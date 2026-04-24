@@ -22,6 +22,12 @@ cd /agents/kaseki-template
 docker build -t kaseki-template:latest .
 ```
 
+If scripts were copied from a fresh clone without executable bits, run:
+
+```sh
+chmod +x run-kaseki.sh cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js
+```
+
 Verify Pi is installed in the image:
 
 ```sh
