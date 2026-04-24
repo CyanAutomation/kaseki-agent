@@ -1,0 +1,6 @@
+/kaseki-runs/
+/kaseki-results/
+/kaseki-cache/
+*.log
+*.tmp
+.DS_Store
