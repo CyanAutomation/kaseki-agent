@@ -75,7 +75,7 @@ write_metadata() {
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
-  "node_version": $(node --version 2>/dev/null | json_encode || printf '""'),
+  "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf '""'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
 }
