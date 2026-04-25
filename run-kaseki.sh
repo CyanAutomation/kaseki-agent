@@ -18,7 +18,124 @@ KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update one focused Vitest case or one compact table-driven case in tests/parser.validation.ts. Avoid broad repeated test blocks and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
-INSTANCE="${1:-}"
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+show_help() {
+  cat << 'HELP'
+kaseki-agent - Ephemeral coding-agent runner with Docker isolation
+
+USAGE:
+  ./run-kaseki.sh [<repo-url> [<git-ref> [<instance-name>]]]
+  ./run-kaseki.sh --doctor
+  ./run-kaseki.sh --help
+
+ARGUMENTS:
+  <repo-url>      Git repository URL (e.g., https://github.com/org/repo)
+                  Default: https://github.com/CyanAutomation/crudmapper
+  <git-ref>       Git reference: branch, tag, or commit (default: main)
+  <instance-name> Kaseki instance name (must match kaseki-N pattern)
+                  Auto-generated if not provided
+
+OPTIONS:
+  --doctor        Run health check and exit
+  --help, -h      Show this help message
+
+ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
+  REPO_URL                          Repository URL
+  GIT_REF                           Git reference
+  OPENROUTER_API_KEY                OpenRouter API key (or use OPENROUTER_API_KEY_FILE)
+  OPENROUTER_API_KEY_FILE           Path to file containing API key
+  KASEKI_MODEL                      AI model (default: openrouter/free)
+  KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
+  KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
+  KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
+  KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
+
+EXAMPLES:
+  # All defaults
+  ./run-kaseki.sh
+
+  # Custom repo, auto instance
+  ./run-kaseki.sh https://github.com/org/myrepo
+
+  # Custom repo and ref
+  ./run-kaseki.sh https://github.com/org/myrepo feature/branch
+
+  # Explicit instance name
+  ./run-kaseki.sh https://github.com/org/myrepo main kaseki-42
+
+  # Via environment variables (legacy)
+  REPO_URL=https://... GIT_REF=main ./run-kaseki.sh
+
+  # Health check
+  ./run-kaseki.sh --doctor
+HELP
+}
+
+is_git_url() {
+  local str="$1"
+  # Must contain / and either end with .git or contain github/gitlab/etc
+  [[ "$str" == */* ]] && ( [[ "$str" == *.git ]] || [[ "$str" == *github* ]] || [[ "$str" == *gitlab* ]] || [[ "$str" == *bitbucket* ]] )
+}
+
+is_instance_name() {
+  local str="$1"
+  [[ "$str" =~ ^kaseki-[0-9]+$ ]]
+}
+
+# Parse command-line arguments
+PARSED_REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
+PARSED_GIT_REF="${GIT_REF:-main}"
+INSTANCE=""
+
+# Argument index tracker
+arg_idx=0
+
+for arg in "$@"; do
+  if [ $arg_idx -eq 0 ]; then
+    # First argument could be: --doctor, --help, repo-url, or help
+    if [ "$arg" = "--doctor" ]; then
+      SHOW_DOCTOR="1"
+      arg_idx=$((arg_idx + 1))
+      continue
+    elif [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
+      show_help
+      exit 0
+    elif is_git_url "$arg"; then
+      PARSED_REPO_URL="$arg"
+      arg_idx=$((arg_idx + 1))
+    elif is_instance_name "$arg"; then
+      # Edge case: passed instance name as first arg without repo
+      INSTANCE="$arg"
+      arg_idx=$((arg_idx + 1))
+    else
+      # Could be short ref like "main" without repo URL
+      PARSED_GIT_REF="$arg"
+      arg_idx=$((arg_idx + 1))
+    fi
+  elif [ $arg_idx -eq 1 ]; then
+    # Second argument: git-ref or instance-name
+    if is_instance_name "$arg"; then
+      INSTANCE="$arg"
+    else
+      PARSED_GIT_REF="$arg"
+    fi
+    arg_idx=$((arg_idx + 1))
+  elif [ $arg_idx -eq 2 ]; then
+    # Third argument: instance-name
+    if is_instance_name "$arg"; then
+      INSTANCE="$arg"
+    fi
+    arg_idx=$((arg_idx + 1))
+  fi
+done
+
+if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
+  INSTANCE=""
+fi
 
 doctor() {
   local status=0
@@ -59,10 +176,14 @@ doctor() {
   return "$status"
 }
 
-if [ "$INSTANCE" = "--doctor" ]; then
+if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
   doctor
   exit "$?"
 fi
+
+# Use parsed CLI arguments, falling back to env vars if not provided via CLI
+REPO_URL="$PARSED_REPO_URL"
+GIT_REF="$PARSED_GIT_REF"
 
 if [ -z "$INSTANCE" ]; then
   next=1

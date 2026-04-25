@@ -88,21 +88,49 @@ OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh kaseki-4
 
 ## Running against a custom repo
 
-Use `REPO_URL` to point Kaseki at a different Git repository:
+### Method 1: CLI Arguments (Recommended)
+
+Pass the repository URL and Git reference as positional arguments to `run-kaseki.sh`:
+
+```sh
+# Custom repo, auto git-ref and instance
+OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo>
+```
+
+```sh
+# Custom repo and branch/tag
+OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo> feature/my-branch
+```
+
+```sh
+# Custom repo, ref, and explicit instance name
+OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo> feature/my-branch kaseki-42
+```
+
+```sh
+# Using secret file with repo args
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo> develop
+```
+
+The arguments are parsed intelligently:
+- Arguments containing `/` or `.git` are recognized as repository URLs (GitHub, GitLab, Bitbucket, etc.)
+- Short strings like `main`, `develop`, or `v1.0.0` are recognized as Git references
+- Names matching the `kaseki-N` pattern are recognized as explicit instance names
+- All unspecified arguments are auto-generated (instance name, git ref)
+
+### Method 2: Environment Variables (Legacy)
+
+Use `REPO_URL` and `GIT_REF` environment variables (still supported but superseded by CLI args):
 
 ```sh
 OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
 ```
 
 ```sh
-OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
-```
-
-For non-default branches or tags, also set `GIT_REF`:
-
-```sh
 OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> GIT_REF=feature/my-branch /agents/kaseki-template/run-kaseki.sh
 ```
+
+**Note:** CLI arguments take precedence over environment variables. If you provide repo arguments on the command line, `REPO_URL` and `GIT_REF` environment variables are ignored.
 
 Useful environment variables:
 
@@ -131,6 +159,21 @@ Run the doctor command before first use or after host changes:
 
 It checks Docker availability, writable run/result directories, image presence,
 and OpenRouter key availability.
+
+## Help and usage
+
+View the full usage guide and all available options:
+
+```sh
+/agents/kaseki-template/run-kaseki.sh --help
+```
+
+This displays:
+- All invocation patterns (CLI arguments and environment variable options)
+- Positional argument descriptions
+- Environment variable reference with defaults
+- Example invocations
+- Information about backward compatibility
 
 ## Dependency install behavior (skip vs refresh)
 
