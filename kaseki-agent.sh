@@ -76,7 +76,7 @@ write_metadata() {
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
-  "npm_version": $(npm --version 2>/dev/null | json_encode || printf '""'),
+  "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
 }
 META
