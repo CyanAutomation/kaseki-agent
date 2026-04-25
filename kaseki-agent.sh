@@ -265,7 +265,7 @@ fi
 
 allowlist_regex="$(printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" | tr ' ' '\n' | sed '/^$/d' | sed 's/[.[\*^$()+?{}|\\]/\\&/g' | paste -sd '|' -)"
 if [ -n "$allowlist_regex" ]; then
-  while IFS= read -r changed_file; do
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       QUALITY_EXIT=5
