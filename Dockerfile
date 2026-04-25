@@ -1,4 +1,5 @@
-FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS deps # bump monthly with security review
+# Bump the pinned Node base image monthly with a security review.
+FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS deps
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
