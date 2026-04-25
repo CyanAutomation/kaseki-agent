@@ -56,6 +56,20 @@ Run an explicit instance:
 OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh kaseki-4
 ```
 
+## Running against a custom repo
+
+Use `REPO_URL` to point Kaseki at a different Git repository:
+
+```sh
+OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
+```
+
+For non-default branches or tags, also set `GIT_REF`:
+
+```sh
+OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> GIT_REF=feature/my-branch /agents/kaseki-template/run-kaseki.sh
+```
+
 Useful environment variables:
 
 - `KASEKI_PROVIDER` defaults to `openrouter`.
