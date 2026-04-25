@@ -1,5 +1,5 @@
 # Bump the pinned Node base image monthly with a security review.
-FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS deps
+FROM node:22.22.2-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c AS deps
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
@@ -25,7 +25,7 @@ RUN npm ci --ignore-scripts
 RUN npm install -g @mariozechner/pi-coding-agent@0.70.2
 
 
-FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS runtime
+FROM node:22.22.2-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
