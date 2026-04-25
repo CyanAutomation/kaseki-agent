@@ -50,11 +50,31 @@ Run the default repo with a runtime-only OpenRouter key via environment variable
 OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh
 ```
 
+The host wrapper writes this value to a per-run secret file and mounts it at
+`/run/secrets/openrouter_api_key`; it does not pass the key through `docker run`
+environment variables.
+
 Run the default repo using a host secret file (mounted for compatibility):
 
 ```sh
 OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh
 ```
+
+Recommended persistent host secret path on a Pi:
+
+```sh
+mkdir -p ~/secrets
+chmod 0700 ~/secrets
+read -rsp "OpenRouter API key: " OPENROUTER_API_KEY
+printf '\n'
+printf '%s' "$OPENROUTER_API_KEY" > ~/secrets/openrouter_api_key
+unset OPENROUTER_API_KEY
+chmod 0600 ~/secrets/openrouter_api_key
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh --doctor
+```
+
+Use that same `OPENROUTER_API_KEY_FILE` value when running Kaseki. The wrapper
+mounts the file into the container at `/run/secrets/openrouter_api_key`.
 
 Run an explicit instance:
 
@@ -82,8 +102,10 @@ OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> GIT_REF=fe
 
 Useful environment variables:
 
+- `KASEKI_ROOT` defaults to `/agents`.
 - `KASEKI_PROVIDER` defaults to `openrouter`.
 - `KASEKI_IMAGE` defaults to `docker.io/cyanautomation/kaseki-agent:0.1.0`.
+- `KASEKI_CONTAINER_USER` defaults to the current host UID/GID (`$(id -u):$(id -g)`).
 - `KASEKI_MODEL` defaults to `openrouter/free`.
 - `KASEKI_AGENT_TIMEOUT_SECONDS` defaults to `1200`.
 - `KASEKI_VALIDATION_COMMANDS` defaults to `npm run check;npm run test;npm run build`.
@@ -94,6 +116,17 @@ Useful environment variables:
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
 - `KASEKI_DEPENDENCY_CACHE_DIR` defaults to `/workspace/.kaseki-cache` (workspace cache for target repo dependencies).
 - `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` defaults to `/opt/kaseki/workspace-cache` (image-provided dependency cache seeds).
+
+## Host readiness check
+
+Run the doctor command before first use or after host changes:
+
+```sh
+/agents/kaseki-template/run-kaseki.sh --doctor
+```
+
+It checks Docker availability, writable run/result directories, image presence,
+and OpenRouter key availability.
 
 ## Dependency install behavior (skip vs refresh)
 
@@ -117,7 +150,7 @@ Cleanup old workspaces while keeping results:
 KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 ```
 
-Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails with a missing-key error. Runtime logs report only the source method (`env` or `secret file`), never the key value.
+Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
 
 ## Exit codes
 
@@ -134,7 +167,7 @@ Other non-zero exit codes may be propagated from failed steps (for example clone
 
 Container healthcheck behavior:
 
-- The image defines `HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD test -f /results/exit_code && exit 0 || exit 1`.
+- The image defines `HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD test -f /results/stdout.log && test -f /results/stderr.log`.
 - `/results` always exists because it is created in the image (`mkdir -p /results`) and also created again at runtime by `kaseki-agent.sh`.
-- The container is reported **unhealthy** while a run is still in progress (before `/results/exit_code` is written).
-- The container flips to **healthy** only after the run finishes and writes `/results/exit_code`.
+- The container is reported **healthy** after the runner initializes its result logs.
+- Run completion is still tracked by `/results/exit_code`.
