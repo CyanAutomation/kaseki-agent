@@ -1,0 +1,7 @@
+{
+  "name": "kaseki-workspace-cache-seed",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Seed manifests for cache-friendly dependency layers",
+  "license": "UNLICENSED"
+}

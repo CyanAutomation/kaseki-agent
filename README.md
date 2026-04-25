@@ -7,7 +7,7 @@ Host layout:
 - `/agents/kaseki-template`: Dockerfile and runner scripts.
 - `/agents/kaseki-runs/kaseki-N`: per-run workspace.
 - `/agents/kaseki-results/kaseki-N`: logs, metadata, exit code, git status, git diff, and resource timing.
-- `/agents/kaseki-cache`: reserved for optional future cache reuse.
+- `/agents/kaseki-cache`: optional host-level cache location for dependency seeds.
 
 Preferred registry image:
 
@@ -82,6 +82,24 @@ Useful environment variables:
 - `KASEKI_CHANGED_FILES_ALLOWLIST` defaults to `src/lib/parser.ts tests/parser.validation.ts`.
 - `KASEKI_MAX_DIFF_BYTES` defaults to `200000`.
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
+- `KASEKI_DEPENDENCY_CACHE_DIR` defaults to `/workspace/.kaseki-cache` (workspace cache for target repo dependencies).
+- `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` defaults to `/opt/kaseki/workspace-cache` (image-provided dependency cache seeds).
+
+## Dependency install behavior (skip vs refresh)
+
+`kaseki-agent.sh` prepares dependencies in this order after cloning the target repo:
+
+1. If no `package.json` is present, dependency installation is skipped.
+2. If `node_modules` already exists in the repo and its stored lock hash matches the current lock source (`package-lock.json`, `npm-shrinkwrap.json`, or fallback `package.json`), install is skipped.
+3. If `node_modules` is missing, Kaseki tries a workspace cache hit at:
+   - `$KASEKI_DEPENDENCY_CACHE_DIR/<repo-and-ref-hash>/<lock-hash>/node_modules`
+4. If workspace cache misses, Kaseki tries an image seed cache hit at:
+   - `$KASEKI_IMAGE_DEPENDENCY_CACHE_DIR/<repo-and-ref-hash>/<lock-hash>/node_modules`
+5. If both caches miss, Kaseki refreshes dependencies with:
+   - `npm ci --prefer-offline` (fallback: `npm install`)
+6. After a successful cache hit or install, `node_modules` is written back to workspace cache for reuse.
+
+`run-kaseki.sh` keeps the same runtime hardening (`--read-only`, `--tmpfs`, dropped capabilities, and non-root execution via `-u 1000:1000`).
 
 Cleanup old workspaces while keeping results:
 

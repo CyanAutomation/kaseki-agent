@@ -1,4 +1,4 @@
-FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a # bump monthly with security review
+FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS deps # bump monthly with security review
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
@@ -17,7 +17,35 @@ ENV HOME=/tmp/kaseki-home \
     PI_SKIP_VERSION_CHECK=1 \
     CI=true
 
+WORKDIR /opt/kaseki/workspace-cache-seed
+COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
+RUN npm ci --ignore-scripts
+
 RUN npm install -g @mariozechner/pi-coding-agent@0.70.2
+
+
+FROM node:22.22.2-bookworm-slim@sha256:db9a3a15e8e8e2adbaf1e1c3d93dfb04c2e294bdd027490addb2391b8e61cc6a AS runtime
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates git procps \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system --gid 10001 kaseki \
+    && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
+    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
+    && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
+
+ENV HOME=/tmp/kaseki-home \
+    NPM_CONFIG_CACHE=/tmp/npm-cache \
+    npm_config_cache=/tmp/npm-cache \
+    PI_CODING_AGENT_DIR=/tmp/pi-agent \
+    PI_TELEMETRY=0 \
+    PI_SKIP_VERSION_CHECK=1 \
+    CI=true
+
+COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=deps /usr/local/bin/pi /usr/local/bin/pi
+COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
