@@ -151,7 +151,7 @@ printf 'Pi version: %s\n' "$PI_VERSION"
 run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
 cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit 0; }
 
-run_step "npm ci --prefer-offline || npm install" bash -lc "npm ci --prefer-offline || npm install"
+run_step "npm ci --prefer-offline || npm install" sh -c "npm ci --prefer-offline || npm install"
 
 printf '\n==> pi coding agent\n'
 set +e
