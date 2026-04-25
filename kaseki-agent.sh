@@ -159,7 +159,11 @@ fi
 
 printf '\n==> pi coding agent\n'
 set +e
-OPENROUTER_API_KEY="$(cat /run/secrets/openrouter_api_key)" \
+openrouter_api_key="${OPENROUTER_API_KEY:-}"
+if [ -r /run/secrets/openrouter_api_key ]; then
+  openrouter_api_key="$(cat /run/secrets/openrouter_api_key)"
+fi
+OPENROUTER_API_KEY="$openrouter_api_key" \
   timeout "$KASEKI_AGENT_TIMEOUT_SECONDS" \
   pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
   > "$RAW_EVENTS" \

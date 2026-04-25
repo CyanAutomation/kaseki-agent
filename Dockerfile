@@ -4,6 +4,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --system --gid 10001 kaseki \
+    && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
+    && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent \
+    && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent
+
 ENV HOME=/tmp/kaseki-home \
     NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm_config_cache=/tmp/npm-cache \
@@ -19,4 +24,5 @@ COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
 RUN chmod 0755 /usr/local/bin/kaseki-agent /usr/local/bin/kaseki-pi-event-filter
 
 WORKDIR /workspace
+USER kaseki
 ENTRYPOINT ["/usr/local/bin/kaseki-agent"]
