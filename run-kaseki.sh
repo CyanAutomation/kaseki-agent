@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/agents"
+ROOT="${KASEKI_ROOT:-/agents}"
 RUNS="$ROOT/kaseki-runs"
 RESULTS="$ROOT/kaseki-results"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:0.1.0}"
+KASEKI_CONTAINER_USER="${KASEKI_CONTAINER_USER:-$(id -u):$(id -g)}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
@@ -16,7 +17,52 @@ KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-1}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update a focused Vitest case in tests/parser.validation.ts. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 INSTANCE="${1:-}"
+
+doctor() {
+  local status=0
+  printf 'Kaseki doctor\n'
+  printf 'Root: %s\n' "$ROOT"
+  printf 'Image: %s\n' "$IMAGE"
+  printf 'Container user: %s\n' "$KASEKI_CONTAINER_USER"
+
+  if command -v docker >/dev/null 2>&1; then
+    printf 'Docker: %s\n' "$(docker --version)"
+  else
+    printf 'Docker: missing\n' >&2
+    status=1
+  fi
+
+  mkdir -p "$RUNS" "$RESULTS" 2>/dev/null || {
+    printf 'Writable Kaseki directories: failed to create %s and %s\n' "$RUNS" "$RESULTS" >&2
+    status=1
+  }
+  [ -w "$RUNS" ] && [ -w "$RESULTS" ] && printf 'Writable Kaseki directories: ok\n'
+
+  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    printf 'OpenRouter API key: env\n'
+  elif [ -r "$HOST_SECRET_FILE" ] && [ -s "$HOST_SECRET_FILE" ]; then
+    printf 'OpenRouter API key: secret file (%s)\n' "$HOST_SECRET_FILE"
+  else
+    printf 'OpenRouter API key: missing\n' >&2
+    status=1
+  fi
+
+  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    printf 'Docker image: present\n'
+  else
+    printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
+    status=1
+  fi
+
+  return "$status"
+}
+
+if [ "$INSTANCE" = "--doctor" ]; then
+  doctor
+  exit "$?"
+fi
 
 if [ -z "$INSTANCE" ]; then
   next=1
@@ -35,7 +81,6 @@ RUN_DIR="$RUNS/$INSTANCE"
 RESULT_DIR="$RESULTS/$INSTANCE"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
-HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 
 cleanup_secret() {
   rm -f "$SECRET_FILE"
@@ -54,6 +99,7 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "git_ref": "$GIT_REF",
   "provider": "$KASEKI_PROVIDER",
   "model": "$KASEKI_MODEL",
+  "container_user": "$KASEKI_CONTAINER_USER",
   "changed_files_allowlist": "$KASEKI_CHANGED_FILES_ALLOWLIST",
   "max_diff_bytes": $KASEKI_MAX_DIFF_BYTES,
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -133,10 +179,7 @@ docker run --rm \
     --tmpfs /tmp:rw,nosuid,nodev,size=256m \
     --security-opt no-new-privileges:true \
     --cap-drop ALL \
-    --pids-limit 256 \
-    --memory 768m \
-    --cpus 1.0 \
-    -u 1000:1000 \
+    -u "$KASEKI_CONTAINER_USER" \
     -e KASEKI_INSTANCE="$INSTANCE" \
     -e REPO_URL="$REPO_URL" \
     -e GIT_REF="$GIT_REF" \
@@ -148,7 +191,6 @@ docker run --rm \
     -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST" \
     -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES" \
     -e TASK_PROMPT="$TASK_PROMPT" \
-    -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
     -v "$WORKSPACE:/workspace:rw" \
     -v "$RESULT_DIR:/results:rw" \
     -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro" \
