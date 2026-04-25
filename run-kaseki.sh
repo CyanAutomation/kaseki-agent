@@ -124,7 +124,7 @@ fi
 printf 'OpenRouter API key source: %s\n' "$key_source"
 printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
-unset key_value
+unset key_value key_source
 
 set +e
 docker run --rm \
