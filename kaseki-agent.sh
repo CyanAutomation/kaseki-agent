@@ -252,7 +252,7 @@ else
     2> >(tee -a /results/pi-stderr.log >&2)
   PI_EXIT="$?"
 fi
-unset OPENROUTER_API_KEY openrouter_api_key secret_content
+unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source secret_content
 set -e
 
 if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
