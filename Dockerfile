@@ -46,17 +46,19 @@ ENV HOME=/tmp/kaseki-home \
     CI=true
 
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=deps /usr/local/bin/pi /usr/local/bin/pi
+RUN ln -sf ../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js /usr/local/bin/pi
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
-RUN chmod 0755 /usr/local/bin/kaseki-agent /usr/local/bin/kaseki-pi-event-filter
+RUN chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
+    /usr/local/bin/kaseki-agent \
+    /usr/local/bin/kaseki-pi-event-filter
 
 WORKDIR /workspace
 USER kaseki
 ENTRYPOINT ["/usr/local/bin/kaseki-agent"]
 
-# The run writes /results/exit_code during shutdown; probe fails until that marker exists.
+# The runner initializes these logs before long-running work starts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD test -f /results/exit_code && exit 0 || exit 1
+  CMD test -f /results/stdout.log && test -f /results/stderr.log
