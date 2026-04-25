@@ -1,0 +1,32 @@
+# Minimal secure Docker build context baseline
+
+# --- Allowlist only what Dockerfile copies ---
+**
+!Dockerfile
+!kaseki-agent.sh
+!pi-event-filter.js
+!.dockerignore
+
+# --- Common exclusions (explicit for clarity) ---
+.git
+.gitignore
+node_modules
+*.log
+.env
+.env.*
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test / coverage artifacts
+coverage
+.nyc_output
+*.lcov
+junit*.xml
+
+# Project-specific files not needed for image build
+README.md
+run-kaseki.sh
+cleanup-kaseki.sh
