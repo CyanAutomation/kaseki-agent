@@ -1,0 +1,120 @@
+name: Build Docker Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Docker image tags (comma-separated, e.g., latest,0.2.0)'
+        required: false
+        default: 'latest'
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  DOCKER_IMAGE: cyanautomation/kaseki-agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Determine tags
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAGS="${{ github.event.inputs.tags }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            VERSION="${VERSION#v}"
+            TAGS="$VERSION,latest"
+          else
+            TAGS="latest"
+          fi
+
+          DOCKER_TAGS=""
+          FIRST_TAG=""
+          for raw_tag in ${TAGS//,/ }; do
+            tag="$(echo "$raw_tag" | xargs)"
+            [[ -z "$tag" ]] && continue
+            [[ -z "$FIRST_TAG" ]] && FIRST_TAG="$tag"
+            DOCKER_TAGS="${DOCKER_TAGS}${DOCKER_IMAGE}:$tag"$'\n'
+            DOCKER_TAGS="${DOCKER_TAGS}${DOCKER_IMAGE}:$tag-arm64"$'\n'
+          done
+
+          if [[ -z "$DOCKER_TAGS" ]]; then
+            echo "No Docker tags were provided" >&2
+            exit 1
+          fi
+
+          DOCKER_TAGS="${DOCKER_TAGS%$'\n'}"
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$DOCKER_TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "primary_tag=${FIRST_TAG:-latest}" >> "$GITHUB_OUTPUT"
+          echo "Building tags:"
+          echo "$DOCKER_TAGS"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  verify:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Determine verification tag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAGS="${{ github.event.inputs.tags }}"
+            TAG="$(echo "${TAGS%%,*}" | xargs)"
+            echo "tag=${TAG:-latest}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            TAG="${TAG#v}"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify multi-arch manifest
+        shell: bash
+        run: |
+          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          echo "Verifying manifest for: $IMAGE"
+          docker manifest inspect "$IMAGE" | jq -e '
+            [.manifests[].platform | "\(.os)/\(.architecture)"] as $platforms |
+            ($platforms | index("linux/amd64")) and ($platforms | index("linux/arm64"))
+          '
+          docker manifest inspect "$IMAGE" | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"'
+          echo "Multi-arch image verified successfully"
