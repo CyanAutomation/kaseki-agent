@@ -162,3 +162,10 @@ jobs:
             .failed_command == "missing OPENROUTER_API_KEY"
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
+          test ! -d "$WORKSPACE/repo"
+
+          docker run --rm \
+            --entrypoint kaseki-report \
+            -v "$RESULTS:/results:ro" \
+            "$IMAGE" \
+            /results

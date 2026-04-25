@@ -15,6 +15,10 @@ Preferred registry image:
 docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
 ```
 
+Use stable version tags such as `0.1.0` for normal operation. The `latest` tag
+is published for smoke testing and previewing the next release before a stable
+tag is cut.
+
 Local fallback build:
 
 ```sh
@@ -35,7 +39,7 @@ docker build -t kaseki-template:latest .
 If scripts were copied from a fresh clone without executable bits, run:
 
 ```sh
-chmod +x run-kaseki.sh cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js
+chmod +x run-kaseki.sh cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js kaseki-report.js
 ```
 
 Verify Pi is installed in the image:
@@ -57,7 +61,7 @@ environment variables.
 Run the default repo using a host secret file (mounted for compatibility):
 
 ```sh
-OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh
 ```
 
 Recommended persistent host secret path on a Pi:
@@ -91,7 +95,7 @@ OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> /agents/ka
 ```
 
 ```sh
-OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
 ```
 
 For non-default branches or tags, also set `GIT_REF`:
@@ -114,7 +118,7 @@ Useful environment variables:
 - `KASEKI_CHANGED_FILES_ALLOWLIST` defaults to `src/lib/parser.ts tests/parser.validation.ts`.
 - `KASEKI_MAX_DIFF_BYTES` defaults to `200000`.
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
-- `KASEKI_DEPENDENCY_CACHE_DIR` defaults to `/workspace/.kaseki-cache` (workspace cache for target repo dependencies).
+- `KASEKI_DEPENDENCY_CACHE_DIR` defaults to `/workspace/.kaseki-cache` (external workspace cache for target repo dependencies).
 - `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` defaults to `/opt/kaseki/workspace-cache` (image-provided dependency cache seeds).
 
 ## Host readiness check
@@ -142,7 +146,13 @@ and OpenRouter key availability.
    - `npm ci --prefer-offline` (fallback: `npm install`)
 6. After a successful cache hit or install, `node_modules` is written back to workspace cache for reuse.
 
-`run-kaseki.sh` keeps the same runtime hardening (`--read-only`, `--tmpfs`, dropped capabilities, and non-root execution via `-u 1000:1000`).
+The dependency stamp is stored outside the cloned repo at
+`$KASEKI_DEPENDENCY_CACHE_DIR/<repo-and-ref-hash>/<lock-hash>/stamp.txt`, so
+`git.status`, `git.diff`, and `changed-files.txt` stay focused on target-repo
+changes rather than Kaseki cache bookkeeping.
+
+`run-kaseki.sh` keeps the same runtime hardening (`--read-only`, `--tmpfs`,
+dropped capabilities, and non-root execution through `KASEKI_CONTAINER_USER`).
 
 Cleanup old workspaces while keeping results:
 
@@ -151,6 +161,20 @@ KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 ```
 
 Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
+
+Print a compact diagnostic report for any result directory:
+
+```sh
+docker run --rm \
+  --entrypoint kaseki-report \
+  -v /agents/kaseki-results/kaseki-4:/results:ro \
+  kaseki-template:latest \
+  /results
+```
+
+The report includes status, failed command, exit codes, requested and actual
+models, duration, validation timings, changed files, secret-scan status, and the
+next diagnostic artifact to inspect.
 
 ## Exit codes
 

@@ -5,6 +5,7 @@
 !Dockerfile
 !kaseki-agent.sh
 !pi-event-filter.js
+!kaseki-report.js
 !.dockerignore
 !docker/
 !docker/workspace-cache/
