@@ -35,6 +35,7 @@ RUN_DIR="$RUNS/$INSTANCE"
 RESULT_DIR="$RESULTS/$INSTANCE"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
+HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 
 cleanup_secret() {
   rm -f "$SECRET_FILE"
@@ -61,10 +62,16 @@ cat > "$RESULT_DIR/host-start.json" <<META
 }
 META
 
-if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  key_source="env"
+  key_value="$OPENROUTER_API_KEY"
+elif [ -r "$HOST_SECRET_FILE" ]; then
+  key_source="secret file"
+  key_value="$(cat "$HOST_SECRET_FILE")"
+else
   {
-    printf 'OPENROUTER_API_KEY is required in the host environment. '
-    printf 'Pass it only at runtime, for example: OPENROUTER_API_KEY=... %s %s\n' "$0" "$INSTANCE"
+    printf 'OpenRouter API key is required. '
+    printf 'Set OPENROUTER_API_KEY or provide a readable secret file at %s (override with OPENROUTER_API_KEY_FILE).\n' "$HOST_SECRET_FILE"
   } > "$RESULT_DIR/stderr.log"
   : > "$RESULT_DIR/stdout.log"
   : > "$RESULT_DIR/pi-events.jsonl"
@@ -89,8 +96,35 @@ META
   exit 2
 fi
 
-printf '%s' "$OPENROUTER_API_KEY" > "$SECRET_FILE"
+if [ -z "$key_value" ]; then
+  printf 'OpenRouter API key source "%s" resolved to an empty value.\n' "$key_source" > "$RESULT_DIR/stderr.log"
+  : > "$RESULT_DIR/stdout.log"
+  : > "$RESULT_DIR/pi-events.jsonl"
+  : > "$RESULT_DIR/git.status"
+  : > "$RESULT_DIR/git.diff"
+  : > "$RESULT_DIR/validation.log"
+  printf '2\n' > "$RESULT_DIR/exit_code"
+  printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
+  printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
+  cat > "$RESULT_DIR/metadata.json" <<META
+{
+  "instance": "$INSTANCE",
+  "repo_url": "$REPO_URL",
+  "git_ref": "$GIT_REF",
+  "provider": "$KASEKI_PROVIDER",
+  "model": "$KASEKI_MODEL",
+  "exit_code": 2,
+  "failed_command": "empty OpenRouter API key from $key_source"
+}
+META
+  cat "$RESULT_DIR/stderr.log" >&2
+  exit 2
+fi
+
+printf 'OpenRouter API key source: %s\n' "$key_source"
+printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
+unset key_value key_source
 
 set +e
 docker run --rm \
@@ -114,6 +148,7 @@ docker run --rm \
     -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST" \
     -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES" \
     -e TASK_PROMPT="$TASK_PROMPT" \
+    -e OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}" \
     -v "$WORKSPACE:/workspace:rw" \
     -v "$RESULT_DIR:/results:rw" \
     -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro" \
