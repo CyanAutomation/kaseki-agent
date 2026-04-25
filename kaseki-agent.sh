@@ -25,6 +25,8 @@ SECRET_SCAN_EXIT=0
 ACTUAL_MODEL=""
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
+KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
+KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
 
 mkdir_paths=(/results)
 if [ -n "${HOME:-}" ]; then
@@ -162,7 +164,60 @@ printf 'Pi version: %s\n' "$PI_VERSION"
 run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
 cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit 0; }
 
-run_step "npm ci --prefer-offline || npm install" sh -c "npm ci --prefer-offline || npm install"
+prepare_dependencies() {
+  if [ ! -f package.json ]; then
+    printf 'No package.json found; skipping dependency installation.\n'
+    return 0
+  fi
+
+  local lock_source=""
+  if [ -f package-lock.json ]; then
+    lock_source="package-lock.json"
+  elif [ -f npm-shrinkwrap.json ]; then
+    lock_source="npm-shrinkwrap.json"
+  else
+    lock_source="package.json"
+  fi
+
+  local repo_key lock_hash cache_key repo_cache_dir workspace_cache_dir image_cache_dir
+  repo_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
+  lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
+  cache_key="${repo_key}/${lock_hash}"
+  repo_cache_dir=".kaseki-cache/${lock_hash}"
+  workspace_cache_dir="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
+  image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
+
+  mkdir -p ".kaseki-cache" "$KASEKI_DEPENDENCY_CACHE_DIR"
+
+  if [ -d node_modules ] && [ -f "${repo_cache_dir}/stamp.txt" ]; then
+    if grep -qx "$lock_hash" "${repo_cache_dir}/stamp.txt"; then
+      printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
+      return 0
+    fi
+  fi
+
+  if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
+    printf 'Dependency cache status: restoring node_modules from workspace cache (%s).\n' "$workspace_cache_dir"
+    cp -a "$workspace_cache_dir" ./node_modules
+  elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
+    printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
+    cp -a "$image_cache_dir" ./node_modules
+  fi
+
+  if [ ! -d node_modules ]; then
+    printf 'Dependency cache status: cache miss, running install.\n'
+    npm ci --prefer-offline || npm install
+  else
+    printf 'Dependency cache status: install skipped due to cache hit.\n'
+  fi
+
+  mkdir -p "$repo_cache_dir" "$(dirname "$workspace_cache_dir")"
+  printf '%s\n' "$lock_hash" > "${repo_cache_dir}/stamp.txt"
+  rm -rf "$workspace_cache_dir"
+  cp -a node_modules "$workspace_cache_dir"
+}
+
+run_step "prepare node dependencies" prepare_dependencies
 
 printf '\n==> pi coding agent\n'
 set +e
