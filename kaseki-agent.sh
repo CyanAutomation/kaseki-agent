@@ -242,6 +242,7 @@ if [ -z "$openrouter_api_key" ]; then
   printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide /run/secrets/openrouter_api_key.\n' | tee -a /results/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
+  openrouter_api_key_source="none"
 else
   printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
   OPENROUTER_API_KEY="$openrouter_api_key" \
