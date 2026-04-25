@@ -16,6 +16,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOCKER_IMAGE: cyanautomation/kaseki-agent
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -123,3 +126,39 @@ jobs:
           '
           docker manifest inspect "$IMAGE" | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"'
           echo "Multi-arch image verified successfully"
+
+      - name: Verify Pi CLI entrypoint
+        shell: bash
+        run: |
+          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          docker run --rm --entrypoint pi "$IMAGE" --version
+
+      - name: Smoke test runtime artifacts
+        shell: bash
+        run: |
+          IMAGE="${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          WORKSPACE="$(mktemp -d)"
+          RESULTS="$(mktemp -d)"
+          chmod 0777 "$WORKSPACE" "$RESULTS"
+
+          set +e
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            -e KASEKI_INSTANCE=kaseki-smoke \
+            -v "$WORKSPACE:/workspace:rw" \
+            -v "$RESULTS:/results:rw" \
+            -w /workspace \
+            "$IMAGE"
+          exit_code="$?"
+          set -e
+
+          test "$exit_code" -eq 2
+          jq -e '
+            .instance == "kaseki-smoke" and
+            .exit_code == 2 and
+            .failed_command == "missing OPENROUTER_API_KEY"
+          ' "$RESULTS/metadata.json"
+          test -s "$RESULTS/result-summary.md"
