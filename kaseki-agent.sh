@@ -48,7 +48,7 @@ unset OPENROUTER_API_KEY
 
 json_encode() {
   # Self-check: encode via Python's JSON encoder to avoid malformed metadata on special characters.
-  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")), end="")'
 }
 
 write_metadata() {
