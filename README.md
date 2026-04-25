@@ -91,6 +91,18 @@ KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 
 Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. The OpenRouter API key is mounted as a one-run secret file and is available only to the Pi invocation.
 
+## Exit codes
+
+Kaseki uses specific non-zero exit codes for validation/policy failures:
+
+- `2`: missing required runtime configuration (for example `OPENROUTER_API_KEY`) or invalid instance format in the wrapper script.
+- `3`: empty git diff (the agent produced no changes).
+- `4`: diff exceeds `KASEKI_MAX_DIFF_BYTES`.
+- `5`: a changed file is outside `KASEKI_CHANGED_FILES_ALLOWLIST`.
+- `6`: secret scan detected credential-like content.
+
+Other non-zero exit codes may be propagated from failed steps (for example clone, dependency install, agent run, or validation commands). Check `/results/metadata.json` for `failed_command` and detailed per-stage exit fields.
+
 
 Container healthcheck behavior:
 
