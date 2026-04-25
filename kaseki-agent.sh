@@ -115,12 +115,7 @@ Artifacts:
 SUMMARY
 }
 
-finish() {
-  local code=$?
-  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
-    STATUS="$code"
-    FAILED_COMMAND="unexpected shell failure"
-  fi
+collect_git_artifacts() {
   if [ -d /workspace/repo/.git ]; then
     git -C /workspace/repo status --short > /results/git.status 2>/dev/null || true
     git -C /workspace/repo diff -- . > /results/git.diff 2>/dev/null || true
@@ -133,6 +128,16 @@ finish() {
     : > /results/git.diff
     : > /results/changed-files.txt
   fi
+}
+
+finish() {
+  local code=$?
+  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    STATUS="$code"
+    FAILED_COMMAND="unexpected shell failure"
+  fi
+  # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
+  collect_git_artifacts
   write_result_summary
   write_metadata "$STATUS"
   exit "$STATUS"
@@ -194,12 +199,7 @@ if [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
 fi
 
 printf '\n==> collect agent diff\n'
-git status --short > /results/git.status 2>/dev/null || true
-git diff -- . > /results/git.diff 2>/dev/null || true
-git diff --name-only -- . > /results/changed-files.txt 2>/dev/null || true
-if [ -s /results/git.diff ]; then
-  DIFF_NONEMPTY=true
-fi
+collect_git_artifacts
 
 printf '\n==> quality checks\n'
 diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
