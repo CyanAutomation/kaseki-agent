@@ -234,7 +234,7 @@ if [ -r /run/secrets/openrouter_api_key ]; then
   fi
 fi
 OPENROUTER_API_KEY="$openrouter_api_key" \
-  timeout "$KASEKI_AGENT_TIMEOUT_SECONDS" \
+  timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
   pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
   > "$RAW_EVENTS" \
   2> >(tee -a /results/pi-stderr.log >&2)
@@ -248,7 +248,13 @@ fi
 kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || true
 ACTUAL_MODEL="$(node -e "try{const s=require('/results/pi-summary.json'); console.log(s.selected_model||'')}catch{process.exit(0)}" 2>/dev/null)"
 
-if [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+if [ "$PI_EXIT" -eq 124 ]; then
+  printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a /results/pi-stderr.log >&2
+  if [ "$STATUS" -eq 0 ]; then
+    STATUS=124
+    FAILED_COMMAND="pi coding agent timeout"
+  fi
+elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$PI_EXIT"
   FAILED_COMMAND="pi coding agent"
 fi
