@@ -42,7 +42,7 @@ Use either the published image or a local build, then run `./run-kaseki.sh` from
 
 ```bash
 docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
-OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
+OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
 ```
 
 ### Option B: build locally, then run
