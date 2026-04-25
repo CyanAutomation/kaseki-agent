@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-const fs = require("node:fs");
-const readline = require("node:readline");
+const fs = require('node:fs');
+const readline = require('node:readline');
 
-const inputPath = process.argv[2] ?? "/tmp/pi-events.raw.jsonl";
-const filteredPath = process.argv[3] ?? "/results/pi-events.jsonl";
-const summaryPath = process.argv[4] ?? "/results/pi-summary.json";
+const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
+const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
+const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
 
 const eventCounts = {};
 const assistantEventCounts = {};
@@ -22,7 +22,7 @@ function increment(map, key) {
 }
 
 function observeModelAndApi(message) {
-  if (!message || typeof message !== "object") return;
+  if (!message || typeof message !== 'object') return;
   increment(models, message.model);
   increment(apis, message.api);
 }
@@ -35,15 +35,15 @@ function eventTimestamp(event) {
     event.assistantMessageEvent?.partial?.timestamp,
   ];
   for (const value of candidates) {
-    if (typeof value === "string") return value;
-    if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString();
   }
   return null;
 }
 
 function shouldKeep(event) {
   const assistantType = event.assistantMessageEvent?.type;
-  if (assistantType?.startsWith("thinking_")) return false;
+  if (assistantType?.startsWith('thinking_')) return false;
   return true;
 }
 
@@ -51,18 +51,18 @@ function sanitize(event) {
   const copy = JSON.parse(JSON.stringify(event));
   if (copy.assistantMessageEvent?.partial?.content) {
     copy.assistantMessageEvent.partial.content = copy.assistantMessageEvent.partial.content.filter(
-      (part) => part?.type !== "thinking"
+      (part) => part?.type !== 'thinking'
     );
   }
   if (copy.message?.content) {
-    copy.message.content = copy.message.content.filter((part) => part?.type !== "thinking");
+    copy.message.content = copy.message.content.filter((part) => part?.type !== 'thinking');
   }
   return copy;
 }
 
 async function main() {
-  const input = fs.createReadStream(inputPath, { encoding: "utf8" });
-  const output = fs.createWriteStream(filteredPath, { encoding: "utf8" });
+  const input = fs.createReadStream(inputPath, { encoding: 'utf8' });
+  const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
 
   for await (const line of lines) {
@@ -75,7 +75,7 @@ async function main() {
       continue;
     }
 
-    increment(eventCounts, event.type ?? "<missing>");
+    increment(eventCounts, event.type ?? '<missing>');
     const timestamp = eventTimestamp(event);
     if (timestamp) {
       firstTimestamp ??= timestamp;
@@ -88,8 +88,8 @@ async function main() {
 
     const assistantType = event.assistantMessageEvent?.type;
     increment(assistantEventCounts, assistantType);
-    if (event.type === "tool_execution_start") toolStartCount++;
-    if (event.type === "tool_execution_end") toolEndCount++;
+    if (event.type === 'tool_execution_start') toolStartCount++;
+    if (event.type === 'tool_execution_end') toolEndCount++;
 
     if (shouldKeep(event)) {
       output.write(`${JSON.stringify(sanitize(event))}\n`);
@@ -98,8 +98,8 @@ async function main() {
 
   await new Promise((resolve) => output.end(resolve));
 
-  const selectedModel = Object.entries(models).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-  const selectedApi = Object.entries(apis).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+  const selectedModel = Object.entries(models).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+  const selectedApi = Object.entries(apis).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
   fs.writeFileSync(
     summaryPath,
     `${JSON.stringify(
