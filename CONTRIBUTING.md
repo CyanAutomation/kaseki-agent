@@ -45,6 +45,9 @@ docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
 OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
 ```
 
+Use stable version tags such as `0.1.0` for reproducible runs. Reserve `latest`
+for smoke testing a freshly published image before a stable release tag is cut.
+
 ### Option B: build locally, then run
 
 ```bash
@@ -73,14 +76,15 @@ A failed allowlist or diff-size check should be treated as a real regression unl
 
 When a run fails, inspect artifacts in this order:
 
-1. `result-summary.md` for top-level status, failed command, and changed files.
-2. `metadata.json` for exit codes (`pi`, validation, quality, secret scan), model details, and timing.
-3. `stdout.log` / `stderr.log` for execution flow and shell-level failures.
-4. `pi-summary.json` and `pi-events.jsonl` for agent/model behavior.
-5. `validation.log` and `validation-timings.tsv` for command failures and duration outliers.
-6. `quality.log`, `changed-files.txt`, and `git.diff` for allowlist/diff-limit failures.
-7. `secret-scan.log` for credential-detection issues.
-8. `host-start.json`, `host_docker_exit_code`, and `resource.time` for host/container startup context.
+1. `kaseki-report /agents/kaseki-results/kaseki-N` for a compact status, failed command, exit-code, model, timing, changed-file, and next-diagnostic summary.
+2. `result-summary.md` for top-level status, failed command, and changed files.
+3. `metadata.json` for exit codes (`pi`, validation, quality, secret scan), model details, and timing.
+4. `stdout.log` / `stderr.log` for execution flow and shell-level failures.
+5. `pi-summary.json` and `pi-events.jsonl` for agent/model behavior.
+6. `validation.log` and `validation-timings.tsv` for command failures and duration outliers.
+7. `quality.log`, `changed-files.txt`, and `git.diff` for allowlist/diff-limit failures.
+8. `secret-scan.log` for credential-detection issues.
+9. `host-start.json`, `host_docker_exit_code`, and `resource.time` for host/container startup context.
 
 Tip: If quality or validation failures are ambiguous, compare `git.status` + `git.diff` with `TASK_PROMPT` constraints first.
 

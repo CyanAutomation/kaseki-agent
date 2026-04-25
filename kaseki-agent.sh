@@ -11,10 +11,10 @@ KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run 
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
-TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update a focused Vitest case in tests/parser.validation.ts. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update one focused Vitest case or one compact table-driven case in tests/parser.validation.ts. Avoid broad repeated test blocks and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-PI_VERSION="$(pi --version 2>/dev/null || true)"
+PI_VERSION=""
 STATUS=0
 FAILED_COMMAND=""
 PI_EXIT=0
@@ -39,6 +39,7 @@ if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
   mkdir_paths+=("${PI_CODING_AGENT_DIR}")
 fi
 mkdir -p "${mkdir_paths[@]}"
+PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/stdout.log
 : > /results/stderr.log
 : > /results/pi-events.jsonl
@@ -205,18 +206,19 @@ prepare_dependencies() {
     lock_source="package.json"
   fi
 
-  local repo_key lock_hash cache_key repo_cache_dir workspace_cache_dir image_cache_dir
+  local repo_key lock_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file
   repo_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
   cache_key="${repo_key}/${lock_hash}"
-  repo_cache_dir=".kaseki-cache/${lock_hash}"
-  workspace_cache_dir="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
+  workspace_cache_root="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}"
+  workspace_cache_dir="${workspace_cache_root}/node_modules"
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
+  stamp_file="${workspace_cache_root}/stamp.txt"
 
-  mkdir -p ".kaseki-cache" "$KASEKI_DEPENDENCY_CACHE_DIR"
+  mkdir -p "$workspace_cache_root"
 
-  if [ -d node_modules ] && [ -f "${repo_cache_dir}/stamp.txt" ]; then
-    if grep -qx "$lock_hash" "${repo_cache_dir}/stamp.txt"; then
+  if [ -d node_modules ] && [ -f "$stamp_file" ]; then
+    if grep -qx "$lock_hash" "$stamp_file"; then
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
       return 0
     fi
@@ -237,8 +239,8 @@ prepare_dependencies() {
     printf 'Dependency cache status: install skipped due to cache hit.\n'
   fi
 
-  mkdir -p "$repo_cache_dir" "$(dirname "$workspace_cache_dir")"
-  printf '%s\n' "$lock_hash" > "${repo_cache_dir}/stamp.txt"
+  mkdir -p "$(dirname "$workspace_cache_dir")"
+  printf '%s\n' "$lock_hash" > "$stamp_file"
   rm -rf "$workspace_cache_dir"
   cp -a node_modules "$workspace_cache_dir"
 }
