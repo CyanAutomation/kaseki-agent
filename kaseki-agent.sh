@@ -48,8 +48,7 @@ mkdir -p "${mkdir_paths[@]}"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 
 json_encode() {
-  # Self-check: encode via Python's JSON encoder to avoid malformed metadata on special characters.
-  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")), end="")'
+  node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
 }
 
 write_metadata() {
@@ -165,6 +164,29 @@ printf 'Provider: %s\n' "$KASEKI_PROVIDER"
 printf 'Model: %s\n' "$KASEKI_MODEL"
 printf 'Pi version: %s\n' "$PI_VERSION"
 
+openrouter_api_key=""
+openrouter_api_key_source=""
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  openrouter_api_key="$OPENROUTER_API_KEY"
+  openrouter_api_key_source="env"
+elif [ -r /run/secrets/openrouter_api_key ]; then
+  secret_content="$(cat /run/secrets/openrouter_api_key)"
+  if [ -n "$secret_content" ]; then
+    openrouter_api_key="$secret_content"
+    openrouter_api_key_source="secret file"
+  fi
+fi
+unset OPENROUTER_API_KEY secret_content
+
+if [ -z "$openrouter_api_key" ]; then
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide /run/secrets/openrouter_api_key.\n' | tee -a /results/pi-stderr.log >&2
+  : > "$RAW_EVENTS"
+  PI_EXIT=2
+  STATUS=2
+  FAILED_COMMAND="missing OPENROUTER_API_KEY"
+  exit 0
+fi
+
 run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
 cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit 0; }
 
@@ -225,34 +247,14 @@ run_step "prepare node dependencies" prepare_dependencies
 
 printf '\n==> pi coding agent\n'
 set +e
-openrouter_api_key=""
-openrouter_api_key_source=""
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-  openrouter_api_key="$OPENROUTER_API_KEY"
-  openrouter_api_key_source="env"
-elif [ -r /run/secrets/openrouter_api_key ]; then
-  secret_content="$(cat /run/secrets/openrouter_api_key)"
-  if [ -n "$secret_content" ]; then
-    openrouter_api_key="$secret_content"
-    openrouter_api_key_source="secret file"
-  fi
-fi
-
-if [ -z "$openrouter_api_key" ]; then
-  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide /run/secrets/openrouter_api_key.\n' | tee -a /results/pi-stderr.log >&2
-  : > "$RAW_EVENTS"
-  PI_EXIT=2
-  openrouter_api_key_source="none"
-else
-  printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
-  OPENROUTER_API_KEY="$openrouter_api_key" \
-    timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
-    > "$RAW_EVENTS" \
-    2> >(tee -a /results/pi-stderr.log >&2)
-  PI_EXIT="$?"
-fi
-unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source secret_content
+printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
+OPENROUTER_API_KEY="$openrouter_api_key" \
+  timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
+  pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
+  > "$RAW_EVENTS" \
+  2> >(tee -a /results/pi-stderr.log >&2)
+PI_EXIT="$?"
+unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
 set -e
 
 if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
