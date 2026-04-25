@@ -44,10 +44,16 @@ Verify Pi is installed in the image:
 docker run --rm --entrypoint pi docker.io/cyanautomation/kaseki-agent:0.1.0 --version
 ```
 
-Run the default repo with a runtime-only OpenRouter key:
+Run the default repo with a runtime-only OpenRouter key via environment variable:
 
 ```sh
 OPENROUTER_API_KEY=sk-or-... /agents/kaseki-template/run-kaseki.sh
+```
+
+Run the default repo using a host secret file (mounted for compatibility):
+
+```sh
+OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key /agents/kaseki-template/run-kaseki.sh
 ```
 
 Run an explicit instance:
@@ -62,6 +68,10 @@ Use `REPO_URL` to point Kaseki at a different Git repository:
 
 ```sh
 OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
+```
+
+```sh
+OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key REPO_URL=https://github.com/<org>/<repo> /agents/kaseki-template/run-kaseki.sh
 ```
 
 For non-default branches or tags, also set `GIT_REF`:
@@ -107,7 +117,7 @@ Cleanup old workspaces while keeping results:
 KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 ```
 
-Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. The OpenRouter API key is mounted as a one-run secret file and is available only to the Pi invocation.
+Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails with a missing-key error. Runtime logs report only the source method (`env` or `secret file`), never the key value.
 
 ## Exit codes
 
