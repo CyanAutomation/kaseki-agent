@@ -76,3 +76,11 @@ KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 ```
 
 Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. The OpenRouter API key is mounted as a one-run secret file and is available only to the Pi invocation.
+
+
+Container healthcheck behavior:
+
+- The image defines `HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD test -f /results/exit_code && exit 0 || exit 1`.
+- `/results` always exists because it is created in the image (`mkdir -p /results`) and also created again at runtime by `kaseki-agent.sh`.
+- The container is reported **unhealthy** while a run is still in progress (before `/results/exit_code` is written).
+- The container flips to **healthy** only after the run finishes and writes `/results/exit_code`.
