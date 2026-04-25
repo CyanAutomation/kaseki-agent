@@ -26,7 +26,17 @@ ACTUAL_MODEL=""
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 
-mkdir -p /results "$HOME" "$NPM_CONFIG_CACHE" "$PI_CODING_AGENT_DIR"
+mkdir_paths=(/results)
+if [ -n "${HOME:-}" ]; then
+  mkdir_paths+=("${HOME}")
+fi
+if [ -n "${NPM_CONFIG_CACHE:-}" ]; then
+  mkdir_paths+=("${NPM_CONFIG_CACHE}")
+fi
+if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
+  mkdir_paths+=("${PI_CODING_AGENT_DIR}")
+fi
+mkdir -p "${mkdir_paths[@]}"
 : > /results/stdout.log
 : > /results/stderr.log
 : > /results/pi-events.jsonl
