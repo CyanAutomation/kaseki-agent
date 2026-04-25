@@ -113,6 +113,7 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key /agents/kaseki-template/run
 ```
 
 The arguments are parsed intelligently:
+
 - Arguments containing `/` or `.git` are recognized as repository URLs (GitHub, GitLab, Bitbucket, etc.)
 - Short strings like `main`, `develop`, or `v1.0.0` are recognized as Git references
 - Names matching the `kaseki-N` pattern are recognized as explicit instance names
@@ -169,6 +170,7 @@ View the full usage guide and all available options:
 ```
 
 This displays:
+
 - All invocation patterns (CLI arguments and environment variable options)
 - Positional argument descriptions
 - Environment variable reference with defaults
@@ -230,7 +232,6 @@ Kaseki uses specific non-zero exit codes for validation/policy failures:
 - `6`: secret scan detected credential-like content.
 
 Other non-zero exit codes may be propagated from failed steps (for example clone, dependency install, agent run, or validation commands). Check `/results/metadata.json` for `failed_command` and detailed per-stage exit fields.
-
 
 Container healthcheck behavior:
 

@@ -34,6 +34,7 @@ USAGE:
 
 ARGUMENTS:
   <repo-url>      Git repository URL (e.g., https://github.com/org/repo)
+                  Supports GitHub, GitLab, Bitbucket, and self-hosted servers
                   Default: https://github.com/CyanAutomation/crudmapper
   <git-ref>       Git reference: branch, tag, or commit (default: main)
   <instance-name> Kaseki instance name (must match kaseki-N pattern)
@@ -77,8 +78,9 @@ HELP
 
 is_git_url() {
   local str="$1"
-  # Must contain / and either end with .git or contain github/gitlab/etc
-  [[ "$str" == */* ]] && ( [[ "$str" == *.git ]] || [[ "$str" == *github* ]] || [[ "$str" == *gitlab* ]] || [[ "$str" == *bitbucket* ]] )
+  # URLs must start with http(s):// and contain at least one /
+  # Supports GitHub, GitLab, Bitbucket, and self-hosted Git servers
+  [[ "$str" =~ ^https?:// ]] && [[ "$str" == */* ]]
 }
 
 is_instance_name() {
