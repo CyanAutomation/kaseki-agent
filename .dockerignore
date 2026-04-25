@@ -6,6 +6,10 @@
 !kaseki-agent.sh
 !pi-event-filter.js
 !.dockerignore
+!docker/
+!docker/workspace-cache/
+!docker/workspace-cache/package.json
+!docker/workspace-cache/package-lock.json
 
 # --- Common exclusions (explicit for clarity) ---
 .git
