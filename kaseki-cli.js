@@ -7,6 +7,9 @@
  * Provides commands for listing, status polling, log streaming, error detection,
  * and post-run analysis.
  *
+ * NOTE: Repo specification (URL, branch) is handled at invocation time via run-kaseki.sh.
+ * This tool monitors and analyzes instances after they are created.
+ *
  * Usage:
  *   kaseki-cli list
  *   kaseki-cli status <instance>
@@ -372,6 +375,10 @@ OPTIONS:
   --interval=S                   For watch: polling interval in seconds (default: 5)
 
 EXAMPLES:
+  # Start a kaseki run with custom repo (see run-kaseki.sh for more options)
+  ./run-kaseki.sh https://github.com/org/repo feature/branch
+
+  # Monitor the instance
   kaseki-cli list
   kaseki-cli status kaseki-1
   kaseki-cli status kaseki-1 | jq .timeoutRiskPercent
@@ -381,6 +388,9 @@ EXAMPLES:
   kaseki-cli watch kaseki-1 --interval=2
   kaseki-cli follow kaseki-1
   kaseki-cli follow kaseki-1 --tail=validation.log
+
+SEE ALSO:
+  ./run-kaseki.sh --help          Invocation options for kaseki-agent (repo, ref, etc.)
 `;
   console.log(help);
 }
