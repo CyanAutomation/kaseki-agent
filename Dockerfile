@@ -20,7 +20,8 @@ ENV HOME=/tmp/kaseki-home \
 
 WORKDIR /opt/kaseki/workspace-cache-seed
 COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts \
+    && mkdir -p node_modules
 
 RUN npm install -g @mariozechner/pi-coding-agent@0.70.2
 
