@@ -49,7 +49,7 @@ OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
 
 ```bash
 docker build -t kaseki-template:latest .
-KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
+KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
 ```
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.
