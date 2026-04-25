@@ -46,8 +46,9 @@ mkdir -p "${mkdir_paths[@]}"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 unset OPENROUTER_API_KEY
 
-json_escape() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g'
+json_encode() {
+  # Self-check: encode via Python's JSON encoder to avoid malformed metadata on special characters.
+  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
 }
 
 write_metadata() {
@@ -58,25 +59,25 @@ write_metadata() {
   exit_code="${1:-$STATUS}"
   cat > /results/metadata.json <<META
 {
-  "instance": "$(json_escape "$INSTANCE_NAME")",
-  "repo_url": "$(json_escape "$REPO_URL")",
-  "git_ref": "$(json_escape "$GIT_REF")",
-  "provider": "$(json_escape "$KASEKI_PROVIDER")",
-  "model": "$(json_escape "$KASEKI_MODEL")",
-  "started_at": "$START_ISO",
-  "ended_at": "$end_iso",
+  "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
+  "repo_url": $(printf '%s' "$REPO_URL" | json_encode),
+  "git_ref": $(printf '%s' "$GIT_REF" | json_encode),
+  "provider": $(printf '%s' "$KASEKI_PROVIDER" | json_encode),
+  "model": $(printf '%s' "$KASEKI_MODEL" | json_encode),
+  "started_at": $(printf '%s' "$START_ISO" | json_encode),
+  "ended_at": $(printf '%s' "$end_iso" | json_encode),
   "duration_seconds": $duration,
   "exit_code": $exit_code,
-  "failed_command": "$(json_escape "$FAILED_COMMAND")",
+  "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "quality_exit_code": $QUALITY_EXIT,
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
   "diff_nonempty": $DIFF_NONEMPTY,
-  "actual_model": "$(json_escape "$ACTUAL_MODEL")",
-  "node_version": "$(node --version 2>/dev/null || true)",
-  "npm_version": "$(npm --version 2>/dev/null || true)",
-  "pi_version": "$(json_escape "$PI_VERSION")"
+  "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
+  "node_version": $(node --version 2>/dev/null | json_encode || printf '""'),
+  "npm_version": $(npm --version 2>/dev/null | json_encode || printf '""'),
+  "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
 }
 META
   printf '%s\n' "$exit_code" > /results/exit_code
