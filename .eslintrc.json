@@ -1,0 +1,59 @@
+{
+  "env": {
+    "node": true,
+    "es2024": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2024,
+    "sourceType": "module"
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "plugins": [
+    "@stylistic"
+  ],
+  "rules": {
+    "@stylistic/indent": [
+      "warn",
+      2
+    ],
+    "@stylistic/linebreak-style": [
+      "error",
+      "unix"
+    ],
+    "@stylistic/quotes": [
+      "warn",
+      "single",
+      {
+        "avoidEscape": true
+      }
+    ],
+    "@stylistic/semi": [
+      "warn",
+      "always"
+    ],
+    "@stylistic/no-trailing-spaces": "warn",
+    "@stylistic/no-multiple-empty-lines": [
+      "warn",
+      {
+        "max": 1
+      }
+    ],
+    "no-console": "off",
+    "no-process-exit": "off",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ]
+  },
+  "ignorePatterns": [
+    "node_modules/",
+    ".git/",
+    "docker/",
+    "/kaseki-*",
+    "**/*.log"
+  ]
+}

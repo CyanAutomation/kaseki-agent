@@ -34,7 +34,52 @@ Behavior changes in target repos must include corresponding tests. In particular
 
 If a prompt requests behavior changes but no focused Vitest update is present, treat that as an incomplete contribution.
 
-## 3) Running the local containerized flow
+## 3) Code Quality: Linting and Style
+
+All JavaScript and shell scripts must pass linting before submission. This repo uses **ESLint** for JavaScript and **ShellCheck** for shell scripts to enforce consistent code style and catch common errors.
+
+### Running linting locally
+
+Before pushing, ensure your code passes all linting checks:
+
+```bash
+npm install                    # Install dependencies (one-time)
+npm run lint                   # Check all JS and shell scripts
+npm run lint:fix               # Auto-fix formatting and common issues
+```
+
+Specific linting commands:
+- `npm run lint:js` — Check only JavaScript files
+- `npm run lint:js:fix` — Auto-fix JavaScript issues
+- `npm run lint:sh` — Check only shell scripts
+
+### What gets linted
+
+- **JavaScript files:** All `.js` files in the repo root (e.g., `kaseki-cli.js`, `kaseki-report.js`, etc.)
+- **Shell scripts:** `run-kaseki.sh`, `kaseki-agent.sh`, `cleanup-kaseki.sh`
+- **Excluded:** `node_modules/`, `.git/`, `docker/`, CI artifacts, and build directories
+
+### Style expectations
+
+See [STYLE.md](STYLE.md) for detailed code style guidelines. In summary:
+
+- **Indentation:** 2 spaces (enforced)
+- **Line endings:** Unix (LF) only
+- **Quotes:** Single quotes, except where escaping is needed
+- **Semicolons:** Required at end of statements
+- **Console usage:** Allowed (not flagged as error; this is a CLI tool)
+- **No trailing whitespace**
+
+### PR checklist for code quality
+
+Before opening a pull request:
+
+- [ ] Run `npm run lint` locally and confirm 0 errors.
+- [ ] If linting issues were found, run `npm run lint:fix` and review the changes.
+- [ ] Ensure no unintended auto-fixes were applied (review git diff).
+- [ ] If you disagree with a lint rule, discuss in the PR description.
+
+## 4) Running the local containerized flow
 
 Use either the published image or a local build, then run `./run-kaseki.sh` from this repo root.
 
@@ -57,7 +102,7 @@ KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key>
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.
 
-## 4) Validating changed-file allowlist and max diff limits
+## 5) Validating changed-file allowlist and max diff limits
 
 The container runner enforces quality gates using:
 
@@ -72,7 +117,7 @@ Contributors must validate that any change to defaults or behavior preserves the
 
 A failed allowlist or diff-size check should be treated as a real regression unless intentionally changed and documented.
 
-## 5) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
+## 6) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
 
 When a run fails, inspect artifacts in this order:
 

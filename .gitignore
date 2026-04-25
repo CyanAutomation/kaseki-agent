@@ -1,6 +1,7 @@
 /kaseki-runs/
 /kaseki-results/
 /kaseki-cache/
+node_modules/
 *.log
 *.tmp
 .DS_Store
