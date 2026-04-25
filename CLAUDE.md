@@ -27,6 +27,7 @@ Two layers, each with its own script:
 **Supporting utilities (Node.js):**
 - `pi-event-filter.js` — filters raw Pi JSONL, strips thinking blocks, emits `pi-events.jsonl` + `pi-summary.json`
 - `kaseki-report.js` — reads a results directory and prints a compact diagnostic report
+- `kaseki-cli.js` + `kaseki-cli-lib.js` — live monitoring CLI for external AI agents (see [docs/CLI.md](docs/CLI.md))
 
 **Directory layout at runtime:**
 ```
@@ -139,3 +140,61 @@ Recommended inspection order:
 ## CI/CD
 
 `.github/workflows/build-docker-image.yml` builds multi-arch images (amd64 + arm64 via QEMU), runs smoke tests (Pi CLI available, metadata structure valid), and publishes to `docker.io/cyanautomation/kaseki-agent` on version tags or manual dispatch.
+
+## External Agent Monitoring with Kaseki CLI
+
+The **Kaseki CLI** enables external AI agents to interrogate running and completed kaseki instances in real-time. This is useful for:
+- **Status polling**: Get current stage, elapsed time, timeout risk
+- **Error detection**: Identify failures in validation, quality gates, secret scans
+- **Anomaly flagging**: Warn when timeout is imminent (>85% elapsed)
+- **Log streaming**: Follow logs live as agent runs
+- **Post-run analysis**: Comprehensive summary of changes, validation results, metrics
+
+### Quick Example
+
+```bash
+# List all instances
+./kaseki-cli.js list
+
+# Get status of a running instance (JSON)
+./kaseki-cli.js status kaseki-1
+
+# Detect errors
+./kaseki-cli.js errors kaseki-1
+
+# Get post-run analysis
+./kaseki-cli.js analysis kaseki-1
+
+# Live monitor with anomaly alerts
+./kaseki-cli.js watch kaseki-1 --interval=2
+
+# Stream logs in real-time
+./kaseki-cli.js follow kaseki-1
+```
+
+### Integration Pattern
+
+An external agent can use the CLI to monitor kaseki:
+
+```bash
+#!/bin/bash
+while true; do
+  STATUS=$(./kaseki-cli.js status kaseki-1)
+  RUNNING=$(echo $STATUS | jq -r '.running')
+  TIMEOUT_RISK=$(echo $STATUS | jq -r '.timeoutRiskPercent')
+  
+  # Alert on timeout risk
+  if (( $(echo "$TIMEOUT_RISK >= 85" | bc -l) )); then
+    echo "⚠ Timeout imminent: ${TIMEOUT_RISK}%"
+  fi
+  
+  # Exit when complete
+  [ "$RUNNING" = "false" ] && break
+  sleep 5
+done
+
+# Final analysis
+./kaseki-cli.js analysis kaseki-1
+```
+
+See [docs/CLI.md](docs/CLI.md) for comprehensive documentation, library usage, and advanced integration patterns.
