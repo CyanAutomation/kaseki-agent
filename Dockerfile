@@ -26,3 +26,7 @@ RUN chmod 0755 /usr/local/bin/kaseki-agent /usr/local/bin/kaseki-pi-event-filter
 WORKDIR /workspace
 USER kaseki
 ENTRYPOINT ["/usr/local/bin/kaseki-agent"]
+
+# The run writes /results/exit_code during shutdown; probe fails until that marker exists.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD test -f /results/exit_code && exit 0 || exit 1
