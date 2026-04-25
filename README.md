@@ -22,6 +22,16 @@ cd /agents/kaseki-template
 docker build -t kaseki-template:latest .
 ```
 
+Controlled base-image refresh (monthly security review):
+
+```sh
+# 1) review current upstream digest for the pinned tag
+docker buildx imagetools inspect docker.io/library/node:22.22.2-bookworm-slim
+
+# 2) update Dockerfile FROM digest via PR, run validation, then rebuild
+docker build -t kaseki-template:latest .
+```
+
 If scripts were copied from a fresh clone without executable bits, run:
 
 ```sh
