@@ -207,6 +207,7 @@ prepare_dependencies() {
   fi
 
   local repo_key lock_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file
+  local lock_file cache_lock_fd tmp_cache_dir old_cache_dir
   repo_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
   cache_key="${repo_key}/${lock_hash}"
@@ -214,12 +215,18 @@ prepare_dependencies() {
   workspace_cache_dir="${workspace_cache_root}/node_modules"
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
   stamp_file="${workspace_cache_root}/stamp.txt"
+  lock_file="${workspace_cache_root}.lock"
+
+  mkdir -p "$(dirname "$workspace_cache_root")"
+  exec {cache_lock_fd}>"$lock_file"
+  flock "$cache_lock_fd"
 
   mkdir -p "$workspace_cache_root"
 
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
+      exec {cache_lock_fd}>&-
       return 0
     fi
   fi
@@ -239,10 +246,27 @@ prepare_dependencies() {
     printf 'Dependency cache status: install skipped due to cache hit.\n'
   fi
 
-  mkdir -p "$(dirname "$workspace_cache_dir")"
+  mkdir -p "$workspace_cache_root"
+  tmp_cache_dir="${workspace_cache_dir}.tmp.$$"
+  old_cache_dir="${workspace_cache_dir}.old.$$"
+  rm -rf "$tmp_cache_dir" "$old_cache_dir"
+  cp -a node_modules "$tmp_cache_dir"
+  cp -a node_modules "$tmp_cache_dir"
+
+  if [ -d "$workspace_cache_dir" ]; then
+    mv "$workspace_cache_dir" "$old_cache_dir"
+  fi
+  mv "$tmp_cache_dir" "$workspace_cache_dir"
   printf '%s\n' "$lock_hash" > "$stamp_file"
-  rm -rf "$workspace_cache_dir"
-  cp -a node_modules "$workspace_cache_dir"
+  rm -rf "$old_cache_dir"
+
+  if [ -d "$workspace_cache_dir" ]; then
+    mv "$workspace_cache_dir" "$old_cache_dir"
+  fi
+  mv "$tmp_cache_dir" "$workspace_cache_dir"
+  rm -rf "$old_cache_dir"
+
+  exec {cache_lock_fd}>&-
 }
 
 run_step "prepare node dependencies" prepare_dependencies
