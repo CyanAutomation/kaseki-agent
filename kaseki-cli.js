@@ -335,9 +335,9 @@ function cmdFollow(args) {
         });
 
         stream.on('error', (err) => {
-          lastPosition += bytesRead;
           isReading = false;
           console.error(`Error reading log: ${err.message}`);
+        });
         });
       }
     } catch (err) {
