@@ -10,31 +10,28 @@
   "extends": [
     "eslint:recommended"
   ],
-  "plugins": [
-    "@stylistic"
-  ],
   "rules": {
-    "@stylistic/indent": [
+    "indent": [
       "warn",
       2
     ],
-    "@stylistic/linebreak-style": [
+    "linebreak-style": [
       "error",
       "unix"
     ],
-    "@stylistic/quotes": [
+    "quotes": [
       "warn",
       "single",
       {
         "avoidEscape": true
       }
     ],
-    "@stylistic/semi": [
+    "semi": [
       "warn",
       "always"
     ],
-    "@stylistic/no-trailing-spaces": "warn",
-    "@stylistic/no-multiple-empty-lines": [
+    "no-trailing-spaces": "warn",
+    "no-multiple-empty-lines": [
       "warn",
       {
         "max": 1
@@ -42,6 +39,12 @@
     ],
     "no-console": "off",
     "no-process-exit": "off",
+    "no-empty": [
+      "error",
+      {
+        "allowEmptyCatch": true
+      }
+    ],
     "no-unused-vars": [
       "warn",
       {
@@ -53,7 +56,9 @@
     "node_modules/",
     ".git/",
     "docker/",
-    "/kaseki-*",
+    "/kaseki-runs/",
+    "/kaseki-results/",
+    "/kaseki-cache/",
     "**/*.log"
   ]
 }
