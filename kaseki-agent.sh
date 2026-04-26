@@ -182,11 +182,11 @@ run_step() {
 }
 
 run_github_operations() {
-  local app_id client_id private_key_file owner repo feature_branch token token_data
+  local app_id private_key_file owner repo feature_branch token token_data
   
   # Load GitHub App credentials
   app_id="$(cat /run/secrets/github_app_id)" || { printf 'Failed to read app ID\n' >&2; return 7; }
-  client_id="$(cat /run/secrets/github_app_client_id)" || { printf 'Failed to read client ID\n' >&2; return 7; }
+  cat /run/secrets/github_app_client_id >/dev/null || { printf 'Failed to read client ID\n' >&2; return 7; }
   private_key_file="/run/secrets/github_app_private_key"
   
   # Parse repo URL to extract owner and repo
