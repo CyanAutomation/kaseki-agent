@@ -208,7 +208,7 @@ doctor() {
       github_app_ready=1
     fi
   fi
-  if [ "$github_app_ready" -eq 0 ] && ([ -n "$GITHUB_APP_ID" ] || [ -n "$GITHUB_APP_CLIENT_ID" ] || [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]); then
+  if [ "$github_app_ready" -eq 0 ] && { [ -n "$GITHUB_APP_ID" ] || [ -n "$GITHUB_APP_CLIENT_ID" ] || [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]; }; then
     printf 'GitHub App credentials: incomplete (need APP_ID, CLIENT_ID, and PRIVATE_KEY or PRIVATE_KEY_FILE)\n' >&2
   fi
 
@@ -382,34 +382,44 @@ if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
 fi
 unset GITHUB_APP_PRIVATE_KEY
 
+docker_args=(
+  run --rm
+  --name "$INSTANCE"
+  --read-only
+  --tmpfs /tmp:rw,nosuid,nodev,size=256m
+  --security-opt no-new-privileges:true
+  --cap-drop ALL
+  -u "$KASEKI_CONTAINER_USER"
+  -e KASEKI_INSTANCE="$INSTANCE"
+  -e REPO_URL="$REPO_URL"
+  -e GIT_REF="$GIT_REF"
+  -e KASEKI_PROVIDER="$KASEKI_PROVIDER"
+  -e KASEKI_MODEL="$KASEKI_MODEL"
+  -e KASEKI_AGENT_TIMEOUT_SECONDS="$KASEKI_AGENT_TIMEOUT_SECONDS"
+  -e KASEKI_VALIDATION_COMMANDS="$KASEKI_VALIDATION_COMMANDS"
+  -e KASEKI_DEBUG_RAW_EVENTS="$KASEKI_DEBUG_RAW_EVENTS"
+  -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST"
+  -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
+  -e TASK_PROMPT="$TASK_PROMPT"
+  -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
+  -v "$WORKSPACE:/workspace:rw"
+  -v "$RESULT_DIR:/results:rw"
+  -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro"
+)
+if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+  docker_args+=(
+    -v "$GITHUB_APP_ID_FILE:/run/secrets/github_app_id:ro"
+    -v "$GITHUB_APP_CLIENT_ID_FILE:/run/secrets/github_app_client_id:ro"
+    -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/github_app_private_key:ro"
+  )
+fi
+docker_args+=(
+  -w /workspace
+  "$IMAGE"
+)
+
 set +e
-docker run --rm \
-    --name "$INSTANCE" \
-    --read-only \
-    --tmpfs /tmp:rw,nosuid,nodev,size=256m \
-    --security-opt no-new-privileges:true \
-    --cap-drop ALL \
-    -u "$KASEKI_CONTAINER_USER" \
-    -e KASEKI_INSTANCE="$INSTANCE" \
-    -e REPO_URL="$REPO_URL" \
-    -e GIT_REF="$GIT_REF" \
-    -e KASEKI_PROVIDER="$KASEKI_PROVIDER" \
-    -e KASEKI_MODEL="$KASEKI_MODEL" \
-    -e KASEKI_AGENT_TIMEOUT_SECONDS="$KASEKI_AGENT_TIMEOUT_SECONDS" \
-    -e KASEKI_VALIDATION_COMMANDS="$KASEKI_VALIDATION_COMMANDS" \
-    -e KASEKI_DEBUG_RAW_EVENTS="$KASEKI_DEBUG_RAW_EVENTS" \
-    -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST" \
-    -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES" \
-    -e TASK_PROMPT="$TASK_PROMPT" \
-    -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED" \
-    -v "$WORKSPACE:/workspace:rw" \
-    -v "$RESULT_DIR:/results:rw" \
-    -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro" \
-    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_id:ro ' "$GITHUB_APP_ID_FILE") \
-    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_client_id:ro ' "$GITHUB_APP_CLIENT_ID_FILE") \
-    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_private_key:ro ' "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE") \
-    -w /workspace \
-    "$IMAGE"
+docker "${docker_args[@]}"
 DOCKER_EXIT="$?"
 set -e
 cleanup_secret
