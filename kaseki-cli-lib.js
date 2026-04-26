@@ -32,6 +32,49 @@ const KASEKI_RUNS_DIR = config.KASEKI_RUNS_DIR;
 // ============================================================================
 
 /**
+ * Parse docker ps --format '{{.Names}}' output into container name array.
+ */
+function parseDockerContainerNames(dockerNamesOutput) {
+  if (!dockerNamesOutput) return [];
+  return dockerNamesOutput
+    .split('\n')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+/**
+ * Exact container-name matcher (test seam).
+ * Ensures "kaseki-1" does NOT match "kaseki-10".
+ */
+function isExactContainerNameMatch(containerName, instance) {
+  return containerName === instance;
+}
+
+/**
+ * Check whether docker ps names output contains an exact instance match.
+ */
+function dockerNamesOutputHasInstance(dockerNamesOutput, instance) {
+  const containerNames = parseDockerContainerNames(dockerNamesOutput);
+  return containerNames.some((name) => isExactContainerNameMatch(name, instance));
+}
+
+/**
+ * Determine if an instance is currently running as a Docker container.
+ * Gracefully falls back to false when Docker is unavailable.
+ */
+function isInstanceRunning(instance) {
+  try {
+    const dockerNamesOutput = execSync(`docker ps --format "{{.Names}}" 2>/dev/null || true`, {
+      encoding: 'utf8',
+    });
+    return dockerNamesOutputHasInstance(dockerNamesOutput, instance);
+  } catch (e) {
+    // Docker may not be available
+    return false;
+  }
+}
+
+/**
  * List all kaseki instances (running and completed).
  * Returns array of instance objects with basic metadata.
  */
@@ -68,15 +111,8 @@ function listInstances() {
         } catch (e) {}
       }
 
-      // Check if currently running via Docker
-      try {
-        const dockerPs = execSync(`docker ps --filter "name=${instance}" --format "{{.ID}}" 2>/dev/null || true`, {
-          encoding: 'utf8',
-        }).trim();
-        isRunning = !!dockerPs;
-      } catch (e) {
-        // Docker may not be available
-      }
+      // Check if currently running via Docker (exact name match)
+      isRunning = isInstanceRunning(instance);
 
       // Read exit code
       const exitCodePath = path.join(resultDir, 'exit_code');
@@ -228,13 +264,7 @@ function getInstanceStatus(instance) {
   const hostStart = readJsonArtifact(instance, 'host-start.json');
 
   // Determine if running
-  let isRunning = false;
-  try {
-    const dockerPs = execSync(`docker ps --filter "name=${instance}" --format "{{.ID}}" 2>/dev/null || true`, {
-      encoding: 'utf8',
-    }).trim();
-    isRunning = !!dockerPs;
-  } catch (e) {}
+  const isRunning = isInstanceRunning(instance);
 
   // Get elapsed time
   let elapsedSeconds = null;
@@ -595,6 +625,10 @@ module.exports = {
   ErrorSeverity,
 
   // Instance discovery
+  parseDockerContainerNames,
+  isExactContainerNameMatch,
+  dockerNamesOutputHasInstance,
+  isInstanceRunning,
   listInstances,
 
   // Artifact reading
