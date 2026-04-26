@@ -62,7 +62,9 @@ function createMockInstance(name, overrides = {}) {
   fs.writeFileSync(path.join(instanceDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
 
   // Mock exit_code
-  fs.writeFileSync(path.join(instanceDir, 'exit_code'), String(metadata.exit_code || 0));
+  if (metadata.exit_code !== null && metadata.exit_code !== undefined) {
+    fs.writeFileSync(path.join(instanceDir, 'exit_code'), String(metadata.exit_code));
+  }
 
   // Mock stdout.log with stage markers
   const stdoutContent = `==> Cloning repository
@@ -201,6 +203,11 @@ function testListInstances() {
   assertEqual(instances.length, 2, 'Should find 2 instances');
   assertEqual(instances[0].name, 'kaseki-2', 'Should sort newest first');
   assertEqual(instances[1].name, 'kaseki-1', 'Should sort oldest last');
+
+  createMockInstance('kaseki-3', { metadata: { exit_code: null } });
+  const instancesWithPending = kasekiCli.listInstances();
+  const pending = instancesWithPending.find((instance) => instance.name === 'kaseki-3');
+  assertEqual(pending.status, 'pending', 'Should mark missing exit code as pending');
 }
 
 function testExactContainerNameMatching() {
@@ -320,7 +327,12 @@ function testGetInstanceStatus() {
   assertEqual(status.timeoutSeconds, 1200, 'Should have timeout');
   assert(status.timeoutRiskPercent >= 0 && status.timeoutRiskPercent <= 100, 'Timeout risk should be 0-100%');
   assertEqual(status.exitCode, 0, 'Should have exit code');
+  assertEqual(status.status, 'completed', 'Should derive completed status');
   assert(!status.running, 'Should be marked as not running');
+
+  createMockInstance('kaseki-170', { metadata: { exit_code: null } });
+  const pending = kasekiCli.getInstanceStatus('kaseki-170');
+  assertEqual(pending.status, 'pending', 'Should derive pending status when exit code is unavailable');
 
   const missing = kasekiCli.getInstanceStatus('nonexistent-instance');
   assertExists(missing.error, 'Should return error for missing instance');
