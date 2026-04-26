@@ -251,20 +251,20 @@ prepare_dependencies() {
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
   cp -a node_modules "$tmp_cache_dir"
-  cp -a node_modules "$tmp_cache_dir"
-
-  if [ -d "$workspace_cache_dir" ]; then
-    mv "$workspace_cache_dir" "$old_cache_dir"
+  # Keep this publish path single-pass and atomic to avoid cache corruption.
+  if [ -d "$workspace_cache_dir" ] && ! mv "$workspace_cache_dir" "$old_cache_dir"; then
+    exec {cache_lock_fd}>&-
+    return 1
   fi
-  mv "$tmp_cache_dir" "$workspace_cache_dir"
+  if ! mv "$tmp_cache_dir" "$workspace_cache_dir"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
   printf '%s\n' "$lock_hash" > "$stamp_file"
-  rm -rf "$old_cache_dir"
-
-  if [ -d "$workspace_cache_dir" ]; then
-    mv "$workspace_cache_dir" "$old_cache_dir"
+  if ! rm -rf "$old_cache_dir"; then
+    exec {cache_lock_fd}>&-
+    return 1
   fi
-  mv "$tmp_cache_dir" "$workspace_cache_dir"
-  rm -rf "$old_cache_dir"
 
   exec {cache_lock_fd}>&-
 }
