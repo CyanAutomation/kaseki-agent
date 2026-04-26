@@ -2,10 +2,10 @@
 
 /**
  * github-app-token.js - Generate GitHub App installation access tokens
- * 
+ *
  * Usage:
  *   node github-app-token.js <app-id> <private-key-file> <owner> <repo>
- * 
+ *
  * Outputs JSON:
  *   {
  *     "token": "ghu_...",
@@ -47,7 +47,7 @@ async function generateJWT(appId, privateKey) {
   const signer = crypto.createSign('RSA-SHA256');
   signer.update(message);
   signer.end();
-  
+
   const signature = signer.sign(privateKey, 'base64url');
   return `${message}.${signature}`;
 }
