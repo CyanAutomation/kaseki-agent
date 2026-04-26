@@ -187,12 +187,23 @@ fi
 REPO_URL="$PARSED_REPO_URL"
 GIT_REF="$PARSED_GIT_REF"
 
+mkdir -p "$RUNS" "$RESULTS"
+
 if [ -z "$INSTANCE" ]; then
   next=1
-  while [ -e "$RUNS/kaseki-$next" ] || [ -e "$RESULTS/kaseki-$next" ]; do
-    next=$((next + 1))
+  while true; do
+    candidate="kaseki-$next"
+    if mkdir "$RUNS/$candidate" 2>/dev/null; then
+      INSTANCE="$candidate"
+      break
+    fi
+    if [ -d "$RUNS/$candidate" ]; then
+      next=$((next + 1))
+      continue
+    fi
+    echo "Failed to reserve instance directory: $RUNS/$candidate" >&2
+    exit 1
   done
-  INSTANCE="kaseki-$next"
 fi
 
 case "$INSTANCE" in
@@ -204,6 +215,17 @@ RUN_DIR="$RUNS/$INSTANCE"
 RESULT_DIR="$RESULTS/$INSTANCE"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
+
+if [ -n "${INSTANCE:-}" ] && [ ! -d "$RUN_DIR" ]; then
+  if ! mkdir "$RUN_DIR" 2>/dev/null; then
+    if [ -d "$RUN_DIR" ]; then
+      echo "Instance already reserved: $INSTANCE" >&2
+      exit 2
+    fi
+    echo "Failed to reserve instance directory: $RUN_DIR" >&2
+    exit 1
+  fi
+fi
 
 cleanup_secret() {
   rm -f "$SECRET_FILE"
