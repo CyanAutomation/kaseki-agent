@@ -69,7 +69,7 @@ function printTable(data) {
 /**
  * List all kaseki instances with basic status
  */
-function cmdList(args) {
+function cmdList(_args) {
   const instances = kasekiCli.listInstances();
 
   if (instances.length === 0) {
@@ -340,7 +340,6 @@ function cmdFollow(args) {
           isReading = false;
           console.error(`Error reading log: ${err.message}`);
         });
-        });
       }
     } catch (err) {
       isReading = false;
@@ -429,29 +428,29 @@ function main() {
 
   try {
     switch (command) {
-      case 'list':
-        cmdList(cmdArgs);
-        break;
-      case 'status':
-        cmdStatus(cmdArgs);
-        break;
-      case 'logs':
-        cmdLogs(cmdArgs);
-        break;
-      case 'errors':
-        cmdErrors(cmdArgs);
-        break;
-      case 'analysis':
-        cmdAnalysis(cmdArgs);
-        break;
-      case 'watch':
-        cmdWatch(cmdArgs);
-        break;
-      case 'follow':
-        cmdFollow(cmdArgs);
-        break;
-      default:
-        printError(`Unknown command: ${command}`);
+    case 'list':
+      cmdList(cmdArgs);
+      break;
+    case 'status':
+      cmdStatus(cmdArgs);
+      break;
+    case 'logs':
+      cmdLogs(cmdArgs);
+      break;
+    case 'errors':
+      cmdErrors(cmdArgs);
+      break;
+    case 'analysis':
+      cmdAnalysis(cmdArgs);
+      break;
+    case 'watch':
+      cmdWatch(cmdArgs);
+      break;
+    case 'follow':
+      cmdFollow(cmdArgs);
+      break;
+    default:
+      printError(`Unknown command: ${command}`);
     }
   } catch (err) {
     printError(err.message);

@@ -8,14 +8,15 @@
     "node": ">=22.22.2"
   },
   "scripts": {
+    "test": "npm run check:syntax && node kaseki-cli.test.js",
+    "check:syntax": "bash -c 'for file in *.js; do node --check \"$file\"; done'",
     "lint": "npm run lint:js && npm run lint:sh",
     "lint:js": "eslint .",
     "lint:js:fix": "eslint . --fix",
-    "lint:sh": "bash -c 'if command -v shellcheck >/dev/null 2>&1; then shellcheck run-kaseki.sh kaseki-agent.sh cleanup-kaseki.sh; else echo \"ShellCheck not found. Install via: apt-get install shellcheck (Debian/Ubuntu) or brew install shellcheck (macOS)\"; fi'",
+    "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh cleanup-kaseki.sh",
     "lint:fix": "npm run lint:js:fix && npm run lint:sh"
   },
   "devDependencies": {
-    "eslint": "^8.56.0",
-    "@stylistic/eslint-plugin": "^1.5.0"
+    "eslint": "^8.56.0"
   }
 }
