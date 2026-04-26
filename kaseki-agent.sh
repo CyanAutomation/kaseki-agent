@@ -260,11 +260,11 @@ prepare_dependencies() {
     exec {cache_lock_fd}>&-
     return 1
   fi
-  printf '%s\n' "$lock_hash" > "$stamp_file"
   if ! rm -rf "$old_cache_dir"; then
     exec {cache_lock_fd}>&-
     return 1
   fi
+  printf '%s\n' "$lock_hash" > "$stamp_file"
 
   exec {cache_lock_fd}>&-
 }
