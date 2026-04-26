@@ -75,6 +75,16 @@ function isInstanceRunning(instance) {
 }
 
 /**
+ * Derive lifecycle status from running flag and exit code.
+ */
+function deriveInstanceLifecycleStatus(isRunning, exitCode) {
+  if (isRunning) return 'running';
+  if (exitCode === 0) return 'completed';
+  if (Number.isInteger(exitCode)) return 'failed';
+  return 'pending';
+}
+
+/**
  * List all kaseki instances (running and completed).
  * Returns array of instance objects with basic metadata.
  */
@@ -141,7 +151,7 @@ function listInstances() {
 
       instances.push({
         name: instance,
-        status: isRunning ? 'running' : exitCode === 0 ? 'completed' : 'failed',
+        status: deriveInstanceLifecycleStatus(isRunning, exitCode),
         running: isRunning,
         exitCode,
         elapsedSeconds,
@@ -292,9 +302,11 @@ function getInstanceStatus(instance) {
 
   const timeoutSeconds = getConfiguredTimeout(instance);
   const timeoutRiskPercent = calculateTimeoutRiskPercent(instance, elapsedSeconds);
+  const status = deriveInstanceLifecycleStatus(isRunning, exitCode);
 
   return {
     instance,
+    status,
     running: isRunning,
     stage,
     elapsedSeconds,
@@ -628,6 +640,7 @@ module.exports = {
   parseDockerContainerNames,
   isExactContainerNameMatch,
   dockerNamesOutputHasInstance,
+  deriveInstanceLifecycleStatus,
   isInstanceRunning,
   listInstances,
 
