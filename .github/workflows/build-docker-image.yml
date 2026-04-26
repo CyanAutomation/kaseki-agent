@@ -24,7 +24,36 @@ permissions:
   packages: write
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.2'
+          cache: npm
+
+      - name: Install ShellCheck
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
   build:
+    needs: checks
     runs-on: ubuntu-latest
 
     steps:
@@ -189,6 +218,8 @@ jobs:
             .failed_command == "missing OPENROUTER_API_KEY"
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
+          test -f "$RESULTS/quality.log"
+          test -f "$RESULTS/secret-scan.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \
@@ -244,6 +275,8 @@ jobs:
             .failed_command == "missing OPENROUTER_API_KEY"
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
+          test -f "$RESULTS/quality.log"
+          test -f "$RESULTS/secret-scan.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \

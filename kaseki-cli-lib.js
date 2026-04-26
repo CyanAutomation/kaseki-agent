@@ -64,7 +64,7 @@ function dockerNamesOutputHasInstance(dockerNamesOutput, instance) {
  */
 function isInstanceRunning(instance) {
   try {
-    const dockerNamesOutput = execSync(`docker ps --format "{{.Names}}" 2>/dev/null || true`, {
+    const dockerNamesOutput = execSync('docker ps --format "{{.Names}}" 2>/dev/null || true', {
       encoding: 'utf8',
     });
     return dockerNamesOutputHasInstance(dockerNamesOutput, instance);
@@ -399,8 +399,7 @@ function detectErrors(instance) {
     }
   }
 
-  // Check validation.log for validation command failures
-  const validationLog = readArtifact(instance, 'validation.log');
+  // Check validation timing rows for validation command failures.
   const validationTimings = readArtifact(instance, 'validation-timings.tsv');
   if (validationTimings) {
     const lines = validationTimings.split('\n').filter((l) => l.trim().length > 0);
@@ -582,10 +581,7 @@ function getAnalysis(instance) {
   const validationTimings = parseValidationTimings(instance);
 
   // Get error
-  let errors = detectErrors(instance);
-
-  // Get result summary
-  const resultSummary = readArtifact(instance, 'result-summary.md');
+  const errors = detectErrors(instance);
 
   // Get exit code from file (metadata may not have it)
   let exitCode = metadata.exit_code ?? null;

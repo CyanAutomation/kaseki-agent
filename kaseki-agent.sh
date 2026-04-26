@@ -11,8 +11,8 @@ KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run 
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
+TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one focused Vitest case, preferably a compact table-driven case, in tests/parser.validation.ts. Avoid repeated assertion blocks, assertion-message prose, and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
-TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update one focused Vitest case or one compact table-driven case in tests/parser.validation.ts. Avoid broad repeated test blocks and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PI_VERSION=""
@@ -49,6 +49,8 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/pi-events.jsonl
 : > /results/pi-summary.json
 : > /results/validation.log
+: > /results/quality.log
+: > /results/secret-scan.log
 : > "$VALIDATION_TIMINGS_FILE"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 
@@ -478,6 +480,8 @@ if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a /results/quality.log
 fi
 
+# The sed expression is a literal regex character class used to escape allowlist entries.
+# shellcheck disable=SC2016
 allowlist_regex="$(printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" | tr ' ' '\n' | sed '/^$/d' | sed 's/[.[\*^$()+?{}|\\]/\\&/g' | paste -sd '|' -)"
 if [ -n "$allowlist_regex" ]; then
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
