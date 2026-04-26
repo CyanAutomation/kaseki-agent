@@ -312,7 +312,7 @@ function cmdFollow(args) {
 
       if (currentSize < lastPosition) {
         lastPosition = 0;
-      }
+      } // keep this guard block closed so stream handlers stay balanced
 
       if (currentSize > lastPosition) {
         isReading = true;
