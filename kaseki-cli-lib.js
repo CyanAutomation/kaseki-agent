@@ -372,8 +372,8 @@ function detectErrors(instance) {
 
       const command = parts[0];
       const exitCodeRaw = parts[1].trim();
-      const exitCode = Number.parseInt(exitCodeRaw, 10);
-      const hasIntegerExitCode = Number.isFinite(exitCode) && /^-?\d+$/.test(exitCodeRaw);
+      const exitCode = parseInt(exitCodeRaw, 10);
+      const hasIntegerExitCode = Number.isFinite(exitCode) && /^-?\d+$/.test(exitCodeRaw) && exitCode >= 0 && exitCode <= 255;
       if (!hasIntegerExitCode) {
         malformedTimingRows.push({ line, reason: `invalid exit code "${parts[1]}"` });
         continue;
