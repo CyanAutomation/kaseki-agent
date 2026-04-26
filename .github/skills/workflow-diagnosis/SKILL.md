@@ -1,5 +1,5 @@
 ---
-name: Workflow Diagnosis
+name: workflow-diagnosis
 description: Diagnosing kaseki run failures and interpreting artifacts
 tags: [kaseki, troubleshooting, diagnostics, debugging]
 relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis]

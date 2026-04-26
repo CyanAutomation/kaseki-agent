@@ -1,5 +1,5 @@
 ---
-name: Prompt Engineering
+name: prompt-engineering
 description: Composing, testing, and validating TASK_PROMPT for kaseki agent runs
 tags: [kaseki, prompts, task-design, security]
 relatedSkills: [quality-gate-config, workflow-diagnosis]

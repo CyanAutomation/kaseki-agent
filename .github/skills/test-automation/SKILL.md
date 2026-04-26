@@ -1,5 +1,5 @@
 ---
-name: Test Automation
+name: test-automation
 description: Testing kaseki-agent behavior changes and adding new test coverage
 tags: [kaseki, testing, qa, automation, vitest]
 relatedSkills: [workflow-diagnosis]

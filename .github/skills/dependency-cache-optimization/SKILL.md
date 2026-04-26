@@ -1,5 +1,5 @@
 ---
-name: Dependency Cache Optimization
+name: dependency-cache-optimization
 description: Understanding and optimizing the 4-layer npm dependency caching strategy
 tags: [kaseki, caching, performance, npm, optimization]
 relatedSkills: [docker-image-management, workflow-diagnosis]
