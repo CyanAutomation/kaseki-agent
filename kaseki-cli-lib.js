@@ -362,10 +362,23 @@ function detectErrors(instance) {
   const validationTimings = readArtifact(instance, 'validation-timings.tsv');
   if (validationTimings) {
     const lines = validationTimings.split('\n').filter((l) => l.trim().length > 0);
+    const malformedTimingRows = [];
     for (const line of lines) {
       const parts = line.split('\t');
+      if (parts.length < 2) {
+        malformedTimingRows.push({ line, reason: 'missing required TSV columns' });
+        continue;
+      }
+
       const command = parts[0];
-      const exitCode = parseInt(parts[1], 10);
+      const exitCodeRaw = parts[1].trim();
+      const exitCode = Number.parseInt(exitCodeRaw, 10);
+      const hasIntegerExitCode = Number.isFinite(exitCode) && /^-?\d+$/.test(exitCodeRaw);
+      if (!hasIntegerExitCode) {
+        malformedTimingRows.push({ line, reason: `invalid exit code "${parts[1]}"` });
+        continue;
+      }
+
       if (exitCode !== 0) {
         errors.push({
           severity: ErrorSeverity.ERROR,
@@ -373,6 +386,12 @@ function detectErrors(instance) {
           message: `Validation command failed: ${command} (exit code: ${exitCode})`,
         });
       }
+    }
+
+    if (malformedTimingRows.length > 0) {
+      console.warn(
+        `[kaseki-cli-lib] Skipped ${malformedTimingRows.length} malformed row(s) in validation-timings.tsv for ${instance}`
+      );
     }
   }
 
