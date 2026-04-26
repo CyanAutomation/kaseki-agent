@@ -1,5 +1,5 @@
 ---
-name: Result Report Analysis
+name: result-report-analysis
 description: Interpreting kaseki-report output and artifact metrics
 tags: [kaseki, analysis, reporting, metrics, diagnostics]
 relatedSkills: [workflow-diagnosis]

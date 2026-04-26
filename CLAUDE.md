@@ -11,12 +11,14 @@ Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docke
 Two layers, each with its own script:
 
 **Host (`run-kaseki.sh`)** — runs on the bare host:
+
 - Auto-generates instance names, creates per-run workspace and results directories
 - Resolves the OpenRouter API key (env var or secret file), mounts it read-only
 - Launches Docker with hardened runtime flags (`--read-only`, `--cap-drop ALL`, tmpfs, non-root user)
 - Cleans up on exit
 
 **Container (`kaseki-agent.sh`)** — runs inside the container:
+
 - Clones the repo at the requested ref
 - Prepares Node.js dependencies via a 4-layer cache (stamp check → workspace cache → image seed cache → fresh install)
 - Invokes Pi with a configurable timeout
@@ -25,11 +27,13 @@ Two layers, each with its own script:
 - Writes all artifacts to `/results`
 
 **Supporting utilities (Node.js):**
+
 - `pi-event-filter.js` — filters raw Pi JSONL, strips thinking blocks, emits `pi-events.jsonl` + `pi-summary.json`
 - `kaseki-report.js` — reads a results directory and prints a compact diagnostic report
 - `kaseki-cli.js` + `kaseki-cli-lib.js` — live monitoring CLI for external AI agents (see [docs/CLI.md](docs/CLI.md))
 
 **Directory layout at runtime:**
+
 ```
 /agents/kaseki-template/          # Dockerfile, scripts (this repo)
 /agents/kaseki-runs/kaseki-N/     # Per-run workspace (cloned repo, node_modules)
@@ -128,6 +132,7 @@ The stamp file lives outside the repo directory to keep `git.status` clean.
 ## Diagnosing Failures
 
 Recommended inspection order:
+
 1. `kaseki-report /agents/kaseki-results/kaseki-N` (compact summary)
 2. `result-summary.md` → status + failed command
 3. `metadata.json` → per-stage exit codes
@@ -144,6 +149,7 @@ Recommended inspection order:
 ## External Agent Monitoring with Kaseki CLI
 
 The **Kaseki CLI** enables external AI agents to interrogate running and completed kaseki instances in real-time. This is useful for:
+
 - **Status polling**: Get current stage, elapsed time, timeout risk
 - **Error detection**: Identify failures in validation, quality gates, secret scans
 - **Anomaly flagging**: Warn when timeout is imminent (>85% elapsed)
