@@ -251,7 +251,14 @@ prepare_dependencies() {
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
   cp -a node_modules "$tmp_cache_dir"
+  cp -a node_modules "$tmp_cache_dir"
+
+  if [ -d "$workspace_cache_dir" ]; then
+    mv "$workspace_cache_dir" "$old_cache_dir"
+  fi
+  mv "$tmp_cache_dir" "$workspace_cache_dir"
   printf '%s\n' "$lock_hash" > "$stamp_file"
+  rm -rf "$old_cache_dir"
 
   if [ -d "$workspace_cache_dir" ]; then
     mv "$workspace_cache_dir" "$old_cache_dir"
