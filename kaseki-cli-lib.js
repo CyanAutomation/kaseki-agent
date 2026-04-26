@@ -111,8 +111,8 @@ function listInstances() {
         elapsedSeconds,
         stage: metadata.current_stage || 'unknown',
         model: hostStart.model || metadata.model || 'unknown',
-        repo: hostStart.repo || 'unknown',
-        ref: hostStart.ref || 'unknown',
+        repo: hostStart.repo_url || hostStart.repo || 'unknown',
+        ref: hostStart.git_ref || hostStart.ref || 'unknown',
       });
     }
   }
@@ -273,8 +273,8 @@ function getInstanceStatus(instance) {
     timeoutImminent: timeoutRiskPercent >= 85,
     timedOut: exitCode === 124,
     exitCode,
-    repo: hostStart.repo || 'unknown',
-    ref: hostStart.ref || 'unknown',
+    repo: hostStart.repo_url || hostStart.repo || 'unknown',
+    ref: hostStart.git_ref || hostStart.ref || 'unknown',
     model: hostStart.model || 'unknown',
   };
 }
@@ -540,8 +540,8 @@ function getAnalysis(instance) {
     duration: metadata.duration_seconds || 0,
     exitCode,
     model: piSummary.model || hostStart.model || 'unknown',
-    repo: hostStart.repo || 'unknown',
-    ref: hostStart.ref || 'unknown',
+    repo: hostStart.repo_url || hostStart.repo || 'unknown',
+    ref: hostStart.git_ref || hostStart.ref || 'unknown',
     stage: metadata.current_stage || 'completed',
     changedFiles,
     changedFileCount: changedFiles.length,

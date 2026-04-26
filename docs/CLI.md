@@ -85,6 +85,7 @@ Get detailed status of a specific instance (JSON format).
   "model": "openrouter/claude-3.5-sonnet"
 }
 ```
+`repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
 
 ### `logs <instance> [options]`
 Display recent log lines (tail).
@@ -176,6 +177,7 @@ Get comprehensive post-run analysis (JSON format).
   "criticalErrors": 0
 }
 ```
+`repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
 
 ### `watch <instance> [options]`
 Live monitor an instance with periodic status updates and anomaly alerts.
@@ -358,6 +360,7 @@ monitorKaseki('kaseki-1');
   "model": "string"
 }
 ```
+Field source note: `repo` is read from `host-start.json.repo_url` with fallback to `host-start.json.repo`; `ref` is read from `host-start.json.git_ref` with fallback to `host-start.json.ref`.
 
 ### Error Object
 
