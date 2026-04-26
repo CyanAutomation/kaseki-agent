@@ -203,6 +203,34 @@ function testListInstances() {
   assertEqual(instances[1].name, 'kaseki-1', 'Should sort oldest last');
 }
 
+function testExactContainerNameMatching() {
+  console.log('\n→ Testing exact docker name matching helpers');
+
+  const dockerNamesOutput = `kaseki-1
+kaseki-10
+some-other-container
+`;
+
+  const names = kasekiCli.parseDockerContainerNames(dockerNamesOutput);
+  assertEqual(names.length, 3, 'Should parse docker names output into discrete names');
+
+  assert(kasekiCli.isExactContainerNameMatch('kaseki-1', 'kaseki-1'), 'Should match identical names');
+  assert(!kasekiCli.isExactContainerNameMatch('kaseki-10', 'kaseki-1'), 'Should not match partial names');
+
+  assert(
+    kasekiCli.dockerNamesOutputHasInstance(dockerNamesOutput, 'kaseki-1'),
+    'Should find exact match for kaseki-1'
+  );
+  assert(
+    kasekiCli.dockerNamesOutputHasInstance(dockerNamesOutput, 'kaseki-10'),
+    'Should find exact match for kaseki-10'
+  );
+  assert(
+    !kasekiCli.dockerNamesOutputHasInstance('kaseki-10\n', 'kaseki-1'),
+    'Should not treat kaseki-10 as match for kaseki-1'
+  );
+}
+
 function testReadArtifact() {
   console.log('\n→ Testing readArtifact()');
 
@@ -377,6 +405,7 @@ console.log('===================================================================
 setupTestEnvironment();
 
 testListInstances();
+testExactContainerNameMatching();
 testReadArtifact();
 testReadJsonArtifact();
 testReadLiveLog();
