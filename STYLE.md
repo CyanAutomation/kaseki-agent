@@ -25,6 +25,7 @@ This document outlines the code style expectations for contributions to the Kase
 ### Examples
 
 **Good:**
+
 ```javascript
 /**
  * List all kaseki instances.
@@ -41,6 +42,7 @@ function listInstances() {
 ```
 
 **Bad:**
+
 ```javascript
 // Don't use double quotes unless escaping is needed
 function listInstances() {
@@ -67,6 +69,7 @@ function listInstances() {
 - Keep comments concise and explain *why*, not *what* (code shows what)
 
 **Example JSDoc:**
+
 ```javascript
 /**
  * Resolve a memory file path to its fully qualified URI.
@@ -143,6 +146,7 @@ try {
 ### Examples
 
 **Good:**
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -161,6 +165,7 @@ done
 ```
 
 **Bad:**
+
 ```bash
 #!/bin/bash
 # Missing error handling (no set -euo pipefail)
