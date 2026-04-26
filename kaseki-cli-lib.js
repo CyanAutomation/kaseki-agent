@@ -197,7 +197,7 @@ function getCurrentStage(instance) {
  */
 function getConfiguredTimeout(instance) {
   const hostStart = readJsonArtifact(instance, 'host-start.json');
-  return hostStart.agentTimeoutSeconds || 1200;
+  return hostStart.agentTimeoutSeconds ?? 1200;
 }
 
 /**
@@ -527,7 +527,7 @@ function getAnalysis(instance) {
   const resultSummary = readArtifact(instance, 'result-summary.md');
 
   // Get exit code from file (metadata may not have it)
-  let exitCode = metadata.exit_code || null;
+  let exitCode = metadata.exit_code ?? null;
   const exitCodePath = path.join(config.KASEKI_RESULTS_DIR, instance, 'exit_code');
   if (fs.existsSync(exitCodePath)) {
     try {
@@ -537,7 +537,7 @@ function getAnalysis(instance) {
 
   return {
     instance,
-    duration: metadata.duration_seconds || 0,
+    duration: metadata.duration_seconds ?? 0,
     exitCode,
     model: piSummary.model || hostStart.model || 'unknown',
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
@@ -554,9 +554,9 @@ function getAnalysis(instance) {
       passed: t.exitCode === 0,
     })),
     piMetrics: {
-      toolStartCount: piSummary.tool_start_count || 0,
-      toolEndCount: piSummary.tool_end_count || 0,
-      eventCount: piSummary.event_count || 0,
+      toolStartCount: piSummary.tool_start_count ?? 0,
+      toolEndCount: piSummary.tool_end_count ?? 0,
+      eventCount: piSummary.event_count ?? 0,
     },
     errors,
     errorCount: errors.length,
