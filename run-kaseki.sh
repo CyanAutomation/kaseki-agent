@@ -16,7 +16,7 @@ KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-1}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
-TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update one focused Vitest case or one compact table-driven case in tests/parser.validation.ts. Avoid broad repeated test blocks and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one focused Vitest case, preferably a compact table-driven case, in tests/parser.validation.ts. Avoid repeated assertion blocks, assertion-message prose, and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 
 # ============================================================================
@@ -76,6 +76,12 @@ EXAMPLES:
 HELP
 }
 
+usage_error() {
+  printf 'Error: %s\n\n' "$1" >&2
+  show_help >&2
+  exit 2
+}
+
 is_git_url() {
   local str="$1"
   # URLs must start with http(s):// and contain at least one /
@@ -100,6 +106,9 @@ for arg in "$@"; do
   if [ $arg_idx -eq 0 ]; then
     # First argument could be: --doctor, --help, repo-url, or help
     if [ "$arg" = "--doctor" ]; then
+      if [ "$#" -gt 1 ]; then
+        usage_error "--doctor does not accept positional arguments"
+      fi
       SHOW_DOCTOR="1"
       arg_idx=$((arg_idx + 1))
       continue
@@ -113,6 +122,8 @@ for arg in "$@"; do
       # Edge case: passed instance name as first arg without repo
       INSTANCE="$arg"
       arg_idx=$((arg_idx + 1))
+    elif [[ "$arg" == -* ]]; then
+      usage_error "unknown option: $arg"
     else
       # Could be short ref like "main" without repo URL
       PARSED_GIT_REF="$arg"
@@ -130,8 +141,12 @@ for arg in "$@"; do
     # Third argument: instance-name
     if is_instance_name "$arg"; then
       INSTANCE="$arg"
+    else
+      usage_error "third argument must be an instance name matching kaseki-N, got: $arg"
     fi
     arg_idx=$((arg_idx + 1))
+  else
+    usage_error "too many positional arguments"
   fi
 done
 
@@ -247,6 +262,7 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "container_user": "$KASEKI_CONTAINER_USER",
   "changed_files_allowlist": "$KASEKI_CHANGED_FILES_ALLOWLIST",
   "max_diff_bytes": $KASEKI_MAX_DIFF_BYTES,
+  "agentTimeoutSeconds": $KASEKI_AGENT_TIMEOUT_SECONDS,
   "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "host": "$(hostname)",
   "image": "$IMAGE"
