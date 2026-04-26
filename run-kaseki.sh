@@ -19,6 +19,12 @@ KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update one focused Vitest case or one compact table-driven case in tests/parser.validation.ts. Avoid broad repeated test blocks and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 
+# GitHub App credentials (optional, for auto PR creation)
+GITHUB_APP_ID="${GITHUB_APP_ID:-}"
+GITHUB_APP_CLIENT_ID="${GITHUB_APP_CLIENT_ID:-}"
+GITHUB_APP_PRIVATE_KEY_FILE="${GITHUB_APP_PRIVATE_KEY_FILE:-}"
+GITHUB_APP_PRIVATE_KEY="${GITHUB_APP_PRIVATE_KEY:-}"
+
 # ============================================================================
 # Argument Parsing
 # ============================================================================
@@ -54,6 +60,10 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
+  GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
+  GITHUB_APP_CLIENT_ID              GitHub App Client ID (optional)
+  GITHUB_APP_PRIVATE_KEY_FILE       Path to GitHub App private key PEM file (optional)
+  GITHUB_APP_PRIVATE_KEY            GitHub App private key inline (optional, fallback)
 
 EXAMPLES:
   # All defaults
@@ -175,6 +185,18 @@ doctor() {
     status=1
   fi
 
+  # Check GitHub App credentials (optional)
+  github_app_ready=0
+  if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
+    if [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
+      printf 'GitHub App credentials: configured\n'
+      github_app_ready=1
+    fi
+  fi
+  if [ "$github_app_ready" -eq 0 ] && ([ -n "$GITHUB_APP_ID" ] || [ -n "$GITHUB_APP_CLIENT_ID" ] || [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]); then
+    printf 'GitHub App credentials: incomplete (need APP_ID, CLIENT_ID, and PRIVATE_KEY or PRIVATE_KEY_FILE)\n' >&2
+  fi
+
   return "$status"
 }
 
@@ -215,6 +237,9 @@ RUN_DIR="$RUNS/$INSTANCE"
 RESULT_DIR="$RESULTS/$INSTANCE"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
+GITHUB_APP_ID_FILE="$RUN_DIR/github_app_id"
+GITHUB_APP_CLIENT_ID_FILE="$RUN_DIR/github_app_client_id"
+GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE="$RUN_DIR/github_app_private_key"
 
 if [ -n "${INSTANCE:-}" ] && [ ! -d "$RUN_DIR" ]; then
   if ! mkdir "$RUN_DIR" 2>/dev/null; then
@@ -228,7 +253,7 @@ if [ -n "${INSTANCE:-}" ] && [ ! -d "$RUN_DIR" ]; then
 fi
 
 cleanup_secret() {
-  rm -f "$SECRET_FILE"
+  rm -f "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
 }
 trap cleanup_secret EXIT
 
@@ -317,6 +342,30 @@ printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
 unset key_value key_source
 
+# Handle GitHub App credentials (optional)
+GITHUB_APP_ENABLED="0"
+if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
+  github_private_key_value=""
+  if [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] && [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
+    github_private_key_value="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE")"
+  elif [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
+    github_private_key_value="$GITHUB_APP_PRIVATE_KEY"
+  fi
+
+  if [ -n "$github_private_key_value" ]; then
+    printf 'GitHub App credentials: configured\n'
+    GITHUB_APP_ENABLED="1"
+    printf '%s' "$GITHUB_APP_ID" > "$GITHUB_APP_ID_FILE"
+    chmod 0600 "$GITHUB_APP_ID_FILE"
+    printf '%s' "$GITHUB_APP_CLIENT_ID" > "$GITHUB_APP_CLIENT_ID_FILE"
+    chmod 0600 "$GITHUB_APP_CLIENT_ID_FILE"
+    printf '%s' "$github_private_key_value" > "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
+    chmod 0600 "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
+    unset github_private_key_value
+  fi
+fi
+unset GITHUB_APP_PRIVATE_KEY
+
 set +e
 docker run --rm \
     --name "$INSTANCE" \
@@ -336,9 +385,13 @@ docker run --rm \
     -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST" \
     -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES" \
     -e TASK_PROMPT="$TASK_PROMPT" \
+    -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED" \
     -v "$WORKSPACE:/workspace:rw" \
     -v "$RESULT_DIR:/results:rw" \
     -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro" \
+    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_id:ro ' "$GITHUB_APP_ID_FILE") \
+    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_client_id:ro ' "$GITHUB_APP_CLIENT_ID_FILE") \
+    $([ "$GITHUB_APP_ENABLED" = "1" ] && printf -- '-v %s:/run/secrets/github_app_private_key:ro ' "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE") \
     -w /workspace \
     "$IMAGE"
 DOCKER_EXIT="$?"
