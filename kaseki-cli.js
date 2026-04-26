@@ -229,8 +229,10 @@ function cmdWatch(args) {
 
     if (status.running) {
       console.log('             Status: RUNNING');
+    } else if (status.status === 'pending') {
+      console.log('             Status: PENDING (exit code: —)');
     } else {
-      console.log(`             Status: ${status.exitCode === 0 ? 'COMPLETED' : 'FAILED'} (exit code: ${status.exitCode})`);
+      console.log(`             Status: ${status.status.toUpperCase()} (exit code: ${status.exitCode})`);
     }
 
     // Show anomalies
