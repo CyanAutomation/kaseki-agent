@@ -12,6 +12,7 @@ KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one focused Vitest case, preferably a compact table-driven case, in tests/parser.validation.ts. Avoid repeated assertion blocks, assertion-message prose, and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PI_VERSION=""
@@ -22,7 +23,10 @@ VALIDATION_EXIT=0
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
+GITHUB_PUSH_EXIT=0
+GITHUB_PR_EXIT=0
 ACTUAL_MODEL=""
+GITHUB_PR_URL=""
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
@@ -76,8 +80,11 @@ write_metadata() {
   "validation_exit_code": $VALIDATION_EXIT,
   "quality_exit_code": $QUALITY_EXIT,
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
+  "github_push_exit_code": $GITHUB_PUSH_EXIT,
+  "github_pr_exit_code": $GITHUB_PR_EXIT,
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
+  "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
@@ -87,10 +94,22 @@ META
 }
 
 write_result_summary() {
-  local changed_files validation_status
+  local changed_files validation_status pr_status
   changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
   validation_status="passed"
   [ "$VALIDATION_EXIT" -ne 0 ] && validation_status="failed"
+  pr_status="not attempted"
+  if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+    if [ "$GITHUB_PUSH_EXIT" -ne 0 ]; then
+      pr_status="push failed"
+    elif [ "$GITHUB_PR_EXIT" -eq 0 ] && [ -n "$GITHUB_PR_URL" ]; then
+      pr_status="created ($GITHUB_PR_URL)"
+    elif [ "$GITHUB_PR_EXIT" -ne 0 ]; then
+      pr_status="pr creation failed"
+    else
+      pr_status="push succeeded, pr not created"
+    fi
+  fi
 
   cat > /results/result-summary.md <<SUMMARY
 # Kaseki Result: $INSTANCE_NAME
@@ -103,6 +122,7 @@ write_result_summary() {
 - Validation: $validation_status ($VALIDATION_EXIT)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
+- GitHub PR: $pr_status
 - Diff non-empty: $DIFF_NONEMPTY
 - Changed files:
 $(printf '%s\n' "$changed_files" | sed 's/^/  - /')
@@ -115,6 +135,7 @@ Artifacts:
 - validation-timings.tsv
 - git.diff
 - git.status
+- git-push.log (if GitHub App enabled)
 SUMMARY
 }
 
@@ -158,6 +179,122 @@ run_step() {
     FAILED_COMMAND="$label"
   fi
   return "$code"
+}
+
+run_github_operations() {
+  local app_id client_id private_key_file owner repo feature_branch token token_data
+  
+  # Load GitHub App credentials
+  app_id="$(cat /run/secrets/github_app_id)" || { printf 'Failed to read app ID\n' >&2; return 7; }
+  client_id="$(cat /run/secrets/github_app_client_id)" || { printf 'Failed to read client ID\n' >&2; return 7; }
+  private_key_file="/run/secrets/github_app_private_key"
+  
+  # Parse repo URL to extract owner and repo
+  if [[ "$REPO_URL" =~ ^https?://github\.com/([^/]+)/([^/]+)(/|\.git)?$ ]]; then
+    owner="${BASH_REMATCH[1]}"
+    repo="${BASH_REMATCH[2]}"
+  else
+    printf 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a /results/git-push.log >&2
+    return 7
+  fi
+  
+  printf 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /results/git-push.log
+  
+  # Set git user for commits
+  git config user.name "GitHub App [$app_id]" || { printf 'Failed to set git user name\n' >&2; return 7; }
+  git config user.email "${app_id}+kaseki@users.noreply.github.com" || { printf 'Failed to set git email\n' >&2; return 7; }
+  
+  # Generate GitHub App installation token
+  printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
+  token_data="$(node /usr/local/bin/github-app-token.js "$app_id" "$private_key_file" "$owner" "$repo")" || {
+    printf 'Failed to generate token\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  }
+  
+  token="$(printf '%s' "$token_data" | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" 2>/dev/null)"
+  if [ -z "$token" ]; then
+    printf 'Failed to extract token from response: %s\n' "$token_data" | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  fi
+  
+  printf 'Token generated successfully\n' | tee -a /results/git-push.log
+  
+  # Create and push feature branch
+  feature_branch="kaseki/$INSTANCE_NAME"
+  printf 'Creating feature branch: %s\n' "$feature_branch" | tee -a /results/git-push.log
+  git checkout -b "$feature_branch" || {
+    printf 'Failed to create branch\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  }
+  
+  # Commit changes (git should already have changes from pi agent)
+  printf 'Committing changes...\n' | tee -a /results/git-push.log
+  git add -A
+  if ! git commit -m "Kaseki: $INSTANCE_NAME"; then
+    printf 'No changes to commit or commit failed\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  fi
+  
+  # Configure git credential helper for pushing
+  git config credential.helper store
+  mkdir -p ~/.git-credentials-temp
+  printf 'https://%s:%s@github.com\n' "x-access-token" "$token" > ~/.git-credentials-temp/credentials
+  export GIT_ASKPASS=:
+  export GIT_ASKPASS_ALWAYS=1
+  
+  # Push branch
+  printf 'Pushing branch to GitHub...\n' | tee -a /results/git-push.log
+  if git push https://x-access-token:"$token"@github.com/"$owner"/"$repo".git "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log; then
+    printf 'Branch pushed successfully\n' | tee -a /results/git-push.log
+  else
+    printf 'Failed to push branch\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=8
+    return 8
+  fi
+  
+  # Create pull request
+  printf 'Creating pull request...\n' | tee -a /results/git-push.log
+  local pr_title pr_body pr_response pr_url
+  pr_title="Kaseki: $INSTANCE_NAME"
+  pr_body=$(cat <<EOF
+Generated by Kaseki agent (instance: $INSTANCE_NAME)
+
+**Model:** $KASEKI_MODEL
+
+**Duration:** $(($(date +%s) - START_EPOCH)) seconds
+
+**Validation:** $([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")
+
+**Quality Checks:** $([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$QUALITY_EXIT")
+
+This PR is in draft status. Please review before merging.
+EOF
+)
+  
+  pr_response=$(curl -s -X POST \
+    -H "Authorization: token $token" \
+    -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/$owner/$repo/pulls" \
+    -d "{\"title\": $(printf '%s' "$pr_title" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))"), \"body\": $(printf '%s' "$pr_body" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))"), \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": true}" 2>&1)
+  
+  pr_url="$(printf '%s' "$pr_response" | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" 2>/dev/null || true)"
+  
+  if [ -n "$pr_url" ]; then
+    GITHUB_PR_URL="$pr_url"
+    GITHUB_PR_EXIT=0
+    printf 'Pull request created: %s\n' "$pr_url" | tee -a /results/git-push.log
+  else
+    printf 'Failed to create PR. Response: %s\n' "$pr_response" | tee -a /results/git-push.log >&2
+    GITHUB_PR_EXIT=9
+  fi
+  
+  # Clean up token
+  unset token
+  rm -f ~/.git-credentials-temp/credentials
 }
 
 printf 'Kaseki instance: %s\n' "$INSTANCE_NAME"
@@ -391,6 +528,22 @@ if grep -R -n -E 'sk-or-[A-Za-z0-9._-]+' /results /workspace/repo/.git /workspac
   SECRET_SCAN_EXIT=6
 fi
 
+printf '\n==> github operations\n'
+: > /results/git-push.log
+if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$DIFF_NONEMPTY" = "true" ]; then
+  if [ -r /run/secrets/github_app_id ] && [ -r /run/secrets/github_app_client_id ] && [ -r /run/secrets/github_app_private_key ]; then
+    run_github_operations
+  else
+    printf 'GitHub App enabled but secrets not found\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+  fi
+else
+  printf 'GitHub operations: skipped (validation %s, diff %s, github_enabled %s)\n' \
+    "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
+    "$DIFF_NONEMPTY" \
+    "$GITHUB_APP_ENABLED" | tee -a /results/git-push.log
+fi
+
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$VALIDATION_EXIT"
   FAILED_COMMAND="validation"
@@ -404,6 +557,11 @@ fi
 if [ "$SECRET_SCAN_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$SECRET_SCAN_EXIT"
   FAILED_COMMAND="secret scan"
+fi
+
+if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+  STATUS="$GITHUB_PUSH_EXIT"
+  FAILED_COMMAND="github push"
 fi
 
 if [ "$DIFF_NONEMPTY" != "true" ] && [ "$STATUS" -eq 0 ]; then

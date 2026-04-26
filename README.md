@@ -153,6 +153,88 @@ OPENROUTER_API_KEY=sk-or-... REPO_URL=https://github.com/<org>/<repo> GIT_REF=fe
 
 **Note:** CLI arguments take precedence over environment variables. If you provide repo arguments on the command line, `REPO_URL` and `GIT_REF` environment variables are ignored.
 
+## GitHub App Integration (Optional)
+
+Kaseki can automatically push changes to a feature branch and create pull requests using a GitHub App. This requires providing GitHub App credentials (App ID, Client ID, and Private Key).
+
+### Prerequisites
+
+1. Create a GitHub App with the following permissions:
+   - `contents: read & write` (for pushing code)
+   - `pull_requests: read & write` (for creating PRs)
+   - `workflows: read` (optional, for checking CI)
+
+2. Generate a private key for the app and save it locally.
+
+3. Install the app on the target repository.
+
+### Setup
+
+Store credentials in secure files:
+
+```sh
+mkdir -p ~/secrets
+chmod 0700 ~/secrets
+
+# Store app credentials
+echo "YOUR_APP_ID" > ~/secrets/github_app_id
+echo "YOUR_CLIENT_ID" > ~/secrets/github_app_client_id
+cp ~/path/to/private-key.pem ~/secrets/github_app_private_key
+chmod 0600 ~/secrets/github_app_*
+```
+
+### Usage
+
+Run Kaseki with GitHub App credentials:
+
+```sh
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+GITHUB_APP_ID_FILE=~/secrets/github_app_id \
+GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id \
+GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key \
+/agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo>
+```
+
+Alternatively, pass credentials via environment variables (less secure; prefer files):
+
+```sh
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+GITHUB_APP_ID="YOUR_APP_ID" \
+GITHUB_APP_CLIENT_ID="YOUR_CLIENT_ID" \
+GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key \
+/agents/kaseki-template/run-kaseki.sh https://github.com/<org>/<repo>
+```
+
+### Behavior
+
+When GitHub App credentials are configured:
+
+1. **After validation passes** and the diff is non-empty, Kaseki generates a GitHub App installation token.
+2. **Creates a feature branch** named `kaseki/<instance-name>` (e.g., `kaseki/kaseki-1`).
+3. **Commits and pushes** changes to the remote branch.
+4. **Creates a draft PR** against the target branch with:
+   - Title: `Kaseki: <instance-name>`
+   - Body: Includes model, duration, validation result, quality check status
+   - Draft status: Set to `true` for safety; review before merging
+
+### Result Artifacts
+
+When GitHub App is enabled:
+
+- `git-push.log`: Detailed log of push and PR creation operations
+- `metadata.json` includes:
+  - `github_pr_url`: URL of created PR (if successful)
+  - `github_push_exit_code`: Push operation status
+  - `github_pr_exit_code`: PR creation status
+
+### Exit Codes
+
+Additional exit codes for GitHub operations:
+
+- `7`: GitHub push/PR setup failed (missing credentials, invalid key, etc.)
+- `8`: Failed to push branch to GitHub
+- `9`: Push succeeded but PR creation failed (non-blocking; push result is retained)
+
 Useful environment variables:
 
 - `KASEKI_ROOT` defaults to `/agents`.
@@ -250,6 +332,9 @@ Kaseki uses specific non-zero exit codes for validation/policy failures:
 - `4`: diff exceeds `KASEKI_MAX_DIFF_BYTES`.
 - `5`: a changed file is outside `KASEKI_CHANGED_FILES_ALLOWLIST`.
 - `6`: secret scan detected credential-like content.
+- `7`: GitHub push/PR setup failed (missing credentials, invalid key, token generation failed, etc.)
+- `8`: failed to push branch to GitHub.
+- `9`: push succeeded but PR creation failed (non-blocking; push result is retained).
 
 Other non-zero exit codes may be propagated from failed steps (for example clone, dependency install, agent run, or validation commands). Check `/results/metadata.json` for `failed_command` and detailed per-stage exit fields.
 
