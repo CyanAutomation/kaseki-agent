@@ -52,10 +52,12 @@ COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/works
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
 COPY kaseki-report.js /usr/local/bin/kaseki-report
+COPY github-app-token.js /usr/local/bin/github-app-token
 RUN chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \
     /usr/local/bin/kaseki-pi-event-filter \
-    /usr/local/bin/kaseki-report
+    /usr/local/bin/kaseki-report \
+    /usr/local/bin/github-app-token
 
 WORKDIR /workspace
 USER kaseki
