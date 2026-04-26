@@ -155,7 +155,7 @@ run_step() {
     STATUS="$code"
     FAILED_COMMAND="$label"
   fi
-  return 0
+  return "$code"
 }
 
 printf 'Kaseki instance: %s\n' "$INSTANCE_NAME"
@@ -217,11 +217,21 @@ prepare_dependencies() {
   stamp_file="${workspace_cache_root}/stamp.txt"
   lock_file="${workspace_cache_root}.lock"
 
-  mkdir -p "$(dirname "$workspace_cache_root")"
-  exec {cache_lock_fd}>"$lock_file"
-  flock "$cache_lock_fd"
+  if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
+    return 1
+  fi
+  if ! exec {cache_lock_fd}>"$lock_file"; then
+    return 1
+  fi
+  if ! flock "$cache_lock_fd"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
 
-  mkdir -p "$workspace_cache_root"
+  if ! mkdir -p "$workspace_cache_root"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
 
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
@@ -233,24 +243,41 @@ prepare_dependencies() {
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s).\n' "$workspace_cache_dir"
-    cp -a "$workspace_cache_dir" ./node_modules
+    if ! cp -a "$workspace_cache_dir" ./node_modules; then
+      exec {cache_lock_fd}>&-
+      return 1
+    fi
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
-    cp -a "$image_cache_dir" ./node_modules
+    if ! cp -a "$image_cache_dir" ./node_modules; then
+      exec {cache_lock_fd}>&-
+      return 1
+    fi
   fi
 
   if [ ! -d node_modules ]; then
     printf 'Dependency cache status: cache miss, running install.\n'
-    npm ci --prefer-offline || npm install
+    if ! npm ci --prefer-offline; then
+      if ! npm install; then
+        exec {cache_lock_fd}>&-
+        return 1
+      fi
+    fi
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
   fi
 
-  mkdir -p "$workspace_cache_root"
+  if ! mkdir -p "$workspace_cache_root"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
   tmp_cache_dir="${workspace_cache_dir}.tmp.$$"
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
-  cp -a node_modules "$tmp_cache_dir"
+  if ! cp -a node_modules "$tmp_cache_dir"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
   # Keep this publish path single-pass and atomic to avoid cache corruption.
   if [ -d "$workspace_cache_dir" ] && ! mv "$workspace_cache_dir" "$old_cache_dir"; then
     exec {cache_lock_fd}>&-
@@ -264,9 +291,13 @@ prepare_dependencies() {
     exec {cache_lock_fd}>&-
     return 1
   fi
-  printf '%s\n' "$lock_hash" > "$stamp_file"
+  if ! printf '%s\n' "$lock_hash" > "$stamp_file"; then
+    exec {cache_lock_fd}>&-
+    return 1
+  fi
 
   exec {cache_lock_fd}>&-
+  return 0
 }
 
 run_step "prepare node dependencies" prepare_dependencies
