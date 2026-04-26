@@ -296,22 +296,33 @@ function cmdFollow(args) {
 
   console.log(`Following ${logFile}...\n`);
 
-  let lastSize = 0;
   let lastPosition = 0;
+  let isReading = false;
 
   const follow = () => {
+    if (isReading) {
+      return;
+    }
+
     try {
       const stats = fs.statSync(logPath);
       const currentSize = stats.size;
 
+      if (currentSize < lastPosition) {
+        lastPosition = 0;
+      }
+
       if (currentSize > lastPosition) {
+        isReading = true;
         const stream = fs.createReadStream(logPath, {
           start: lastPosition,
           end: currentSize - 1,
         });
 
         let data = '';
+        let bytesRead = 0;
         stream.on('data', (chunk) => {
+          bytesRead += chunk.length;
           data += chunk;
         });
 
@@ -319,14 +330,18 @@ function cmdFollow(args) {
           if (data.length > 0) {
             process.stdout.write(data);
           }
-          lastPosition = currentSize;
+          lastPosition += bytesRead;
+          isReading = false;
         });
 
         stream.on('error', (err) => {
+          lastPosition += bytesRead;
+          isReading = false;
           console.error(`Error reading log: ${err.message}`);
         });
       }
     } catch (err) {
+      isReading = false;
       console.error(`Error: ${err.message}`);
     }
   };
