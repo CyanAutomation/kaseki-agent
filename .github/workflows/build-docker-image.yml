@@ -18,6 +18,7 @@ env:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build:
@@ -41,6 +42,13 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Determine tags
         id: meta
         shell: bash
@@ -55,28 +63,33 @@ jobs:
             TAGS="latest"
           fi
 
-          DOCKER_TAGS=""
+          DOCKER_HUB_TAGS=""
+          GHCR_TAGS=""
           FIRST_TAG=""
           for raw_tag in ${TAGS//,/ }; do
             tag="$(echo "$raw_tag" | xargs)"
             [[ -z "$tag" ]] && continue
             [[ -z "$FIRST_TAG" ]] && FIRST_TAG="$tag"
-            DOCKER_TAGS="${DOCKER_TAGS}${DOCKER_IMAGE}:$tag"$'\n'
-            DOCKER_TAGS="${DOCKER_TAGS}${DOCKER_IMAGE}:$tag-arm64"$'\n'
+            DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS}${DOCKER_IMAGE}:$tag"$'\n'
+            DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS}${DOCKER_IMAGE}:$tag-arm64"$'\n'
+            GHCR_TAGS="${GHCR_TAGS}ghcr.io/${DOCKER_IMAGE}:$tag"$'\n'
+            GHCR_TAGS="${GHCR_TAGS}ghcr.io/${DOCKER_IMAGE}:$tag-arm64"$'\n'
           done
 
-          if [[ -z "$DOCKER_TAGS" ]]; then
+          if [[ -z "$DOCKER_HUB_TAGS" ]]; then
             echo "No Docker tags were provided" >&2
             exit 1
           fi
 
-          DOCKER_TAGS="${DOCKER_TAGS%$'\n'}"
+          DOCKER_HUB_TAGS="${DOCKER_HUB_TAGS%$'\n'}"
+          GHCR_TAGS="${GHCR_TAGS%$'\n'}"
+          ALL_TAGS="${DOCKER_HUB_TAGS}"$'\n'"${GHCR_TAGS}"
           echo "tags<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$DOCKER_TAGS" >> "$GITHUB_OUTPUT"
+          echo "$ALL_TAGS" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
           echo "primary_tag=${FIRST_TAG:-latest}" >> "$GITHUB_OUTPUT"
           echo "Building tags:"
-          echo "$DOCKER_TAGS"
+          echo "$ALL_TAGS"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -98,6 +111,13 @@ jobs:
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine verification tag
         id: meta
@@ -158,6 +178,61 @@ jobs:
           test "$exit_code" -eq 2
           jq -e '
             .instance == "kaseki-smoke" and
+            .exit_code == 2 and
+            .failed_command == "missing OPENROUTER_API_KEY"
+          ' "$RESULTS/metadata.json"
+          test -s "$RESULTS/result-summary.md"
+          test ! -d "$WORKSPACE/repo"
+
+          docker run --rm \
+            --entrypoint kaseki-report \
+            -v "$RESULTS:/results:ro" \
+            "$IMAGE" \
+            /results
+
+      - name: Verify multi-arch manifest (GHCR)
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          echo "Verifying manifest for: $IMAGE"
+          docker manifest inspect "$IMAGE" | jq -e '
+            [.manifests[].platform | "\(.os)/\(.architecture)"] as $platforms |
+            ($platforms | index("linux/amd64")) and ($platforms | index("linux/arm64"))
+          '
+          docker manifest inspect "$IMAGE" | jq -r '.manifests[] | "\(.platform.os)/\(.platform.architecture)"'
+          echo "Multi-arch image verified successfully (GHCR)"
+
+      - name: Verify Pi CLI entrypoint (GHCR)
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          docker run --rm --entrypoint pi "$IMAGE" --version
+
+      - name: Smoke test runtime artifacts (GHCR)
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${DOCKER_IMAGE}:${{ steps.meta.outputs.tag }}"
+          WORKSPACE="$(mktemp -d)"
+          RESULTS="$(mktemp -d)"
+          chmod 0777 "$WORKSPACE" "$RESULTS"
+
+          set +e
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            -e KASEKI_INSTANCE=kaseki-smoke-ghcr \
+            -v "$WORKSPACE:/workspace:rw" \
+            -v "$RESULTS:/results:rw" \
+            -w /workspace \
+            "$IMAGE"
+          exit_code="$?"
+          set -e
+
+          test "$exit_code" -eq 2
+          jq -e '
+            .instance == "kaseki-smoke-ghcr" and
             .exit_code == 2 and
             .failed_command == "missing OPENROUTER_API_KEY"
           ' "$RESULTS/metadata.json"

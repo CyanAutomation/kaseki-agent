@@ -9,15 +9,22 @@ Host layout:
 - `/agents/kaseki-results/kaseki-N`: logs, metadata, exit code, git status, git diff, and resource timing.
 - `/agents/kaseki-cache`: optional host-level cache location for dependency seeds.
 
-Preferred registry image:
+Preferred registry image (Docker Hub):
 
 ```sh
 docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
 ```
 
-Use stable version tags such as `0.1.0` for normal operation. The `latest` tag
-is published for smoke testing and previewing the next release before a stable
-tag is cut.
+Alternative registry (GitHub Container Registry):
+
+```sh
+docker pull ghcr.io/cyanautomation/kaseki-agent:0.1.0
+```
+
+Both registries are equivalent and receive identical multi-architecture builds
+for `linux/amd64` and `linux/arm64`. Use stable version tags such as `0.1.0`
+for normal operation. The `latest` tag is published for smoke testing and
+previewing the next release before a stable tag is cut.
 
 Local fallback build:
 
@@ -42,10 +49,16 @@ If scripts were copied from a fresh clone without executable bits, run:
 chmod +x run-kaseki.sh cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js kaseki-report.js
 ```
 
-Verify Pi is installed in the image:
+Verify Pi is installed in the image (Docker Hub):
 
 ```sh
 docker run --rm --entrypoint pi docker.io/cyanautomation/kaseki-agent:0.1.0 --version
+```
+
+Or from GitHub Container Registry:
+
+```sh
+docker run --rm --entrypoint pi ghcr.io/cyanautomation/kaseki-agent:0.1.0 --version
 ```
 
 Run the default repo with a runtime-only OpenRouter key via environment variable:
