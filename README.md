@@ -23,8 +23,15 @@ docker pull ghcr.io/cyanautomation/kaseki-agent:0.1.0
 
 Both registries are equivalent and receive identical multi-architecture builds
 for `linux/amd64` and `linux/arm64`. Use stable version tags such as `0.1.0`
-for normal operation. The `latest` tag is published for smoke testing and
-previewing the next release before a stable tag is cut.
+for normal operation.
+
+Tag publication schedule:
+
+- **Stable version tags** (e.g., `0.1.0`): Published once via version tag push; never overwritten
+- **`latest` tag**: Updated on every version push **and** via weekly schedule every Sunday at 00:00 UTC
+
+The `latest` tag is suitable for smoke testing and previewing, but production deployments should
+pin specific stable versions to avoid unexpected updates.
 
 Local fallback build:
 

@@ -11,6 +11,9 @@ on:
     tags:
       - 'v*'
       - '[0-9]*'
+  schedule:
+    # Weekly build every Sunday at 00:00 UTC, publishes 'latest' tag to both registries
+    - cron: '0 0 * * 0'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -53,6 +56,10 @@ jobs:
         id: meta
         shell: bash
         run: |
+          # Three trigger paths converge here with different tag logic:
+          # 1. workflow_dispatch: use custom tags from input (default 'latest')
+          # 2. push tags (v* or [0-9]*): extract version and add 'latest'
+          # 3. schedule (Sunday 00:00 UTC) or other: use 'latest'
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             TAGS="${{ github.event.inputs.tags }}"
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
