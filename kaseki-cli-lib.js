@@ -197,7 +197,7 @@ function readArtifact(instance, filename) {
  */
 function readLiveLog(instance, filename, tailLines = 50) {
   const content = readArtifact(instance, filename);
-  if (!content) return null;
+  if (content === null) return null;
 
   const lines = content.split('\n').filter((line) => line.length > 0);
   return lines.slice(Math.max(0, lines.length - tailLines)).join('\n');
