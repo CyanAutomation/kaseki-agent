@@ -92,6 +92,24 @@ usage_error() {
   exit 2
 }
 
+json_encode() {
+  node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString())));'
+}
+
+json_string() {
+  printf '%s' "$1" | json_encode
+}
+
+require_non_negative_int() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    printf 'Error: %s must be a non-negative integer, got: %s\n' "$name" "$value" >&2
+    exit 2
+  fi
+  printf '%s' "$value"
+}
+
 is_git_url() {
   local str="$1"
   # URLs must start with http(s):// and contain at least one /
@@ -276,21 +294,24 @@ mkdir -p "$WORKSPACE" "$RESULT_DIR"
 chmod 0755 "$RUN_DIR" "$WORKSPACE" "$RESULT_DIR"
 
 START_EPOCH="$(date +%s)"
+MAX_DIFF_BYTES_VALUE="$(require_non_negative_int "KASEKI_MAX_DIFF_BYTES" "$KASEKI_MAX_DIFF_BYTES")"
+AGENT_TIMEOUT_SECONDS_VALUE="$(require_non_negative_int "KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_AGENT_TIMEOUT_SECONDS")"
+FAILURE_EXIT_CODE_VALUE="$(require_non_negative_int "exit_code" "2")"
 
 cat > "$RESULT_DIR/host-start.json" <<META
 {
-  "instance": "$INSTANCE",
-  "repo_url": "$REPO_URL",
-  "git_ref": "$GIT_REF",
-  "provider": "$KASEKI_PROVIDER",
-  "model": "$KASEKI_MODEL",
-  "container_user": "$KASEKI_CONTAINER_USER",
-  "changed_files_allowlist": "$KASEKI_CHANGED_FILES_ALLOWLIST",
-  "max_diff_bytes": $KASEKI_MAX_DIFF_BYTES,
-  "agentTimeoutSeconds": $KASEKI_AGENT_TIMEOUT_SECONDS,
-  "started_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "host": "$(hostname)",
-  "image": "$IMAGE"
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "container_user": $(json_string "$KASEKI_CONTAINER_USER"),
+  "changed_files_allowlist": $(json_string "$KASEKI_CHANGED_FILES_ALLOWLIST"),
+  "max_diff_bytes": $MAX_DIFF_BYTES_VALUE,
+  "agentTimeoutSeconds": $AGENT_TIMEOUT_SECONDS_VALUE,
+  "started_at": $(json_string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"),
+  "host": $(json_string "$(hostname)"),
+  "image": $(json_string "$IMAGE")
 }
 META
 
@@ -315,13 +336,13 @@ else
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
   cat > "$RESULT_DIR/metadata.json" <<META
 {
-  "instance": "$INSTANCE",
-  "repo_url": "$REPO_URL",
-  "git_ref": "$GIT_REF",
-  "provider": "$KASEKI_PROVIDER",
-  "model": "$KASEKI_MODEL",
-  "exit_code": 2,
-  "failed_command": "missing OPENROUTER_API_KEY"
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "exit_code": $FAILURE_EXIT_CODE_VALUE,
+  "failed_command": $(json_string "missing OPENROUTER_API_KEY")
 }
 META
   cat "$RESULT_DIR/stderr.log" >&2
@@ -340,13 +361,24 @@ if [ -z "$key_value" ]; then
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
   cat > "$RESULT_DIR/metadata.json" <<META
 {
-  "instance": "$INSTANCE",
-  "repo_url": "$REPO_URL",
-  "git_ref": "$GIT_REF",
-  "provider": "$KASEKI_PROVIDER",
-  "model": "$KASEKI_MODEL",
-  "exit_code": 2,
-  "failed_command": "empty OpenRouter API key from $key_source"
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "exit_code": $FAILURE_EXIT_CODE_VALUE,
+  "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
+}
+META
+  cat > "$RESULT_DIR/metadata.json" <<META
+{
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "exit_code": $FAILURE_EXIT_CODE_VALUE,
+  "failed_command": $(json_string "$failed_command")
 }
 META
   cat "$RESULT_DIR/stderr.log" >&2
