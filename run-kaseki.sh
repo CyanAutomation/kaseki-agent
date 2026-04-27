@@ -359,7 +359,17 @@ if [ -z "$key_value" ]; then
   printf '2\n' > "$RESULT_DIR/exit_code"
   printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
-  failed_command="empty OpenRouter API key from $key_source"
+  cat > "$RESULT_DIR/metadata.json" <<META
+{
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "exit_code": $FAILURE_EXIT_CODE_VALUE,
+  "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
+}
+META
   cat > "$RESULT_DIR/metadata.json" <<META
 {
   "instance": $(json_string "$INSTANCE"),
