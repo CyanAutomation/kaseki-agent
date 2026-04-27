@@ -386,7 +386,7 @@ docker_args=(
   run --rm
   --name "$INSTANCE"
   --read-only
-  --tmpfs /tmp:rw,nosuid,nodev,size=256m
+  --tmpfs "/tmp:rw,nosuid,nodev,size=256m"
   --security-opt no-new-privileges:true
   --cap-drop ALL
   -u "$KASEKI_CONTAINER_USER"
