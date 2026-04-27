@@ -14,6 +14,7 @@
  *   kaseki-cli list
  *   kaseki-cli status <instance>
  *   kaseki-cli logs <instance> [--tail=N]
+ *   kaseki-cli progress <instance> [--tail=N]
  *   kaseki-cli errors <instance>
  *   kaseki-cli analysis <instance>
  *   kaseki-cli watch <instance> [--interval=S]
@@ -141,6 +142,36 @@ function cmdLogs(args) {
   }
 
   console.log(logs);
+}
+
+/**
+ * Display sanitized progress events.
+ */
+function cmdProgress(args) {
+  if (args.length < 1) {
+    printError('progress requires instance name argument');
+  }
+
+  const instance = args[0];
+  let tailLines = 20;
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i].startsWith('--tail=')) {
+      tailLines = parseInt(args[i].split('=')[1], 10);
+    }
+  }
+
+  const events = kasekiCli.readProgressEvents(instance, tailLines);
+  if (events === null) {
+    printError('Progress file not found: progress.jsonl');
+  }
+
+  for (const event of events) {
+    const timestamp = event.timestamp || 'unknown-time';
+    const stage = event.stage || 'progress';
+    const message = event.message || '';
+    console.log(`[${timestamp}] ${stage}: ${message}`);
+  }
 }
 
 /**
@@ -377,6 +408,8 @@ COMMANDS:
   status <instance>              Get status of a specific instance (JSON)
   logs <instance>                Display recent log lines (tail)
                                  Options: --tail=N --file=<name>
+  progress <instance>            Display sanitized progress events
+                                 Options: --tail=N
   errors <instance>              Detect and list errors (JSON)
   analysis <instance>            Get post-run analysis (JSON)
   watch <instance>               Live monitor instance with status updates
@@ -399,6 +432,7 @@ EXAMPLES:
   kaseki-cli status kaseki-1
   kaseki-cli status kaseki-1 | jq .timeoutRiskPercent
   kaseki-cli logs kaseki-1 --tail=100
+  kaseki-cli progress kaseki-1 --tail=25
   kaseki-cli errors kaseki-1
   kaseki-cli analysis kaseki-1
   kaseki-cli watch kaseki-1 --interval=2
@@ -436,6 +470,9 @@ function main() {
       break;
     case 'logs':
       cmdLogs(cmdArgs);
+      break;
+    case 'progress':
+      cmdProgress(cmdArgs);
       break;
     case 'errors':
       cmdErrors(cmdArgs);

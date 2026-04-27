@@ -40,6 +40,20 @@ cd /agents/kaseki-template
 docker build -t kaseki-template:latest .
 ```
 
+For readable logs over SSH on a Pi, prefer plain progress output:
+
+```sh
+docker build --progress=plain -t kaseki-template:latest .
+```
+
+Deploy the current checkout to the host template directory without touching
+run, result, cache, or secret directories:
+
+```sh
+cd /path/to/kaseki-agent
+sudo ./deploy-pi-template.sh
+```
+
 Controlled base-image refresh (monthly security review):
 
 ```sh
@@ -245,7 +259,8 @@ Useful environment variables:
 - `KASEKI_AGENT_TIMEOUT_SECONDS` defaults to `1200`.
 - `KASEKI_VALIDATION_COMMANDS` defaults to `npm run check;npm run test;npm run build`.
 - `KASEKI_DEBUG_RAW_EVENTS=1` stores raw Pi JSONL events as `pi-events.raw.jsonl`.
-- `KASEKI_KEEP_WORKSPACE=0` removes the workspace after successful runs.
+- `KASEKI_KEEP_WORKSPACE=0` removes the per-run workspace after each run. Set to `1` only when you need to inspect the workspace after a failure.
+- `KASEKI_STREAM_PROGRESS=1` streams sanitized progress lines from Pi JSON events. Set to `0` to keep progress only in artifacts.
 - `KASEKI_CHANGED_FILES_ALLOWLIST` defaults to `src/lib/parser.ts tests/parser.validation.ts`.
 - `KASEKI_MAX_DIFF_BYTES` defaults to `200000`.
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
@@ -307,7 +322,22 @@ Cleanup old workspaces while keeping results:
 KASEKI_CLEANUP_DAYS=1 /agents/kaseki-template/cleanup-kaseki.sh
 ```
 
-Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, and git diff. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
+Docker cleanup is explicit and guarded. Use `--docker --dry-run` first, then
+add `--force` to prune old Docker build cache and dangling images:
+
+```sh
+/agents/kaseki-template/cleanup-kaseki.sh --docker --dry-run
+/agents/kaseki-template/cleanup-kaseki.sh --docker --force
+```
+
+Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, git diff, `progress.log`, `progress.jsonl`, and `cleanup.log`. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
+
+Show sanitized progress for a running or completed instance:
+
+```sh
+/agents/kaseki-template/kaseki-cli.js progress kaseki-4 --tail=25
+/agents/kaseki-template/kaseki-cli.js follow kaseki-4 --tail=progress.log
+```
 
 Print a compact diagnostic report for any result directory:
 

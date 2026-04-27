@@ -84,6 +84,16 @@ Done.
 `;
   fs.writeFileSync(path.join(instanceDir, 'stdout.log'), stdoutContent);
 
+  const progressEvents = [
+    { timestamp: '2026-04-27T00:00:00Z', stage: 'clone repository', message: 'started' },
+    { timestamp: '2026-04-27T00:00:01Z', stage: 'clone repository', message: 'finished with exit 0' },
+    { timestamp: '2026-04-27T00:00:02Z', stage: 'pi coding agent', message: 'working; events=10, tool starts=1, tool ends=1' },
+  ];
+  fs.writeFileSync(
+    path.join(instanceDir, 'progress.jsonl'),
+    `${progressEvents.map((event) => JSON.stringify(event)).join('\n')}\n`
+  );
+
   // Mock stderr.log
   const stderrContent = overrides.hasErrors ? 'Error: something went wrong\n' : '';
   fs.writeFileSync(path.join(instanceDir, 'stderr.log'), stderrContent);
@@ -289,6 +299,21 @@ function testReadLiveLog() {
   assertEqual(emptyLogs, '', 'Should return empty string for existing empty log file (not not-found path)');
 }
 
+function testReadProgressEvents() {
+  console.log('\n→ Testing readProgressEvents()');
+
+  createMockInstance('kaseki-12-progress');
+
+  const events = kasekiCli.readProgressEvents('kaseki-12-progress', 2);
+  assertEqual(events.length, 2, 'Should tail progress events');
+  assertEqual(events[0].stage, 'clone repository', 'Should parse progress JSONL');
+  assertEqual(events[1].stage, 'pi coding agent', 'Should include latest progress event');
+
+  fs.writeFileSync(path.join(MOCK_RESULTS_DIR, 'kaseki-12-progress', 'progress.jsonl'), 'not-json\n');
+  const malformed = kasekiCli.readProgressEvents('kaseki-12-progress', 1);
+  assertEqual(malformed[0].malformed, true, 'Should mark malformed progress lines');
+}
+
 function testGetCurrentStage() {
   console.log('\n→ Testing getCurrentStage()');
 
@@ -462,6 +487,7 @@ testExactContainerNameMatching();
 testReadArtifact();
 testReadJsonArtifact();
 testReadLiveLog();
+testReadProgressEvents();
 testGetCurrentStage();
 testGetConfiguredTimeout();
 testCalculateTimeoutRiskPercent();

@@ -5,6 +5,7 @@
 !Dockerfile
 !kaseki-agent.sh
 !pi-event-filter.js
+!pi-progress-stream.js
 !kaseki-report.js
 !github-app-token.js
 !.dockerignore

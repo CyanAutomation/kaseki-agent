@@ -48,7 +48,7 @@ if (metadata.git_ref !== expectedRef) throw new Error("metadata git_ref mismatch
   "$REPO_URL" \
   "$GIT_REF"
 
-for artifact in changed-files.txt validation-timings.tsv quality.log secret-scan.log git-push.log; do
+for artifact in changed-files.txt validation-timings.tsv quality.log secret-scan.log git-push.log progress.log progress.jsonl cleanup.log; do
   if [ ! -f "$result_dir/$artifact" ]; then
     echo "Expected artifact missing: $artifact" >&2
     exit 1
