@@ -8,7 +8,7 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "test": "npm run check:syntax && node kaseki-cli.test.js",
+    "test": "npm run check:syntax && node kaseki-cli.test.js && bash run-kaseki-json.test.sh",
     "check:syntax": "bash -c 'for file in *.js; do node --check \"$file\"; done'",
     "lint": "npm run lint:js && npm run lint:sh",
     "lint:js": "eslint .",
