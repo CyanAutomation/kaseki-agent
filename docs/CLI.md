@@ -8,6 +8,7 @@ The **Kaseki CLI** is a command-line tool that allows external AI agents to quer
 - **Detect errors**: Identify failures in stderr, validation, quality gates, and secret scans
 - **Anomaly detection**: Flag timeout risk as instance approaches timeout
 - **Log streaming**: Follow logs in real-time as they're written
+- **Progress streaming**: Read sanitized stage and Pi tool progress without model text
 - **Post-run analysis**: Comprehensive summary of changes, validation results, and Pi metrics
 
 ## Installation
@@ -100,6 +101,18 @@ Display recent log lines (tail).
 # Show last 20 lines of validation.log
 ./kaseki-cli.js logs kaseki-1 --file=validation.log --tail=20
 ```
+
+### `progress <instance> [options]`
+Display sanitized progress events from `progress.jsonl`.
+
+```bash
+./kaseki-cli.js progress kaseki-1
+./kaseki-cli.js progress kaseki-1 --tail=25
+```
+
+Progress events include stage starts/finishes, Pi event counts, and tool
+start/end counts. They intentionally do not include assistant text, thinking
+content, environment values, or secrets.
 
 ### `errors <instance>`
 Detect and list errors (JSON format).

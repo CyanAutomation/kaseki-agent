@@ -13,7 +13,7 @@
     "lint": "npm run lint:js && npm run lint:sh",
     "lint:js": "eslint .",
     "lint:js:fix": "eslint . --fix",
-    "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh cleanup-kaseki.sh",
+    "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh cleanup-kaseki.sh deploy-pi-template.sh test-github-app.sh run-kaseki-json.test.sh",
     "lint:fix": "npm run lint:js:fix && npm run lint:sh"
   },
   "devDependencies": {

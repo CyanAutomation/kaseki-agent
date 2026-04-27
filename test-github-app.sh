@@ -57,10 +57,11 @@ fi
 echo ""
 echo "Test 5: Checking Dockerfile..."
 if grep -q "github-app-token.js" "$ROOT_DIR/Dockerfile" && \
+   grep -q "pi-progress-stream.js" "$ROOT_DIR/Dockerfile" && \
    grep -q "/usr/local/bin/github-app-token " "$ROOT_DIR/kaseki-agent.sh"; then
-  echo "✓ Dockerfile and agent agree on GitHub App token helper path"
+  echo "✓ Dockerfile includes helpers and agent agrees on GitHub App token helper path"
 else
-  echo "✗ GitHub App token helper path mismatch between Dockerfile and agent"
+  echo "✗ Dockerfile helper coverage or GitHub App token helper path mismatch"
   exit 1
 fi
 

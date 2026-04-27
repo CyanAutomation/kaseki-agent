@@ -9,9 +9,10 @@ KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
+KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
-TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one focused Vitest case, preferably a compact table-driven case, in tests/parser.validation.ts. Avoid repeated assertion blocks, assertion-message prose, and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -54,11 +55,25 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/validation.log
 : > /results/quality.log
 : > /results/secret-scan.log
+: > /results/progress.log
+: > /results/progress.jsonl
 : > "$VALIDATION_TIMINGS_FILE"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 
 json_encode() {
   node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
+}
+
+emit_progress() {
+  local stage="$1"
+  local message="$2"
+  local now
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"timestamp":%s,"stage":%s,"message":%s}\n' \
+    "$(printf '%s' "$now" | json_encode)" \
+    "$(printf '%s' "$stage" | json_encode)" \
+    "$(printf '%s' "$message" | json_encode)" >> /results/progress.jsonl
+  printf '[progress] %s: %s\n' "$stage" "$message" | tee -a /results/progress.log
 }
 
 write_metadata() {
@@ -139,6 +154,9 @@ Artifacts:
 - git.diff
 - git.status
 - git-push.log (if GitHub App enabled)
+- progress.log
+- progress.jsonl
+- cleanup.log (host artifact)
 SUMMARY
 }
 
@@ -175,8 +193,10 @@ run_step() {
   local label="$1"
   shift
   printf '\n==> %s\n' "$label"
+  emit_progress "$label" "started"
   "$@"
   local code=$?
+  emit_progress "$label" "finished with exit $code"
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     STATUS="$code"
     FAILED_COMMAND="$label"
@@ -451,12 +471,14 @@ fi
 printf '\n==> pi coding agent\n'
 set +e
 printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
+export KASEKI_STREAM_PROGRESS
 OPENROUTER_API_KEY="$openrouter_api_key" \
   timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
   pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
-  > "$RAW_EVENTS" \
-  2> >(tee -a /results/pi-stderr.log >&2)
-PI_EXIT="$?"
+  2> >(tee -a /results/pi-stderr.log >&2) \
+  | tee "$RAW_EVENTS" \
+  | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+PI_EXIT="${PIPESTATUS[0]}"
 unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
 set -e
 
@@ -478,14 +500,18 @@ elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
 fi
 
 printf '\n==> collect agent diff\n'
+emit_progress "collect agent diff" "started"
 collect_git_artifacts
+emit_progress "collect agent diff" "finished"
 
 printf '\n==> quality checks\n'
+emit_progress "quality checks" "started"
 diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_EXIT=4
   printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a /results/quality.log
 fi
+emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
 
 # The sed expression is a literal regex character class used to escape allowlist entries.
 # shellcheck disable=SC2016
@@ -506,6 +532,7 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
 fi
 
 printf '\n==> validation\n'
+emit_progress "validation" "started"
 set +e
 IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
 for command in "${VALIDATION_COMMANDS[@]}"; do
@@ -528,14 +555,18 @@ for command in "${VALIDATION_COMMANDS[@]}"; do
   fi
 done
 set -e
+emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 
 printf '\n==> secret scan\n'
+emit_progress "secret scan" "started"
 : > /results/secret-scan.log
 if grep -R -n -E 'sk-or-[A-Za-z0-9._-]+' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
   SECRET_SCAN_EXIT=6
 fi
+emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 printf '\n==> github operations\n'
+emit_progress "github operations" "started"
 : > /results/git-push.log
 if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$DIFF_NONEMPTY" = "true" ]; then
   if [ -r /run/secrets/github_app_id ] && [ -r /run/secrets/github_app_client_id ] && [ -r /run/secrets/github_app_private_key ]; then
@@ -549,6 +580,10 @@ else
     "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$DIFF_NONEMPTY" \
     "$GITHUB_APP_ENABLED" | tee -a /results/git-push.log
+  emit_progress "github operations" "skipped"
+fi
+if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+  emit_progress "github operations" "finished with push exit $GITHUB_PUSH_EXIT and pr exit $GITHUB_PR_EXIT"
 fi
 
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
