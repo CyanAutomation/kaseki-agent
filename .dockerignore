@@ -6,6 +6,7 @@
 !kaseki-agent.sh
 !pi-event-filter.js
 !kaseki-report.js
+!github-app-token.js
 !.dockerignore
 !docker/
 !docker/workspace-cache/
