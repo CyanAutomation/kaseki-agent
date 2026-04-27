@@ -3,14 +3,16 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "=== Kaseki GitHub App Integration Test ==="
 echo ""
 
 # Test 1: Verify run-kaseki.sh recognizes GitHub App env vars
 echo "Test 1: Checking run-kaseki.sh for GitHub App variable support..."
-if grep -q "GITHUB_APP_ID" /workspaces/kaseki-agent/run-kaseki.sh && \
-   grep -q "GITHUB_APP_CLIENT_ID" /workspaces/kaseki-agent/run-kaseki.sh && \
-   grep -q "GITHUB_APP_PRIVATE_KEY" /workspaces/kaseki-agent/run-kaseki.sh; then
+if grep -q "GITHUB_APP_ID" "$ROOT_DIR/run-kaseki.sh" && \
+   grep -q "GITHUB_APP_CLIENT_ID" "$ROOT_DIR/run-kaseki.sh" && \
+   grep -q "GITHUB_APP_PRIVATE_KEY" "$ROOT_DIR/run-kaseki.sh"; then
   echo "✓ GitHub App environment variables are defined in run-kaseki.sh"
 else
   echo "✗ GitHub App environment variables NOT found in run-kaseki.sh"
@@ -20,9 +22,9 @@ fi
 # Test 2: Verify kaseki-agent.sh has GitHub operations
 echo ""
 echo "Test 2: Checking kaseki-agent.sh for GitHub operations..."
-if grep -q "run_github_operations" /workspaces/kaseki-agent/kaseki-agent.sh && \
-   grep -q "GITHUB_APP_ENABLED" /workspaces/kaseki-agent/kaseki-agent.sh && \
-   grep -q "GITHUB_PR_URL" /workspaces/kaseki-agent/kaseki-agent.sh; then
+if grep -q "run_github_operations" "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q "GITHUB_APP_ENABLED" "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q "GITHUB_PR_URL" "$ROOT_DIR/kaseki-agent.sh"; then
   echo "✓ GitHub operations code is present in kaseki-agent.sh"
 else
   echo "✗ GitHub operations code NOT found in kaseki-agent.sh"
@@ -32,7 +34,7 @@ fi
 # Test 3: Verify github-app-token.js exists and is executable
 echo ""
 echo "Test 3: Checking github-app-token.js..."
-if [ -x /workspaces/kaseki-agent/github-app-token.js ]; then
+if [ -x "$ROOT_DIR/github-app-token.js" ]; then
   echo "✓ github-app-token.js exists and is executable"
 else
   echo "✗ github-app-token.js is NOT executable"
@@ -42,30 +44,31 @@ fi
 # Test 4: Verify github-app-token.js has required functions
 echo ""
 echo "Test 4: Checking github-app-token.js content..."
-if grep -q "generateJWT" /workspaces/kaseki-agent/github-app-token.js && \
-   grep -q "getInstallationId" /workspaces/kaseki-agent/github-app-token.js && \
-   grep -q "getAccessToken" /workspaces/kaseki-agent/github-app-token.js; then
+if grep -q "generateJWT" "$ROOT_DIR/github-app-token.js" && \
+   grep -q "getInstallationId" "$ROOT_DIR/github-app-token.js" && \
+   grep -q "getAccessToken" "$ROOT_DIR/github-app-token.js"; then
   echo "✓ github-app-token.js contains required functions"
 else
   echo "✗ github-app-token.js missing required functions"
   exit 1
 fi
 
-# Test 5: Verify Dockerfile includes github-app-token.js
+# Test 5: Verify Dockerfile and agent agree on helper path
 echo ""
 echo "Test 5: Checking Dockerfile..."
-if grep -q "github-app-token.js" /workspaces/kaseki-agent/Dockerfile; then
-  echo "✓ Dockerfile includes github-app-token.js"
+if grep -q "github-app-token.js" "$ROOT_DIR/Dockerfile" && \
+   grep -q "/usr/local/bin/github-app-token " "$ROOT_DIR/kaseki-agent.sh"; then
+  echo "✓ Dockerfile and agent agree on GitHub App token helper path"
 else
-  echo "✗ Dockerfile does NOT include github-app-token.js"
+  echo "✗ GitHub App token helper path mismatch between Dockerfile and agent"
   exit 1
 fi
 
 # Test 6: Verify README has GitHub App documentation
 echo ""
 echo "Test 6: Checking README.md documentation..."
-if grep -q "GitHub App Integration" /workspaces/kaseki-agent/README.md && \
-   grep -q "GITHUB_APP_ID_FILE" /workspaces/kaseki-agent/README.md; then
+if grep -q "GitHub App Integration" "$ROOT_DIR/README.md" && \
+   grep -q "GITHUB_APP_ID_FILE" "$ROOT_DIR/README.md"; then
   echo "✓ README.md contains GitHub App documentation"
 else
   echo "✗ README.md missing GitHub App documentation"
@@ -75,8 +78,8 @@ fi
 # Test 7: Verify metadata.json will include GitHub PR info
 echo ""
 echo "Test 7: Checking for GitHub PR metadata..."
-if grep -q "github_pr_url" /workspaces/kaseki-agent/kaseki-agent.sh && \
-   grep -q "github_push_exit_code" /workspaces/kaseki-agent/kaseki-agent.sh; then
+if grep -q "github_pr_url" "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q "github_push_exit_code" "$ROOT_DIR/kaseki-agent.sh"; then
   echo "✓ Metadata includes GitHub PR information"
 else
   echo "✗ Metadata missing GitHub PR information"
@@ -86,8 +89,8 @@ fi
 # Test 8: Verify exit code handling
 echo ""
 echo "Test 8: Checking exit code definitions..."
-if grep -q "GITHUB_PUSH_EXIT=0" /workspaces/kaseki-agent/kaseki-agent.sh && \
-   grep -q "GITHUB_PR_EXIT=0" /workspaces/kaseki-agent/kaseki-agent.sh; then
+if grep -q "GITHUB_PUSH_EXIT=0" "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q "GITHUB_PR_EXIT=0" "$ROOT_DIR/kaseki-agent.sh"; then
   echo "✓ GitHub exit codes are initialized"
 else
   echo "✗ GitHub exit codes NOT initialized"
@@ -97,7 +100,7 @@ fi
 # Test 9: Test github-app-token.js argument validation
 echo ""
 echo "Test 9: Testing github-app-token.js argument validation..."
-output=$(node /workspaces/kaseki-agent/github-app-token.js 2>&1 || true)
+output=$(node "$ROOT_DIR/github-app-token.js" 2>&1 || true)
 if echo "$output" | grep -q "Usage:"; then
   echo "✓ github-app-token.js shows usage message"
 else
@@ -108,9 +111,9 @@ fi
 # Test 10: Verify cleanup in run-kaseki.sh includes GitHub files
 echo ""
 echo "Test 10: Checking cleanup for GitHub credential files..."
-if grep -q "GITHUB_APP_ID_FILE" /workspaces/kaseki-agent/run-kaseki.sh && \
-   grep -q "cleanup_secret" /workspaces/kaseki-agent/run-kaseki.sh && \
-   grep -q "GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE" /workspaces/kaseki-agent/run-kaseki.sh; then
+if grep -q "GITHUB_APP_ID_FILE" "$ROOT_DIR/run-kaseki.sh" && \
+   grep -q "cleanup_secret" "$ROOT_DIR/run-kaseki.sh" && \
+   grep -q "GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE" "$ROOT_DIR/run-kaseki.sh"; then
   echo "✓ Cleanup includes GitHub credential files"
 else
   echo "✗ Cleanup does NOT include GitHub credential files"
