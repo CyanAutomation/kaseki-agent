@@ -85,6 +85,38 @@ function deriveInstanceLifecycleStatus(isRunning, exitCode) {
 }
 
 /**
+ * Normalize an exit code candidate into an integer or null.
+ */
+function normalizeExitCodeCandidate(value) {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) {
+    return parseInt(value.trim(), 10);
+  }
+  return null;
+}
+
+/**
+ * Resolve exit code from metadata first, then prefer /exit_code when readable/valid.
+ * Returns null only when neither source has a valid integer.
+ */
+function resolveInstanceExitCode(resultDir, metadata = {}) {
+  const metadataExitCode = normalizeExitCodeCandidate(metadata.exit_code);
+  const exitCodePath = path.join(resultDir, 'exit_code');
+  if (!fs.existsSync(exitCodePath)) {
+    return metadataExitCode;
+  }
+
+  try {
+    const fileExitCode = normalizeExitCodeCandidate(fs.readFileSync(exitCodePath, 'utf8'));
+    return fileExitCode !== null ? fileExitCode : metadataExitCode;
+  } catch (e) {
+    return metadataExitCode;
+  }
+}
+
+/**
  * List all kaseki instances (running and completed).
  * Returns array of instance objects with basic metadata.
  */
@@ -124,13 +156,8 @@ function listInstances() {
       // Check if currently running via Docker (exact name match)
       isRunning = isInstanceRunning(instance);
 
-      // Read exit code
-      const exitCodePath = path.join(resultDir, 'exit_code');
-      if (fs.existsSync(exitCodePath)) {
-        try {
-          exitCode = parseInt(fs.readFileSync(exitCodePath, 'utf8').trim(), 10);
-        } catch (e) {}
-      }
+      // Read exit code from metadata fallback and /exit_code when available
+      exitCode = resolveInstanceExitCode(resultDir, metadata);
 
       // Calculate elapsed time
       let elapsedSeconds = null;
@@ -291,14 +318,8 @@ function getInstanceStatus(instance) {
   // Get stage
   const stage = getCurrentStage(instance);
 
-  // Get exit code
-  let exitCode = null;
-  const exitCodePath = path.join(resultDir, 'exit_code');
-  if (fs.existsSync(exitCodePath)) {
-    try {
-      exitCode = parseInt(fs.readFileSync(exitCodePath, 'utf8').trim(), 10);
-    } catch (e) {}
-  }
+  // Get exit code from metadata fallback and /exit_code when available
+  const exitCode = resolveInstanceExitCode(resultDir, metadata);
 
   const timeoutSeconds = getConfiguredTimeout(instance);
   const timeoutRiskPercent = calculateTimeoutRiskPercent(instance, elapsedSeconds);

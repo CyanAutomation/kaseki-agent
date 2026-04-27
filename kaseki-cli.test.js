@@ -208,6 +208,13 @@ function testListInstances() {
   const instancesWithPending = kasekiCli.listInstances();
   const pending = instancesWithPending.find((instance) => instance.name === 'kaseki-3');
   assertEqual(pending.status, 'pending', 'Should mark missing exit code as pending');
+
+  createMockInstance('kaseki-4', { metadata: { exit_code: 9 } });
+  fs.unlinkSync(path.join(MOCK_RESULTS_DIR, 'kaseki-4', 'exit_code'));
+  const instancesWithMetadataOnlyExitCode = kasekiCli.listInstances();
+  const metadataOnlyExitCode = instancesWithMetadataOnlyExitCode.find((instance) => instance.name === 'kaseki-4');
+  assertEqual(metadataOnlyExitCode.exitCode, 9, 'Should use metadata exit code when exit_code file is absent');
+  assertEqual(metadataOnlyExitCode.status, 'failed', 'Should derive failed status from metadata exit code when file is absent');
 }
 
 function testExactContainerNameMatching() {
@@ -339,6 +346,12 @@ function testGetInstanceStatus() {
   createMockInstance('kaseki-170', { metadata: { exit_code: null } });
   const pending = kasekiCli.getInstanceStatus('kaseki-170');
   assertEqual(pending.status, 'pending', 'Should derive pending status when exit code is unavailable');
+
+  createMockInstance('kaseki-171', { metadata: { exit_code: 7 } });
+  fs.unlinkSync(path.join(MOCK_RESULTS_DIR, 'kaseki-171', 'exit_code'));
+  const metadataFallbackStatus = kasekiCli.getInstanceStatus('kaseki-171');
+  assertEqual(metadataFallbackStatus.exitCode, 7, 'Should use metadata exit code when exit_code file is absent');
+  assertEqual(metadataFallbackStatus.status, 'failed', 'Should derive lifecycle from metadata fallback exit code');
 
   const missing = kasekiCli.getInstanceStatus('nonexistent-instance');
   assertExists(missing.error, 'Should return error for missing instance');
