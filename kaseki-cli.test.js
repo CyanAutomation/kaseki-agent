@@ -272,6 +272,12 @@ function testReadLiveLog() {
   assertExists(logs, 'Should read log file');
   assert(logs.includes('Collecting artifacts'), 'Should include log content');
   assert(logs.split('\n').length <= 6, 'Should respect tail limit'); // +1 for potential empty line
+
+  createMockInstance('kaseki-12-empty');
+  fs.writeFileSync(path.join(MOCK_RESULTS_DIR, 'kaseki-12-empty', 'stdout.log'), '');
+
+  const emptyLogs = kasekiCli.readLiveLog('kaseki-12-empty', 'stdout.log', 5);
+  assertEqual(emptyLogs, '', 'Should return empty string for existing empty log file (not not-found path)');
 }
 
 function testGetCurrentStage() {

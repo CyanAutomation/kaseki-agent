@@ -136,7 +136,7 @@ function cmdLogs(args) {
   }
 
   const logs = kasekiCli.readLiveLog(instance, logFile, tailLines);
-  if (!logs) {
+  if (logs === null) {
     printError(`Log file not found: ${logFile}`);
   }
 
