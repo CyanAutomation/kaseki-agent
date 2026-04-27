@@ -12,6 +12,7 @@ OPENROUTER_API_KEY_FILE="$TMP_DIR/missing-secret"
 
 set +e
 env \
+  PATH="/usr/bin:/bin" \
   KASEKI_ROOT="$KASEKI_ROOT" \
   REPO_URL="$REPO_URL" \
   GIT_REF="$GIT_REF" \
@@ -46,3 +47,15 @@ if (metadata.git_ref !== expectedRef) throw new Error("metadata git_ref mismatch
   "$result_dir/metadata.json" \
   "$REPO_URL" \
   "$GIT_REF"
+
+for artifact in changed-files.txt validation-timings.tsv quality.log secret-scan.log git-push.log; do
+  if [ ! -f "$result_dir/$artifact" ]; then
+    echo "Expected artifact missing: $artifact" >&2
+    exit 1
+  fi
+done
+
+if grep -q "node: command not found" "$result_dir/stderr.log"; then
+  echo "run-kaseki.sh should not require node on the host" >&2
+  exit 1
+fi

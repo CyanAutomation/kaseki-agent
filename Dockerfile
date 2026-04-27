@@ -53,11 +53,13 @@ COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
 COPY kaseki-report.js /usr/local/bin/kaseki-report
 COPY github-app-token.js /usr/local/bin/github-app-token
+RUN ln -sf github-app-token /usr/local/bin/github-app-token.js
 RUN chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \
     /usr/local/bin/kaseki-pi-event-filter \
     /usr/local/bin/kaseki-report \
-    /usr/local/bin/github-app-token
+    /usr/local/bin/github-app-token \
+    /usr/local/bin/github-app-token.js
 
 WORKDIR /workspace
 USER kaseki

@@ -39,6 +39,9 @@ fi
 if [ -n "${NPM_CONFIG_CACHE:-}" ]; then
   mkdir_paths+=("${NPM_CONFIG_CACHE}")
 fi
+if [ -n "${TMPDIR:-}" ]; then
+  mkdir_paths+=("${TMPDIR}")
+fi
 if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
   mkdir_paths+=("${PI_CODING_AGENT_DIR}")
 fi
@@ -206,7 +209,7 @@ run_github_operations() {
   
   # Generate GitHub App installation token
   printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
-  token_data="$(node /usr/local/bin/github-app-token.js "$app_id" "$private_key_file" "$owner" "$repo")" || {
+  token_data="$(node /usr/local/bin/github-app-token "$app_id" "$private_key_file" "$owner" "$repo")" || {
     printf 'Failed to generate token\n' | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
@@ -327,7 +330,9 @@ if [ -z "$openrouter_api_key" ]; then
   exit 0
 fi
 
-run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
+if ! run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo; then
+  exit 0
+fi
 cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit 0; }
 
 prepare_dependencies() {
@@ -439,7 +444,9 @@ prepare_dependencies() {
   return 0
 }
 
-run_step "prepare node dependencies" prepare_dependencies
+if ! run_step "prepare node dependencies" prepare_dependencies; then
+  exit 0
+fi
 
 printf '\n==> pi coding agent\n'
 set +e

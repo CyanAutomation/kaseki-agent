@@ -93,7 +93,16 @@ usage_error() {
 }
 
 json_encode() {
-  node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString())));'
+  local value
+  value="$(cat)"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\b'/\\b}"
+  value="${value//$'\f'/\\f}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '"%s"' "$value"
 }
 
 json_string() {
@@ -330,7 +339,12 @@ else
   : > "$RESULT_DIR/pi-events.jsonl"
   : > "$RESULT_DIR/git.status"
   : > "$RESULT_DIR/git.diff"
+  : > "$RESULT_DIR/changed-files.txt"
   : > "$RESULT_DIR/validation.log"
+  : > "$RESULT_DIR/validation-timings.tsv"
+  : > "$RESULT_DIR/quality.log"
+  : > "$RESULT_DIR/secret-scan.log"
+  : > "$RESULT_DIR/git-push.log"
   printf '2\n' > "$RESULT_DIR/exit_code"
   printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
@@ -355,7 +369,12 @@ if [ -z "$key_value" ]; then
   : > "$RESULT_DIR/pi-events.jsonl"
   : > "$RESULT_DIR/git.status"
   : > "$RESULT_DIR/git.diff"
+  : > "$RESULT_DIR/changed-files.txt"
   : > "$RESULT_DIR/validation.log"
+  : > "$RESULT_DIR/validation-timings.tsv"
+  : > "$RESULT_DIR/quality.log"
+  : > "$RESULT_DIR/secret-scan.log"
+  : > "$RESULT_DIR/git-push.log"
   printf '2\n' > "$RESULT_DIR/exit_code"
   printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
@@ -423,6 +442,9 @@ docker_args=(
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
+  -e TMPDIR="/workspace/tmp"
+  -e NPM_CONFIG_CACHE="/workspace/npm-cache"
+  -e npm_config_cache="/workspace/npm-cache"
   -v "$WORKSPACE:/workspace:rw"
   -v "$RESULT_DIR:/results:rw"
   -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro"
