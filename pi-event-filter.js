@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const fs = require('node:fs');
+const { once } = require('node:events');
 const readline = require('node:readline');
 
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
@@ -92,7 +93,10 @@ async function main() {
     if (event.type === 'tool_execution_end') toolEndCount++;
 
     if (shouldKeep(event)) {
-      output.write(`${JSON.stringify(sanitize(event))}\n`);
+      const canContinue = output.write(`${JSON.stringify(sanitize(event))}\n`);
+      if (!canContinue) {
+        await once(output, 'drain');
+      }
     }
   }
 
