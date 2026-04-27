@@ -55,6 +55,7 @@ test('pi-event-filter stress run completes and keeps memory bounded', async () =
 
   let peakRssKb = 0;
   const sample = setInterval(() => {
+    if (child.exitCode !== null) return;
     const rssKb = readRssKb(child.pid);
     if (rssKb !== null) peakRssKb = Math.max(peakRssKb, rssKb);
   }, 20);
