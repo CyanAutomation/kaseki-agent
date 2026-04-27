@@ -13,10 +13,11 @@ KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
-KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-1}"
+KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
+KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
-TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one focused Vitest case, preferably a compact table-driven case, in tests/parser.validation.ts. Avoid repeated assertion blocks, assertion-message prose, and explanatory test comments. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 
 # GitHub App credentials (optional, for auto PR creation)
@@ -58,6 +59,8 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_MODEL                      AI model (default: openrouter/free)
   KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
   KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
+  KASEKI_STREAM_PROGRESS            Stream sanitized progress lines (default: 1)
+  KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
@@ -307,6 +310,28 @@ MAX_DIFF_BYTES_VALUE="$(require_non_negative_int "KASEKI_MAX_DIFF_BYTES" "$KASEK
 AGENT_TIMEOUT_SECONDS_VALUE="$(require_non_negative_int "KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_AGENT_TIMEOUT_SECONDS")"
 FAILURE_EXIT_CODE_VALUE="$(require_non_negative_int "exit_code" "2")"
 
+write_cleanup_log() {
+  {
+    printf 'cleanup_started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'keep_workspace=%s\n' "$KASEKI_KEEP_WORKSPACE"
+    if [ "$KASEKI_KEEP_WORKSPACE" != "1" ]; then
+      rm -rf "$WORKSPACE"
+      printf 'workspace_removed=true\n'
+    else
+      printf 'workspace_removed=false\n'
+    fi
+    if command -v docker >/dev/null 2>&1; then
+      printf '%s\n' 'docker_system_df_after_run:'
+      docker system df 2>&1 || true
+    fi
+    printf 'cleanup_finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$RESULT_DIR/cleanup.log"
+
+  if [ "$KASEKI_KEEP_WORKSPACE" != "1" ]; then
+    rmdir "$RUN_DIR" 2>/dev/null || true
+  fi
+}
+
 cat > "$RESULT_DIR/host-start.json" <<META
 {
   "instance": $(json_string "$INSTANCE"),
@@ -345,6 +370,9 @@ else
   : > "$RESULT_DIR/quality.log"
   : > "$RESULT_DIR/secret-scan.log"
   : > "$RESULT_DIR/git-push.log"
+  : > "$RESULT_DIR/progress.log"
+  : > "$RESULT_DIR/progress.jsonl"
+  : > "$RESULT_DIR/cleanup.log"
   printf '2\n' > "$RESULT_DIR/exit_code"
   printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
@@ -359,6 +387,7 @@ else
   "failed_command": $(json_string "missing OPENROUTER_API_KEY")
 }
 META
+  write_cleanup_log
   cat "$RESULT_DIR/stderr.log" >&2
   exit 2
 fi
@@ -375,6 +404,9 @@ if [ -z "$key_value" ]; then
   : > "$RESULT_DIR/quality.log"
   : > "$RESULT_DIR/secret-scan.log"
   : > "$RESULT_DIR/git-push.log"
+  : > "$RESULT_DIR/progress.log"
+  : > "$RESULT_DIR/progress.jsonl"
+  : > "$RESULT_DIR/cleanup.log"
   printf '2\n' > "$RESULT_DIR/exit_code"
   printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
@@ -389,6 +421,7 @@ if [ -z "$key_value" ]; then
   "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
 }
 META
+  write_cleanup_log
   cat "$RESULT_DIR/stderr.log" >&2
   exit 2
 fi
@@ -442,6 +475,7 @@ docker_args=(
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
+  -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"
   -e TMPDIR="/workspace/tmp"
   -e NPM_CONFIG_CACHE="/workspace/npm-cache"
   -e npm_config_cache="/workspace/npm-cache"
@@ -471,9 +505,7 @@ END_EPOCH="$(date +%s)"
 printf 'elapsed_seconds=%s\n' "$((END_EPOCH - START_EPOCH))" > "$RESULT_DIR/resource.time"
 printf '%s\n' "$DOCKER_EXIT" > "$RESULT_DIR/host_docker_exit_code"
 
-if [ "$DOCKER_EXIT" -eq 0 ] && [ "$KASEKI_KEEP_WORKSPACE" != "1" ]; then
-  rm -rf "$WORKSPACE"
-fi
+write_cleanup_log
 
 printf '%s\n' "$INSTANCE"
 printf 'run_dir=%s\n' "$RUN_DIR"

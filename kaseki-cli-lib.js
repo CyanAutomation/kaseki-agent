@@ -231,6 +231,28 @@ function readLiveLog(instance, filename, tailLines = 50) {
 }
 
 /**
+ * Read sanitized progress events emitted by the runner.
+ */
+function readProgressEvents(instance, tailLines = 20) {
+  const content = readArtifact(instance, 'progress.jsonl');
+  if (content === null) return null;
+
+  const lines = content.split('\n').filter((line) => line.trim().length > 0);
+  return lines.slice(Math.max(0, lines.length - tailLines)).map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return {
+        timestamp: null,
+        stage: 'progress',
+        message: line,
+        malformed: true,
+      };
+    }
+  });
+}
+
+/**
  * Parse JSON artifact file.
  * Returns parsed object, or empty object if not found or invalid.
  */
@@ -713,6 +735,7 @@ module.exports = {
   // Artifact reading
   readArtifact,
   readLiveLog,
+  readProgressEvents,
   readJsonArtifact,
 
   // Status and progress
