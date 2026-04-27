@@ -426,21 +426,13 @@ function detectErrors(instance) {
     const lines = validationTimings.split('\n').filter((l) => l.trim().length > 0);
     const malformedTimingRows = [];
     for (const line of lines) {
-      const parts = line.split('\t');
-      if (parts.length < 2) {
-        malformedTimingRows.push({ line, reason: 'missing required TSV columns' });
+      const parsed = parseValidationTimingRow(line);
+      if (parsed.malformed) {
+        malformedTimingRows.push({ line, reason: parsed.reason });
         continue;
       }
 
-      const command = parts[0];
-      const exitCodeRaw = parts[1].trim();
-      const exitCode = parseInt(exitCodeRaw, 10);
-      const hasIntegerExitCode = Number.isFinite(exitCode) && /^-?\d+$/.test(exitCodeRaw) && exitCode >= 0 && exitCode <= 255;
-      if (!hasIntegerExitCode) {
-        malformedTimingRows.push({ line, reason: `invalid exit code "${parts[1]}"` });
-        continue;
-      }
-
+      const { command, exitCode } = parsed.timing;
       if (exitCode !== 0) {
         errors.push({
           severity: ErrorSeverity.ERROR,
@@ -545,22 +537,79 @@ function detectAnomalies(instance) {
  * Parse validation timings from validation-timings.tsv.
  * Format: command_name<tab>exit_code<tab>duration_seconds
  */
-function parseValidationTimings(instance) {
+function parseValidationTimingRow(line) {
+  const parts = line.split('\t');
+  if (parts.length < 3) {
+    return { malformed: true, reason: 'missing required TSV columns' };
+  }
+
+  const command = parts[0];
+
+  const exitCodeRaw = parts[1].trim();
+  const exitCode = parseInt(exitCodeRaw, 10);
+  const hasIntegerExitCode =
+    Number.isInteger(exitCode) &&
+    /^-?\d+$/.test(exitCodeRaw) &&
+    exitCode >= 0 &&
+    exitCode <= 255;
+  if (!hasIntegerExitCode) {
+    return { malformed: true, reason: `invalid exit code "${parts[1]}"` };
+  }
+
+  const durationRaw = parts[2].trim();
+  const durationSeconds = parseInt(durationRaw, 10);
+  const hasIntegerDuration =
+    Number.isInteger(durationSeconds) &&
+    /^-?\d+$/.test(durationRaw) &&
+    durationSeconds >= 0;
+  if (!hasIntegerDuration) {
+    return { malformed: true, reason: `invalid duration seconds "${parts[2]}"` };
+  }
+
+  return {
+    malformed: false,
+    timing: {
+      command,
+      exitCode,
+      durationSeconds,
+    },
+  };
+}
+
+function parseValidationTimings(instance, options = {}) {
+  const includeMalformedRowCount = options.includeMalformedRowCount === true;
+  const onMalformedRows = typeof options.onMalformedRows === 'function' ? options.onMalformedRows : null;
   const timings = [];
   const content = readArtifact(instance, 'validation-timings.tsv');
-  if (!content) return timings;
+  if (!content) {
+    return includeMalformedRowCount ? { timings, malformedRowCount: 0 } : timings;
+  }
 
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
+  const malformedRows = [];
   for (const line of lines) {
-    const parts = line.split('\t');
-    if (parts.length >= 3) {
-      timings.push({
-        command: parts[0],
-        exitCode: parseInt(parts[1], 10),
-        durationSeconds: parseInt(parts[2], 10),
-      });
+    const parsed = parseValidationTimingRow(line);
+    if (parsed.malformed) {
+      malformedRows.push({ line, reason: parsed.reason });
+      continue;
+    }
+    timings.push(parsed.timing);
+  }
+
+  if (malformedRows.length > 0) {
+    if (onMalformedRows) {
+      onMalformedRows({ instance, malformedRows, malformedRowCount: malformedRows.length });
+    } else {
+      console.warn(
+        `[kaseki-cli-lib] Skipped ${malformedRows.length} malformed row(s) in validation-timings.tsv for ${instance}`
+      );
     }
   }
+
+  if (includeMalformedRowCount) {
+    return { timings, malformedRowCount: malformedRows.length };
+  }
+
   return timings;
 }
 

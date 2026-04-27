@@ -104,7 +104,9 @@ Done.
   fs.writeFileSync(path.join(instanceDir, 'pi-summary.json'), JSON.stringify(piSummary, null, 2));
 
   // Mock validation-timings.tsv
-  const validationTimings = `npm run check\t0\t10
+  const validationTimings =
+    overrides.validationTimings ??
+    `npm run check\t0\t10
 npm run test\t0\t45
 npm run build\t0\t30
 `;
@@ -407,6 +409,26 @@ function testParseValidationTimings() {
   assertEqual(timings[0].command, 'npm run check', 'Should extract command name');
   assertEqual(timings[0].exitCode, 0, 'Should extract exit code');
   assertEqual(timings[0].durationSeconds, 10, 'Should extract duration');
+
+  createMockInstance('kaseki-240', {
+    validationTimings: `npm run check\t0\t10
+npm run bad-exit\tok\t30
+npm run bad-duration\t0\t12.5
+npm run test\t1\t45
+`,
+  });
+
+  const malformedWarnings = [];
+  const malformedResult = kasekiCli.parseValidationTimings('kaseki-240', {
+    includeMalformedRowCount: true,
+    onMalformedRows: ({ malformedRowCount }) => malformedWarnings.push(malformedRowCount),
+  });
+
+  assertEqual(malformedResult.timings.length, 2, 'Should exclude malformed rows');
+  assertEqual(malformedResult.malformedRowCount, 2, 'Should count malformed rows');
+  assertEqual(malformedWarnings.length, 1, 'Should report malformed rows once');
+  assertEqual(malformedWarnings[0], 2, 'Warning channel should receive malformed row count');
+  assertEqual(malformedResult.timings[1].command, 'npm run test', 'Should keep valid rows after malformed entries');
 }
 
 function testGetAnalysis() {
