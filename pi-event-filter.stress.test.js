@@ -45,7 +45,10 @@ test('pi-event-filter stress run completes and keeps memory bounded', async () =
         },
       },
     };
-    input.write(`${JSON.stringify(event)}\n`);
+    const canContinue = input.write(`${JSON.stringify(event)}\n`);
+    if (!canContinue) {
+      await new Promise((resolve) => input.once('drain', resolve));
+    }
   }
   await new Promise((resolve) => input.end(resolve));
 
