@@ -83,7 +83,8 @@ docker run --rm --entrypoint kaseki-report \
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |
-| `KASEKI_KEEP_WORKSPACE` | 1 | Retain workspace after success |
+| `KASEKI_KEEP_WORKSPACE` | 0 | Remove per-run workspace after each run |
+| `KASEKI_STREAM_PROGRESS` | 1 | Stream sanitized progress lines |
 | `KASEKI_IMAGE` | docker.io/cyanautomation/kaseki-agent:0.1.0 | Image to use |
 
 ## Quality Gates and Exit Codes
@@ -110,6 +111,8 @@ All written to `/agents/kaseki-results/kaseki-N/`:
 - `git.diff` / `git.status` / `changed-files.txt` — repo changes
 - `validation.log` / `validation-timings.tsv` — command output + timing
 - `quality.log` / `secret-scan.log` — gate failures
+- `progress.log` / `progress.jsonl` — sanitized stage and Pi event progress
+- `cleanup.log` — mandatory post-run cleanup summary
 - `stdout.log` / `stderr.log` / `exit_code` — raw execution output
 
 ## Dependency Caching
@@ -176,6 +179,9 @@ The **Kaseki CLI** enables external AI agents to interrogate running and complet
 
 # Stream logs in real-time
 ./kaseki-cli.js follow kaseki-1
+
+# Show sanitized progress events
+./kaseki-cli.js progress kaseki-1 --tail=25
 ```
 
 ### Integration Pattern
