@@ -370,17 +370,6 @@ if [ -z "$key_value" ]; then
   "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
 }
 META
-  cat > "$RESULT_DIR/metadata.json" <<META
-{
-  "instance": $(json_string "$INSTANCE"),
-  "repo_url": $(json_string "$REPO_URL"),
-  "git_ref": $(json_string "$GIT_REF"),
-  "provider": $(json_string "$KASEKI_PROVIDER"),
-  "model": $(json_string "$KASEKI_MODEL"),
-  "exit_code": $FAILURE_EXIT_CODE_VALUE,
-  "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
-}
-META
   cat "$RESULT_DIR/stderr.log" >&2
   exit 2
 fi
