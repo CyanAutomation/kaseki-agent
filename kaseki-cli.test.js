@@ -372,8 +372,9 @@ function testGetInstanceStatusPrefersMetadataStage() {
   assertEqual(status.instance, 'kaseki-17', 'Should have instance name');
   assertEqual(status.stage, 'completed', 'Should prefer metadata current_stage over stdout-derived stage');
   assertExists(status.elapsedSeconds, 'Should have elapsed time');
+  assertEqual(status.totalDurationSeconds, 300, 'Should expose total duration separately');
   assertEqual(status.timeoutSeconds, 1200, 'Should have timeout');
-  assert(status.timeoutRiskPercent >= 0 && status.timeoutRiskPercent <= 100, 'Timeout risk should be 0-100%');
+  assertEqual(status.timeoutRiskPercent, 0, 'Completed non-timeout runs should not report timeout risk');
   assertEqual(status.exitCode, 0, 'Should have exit code');
   assertEqual(status.status, 'completed', 'Should derive completed status');
   assert(!status.running, 'Should be marked as not running');
@@ -393,6 +394,7 @@ function testGetInstanceStatusPrefersMetadataStage() {
       duration_seconds: undefined,
       started_at: new Date(Date.now() - 120000).toISOString(),
       start_time: undefined,
+      current_stage: 'pi coding agent',
       exit_code: null,
     },
   });
@@ -453,12 +455,33 @@ function testDetectAnomalies() {
   const cleanAnomalies = kasekiCli.detectAnomalies('kaseki-22');
   assertEqual(cleanAnomalies.length, 0, 'Should find no anomalies for normal run');
 
-  // Timeout risk - create instance approaching timeout
   createMockInstance('kaseki-23', {
-    metadata: { duration_seconds: 1150 }, // 1150s / 1200s = 95.8%
+    metadata: {
+      current_stage: 'pi coding agent',
+      duration_seconds: undefined,
+      pi_duration_seconds: 1150,
+      exit_code: null,
+    },
   });
-  const timeoutAnomalies = kasekiCli.detectAnomalies('kaseki-23');
+
+  const childProcess = require('child_process');
+  const originalExecSync = childProcess.execSync;
+  childProcess.execSync = (command, options) => {
+    if (command.includes('docker ps --format')) {
+      return 'kaseki-23\n';
+    }
+    return originalExecSync(command, options);
+  };
+
+  delete require.cache[require.resolve('./kaseki-cli-lib.js')];
+  const runningAwareCli = require('./kaseki-cli-lib.js');
+  runningAwareCli.config.KASEKI_RESULTS_DIR = MOCK_RESULTS_DIR;
+
+  const timeoutAnomalies = runningAwareCli.detectAnomalies('kaseki-23');
   assert(timeoutAnomalies.some((a) => a.type === 'timeout-risk'), 'Should detect timeout risk');
+
+  childProcess.execSync = originalExecSync;
+  delete require.cache[require.resolve('./kaseki-cli-lib.js')];
 }
 
 function testParseValidationTimings() {
@@ -503,6 +526,7 @@ function testGetAnalysis() {
 
   assertEqual(analysis.instance, 'kaseki-25', 'Should have instance name');
   assertEqual(analysis.duration, 300, 'Should have duration');
+  assertEqual(analysis.totalDurationSeconds, 300, 'Should expose total duration in analysis');
   assertEqual(analysis.exitCode, 0, 'Should have exit code');
   assertEqual(analysis.stage, 'validation', 'Should use metadata current_stage when present');
   assertEqual(analysis.changedFileCount, 2, 'Should count changed files');

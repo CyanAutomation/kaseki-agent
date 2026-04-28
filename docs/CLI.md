@@ -23,6 +23,16 @@ chmod +x kaseki-cli.js kaseki-cli-lib.js
 export PATH="/workspaces/kaseki-agent:$PATH"
 ```
 
+On Pi hosts that do not have Node.js installed, use the `kaseki` wrapper
+deployed with the template. It runs the CLI inside the configured Kaseki Docker
+image:
+
+```bash
+/agents/kaseki-template/kaseki list
+/agents/kaseki-template/kaseki status kaseki-1
+/agents/kaseki-template/kaseki analysis kaseki-1
+```
+
 ## Core Library (`kaseki-cli-lib.js`)
 
 The library provides direct programmatic access. Use this for custom integration:

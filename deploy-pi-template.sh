@@ -3,7 +3,7 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
-IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:0.1.0}"
+IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 
 if [ "${1:-}" = "--help" ]; then
   cat <<HELP
@@ -26,6 +26,7 @@ install_file() {
 }
 
 install_file 0755 run-kaseki.sh
+install_file 0755 kaseki
 install_file 0755 cleanup-kaseki.sh
 install_file 0755 kaseki-agent.sh
 install_file 0755 deploy-pi-template.sh
