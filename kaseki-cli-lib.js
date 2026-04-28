@@ -669,9 +669,9 @@ function getAnalysis(instance) {
     piSummary.event_counts && typeof piSummary.event_counts === 'object' && !Array.isArray(piSummary.event_counts);
   const eventCount = hasEventCounts
     ? Object.values(piSummary.event_counts).reduce((total, value) => {
-        const numericValue = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numericValue) ? total + numericValue : total;
-      }, 0)
+      const numericValue = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(numericValue) ? total + numericValue : total;
+    }, 0)
     : (piSummary.event_count ?? 0);
 
   // Get changed files
