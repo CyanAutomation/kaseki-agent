@@ -7,37 +7,38 @@ Host layout:
 - `/agents/kaseki-template`: Dockerfile and runner scripts.
 - `/agents/kaseki-runs/kaseki-N`: per-run workspace.
 - `/agents/kaseki-results/kaseki-N`: logs, metadata, exit code, git status, git diff, and resource timing.
-- `/agents/kaseki-cache`: optional host-level cache location for dependency seeds.
+- `/agents/kaseki-cache`: persistent host-level cache for dependency installs and npm cache.
 
 Preferred registry image (Docker Hub):
 
 ```sh
-docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
+docker pull docker.io/cyanautomation/kaseki-agent:latest
 ```
 
 Alternative registry (GitHub Container Registry):
 
 ```sh
-docker pull ghcr.io/cyanautomation/kaseki-agent:0.1.0
+docker pull ghcr.io/cyanautomation/kaseki-agent:latest
 ```
 
 Both registries are equivalent and receive identical multi-architecture builds
-for `linux/amd64` and `linux/arm64`. Use stable version tags such as `0.1.0`
-for normal operation.
+for `linux/amd64` and `linux/arm64`. Pin a stable version tag once a release
+contains the current observability and failure-handling fixes.
 
 Tag publication schedule:
 
 - **Stable version tags** (e.g., `0.1.0`): Published once via version tag push; never overwritten
 - **`latest` tag**: Updated on every version push **and** via weekly schedule every Sunday at 00:00 UTC
 
-The `latest` tag is suitable for smoke testing and previewing, but production deployments should
-pin specific stable versions to avoid unexpected updates.
+The default wrapper image is `latest` until the next stable version tag is cut.
+Production deployments should pin that newer stable tag once it exists.
 
 Local fallback build:
 
 ```sh
 cd /agents/kaseki-template
 docker build -t kaseki-template:latest .
+KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key ./run-kaseki.sh --doctor
 ```
 
 For readable logs over SSH on a Pi, prefer plain progress output:
@@ -67,20 +68,31 @@ docker build -t kaseki-template:latest .
 If scripts were copied from a fresh clone without executable bits, run:
 
 ```sh
-chmod +x run-kaseki.sh cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js kaseki-report.js
+chmod +x run-kaseki.sh kaseki cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js kaseki-report.js
 ```
 
 Verify Pi is installed in the image (Docker Hub):
 
 ```sh
-docker run --rm --entrypoint pi docker.io/cyanautomation/kaseki-agent:0.1.0 --version
+docker run --rm --entrypoint pi docker.io/cyanautomation/kaseki-agent:latest --version
 ```
 
 Or from GitHub Container Registry:
 
 ```sh
-docker run --rm --entrypoint pi ghcr.io/cyanautomation/kaseki-agent:0.1.0 --version
+docker run --rm --entrypoint pi ghcr.io/cyanautomation/kaseki-agent:latest --version
 ```
+
+Monitor Kaseki runs on a Pi without installing Node on the host:
+
+```sh
+/agents/kaseki-template/kaseki list
+/agents/kaseki-template/kaseki status kaseki-1
+/agents/kaseki-template/kaseki analysis kaseki-1
+```
+
+The `kaseki` wrapper runs the Node-based CLI inside the configured Kaseki Docker
+image and mounts `/agents/kaseki-results` read-only.
 
 Run the default repo with a runtime-only OpenRouter key via environment variable:
 

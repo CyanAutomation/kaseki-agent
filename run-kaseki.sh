@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT="${KASEKI_ROOT:-/agents}"
 RUNS="$ROOT/kaseki-runs"
 RESULTS="$ROOT/kaseki-results"
-IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:0.1.0}"
+CACHE="${KASEKI_CACHE_DIR:-$ROOT/kaseki-cache}"
+IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 KASEKI_CONTAINER_USER="${KASEKI_CONTAINER_USER:-$(id -u):$(id -g)}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
@@ -61,6 +62,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
   KASEKI_STREAM_PROGRESS            Stream sanitized progress lines (default: 1)
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
+  KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
@@ -199,6 +201,7 @@ doctor() {
   printf 'Kaseki doctor\n'
   printf 'Root: %s\n' "$ROOT"
   printf 'Image: %s\n' "$IMAGE"
+  printf 'Cache: %s\n' "$CACHE"
   printf 'Container user: %s\n' "$KASEKI_CONTAINER_USER"
 
   if command -v docker >/dev/null 2>&1; then
@@ -208,11 +211,11 @@ doctor() {
     status=1
   fi
 
-  mkdir -p "$RUNS" "$RESULTS" 2>/dev/null || {
-    printf 'Writable Kaseki directories: failed to create %s and %s\n' "$RUNS" "$RESULTS" >&2
+  mkdir -p "$RUNS" "$RESULTS" "$CACHE" 2>/dev/null || {
+    printf 'Writable Kaseki directories: failed to create %s, %s, and %s\n' "$RUNS" "$RESULTS" "$CACHE" >&2
     status=1
   }
-  [ -w "$RUNS" ] && [ -w "$RESULTS" ] && printf 'Writable Kaseki directories: ok\n'
+  [ -w "$RUNS" ] && [ -w "$RESULTS" ] && [ -w "$CACHE" ] && printf 'Writable Kaseki directories: ok\n'
 
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
     printf 'OpenRouter API key: env\n'
@@ -254,7 +257,7 @@ fi
 REPO_URL="$PARSED_REPO_URL"
 GIT_REF="$PARSED_GIT_REF"
 
-mkdir -p "$RUNS" "$RESULTS"
+mkdir -p "$RUNS" "$RESULTS" "$CACHE"
 
 if [ -z "$INSTANCE" ]; then
   next=1
@@ -302,13 +305,101 @@ cleanup_secret() {
 }
 trap cleanup_secret EXIT
 
-mkdir -p "$WORKSPACE" "$RESULT_DIR"
-chmod 0755 "$RUN_DIR" "$WORKSPACE" "$RESULT_DIR"
+mkdir -p "$WORKSPACE" "$RESULT_DIR" "$CACHE"
+chmod 0755 "$RUN_DIR" "$WORKSPACE" "$RESULT_DIR" "$CACHE"
 
 START_EPOCH="$(date +%s)"
 MAX_DIFF_BYTES_VALUE="$(require_non_negative_int "KASEKI_MAX_DIFF_BYTES" "$KASEKI_MAX_DIFF_BYTES")"
 AGENT_TIMEOUT_SECONDS_VALUE="$(require_non_negative_int "KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_AGENT_TIMEOUT_SECONDS")"
 FAILURE_EXIT_CODE_VALUE="$(require_non_negative_int "exit_code" "2")"
+
+initialize_result_artifacts() {
+  : > "$RESULT_DIR/stdout.log"
+  : > "$RESULT_DIR/stderr.log"
+  : > "$RESULT_DIR/pi-events.jsonl"
+  : > "$RESULT_DIR/pi-summary.json"
+  : > "$RESULT_DIR/git.status"
+  : > "$RESULT_DIR/git.diff"
+  : > "$RESULT_DIR/changed-files.txt"
+  : > "$RESULT_DIR/validation.log"
+  : > "$RESULT_DIR/validation-timings.tsv"
+  : > "$RESULT_DIR/quality.log"
+  : > "$RESULT_DIR/secret-scan.log"
+  : > "$RESULT_DIR/git-push.log"
+  : > "$RESULT_DIR/progress.log"
+  : > "$RESULT_DIR/progress.jsonl"
+  : > "$RESULT_DIR/format-check-command.txt"
+  : > "$RESULT_DIR/failure.json"
+  : > "$RESULT_DIR/result-summary.md"
+}
+
+write_failure_json() {
+  local exit_code="$1"
+  local failed_command="$2"
+  local message="$3"
+  local stderr_tail
+  stderr_tail="$(tail -20 "$RESULT_DIR/stderr.log" 2>/dev/null || true)"
+  cat > "$RESULT_DIR/failure.json" <<META
+{
+  "instance": $(json_string "$INSTANCE"),
+  "exit_code": $exit_code,
+  "failed_command": $(json_string "$failed_command"),
+  "message": $(json_string "$message"),
+  "stderr_tail": $(json_string "$stderr_tail"),
+  "artifacts_dir": $(json_string "$RESULT_DIR"),
+  "metadata": "metadata.json",
+  "stderr": "stderr.log",
+  "stdout": "stdout.log",
+  "progress": "progress.jsonl",
+  "summary": "result-summary.md"
+}
+META
+}
+
+write_host_metadata_failure() {
+  local exit_code="$1"
+  local failed_command="$2"
+  local message="$3"
+  printf '%s\n' "$exit_code" > "$RESULT_DIR/exit_code"
+  printf '%s\n' "$exit_code" > "$RESULT_DIR/host_docker_exit_code"
+  printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
+  cat > "$RESULT_DIR/metadata.json" <<META
+{
+  "instance": $(json_string "$INSTANCE"),
+  "repo_url": $(json_string "$REPO_URL"),
+  "git_ref": $(json_string "$GIT_REF"),
+  "provider": $(json_string "$KASEKI_PROVIDER"),
+  "model": $(json_string "$KASEKI_MODEL"),
+  "started_at": $(json_string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"),
+  "current_stage": $(json_string "$failed_command"),
+  "duration_seconds": 0,
+  "total_duration_seconds": 0,
+  "pi_duration_seconds": 0,
+  "exit_code": $exit_code,
+  "failed_command": $(json_string "$failed_command")
+}
+META
+  cat > "$RESULT_DIR/result-summary.md" <<SUMMARY
+# Kaseki Result: $INSTANCE
+
+- Status: failed
+- Failed command: $failed_command
+- Message: $message
+- Artifacts: $RESULT_DIR
+SUMMARY
+  write_failure_json "$exit_code" "$failed_command" "$message"
+}
+
+fail_before_container() {
+  local exit_code="$1"
+  local failed_command="$2"
+  local message="$3"
+  printf '%s\n' "$message" > "$RESULT_DIR/stderr.log"
+  write_host_metadata_failure "$exit_code" "$failed_command" "$message"
+  write_cleanup_log
+  cat "$RESULT_DIR/stderr.log" >&2
+  exit "$exit_code"
+}
 
 write_cleanup_log() {
   {
@@ -332,6 +423,8 @@ write_cleanup_log() {
   fi
 }
 
+initialize_result_artifacts
+
 cat > "$RESULT_DIR/host-start.json" <<META
 {
   "instance": $(json_string "$INSTANCE"),
@@ -345,7 +438,8 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "agentTimeoutSeconds": $AGENT_TIMEOUT_SECONDS_VALUE,
   "started_at": $(json_string "$(date -u +%Y-%m-%dT%H:%M:%SZ)"),
   "host": $(json_string "$(hostname)"),
-  "image": $(json_string "$IMAGE")
+  "image": $(json_string "$IMAGE"),
+  "cache_dir": $(json_string "$CACHE")
 }
 META
 
@@ -356,80 +450,38 @@ elif [ -r "$HOST_SECRET_FILE" ]; then
   key_source="secret file"
   key_value="$(cat "$HOST_SECRET_FILE")"
 else
-  {
-    printf 'OpenRouter API key is required. '
-    printf 'Set OPENROUTER_API_KEY or provide a readable secret file at %s (override with OPENROUTER_API_KEY_FILE).\n' "$HOST_SECRET_FILE"
-  } > "$RESULT_DIR/stderr.log"
-  : > "$RESULT_DIR/stdout.log"
-  : > "$RESULT_DIR/pi-events.jsonl"
-  : > "$RESULT_DIR/git.status"
-  : > "$RESULT_DIR/git.diff"
-  : > "$RESULT_DIR/changed-files.txt"
-  : > "$RESULT_DIR/validation.log"
-  : > "$RESULT_DIR/validation-timings.tsv"
-  : > "$RESULT_DIR/quality.log"
-  : > "$RESULT_DIR/secret-scan.log"
-  : > "$RESULT_DIR/git-push.log"
-  : > "$RESULT_DIR/progress.log"
-  : > "$RESULT_DIR/progress.jsonl"
-  : > "$RESULT_DIR/cleanup.log"
-  printf '2\n' > "$RESULT_DIR/exit_code"
-  printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
-  printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
-  cat > "$RESULT_DIR/metadata.json" <<META
-{
-  "instance": $(json_string "$INSTANCE"),
-  "repo_url": $(json_string "$REPO_URL"),
-  "git_ref": $(json_string "$GIT_REF"),
-  "provider": $(json_string "$KASEKI_PROVIDER"),
-  "model": $(json_string "$KASEKI_MODEL"),
-  "exit_code": $FAILURE_EXIT_CODE_VALUE,
-  "failed_command": $(json_string "missing OPENROUTER_API_KEY")
-}
-META
-  write_cleanup_log
-  cat "$RESULT_DIR/stderr.log" >&2
-  exit 2
+  fail_before_container 2 "missing OPENROUTER_API_KEY" "OpenRouter API key is required. Set OPENROUTER_API_KEY or provide a readable secret file at $HOST_SECRET_FILE (override with OPENROUTER_API_KEY_FILE)."
 fi
 
 if [ -z "$key_value" ]; then
-  printf 'OpenRouter API key source "%s" resolved to an empty value.\n' "$key_source" > "$RESULT_DIR/stderr.log"
-  : > "$RESULT_DIR/stdout.log"
-  : > "$RESULT_DIR/pi-events.jsonl"
-  : > "$RESULT_DIR/git.status"
-  : > "$RESULT_DIR/git.diff"
-  : > "$RESULT_DIR/changed-files.txt"
-  : > "$RESULT_DIR/validation.log"
-  : > "$RESULT_DIR/validation-timings.tsv"
-  : > "$RESULT_DIR/quality.log"
-  : > "$RESULT_DIR/secret-scan.log"
-  : > "$RESULT_DIR/git-push.log"
-  : > "$RESULT_DIR/progress.log"
-  : > "$RESULT_DIR/progress.jsonl"
-  : > "$RESULT_DIR/cleanup.log"
-  printf '2\n' > "$RESULT_DIR/exit_code"
-  printf '2\n' > "$RESULT_DIR/host_docker_exit_code"
-  printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
-  cat > "$RESULT_DIR/metadata.json" <<META
-{
-  "instance": $(json_string "$INSTANCE"),
-  "repo_url": $(json_string "$REPO_URL"),
-  "git_ref": $(json_string "$GIT_REF"),
-  "provider": $(json_string "$KASEKI_PROVIDER"),
-  "model": $(json_string "$KASEKI_MODEL"),
-  "exit_code": $FAILURE_EXIT_CODE_VALUE,
-  "failed_command": $(json_string "empty OpenRouter API key from ${key_source}")
-}
-META
-  write_cleanup_log
-  cat "$RESULT_DIR/stderr.log" >&2
-  exit 2
+  fail_before_container 2 "empty OpenRouter API key from ${key_source}" "OpenRouter API key source \"$key_source\" resolved to an empty value."
 fi
 
 printf 'OpenRouter API key source: %s\n' "$key_source"
 printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
 unset key_value key_source
+
+if ! command -v docker >/dev/null 2>&1; then
+  fail_before_container 2 "preflight docker" "Docker is required but was not found on the host."
+fi
+
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  fail_before_container 2 "preflight docker image" "Docker image is missing locally: $IMAGE. Pull it or set KASEKI_IMAGE to an available image."
+fi
+
+if command -v git >/dev/null 2>&1; then
+  if ! git ls-remote --exit-code "$REPO_URL" "$GIT_REF" >/dev/null 2>"$RESULT_DIR/preflight-git.log"; then
+    message="Git ref preflight failed for $REPO_URL at $GIT_REF. See preflight-git.log."
+    cat "$RESULT_DIR/preflight-git.log" > "$RESULT_DIR/stderr.log"
+    write_host_metadata_failure 128 "preflight git ref" "$message"
+    write_cleanup_log
+    cat "$RESULT_DIR/stderr.log" >&2
+    exit 128
+  fi
+else
+  printf 'Git: missing on host; skipping git ref preflight.\n' >> "$RESULT_DIR/progress.log"
+fi
 
 # Handle GitHub App credentials (optional)
 GITHUB_APP_ENABLED="0"
@@ -476,10 +528,12 @@ docker_args=(
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
   -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"
+  -e KASEKI_DEPENDENCY_CACHE_DIR="/cache/dependencies"
   -e TMPDIR="/workspace/tmp"
-  -e NPM_CONFIG_CACHE="/workspace/npm-cache"
-  -e npm_config_cache="/workspace/npm-cache"
+  -e NPM_CONFIG_CACHE="/cache/npm-cache"
+  -e npm_config_cache="/cache/npm-cache"
   -v "$WORKSPACE:/workspace:rw"
+  -v "$CACHE:/cache:rw"
   -v "$RESULT_DIR:/results:rw"
   -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro"
 )
