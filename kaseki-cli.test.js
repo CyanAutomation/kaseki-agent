@@ -605,13 +605,18 @@ function createMockFollowFs(logPath, initialFile) {
       const text = file ? file.content.slice(options.start, options.end + 1) : '';
 
       const originalOn = emitter.on.bind(emitter);
+      const originalOn = emitter.on.bind(emitter);
+      let endHandler = null;
       emitter.on = (event, handler) => {
         originalOn(event, handler);
         if (event === 'end') {
-          if (text.length > 0) {
-            emitter.emit('data', text);
-          }
-          emitter.emit('end');
+          endHandler = handler;
+          setImmediate(() => {
+            if (text.length > 0) {
+              emitter.emit('data', text);
+            }
+            emitter.emit('end');
+          });
         }
         return emitter;
       };
