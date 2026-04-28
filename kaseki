@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${KASEKI_ROOT:-/agents}"
+TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
+IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+
+if ! command -v docker >/dev/null 2>&1; then
+  printf 'Docker is required to run the Kaseki CLI wrapper.\n' >&2
+  exit 2
+fi
+
+if [ ! -d "$TEMPLATE_DIR" ]; then
+  printf 'Kaseki template directory not found: %s\n' "$TEMPLATE_DIR" >&2
+  exit 2
+fi
+
+exec docker run --rm \
+  --entrypoint node \
+  -e KASEKI_RESULTS_DIR="$ROOT/kaseki-results" \
+  -e KASEKI_RUNS_DIR="$ROOT/kaseki-runs" \
+  -v "$TEMPLATE_DIR:/tools:ro" \
+  -v "$ROOT:$ROOT:ro" \
+  -w /tools \
+  "$IMAGE" \
+  /tools/kaseki-cli.js "$@"

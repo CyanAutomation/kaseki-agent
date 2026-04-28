@@ -19,8 +19,8 @@ const { execSync } = require('child_process');
 
 // Configuration object (can be overridden for testing)
 const config = {
-  KASEKI_RESULTS_DIR: '/agents/kaseki-results',
-  KASEKI_RUNS_DIR: '/agents/kaseki-runs',
+  KASEKI_RESULTS_DIR: process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results',
+  KASEKI_RUNS_DIR: process.env.KASEKI_RUNS_DIR || '/agents/kaseki-runs',
 };
 
 // For backwards compatibility, also export as constants
@@ -277,6 +277,24 @@ function readJsonArtifact(instance, filename) {
   }
 }
 
+function parseTimestampSeconds(value) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  if (Number.isNaN(parsed)) return null;
+  return Math.floor(parsed / 1000);
+}
+
+function getPiStageStartedAtSeconds(instance) {
+  const events = readProgressEvents(instance, 500);
+  if (!events) return null;
+  const started = [...events].reverse().find((event) => (
+    event &&
+    event.stage === 'pi coding agent' &&
+    (event.message === 'started' || event.type === 'agent_start')
+  ));
+  return started ? parseTimestampSeconds(started.timestamp) : null;
+}
+
 // ============================================================================
 // Status and Progress
 // ============================================================================
@@ -357,8 +375,21 @@ function getInstanceStatus(instance) {
   // Get exit code from metadata fallback and /exit_code when available
   const exitCode = resolveInstanceExitCode(resultDir, metadata);
 
+  let agentElapsedSeconds = null;
+  if (metadata.pi_duration_seconds !== undefined) {
+    agentElapsedSeconds = metadata.pi_duration_seconds;
+  } else if (isRunning && stage === 'pi coding agent') {
+    const piStartedAt = getPiStageStartedAtSeconds(instance);
+    if (piStartedAt !== null) {
+      agentElapsedSeconds = Math.max(Math.floor(Date.now() / 1000) - piStartedAt, 0);
+    }
+  }
+
   const timeoutSeconds = getConfiguredTimeout(instance);
-  const timeoutRiskPercent = calculateTimeoutRiskPercent(instance, elapsedSeconds);
+  const timedOut = exitCode === 124;
+  const timeoutRiskPercent = isRunning && stage === 'pi coding agent'
+    ? calculateTimeoutRiskPercent(instance, agentElapsedSeconds)
+    : (timedOut ? 100 : 0);
   const status = deriveInstanceLifecycleStatus(isRunning, exitCode);
 
   return {
@@ -367,10 +398,12 @@ function getInstanceStatus(instance) {
     running: isRunning,
     stage,
     elapsedSeconds,
+    totalDurationSeconds: elapsedSeconds,
+    agentElapsedSeconds,
     timeoutSeconds,
     timeoutRiskPercent,
-    timeoutImminent: timeoutRiskPercent >= 85,
-    timedOut: exitCode === 124,
+    timeoutImminent: isRunning && stage === 'pi coding agent' && timeoutRiskPercent >= 85,
+    timedOut,
     exitCode,
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
@@ -709,6 +742,8 @@ function getAnalysis(instance) {
   return {
     instance,
     duration: metadata.duration_seconds ?? 0,
+    totalDurationSeconds: metadata.total_duration_seconds ?? metadata.duration_seconds ?? 0,
+    piDurationSeconds: metadata.pi_duration_seconds ?? null,
     exitCode,
     model: piSummary.selected_model || piSummary.model || hostStart.model || 'unknown',
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
