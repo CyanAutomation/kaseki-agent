@@ -273,6 +273,7 @@ Useful environment variables:
 - `KASEKI_DEBUG_RAW_EVENTS=1` stores raw Pi JSONL events as `pi-events.raw.jsonl`.
 - `KASEKI_KEEP_WORKSPACE=0` removes the per-run workspace after each run. Set to `1` only when you need to inspect the workspace after a failure.
 - `KASEKI_STREAM_PROGRESS=1` streams sanitized progress lines from Pi JSON events. Set to `0` to keep progress only in artifacts.
+- `KASEKI_VALIDATE_AFTER_AGENT_FAILURE=0` skips validation after the Pi agent fails or times out. Set to `1` to run validation anyway.
 - `KASEKI_CHANGED_FILES_ALLOWLIST` defaults to `src/lib/parser.ts tests/parser.validation.ts`.
 - `KASEKI_MAX_DIFF_BYTES` defaults to `200000`.
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
@@ -288,7 +289,11 @@ Run the doctor command before first use or after host changes:
 ```
 
 It checks Docker availability, writable run/result directories, image presence,
-and OpenRouter key availability.
+OpenRouter key availability, and whether the deployed host template files match
+the configured Docker image. A parity warning means host scripts were deployed
+without rebuilding or pulling the matching image; set `KASEKI_IMAGE` to the
+matching local image or rebuild before trusting behavior changes inside the
+container.
 
 ## Help and usage
 
@@ -342,13 +347,13 @@ add `--force` to prune old Docker build cache and dangling images:
 /agents/kaseki-template/cleanup-kaseki.sh --docker --force
 ```
 
-Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, git status, git diff, `progress.log`, `progress.jsonl`, and `cleanup.log`. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
+Results are written to `/agents/kaseki-results/kaseki-N`, including filtered `pi-events.jsonl`, `pi-summary.json`, `result-summary.md`, logs, metadata, validation output, stage timings, dependency cache status, git status, git diff, `progress.log`, `progress.jsonl`, and `cleanup.log`. Automatic instance selection skips any existing result directory so completed artifacts are not overwritten after run workspace cleanup. `kaseki-agent.sh` resolves the OpenRouter key in this order before Pi execution: non-empty `OPENROUTER_API_KEY` environment value, then `/run/secrets/openrouter_api_key`, else it fails fast with a missing-key error before cloning or validation. Runtime logs report only the source method (`env` or `secret file`), never the key value.
 
 Show sanitized progress for a running or completed instance:
 
 ```sh
-/agents/kaseki-template/kaseki-cli.js progress kaseki-4 --tail=25
-/agents/kaseki-template/kaseki-cli.js follow kaseki-4 --tail=progress.log
+/agents/kaseki-template/kaseki progress kaseki-4 --tail=25
+/agents/kaseki-template/kaseki follow kaseki-4 --tail=progress.log
 ```
 
 Print a compact diagnostic report for any result directory:
@@ -362,8 +367,9 @@ docker run --rm \
 ```
 
 The report includes status, failed command, exit codes, requested and actual
-models, duration, validation timings, changed files, secret-scan status, and the
-next diagnostic artifact to inspect.
+models, total and agent duration, stage timings, validation timings, dependency
+cache status, changed files, secret-scan status, and the next diagnostic
+artifact to inspect.
 
 ## Exit codes
 

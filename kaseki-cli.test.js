@@ -125,6 +125,15 @@ npm run build\t0\t30
 `;
   fs.writeFileSync(path.join(instanceDir, 'validation-timings.tsv'), validationTimings);
 
+  const stageTimings =
+    overrides.stageTimings ??
+    `clone repository\t0\t1\t
+prepare node dependencies\t0\t20\tworkspace-cache-hit
+pi coding agent\t0\t120\ttimeout_seconds=1200
+validation\t0\t85\t
+`;
+  fs.writeFileSync(path.join(instanceDir, 'stage-timings.tsv'), stageTimings);
+
   // Mock changed-files.txt
   const changedFiles = `src/lib/parser.ts
 tests/parser.test.ts
@@ -479,9 +488,32 @@ function testDetectAnomalies() {
 
   const timeoutAnomalies = runningAwareCli.detectAnomalies('kaseki-23');
   assert(timeoutAnomalies.some((a) => a.type === 'timeout-risk'), 'Should detect timeout risk');
+  assert(
+    timeoutAnomalies.some((a) => a.message.includes('Agent timeout approaching: 1150s / 1200s')),
+    'Timeout risk should use agent elapsed time'
+  );
 
   childProcess.execSync = originalExecSync;
   delete require.cache[require.resolve('./kaseki-cli-lib.js')];
+
+  createMockInstance('kaseki-231', {
+    metadata: {
+      duration_seconds: 104,
+      total_duration_seconds: 104,
+      pi_duration_seconds: 45,
+      exit_code: 124,
+    },
+    hostStart: { agentTimeoutSeconds: 45 },
+  });
+  const timeoutAnomaliesCompleted = kasekiCli.detectAnomalies('kaseki-231');
+  assert(
+    timeoutAnomaliesCompleted.some((a) => a.message.includes('Agent timed out after 45s')),
+    'Completed timeout anomaly should use agent duration'
+  );
+  assert(
+    timeoutAnomaliesCompleted.some((a) => a.message.includes('total run 104s')),
+    'Completed timeout anomaly should include total run duration separately'
+  );
 }
 
 function testParseValidationTimings() {
@@ -517,6 +549,30 @@ npm run test\t1\t45
   assertEqual(malformedResult.timings[1].command, 'npm run test', 'Should keep valid rows after malformed entries');
 }
 
+function testParseStageTimings() {
+  console.log('\n→ Testing parseStageTimings()');
+
+  createMockInstance('kaseki-241');
+
+  const timings = kasekiCli.parseStageTimings('kaseki-241');
+
+  assertEqual(timings.length, 4, 'Should parse stage timing rows');
+  assertEqual(timings[1].stage, 'prepare node dependencies', 'Should extract stage name');
+  assertEqual(timings[1].exitCode, 0, 'Should extract stage exit code');
+  assertEqual(timings[1].durationSeconds, 20, 'Should extract stage duration');
+  assertEqual(timings[1].detail, 'workspace-cache-hit', 'Should extract stage detail');
+
+  createMockInstance('kaseki-242', {
+    stageTimings: `clone repository\t0\t1\t
+bad row
+validation\t0\t2\t
+`,
+  });
+
+  const timingsWithMalformedRows = kasekiCli.parseStageTimings('kaseki-242');
+  assertEqual(timingsWithMalformedRows.length, 2, 'Should skip malformed stage timing rows');
+}
+
 function testGetAnalysis() {
   console.log('\n→ Testing getAnalysis()');
 
@@ -532,6 +588,7 @@ function testGetAnalysis() {
   assertEqual(analysis.changedFileCount, 2, 'Should count changed files');
   assert(analysis.diffSizeBytes > 0, 'Should calculate diff size');
   assert(analysis.validationCommands.length > 0, 'Should include validation commands');
+  assert(analysis.stageTimings.length > 0, 'Should include stage timings');
   assertExists(analysis.piMetrics, 'Should include Pi metrics');
 
   createMockInstance('kaseki-26', {
@@ -810,6 +867,7 @@ async function runTests() {
   testDetectErrors();
   testDetectAnomalies();
   testParseValidationTimings();
+  testParseStageTimings();
   testGetAnalysis();
   testCliNumericOptionValidation();
   await testFollowPollerHandlesTruncateAndRotate();
