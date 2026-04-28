@@ -112,6 +112,7 @@ Done.
     event_count: 42,
     start_time: new Date(Date.now() - 180000).toISOString(),
     end_time: new Date(Date.now() - 60000).toISOString(),
+    ...overrides.piSummary,
   };
   fs.writeFileSync(path.join(instanceDir, 'pi-summary.json'), JSON.stringify(piSummary, null, 2));
 
@@ -502,6 +503,24 @@ function testGetAnalysis() {
   assert(analysis.diffSizeBytes > 0, 'Should calculate diff size');
   assert(analysis.validationCommands.length > 0, 'Should include validation commands');
   assertExists(analysis.piMetrics, 'Should include Pi metrics');
+
+  createMockInstance('kaseki-26', {
+    hostStart: { model: 'openrouter/gpt-4.1-mini' },
+    piSummary: {
+      selected_model: 'openrouter/claude-3.7-sonnet',
+      model: 'legacy-model-should-not-win',
+      event_counts: {
+        message: 7,
+        tool_start: 3,
+        tool_end: 3,
+      },
+      event_count: 999,
+    },
+  });
+
+  const normalizedAnalysis = kasekiCli.getAnalysis('kaseki-26');
+  assertEqual(normalizedAnalysis.model, 'openrouter/claude-3.7-sonnet', 'Should prefer selected_model over legacy model fields');
+  assertEqual(normalizedAnalysis.piMetrics.eventCount, 13, 'Should sum event_counts values when present');
 }
 
 function testCliNumericOptionValidation() {
