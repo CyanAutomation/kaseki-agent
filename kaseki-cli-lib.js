@@ -654,6 +654,14 @@ function getAnalysis(instance) {
   const metadata = readJsonArtifact(instance, 'metadata.json');
   const piSummary = readJsonArtifact(instance, 'pi-summary.json');
   const hostStart = readJsonArtifact(instance, 'host-start.json');
+  const hasEventCounts =
+    piSummary.event_counts && typeof piSummary.event_counts === 'object' && !Array.isArray(piSummary.event_counts);
+  const eventCount = hasEventCounts
+    ? Object.values(piSummary.event_counts).reduce((total, value) => {
+        const numericValue = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numericValue) ? total + numericValue : total;
+      }, 0)
+    : (piSummary.event_count ?? 0);
 
   // Get changed files
   let changedFiles = [];
@@ -691,7 +699,7 @@ function getAnalysis(instance) {
     instance,
     duration: metadata.duration_seconds ?? 0,
     exitCode,
-    model: piSummary.model || hostStart.model || 'unknown',
+    model: piSummary.selected_model || piSummary.model || hostStart.model || 'unknown',
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
     stage: metadata.current_stage || 'completed',
@@ -708,7 +716,7 @@ function getAnalysis(instance) {
     piMetrics: {
       toolStartCount: piSummary.tool_start_count ?? 0,
       toolEndCount: piSummary.tool_end_count ?? 0,
-      eventCount: piSummary.event_count ?? 0,
+      eventCount,
     },
     errors,
     errorCount: errors.length,
