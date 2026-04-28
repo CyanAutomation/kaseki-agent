@@ -48,12 +48,38 @@ if (metadata.git_ref !== expectedRef) throw new Error("metadata git_ref mismatch
   "$REPO_URL" \
   "$GIT_REF"
 
-for artifact in changed-files.txt validation-timings.tsv quality.log secret-scan.log git-push.log progress.log progress.jsonl cleanup.log; do
+for artifact in changed-files.txt validation-timings.tsv stage-timings.tsv dependency-cache.log quality.log secret-scan.log git-push.log progress.log progress.jsonl cleanup.log; do
   if [ ! -f "$result_dir/$artifact" ]; then
     echo "Expected artifact missing: $artifact" >&2
     exit 1
   fi
 done
+
+if ! grep -q "missing OPENROUTER_API_KEY" "$result_dir/stage-timings.tsv"; then
+  echo "Expected missing-key failure to be recorded in stage-timings.tsv" >&2
+  exit 1
+fi
+
+set +e
+env \
+  PATH="/usr/bin:/bin" \
+  KASEKI_ROOT="$KASEKI_ROOT" \
+  REPO_URL="$REPO_URL" \
+  GIT_REF="$GIT_REF" \
+  OPENROUTER_API_KEY_FILE="$OPENROUTER_API_KEY_FILE" \
+  "$ROOT_DIR/run-kaseki.sh" >/tmp/kaseki-json-rerun.out 2>/tmp/kaseki-json-rerun.err
+rerun_status=$?
+set -e
+
+if [ "$rerun_status" -ne 2 ]; then
+  echo "Expected second auto run to skip existing result and fail with missing key at kaseki-2, got: $rerun_status" >&2
+  exit 1
+fi
+
+if [ ! -d "$KASEKI_ROOT/kaseki-results/kaseki-2" ]; then
+  echo "Expected second auto run to create kaseki-2 instead of overwriting kaseki-1" >&2
+  exit 1
+fi
 
 if grep -q "node: command not found" "$result_dir/stderr.log"; then
   echo "run-kaseki.sh should not require node on the host" >&2

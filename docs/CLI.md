@@ -6,7 +6,7 @@ The **Kaseki CLI** is a command-line tool that allows external AI agents to quer
 
 - **Query running instances**: Get current stage, elapsed time, timeout risk
 - **Detect errors**: Identify failures in stderr, validation, quality gates, and secret scans
-- **Anomaly detection**: Flag timeout risk as instance approaches timeout
+- **Anomaly detection**: Flag timeout risk as the Pi agent approaches timeout
 - **Log streaming**: Follow logs in real-time as they're written
 - **Progress streaming**: Read sanitized stage and Pi tool progress without model text
 - **Post-run analysis**: Comprehensive summary of changes, validation results, and Pi metrics
@@ -25,7 +25,7 @@ export PATH="/workspaces/kaseki-agent:$PATH"
 
 On Pi hosts that do not have Node.js installed, use the `kaseki` wrapper
 deployed with the template. It runs the CLI inside the configured Kaseki Docker
-image:
+image. Prefer this wrapper in Pi runbooks:
 
 ```bash
 /agents/kaseki-template/kaseki list
@@ -86,8 +86,10 @@ Get detailed status of a specific instance (JSON format).
   "running": false,
   "stage": "Collecting artifacts",
   "elapsedSeconds": 300,
+  "totalDurationSeconds": 300,
+  "agentElapsedSeconds": 120,
   "timeoutSeconds": 1200,
-  "timeoutRiskPercent": 25.0,
+  "timeoutRiskPercent": 10.0,
   "timeoutImminent": false,
   "timedOut": false,
   "exitCode": 0,
@@ -188,6 +190,14 @@ Get comprehensive post-run analysis (JSON format).
       "exitCode": 0,
       "durationSeconds": 10,
       "passed": true
+    }
+  ],
+  "stageTimings": [
+    {
+      "stage": "prepare node dependencies",
+      "exitCode": 0,
+      "durationSeconds": 47,
+      "detail": "workspace-cache-hit"
     }
   ],
   "piMetrics": {
@@ -373,6 +383,8 @@ monitorKaseki('kaseki-1');
   "running": boolean,
   "stage": "string",
   "elapsedSeconds": number,
+  "totalDurationSeconds": number,
+  "agentElapsedSeconds": number | null,
   "timeoutSeconds": number,
   "timeoutRiskPercent": number (0-100),
   "timeoutImminent": boolean,
@@ -405,6 +417,10 @@ Field source note: `repo` is read from `host-start.json.repo_url` with fallback 
   "message": "string"
 }
 ```
+
+Timeout anomalies use Pi agent elapsed time rather than total run time. When a
+completed run timed out after slow setup or artifact collection, the message also
+includes total run duration separately.
 
 ---
 

@@ -10,6 +10,7 @@ KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
+KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -32,6 +33,8 @@ GITHUB_PR_EXIT=0
 ACTUAL_MODEL=""
 GITHUB_PR_URL=""
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
+STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
+DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
@@ -65,6 +68,8 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/failure.json
 : > /results/result-summary.md
 : > "$VALIDATION_TIMINGS_FILE"
+: >> "$STAGE_TIMINGS_FILE"
+: > "$DEPENDENCY_CACHE_LOG"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 
 json_encode() {
@@ -130,6 +135,9 @@ write_result_summary() {
   changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
   validation_status="passed"
   [ "$VALIDATION_EXIT" -ne 0 ] && validation_status="failed"
+  if grep -q 'skipped_after_agent_failure' "$STAGE_TIMINGS_FILE" 2>/dev/null; then
+    validation_status="skipped"
+  fi
   pr_status="not attempted"
   if [ "$GITHUB_APP_ENABLED" = "1" ]; then
     if [ "$GITHUB_PUSH_EXIT" -ne 0 ]; then
@@ -165,6 +173,8 @@ Artifacts:
 - pi-events.jsonl
 - validation.log
 - validation-timings.tsv
+- stage-timings.tsv
+- dependency-cache.log
 - git.diff
 - git.status
 - git-push.log (if GitHub App enabled)
@@ -232,17 +242,35 @@ trap finish EXIT
 run_step() {
   local label="$1"
   shift
+  local step_start step_end code
+  step_start="$(date +%s)"
   set_current_stage "$label"
   printf '\n==> %s\n' "$label"
   emit_progress "$label" "started"
   "$@"
-  local code=$?
+  code=$?
+  step_end="$(date +%s)"
   emit_progress "$label" "finished with exit $code"
+  record_stage_timing "$label" "$code" "$((step_end - step_start))" ""
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     STATUS="$code"
     FAILED_COMMAND="$label"
   fi
   return "$code"
+}
+
+record_stage_timing() {
+  local stage="$1"
+  local exit_code="$2"
+  local duration_seconds="$3"
+  local detail="${4:-}"
+  printf '%s\t%s\t%s\t%s\n' "$stage" "$exit_code" "$duration_seconds" "$detail" >> "$STAGE_TIMINGS_FILE"
+}
+
+set_dependency_cache_status() {
+  local status="$1"
+  local detail="${2:-}"
+  printf '%s\t%s\n' "$status" "$detail" >> "$DEPENDENCY_CACHE_LOG"
 }
 
 run_github_operations() {
@@ -442,6 +470,7 @@ prepare_dependencies() {
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
+      set_dependency_cache_status "existing-node-modules" "lock_hash=$lock_hash cache_key=$cache_key"
       exec {cache_lock_fd}>&-
       return 0
     fi
@@ -449,12 +478,14 @@ prepare_dependencies() {
 
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s).\n' "$workspace_cache_dir"
+    set_dependency_cache_status "workspace-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
     if ! cp -a "$workspace_cache_dir" ./node_modules; then
       exec {cache_lock_fd}>&-
       return 1
     fi
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
+    set_dependency_cache_status "image-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
     if ! cp -a "$image_cache_dir" ./node_modules; then
       exec {cache_lock_fd}>&-
       return 1
@@ -463,6 +494,7 @@ prepare_dependencies() {
 
   if [ ! -d node_modules ]; then
     printf 'Dependency cache status: cache miss, running install.\n'
+    set_dependency_cache_status "cache-miss" "lock_hash=$lock_hash cache_key=$cache_key"
     if ! npm ci --prefer-offline; then
       if ! npm install; then
         exec {cache_lock_fd}>&-
@@ -471,6 +503,7 @@ prepare_dependencies() {
     fi
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
+    set_dependency_cache_status "install-skipped" "lock_hash=$lock_hash cache_key=$cache_key"
   fi
 
   if ! mkdir -p "$workspace_cache_root"; then
@@ -526,6 +559,7 @@ PI_EXIT="${PIPESTATUS[0]}"
 PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
 unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
 set -e
+record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
 if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
   cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
@@ -547,12 +581,15 @@ fi
 printf '\n==> collect agent diff\n'
 set_current_stage "collect agent diff"
 emit_progress "collect agent diff" "started"
+stage_start="$(date +%s)"
 collect_git_artifacts
+record_stage_timing "collect agent diff" 0 "$(($(date +%s) - stage_start))" "diff_nonempty=$DIFF_NONEMPTY"
 emit_progress "collect agent diff" "finished"
 
 printf '\n==> quality checks\n'
 set_current_stage "quality checks"
 emit_progress "quality checks" "started"
+stage_start="$(date +%s)"
 diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_EXIT=4
@@ -577,48 +614,64 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
   format_command="$(node -e "const p=require('./package.json'); console.log(p.scripts['format:check'] ? 'npm run format:check' : 'npm run format -- --check')" 2>/dev/null)"
   printf '%s\n' "$format_command" >> /results/format-check-command.txt
 fi
+record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
 printf '\n==> validation\n'
 set_current_stage "validation"
 emit_progress "validation" "started"
-set +e
-IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
-for command in "${VALIDATION_COMMANDS[@]}"; do
-  trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
-  [ -z "$trimmed" ] && continue
-  validation_start="$(date +%s)"
-  {
-    printf '\n==> %s\n' "$trimmed"
-    unset OPENROUTER_API_KEY
-    bash -lc "$trimmed"
-    command_exit=$?
-    printf 'exit_code=%s\n' "$command_exit"
-    exit "$command_exit"
-  } 2>&1 | tee -a /results/validation.log
-  command_exit="${PIPESTATUS[0]}"
-  validation_end="$(date +%s)"
-  printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$((validation_end - validation_start))" >> "$VALIDATION_TIMINGS_FILE"
-  if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
-    VALIDATION_EXIT="$command_exit"
-  fi
-done
-set -e
+stage_start="$(date +%s)"
+if [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
+  printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
+  record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
+else
+  set +e
+  IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
+  for command in "${VALIDATION_COMMANDS[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    validation_start="$(date +%s)"
+    {
+      printf '\n==> %s\n' "$trimmed"
+      unset OPENROUTER_API_KEY
+      bash -lc "$trimmed"
+      command_exit=$?
+      printf 'exit_code=%s\n' "$command_exit"
+      exit "$command_exit"
+    } 2>&1 | tee -a /results/validation.log
+    command_exit="${PIPESTATUS[0]}"
+    validation_end="$(date +%s)"
+    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$((validation_end - validation_start))" >> "$VALIDATION_TIMINGS_FILE"
+    if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
+      VALIDATION_EXIT="$command_exit"
+    fi
+  done
+  set -e
+  record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
+fi
 emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 
 printf '\n==> secret scan\n'
 set_current_stage "secret scan"
 emit_progress "secret scan" "started"
+stage_start="$(date +%s)"
 : > /results/secret-scan.log
 if grep -R -n -E 'sk-or-[A-Za-z0-9._-]+' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
   SECRET_SCAN_EXIT=6
 fi
+record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 printf '\n==> github operations\n'
 set_current_stage "github operations"
 emit_progress "github operations" "started"
+stage_start="$(date +%s)"
 : > /results/git-push.log
-if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$DIFF_NONEMPTY" = "true" ]; then
+if [ "$GITHUB_APP_ENABLED" = "1" ] &&
+  [ "$PI_EXIT" -eq 0 ] &&
+  [ "$VALIDATION_EXIT" -eq 0 ] &&
+  [ "$QUALITY_EXIT" -eq 0 ] &&
+  [ "$SECRET_SCAN_EXIT" -eq 0 ] &&
+  [ "$DIFF_NONEMPTY" = "true" ]; then
   if [ -r /run/secrets/github_app_id ] && [ -r /run/secrets/github_app_client_id ] && [ -r /run/secrets/github_app_private_key ]; then
     run_github_operations
   else
@@ -626,8 +679,11 @@ if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$DIFF_N
     GITHUB_PUSH_EXIT=7
   fi
 else
-  printf 'GitHub operations: skipped (validation %s, diff %s, github_enabled %s)\n' \
+  printf 'GitHub operations: skipped (agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
+    "$([ "$PI_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
+    "$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
+    "$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$DIFF_NONEMPTY" \
     "$GITHUB_APP_ENABLED" | tee -a /results/git-push.log
   emit_progress "github operations" "skipped"
@@ -635,6 +691,7 @@ fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   emit_progress "github operations" "finished with push exit $GITHUB_PUSH_EXIT and pr exit $GITHUB_PR_EXIT"
 fi
+record_stage_timing "github operations" "$GITHUB_PUSH_EXIT" "$(($(date +%s) - stage_start))" "pr_exit=$GITHUB_PR_EXIT enabled=$GITHUB_APP_ENABLED"
 
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$VALIDATION_EXIT"
