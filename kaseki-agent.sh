@@ -16,6 +16,7 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+CURRENT_STAGE="initializing"
 PI_VERSION=""
 STATUS=0
 FAILED_COMMAND=""
@@ -90,6 +91,7 @@ write_metadata() {
   "provider": $(printf '%s' "$KASEKI_PROVIDER" | json_encode),
   "model": $(printf '%s' "$KASEKI_MODEL" | json_encode),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
+  "current_stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "ended_at": $(printf '%s' "$end_iso" | json_encode),
   "duration_seconds": $duration,
   "exit_code": $exit_code,
@@ -109,6 +111,10 @@ write_metadata() {
 }
 META
   printf '%s\n' "$exit_code" > /results/exit_code
+}
+
+set_current_stage() {
+  CURRENT_STAGE="$1"
 }
 
 write_result_summary() {
@@ -192,6 +198,7 @@ trap finish EXIT
 run_step() {
   local label="$1"
   shift
+  set_current_stage "$label"
   printf '\n==> %s\n' "$label"
   emit_progress "$label" "started"
   "$@"
@@ -342,6 +349,7 @@ fi
 unset OPENROUTER_API_KEY secret_content
 
 if [ -z "$openrouter_api_key" ]; then
+  set_current_stage "agent setup"
   printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide /run/secrets/openrouter_api_key.\n' | tee -a /results/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
@@ -469,6 +477,7 @@ if ! run_step "prepare node dependencies" prepare_dependencies; then
 fi
 
 printf '\n==> pi coding agent\n'
+set_current_stage "pi coding agent"
 set +e
 printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
 export KASEKI_STREAM_PROGRESS
@@ -500,11 +509,13 @@ elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
 fi
 
 printf '\n==> collect agent diff\n'
+set_current_stage "collect agent diff"
 emit_progress "collect agent diff" "started"
 collect_git_artifacts
 emit_progress "collect agent diff" "finished"
 
 printf '\n==> quality checks\n'
+set_current_stage "quality checks"
 emit_progress "quality checks" "started"
 diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
@@ -532,6 +543,7 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
 fi
 
 printf '\n==> validation\n'
+set_current_stage "validation"
 emit_progress "validation" "started"
 set +e
 IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
@@ -558,6 +570,7 @@ set -e
 emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 
 printf '\n==> secret scan\n'
+set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 : > /results/secret-scan.log
 if grep -R -n -E 'sk-or-[A-Za-z0-9._-]+' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
@@ -566,6 +579,7 @@ fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 printf '\n==> github operations\n'
+set_current_stage "github operations"
 emit_progress "github operations" "started"
 : > /results/git-push.log
 if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$DIFF_NONEMPTY" = "true" ]; then
@@ -610,3 +624,5 @@ if [ "$DIFF_NONEMPTY" != "true" ] && [ "$STATUS" -eq 0 ]; then
   STATUS=3
   FAILED_COMMAND="empty git diff"
 fi
+
+set_current_stage "complete"
