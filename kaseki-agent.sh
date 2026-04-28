@@ -17,6 +17,8 @@ GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STAGE="initializing"
+PI_START_EPOCH=0
+PI_DURATION_SECONDS=0
 PI_VERSION=""
 STATUS=0
 FAILED_COMMAND=""
@@ -56,8 +58,12 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/validation.log
 : > /results/quality.log
 : > /results/secret-scan.log
+: > /results/git-push.log
 : > /results/progress.log
 : > /results/progress.jsonl
+: > /results/format-check-command.txt
+: > /results/failure.json
+: > /results/result-summary.md
 : > "$VALIDATION_TIMINGS_FILE"
 exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
 
@@ -94,6 +100,8 @@ write_metadata() {
   "current_stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "ended_at": $(printf '%s' "$end_iso" | json_encode),
   "duration_seconds": $duration,
+  "total_duration_seconds": $duration,
+  "pi_duration_seconds": $PI_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "pi_exit_code": $PI_EXIT,
@@ -166,6 +174,31 @@ Artifacts:
 SUMMARY
 }
 
+write_failure_json() {
+  local exit_code="$1"
+  local stderr_tail
+  stderr_tail="$(tail -20 /results/stderr.log 2>/dev/null || true)"
+  if [ "$exit_code" -eq 0 ]; then
+    : > /results/failure.json
+    return 0
+  fi
+  cat > /results/failure.json <<FAILURE
+{
+  "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
+  "exit_code": $exit_code,
+  "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
+  "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
+  "artifacts_dir": "/results",
+  "metadata": "metadata.json",
+  "stderr": "stderr.log",
+  "stdout": "stdout.log",
+  "progress": "progress.jsonl",
+  "summary": "result-summary.md"
+}
+FAILURE
+}
+
 collect_git_artifacts() {
   if [ -d /workspace/repo/.git ]; then
     git -C /workspace/repo status --short > /results/git.status 2>/dev/null || true
@@ -190,6 +223,7 @@ finish() {
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   collect_git_artifacts
   write_result_summary
+  write_failure_json "$STATUS"
   write_metadata "$STATUS"
   exit "$STATUS"
 }
@@ -481,6 +515,7 @@ set_current_stage "pi coding agent"
 set +e
 printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
 export KASEKI_STREAM_PROGRESS
+PI_START_EPOCH="$(date +%s)"
 OPENROUTER_API_KEY="$openrouter_api_key" \
   timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
   pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
@@ -488,6 +523,7 @@ OPENROUTER_API_KEY="$openrouter_api_key" \
   | tee "$RAW_EVENTS" \
   | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
 PI_EXIT="${PIPESTATUS[0]}"
+PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
 unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
 set -e
 
