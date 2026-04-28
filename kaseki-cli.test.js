@@ -362,15 +362,15 @@ function testCalculateTimeoutRiskPercent() {
   assertEqual(risk100, 100, 'Should cap at 100%');
 }
 
-function testGetInstanceStatus() {
-  console.log('\n→ Testing getInstanceStatus()');
+function testGetInstanceStatusPrefersMetadataStage() {
+  console.log('\n→ Testing getInstanceStatus() preferring metadata stage');
 
   createMockInstance('kaseki-17');
 
   const status = kasekiCli.getInstanceStatus('kaseki-17');
 
   assertEqual(status.instance, 'kaseki-17', 'Should have instance name');
-  assertEqual(status.stage, 'Collecting artifacts', 'Should extract stage');
+  assertEqual(status.stage, 'completed', 'Should prefer metadata current_stage over stdout-derived stage');
   assertExists(status.elapsedSeconds, 'Should have elapsed time');
   assertEqual(status.timeoutSeconds, 1200, 'Should have timeout');
   assert(status.timeoutRiskPercent >= 0 && status.timeoutRiskPercent <= 100, 'Timeout risk should be 0-100%');
@@ -782,7 +782,7 @@ async function runTests() {
   testGetCurrentStage();
   testGetConfiguredTimeout();
   testCalculateTimeoutRiskPercent();
-  testGetInstanceStatus();
+  testGetInstanceStatusPrefersMetadataStage();
   testDetectErrors();
   testDetectAnomalies();
   testParseValidationTimings();
