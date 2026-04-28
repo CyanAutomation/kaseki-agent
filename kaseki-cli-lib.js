@@ -117,6 +117,17 @@ function resolveInstanceExitCode(resultDir, metadata = {}) {
 }
 
 /**
+ * Resolve stage from metadata first, then fallback to stdout markers.
+ */
+function resolveInstanceStage(instance, metadata = {}, fallback = 'unknown') {
+  if (typeof metadata.current_stage === 'string' && metadata.current_stage.trim().length > 0) {
+    return metadata.current_stage;
+  }
+  const parsedStage = getCurrentStage(instance);
+  return parsedStage || fallback;
+}
+
+/**
  * List all kaseki instances (running and completed).
  * Returns array of instance objects with basic metadata.
  */
@@ -182,7 +193,7 @@ function listInstances() {
         running: isRunning,
         exitCode,
         elapsedSeconds,
-        stage: metadata.current_stage || 'unknown',
+        stage: resolveInstanceStage(instance, metadata, 'unknown'),
         model: hostStart.model || metadata.model || 'unknown',
         repo: hostStart.repo_url || hostStart.repo || 'unknown',
         ref: hostStart.git_ref || hostStart.ref || 'unknown',
@@ -341,7 +352,7 @@ function getInstanceStatus(instance) {
   }
 
   // Get stage
-  const stage = getCurrentStage(instance);
+  const stage = resolveInstanceStage(instance, metadata, 'unknown');
 
   // Get exit code from metadata fallback and /exit_code when available
   const exitCode = resolveInstanceExitCode(resultDir, metadata);
@@ -702,7 +713,7 @@ function getAnalysis(instance) {
     model: piSummary.selected_model || piSummary.model || hostStart.model || 'unknown',
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
-    stage: metadata.current_stage || 'completed',
+    stage: resolveInstanceStage(instance, metadata, 'completed'),
     changedFiles,
     changedFileCount: changedFiles.length,
     diffSizeBytes,

@@ -210,7 +210,7 @@ kasekiCli.config.KASEKI_RESULTS_DIR = MOCK_RESULTS_DIR;
 function testListInstances() {
   console.log('\n→ Testing listInstances()');
 
-  createMockInstance('kaseki-1');
+  createMockInstance('kaseki-1', { metadata: { current_stage: 'validation' } });
   createMockInstance('kaseki-2');
 
   const instances = kasekiCli.listInstances();
@@ -218,6 +218,7 @@ function testListInstances() {
   assertEqual(instances.length, 2, 'Should find 2 instances');
   assertEqual(instances[0].name, 'kaseki-2', 'Should sort newest first');
   assertEqual(instances[1].name, 'kaseki-1', 'Should sort oldest last');
+  assertEqual(instances[1].stage, 'validation', 'Should prefer metadata current_stage when present');
 
   createMockInstance('kaseki-3', { metadata: { exit_code: null } });
   const instancesWithPending = kasekiCli.listInstances();
@@ -492,13 +493,14 @@ npm run test\t1\t45
 function testGetAnalysis() {
   console.log('\n→ Testing getAnalysis()');
 
-  createMockInstance('kaseki-25');
+  createMockInstance('kaseki-25', { metadata: { current_stage: 'validation' } });
 
   const analysis = kasekiCli.getAnalysis('kaseki-25');
 
   assertEqual(analysis.instance, 'kaseki-25', 'Should have instance name');
   assertEqual(analysis.duration, 300, 'Should have duration');
   assertEqual(analysis.exitCode, 0, 'Should have exit code');
+  assertEqual(analysis.stage, 'validation', 'Should use metadata current_stage when present');
   assertEqual(analysis.changedFileCount, 2, 'Should count changed files');
   assert(analysis.diffSizeBytes > 0, 'Should calculate diff size');
   assert(analysis.validationCommands.length > 0, 'Should include validation commands');
@@ -623,7 +625,6 @@ function createMockFollowFs(logPath, initialFile) {
       const emitter = new EventEmitter();
       const text = file ? file.content.slice(options.start, options.end + 1) : '';
 
-      const originalOn = emitter.on.bind(emitter);
       const originalOn = emitter.on.bind(emitter);
       let endHandler = null;
       emitter.on = (event, handler) => {
