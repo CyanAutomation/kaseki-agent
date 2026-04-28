@@ -25,6 +25,154 @@ const kasekiCli = require('./kaseki-cli-lib.js');
 const fs = require('fs');
 const path = require('path');
 
+function statsIdentity(stats) {
+  if (typeof stats.ino === 'number' && stats.ino > 0) {
+    return `ino:${stats.ino}`;
+  }
+
+  // Fallback for filesystems that do not expose stable inode numbers.
+  return `mtime-size:${stats.mtimeMs}:${stats.size}`;
+}
+
+function createFollowPoller(fsModule, logPath, callbacks = {}) {
+  const onInfo = callbacks.onInfo || (() => {});
+  const onData = callbacks.onData || (() => {});
+  const onError = callbacks.onError || (() => {});
+
+  let fd = null;
+  let lastPosition = 0;
+  let isReading = false;
+  let lastPathIdentity = null;
+
+  function closeFd() {
+    if (fd === null) {
+      return;
+    }
+
+    try {
+      fsModule.closeSync(fd);
+    } catch (_closeErr) {
+      // Ignore close failures; next open/read will surface actionable errors.
+    }
+    fd = null;
+  }
+
+  function openFd() {
+    fd = fsModule.openSync(logPath, 'r');
+  }
+
+  function resetCursor(reason) {
+    lastPosition = 0;
+    onInfo(`[follow] ${reason}; resetting cursor.`);
+  }
+
+  function poll() {
+    if (isReading) {
+      return;
+    }
+
+    let pathStats;
+    try {
+      pathStats = fsModule.statSync(logPath);
+    } catch (err) {
+      if (err.code === 'ENOENT' || err.code === 'ESTALE') {
+        closeFd();
+        return;
+      }
+      onError(err);
+      return;
+    }
+
+    const currentIdentity = statsIdentity(pathStats);
+
+    if (lastPathIdentity !== null && currentIdentity !== lastPathIdentity) {
+      closeFd();
+      resetCursor('log file replaced/rotated');
+    }
+    lastPathIdentity = currentIdentity;
+
+    if (fd === null) {
+      try {
+        openFd();
+      } catch (err) {
+        if (err.code !== 'ENOENT' && err.code !== 'ESTALE') {
+          onError(err);
+        }
+        return;
+      }
+    }
+
+    let fdStats;
+    try {
+      fdStats = fsModule.fstatSync(fd);
+    } catch (err) {
+      closeFd();
+      if (err.code !== 'ENOENT' && err.code !== 'ESTALE') {
+        onError(err);
+      }
+      return;
+    }
+
+    if (statsIdentity(fdStats) !== currentIdentity) {
+      closeFd();
+      resetCursor('underlying file descriptor became stale');
+      return;
+    }
+
+    if (pathStats.size < lastPosition) {
+      resetCursor('log file truncated');
+    }
+
+    if (pathStats.size <= lastPosition) {
+      return;
+    }
+
+    const start = lastPosition;
+    const end = pathStats.size - 1;
+    if (end < start) {
+      return;
+    }
+
+    isReading = true;
+    const stream = fsModule.createReadStream(logPath, {
+      fd,
+      autoClose: false,
+      start,
+      end,
+    });
+
+    let data = '';
+    let bytesRead = 0;
+    stream.on('data', (chunk) => {
+      bytesRead += chunk.length;
+      data += chunk;
+    });
+
+    stream.on('end', () => {
+      if (data.length > 0) {
+        onData(data);
+      }
+      lastPosition += bytesRead;
+      isReading = false;
+    });
+
+    stream.on('error', (err) => {
+      isReading = false;
+      closeFd();
+      onError(err);
+    });
+  }
+
+  function close() {
+    closeFd();
+  }
+
+  return {
+    poll,
+    close,
+  };
+}
+
 // ============================================================================
 // Utilities
 // ============================================================================
@@ -346,64 +494,22 @@ function cmdFollow(args) {
 
   console.log(`Following ${logFile}...\n`);
 
-  let lastPosition = 0;
-  let isReading = false;
-
-  const follow = () => {
-    if (isReading) {
-      return;
-    }
-
-    try {
-      const stats = fs.statSync(logPath);
-      const currentSize = stats.size;
-
-      if (currentSize < lastPosition) {
-        lastPosition = 0;
-      } // keep this guard block closed so stream handlers stay balanced
-
-      if (currentSize > lastPosition) {
-        isReading = true;
-        const stream = fs.createReadStream(logPath, {
-          start: lastPosition,
-          end: currentSize - 1,
-        });
-
-        let data = '';
-        let bytesRead = 0;
-        stream.on('data', (chunk) => {
-          bytesRead += chunk.length;
-          data += chunk;
-        });
-
-        stream.on('end', () => {
-          if (data.length > 0) {
-            process.stdout.write(data);
-          }
-          lastPosition += bytesRead;
-          isReading = false;
-        });
-
-        stream.on('error', (err) => {
-          isReading = false;
-          console.error(`Error reading log: ${err.message}`);
-        });
-      }
-    } catch (err) {
-      isReading = false;
-      console.error(`Error: ${err.message}`);
-    }
-  };
+  const poller = createFollowPoller(fs, logPath, {
+    onInfo: (message) => console.log(message),
+    onData: (chunk) => process.stdout.write(chunk),
+    onError: (err) => console.error(`Error reading log: ${err.message}`),
+  });
 
   // Initial read
-  follow();
+  poller.poll();
 
   // Poll for new data
-  const timer = setInterval(follow, 1000);
+  const timer = setInterval(() => poller.poll(), 1000);
 
   // Handle Ctrl+C gracefully
   process.on('SIGINT', () => {
     clearInterval(timer);
+    poller.close();
     console.log('\n\nFollow mode stopped.');
     process.exit(0);
   });
@@ -511,4 +617,10 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  createFollowPoller,
+};
