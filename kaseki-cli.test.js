@@ -204,6 +204,10 @@ function assertExists(value, message) {
   assert(value !== null && value !== undefined, `${message} (exists)`);
 }
 
+function flushImmediate() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 // Override config for testing
 kasekiCli.config.KASEKI_RESULTS_DIR = MOCK_RESULTS_DIR;
 
@@ -646,7 +650,7 @@ function createMockFollowFs(logPath, initialFile) {
   };
 }
 
-function testFollowPollerHandlesTruncateAndRotate() {
+async function testFollowPollerHandlesTruncateAndRotate() {
   console.log('\n→ Testing follow poller truncate/rotate resilience');
 
   const logPath = '/tmp/mock-follow.log';
@@ -667,6 +671,7 @@ function testFollowPollerHandlesTruncateAndRotate() {
   });
 
   poller.poll();
+  await flushImmediate();
   assertEqual(chunks.join(''), 'line-1\nline-2\n', 'Should read initial content');
 
   mockFs.setFile(logPath, {
@@ -675,6 +680,7 @@ function testFollowPollerHandlesTruncateAndRotate() {
     mtimeMs: 2,
   });
   poller.poll();
+  await flushImmediate();
 
   assert(
     infos.some((message) => message.includes('truncated')),
@@ -688,7 +694,9 @@ function testFollowPollerHandlesTruncateAndRotate() {
     mtimeMs: 3,
   });
   poller.poll();
+  await flushImmediate();
   poller.poll();
+  await flushImmediate();
 
   assert(
     infos.some((message) => message.includes('replaced/rotated')),
@@ -704,35 +712,43 @@ function testFollowPollerHandlesTruncateAndRotate() {
 // Test Runner
 // ============================================================================
 
-console.log('================================================================================');
-console.log('kaseki-cli Library Tests');
-console.log('================================================================================');
+async function runTests() {
+  console.log('================================================================================');
+  console.log('kaseki-cli Library Tests');
+  console.log('================================================================================');
 
-setupTestEnvironment();
+  setupTestEnvironment();
 
-testListInstances();
-testExactContainerNameMatching();
-testReadArtifact();
-testReadJsonArtifact();
-testReadLiveLog();
-testReadProgressEvents();
-testGetCurrentStage();
-testGetConfiguredTimeout();
-testCalculateTimeoutRiskPercent();
-testGetInstanceStatus();
-testDetectErrors();
-testDetectAnomalies();
-testParseValidationTimings();
-testGetAnalysis();
-testCliNumericOptionValidation();
-testFollowPollerHandlesTruncateAndRotate();
+  testListInstances();
+  testExactContainerNameMatching();
+  testReadArtifact();
+  testReadJsonArtifact();
+  testReadLiveLog();
+  testReadProgressEvents();
+  testGetCurrentStage();
+  testGetConfiguredTimeout();
+  testCalculateTimeoutRiskPercent();
+  testGetInstanceStatus();
+  testDetectErrors();
+  testDetectAnomalies();
+  testParseValidationTimings();
+  testGetAnalysis();
+  testCliNumericOptionValidation();
+  await testFollowPollerHandlesTruncateAndRotate();
 
-// Summary
-console.log('\n================================================================================');
-console.log(`Test Results: ${testsPassed} passed, ${testsFailed} failed`);
-console.log('================================================================================\n');
+  // Summary
+  console.log('\n================================================================================');
+  console.log(`Test Results: ${testsPassed} passed, ${testsFailed} failed`);
+  console.log('================================================================================\n');
 
-// Cleanup
-execSync(`rm -rf "${TEST_DIR}"`);
+  // Cleanup
+  execSync(`rm -rf "${TEST_DIR}"`);
 
-process.exit(testsFailed > 0 ? 1 : 0);
+  process.exit(testsFailed > 0 ? 1 : 0);
+}
+
+runTests().catch((error) => {
+  console.error(error);
+  execSync(`rm -rf "${TEST_DIR}"`);
+  process.exit(1);
+});
