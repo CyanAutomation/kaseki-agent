@@ -380,6 +380,36 @@ function testGetInstanceStatus() {
   assertEqual(metadataFallbackStatus.exitCode, 7, 'Should use metadata exit code when exit_code file is absent');
   assertEqual(metadataFallbackStatus.status, 'failed', 'Should derive lifecycle from metadata fallback exit code');
 
+  createMockInstance('kaseki-172', {
+    metadata: {
+      duration_seconds: undefined,
+      started_at: new Date(Date.now() - 120000).toISOString(),
+      start_time: undefined,
+      exit_code: null,
+    },
+  });
+
+  const childProcess = require('child_process');
+  const originalExecSync = childProcess.execSync;
+  childProcess.execSync = (command, options) => {
+    if (command.includes('docker ps --format')) {
+      return 'kaseki-172\n';
+    }
+    return originalExecSync(command, options);
+  };
+
+  delete require.cache[require.resolve('./kaseki-cli-lib.js')];
+  const runningAwareCli = require('./kaseki-cli-lib.js');
+  runningAwareCli.config.KASEKI_RESULTS_DIR = MOCK_RESULTS_DIR;
+
+  const startedAtStatus = runningAwareCli.getInstanceStatus('kaseki-172');
+  assertExists(startedAtStatus.elapsedSeconds, 'Should estimate elapsed time for running instance with started_at');
+  assert(startedAtStatus.elapsedSeconds > 0, 'Estimated elapsed time from started_at should be positive');
+  assertEqual(startedAtStatus.running, true, 'Should mark instance as running when docker lists exact name');
+
+  childProcess.execSync = originalExecSync;
+  delete require.cache[require.resolve('./kaseki-cli-lib.js')];
+
   const missing = kasekiCli.getInstanceStatus('nonexistent-instance');
   assertExists(missing.error, 'Should return error for missing instance');
 }

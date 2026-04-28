@@ -330,10 +330,13 @@ function getInstanceStatus(instance) {
   if (metadata.duration_seconds !== undefined) {
     elapsedSeconds = metadata.duration_seconds;
   } else if (isRunning) {
-    // For running instances, estimate from start time
-    if (metadata.start_time) {
-      const startTime = new Date(metadata.start_time).getTime();
-      elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+    // For running instances, estimate from start timestamp (new key first, legacy fallback)
+    const startTimestamp = metadata.started_at || metadata.start_time;
+    if (startTimestamp) {
+      const startTime = new Date(startTimestamp).getTime();
+      if (!Number.isNaN(startTime)) {
+        elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      }
     }
   }
 
