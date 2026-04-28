@@ -693,6 +693,8 @@ async function testFollowPollerHandlesTruncateAndRotate() {
     ino: 2002,
     mtimeMs: 3,
   });
+  // Follow polling is asynchronous across ticks. First poll observes rotation/reset,
+  // second poll consumes available bytes from the new file.
   poller.poll();
   await flushImmediate();
   poller.poll();
@@ -704,6 +706,58 @@ async function testFollowPollerHandlesTruncateAndRotate() {
   );
   assert(chunks.join('').includes('rotated\n'), 'Should read appended data from rotated file');
   assertEqual(errors.length, 0, 'Should not emit follow read errors');
+
+  poller.close();
+}
+
+async function testFollowPollerQueuesPollDuringActiveRead() {
+  console.log('\n→ Testing follow poller queued repoll during active read');
+
+  const logPath = '/tmp/mock-follow-queued.log';
+  const mockFs = createMockFollowFs(logPath, {
+    content: 'before-rotate\n',
+    ino: 3001,
+    mtimeMs: 1,
+  });
+
+  const chunks = [];
+  const errors = [];
+  const infos = [];
+  let didMutateDuringRead = false;
+  let poller;
+
+  poller = createFollowPoller(mockFs, logPath, {
+    onInfo: (message) => infos.push(message),
+    onData: (chunk) => {
+      chunks.push(chunk);
+      if (!didMutateDuringRead) {
+        didMutateDuringRead = true;
+        mockFs.setFile(logPath, {
+          content: 'after-rotate\n',
+          ino: 4002,
+          mtimeMs: 2,
+        });
+        // Queue a follow-up poll while the stream is still active.
+        poller.poll();
+      }
+    },
+    onError: (err) => errors.push(err.message),
+  });
+
+  poller.poll();
+  await flushImmediate();
+  await flushImmediate();
+
+  assertEqual(
+    chunks.join(''),
+    'before-rotate\nafter-rotate\n',
+    'Should not miss post-rotation content when poll is requested during active read'
+  );
+  assert(
+    infos.some((message) => message.includes('replaced/rotated')),
+    'Should report rotation detected by queued follow-up poll'
+  );
+  assertEqual(errors.length, 0, 'Should not emit errors when repolling after active read');
 
   poller.close();
 }
@@ -735,6 +789,7 @@ async function runTests() {
   testGetAnalysis();
   testCliNumericOptionValidation();
   await testFollowPollerHandlesTruncateAndRotate();
+  await testFollowPollerQueuesPollDuringActiveRead();
 
   // Summary
   console.log('\n================================================================================');
