@@ -42,6 +42,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
   let fd = null;
   let lastPosition = 0;
   let isReading = false;
+  let hasQueuedPoll = false;
   let lastPathIdentity = null;
 
   function closeFd() {
@@ -68,6 +69,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
 
   function poll() {
     if (isReading) {
+      hasQueuedPoll = true;
       return;
     }
 
@@ -154,12 +156,20 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       }
       lastPosition += bytesRead;
       isReading = false;
+      if (hasQueuedPoll) {
+        hasQueuedPoll = false;
+        poll();
+      }
     });
 
     stream.on('error', (err) => {
       isReading = false;
       closeFd();
       onError(err);
+      if (hasQueuedPoll) {
+        hasQueuedPoll = false;
+        poll();
+      }
     });
   }
 
