@@ -583,15 +583,20 @@ function detectAnomalies(instance) {
     anomalies.push({
       type: 'timeout-risk',
       severity: 'warning',
-      message: `Timeout approaching: ${status.elapsedSeconds}s / ${status.timeoutSeconds}s (${status.timeoutRiskPercent.toFixed(1)}%)`,
+      message: `Agent timeout approaching: ${status.agentElapsedSeconds}s / ${status.timeoutSeconds}s (${status.timeoutRiskPercent.toFixed(1)}%)`,
     });
   }
 
   if (status.timedOut) {
+    const agentElapsed = status.agentElapsedSeconds ?? status.timeoutSeconds;
+    const totalElapsed = status.totalDurationSeconds ?? status.elapsedSeconds;
+    const totalSuffix = totalElapsed !== null && totalElapsed !== undefined && totalElapsed !== agentElapsed
+      ? `; total run ${totalElapsed}s`
+      : '';
     anomalies.push({
       type: 'timeout',
       severity: 'critical',
-      message: `Process timed out after ${status.elapsedSeconds}s`,
+      message: `Agent timed out after ${agentElapsed}s (limit ${status.timeoutSeconds}s)${totalSuffix}`,
     });
   }
 
@@ -682,6 +687,50 @@ function parseValidationTimings(instance, options = {}) {
   return timings;
 }
 
+function parseStageTimingRow(line) {
+  const parts = line.split('\t');
+  if (parts.length < 3) {
+    return { malformed: true, reason: 'missing required TSV columns' };
+  }
+
+  const exitCodeRaw = parts[1].trim();
+  const exitCode = parseInt(exitCodeRaw, 10);
+  if (!Number.isInteger(exitCode) || !/^-?\d+$/.test(exitCodeRaw)) {
+    return { malformed: true, reason: `invalid exit code "${parts[1]}"` };
+  }
+
+  const durationRaw = parts[2].trim();
+  const durationSeconds = parseInt(durationRaw, 10);
+  if (!Number.isInteger(durationSeconds) || !/^-?\d+$/.test(durationRaw) || durationSeconds < 0) {
+    return { malformed: true, reason: `invalid duration seconds "${parts[2]}"` };
+  }
+
+  return {
+    malformed: false,
+    timing: {
+      stage: parts[0],
+      exitCode,
+      durationSeconds,
+      detail: parts.slice(3).join('\t'),
+    },
+  };
+}
+
+function parseStageTimings(instance) {
+  const timings = [];
+  const content = readArtifact(instance, 'stage-timings.tsv');
+  if (!content) return timings;
+
+  const lines = content.split('\n').filter((line) => line.trim().length > 0);
+  for (const line of lines) {
+    const parsed = parseStageTimingRow(line);
+    if (!parsed.malformed) {
+      timings.push(parsed.timing);
+    }
+  }
+  return timings;
+}
+
 // ============================================================================
 // Post-Run Analysis
 // ============================================================================
@@ -726,6 +775,7 @@ function getAnalysis(instance) {
 
   // Get validation timings
   const validationTimings = parseValidationTimings(instance);
+  const stageTimings = parseStageTimings(instance);
 
   // Get error
   const errors = detectErrors(instance);
@@ -759,6 +809,7 @@ function getAnalysis(instance) {
       durationSeconds: t.durationSeconds,
       passed: t.exitCode === 0,
     })),
+    stageTimings,
     piMetrics: {
       toolStartCount: piSummary.tool_start_count ?? 0,
       toolEndCount: piSummary.tool_end_count ?? 0,
@@ -809,6 +860,7 @@ module.exports = {
 
   // Validation parsing
   parseValidationTimings,
+  parseStageTimings,
 
   // Analysis
   getAnalysis,

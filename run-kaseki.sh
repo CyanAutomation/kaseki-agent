@@ -16,6 +16,7 @@ KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run 
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
+KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -62,6 +63,8 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
   KASEKI_STREAM_PROGRESS            Stream sanitized progress lines (default: 1)
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
+  KASEKI_VALIDATE_AFTER_AGENT_FAILURE
+                                    Run validation even when the agent fails (default: 0)
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
@@ -112,6 +115,16 @@ json_encode() {
 
 json_string() {
   printf '%s' "$1" | json_encode
+}
+
+file_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    return 1
+  fi
 }
 
 require_non_negative_int() {
@@ -198,6 +211,7 @@ fi
 
 doctor() {
   local status=0
+  local image_present=0
   printf 'Kaseki doctor\n'
   printf 'Root: %s\n' "$ROOT"
   printf 'Image: %s\n' "$IMAGE"
@@ -228,9 +242,37 @@ doctor() {
 
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
     printf 'Docker image: present\n'
+    image_present=1
   else
     printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
     status=1
+  fi
+
+  if [ "$image_present" -eq 1 ]; then
+    local mismatch=0
+    local pairs
+    pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream kaseki-report.js:/usr/local/bin/kaseki-report github-app-token.js:/usr/local/bin/github-app-token'
+    for pair in $pairs; do
+      local host_file="${pair%%:*}"
+      local image_file="${pair#*:}"
+      local host_sum image_sum
+      if [ ! -f "$host_file" ]; then
+        printf 'Image/template parity: missing host file %s\n' "$host_file" >&2
+        mismatch=1
+        continue
+      fi
+      host_sum="$(file_sha256 "$host_file" || true)"
+      image_sum="$(docker run --rm --entrypoint sha256sum "$IMAGE" "$image_file" 2>/dev/null | awk '{print $1}' || true)"
+      if [ -z "$host_sum" ] || [ -z "$image_sum" ] || [ "$host_sum" != "$image_sum" ]; then
+        printf 'Image/template parity: mismatch for %s vs %s\n' "$host_file" "$image_file" >&2
+        mismatch=1
+      fi
+    done
+    if [ "$mismatch" -eq 0 ]; then
+      printf 'Image/template parity: ok\n'
+    else
+      printf 'Image/template parity: mismatch; rebuild/pull the image or set KASEKI_IMAGE to the matching local image.\n' >&2
+    fi
   fi
 
   # Check GitHub App credentials (optional)
@@ -263,6 +305,10 @@ if [ -z "$INSTANCE" ]; then
   next=1
   while true; do
     candidate="kaseki-$next"
+    if [ -d "$RESULTS/$candidate" ]; then
+      next=$((next + 1))
+      continue
+    fi
     if mkdir "$RUNS/$candidate" 2>/dev/null; then
       INSTANCE="$candidate"
       break
@@ -288,6 +334,12 @@ SECRET_FILE="$RUN_DIR/openrouter_api_key"
 GITHUB_APP_ID_FILE="$RUN_DIR/github_app_id"
 GITHUB_APP_CLIENT_ID_FILE="$RUN_DIR/github_app_client_id"
 GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE="$RUN_DIR/github_app_private_key"
+
+if [ -d "$RESULT_DIR" ]; then
+  echo "Result directory already exists for $INSTANCE: $RESULT_DIR" >&2
+  echo "Choose a new instance name; Kaseki does not overwrite prior results." >&2
+  exit 2
+fi
 
 if [ -n "${INSTANCE:-}" ] && [ ! -d "$RUN_DIR" ]; then
   if ! mkdir "$RUN_DIR" 2>/dev/null; then
@@ -323,6 +375,8 @@ initialize_result_artifacts() {
   : > "$RESULT_DIR/changed-files.txt"
   : > "$RESULT_DIR/validation.log"
   : > "$RESULT_DIR/validation-timings.tsv"
+  : > "$RESULT_DIR/stage-timings.tsv"
+  : > "$RESULT_DIR/dependency-cache.log"
   : > "$RESULT_DIR/quality.log"
   : > "$RESULT_DIR/secret-scan.log"
   : > "$RESULT_DIR/git-push.log"
@@ -390,12 +444,21 @@ SUMMARY
   write_failure_json "$exit_code" "$failed_command" "$message"
 }
 
+record_host_stage_timing() {
+  local stage="$1"
+  local exit_code="$2"
+  local duration_seconds="${3:-0}"
+  local detail="${4:-}"
+  printf '%s\t%s\t%s\t%s\n' "$stage" "$exit_code" "$duration_seconds" "$detail" >> "$RESULT_DIR/stage-timings.tsv"
+}
+
 fail_before_container() {
   local exit_code="$1"
   local failed_command="$2"
   local message="$3"
   printf '%s\n' "$message" > "$RESULT_DIR/stderr.log"
   write_host_metadata_failure "$exit_code" "$failed_command" "$message"
+  record_host_stage_timing "$failed_command" "$exit_code" 0 "$message"
   write_cleanup_log
   cat "$RESULT_DIR/stderr.log" >&2
   exit "$exit_code"
@@ -471,14 +534,20 @@ if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 fi
 
 if command -v git >/dev/null 2>&1; then
-  if ! git ls-remote --exit-code "$REPO_URL" "$GIT_REF" >/dev/null 2>"$RESULT_DIR/preflight-git.log"; then
-    message="Git ref preflight failed for $REPO_URL at $GIT_REF. See preflight-git.log."
-    cat "$RESULT_DIR/preflight-git.log" > "$RESULT_DIR/stderr.log"
+  preflight_start="$(date +%s)"
+  if ! git ls-remote --exit-code "$REPO_URL" "$GIT_REF" >"$RESULT_DIR/preflight-git.log" 2>&1; then
+    message="Git ref preflight failed for $REPO_URL at $GIT_REF. The repository or ref may not exist, may be private, or may be unreachable. See preflight-git.log."
+    {
+      printf '%s\n' "$message"
+      cat "$RESULT_DIR/preflight-git.log"
+    } > "$RESULT_DIR/stderr.log"
     write_host_metadata_failure 128 "preflight git ref" "$message"
+    record_host_stage_timing "preflight git ref" 128 "$(($(date +%s) - preflight_start))" "$message"
     write_cleanup_log
     cat "$RESULT_DIR/stderr.log" >&2
     exit 128
   fi
+  record_host_stage_timing "preflight git ref" 0 "$(($(date +%s) - preflight_start))" "ok"
 else
   printf 'Git: missing on host; skipping git ref preflight.\n' >> "$RESULT_DIR/progress.log"
 fi
@@ -528,6 +597,7 @@ docker_args=(
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
   -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"
+  -e KASEKI_VALIDATE_AFTER_AGENT_FAILURE="$KASEKI_VALIDATE_AFTER_AGENT_FAILURE"
   -e KASEKI_DEPENDENCY_CACHE_DIR="/cache/dependencies"
   -e TMPDIR="/workspace/tmp"
   -e NPM_CONFIG_CACHE="/cache/npm-cache"
