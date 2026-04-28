@@ -11,8 +11,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { EventEmitter } = require('events');
 const { execSync, spawnSync } = require('child_process');
 const kasekiCli = require('./kaseki-cli-lib.js');
+const { createFollowPoller } = require('./kaseki-cli.js');
 
 // ============================================================================
 // Test Setup
@@ -530,6 +532,156 @@ function testCliNumericOptionValidation() {
   }
 }
 
+function createMockFollowFs(logPath, initialFile) {
+  let nextFd = 10;
+  const filesByPath = new Map([[logPath, { ...initialFile }]]);
+  const fds = new Map();
+
+  function getStats(file) {
+    return {
+      size: Buffer.byteLength(file.content),
+      ino: file.ino,
+      mtimeMs: file.mtimeMs,
+    };
+  }
+
+  return {
+    statSync(targetPath) {
+      const file = filesByPath.get(targetPath);
+      if (!file) {
+        const err = new Error('ENOENT');
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return getStats(file);
+    },
+    openSync(targetPath) {
+      const file = filesByPath.get(targetPath);
+      if (!file) {
+        const err = new Error('ENOENT');
+        err.code = 'ENOENT';
+        throw err;
+      }
+      const fd = nextFd++;
+      fds.set(fd, {
+        path: targetPath,
+        ino: file.ino,
+        mtimeMs: file.mtimeMs,
+      });
+      return fd;
+    },
+    fstatSync(fd) {
+      const opened = fds.get(fd);
+      if (!opened) {
+        const err = new Error('EBADF');
+        err.code = 'EBADF';
+        throw err;
+      }
+
+      const file = filesByPath.get(opened.path);
+      if (!file) {
+        const err = new Error('ESTALE');
+        err.code = 'ESTALE';
+        throw err;
+      }
+
+      if (file.ino === opened.ino) {
+        return getStats(file);
+      }
+
+      return {
+        size: 0,
+        ino: opened.ino,
+        mtimeMs: opened.mtimeMs,
+      };
+    },
+    closeSync(fd) {
+      fds.delete(fd);
+    },
+    createReadStream(_targetPath, options) {
+      const opened = fds.get(options.fd);
+      const file = opened ? filesByPath.get(opened.path) : null;
+      const emitter = new EventEmitter();
+      const text = file ? file.content.slice(options.start, options.end + 1) : '';
+
+      const originalOn = emitter.on.bind(emitter);
+      const originalOn = emitter.on.bind(emitter);
+      let endHandler = null;
+      emitter.on = (event, handler) => {
+        originalOn(event, handler);
+        if (event === 'end') {
+          endHandler = handler;
+          setImmediate(() => {
+            if (text.length > 0) {
+              emitter.emit('data', text);
+            }
+            emitter.emit('end');
+          });
+        }
+        return emitter;
+      };
+      return emitter;
+    },
+    setFile(targetPath, nextFile) {
+      filesByPath.set(targetPath, { ...nextFile });
+    },
+  };
+}
+
+function testFollowPollerHandlesTruncateAndRotate() {
+  console.log('\n→ Testing follow poller truncate/rotate resilience');
+
+  const logPath = '/tmp/mock-follow.log';
+  const mockFs = createMockFollowFs(logPath, {
+    content: 'line-1\nline-2\n',
+    ino: 1001,
+    mtimeMs: 1,
+  });
+
+  const infos = [];
+  const chunks = [];
+  const errors = [];
+
+  const poller = createFollowPoller(mockFs, logPath, {
+    onInfo: (message) => infos.push(message),
+    onData: (chunk) => chunks.push(chunk),
+    onError: (err) => errors.push(err.message),
+  });
+
+  poller.poll();
+  assertEqual(chunks.join(''), 'line-1\nline-2\n', 'Should read initial content');
+
+  mockFs.setFile(logPath, {
+    content: 'new\n',
+    ino: 1001,
+    mtimeMs: 2,
+  });
+  poller.poll();
+
+  assert(
+    infos.some((message) => message.includes('truncated')),
+    'Should emit info message when file truncates while following'
+  );
+  assert(chunks.join('').includes('new\n'), 'Should read data after truncation reset');
+
+  mockFs.setFile(logPath, {
+    content: 'rotated\n',
+    ino: 2002,
+    mtimeMs: 3,
+  });
+  poller.poll();
+  poller.poll();
+
+  assert(
+    infos.some((message) => message.includes('replaced/rotated')),
+    'Should emit info message when inode changes due to rotation'
+  );
+  assert(chunks.join('').includes('rotated\n'), 'Should read appended data from rotated file');
+  assertEqual(errors.length, 0, 'Should not emit follow read errors');
+
+  poller.close();
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -555,6 +707,7 @@ testDetectAnomalies();
 testParseValidationTimings();
 testGetAnalysis();
 testCliNumericOptionValidation();
+testFollowPollerHandlesTruncateAndRotate();
 
 // Summary
 console.log('\n================================================================================');
