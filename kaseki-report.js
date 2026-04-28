@@ -50,13 +50,23 @@ const metadata = readJson('metadata.json');
 const summary = readJson('pi-summary.json');
 const changedFiles = readText('changed-files.txt').split(/\r?\n/).filter(Boolean);
 const timings = readText('validation-timings.tsv').split(/\r?\n/).filter(Boolean);
+const stageTimings = readText('stage-timings.tsv').split(/\r?\n/).filter(Boolean);
+const dependencyCache = readText('dependency-cache.log').split(/\r?\n/).filter(Boolean);
 const secretScanBytes = Buffer.byteLength(readText('secret-scan.log'));
 const status = metadata.exit_code === 0 ? 'passed' : 'failed';
 const resultName = metadata.instance || path.basename(resultDir);
 const nextDiagnostic =
   metadata.exit_code === 0
     ? 'none'
-    : firstExisting(['quality.log', 'secret-scan.log', 'pi-stderr.log', 'validation.log', 'stderr.log']) ??
+    : firstExisting([
+      'failure.json',
+      'quality.log',
+      'secret-scan.log',
+      'pi-stderr.log',
+      'validation.log',
+      'preflight-git.log',
+      'stderr.log',
+    ]) ??
       'metadata.json';
 
 console.log(`Kaseki result: ${resultName}`);
@@ -71,8 +81,11 @@ console.log(`Requested model: ${metadata.model || 'unknown'}`);
 console.log(`Actual model: ${metadata.actual_model || summary.selected_model || 'unknown'}`);
 console.log(`Pi version: ${metadata.pi_version || 'unknown'}`);
 console.log(`Duration seconds: ${metadata.duration_seconds ?? 'unknown'}`);
+console.log(`Agent duration seconds: ${metadata.pi_duration_seconds ?? 'unknown'}`);
 console.log(`Diff non-empty: ${metadata.diff_nonempty ?? 'unknown'}`);
 printList('Changed files', changedFiles);
+printList('Stage timings', stageTimings);
 printList('Validation timings', timings);
+printList('Dependency cache', dependencyCache);
 console.log(`Secret scan bytes: ${secretScanBytes}`);
 console.log(`Next diagnostic: ${nextDiagnostic}`);
