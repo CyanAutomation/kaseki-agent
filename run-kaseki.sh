@@ -450,11 +450,11 @@ elif [ -r "$HOST_SECRET_FILE" ]; then
   key_source="secret file"
   key_value="$(cat "$HOST_SECRET_FILE")"
 else
-  fail_before_container 2 "missing OPENROUTER_API_KEY" "OpenRouter API key is required. Set OPENROUTER_API_KEY or provide a readable secret file at $HOST_SECRET_FILE (override with OPENROUTER_API_KEY_FILE)."
+  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "missing OPENROUTER_API_KEY" "OpenRouter API key is required. Set OPENROUTER_API_KEY or provide a readable secret file at $HOST_SECRET_FILE (override with OPENROUTER_API_KEY_FILE)."
 fi
 
 if [ -z "$key_value" ]; then
-  fail_before_container 2 "empty OpenRouter API key from ${key_source}" "OpenRouter API key source \"$key_source\" resolved to an empty value."
+  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "empty OpenRouter API key from ${key_source}" "OpenRouter API key source \"$key_source\" resolved to an empty value."
 fi
 
 printf 'OpenRouter API key source: %s\n' "$key_source"
@@ -463,11 +463,11 @@ chmod 0600 "$SECRET_FILE"
 unset key_value key_source
 
 if ! command -v docker >/dev/null 2>&1; then
-  fail_before_container 2 "preflight docker" "Docker is required but was not found on the host."
+  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker" "Docker is required but was not found on the host."
 fi
 
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  fail_before_container 2 "preflight docker image" "Docker image is missing locally: $IMAGE. Pull it or set KASEKI_IMAGE to an available image."
+  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker image" "Docker image is missing locally: $IMAGE. Pull it or set KASEKI_IMAGE to an available image."
 fi
 
 if command -v git >/dev/null 2>&1; then
