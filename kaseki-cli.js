@@ -38,6 +38,23 @@ function printError(msg) {
   process.exit(1);
 }
 
+function parsePositiveIntOption(name, raw, min = 1) {
+  if (raw === undefined || raw === null || raw === '') {
+    printError(`Invalid value for --${name}: expected an integer >= ${min}, got empty value`);
+  }
+
+  if (!/^-?\d+$/.test(raw)) {
+    printError(`Invalid value for --${name}: expected an integer >= ${min}, got "${raw}"`);
+  }
+
+  const parsed = Number(raw);
+  if (parsed < min) {
+    printError(`Invalid value for --${name}: expected an integer >= ${min}, got ${parsed}`);
+  }
+
+  return parsed;
+}
+
 function printTable(data) {
   if (data.length === 0) {
     console.log('(empty)');
@@ -130,7 +147,7 @@ function cmdLogs(args) {
   // Parse options
   for (let i = 1; i < args.length; i++) {
     if (args[i].startsWith('--tail=')) {
-      tailLines = parseInt(args[i].split('=')[1], 10);
+      tailLines = parsePositiveIntOption('tail', args[i].split('=')[1]);
     } else if (args[i].startsWith('--file=')) {
       logFile = args[i].split('=')[1];
     }
@@ -157,7 +174,7 @@ function cmdProgress(args) {
 
   for (let i = 1; i < args.length; i++) {
     if (args[i].startsWith('--tail=')) {
-      tailLines = parseInt(args[i].split('=')[1], 10);
+      tailLines = parsePositiveIntOption('tail', args[i].split('=')[1]);
     }
   }
 
@@ -236,7 +253,7 @@ function cmdWatch(args) {
   // Parse options
   for (let i = 1; i < args.length; i++) {
     if (args[i].startsWith('--interval=')) {
-      interval = parseInt(args[i].split('=')[1], 10);
+      interval = parsePositiveIntOption('interval', args[i].split('=')[1]);
     }
   }
 

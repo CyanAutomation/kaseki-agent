@@ -11,7 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const kasekiCli = require('./kaseki-cli-lib.js');
 
 // ============================================================================
@@ -472,6 +472,34 @@ function testGetAnalysis() {
   assertExists(analysis.piMetrics, 'Should include Pi metrics');
 }
 
+function testCliNumericOptionValidation() {
+  console.log('\n→ Testing CLI numeric option validation');
+
+  const cases = [
+    { commandArgs: ['logs', 'kaseki-1', '--tail='], option: '--tail', expectedRaw: 'empty value' },
+    { commandArgs: ['logs', 'kaseki-1', '--tail=abc'], option: '--tail', expectedRaw: '"abc"' },
+    { commandArgs: ['progress', 'kaseki-1', '--tail=0'], option: '--tail', expectedRaw: '0' },
+    { commandArgs: ['watch', 'kaseki-1', '--interval=-3'], option: '--interval', expectedRaw: '-3' },
+  ];
+
+  for (const testCase of cases) {
+    const result = spawnSync('node', ['kaseki-cli.js', ...testCase.commandArgs], {
+      cwd: __dirname,
+      encoding: 'utf8',
+    });
+
+    assert(result.status !== 0, `${testCase.commandArgs.join(' ')} should exit non-zero`);
+    assert(
+      result.stderr.includes(`Invalid value for ${testCase.option}`),
+      `${testCase.commandArgs.join(' ')} should report invalid option`
+    );
+    assert(
+      result.stderr.includes(testCase.expectedRaw),
+      `${testCase.commandArgs.join(' ')} should include rejected raw value`
+    );
+  }
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -496,6 +524,7 @@ testDetectErrors();
 testDetectAnomalies();
 testParseValidationTimings();
 testGetAnalysis();
+testCliNumericOptionValidation();
 
 // Summary
 console.log('\n================================================================================');
