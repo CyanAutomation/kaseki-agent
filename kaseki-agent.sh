@@ -101,14 +101,18 @@ json_encode() {
 
 emit_progress() {
   local stage="$1"
-  local message="$2"
+  local detail="$2"
+  local status="${3:-info}"
   local now
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"timestamp":%s,"stage":%s,"message":%s}\n' \
+  printf '{"timestamp":%s,"component":%s,"stage":%s,"status":%s,"instance":%s,"detail":%s}\n' \
     "$(printf '%s' "$now" | json_encode)" \
+    "$(printf '%s' "kaseki-agent" | json_encode)" \
     "$(printf '%s' "$stage" | json_encode)" \
-    "$(printf '%s' "$message" | json_encode)" >> /results/progress.jsonl
-  printf '[progress] %s: %s\n' "$stage" "$message" | tee -a /results/progress.log
+    "$(printf '%s' "$status" | json_encode)" \
+    "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
+    "$(printf '%s' "$detail" | json_encode)" >> /results/progress.jsonl
+  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a /results/progress.log
 }
 
 write_metadata() {
