@@ -380,6 +380,7 @@ GIT_REF="$PARSED_GIT_REF"
 
 mkdir -p "$RUNS" "$RESULTS" "$CACHE"
 
+INSTANCE_AUTO_RESERVED=0
 if [ -z "$INSTANCE" ]; then
   next=1
   while true; do
@@ -390,6 +391,7 @@ if [ -z "$INSTANCE" ]; then
     fi
     if mkdir "$RUNS/$candidate" 2>/dev/null; then
       INSTANCE="$candidate"
+      INSTANCE_AUTO_RESERVED=1
       break
     fi
     if [ -d "$RUNS/$candidate" ]; then
@@ -426,7 +428,7 @@ if [ -d "$FINAL_RESULT_DIR" ]; then
   exit 2
 fi
 
-if [ -n "${INSTANCE:-}" ] && [ -d "$FINAL_RUN_DIR" ]; then
+if [ "$INSTANCE_AUTO_RESERVED" -eq 0 ] && [ -n "${INSTANCE:-}" ] && [ -d "$FINAL_RUN_DIR" ]; then
   echo "Instance already reserved: $INSTANCE" >&2
   exit 2
 fi
