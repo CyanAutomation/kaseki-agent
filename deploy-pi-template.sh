@@ -4,6 +4,27 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
+KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+
+setup_host_logging() {
+  local base_name="$1"
+  local stamp host_log_file
+  if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    host_log_file="$KASEKI_LOG_DIR/${base_name}-${stamp}.log"
+    exec > >(tee -a "$host_log_file") 2> >(tee -a "$host_log_file" >&2)
+    printf 'Host log mirror: %s\n' "$host_log_file"
+    return 0
+  fi
+  if [ "$KASEKI_STRICT_HOST_LOGGING" = "1" ]; then
+    printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
+    exit 1
+  fi
+  printf 'Warning: host logging disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
+}
+
+setup_host_logging "deploy-pi-template"
 
 if [ "${1:-}" = "--help" ]; then
   cat <<HELP
@@ -46,6 +67,7 @@ install_file 0644 docker/workspace-cache/package.json
 install_file 0644 docker/workspace-cache/package-lock.json
 install_file 0644 docs/CLI.md
 install_file 0644 docs/repo-maturity.md
+install_file 0644 ops/logrotate/kaseki
 
 if command -v docker >/dev/null 2>&1; then
   printf 'Docker image configured for doctor: %s\n' "$IMAGE"

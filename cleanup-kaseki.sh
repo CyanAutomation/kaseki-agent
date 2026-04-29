@@ -8,6 +8,25 @@ OLDER_THAN_DAYS="${KASEKI_CLEANUP_DAYS:-1}"
 DRY_RUN=0
 DOCKER_CLEANUP=0
 FORCE=0
+KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
+KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+
+setup_host_logging() {
+  local base_name="$1"
+  local stamp host_log_file
+  if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    host_log_file="$KASEKI_LOG_DIR/${base_name}-${stamp}.log"
+    exec > >(tee -a "$host_log_file") 2> >(tee -a "$host_log_file" >&2)
+    printf 'Host log mirror: %s\n' "$host_log_file"
+    return 0
+  fi
+  if [ "$KASEKI_STRICT_HOST_LOGGING" = "1" ]; then
+    printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
+    exit 1
+  fi
+  printf 'Warning: host logging disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
+}
 
 show_help() {
   cat <<HELP
@@ -46,6 +65,8 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+setup_host_logging "cleanup-kaseki"
 
 run_or_print() {
   if [ "$DRY_RUN" -eq 1 ]; then

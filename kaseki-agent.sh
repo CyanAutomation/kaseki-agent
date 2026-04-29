@@ -38,6 +38,27 @@ DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
+KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
+KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+
+setup_host_logging_mirror() {
+  local base_name="$1"
+  local stamp host_log_file
+  if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    host_log_file="$KASEKI_LOG_DIR/${base_name}-${stamp}.log"
+    exec > >(tee -a /results/stdout.log | tee -a "$host_log_file") \
+      2> >(tee -a /results/stderr.log | tee -a "$host_log_file" >&2)
+    printf 'Host log mirror: %s\n' "$host_log_file"
+    return 0
+  fi
+  if [ "$KASEKI_STRICT_HOST_LOGGING" = "1" ]; then
+    printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
+    exit 1
+  fi
+  exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
+  printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
+}
 
 mkdir_paths=(/results)
 if [ -n "${HOME:-}" ]; then
@@ -70,7 +91,7 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > "$VALIDATION_TIMINGS_FILE"
 : >> "$STAGE_TIMINGS_FILE"
 : > "$DEPENDENCY_CACHE_LOG"
-exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
+setup_host_logging_mirror "$INSTANCE_NAME"
 
 json_encode() {
   node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
