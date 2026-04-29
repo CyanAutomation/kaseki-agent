@@ -30,35 +30,39 @@ failure = 0
 stage_count = 0
 stage_duration_seconds = OrderedDict()
 
-with open(stage_path, "r", encoding="utf-8") as f:
-    for raw in f:
-        line = raw.rstrip("\n")
-        if not line.strip():
-            continue
-        parts = line.split("\t")
-        if len(parts) < 3:
-            continue
-        stage = parts[0]
-        exit_raw = parts[1].strip()
-        duration_raw = parts[2].strip()
+try:
+    with open(stage_path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.rstrip("\n")
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            stage = parts[0]
+            exit_raw = parts[1].strip()
+            duration_raw = parts[2].strip()
 
-        try:
-            exit_code = int(exit_raw)
-        except ValueError:
-            continue
+            try:
+                exit_code = int(exit_raw)
+            except ValueError:
+                continue
 
-        try:
-            duration = float(duration_raw)
-        except ValueError:
-            duration = 0.0
+            try:
+                duration = float(duration_raw)
+            except ValueError:
+                duration = 0.0
 
-        stage_count += 1
-        if exit_code == 0:
-            success += 1
-        else:
-            failure += 1
+            stage_count += 1
+            if exit_code == 0:
+                success += 1
+            else:
+                failure += 1
 
-        stage_duration_seconds[stage] = round(stage_duration_seconds.get(stage, 0.0) + duration, 6)
+            stage_duration_seconds[stage] = round(stage_duration_seconds.get(stage, 0.0) + duration, 6)
+except (FileNotFoundError, PermissionError) as e:
+    print(f"Error reading stage timings: {e}", file=sys.stderr)
+    sys.exit(1)
 
 total_runtime = metadata.get("total_duration_seconds")
 if total_runtime is None:
