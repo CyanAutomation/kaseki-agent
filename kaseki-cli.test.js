@@ -277,6 +277,33 @@ function testListInstancesHandlesReaddirRace() {
     fs.readdirSync = originalReaddirSync;
   }
 }
+
+function testListInstancesSkipsDisappearingInstanceDir() {
+  console.log('\n→ Testing listInstances() skips disappearing instance directory');
+
+  createMockInstance('kaseki-30');
+  createMockInstance('kaseki-31');
+
+  const originalReadFileSync = fs.readFileSync;
+  const disappearingDir = path.join(MOCK_RESULTS_DIR, 'kaseki-31');
+  let removed = false;
+
+  fs.readFileSync = (targetPath, ...args) => {
+    if (!removed && targetPath === path.join(disappearingDir, 'metadata.json')) {
+      fs.rmSync(disappearingDir, { recursive: true, force: true });
+      removed = true;
+    }
+    return originalReadFileSync(targetPath, ...args);
+  };
+
+  try {
+    const instances = kasekiCli.listInstances();
+    assert(instances.some((instance) => instance.name === 'kaseki-30'), 'Should still include unaffected instance');
+    assert(!instances.some((instance) => instance.name === 'kaseki-31'), 'Should skip instance removed during scan');
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+}
 function testExactContainerNameMatching() {
   console.log('\n→ Testing exact docker name matching helpers');
 
@@ -916,6 +943,7 @@ async function runTests() {
 
   testListInstances();
   testListInstancesHandlesReaddirRace();
+  testListInstancesSkipsDisappearingInstanceDir();
   testExactContainerNameMatching();
   testReadArtifact();
   testReadJsonArtifact();
