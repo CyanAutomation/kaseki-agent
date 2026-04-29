@@ -18,8 +18,12 @@ from collections import OrderedDict
 stage_path = sys.argv[1]
 metadata_path = sys.argv[2]
 
-with open(metadata_path, "r", encoding="utf-8") as f:
-    metadata = json.load(f)
+try:
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+except (FileNotFoundError, PermissionError, json.JSONDecodeError) as e:
+    print(f"Error reading metadata: {e}", file=sys.stderr)
+    sys.exit(1)
 
 success = 0
 failure = 0
