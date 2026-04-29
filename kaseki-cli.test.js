@@ -246,7 +246,6 @@ function testListInstances() {
   assertEqual(metadataOnlyExitCode.status, 'failed', 'Should derive failed status from metadata exit code when file is absent');
 }
 
-
 function testListInstancesHandlesReaddirRace() {
   console.log('\n→ Testing listInstances() readdir race handling');
 
