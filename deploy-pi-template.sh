@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
 DEFAULT_TARGET_DIR="/agents/kaseki-template"
+TARGET_DIR="${KASEKI_TEMPLATE_DIR:-$DEFAULT_TARGET_DIR}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
@@ -65,10 +65,10 @@ setup_host_logging "deploy-pi-template"
 
 if [ "${1:-}" = "--help" ]; then
   cat <<HELP
-Usage: KASEKI_TEMPLATE_DIR=/agents/kaseki-template $0
+Usage: KASEKI_TEMPLATE_DIR=$DEFAULT_TARGET_DIR $0
 
 Deploys the current Kaseki runner files into KASEKI_TEMPLATE_DIR
-(default: /agents/kaseki-template).
+(default: $DEFAULT_TARGET_DIR).
 
 Idempotent behavior:
 - Refuses to clean unexpected targets (guardrails require basename "kaseki-template"
