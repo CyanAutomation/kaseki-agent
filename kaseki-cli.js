@@ -223,7 +223,7 @@ function printTable(data) {
   const headers = Object.keys(data[0]);
   const widths = {};
   for (const header of headers) {
-    widths[header] = Math.max(header.length, ...data.map((row) => String(row[header] || '').length));
+    widths[header] = Math.max(header.length, ...data.map((row) => String(row[header] ?? '').length));
   }
 
   // Print header
@@ -233,7 +233,7 @@ function printTable(data) {
 
   // Print rows
   for (const row of data) {
-    const values = headers.map((h) => String(row[h] || '').padEnd(widths[h])).join('  ');
+    const values = headers.map((h) => String(row[h] ?? '').padEnd(widths[h])).join('  ');
     console.log(values);
   }
 }
@@ -633,4 +633,5 @@ if (require.main === module) {
 
 module.exports = {
   createFollowPoller,
+  printTable,
 };
