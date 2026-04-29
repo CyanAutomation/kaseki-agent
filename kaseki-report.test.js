@@ -53,15 +53,19 @@ function run() {
     { name: 'exit-str-invalid', fixture: 'metadata-exit-invalid.json', expectedStatus: 'failed', expectedCode: 'unknown' },
   ];
 
-  for (const testCase of cases) {
-    const fixturePath = path.join(__dirname, 'test', 'fixtures', 'kaseki-report-exit-codes', testCase.fixture);
-    const metadata = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-    const fixtureDir = createFixture(baseDir, testCase.name, metadata.exit_code);
-    const result = runFixture(fixtureDir);
-    assert(result.code === 0, `${testCase.name}: report command exits with code 0`);
-    assert(result.stdout.includes(`Status: ${testCase.expectedStatus}`), `${testCase.name}: status reflects normalized exit code`);
-    assert(result.stdout.includes(`Exit code: ${testCase.expectedCode}`), `${testCase.name}: printed exit code uses normalization`);
-    assert(result.stdout.includes(`Pi exit code: ${testCase.expectedCode}`), `${testCase.name}: pi exit code uses normalization`);
+  try {
+    for (const testCase of cases) {
+      const fixturePath = path.join(__dirname, 'test', 'fixtures', 'kaseki-report-exit-codes', testCase.fixture);
+      const metadata = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+      const fixtureDir = createFixture(baseDir, testCase.name, metadata.exit_code);
+      const result = runFixture(fixtureDir);
+      assert(result.code === 0, `${testCase.name}: report command exits with code 0`);
+      assert(result.stdout.includes(`Status: ${testCase.expectedStatus}`), `${testCase.name}: status reflects normalized exit code`);
+      assert(result.stdout.includes(`Exit code: ${testCase.expectedCode}`), `${testCase.name}: printed exit code uses normalization`);
+      assert(result.stdout.includes(`Pi exit code: ${testCase.expectedCode}`), `${testCase.name}: pi exit code uses normalization`);
+    }
+  } finally {
+    fs.rmSync(baseDir, { recursive: true, force: true });
   }
 
   console.log(`\nPassed: ${passed}, Failed: ${failed}`);
