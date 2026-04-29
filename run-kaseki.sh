@@ -24,6 +24,17 @@ HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 
+
+run_preflight() {
+  local mode="$1"
+  local preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-preflight.sh"
+  if [ ! -x "$preflight_script" ]; then
+    printf 'Error: preflight script not found or not executable: %s\n' "$preflight_script" >&2
+    exit 1
+  fi
+  "$preflight_script" "$mode"
+}
+
 setup_host_logging() {
   local instance_for_log="$1"
   local stamp host_log_file
@@ -228,6 +239,14 @@ if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
   INSTANCE=""
 fi
 
+if [ "${SHOW_DOCTOR:-0}" != "1" ]; then
+  run_preflight run
+fi
+
+if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
+  INSTANCE=""
+fi
+
 setup_host_logging "${INSTANCE:-session}"
 
 doctor() {
@@ -238,6 +257,12 @@ doctor() {
   printf 'Image: %s\n' "$IMAGE"
   printf 'Cache: %s\n' "$CACHE"
   printf 'Container user: %s\n' "$KASEKI_CONTAINER_USER"
+
+  if run_preflight doctor; then
+    :
+  else
+    status=1
+  fi
 
   if command -v docker >/dev/null 2>&1; then
     printf 'Docker: %s\n' "$(docker --version)"
