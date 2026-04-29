@@ -266,3 +266,15 @@ When scoring a repo, output:
     }
   ]
 }
+
+## Runner result status contract
+
+The host and container runners publish a small deterministic status contract in each run result directory:
+
+- `exit_code`: Final workflow exit code produced by the in-container runner (`kaseki-agent.sh`).
+- `host_docker_exit_code`: Exit code returned by the host `docker run` process.
+- `host_exit_code`: Host-side status persisted by `run-kaseki.sh` for all host exits (including pre-container failures).
+- `stage-timings.tsv`: Tab-separated per-stage entries in the format `stage\texit_code\tduration_seconds\tdetail`.
+- `validation-timings.tsv`: Tab-separated validation command timing entries in the format `command\texit_code\tduration_seconds`.
+
+These files are intended to be machine-consumed and should remain stable across refactors.
