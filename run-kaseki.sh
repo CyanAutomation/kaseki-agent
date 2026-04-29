@@ -23,6 +23,8 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
+KASEKI_METRICS_JSONL_PATH="${KASEKI_METRICS_JSONL_PATH:-/var/log/kaseki/metrics.jsonl}"
 INSTANCE="${INSTANCE:-}"
 KASEKI_JSON_LOG_COMPONENT="run-kaseki"
 
@@ -752,6 +754,20 @@ persist_host_status "$DOCKER_EXIT"
 
 write_cleanup_log
 promote_staging_dirs
+
+METRICS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-metrics.sh"
+if [ -x "$METRICS_SCRIPT" ] && [ -f "$RESULT_DIR/stage-timings.tsv" ] && [ -f "$RESULT_DIR/metadata.json" ]; then
+  if "$METRICS_SCRIPT" "$RESULT_DIR/stage-timings.tsv" "$RESULT_DIR/metadata.json" "$RESULT_DIR/metrics.json" >/dev/null 2>&1; then
+    if [ "$KASEKI_APPEND_METRICS_JSONL" = "1" ]; then
+      mkdir -p "$(dirname "$KASEKI_METRICS_JSONL_PATH")" 2>/dev/null || true
+      if [ -w "$(dirname "$KASEKI_METRICS_JSONL_PATH")" ] || [ -w "$KASEKI_METRICS_JSONL_PATH" ]; then
+        "$METRICS_SCRIPT" "$RESULT_DIR/stage-timings.tsv" "$RESULT_DIR/metadata.json" >> "$KASEKI_METRICS_JSONL_PATH" 2>/dev/null || true
+      fi
+    fi
+  else
+    printf 'Warning: metrics generation failed for %s\n' "$RESULT_DIR" >&2
+  fi
+fi
 
 printf '%s\n' "$INSTANCE"
 if [ "$KASEKI_KEEP_WORKSPACE" = "1" ]; then

@@ -405,6 +405,45 @@ Useful environment variables:
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
 - `KASEKI_DEPENDENCY_CACHE_DIR` defaults to `/workspace/.kaseki-cache` (external workspace cache for target repo dependencies).
 - `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` defaults to `/opt/kaseki/workspace-cache` (image-provided dependency cache seeds).
+- `KASEKI_APPEND_METRICS_JSONL=1` appends per-run metrics JSON to a host JSONL stream when writable.
+- `KASEKI_METRICS_JSONL_PATH` defaults to `/var/log/kaseki/metrics.jsonl`.
+
+## Metrics export
+
+`run-kaseki.sh` now writes a stable metrics artifact at the end of each run:
+
+- `$RESULT_DIR/metrics.json` (one JSON object per run, schema `kaseki.metrics.v1`)
+- Optional centralized stream: `/var/log/kaseki/metrics.jsonl` (one JSON line per run)
+
+Metrics are generated from:
+
+- `$RESULT_DIR/stage-timings.tsv`
+- `$RESULT_DIR/metadata.json`
+
+Current metric fields include:
+
+- Success/failure counters for stage executions (`stage_counters`)
+- Aggregated stage durations in seconds (`stage_duration_seconds`)
+- Total runtime in seconds (`total_runtime_seconds`)
+
+Generate (or regenerate) metrics manually:
+
+```sh
+./kaseki-metrics.sh /agents/kaseki-results/kaseki-4/stage-timings.tsv /agents/kaseki-results/kaseki-4/metadata.json /agents/kaseki-results/kaseki-4/metrics.json
+```
+
+External scrape/aggregation examples:
+
+```sh
+# jq: inspect one run
+jq . /agents/kaseki-results/kaseki-4/metrics.json
+
+# jq: aggregate centralized JSONL by repo and sum runtimes
+jq -s 'group_by(.repo_url) | map({repo_url: .[0].repo_url, runs: length, total_runtime_seconds: (map(.total_runtime_seconds // 0) | add)})' /var/log/kaseki/metrics.jsonl
+
+# Prometheus textfile bridge (example)
+jq -r '\"kaseki_total_runtime_seconds{instance=\\\"\" + (.instance // \"unknown\") + \"\\\"} \" + ((.total_runtime_seconds // 0)|tostring)' /agents/kaseki-results/kaseki-4/metrics.json > /var/lib/node_exporter/textfile_collector/kaseki.prom
+```
 
 ## Host readiness check
 
