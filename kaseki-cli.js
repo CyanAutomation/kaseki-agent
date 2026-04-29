@@ -196,7 +196,6 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
         hasQueuedPoll = false;
         poll();
       }
-      }
     });
   }
 
