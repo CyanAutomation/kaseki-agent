@@ -239,10 +239,12 @@ if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
   INSTANCE=""
 fi
 
-if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
-  :
-else
+if [ "${SHOW_DOCTOR:-0}" != "1" ]; then
   run_preflight run
+fi
+
+if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
+  INSTANCE=""
 fi
 
 setup_host_logging "${INSTANCE:-session}"
