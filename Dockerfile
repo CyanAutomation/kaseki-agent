@@ -50,10 +50,10 @@ RUN ln -sf ../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js /usr/lo
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
-COPY pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
-COPY pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream
-COPY kaseki-report.js /usr/local/bin/kaseki-report
-COPY github-app-token.js /usr/local/bin/github-app-token
+COPY lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
+COPY lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream
+COPY lib/kaseki-report.js /usr/local/bin/kaseki-report
+COPY lib/github-app-token.js /usr/local/bin/github-app-token
 RUN ln -sf github-app-token /usr/local/bin/github-app-token.js
 RUN chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \

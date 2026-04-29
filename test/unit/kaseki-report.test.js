@@ -37,7 +37,7 @@ function createFixture(baseDir, name, exitCodeValue) {
 
 function runFixture(fixtureDir) {
   const result = spawnSync('node', ['kaseki-report.js', fixtureDir], {
-    cwd: __dirname,
+    cwd: path.join(__dirname, '..', '..', 'lib'),
     encoding: 'utf8',
   });
   return { stdout: result.stdout, stderr: result.stderr, code: result.status };
@@ -55,7 +55,7 @@ function run() {
 
   try {
     for (const testCase of cases) {
-      const fixturePath = path.join(__dirname, 'test', 'fixtures', 'kaseki-report-exit-codes', testCase.fixture);
+      const fixturePath = path.join(__dirname, '..', 'fixtures', 'kaseki-report-exit-codes', testCase.fixture);
       const metadata = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
       const fixtureDir = createFixture(baseDir, testCase.name, metadata.exit_code);
       const result = runFixture(fixtureDir);

@@ -8,12 +8,12 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "test": "npm run check:syntax && node kaseki-cli.test.js && node kaseki-report.test.js && bash run-kaseki-json.test.sh && bash test-github-app.sh",
-    "check:syntax": "bash -c 'for file in *.js; do node --check \"$file\"; done'",
+    "test": "npm run check:syntax && node test/unit/kaseki-cli.test.js && node test/unit/kaseki-report.test.js && bash run-kaseki-json.test.sh && bash scripts/test-github-app.sh",
+    "check:syntax": "bash -c 'for file in lib/*.js; do [ -f \"$file\" ] && node --check \"$file\"; done'",
     "lint": "npm run lint:js && npm run lint:sh",
-    "lint:js": "eslint .",
-    "lint:js:fix": "eslint . --fix",
-    "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh cleanup-kaseki.sh deploy-pi-template.sh test-github-app.sh run-kaseki-json.test.sh",
+    "lint:js": "eslint . lib/",
+    "lint:js:fix": "eslint . lib/ --fix",
+    "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh scripts/*.sh run-kaseki-json.test.sh",
     "lint:fix": "npm run lint:js:fix && npm run lint:sh"
   },
   "devDependencies": {

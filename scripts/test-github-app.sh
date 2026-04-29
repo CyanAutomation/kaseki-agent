@@ -3,7 +3,7 @@
 
 set -e
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "=== Kaseki GitHub App Integration Test ==="
 echo ""
@@ -33,23 +33,23 @@ fi
 
 # Test 3: Verify github-app-token.js exists and is executable
 echo ""
-echo "Test 3: Checking github-app-token.js..."
-if [ -x "$ROOT_DIR/github-app-token.js" ]; then
-  echo "✓ github-app-token.js exists and is executable"
+echo "Test 3: Checking lib/github-app-token.js..."
+if [ -x "$ROOT_DIR/lib/github-app-token.js" ]; then
+  echo "✓ lib/github-app-token.js exists and is executable"
 else
-  echo "✗ github-app-token.js is NOT executable"
+  echo "✗ lib/github-app-token.js is NOT executable"
   exit 1
 fi
 
 # Test 4: Verify github-app-token.js has required functions
 echo ""
-echo "Test 4: Checking github-app-token.js content..."
-if grep -q "generateJWT" "$ROOT_DIR/github-app-token.js" && \
-   grep -q "getInstallationId" "$ROOT_DIR/github-app-token.js" && \
-   grep -q "getAccessToken" "$ROOT_DIR/github-app-token.js"; then
-  echo "✓ github-app-token.js contains required functions"
+echo "Test 4: Checking lib/github-app-token.js content..."
+if grep -q "generateJWT" "$ROOT_DIR/lib/github-app-token.js" && \
+   grep -q "getInstallationId" "$ROOT_DIR/lib/github-app-token.js" && \
+   grep -q "getAccessToken" "$ROOT_DIR/lib/github-app-token.js"; then
+  echo "✓ lib/github-app-token.js contains required functions"
 else
-  echo "✗ github-app-token.js missing required functions"
+  echo "✗ lib/github-app-token.js missing required functions"
   exit 1
 fi
 
@@ -100,12 +100,12 @@ fi
 
 # Test 9: Test github-app-token.js argument validation
 echo ""
-echo "Test 9: Testing github-app-token.js argument validation..."
-output=$(node "$ROOT_DIR/github-app-token.js" 2>&1 || true)
+echo "Test 9: Testing lib/github-app-token.js argument validation..."
+output=$(node "$ROOT_DIR/lib/github-app-token.js" 2>&1 || true)
 if echo "$output" | grep -q "Usage:"; then
-  echo "✓ github-app-token.js shows usage message"
+  echo "✓ lib/github-app-token.js shows usage message"
 else
-  echo "✗ github-app-token.js usage message not shown"
+  echo "✗ lib/github-app-token.js usage message not shown"
   exit 1
 fi
 
@@ -127,7 +127,7 @@ echo ""
 echo "Summary:"
 echo "  ✓ run-kaseki.sh has GitHub App credential handling"
 echo "  ✓ kaseki-agent.sh has GitHub operations support"
-echo "  ✓ github-app-token.js helper script is complete"
-echo "  ✓ Dockerfile includes github-app-token.js"
+echo "  ✓ lib/github-app-token.js helper script is complete"
+echo "  ✓ Dockerfile includes lib/github-app-token.js"
 echo "  ✓ README.md documents GitHub App integration"
 echo "  ✓ Metadata and exit codes for GitHub operations"
