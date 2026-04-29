@@ -192,10 +192,10 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       onError(err);
       if (isRecoverableError(err)) {
         scheduleRetry();
-      }
-      if (hasQueuedPoll) {
+      } else if (hasQueuedPoll) {
         hasQueuedPoll = false;
         poll();
+      }
       }
     });
   }
