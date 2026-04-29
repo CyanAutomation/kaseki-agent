@@ -26,9 +26,19 @@ if [ "$status" -ne 2 ]; then
   exit 1
 fi
 
-result_dir="$(find "$KASEKI_ROOT/kaseki-results" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-if [ -z "${result_dir:-}" ]; then
-  echo "No result directory was created under $KASEKI_ROOT/kaseki-results" >&2
+if [ ! -d "$KASEKI_ROOT/kaseki-results/kaseki-1" ]; then
+  echo "Expected first auto run to create $KASEKI_ROOT/kaseki-results/kaseki-1" >&2
+  exit 1
+fi
+result_dir="$KASEKI_ROOT/kaseki-results/kaseki-1"
+
+if [ ! -f "$result_dir/host-start.json" ]; then
+  echo "Expected $result_dir/host-start.json to exist" >&2
+  exit 1
+fi
+
+if [ ! -f "$result_dir/metadata.json" ]; then
+  echo "Expected $result_dir/metadata.json to exist" >&2
   exit 1
 fi
 
