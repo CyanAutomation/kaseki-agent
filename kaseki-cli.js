@@ -44,6 +44,30 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
   let isReading = false;
   let hasQueuedPoll = false;
   let lastPathIdentity = null;
+  let retryTimer = null;
+
+  function isRecoverableError(err) {
+    if (!err || typeof err !== 'object') {
+      return false;
+    }
+
+    if (err.code === 'ENOENT' || err.code === 'ESTALE') {
+      return true;
+    }
+
+    return err.code === 'EIO' || err.code === 'EBUSY' || err.code === 'EMFILE' || err.code === 'ENFILE';
+  }
+
+  function scheduleRetry() {
+    if (retryTimer !== null) {
+      return;
+    }
+
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      poll();
+    }, 200);
+  }
 
   function closeFd() {
     if (fd === null) {
@@ -166,6 +190,9 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       isReading = false;
       closeFd();
       onError(err);
+      if (isRecoverableError(err)) {
+        scheduleRetry();
+      }
       if (hasQueuedPoll) {
         hasQueuedPoll = false;
         poll();
@@ -174,6 +201,10 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
   }
 
   function close() {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     closeFd();
   }
 
