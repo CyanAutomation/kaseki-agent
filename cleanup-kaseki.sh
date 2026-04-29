@@ -32,8 +32,10 @@ show_help() {
   cat <<HELP
 Usage: KASEKI_CLEANUP_DAYS=1 $0 [--docker] [--dry-run] [--force]
 
-Deletes kaseki-N workspaces older than the configured age.
+Deletes finalized kaseki-N workspaces older than the configured age.
 Results under $RESULTS are preserved.
+Transient staging directories (for example: .staging-run-kaseki-N-XXXXXX)
+are created and cleaned automatically by run-kaseki.sh.
 
 Options:
   --docker   Also remove stopped kaseki containers and prune Docker build cache.
