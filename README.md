@@ -173,12 +173,19 @@ For readable logs over SSH on a Pi, prefer plain progress output:
 docker build --progress=plain -t kaseki-template:latest .
 ```
 
-Deploy the current checkout to the host template directory without touching
-run, result, cache, or secret directories:
+Deploy the current checkout to the host template directory with idempotent cleanup:
+
+- destination defaults to `/agents/kaseki-template` (override with `KASEKI_TEMPLATE_DIR`)
+- destination root is deleted and recreated before install
+- guardrails refuse unexpected destinations (must end with `kaseki-template` and be under `/agents/` or `$HOME/`)
+- existing `run`, `result`, `cache`, and `secrets` subdirectories under the destination are preserved
 
 ```sh
 cd /path/to/kaseki-agent
 sudo ./deploy-pi-template.sh
+
+# optional override that still satisfies guardrails
+sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./deploy-pi-template.sh
 ```
 
 Controlled base-image refresh (monthly security review):

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
+DEFAULT_TARGET_DIR="/agents/kaseki-template"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
@@ -66,13 +67,66 @@ if [ "${1:-}" = "--help" ]; then
   cat <<HELP
 Usage: KASEKI_TEMPLATE_DIR=/agents/kaseki-template $0
 
-Deploys the current Kaseki runner files into /agents/kaseki-template.
-Preserves existing run, result, cache, and secret directories.
+Deploys the current Kaseki runner files into KASEKI_TEMPLATE_DIR
+(default: /agents/kaseki-template).
+
+Idempotent behavior:
+- Refuses to clean unexpected targets (guardrails require basename "kaseki-template"
+  and path prefix "/agents/" or "$HOME/").
+- Cleans destination root before install.
+- Preserves existing destination subdirectories named run, result, cache, and secrets.
 HELP
   exit 0
 fi
 
-mkdir -p "$TARGET_DIR"
+is_allowed_target_dir() {
+  local target="$1"
+  local base
+  base="$(basename "$target")"
+  [ "$base" = "kaseki-template" ] || return 1
+  case "$target" in
+    /agents/*) return 0 ;;
+    "$HOME"/*) return 0 ;;
+  esac
+  return 1
+}
+
+prepare_target_dir() {
+  local target="$1"
+  local abs_target
+  local tmp_root
+  local persistent
+  local path
+
+  mkdir -p "$target"
+  abs_target="$(cd "$target" && pwd -P)"
+
+  if ! is_allowed_target_dir "$abs_target"; then
+    printf 'Error: refusing to clean unexpected target path: %s\n' "$abs_target" >&2
+    printf 'Expected basename "kaseki-template" and prefix "/agents/" or "$HOME/".\n' >&2
+    exit 1
+  fi
+
+  tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-template-preserve.XXXXXX")"
+  for persistent in run result cache secrets; do
+    path="$abs_target/$persistent"
+    if [ -d "$path" ]; then
+      mv "$path" "$tmp_root/$persistent"
+    fi
+  done
+
+  rm -rf "$abs_target"
+  mkdir -p "$abs_target"
+
+  for persistent in run result cache secrets; do
+    if [ -d "$tmp_root/$persistent" ]; then
+      mv "$tmp_root/$persistent" "$abs_target/$persistent"
+    fi
+  done
+  rm -rf "$tmp_root"
+}
+
+prepare_target_dir "$TARGET_DIR"
 emit_json_log "copy-template" "started" "syncing template files"
 
 install_file() {
