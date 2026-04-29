@@ -59,7 +59,8 @@ emit_json_log "run" "started" "run-kaseki.sh starting"
 
 run_preflight() {
   local mode="$1"
-  local preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-preflight.sh"
+  local preflight_script
+  preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-preflight.sh"
   if [ ! -x "$preflight_script" ]; then
     printf 'Error: preflight script not found or not executable: %s\n' "$preflight_script" >&2
     exit 1
