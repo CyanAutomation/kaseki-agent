@@ -14,7 +14,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { execSync, spawnSync } = require('child_process');
 const kasekiCli = require('./kaseki-cli-lib.js');
-const { createFollowPoller } = require('./kaseki-cli.js');
+const { createFollowPoller, printTable } = require('./kaseki-cli.js');
 
 // ============================================================================
 // Test Setup
@@ -638,6 +638,35 @@ function testCliNumericOptionValidation() {
   }
 }
 
+function testPrintTableNullishHandling() {
+  console.log('\n→ Testing printTable() nullish-aware rendering');
+
+  const output = [];
+  const originalConsoleLog = console.log;
+  console.log = (line) => output.push(line);
+  try {
+    printTable([
+      { name: 'zero', value: 0, note: '' },
+      { name: 'bool', value: false, note: null },
+      { name: 'empty', value: undefined, note: '' },
+    ]);
+  } finally {
+    console.log = originalConsoleLog;
+  }
+
+  assertEqual(output.length, 5, 'Should render header, separator, and 3 rows');
+  assert(output[2].includes('zero') && output[2].includes('0'), 'Should render numeric 0 as "0"');
+  assert(output[3].includes('bool') && output[3].includes('false'), 'Should render boolean false as "false"');
+  assert(output[4].includes('empty'), 'Should render row with undefined value');
+
+  const zeroColumns = output[2].split('  ');
+  const boolColumns = output[3].split('  ');
+  const emptyColumns = output[4].split('  ');
+  assertEqual(zeroColumns[2], '', 'Should keep empty string values as blank');
+  assertEqual(boolColumns[2], '', 'Should collapse null values to blank');
+  assertEqual(emptyColumns[1], '', 'Should collapse undefined values to blank');
+}
+
 function createMockFollowFs(logPath, initialFile) {
   let nextFd = 10;
   const filesByPath = new Map([[logPath, { ...initialFile }]]);
@@ -870,6 +899,7 @@ async function runTests() {
   testParseStageTimings();
   testGetAnalysis();
   testCliNumericOptionValidation();
+  testPrintTableNullishHandling();
   await testFollowPollerHandlesTruncateAndRotate();
   await testFollowPollerQueuesPollDuringActiveRead();
 
