@@ -10,6 +10,40 @@ Host layout:
 - `/agents/kaseki-cache`: persistent host-level cache for dependency installs and npm cache.
 - `/var/log/kaseki`: optional host-level mirrored logs for runner scripts.
 
+## Required host dependencies
+
+`run-kaseki.sh` now runs a host preflight check before allocating run resources or writing secrets.
+
+Required binaries:
+
+- `wget`
+- `sshpass`
+- `docker`
+
+Run-time optional (validated by preflight and reported in `--doctor`):
+
+- `git`
+- `node`
+- `npm`
+
+Install guidance:
+
+- Debian/Ubuntu/Raspberry Pi OS:
+  ```sh
+  sudo apt update
+  sudo apt install -y wget sshpass docker.io git nodejs npm
+  ```
+- Fedora/RHEL/CentOS Stream:
+  ```sh
+  sudo dnf install -y wget sshpass docker git nodejs npm
+  ```
+- Arch Linux:
+  ```sh
+  sudo pacman -S --needed wget sshpass docker git nodejs npm
+  ```
+
+After installing Docker, ensure your user can access the daemon (for example, add the user to the `docker` group and re-login).
+
 ## Host logging and log rotation
 
 Kaseki scripts support mirrored host logs via `KASEKI_LOG_DIR` (default:
