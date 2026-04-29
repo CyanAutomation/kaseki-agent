@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * github-app-token.js - Generate GitHub App installation access tokens
+ * github-app-token.ts - Generate GitHub App installation access tokens
  *
  * Usage:
- *   node github-app-token.js <app-id> <private-key-file> <owner> <repo>
+ *   node dist/github-app-token.js <app-id> <private-key-file> <owner> <repo>
  *
  * Outputs JSON:
  *   {
@@ -14,26 +14,54 @@
  *   }
  */
 
-const fs = require('fs');
-const crypto = require('crypto');
-const https = require('https');
+import fs from 'fs';
+import crypto from 'crypto';
+import https from 'https';
+
+interface JWTHeader {
+  alg: string;
+  typ: string;
+}
+
+interface JWTPayload {
+  iss: string;
+  iat: number;
+  exp: number;
+}
+
+interface InstallationIdResponse {
+  id: number;
+  [key: string]: any;
+}
+
+interface AccessTokenResponse {
+  token: string;
+  expires_at: string;
+  [key: string]: any;
+}
+
+interface TokenResult {
+  token?: string;
+  expires_at?: string;
+  error?: string;
+}
 
 const APP_ID = process.argv[2];
 const PRIVATE_KEY_FILE = process.argv[3];
 const OWNER = process.argv[4];
 const REPO = process.argv[5];
 
-async function generateJWT(appId, privateKey) {
+async function generateJWT(appId: string, privateKey: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const iat = now - 60; // account for clock skew
-  const exp = now + (10 * 60); // 10 minutes
+  const exp = now + 10 * 60; // 10 minutes
 
-  const header = {
+  const header: JWTHeader = {
     alg: 'RS256',
     typ: 'JWT',
   };
 
-  const payload = {
+  const payload: JWTPayload = {
     iss: appId,
     iat,
     exp,
@@ -52,7 +80,7 @@ async function generateJWT(appId, privateKey) {
   return `${message}.${signature}`;
 }
 
-async function getInstallationId(jwt, owner, repo) {
+async function getInstallationId(jwt: string, owner: string, repo: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -67,18 +95,28 @@ async function getInstallationId(jwt, owner, repo) {
 
     const req = https.request(options, (res) => {
       let data = '';
-      res.on('data', (chunk) => {
+      res.on('data', (chunk: Buffer) => {
         data += chunk;
       });
       res.on('end', () => {
         if (res.statusCode !== 200) {
-          reject(new Error(`Failed to get installation ID: ${res.statusCode} ${data}`));
+          reject(
+            new Error(
+              `Failed to get installation ID: ${res.statusCode} ${data}`
+            )
+          );
         } else {
           try {
-            const json = JSON.parse(data);
+            const json: InstallationIdResponse = JSON.parse(data);
             resolve(json.id);
           } catch (e) {
-            reject(new Error(`Failed to parse installation response: ${e.message}`));
+            reject(
+              new Error(
+                `Failed to parse installation response: ${
+                  e instanceof Error ? e.message : String(e)
+                }`
+              )
+            );
           }
         }
       });
@@ -89,7 +127,10 @@ async function getInstallationId(jwt, owner, repo) {
   });
 }
 
-async function getAccessToken(jwt, installationId) {
+async function getAccessToken(
+  jwt: string,
+  installationId: number
+): Promise<AccessTokenResponse> {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -105,21 +146,29 @@ async function getAccessToken(jwt, installationId) {
 
     const req = https.request(options, (res) => {
       let data = '';
-      res.on('data', (chunk) => {
+      res.on('data', (chunk: Buffer) => {
         data += chunk;
       });
       res.on('end', () => {
         if (res.statusCode !== 201) {
-          reject(new Error(`Failed to get access token: ${res.statusCode} ${data}`));
+          reject(
+            new Error(`Failed to get access token: ${res.statusCode} ${data}`)
+          );
         } else {
           try {
-            const json = JSON.parse(data);
+            const json: AccessTokenResponse = JSON.parse(data);
             resolve({
               token: json.token,
               expires_at: json.expires_at,
             });
           } catch (e) {
-            reject(new Error(`Failed to parse token response: ${e.message}`));
+            reject(
+              new Error(
+                `Failed to parse token response: ${
+                  e instanceof Error ? e.message : String(e)
+                }`
+              )
+            );
           }
         }
       });
@@ -130,9 +179,11 @@ async function getAccessToken(jwt, installationId) {
   });
 }
 
-async function main() {
+async function main(): Promise<void> {
   if (!APP_ID || !PRIVATE_KEY_FILE || !OWNER || !REPO) {
-    console.error('Usage: node github-app-token.js <app-id> <private-key-file> <owner> <repo>');
+    console.error(
+      'Usage: node github-app-token.js <app-id> <private-key-file> <owner> <repo>'
+    );
     process.exit(1);
   }
 
@@ -153,9 +204,10 @@ async function main() {
     console.log(JSON.stringify(tokenData));
   } catch (error) {
     // Output error as JSON
-    console.log(JSON.stringify({
-      error: error.message,
-    }));
+    const result: TokenResult = {
+      error: error instanceof Error ? error.message : String(error),
+    };
+    console.log(JSON.stringify(result));
     process.exit(1);
   }
 }

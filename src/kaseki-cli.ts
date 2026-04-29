@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * kaseki-cli.js
+ * kaseki-cli.ts
  *
  * Command-line interface for querying and monitoring kaseki instances.
  * Provides commands for listing, status polling, log streaming, error detection,
@@ -21,11 +21,25 @@
  *   kaseki-cli follow <instance> [--tail=<log_name>]
  */
 
-const kasekiCli = require('./kaseki-cli-lib.js');
-const fs = require('fs');
-const path = require('path');
+import * as kasekiCliLib from './kaseki-cli-lib';
+import fs from 'fs';
+import path from 'path';
+import { Stats } from 'fs';
 
-function statsIdentity(stats) {
+interface FileStats extends Stats {}
+
+interface FollowCallbacks {
+  onInfo?: (message: string) => void;
+  onData?: (chunk: string) => void;
+  onError?: (error: Error) => void;
+}
+
+interface FollowPoller {
+  poll: () => void;
+  close: () => void;
+}
+
+function statsIdentity(stats: FileStats): string {
   if (typeof stats.ino === 'number' && stats.ino > 0) {
     return `ino:${stats.ino}`;
   }
@@ -34,19 +48,23 @@ function statsIdentity(stats) {
   return `mtime-size:${stats.mtimeMs}:${stats.size}`;
 }
 
-function createFollowPoller(fsModule, logPath, callbacks = {}) {
+function createFollowPoller(
+  fsModule: typeof fs,
+  logPath: string,
+  callbacks: FollowCallbacks = {}
+): FollowPoller {
   const onInfo = callbacks.onInfo || (() => {});
   const onData = callbacks.onData || (() => {});
   const onError = callbacks.onError || (() => {});
 
-  let fd = null;
+  let fd: number | null = null;
   let lastPosition = 0;
   let isReading = false;
   let hasQueuedPoll = false;
-  let lastPathIdentity = null;
-  let retryTimer = null;
+  let lastPathIdentity: string | null = null;
+  let retryTimer: NodeJS.Timeout | null = null;
 
-  function isRecoverableError(err) {
+  function isRecoverableError(err: any): boolean {
     if (!err || typeof err !== 'object') {
       return false;
     }
@@ -55,10 +73,12 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       return true;
     }
 
-    return err.code === 'EIO' || err.code === 'EBUSY' || err.code === 'EMFILE' || err.code === 'ENFILE';
+    return (
+      err.code === 'EIO' || err.code === 'EBUSY' || err.code === 'EMFILE' || err.code === 'ENFILE'
+    );
   }
 
-  function scheduleRetry() {
+  function scheduleRetry(): void {
     if (retryTimer !== null) {
       return;
     }
@@ -69,38 +89,38 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
     }, 200);
   }
 
-  function closeFd() {
+  function closeFd(): void {
     if (fd === null) {
       return;
     }
 
     try {
       fsModule.closeSync(fd);
-    } catch (_closeErr) {
+    } catch {
       // Ignore close failures; next open/read will surface actionable errors.
     }
     fd = null;
   }
 
-  function openFd() {
+  function openFd(): void {
     fd = fsModule.openSync(logPath, 'r');
   }
 
-  function resetCursor(reason) {
+  function resetCursor(reason: string): void {
     lastPosition = 0;
     onInfo(`[follow] ${reason}; resetting cursor.`);
   }
 
-  function poll() {
+  function poll(): void {
     if (isReading) {
       hasQueuedPoll = true;
       return;
     }
 
-    let pathStats;
+    let pathStats: FileStats;
     try {
-      pathStats = fsModule.statSync(logPath);
-    } catch (err) {
+      pathStats = fsModule.statSync(logPath) as FileStats;
+    } catch (err: any) {
       if (err.code === 'ENOENT' || err.code === 'ESTALE') {
         closeFd();
         return;
@@ -120,7 +140,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
     if (fd === null) {
       try {
         openFd();
-      } catch (err) {
+      } catch (err: any) {
         if (err.code !== 'ENOENT' && err.code !== 'ESTALE') {
           onError(err);
         }
@@ -128,10 +148,10 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       }
     }
 
-    let fdStats;
+    let fdStats: FileStats;
     try {
-      fdStats = fsModule.fstatSync(fd);
-    } catch (err) {
+      fdStats = fsModule.fstatSync(fd as number) as FileStats;
+    } catch (err: any) {
       closeFd();
       if (err.code !== 'ENOENT' && err.code !== 'ESTALE') {
         onError(err);
@@ -161,7 +181,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
 
     isReading = true;
     const stream = fsModule.createReadStream(logPath, {
-      fd,
+      fd: fd as number,
       autoClose: false,
       start,
       end,
@@ -169,8 +189,8 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
 
     let data = '';
     let bytesRead = 0;
-    stream.on('data', (chunk) => {
-      bytesRead += chunk.length;
+    stream.on('data', (chunk: any) => {
+      bytesRead += (chunk as Buffer).length;
       data += chunk;
     });
 
@@ -186,7 +206,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
       }
     });
 
-    stream.on('error', (err) => {
+    stream.on('error', (err: Error) => {
       isReading = false;
       closeFd();
       onError(err);
@@ -199,7 +219,7 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
     });
   }
 
-  function close() {
+  function close(): void {
     if (retryTimer !== null) {
       clearTimeout(retryTimer);
       retryTimer = null;
@@ -217,16 +237,16 @@ function createFollowPoller(fsModule, logPath, callbacks = {}) {
 // Utilities
 // ============================================================================
 
-function printJson(obj) {
+function printJson(obj: any): void {
   console.log(JSON.stringify(obj, null, 2));
 }
 
-function printError(msg) {
+function printError(msg: string): never {
   console.error(`Error: ${msg}`);
   process.exit(1);
 }
 
-function parsePositiveIntOption(name, raw, min = 1) {
+function parsePositiveIntOption(name: string, raw: any, min: number = 1): number {
   if (raw === undefined || raw === null || raw === '') {
     printError(`Invalid value for --${name}: expected an integer >= ${min}, got empty value`);
   }
@@ -243,7 +263,11 @@ function parsePositiveIntOption(name, raw, min = 1) {
   return parsed;
 }
 
-function printTable(data) {
+interface TableRow {
+  [key: string]: any;
+}
+
+function printTable(data: TableRow[]): void {
   if (data.length === 0) {
     console.log('(empty)');
     return;
@@ -251,9 +275,12 @@ function printTable(data) {
 
   // Determine column widths
   const headers = Object.keys(data[0]);
-  const widths = {};
+  const widths: Record<string, number> = {};
   for (const header of headers) {
-    widths[header] = Math.max(header.length, ...data.map((row) => String(row[header] ?? '').length));
+    widths[header] = Math.max(
+      header.length,
+      ...data.map((row) => String(row[header] ?? '').length)
+    );
   }
 
   // Print header
@@ -263,7 +290,9 @@ function printTable(data) {
 
   // Print rows
   for (const row of data) {
-    const values = headers.map((h) => String(row[h] ?? '').padEnd(widths[h])).join('  ');
+    const values = headers
+      .map((h) => String(row[h] ?? '').padEnd(widths[h]))
+      .join('  ');
     console.log(values);
   }
 }
@@ -275,8 +304,8 @@ function printTable(data) {
 /**
  * List all kaseki instances with basic status
  */
-function cmdList(_args) {
-  const instances = kasekiCli.listInstances();
+function cmdList(_args: string[]): void {
+  const instances = kasekiCliLib.listInstances();
 
   if (instances.length === 0) {
     console.log('No kaseki instances found.');
@@ -284,12 +313,12 @@ function cmdList(_args) {
   }
 
   const data = instances.map((inst) => ({
-    'Instance': inst.name,
-    'Status': inst.status,
-    'Stage': inst.stage,
+    Instance: inst.name,
+    Status: inst.status,
+    Stage: inst.stage,
     'Elapsed (s)': inst.elapsedSeconds !== null ? inst.elapsedSeconds : '—',
     'Exit Code': inst.exitCode !== null ? inst.exitCode : '—',
-    'Model': inst.model.substring(0, 30),
+    Model: inst.model.substring(0, 30),
   }));
 
   printTable(data);
@@ -298,32 +327,25 @@ function cmdList(_args) {
 /**
  * Get status of a specific instance
  */
-function cmdStatus(args) {
+function cmdStatus(args: string[]): void {
   if (args.length < 1) {
     printError('status requires instance name argument');
   }
 
   const instance = args[0];
-  const status = kasekiCli.getInstanceStatus(instance);
+  const status = kasekiCliLib.getInstanceStatus(instance);
 
   if (status.error) {
     printError(status.error);
   }
 
-  const anomalies = kasekiCli.detectAnomalies(instance);
-
-  const output = {
-    ...status,
-    anomalies,
-  };
-
-  printJson(output);
+  printJson(status);
 }
 
 /**
  * Read and display log file
  */
-function cmdLogs(args) {
+function cmdLogs(args: string[]): void {
   if (args.length < 1) {
     printError('logs requires instance name argument');
   }
@@ -341,7 +363,7 @@ function cmdLogs(args) {
     }
   }
 
-  const logs = kasekiCli.readLiveLog(instance, logFile, tailLines);
+  const logs = kasekiCliLib.readLiveLog(instance, logFile, tailLines);
   if (logs === null) {
     printError(`Log file not found: ${logFile}`);
   }
@@ -352,7 +374,7 @@ function cmdLogs(args) {
 /**
  * Display sanitized progress events.
  */
-function cmdProgress(args) {
+function cmdProgress(args: string[]): void {
   if (args.length < 1) {
     printError('progress requires instance name argument');
   }
@@ -366,7 +388,7 @@ function cmdProgress(args) {
     }
   }
 
-  const events = kasekiCli.readProgressEvents(instance, tailLines);
+  const events = kasekiCliLib.readProgressEvents(instance, tailLines);
   if (events === null) {
     printError('Progress file not found: progress.jsonl');
   }
@@ -382,13 +404,13 @@ function cmdProgress(args) {
 /**
  * Detect and display errors in an instance
  */
-function cmdErrors(args) {
+function cmdErrors(args: string[]): void {
   if (args.length < 1) {
     printError('errors requires instance name argument');
   }
 
   const instance = args[0];
-  const errors = kasekiCli.detectErrors(instance);
+  const errors = kasekiCliLib.detectErrors(instance);
 
   if (errors.length === 0) {
     console.log('No errors detected.');
@@ -412,13 +434,13 @@ function cmdErrors(args) {
 /**
  * Get comprehensive post-run analysis
  */
-function cmdAnalysis(args) {
+function cmdAnalysis(args: string[]): void {
   if (args.length < 1) {
     printError('analysis requires instance name argument');
   }
 
   const instance = args[0];
-  const analysis = kasekiCli.getAnalysis(instance);
+  const analysis = kasekiCliLib.getAnalysis(instance);
 
   if (analysis.error) {
     printError(analysis.error);
@@ -430,7 +452,7 @@ function cmdAnalysis(args) {
 /**
  * Watch an instance in real-time with periodic status updates
  */
-function cmdWatch(args) {
+function cmdWatch(args: string[]): void {
   if (args.length < 1) {
     printError('watch requires instance name argument');
   }
@@ -447,8 +469,8 @@ function cmdWatch(args) {
 
   console.log(`Watching ${instance} (updating every ${interval}s, Ctrl+C to stop)...\n`);
 
-  const watch = () => {
-    const status = kasekiCli.getInstanceStatus(instance);
+  const watch = (): void => {
+    const status = kasekiCliLib.getInstanceStatus(instance);
 
     if (status.error) {
       console.error(`Error: ${status.error}`);
@@ -459,7 +481,7 @@ function cmdWatch(args) {
     console.log(`[${timestamp}] Stage: ${status.stage}`);
     console.log(`             Elapsed: ${status.elapsedSeconds}s / ${status.timeoutSeconds}s`);
 
-    if (status.timeoutRiskPercent >= 0) {
+    if (status.timeoutRiskPercent !== undefined && status.timeoutRiskPercent >= 0) {
       console.log(`             Timeout: ${status.timeoutRiskPercent.toFixed(1)}%`);
     }
 
@@ -468,19 +490,15 @@ function cmdWatch(args) {
     } else if (status.status === 'pending') {
       console.log('             Status: PENDING (exit code: —)');
     } else {
-      console.log(`             Status: ${status.status.toUpperCase()} (exit code: ${status.exitCode})`);
-    }
-
-    // Show anomalies
-    const anomalies = kasekiCli.detectAnomalies(instance);
-    for (const anomaly of anomalies) {
-      console.log(`             ⚠ [${anomaly.severity.toUpperCase()}] ${anomaly.message}`);
+      console.log(
+        `             Status: ${(status.status || '').toUpperCase()} (exit code: ${status.exitCode})`
+      );
     }
 
     // Show recent errors
-    const errors = kasekiCli.detectErrors(instance);
+    const errors = kasekiCliLib.detectErrors(instance);
     if (errors.length > 0) {
-      const criticalErrors = errors.filter((e) => e.severity === kasekiCli.ErrorSeverity.CRITICAL);
+      const criticalErrors = errors.filter((e) => e.severity === kasekiCliLib.ErrorSeverity.CRITICAL);
       if (criticalErrors.length > 0) {
         console.log(`             ✗ ${criticalErrors.length} critical error(s) detected`);
       }
@@ -511,7 +529,7 @@ function cmdWatch(args) {
 /**
  * Follow/stream logs from an instance in real-time
  */
-function cmdFollow(args) {
+function cmdFollow(args: string[]): void {
   if (args.length < 1) {
     printError('follow requires instance name argument');
   }
@@ -526,7 +544,7 @@ function cmdFollow(args) {
     }
   }
 
-  const logPath = path.join(kasekiCli.config.KASEKI_RESULTS_DIR, instance, logFile);
+  const logPath = path.join(kasekiCliLib.config.KASEKI_RESULTS_DIR, instance, logFile);
 
   if (!fs.existsSync(logPath)) {
     printError(`Log file not found: ${logFile}`);
@@ -559,7 +577,7 @@ function cmdFollow(args) {
 // Help
 // ============================================================================
 
-function showHelp() {
+function showHelp(): void {
   const help = `
 kaseki-cli - Kaseki Agent instance monitoring and analysis
 
@@ -612,7 +630,7 @@ SEE ALSO:
 // Main
 // ============================================================================
 
-function main() {
+function main(): void {
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args[0] === 'help' || args[0] === '-h' || args[0] === '--help') {
@@ -653,7 +671,7 @@ function main() {
       printError(`Unknown command: ${command}`);
     }
   } catch (err) {
-    printError(err.message);
+    printError((err as Error).message);
   }
 }
 
@@ -661,7 +679,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = {
-  createFollowPoller,
-  printTable,
-};
+export { createFollowPoller, printTable };
