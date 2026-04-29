@@ -6,6 +6,11 @@ const readline = require('node:readline');
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
 const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
 const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
+// Maximum number of distinct keys tracked per dynamic summary map.
+// Once this cap is reached, unseen keys are folded into "__other__" so
+// summary objects stay bounded and may truncate long-tail categories.
+const MAX_DISTINCT_SUMMARY_KEYS = 1000;
+const OTHER_BUCKET_KEY = '__other__';
 
 const eventCounts = {};
 const assistantEventCounts = {};
@@ -19,15 +24,25 @@ let lastTimestamp = null;
 let minTimestampMs = null;
 let maxTimestampMs = null;
 
-function increment(map, key) {
+function increment(map, key, options = {}) {
   if (!key) return;
-  map[key] = (map[key] ?? 0) + 1;
+  const { maxDistinctKeys } = options;
+  let targetKey = key;
+  if (
+    Number.isInteger(maxDistinctKeys) &&
+    maxDistinctKeys > 0 &&
+    map[key] === undefined &&
+    Object.keys(map).filter(k => k !== OTHER_BUCKET_KEY).length >= maxDistinctKeys
+  ) {
+    targetKey = OTHER_BUCKET_KEY;
+  }
+  map[targetKey] = (map[targetKey] ?? 0) + 1;
 }
 
 function observeModelAndApi(message) {
   if (!message || typeof message !== 'object') return;
-  increment(models, message.model);
-  increment(apis, message.api);
+  increment(models, message.model, { maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS });
+  increment(apis, message.api, { maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS });
 }
 
 function eventTimestamp(event) {
@@ -84,7 +99,9 @@ async function main() {
       continue;
     }
 
-    increment(eventCounts, event.type ?? '<missing>');
+    increment(eventCounts, event.type ?? '<missing>', {
+      maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS,
+    });
     const timestamp = eventTimestamp(event);
     if (timestamp) {
       firstTimestamp ??= timestamp;
@@ -102,7 +119,9 @@ async function main() {
     observeModelAndApi(event.assistantMessageEvent?.partial);
 
     const assistantType = event.assistantMessageEvent?.type;
-    increment(assistantEventCounts, assistantType);
+    increment(assistantEventCounts, assistantType, {
+      maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS,
+    });
     if (event.type === 'tool_execution_start') toolStartCount++;
     if (event.type === 'tool_execution_end') toolEndCount++;
 
