@@ -6,6 +6,42 @@ TARGET_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+KASEKI_JSON_LOG_COMPONENT="deploy-pi-template"
+
+json_escape() {
+  local value="${1-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
+emit_json_log() {
+  local stage="$1"
+  local status="$2"
+  local detail="${3-}"
+  printf '{"timestamp":"%s","component":"%s","stage":"%s","status":"%s","instance":"%s","detail":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$KASEKI_JSON_LOG_COMPONENT" \
+    "$(json_escape "$stage")" \
+    "$(json_escape "$status")" \
+    "template" \
+    "$(json_escape "$detail")"
+}
+
+on_deploy_exit() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    emit_json_log "deploy" "finished" "deploy-pi-template.sh completed successfully"
+  else
+    emit_json_log "deploy" "error" "deploy-pi-template.sh exited with code $code"
+  fi
+}
+
+trap on_deploy_exit EXIT
+emit_json_log "deploy" "started" "deploy-pi-template.sh starting"
 
 setup_host_logging() {
   local base_name="$1"
@@ -37,6 +73,7 @@ HELP
 fi
 
 mkdir -p "$TARGET_DIR"
+emit_json_log "copy-template" "started" "syncing template files"
 
 install_file() {
   local mode="$1"
@@ -69,13 +106,17 @@ install_file 0644 docker/workspace-cache/package-lock.json
 install_file 0644 docs/CLI.md
 install_file 0644 docs/repo-maturity.md
 install_file 0644 ops/logrotate/kaseki
+emit_json_log "copy-template" "finished" "template files synced"
 
 if command -v docker >/dev/null 2>&1; then
+  emit_json_log "docker-check" "started" "checking docker image availability"
   printf 'Docker image configured for doctor: %s\n' "$IMAGE"
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
     printf 'Docker image: present\n'
+    emit_json_log "docker-check" "finished" "docker image present locally"
   else
     printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
+    emit_json_log "docker-check" "error" "docker image missing locally"
   fi
 fi
 
