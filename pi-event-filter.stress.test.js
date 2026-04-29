@@ -102,3 +102,46 @@ test('pi-event-filter stress run completes and keeps memory bounded', async () =
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('pi-event-filter computes first/last event bounds from parsed timestamps', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-bounds-'));
+  const inputPath = path.join(tmpDir, 'in.jsonl');
+  const outputPath = path.join(tmpDir, 'out.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+
+  try {
+    const events = [
+      { type: 'assistant_message', timestamp: '2026-03-05T10:00:00.000Z' },
+      { type: 'assistant_message', timestamp: 'not-a-date' },
+      { type: 'assistant_message', timestamp: '2025-01-01T00:00:00.000Z' },
+      { type: 'assistant_message', timestamp: '2027-12-31T23:59:59.000Z' },
+      { type: 'assistant_message' },
+      { type: 'assistant_message', timestamp: '2026-06-01T12:30:00.000Z' },
+    ];
+    fs.writeFileSync(inputPath, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
+
+    await new Promise((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [path.join(__dirname, 'pi-event-filter.js'), inputPath, outputPath, summaryPath],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      const stderr = [];
+      child.stderr.on('data', (chunk) => stderr.push(chunk));
+      child.once('error', reject);
+      child.once('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`pi-event-filter exited with ${code}: ${Buffer.concat(stderr).toString('utf8')}`));
+          return;
+        }
+        resolve();
+      });
+    });
+
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    assert.equal(summary.first_event_at, '2025-01-01T00:00:00.000Z');
+    assert.equal(summary.last_event_at, '2027-12-31T23:59:59.000Z');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
