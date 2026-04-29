@@ -394,10 +394,8 @@ if [ -d "$FINAL_RESULT_DIR" ]; then
 fi
 
 if [ -n "${INSTANCE:-}" ] && [ -d "$FINAL_RUN_DIR" ]; then
-  if [ -d "$FINAL_RUN_DIR" ]; then
-      echo "Instance already reserved: $INSTANCE" >&2
-      exit 2
-  fi
+  echo "Instance already reserved: $INSTANCE" >&2
+  exit 2
 fi
 
 cleanup_secret() {
