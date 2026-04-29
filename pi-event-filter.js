@@ -32,7 +32,7 @@ function increment(map, key, options = {}) {
     Number.isInteger(maxDistinctKeys) &&
     maxDistinctKeys > 0 &&
     map[key] === undefined &&
-    Object.keys(map).length >= maxDistinctKeys
+    Object.keys(map).filter(k => k !== OTHER_BUCKET_KEY).length >= maxDistinctKeys
   ) {
     targetKey = OTHER_BUCKET_KEY;
   }
