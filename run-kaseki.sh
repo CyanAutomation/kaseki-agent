@@ -54,16 +54,6 @@ emit_json_log() {
     "$(json_escape "$detail")"
 }
 
-on_run_kaseki_exit() {
-  local code=$?
-  if [ "$code" -eq 0 ]; then
-    emit_json_log "run" "finished" "run-kaseki.sh completed successfully"
-  else
-    emit_json_log "run" "error" "run-kaseki.sh exited with code $code"
-  fi
-}
-
-trap on_run_kaseki_exit EXIT
 emit_json_log "run" "started" "run-kaseki.sh starting"
 
 
@@ -447,11 +437,17 @@ cleanup_staging_dirs() {
   [ "$PROMOTED_RESULT_DIR" -eq 1 ] || rm -rf "$RESULT_STAGE_DIR"
   [ "$PROMOTED_RUN_DIR" -eq 1 ] || rm -rf "$RUN_STAGE_DIR"
 }
-cleanup_on_exit() {
+unified_exit_handler() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    emit_json_log "run" "finished" "run-kaseki.sh completed successfully"
+  else
+    emit_json_log "run" "error" "run-kaseki.sh exited with code $code"
+  fi
   cleanup_secret
   cleanup_staging_dirs
 }
-trap cleanup_on_exit EXIT INT TERM HUP
+trap unified_exit_handler EXIT INT TERM HUP
 
 mkdir -p "$WORKSPACE" "$RESULT_DIR" "$CACHE"
 chmod 0755 "$RUN_DIR" "$WORKSPACE" "$RESULT_DIR" "$CACHE"
