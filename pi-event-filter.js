@@ -16,6 +16,8 @@ let toolEndCount = 0;
 let invalidJsonLines = 0;
 let firstTimestamp = null;
 let lastTimestamp = null;
+let minTimestampMs = null;
+let maxTimestampMs = null;
 
 function increment(map, key) {
   if (!key) return;
@@ -40,6 +42,12 @@ function eventTimestamp(event) {
     if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString();
   }
   return null;
+}
+
+function toEpochMilliseconds(timestamp) {
+  if (!timestamp) return null;
+  const epochMs = Date.parse(timestamp);
+  return Number.isFinite(epochMs) ? epochMs : null;
 }
 
 function shouldKeep(event) {
@@ -81,6 +89,12 @@ async function main() {
     if (timestamp) {
       firstTimestamp ??= timestamp;
       lastTimestamp = timestamp;
+
+      const epochMs = toEpochMilliseconds(timestamp);
+      if (epochMs !== null) {
+        minTimestampMs = minTimestampMs === null ? epochMs : Math.min(minTimestampMs, epochMs);
+        maxTimestampMs = maxTimestampMs === null ? epochMs : Math.max(maxTimestampMs, epochMs);
+      }
     }
 
     observeModelAndApi(event.message);
@@ -115,8 +129,10 @@ async function main() {
         tool_start_count: toolStartCount,
         tool_end_count: toolEndCount,
         invalid_json_lines: invalidJsonLines,
-        first_event_at: firstTimestamp,
-        last_event_at: lastTimestamp,
+        first_event_at:
+          minTimestampMs !== null ? new Date(minTimestampMs).toISOString() : firstTimestamp,
+        last_event_at:
+          maxTimestampMs !== null ? new Date(maxTimestampMs).toISOString() : lastTimestamp,
       },
       null,
       2
