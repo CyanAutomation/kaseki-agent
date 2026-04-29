@@ -385,6 +385,7 @@ START_EPOCH="$(date +%s)"
 MAX_DIFF_BYTES_VALUE="$(require_non_negative_int "KASEKI_MAX_DIFF_BYTES" "$KASEKI_MAX_DIFF_BYTES")"
 AGENT_TIMEOUT_SECONDS_VALUE="$(require_non_negative_int "KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_AGENT_TIMEOUT_SECONDS")"
 FAILURE_EXIT_CODE_VALUE="$(require_non_negative_int "exit_code" "2")"
+HOST_EXIT_CODE_FILE="$RESULT_DIR/host_exit_code"
 
 initialize_result_artifacts() {
   : > "$RESULT_DIR/stdout.log"
@@ -406,6 +407,13 @@ initialize_result_artifacts() {
   : > "$RESULT_DIR/format-check-command.txt"
   : > "$RESULT_DIR/failure.json"
   : > "$RESULT_DIR/result-summary.md"
+  : > "$HOST_EXIT_CODE_FILE"
+}
+
+persist_host_status() {
+  local exit_code="$1"
+  # Keep host-side status deterministic even when container startup fails.
+  printf '%s\n' "$exit_code" > "$HOST_EXIT_CODE_FILE"
 }
 
 write_failure_json() {
@@ -437,6 +445,7 @@ write_host_metadata_failure() {
   local message="$3"
   printf '%s\n' "$exit_code" > "$RESULT_DIR/exit_code"
   printf '%s\n' "$exit_code" > "$RESULT_DIR/host_docker_exit_code"
+  persist_host_status "$exit_code"
   printf 'elapsed_seconds=0\n' > "$RESULT_DIR/resource.time"
   cat > "$RESULT_DIR/metadata.json" <<META
 {
@@ -649,6 +658,7 @@ cleanup_secret
 END_EPOCH="$(date +%s)"
 printf 'elapsed_seconds=%s\n' "$((END_EPOCH - START_EPOCH))" > "$RESULT_DIR/resource.time"
 printf '%s\n' "$DOCKER_EXIT" > "$RESULT_DIR/host_docker_exit_code"
+persist_host_status "$DOCKER_EXIT"
 
 write_cleanup_log
 
