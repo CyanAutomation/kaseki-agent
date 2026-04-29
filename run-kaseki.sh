@@ -373,35 +373,45 @@ case "$INSTANCE" in
   *) echo "Instance must look like kaseki-N, got: $INSTANCE" >&2; exit 2 ;;
 esac
 
-RUN_DIR="$RUNS/$INSTANCE"
-RESULT_DIR="$RESULTS/$INSTANCE"
+FINAL_RUN_DIR="$RUNS/$INSTANCE"
+FINAL_RESULT_DIR="$RESULTS/$INSTANCE"
+RUN_STAGE_DIR="$(mktemp -d "$RUNS/.staging-run-${INSTANCE}-XXXXXX")"
+RESULT_STAGE_DIR="$(mktemp -d "$RESULTS/.staging-result-${INSTANCE}-XXXXXX")"
+RUN_DIR="$RUN_STAGE_DIR"
+RESULT_DIR="$RESULT_STAGE_DIR"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
 GITHUB_APP_ID_FILE="$RUN_DIR/github_app_id"
 GITHUB_APP_CLIENT_ID_FILE="$RUN_DIR/github_app_client_id"
 GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE="$RUN_DIR/github_app_private_key"
+PROMOTED_RESULT_DIR=0
+PROMOTED_RUN_DIR=0
 
-if [ -d "$RESULT_DIR" ]; then
-  echo "Result directory already exists for $INSTANCE: $RESULT_DIR" >&2
+if [ -d "$FINAL_RESULT_DIR" ]; then
+  echo "Result directory already exists for $INSTANCE: $FINAL_RESULT_DIR" >&2
   echo "Choose a new instance name; Kaseki does not overwrite prior results." >&2
   exit 2
 fi
 
-if [ -n "${INSTANCE:-}" ] && [ ! -d "$RUN_DIR" ]; then
-  if ! mkdir "$RUN_DIR" 2>/dev/null; then
-    if [ -d "$RUN_DIR" ]; then
+if [ -n "${INSTANCE:-}" ] && [ -d "$FINAL_RUN_DIR" ]; then
+  if [ -d "$FINAL_RUN_DIR" ]; then
       echo "Instance already reserved: $INSTANCE" >&2
       exit 2
-    fi
-    echo "Failed to reserve instance directory: $RUN_DIR" >&2
-    exit 1
   fi
 fi
 
 cleanup_secret() {
   rm -f "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
 }
-trap cleanup_secret EXIT
+cleanup_staging_dirs() {
+  [ "$PROMOTED_RESULT_DIR" -eq 1 ] || rm -rf "$RESULT_STAGE_DIR"
+  [ "$PROMOTED_RUN_DIR" -eq 1 ] || rm -rf "$RUN_STAGE_DIR"
+}
+cleanup_on_exit() {
+  cleanup_secret
+  cleanup_staging_dirs
+}
+trap cleanup_on_exit EXIT INT TERM HUP
 
 mkdir -p "$WORKSPACE" "$RESULT_DIR" "$CACHE"
 chmod 0755 "$RUN_DIR" "$WORKSPACE" "$RESULT_DIR" "$CACHE"
@@ -515,6 +525,7 @@ fail_before_container() {
   write_host_metadata_failure "$exit_code" "$failed_command" "$message"
   record_host_stage_timing "$failed_command" "$exit_code" 0 "$message"
   write_cleanup_log
+  promote_staging_dirs
   cat "$RESULT_DIR/stderr.log" >&2
   exit "$exit_code"
 }
@@ -538,6 +549,22 @@ write_cleanup_log() {
 
   if [ "$KASEKI_KEEP_WORKSPACE" != "1" ]; then
     rmdir "$RUN_DIR" 2>/dev/null || true
+  fi
+}
+
+promote_staging_dirs() {
+  mkdir -p "$RUNS" "$RESULTS"
+  if [ "$PROMOTED_RESULT_DIR" -eq 0 ]; then
+    mv "$RESULT_STAGE_DIR" "$FINAL_RESULT_DIR"
+    RESULT_DIR="$FINAL_RESULT_DIR"
+    HOST_EXIT_CODE_FILE="$RESULT_DIR/host_exit_code"
+    PROMOTED_RESULT_DIR=1
+  fi
+  if [ "$KASEKI_KEEP_WORKSPACE" = "1" ] && [ "$PROMOTED_RUN_DIR" -eq 0 ]; then
+    mv "$RUN_STAGE_DIR" "$FINAL_RUN_DIR"
+    RUN_DIR="$FINAL_RUN_DIR"
+    WORKSPACE="$RUN_DIR/workspace"
+    PROMOTED_RUN_DIR=1
   fi
 }
 
@@ -599,6 +626,7 @@ if command -v git >/dev/null 2>&1; then
     write_host_metadata_failure 128 "preflight git ref" "$message"
     record_host_stage_timing "preflight git ref" 128 "$(($(date +%s) - preflight_start))" "$message"
     write_cleanup_log
+    promote_staging_dirs
     cat "$RESULT_DIR/stderr.log" >&2
     exit 128
   fi
@@ -678,7 +706,6 @@ set +e
 docker "${docker_args[@]}"
 DOCKER_EXIT="$?"
 set -e
-cleanup_secret
 
 END_EPOCH="$(date +%s)"
 printf 'elapsed_seconds=%s\n' "$((END_EPOCH - START_EPOCH))" > "$RESULT_DIR/resource.time"
@@ -686,8 +713,13 @@ printf '%s\n' "$DOCKER_EXIT" > "$RESULT_DIR/host_docker_exit_code"
 persist_host_status "$DOCKER_EXIT"
 
 write_cleanup_log
+promote_staging_dirs
 
 printf '%s\n' "$INSTANCE"
-printf 'run_dir=%s\n' "$RUN_DIR"
-printf 'result_dir=%s\n' "$RESULT_DIR"
+if [ "$KASEKI_KEEP_WORKSPACE" = "1" ]; then
+  printf 'run_dir=%s\n' "$FINAL_RUN_DIR"
+else
+  printf 'run_dir=%s\n' "$FINAL_RUN_DIR (removed)\n"
+fi
+printf 'result_dir=%s\n' "$FINAL_RESULT_DIR"
 exit "$DOCKER_EXIT"
