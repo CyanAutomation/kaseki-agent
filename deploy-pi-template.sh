@@ -49,6 +49,7 @@ install_file() {
 install_file 0755 run-kaseki.sh
 install_file 0755 kaseki
 install_file 0755 cleanup-kaseki.sh
+install_file 0755 kaseki-healthcheck.sh
 install_file 0755 kaseki-agent.sh
 install_file 0755 deploy-pi-template.sh
 install_file 0755 github-app-token.js
