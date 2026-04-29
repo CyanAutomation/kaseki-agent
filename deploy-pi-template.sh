@@ -103,7 +103,7 @@ prepare_target_dir() {
 
   if ! is_allowed_target_dir "$abs_target"; then
     printf 'Error: refusing to clean unexpected target path: %s\n' "$abs_target" >&2
-    printf 'Expected basename "kaseki-template" and prefix "/agents/" or "$HOME/".\n' >&2
+    printf "Expected basename \"kaseki-template\" and prefix \"/agents/\" or \"\$HOME/\".\n" >&2
     exit 1
   fi
 
