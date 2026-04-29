@@ -23,6 +23,46 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+INSTANCE="${INSTANCE:-}"
+KASEKI_JSON_LOG_COMPONENT="run-kaseki"
+
+json_escape() {
+  local value="${1-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
+emit_json_log() {
+  local stage="$1"
+  local status="$2"
+  local detail="${3-}"
+  local now instance_value
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  instance_value="${INSTANCE:-pending}"
+  printf '{"timestamp":"%s","component":"%s","stage":"%s","status":"%s","instance":"%s","detail":"%s"}\n' \
+    "$now" \
+    "$KASEKI_JSON_LOG_COMPONENT" \
+    "$(json_escape "$stage")" \
+    "$(json_escape "$status")" \
+    "$(json_escape "$instance_value")" \
+    "$(json_escape "$detail")"
+}
+
+on_run_kaseki_exit() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    emit_json_log "run" "finished" "run-kaseki.sh completed successfully"
+  else
+    emit_json_log "run" "error" "run-kaseki.sh exited with code $code"
+  fi
+}
+
+trap on_run_kaseki_exit EXIT
+emit_json_log "run" "started" "run-kaseki.sh starting"
 
 
 run_preflight() {
