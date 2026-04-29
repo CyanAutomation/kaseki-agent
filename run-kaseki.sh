@@ -719,7 +719,7 @@ printf '%s\n' "$INSTANCE"
 if [ "$KASEKI_KEEP_WORKSPACE" = "1" ]; then
   printf 'run_dir=%s\n' "$FINAL_RUN_DIR"
 else
-  printf 'run_dir=%s\n' "$FINAL_RUN_DIR (removed)\n"
+  printf 'run_dir=%s\n' "$FINAL_RUN_DIR (removed)"
 fi
 printf 'result_dir=%s\n' "$FINAL_RESULT_DIR"
 exit "$DOCKER_EXIT"
