@@ -22,14 +22,16 @@ function readJson(name) {
   }
 }
 
-function firstExisting(names) {
-  return names.find((name) => {
+function firstReadableNonEmpty(names) {
+  for (const name of names) {
     try {
-      return fs.statSync(path.join(resultDir, name)).size > 0;
+      const text = fs.readFileSync(path.join(resultDir, name), 'utf8');
+      if (text.trim()) return { name, text };
     } catch {
-      return false;
+      // ignore files that cannot be read at decision time
     }
-  });
+  }
+  return null;
 }
 
 function normalizeExitCode(value) {
@@ -70,7 +72,7 @@ const resultName = metadata.instance || path.basename(resultDir);
 const nextDiagnostic =
   normalizedExitCode === 0
     ? 'none'
-    : firstExisting([
+    : firstReadableNonEmpty([
       'failure.json',
       'quality.log',
       'secret-scan.log',
@@ -78,7 +80,7 @@ const nextDiagnostic =
       'validation.log',
       'preflight-git.log',
       'stderr.log',
-    ]) ??
+    ])?.name ??
       'metadata.json';
 
 console.log(`Kaseki result: ${resultName}`);
