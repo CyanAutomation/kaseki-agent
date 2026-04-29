@@ -2,6 +2,9 @@
 /kaseki-results/
 /kaseki-cache/
 node_modules/
+dist/
+coverage/
+*.tsbuildinfo
 *.log
 *.tmp
 .DS_Store
