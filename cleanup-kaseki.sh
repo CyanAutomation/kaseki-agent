@@ -10,6 +10,42 @@ DOCKER_CLEANUP=0
 FORCE=0
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+KASEKI_JSON_LOG_COMPONENT="cleanup-kaseki"
+
+json_escape() {
+  local value="${1-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
+emit_json_log() {
+  local stage="$1"
+  local status="$2"
+  local detail="${3-}"
+  printf '{"timestamp":"%s","component":"%s","stage":"%s","status":"%s","instance":"%s","detail":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$KASEKI_JSON_LOG_COMPONENT" \
+    "$(json_escape "$stage")" \
+    "$(json_escape "$status")" \
+    "maintenance" \
+    "$(json_escape "$detail")"
+}
+
+on_cleanup_exit() {
+  local code=$?
+  if [ "$code" -eq 0 ]; then
+    emit_json_log "cleanup" "finished" "cleanup-kaseki.sh completed successfully"
+  else
+    emit_json_log "cleanup" "error" "cleanup-kaseki.sh exited with code $code"
+  fi
+}
+
+trap on_cleanup_exit EXIT
+emit_json_log "cleanup" "started" "cleanup-kaseki.sh starting"
 
 setup_host_logging() {
   local base_name="$1"
@@ -90,17 +126,22 @@ printf 'Runs: %s\n' "$RUNS"
 printf 'Results preserved: %s\n' "$RESULTS"
 
 if [ -d "$RUNS" ]; then
+  emit_json_log "workspace-prune" "started" "removing stale run directories older than $OLDER_THAN_DAYS days"
   find "$RUNS" -mindepth 1 -maxdepth 1 -type d -name 'kaseki-[0-9]*' -mtime +"$OLDER_THAN_DAYS" -print |
     while IFS= read -r run_dir; do
       run_or_print rm -rf "$run_dir"
     done
+  emit_json_log "workspace-prune" "finished" "stale run directory cleanup complete"
 else
   printf 'No Kaseki runs directory found: %s\n' "$RUNS"
+  emit_json_log "workspace-prune" "finished" "runs directory missing; nothing to prune"
 fi
 
 if [ "$DOCKER_CLEANUP" -eq 1 ]; then
+  emit_json_log "docker-cleanup" "started" "docker cleanup requested"
   if ! command -v docker >/dev/null 2>&1; then
     printf 'Docker: missing; skipping Docker cleanup\n' >&2
+    emit_json_log "docker-cleanup" "error" "docker binary missing; skipping docker cleanup"
     exit 0
   fi
 
@@ -123,4 +164,5 @@ if [ "$DOCKER_CLEANUP" -eq 1 ]; then
 
   printf '\nDocker disk usage after cleanup:\n'
   docker system df || true
+  emit_json_log "docker-cleanup" "finished" "docker cleanup stage complete"
 fi
