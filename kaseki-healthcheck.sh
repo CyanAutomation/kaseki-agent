@@ -67,7 +67,7 @@ if [ "$status_ok" != "true" ]; then
 fi
 
 mkdir -p "$(dirname "$TARGET_FILE")"
-tmp_file="${TARGET_FILE}.tmp.$$"
+tmp_file="$(mktemp "${TARGET_FILE}.XXXXXX")"
 
 cat > "$tmp_file" <<JSON
 {
