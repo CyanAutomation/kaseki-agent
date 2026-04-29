@@ -127,6 +127,10 @@ function resolveInstanceStage(instance, metadata = {}, fallback = 'unknown') {
   return parsedStage || fallback;
 }
 
+function isSkippableInstanceIoError(error) {
+  return error && (error.code === 'ENOENT' || error.code === 'ESTALE');
+}
+
 /**
  * List all kaseki instances (running and completed).
  * Returns array of instance objects with basic metadata.
@@ -144,6 +148,7 @@ function listInstances() {
   }
 
   for (const dir of dirs) {
+    try {
       const instance = dir;
       const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
       const metadataPath = path.join(resultDir, 'metadata.json');
@@ -159,6 +164,9 @@ function listInstances() {
         try {
           metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
         } catch (e) {
+          if (isSkippableInstanceIoError(e)) {
+            throw e;
+          }
           // Metadata may still be incomplete if run is in progress
         }
       }
@@ -167,7 +175,11 @@ function listInstances() {
       if (fs.existsSync(hostStartPath)) {
         try {
           hostStart = JSON.parse(fs.readFileSync(hostStartPath, 'utf8'));
-        } catch (e) {}
+        } catch (e) {
+          if (isSkippableInstanceIoError(e)) {
+            throw e;
+          }
+        }
       }
 
       // Check if currently running via Docker (exact name match)
@@ -189,7 +201,11 @@ function listInstances() {
             if (match) {
               elapsedSeconds = parseInt(match[1], 10);
             }
-          } catch (e) {}
+          } catch (e) {
+            if (isSkippableInstanceIoError(e)) {
+              throw e;
+            }
+          }
         }
       }
 
@@ -204,6 +220,13 @@ function listInstances() {
         repo: hostStart.repo_url || hostStart.repo || 'unknown',
         ref: hostStart.git_ref || hostStart.ref || 'unknown',
       });
+    } catch (e) {
+      if (isSkippableInstanceIoError(e)) {
+        // Instance directory can disappear while scanning; skip just this instance.
+        continue;
+      }
+      throw e;
+    }
     }
 
   return instances.sort((a, b) => {
