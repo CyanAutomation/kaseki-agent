@@ -108,6 +108,20 @@ prepare_target_dir() {
   fi
 
   tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-template-preserve.XXXXXX")"
+  
+  cleanup_or_restore() {
+    if [ -d "$tmp_root" ]; then
+      for persistent in run result cache secrets; do
+        if [ -d "$tmp_root/$persistent" ] && [ ! -d "$abs_target/$persistent" ]; then
+          mkdir -p "$abs_target"
+          mv "$tmp_root/$persistent" "$abs_target/$persistent" 2>/dev/null || true
+        fi
+      done
+      rm -rf "$tmp_root"
+    fi
+  }
+  trap cleanup_or_restore EXIT INT TERM
+  
   for persistent in run result cache secrets; do
     path="$abs_target/$persistent"
     if [ -d "$path" ]; then
@@ -123,6 +137,7 @@ prepare_target_dir() {
       mv "$tmp_root/$persistent" "$abs_target/$persistent"
     fi
   done
+  trap - EXIT INT TERM
   rm -rf "$tmp_root"
 }
 
