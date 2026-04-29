@@ -21,6 +21,25 @@ KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
+KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
+KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+
+setup_host_logging() {
+  local instance_for_log="$1"
+  local stamp host_log_file
+  if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    host_log_file="$KASEKI_LOG_DIR/run-kaseki-${instance_for_log:-session}-${stamp}.log"
+    exec > >(tee -a "$host_log_file") 2> >(tee -a "$host_log_file" >&2)
+    printf 'Host log mirror: %s\n' "$host_log_file"
+    return 0
+  fi
+  if [ "$KASEKI_STRICT_HOST_LOGGING" = "1" ]; then
+    printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
+    exit 1
+  fi
+  printf 'Warning: host logging disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
+}
 
 # GitHub App credentials (optional, for auto PR creation)
 GITHUB_APP_ID="${GITHUB_APP_ID:-}"
@@ -208,6 +227,8 @@ done
 if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
   INSTANCE=""
 fi
+
+setup_host_logging "${INSTANCE:-session}"
 
 doctor() {
   local status=0
