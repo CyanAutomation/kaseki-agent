@@ -4,10 +4,11 @@
 **
 !Dockerfile
 !kaseki-agent.sh
-!pi-event-filter.js
-!pi-progress-stream.js
-!kaseki-report.js
-!github-app-token.js
+!lib/
+!lib/pi-event-filter.js
+!lib/pi-progress-stream.js
+!lib/kaseki-report.js
+!lib/github-app-token.js
 !.dockerignore
 !docker/
 !docker/workspace-cache/

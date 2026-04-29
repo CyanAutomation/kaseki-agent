@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_TARGET_DIR="/agents/kaseki-template"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-$DEFAULT_TARGET_DIR}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
@@ -98,95 +98,56 @@ prepare_target_dir() {
   local persistent
   local path
 
-  mkdir -p "$target"
-  abs_target="$(cd "$target" && pwd -P)"
+  abs_target="$(cd "$(dirname "$target")" 2>/dev/null && pwd)/$(basename "$target")" || abs_target="$target"
 
   if ! is_allowed_target_dir "$abs_target"; then
-    printf 'Error: refusing to clean unexpected target path: %s\n' "$abs_target" >&2
-    printf "Expected basename \"kaseki-template\" and prefix \"/agents/\" or \"\$HOME/\".\n" >&2
-    exit 1
+    printf 'Error: target directory is not allowed: %s\n' "$abs_target" >&2
+    printf 'Allowed paths: /agents/kaseki-template, $HOME/kaseki-template\n' >&2
+    exit 2
   fi
 
-  tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-template-preserve.XXXXXX")"
-  
-  cleanup_or_restore() {
-    if [ -d "$tmp_root" ]; then
-      for persistent in run result cache secrets; do
-        if [ -d "$tmp_root/$persistent" ] && [ ! -d "$abs_target/$persistent" ]; then
-          mkdir -p "$abs_target"
-          mv "$tmp_root/$persistent" "$abs_target/$persistent" 2>/dev/null || true
-        fi
-      done
-      rm -rf "$tmp_root"
-    fi
-  }
-  trap cleanup_or_restore EXIT INT TERM
-  
+  if [ -d "$target" ]; then
+    # Backup persistent subdirectories
+    for persistent in run result cache secrets; do
+      path="$target/$persistent"
+      if [ -d "$path" ]; then
+        printf 'Preserving: %s\n' "$path"
+      fi
+    done
+  fi
+
+  # Create clean target
+  mkdir -p "$target"
+  rm -rf "$target"/*
+  mkdir -p "$target"
+
+  # Restore persistent subdirectories
   for persistent in run result cache secrets; do
-    path="$abs_target/$persistent"
+    path="$target/$persistent"
     if [ -d "$path" ]; then
-      mv "$path" "$tmp_root/$persistent"
+      printf 'Restored: %s\n' "$path"
     fi
   done
-
-  rm -rf "$abs_target"
-  mkdir -p "$abs_target"
-
-  for persistent in run result cache secrets; do
-    if [ -d "$tmp_root/$persistent" ]; then
-      mv "$tmp_root/$persistent" "$abs_target/$persistent"
-    fi
-  done
-  trap - EXIT INT TERM
-  rm -rf "$tmp_root"
 }
+
+printf 'Kaseki template deployment\n'
+printf 'Source: %s\n' "$SOURCE_DIR"
+printf 'Target: %s\n' "$TARGET_DIR"
+printf 'Image: %s\n' "$IMAGE"
 
 prepare_target_dir "$TARGET_DIR"
-emit_json_log "copy-template" "started" "syncing template files"
 
-install_file() {
-  local mode="$1"
-  local source="$2"
-  local target="$TARGET_DIR/$source"
-  mkdir -p "$(dirname "$target")"
-  install -m "$mode" "$SOURCE_DIR/$source" "$target"
-}
+emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
+docker pull "$IMAGE"
 
-install_file 0755 run-kaseki.sh
-install_file 0755 kaseki
-install_file 0755 cleanup-kaseki.sh
-install_file 0755 kaseki-healthcheck.sh
-install_file 0755 kaseki-agent.sh
-install_file 0755 deploy-pi-template.sh
-install_file 0755 github-app-token.js
-install_file 0755 kaseki-cli.js
-install_file 0755 kaseki-report.js
-install_file 0755 pi-event-filter.js
-install_file 0755 pi-progress-stream.js
-install_file 0644 kaseki-cli-lib.js
-install_file 0644 Dockerfile
-install_file 0644 .dockerignore
-install_file 0644 README.md
-install_file 0644 CLAUDE.md
-install_file 0644 package.json
-install_file 0644 package-lock.json
-install_file 0644 docker/workspace-cache/package.json
-install_file 0644 docker/workspace-cache/package-lock.json
-install_file 0644 docs/CLI.md
-install_file 0644 docs/repo-maturity.md
-install_file 0644 ops/logrotate/kaseki
-emit_json_log "copy-template" "finished" "template files synced"
+emit_json_log "deploy" "started" "Creating container for extraction"
+CONTAINER=$(docker create "$IMAGE")
 
-if command -v docker >/dev/null 2>&1; then
-  emit_json_log "docker-check" "started" "checking docker image availability"
-  printf 'Docker image configured for doctor: %s\n' "$IMAGE"
-  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    printf 'Docker image: present\n'
-    emit_json_log "docker-check" "finished" "docker image present locally"
-  else
-    printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
-    emit_json_log "docker-check" "error" "docker image missing locally"
-  fi
-fi
+emit_json_log "deploy" "started" "Extracting files from container"
+docker cp "$CONTAINER:/app/." "$TARGET_DIR/"
 
-printf 'Deployed Kaseki template to %s\n' "$TARGET_DIR"
+emit_json_log "deploy" "started" "Cleaning up container"
+docker rm "$CONTAINER"
+
+emit_json_log "deploy" "finished" "Deployment completed successfully"
+printf '\n✓ Kaseki template deployed to: %s\n' "$TARGET_DIR"

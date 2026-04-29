@@ -55,7 +55,7 @@ test('pi-event-filter stress run completes and keeps memory bounded', async () =
 
     const child = spawn(
       process.execPath,
-      [path.join(__dirname, 'pi-event-filter.js'), inputPath, outputPath, summaryPath],
+      [path.join(__dirname, '..', '..', 'lib', 'pi-event-filter.js'), inputPath, outputPath, summaryPath],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
 
@@ -123,7 +123,7 @@ test('pi-event-filter computes first/last event bounds from parsed timestamps', 
     await new Promise((resolve, reject) => {
       const child = spawn(
         process.execPath,
-        [path.join(__dirname, 'pi-event-filter.js'), inputPath, outputPath, summaryPath],
+        [path.join(__dirname, '..', '..', 'lib', 'pi-event-filter.js'), inputPath, outputPath, summaryPath],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );
       const stderr = [];

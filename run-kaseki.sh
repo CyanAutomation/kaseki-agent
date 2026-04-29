@@ -60,7 +60,7 @@ emit_json_log "run" "started" "run-kaseki.sh starting"
 run_preflight() {
   local mode="$1"
   local preflight_script
-  preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-preflight.sh"
+  preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/kaseki-preflight.sh"
   if [ ! -x "$preflight_script" ]; then
     printf 'Error: preflight script not found or not executable: %s\n' "$preflight_script" >&2
     exit 1
@@ -330,7 +330,7 @@ doctor() {
   if [ "$image_present" -eq 1 ]; then
     local mismatch=0
     local pairs
-    pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream kaseki-report.js:/usr/local/bin/kaseki-report github-app-token.js:/usr/local/bin/github-app-token'
+    pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent lib/pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter lib/pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream lib/kaseki-report.js:/usr/local/bin/kaseki-report lib/github-app-token.js:/usr/local/bin/github-app-token'
     for pair in $pairs; do
       local host_file="${pair%%:*}"
       local image_file="${pair#*:}"
@@ -760,7 +760,7 @@ persist_host_status "$DOCKER_EXIT"
 write_cleanup_log
 promote_staging_dirs
 
-METRICS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/kaseki-metrics.sh"
+METRICS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/kaseki-metrics.sh"
 if [ -x "$METRICS_SCRIPT" ] && [ -f "$RESULT_DIR/stage-timings.tsv" ] && [ -f "$RESULT_DIR/metadata.json" ]; then
   if "$METRICS_SCRIPT" "$RESULT_DIR/stage-timings.tsv" "$RESULT_DIR/metadata.json" "$RESULT_DIR/metrics.json" >/dev/null 2>&1; then
     if [ "$KASEKI_APPEND_METRICS_JSONL" = "1" ]; then
