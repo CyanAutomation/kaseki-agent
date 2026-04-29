@@ -32,6 +32,17 @@ function firstExisting(names) {
   });
 }
 
+function normalizeExitCode(value) {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) return Number.parseInt(value, 10);
+  return null;
+}
+
+function printableExitCode(value) {
+  const normalized = normalizeExitCode(value);
+  return normalized === null ? 'unknown' : normalized;
+}
+
 function printList(title, values) {
   console.log(`${title}:`);
   if (values.length === 0) {
@@ -53,10 +64,11 @@ const timings = readText('validation-timings.tsv').split(/\r?\n/).filter(Boolean
 const stageTimings = readText('stage-timings.tsv').split(/\r?\n/).filter(Boolean);
 const dependencyCache = readText('dependency-cache.log').split(/\r?\n/).filter(Boolean);
 const secretScanBytes = Buffer.byteLength(readText('secret-scan.log'));
-const status = metadata.exit_code === 0 ? 'passed' : 'failed';
+const normalizedExitCode = normalizeExitCode(metadata.exit_code);
+const status = normalizedExitCode === 0 ? 'passed' : 'failed';
 const resultName = metadata.instance || path.basename(resultDir);
 const nextDiagnostic =
-  metadata.exit_code === 0
+  normalizedExitCode === 0
     ? 'none'
     : firstExisting([
       'failure.json',
@@ -72,11 +84,11 @@ const nextDiagnostic =
 console.log(`Kaseki result: ${resultName}`);
 console.log(`Status: ${status}`);
 console.log(`Failed command: ${metadata.failed_command || 'none'}`);
-console.log(`Exit code: ${metadata.exit_code ?? 'unknown'}`);
-console.log(`Pi exit code: ${metadata.pi_exit_code ?? 'unknown'}`);
-console.log(`Validation exit code: ${metadata.validation_exit_code ?? 'unknown'}`);
-console.log(`Quality exit code: ${metadata.quality_exit_code ?? 'unknown'}`);
-console.log(`Secret scan exit code: ${metadata.secret_scan_exit_code ?? 'unknown'}`);
+console.log(`Exit code: ${printableExitCode(metadata.exit_code)}`);
+console.log(`Pi exit code: ${printableExitCode(metadata.pi_exit_code)}`);
+console.log(`Validation exit code: ${printableExitCode(metadata.validation_exit_code)}`);
+console.log(`Quality exit code: ${printableExitCode(metadata.quality_exit_code)}`);
+console.log(`Secret scan exit code: ${printableExitCode(metadata.secret_scan_exit_code)}`);
 console.log(`Requested model: ${metadata.model || 'unknown'}`);
 console.log(`Actual model: ${metadata.actual_model || summary.selected_model || 'unknown'}`);
 console.log(`Pi version: ${metadata.pi_version || 'unknown'}`);
