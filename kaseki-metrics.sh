@@ -97,7 +97,10 @@ PY
 
 if [ -n "$OUTPUT_FILE" ]; then
   mkdir -p "$(dirname "$OUTPUT_FILE")"
-  printf '%s\n' "$metrics_json" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=False))' > "$OUTPUT_FILE"
+  if ! printf '%s\n' "$metrics_json" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=False))' > "$OUTPUT_FILE"; then
+    echo "Error: Failed to write metrics to $OUTPUT_FILE" >&2
+    exit 1
+  fi
 fi
 
 printf '%s\n' "$metrics_json"
