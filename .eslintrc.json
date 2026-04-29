@@ -10,6 +10,35 @@
   "extends": [
     "eslint:recommended"
   ],
+  "overrides": [
+    {
+      "files": [
+        "src/**/*.ts"
+      ],
+      "parser": "@typescript-eslint/parser",
+      "parserOptions": {
+        "ecmaVersion": 2024,
+        "sourceType": "module"
+      },
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+      ],
+      "plugins": [
+        "@typescript-eslint"
+      ],
+      "rules": {
+        "no-unused-vars": "off",
+        "@typescript-eslint/no-unused-vars": [
+          "warn",
+          {
+            "argsIgnorePattern": "^_"
+          }
+        ],
+        "@typescript-eslint/no-explicit-any": "warn"
+      }
+    }
+  ],
   "rules": {
     "indent": [
       "warn",
@@ -59,6 +88,7 @@
     "/kaseki-runs/",
     "/kaseki-results/",
     "/kaseki-cache/",
+    "dist/",
     "**/*.log"
   ]
 }

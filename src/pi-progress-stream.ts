@@ -1,28 +1,50 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const readline = require('readline');
+import fs from 'fs';
+import readline from 'readline';
+
+interface EventCountMap {
+  [key: string]: number;
+}
+
+interface PiEvent {
+  type?: string;
+  event?: string;
+  name?: string;
+  kind?: string;
+  tool_name?: string;
+  toolName?: string;
+  tool?: { name: string };
+  call?: { name: string };
+}
+
+interface ProgressPayload {
+  timestamp: string;
+  stage: string;
+  message: string;
+  [key: string]: any;
+}
 
 const progressJsonlPath = process.argv[2] || '/results/progress.jsonl';
 const progressLogPath = process.argv[3] || '/results/progress.log';
 const streamToStdout = process.env.KASEKI_STREAM_PROGRESS !== '0';
 
-const counts = {};
+const counts: EventCountMap = {};
 let toolStartCount = 0;
 let toolEndCount = 0;
 let messageUpdateCount = 0;
 let lastHeartbeat = 0;
 let streamOpen = true;
 
-function append(file, text) {
+function append(file: string, text: string): void {
   fs.appendFileSync(file, text);
 }
 
-function eventType(event) {
+function eventType(event: PiEvent | any): string {
   return event?.type || event?.event || event?.name || event?.kind || 'unknown';
 }
 
-function toolName(event) {
+function toolName(event: PiEvent | any): string {
   return (
     event?.tool_name ||
     event?.toolName ||
@@ -33,8 +55,8 @@ function toolName(event) {
   );
 }
 
-function emit(stage, message, extra = {}) {
-  const payload = {
+function emit(stage: string, message: string, extra: Record<string, any> = {}): void {
+  const payload: ProgressPayload = {
     timestamp: new Date().toISOString(),
     stage,
     message,
@@ -48,11 +70,11 @@ function emit(stage, message, extra = {}) {
   }
 }
 
-function eventTotal() {
+function eventTotal(): number {
   return Object.values(counts).reduce((sum, count) => sum + count, 0);
 }
 
-function maybeHeartbeat(force = false, reason = 'events') {
+function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void {
   const now = Date.now();
   if (!force && now - lastHeartbeat < 15000) {
     return;
@@ -61,7 +83,13 @@ function maybeHeartbeat(force = false, reason = 'events') {
   emit(
     'pi coding agent',
     `working; events=${eventTotal()}, tool starts=${toolStartCount}, tool ends=${toolEndCount}`,
-    { counts, toolStartCount, toolEndCount, messageUpdateCount, reason }
+    {
+      counts,
+      toolStartCount,
+      toolEndCount,
+      messageUpdateCount,
+      reason,
+    }
   );
 }
 
@@ -77,12 +105,12 @@ const rl = readline.createInterface({
   crlfDelay: Infinity,
 });
 
-rl.on('line', (line) => {
+rl.on('line', (line: string) => {
   if (line.trim().length === 0) {
     return;
   }
 
-  let event;
+  let event: any;
   try {
     event = JSON.parse(line);
   } catch {

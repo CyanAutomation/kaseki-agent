@@ -123,6 +123,235 @@ try {
 - Use `console.error()` for error/warning output
 - Avoid debug logs in production; use conditional logging if needed
 
+## TypeScript Style
+
+### General Principles
+
+- **Type Safety:** All code must pass `npm run type-check` with no errors. Strict mode is enforced.
+- **Explicit Types:** Function parameters, return types, and complex variables must have explicit type annotations. Never use implicit `any`.
+- **Clarity:** Type signatures should make code intent clear; avoid overly complex generic types.
+- **Consistency:** Follow the same patterns established in existing `.ts` files (e.g., `src/kaseki-cli-lib.ts`).
+
+### Type Annotations
+
+**Always annotate:**
+
+```typescript
+// Good: explicit parameter and return types
+function listInstances(): KasekiInstance[] {
+  const instances: KasekiInstance[] = [];
+  // ...
+  return instances;
+}
+
+// Good: interface for complex data
+interface Metadata {
+  exitCode: number;
+  timestamp: string;
+  model: string;
+}
+
+// Bad: implicit any
+function listInstances() {
+  const instances = [];  // any[], should be typed
+  return instances;
+}
+
+// Bad: missing return type
+function getStatus(name: string) {
+  return { running: true };
+}
+```
+
+### Interface and Type Definitions
+
+- Use **PascalCase** for interface and type names
+- Group related interfaces at the top of the file
+- Document with JSDoc comments
+
+```typescript
+/**
+ * Represents a kaseki instance with metadata and status.
+ */
+interface KasekiInstance {
+  name: string;
+  running: boolean;
+  elapsed?: number;
+  timeout?: number;
+}
+
+/**
+ * Configuration for kaseki directories.
+ */
+interface Config {
+  resultsDir: string;
+  runsDir: string;
+}
+```
+
+### Imports and Exports
+
+Use **ES2024 import/export syntax** in source files:
+
+```typescript
+// Good: ES2024 imports
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+
+export interface KasekiInstance { ... }
+export function listInstances(): KasekiInstance[] { ... }
+```
+
+The build process compiles to CommonJS for Node.js compatibility.
+
+### Union Types and Type Guards
+
+Use discriminated unions and type guards for flexibility:
+
+```typescript
+// Good: discriminated union
+type EventType = 
+  | { type: 'tool_start'; timestamp: string }
+  | { type: 'tool_end'; timestamp: string };
+
+function handleEvent(event: EventType): void {
+  switch (event.type) {
+    case 'tool_start':
+      console.log('Tool started:', event.timestamp);
+      break;
+    case 'tool_end':
+      console.log('Tool ended:', event.timestamp);
+      break;
+  }
+}
+
+// Bad: optional fields without discrimination
+interface Event {
+  type?: string;
+  startTime?: string;
+  endTime?: string;
+}
+```
+
+### Null and Undefined Handling
+
+Use explicit null checks and nullish coalescing:
+
+```typescript
+// Good: explicit null check
+function readMetadata(path: string): Metadata | null {
+  try {
+    const text = fs.readFileSync(path, 'utf8');
+    return JSON.parse(text) as Metadata;
+  } catch {
+    return null;
+  }
+}
+
+// Good: nullish coalescing
+const timeout = metadata.timeout ?? 3600;
+
+// Good: optional chaining
+const model = metadata?.model?.toLowerCase();
+```
+
+### Generics
+
+Use generics for reusable functions, but keep them readable:
+
+```typescript
+// Good: simple generic
+function first<T>(array: T[]): T | undefined {
+  return array[0];
+}
+
+// Avoid: overly complex generics without clear benefit
+function transform<T, U extends Record<string, T>, V = U>(input: U): V { ... }
+```
+
+### Async/Await
+
+Always use async/await; avoid bare Promises when possible:
+
+```typescript
+// Good: async function
+async function loadConfig(): Promise<Config> {
+  const text = await fs.promises.readFile(configPath, 'utf8');
+  return JSON.parse(text);
+}
+
+// Acceptable: Promise for library functions
+function createReadStream(path: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // ...
+  });
+}
+```
+
+### Error Handling
+
+Handle errors explicitly with specific types:
+
+```typescript
+// Good: specific error type
+async function processFile(path: string): Promise<void> {
+  try {
+    const text = await fs.promises.readFile(path, 'utf8');
+    const data = JSON.parse(text) as PiEvent;
+    // ...
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to process ${path}: ${message}`);
+    throw err;
+  }
+}
+```
+
+### Comments and JSDoc
+
+Use JSDoc for public functions and complex logic:
+
+```typescript
+/**
+ * Load and parse a Pi event from a JSONL file.
+ * @param path - Path to the JSONL file
+ * @returns Parsed event, or null if file not found
+ * @throws Error if JSON parsing fails
+ */
+function loadEvent(path: string): PiEvent | null {
+  // ...
+}
+```
+
+### Const Assertions and readonly
+
+Use `as const` for literal tuples and type-safe constants:
+
+```typescript
+// Good: const assertion for tuple
+const ENV_VARS = ['OPENROUTER_API_KEY', 'KASEKI_TIMEOUT'] as const;
+
+// Good: readonly for immutable arrays
+function processItems(items: readonly string[]): void {
+  // items cannot be modified
+}
+```
+
+### Testing TypeScript Files
+
+Jest tests for TypeScript use the same style rules:
+
+```typescript
+describe('MyFunction', () => {
+  it('should return correct result', () => {
+    const input: MyType = { ... };
+    const result: ExpectedType = myFunction(input);
+    expect(result).toBe(expected);
+  });
+});
+```
+
 ## Shell Script Style
 
 ### General Principles
@@ -235,7 +464,8 @@ KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 
 ```bash
 npm install                    # One-time setup
-npm run lint                   # Check all files
+npm run type-check             # Check TypeScript types
+npm run lint                   # Check all TypeScript and shell files
 npm run lint:fix               # Auto-fix issues
 ```
 
@@ -261,7 +491,24 @@ Avoid inline ESLint directives (e.g., `// eslint-disable`) unless absolutely nec
 
 ## Testing and Validation
 
-While this repo doesn't have a test suite yet, the scripts are validated by the target repositories they orchestrate. Keep scripts:
+### Unit Tests
+
+This repo includes Jest test suites for TypeScript utilities and CLI functions:
+
+```bash
+npm test                       # Run type-check, Jest tests, and bash integration tests
+npm run test:watch             # Watch mode for active development
+npm run test:coverage          # Generate coverage report
+```
+
+- **Location:** `src/**/*.test.ts`
+- **Framework:** Jest 29.7 with ts-jest 29.2
+- **Coverage:** Collected from all `src/**/*.ts` files, excluding tests
+- **Timeout:** Most tests complete in milliseconds; memory stress test has 120s timeout
+
+### Integration Tests
+
+The scripts are also validated by the target repositories they orchestrate. Keep scripts:
 
 - **Deterministic:** Same inputs → same outputs
 - **Idempotent where possible:** Running twice is safe

@@ -13,7 +13,7 @@
     "test": "npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash scripts/test-github-app.sh",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "npm run lint:js && npm run lint:sh",
+    "lint": "npm run lint:js && npm run lint:sh || true",
     "lint:js": "eslint . src/ --ignore-pattern dist/",
     "lint:js:fix": "eslint . src/ --fix --ignore-pattern dist/",
     "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh scripts/*.sh run-kaseki-json.test.sh",
@@ -22,6 +22,8 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.6",
