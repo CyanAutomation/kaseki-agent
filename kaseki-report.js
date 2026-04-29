@@ -65,7 +65,7 @@ const stageTimings = readText('stage-timings.tsv').split(/\r?\n/).filter(Boolean
 const dependencyCache = readText('dependency-cache.log').split(/\r?\n/).filter(Boolean);
 const secretScanBytes = Buffer.byteLength(readText('secret-scan.log'));
 const normalizedExitCode = normalizeExitCode(metadata.exit_code);
-const status = normalizedExitCode === 0 ? 'passed' : normalizedExitCode === null ? 'unknown' : 'failed';
+const status = normalizedExitCode === 0 ? 'passed' : 'failed';
 const resultName = metadata.instance || path.basename(resultDir);
 const nextDiagnostic =
   normalizedExitCode === 0
