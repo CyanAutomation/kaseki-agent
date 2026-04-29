@@ -8,6 +8,39 @@ Host layout:
 - `/agents/kaseki-runs/kaseki-N`: per-run workspace.
 - `/agents/kaseki-results/kaseki-N`: logs, metadata, exit code, git status, git diff, and resource timing.
 - `/agents/kaseki-cache`: persistent host-level cache for dependency installs and npm cache.
+- `/var/log/kaseki`: optional host-level mirrored logs for runner scripts.
+
+## Host logging and log rotation
+
+Kaseki scripts support mirrored host logs via `KASEKI_LOG_DIR` (default:
+`/var/log/kaseki`):
+
+- `run-kaseki.sh` writes `run-kaseki-<instance>-<timestamp>.log`
+- `deploy-pi-template.sh` writes `deploy-pi-template-<timestamp>.log`
+- `cleanup-kaseki.sh` writes `cleanup-kaseki-<timestamp>.log`
+- `kaseki-agent.sh` keeps `/results/stdout.log` and `/results/stderr.log` as the
+  primary container artifacts, and mirrors host stream when `KASEKI_LOG_DIR` is
+  mounted and writable.
+
+Recommended host setup:
+
+```sh
+sudo mkdir -p /var/log/kaseki
+sudo chown root:adm /var/log/kaseki
+sudo chmod 0750 /var/log/kaseki
+```
+
+Strict mode is optional. Set `KASEKI_STRICT_HOST_LOGGING=1` to fail fast when
+`KASEKI_LOG_DIR` cannot be created or written. Leave it unset (or `0`) for
+graceful degradation: scripts continue running and emit a warning when host log
+mirroring is unavailable.
+
+Install logrotate policy:
+
+```sh
+sudo install -m 0644 /agents/kaseki-template/ops/logrotate/kaseki /etc/logrotate.d/kaseki
+sudo logrotate -d /etc/logrotate.d/kaseki
+```
 
 Preferred registry image (Docker Hub):
 
