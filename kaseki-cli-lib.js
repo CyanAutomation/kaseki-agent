@@ -135,9 +135,15 @@ function listInstances() {
   const instances = [];
 
   // Scan results directory for completed instances
-  if (fs.existsSync(config.KASEKI_RESULTS_DIR)) {
-    const dirs = fs.readdirSync(config.KASEKI_RESULTS_DIR).filter((d) => d.match(/^kaseki-\d+$/));
-    for (const dir of dirs) {
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(config.KASEKI_RESULTS_DIR).filter((d) => d.match(/^kaseki-\d+$/));
+  } catch (e) {
+    // Results directory may disappear between checks or be transiently unreadable
+    dirs = [];
+  }
+
+  for (const dir of dirs) {
       const instance = dir;
       const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
       const metadataPath = path.join(resultDir, 'metadata.json');
@@ -199,7 +205,6 @@ function listInstances() {
         ref: hostStart.git_ref || hostStart.ref || 'unknown',
       });
     }
-  }
 
   return instances.sort((a, b) => {
     // Sort by instance number descending (newest first)

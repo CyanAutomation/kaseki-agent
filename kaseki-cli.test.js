@@ -246,6 +246,37 @@ function testListInstances() {
   assertEqual(metadataOnlyExitCode.status, 'failed', 'Should derive failed status from metadata exit code when file is absent');
 }
 
+
+function testListInstancesHandlesReaddirRace() {
+  console.log('\n→ Testing listInstances() readdir race handling');
+
+  const originalExistsSync = fs.existsSync;
+  const originalReaddirSync = fs.readdirSync;
+
+  fs.existsSync = (targetPath) => {
+    if (targetPath === MOCK_RESULTS_DIR) {
+      return true;
+    }
+    return originalExistsSync(targetPath);
+  };
+
+  fs.readdirSync = (targetPath, ...args) => {
+    if (targetPath === MOCK_RESULTS_DIR) {
+      const error = new Error('stale handle');
+      error.code = 'ESTALE';
+      throw error;
+    }
+    return originalReaddirSync(targetPath, ...args);
+  };
+
+  try {
+    const instances = kasekiCli.listInstances();
+    assertEqual(instances.length, 0, 'Should return empty list when results dir read fails after exists check');
+  } finally {
+    fs.existsSync = originalExistsSync;
+    fs.readdirSync = originalReaddirSync;
+  }
+}
 function testExactContainerNameMatching() {
   console.log('\n→ Testing exact docker name matching helpers');
 
@@ -855,6 +886,7 @@ async function runTests() {
   setupTestEnvironment();
 
   testListInstances();
+  testListInstancesHandlesReaddirRace();
   testExactContainerNameMatching();
   testReadArtifact();
   testReadJsonArtifact();
