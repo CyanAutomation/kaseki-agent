@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# NOTE: This script intentionally avoids global `set -e` so each stage can
+# record status/timing artifacts before deciding whether to stop.
 set -uo pipefail
 
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
@@ -268,8 +270,13 @@ run_step() {
   set_current_stage "$label"
   printf '\n==> %s\n' "$label"
   emit_progress "$label" "started"
-  "$@"
-  code=$?
+  # Keep this explicit branch (instead of relying on `set -e`) so we can
+  # always emit progress/timing and preserve FAILED_COMMAND deterministically.
+  if "$@"; then
+    code=0
+  else
+    code=$?
+  fi
   step_end="$(date +%s)"
   emit_progress "$label" "finished with exit $code"
   record_stage_timing "$label" "$code" "$((step_end - step_start))" ""
@@ -444,7 +451,7 @@ fi
 if ! run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo; then
   exit 0
 fi
-cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit 0; }
+cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
 
 prepare_dependencies() {
   if [ ! -f package.json ]; then
