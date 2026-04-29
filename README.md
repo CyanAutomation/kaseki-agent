@@ -18,6 +18,7 @@ Kaseki scripts support mirrored host logs via `KASEKI_LOG_DIR` (default:
 - `run-kaseki.sh` writes `run-kaseki-<instance>-<timestamp>.log`
 - `deploy-pi-template.sh` writes `deploy-pi-template-<timestamp>.log`
 - `cleanup-kaseki.sh` writes `cleanup-kaseki-<timestamp>.log`
+- `kaseki-healthcheck.sh` writes a JSON heartbeat file (`/var/log/kaseki/heartbeat.json` by default)
 - `kaseki-agent.sh` keeps `/results/stdout.log` and `/results/stderr.log` as the
   primary container artifacts, and mirrors host stream when `KASEKI_LOG_DIR` is
   mounted and writable.
@@ -34,6 +35,64 @@ Strict mode is optional. Set `KASEKI_STRICT_HOST_LOGGING=1` to fail fast when
 `KASEKI_LOG_DIR` cannot be created or written. Leave it unset (or `0`) for
 graceful degradation: scripts continue running and emit a warning when host log
 mirroring is unavailable.
+
+### Heartbeat healthcheck
+
+Use `kaseki-healthcheck.sh` to write a single JSON heartbeat object per run. It checks:
+
+- Docker CLI availability
+- Docker daemon accessibility (`docker info`)
+- Optional active `kaseki-*` container status (enabled by default when daemon is reachable)
+
+Examples:
+
+```sh
+# Write to default target
+/agents/kaseki-template/kaseki-healthcheck.sh
+
+# Write to a custom file
+KASEKI_HEARTBEAT_FILE=/tmp/kaseki-heartbeat.json /agents/kaseki-template/kaseki-healthcheck.sh
+
+# Disable container status check
+KASEKI_HEALTHCHECK_CONTAINERS=0 /agents/kaseki-template/kaseki-healthcheck.sh
+```
+
+Cron example (every 5 minutes):
+
+```cron
+*/5 * * * * /agents/kaseki-template/kaseki-healthcheck.sh >/dev/null 2>&1
+```
+
+Systemd timer example:
+
+```ini
+# /etc/systemd/system/kaseki-healthcheck.service
+[Unit]
+Description=Kaseki heartbeat healthcheck
+
+[Service]
+Type=oneshot
+ExecStart=/agents/kaseki-template/kaseki-healthcheck.sh
+```
+
+```ini
+# /etc/systemd/system/kaseki-healthcheck.timer
+[Unit]
+Description=Run Kaseki heartbeat healthcheck every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=kaseki-healthcheck.service
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now kaseki-healthcheck.timer
+```
 
 Install logrotate policy:
 
