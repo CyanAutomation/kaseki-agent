@@ -227,7 +227,7 @@ function listInstances() {
       }
       throw e;
     }
-    }
+  
 
   return instances.sort((a, b) => {
     // Sort by instance number descending (newest first)
