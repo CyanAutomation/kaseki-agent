@@ -1,22 +1,3 @@
-## Log contract (JSONL stage events)
-
-Operational scripts emit one JSON object per line using this schema:
-
-- `timestamp`: UTC ISO-8601 time (`YYYY-MM-DDTHH:MM:SSZ`)
-- `component`: script or subsystem emitting the event (for example `run-kaseki`, `kaseki-agent`)
-- `stage`: lifecycle step name (for example `clone`, `validation`, `deploy`, `cleanup`)
-- `status`: event state (`started`, `finished`, `error`, or `info`)
-- `instance`: instance identifier or logical scope (`kaseki-42`, `template`, `maintenance`)
-- `detail`: sanitized human-readable detail (must not include secrets, tokens, keys, or auth env values)
-
-Example events:
-
-```json
-{"timestamp":"2026-04-29T12:00:00Z","component":"run-kaseki","stage":"clone","status":"started","instance":"kaseki-42","detail":"cloning repository"}
-{"timestamp":"2026-04-29T12:00:04Z","component":"run-kaseki","stage":"clone","status":"finished","instance":"kaseki-42","detail":"repository cloned successfully"}
-{"timestamp":"2026-04-29T12:00:10Z","component":"kaseki-agent","stage":"validation","status":"error","instance":"kaseki-42","detail":"validation command failed with exit code 1"}
-```
-
 🧭 Maturity Scoring Rubric (v2 — Deterministic)
 
 Overview
