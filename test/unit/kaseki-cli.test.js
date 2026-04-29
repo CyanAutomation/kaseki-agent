@@ -11,10 +11,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { EventEmitter } = require('events');
-const { execSync, spawnSync } = require('child_process');
-const kasekiCli = require('../lib/kaseki-cli-lib.js');
-const { createFollowPoller, printTable } = require('../lib/kaseki-cli.js');
+const { execSync } = require('child_process');
+const kasekiCli = require('../../lib/kaseki-cli-lib.js');
 
 // ============================================================================
 // Test Setup
@@ -211,10 +209,6 @@ function assertEqual(actual, expected, message) {
 
 function assertExists(value, message) {
   assert(value !== null && value !== undefined, `${message} (exists)`);
-}
-
-function flushImmediate() {
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 // Override config for testing
@@ -486,7 +480,7 @@ function testGetAnalysis() {
 
   assertEqual(analysis.instance, 'kaseki-25', 'Should have instance name');
   assertEqual(analysis.exit_code, 0, 'Should have exit code');
-  assertEqual(analysis.stage, 'validation', 'Should use metadata current_stage when present');
+  assertEqual(analysis.status, 'passed', 'Should have status based on exit code');
   assertEqual(analysis.changed_files_count, 2, 'Should count changed files');
   assert(analysis.error_count >= 0, 'Should include error count');
 }

@@ -3,14 +3,14 @@ set -euo pipefail
 
 mode="${1:-run}"
 
-required_bins=(wget sshpass docker)
+required_bins=(docker)
 optional_bins=()
 case "$mode" in
   run)
-    optional_bins=(git node npm)
+    optional_bins=(wget sshpass git node npm)
     ;;
   doctor)
-    optional_bins=(git node npm)
+    optional_bins=(wget sshpass git node npm)
     ;;
   *)
     printf 'Error: unknown preflight mode: %s\n' "$mode" >&2
