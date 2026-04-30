@@ -9,10 +9,16 @@ KASEKI_ROOT="$TMP_DIR/kaseki"
 REPO_URL='https://example.com/repo"quoted"'
 GIT_REF='feature/"quoted"/branch'
 OPENROUTER_API_KEY_FILE="$TMP_DIR/missing-secret"
+DOCKER_BIN="$(command -v docker || true)"
+if [ -z "$DOCKER_BIN" ]; then
+  echo "Skipping run-kaseki-json.test.sh because docker is not available" >&2
+  exit 0
+fi
+TEST_PATH="$(dirname "$DOCKER_BIN"):/usr/bin:/bin"
 
 set +e
 env \
-  PATH="/usr/bin:/bin" \
+  PATH="$TEST_PATH" \
   KASEKI_ROOT="$KASEKI_ROOT" \
   REPO_URL="$REPO_URL" \
   GIT_REF="$GIT_REF" \
@@ -72,7 +78,7 @@ fi
 
 set +e
 env \
-  PATH="/usr/bin:/bin" \
+  PATH="$TEST_PATH" \
   KASEKI_ROOT="$KASEKI_ROOT" \
   REPO_URL="$REPO_URL" \
   GIT_REF="$GIT_REF" \
