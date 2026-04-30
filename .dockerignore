@@ -3,16 +3,29 @@
 # --- Allowlist only what Dockerfile copies ---
 **
 !Dockerfile
+!kaseki
 !kaseki-agent.sh
+!run-kaseki.sh
 !package.json
 !package-lock.json
 !tsconfig.json
 !jest.config.js
 !src/
 !src/**
-!dist/
-!dist/**
 !.dockerignore
+!README.md
+!CLAUDE.md
+!CONTRIBUTING.md
+!STYLE.md
+!docs/
+!docs/**
+!ops/
+!ops/**
+!scripts/
+!scripts/**
+!test/
+!test/fixtures/
+!test/fixtures/**
 !docker/
 !docker/workspace-cache/
 !docker/workspace-cache/package.json
@@ -37,12 +50,5 @@ coverage
 *.lcov
 junit*.xml
 
-# Project-specific files not needed for image build
-README.md
-run-kaseki.sh
-cleanup-kaseki.sh
-CONTRIBUTING.md
-STYLE.md
-CLAUDE.md
-CHANGELOG.md
 .github/
+dist/

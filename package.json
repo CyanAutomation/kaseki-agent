@@ -8,9 +8,9 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod 0755 dist/*.js",
     "type-check": "tsc --noEmit",
-    "test": "npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash scripts/test-github-app.sh",
+    "test": "npm run build && npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash scripts/test-github-app.sh",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "npm run lint:js && npm run lint:sh || true",
