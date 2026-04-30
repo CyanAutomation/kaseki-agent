@@ -5,9 +5,12 @@ SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_TARGET_DIR="/agents/kaseki-template"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-$DEFAULT_TARGET_DIR}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+LOCAL_BUILD_IMAGE="${KASEKI_LOCAL_BUILD_IMAGE:-kaseki-agent:local}"
+KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_JSON_LOG_COMPONENT="deploy-pi-template"
+CONTAINER=""
 
 json_escape() {
   local value="${1-}"
@@ -34,6 +37,9 @@ emit_json_log() {
 
 on_deploy_exit() {
   local code=$?
+  if [ -n "${CONTAINER:-}" ]; then
+    docker rm "$CONTAINER" >/dev/null 2>&1 || true
+  fi
   if [ "$code" -eq 0 ]; then
     emit_json_log "deploy" "finished" "deploy-pi-template.sh completed successfully"
   else
@@ -75,6 +81,12 @@ Idempotent behavior:
   and path prefix "/agents/" or "$HOME/").
 - Cleans destination root before install.
 - Preserves existing destination subdirectories named run, result, cache, and secrets.
+
+Image behavior:
+- Pulls KASEKI_IMAGE (default: $IMAGE).
+- If the image lacks a deployable /app template and
+  KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=1, builds this checkout as
+  $LOCAL_BUILD_IMAGE and deploys that image instead.
 HELP
   exit 0
 fi
@@ -94,7 +106,7 @@ is_allowed_target_dir() {
 prepare_target_dir() {
   local target="$1"
   local abs_target
-  local tmp_root
+  local backup_root=""
   local persistent
   local path
 
@@ -107,27 +119,82 @@ prepare_target_dir() {
   fi
 
   if [ -d "$target" ]; then
-    # Backup persistent subdirectories
+    backup_root="$(mktemp -d)"
     for persistent in run result cache secrets; do
       path="$target/$persistent"
       if [ -d "$path" ]; then
         printf 'Preserving: %s\n' "$path"
+        mv "$path" "$backup_root/$persistent"
       fi
     done
   fi
 
-  # Create clean target
   mkdir -p "$target"
   rm -rf "$target"/*
   mkdir -p "$target"
 
-  # Restore persistent subdirectories
-  for persistent in run result cache secrets; do
-    path="$target/$persistent"
-    if [ -d "$path" ]; then
-      printf 'Restored: %s\n' "$path"
+  if [ -n "$backup_root" ]; then
+    for persistent in run result cache secrets; do
+      if [ -d "$backup_root/$persistent" ]; then
+        mv "$backup_root/$persistent" "$target/$persistent"
+        printf 'Restored: %s\n' "$target/$persistent"
+      fi
+    done
+    rmdir "$backup_root" 2>/dev/null || true
+  fi
+}
+
+image_has_template() {
+  local image="$1"
+  local probe_container=""
+  probe_container="$(docker create "$image" 2>/dev/null)" || return 1
+  if docker cp "$probe_container:/app/run-kaseki.sh" - >/dev/null 2>&1; then
+    docker rm "$probe_container" >/dev/null 2>&1 || true
+    return 0
+  fi
+  docker rm "$probe_container" >/dev/null 2>&1 || true
+  return 1
+}
+
+ensure_deployable_image() {
+  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    emit_json_log "deploy" "started" "Using local Docker image: $IMAGE"
+  else
+    emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
+    docker pull "$IMAGE"
+  fi
+
+  if image_has_template "$IMAGE"; then
+    return 0
+  fi
+
+  if [ "$KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING" != "1" ]; then
+    printf 'Error: image does not contain deployable /app template: %s\n' "$IMAGE" >&2
+    return 1
+  fi
+
+  emit_json_log "deploy" "started" "Image lacks /app template; building $LOCAL_BUILD_IMAGE from checkout"
+  printf 'Image lacks /app template, building local fallback: %s\n' "$LOCAL_BUILD_IMAGE"
+  docker build --progress=plain -t "$LOCAL_BUILD_IMAGE" "$SOURCE_DIR"
+  IMAGE="$LOCAL_BUILD_IMAGE"
+
+  if ! image_has_template "$IMAGE"; then
+    printf 'Error: locally built image still does not contain /app template: %s\n' "$IMAGE" >&2
+    return 1
+  fi
+}
+
+verify_template() {
+  local target="$1"
+  local missing=0
+  local required
+  for required in run-kaseki.sh kaseki kaseki-agent.sh scripts/kaseki-preflight.sh lib/pi-event-filter.js lib/pi-progress-stream.js lib/kaseki-report.js lib/github-app-token.js; do
+    if [ ! -f "$target/$required" ]; then
+      printf 'Missing deployed template file: %s\n' "$required" >&2
+      missing=1
     fi
   done
+  return "$missing"
 }
 
 printf 'Kaseki template deployment\n'
@@ -137,8 +204,7 @@ printf 'Image: %s\n' "$IMAGE"
 
 prepare_target_dir "$TARGET_DIR"
 
-emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
-docker pull "$IMAGE"
+ensure_deployable_image
 
 emit_json_log "deploy" "started" "Creating container for extraction"
 CONTAINER=$(docker create "$IMAGE")
@@ -148,6 +214,10 @@ docker cp "$CONTAINER:/app/." "$TARGET_DIR/"
 
 emit_json_log "deploy" "started" "Cleaning up container"
 docker rm "$CONTAINER"
+CONTAINER=""
+
+printf '%s\n' "$IMAGE" > "$TARGET_DIR/.kaseki-image"
+verify_template "$TARGET_DIR"
 
 emit_json_log "deploy" "finished" "Deployment completed successfully"
 printf '\n✓ Kaseki template deployed to: %s\n' "$TARGET_DIR"

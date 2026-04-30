@@ -14,14 +14,14 @@ Host layout:
 
 `run-kaseki.sh` now runs a host preflight check before allocating run resources or writing secrets.
 
-Required binaries:
+Required binaries on a Kaseki host:
 
-- `wget`
-- `sshpass`
 - `docker`
 
 Run-time optional (validated by preflight and reported in `--doctor`):
 
+- `wget`
+- `sshpass`
 - `git`
 - `node`
 - `npm`
@@ -182,11 +182,49 @@ Deploy the current checkout to the host template directory with idempotent clean
 
 ```sh
 cd /path/to/kaseki-agent
-sudo ./deploy-pi-template.sh
+sudo ./scripts/deploy-pi-template.sh
 
 # optional override that still satisfies guardrails
-sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./deploy-pi-template.sh
+sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./scripts/deploy-pi-template.sh
 ```
+
+`scripts/deploy-pi-template.sh` treats the Git checkout as authoritative. It
+pulls `KASEKI_IMAGE`, verifies that the image contains a deployable `/app`
+template, and falls back to building the current checkout as
+`kaseki-agent:local` when the registry image is stale. Set
+`KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=0` to fail instead of building.
+
+## Agent activation from local or remote hosts
+
+For OpenClaw or a similar controller, prefer the host activation entrypoint:
+
+```sh
+cd /agents/kaseki-agent
+KASEKI_LOG_DIR=/tmp/kaseki-log OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  ./scripts/kaseki-activate.sh bootstrap
+```
+
+Run a task after bootstrap:
+
+```sh
+cd /agents/kaseki-agent
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  TASK_PROMPT='Make the requested change and keep the diff focused.' \
+  ./scripts/kaseki-activate.sh run https://github.com/<org>/<repo> main
+```
+
+First install over SSH can be a single remote command:
+
+```sh
+ssh pi@192.168.88.201 'set -e; mkdir -p /agents; \
+  if [ -d /agents/kaseki-agent/.git ]; then git -C /agents/kaseki-agent pull --ff-only; \
+  else git clone https://github.com/CyanAutomation/kaseki-agent.git /agents/kaseki-agent; fi; \
+  KASEKI_LOG_DIR=/tmp/kaseki-log /agents/kaseki-agent/scripts/kaseki-activate.sh bootstrap'
+```
+
+The activation script emits newline-delimited JSON status records around each
+major step, making it safer for another agent to parse than free-form shell
+output alone.
 
 Controlled base-image refresh (monthly security review):
 
@@ -201,7 +239,7 @@ docker build -t kaseki-template:latest .
 If scripts were copied from a fresh clone without executable bits, run:
 
 ```sh
-chmod +x run-kaseki.sh kaseki cleanup-kaseki.sh kaseki-agent.sh pi-event-filter.js kaseki-report.js
+chmod +x run-kaseki.sh kaseki kaseki-agent.sh scripts/*.sh
 ```
 
 Verify Pi is installed in the image (Docker Hub):

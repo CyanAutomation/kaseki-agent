@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${KASEKI_ROOT:-/agents}"
 RUNS="$ROOT/kaseki-runs"
 RESULTS="$ROOT/kaseki-results"
 CACHE="${KASEKI_CACHE_DIR:-$ROOT/kaseki-cache}"
-IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+if [ -n "${KASEKI_IMAGE:-}" ]; then
+  IMAGE="$KASEKI_IMAGE"
+elif [ -r "$SCRIPT_DIR/.kaseki-image" ]; then
+  IMAGE="$(cat "$SCRIPT_DIR/.kaseki-image")"
+else
+  IMAGE="docker.io/cyanautomation/kaseki-agent:latest"
+fi
 KASEKI_CONTAINER_USER="${KASEKI_CONTAINER_USER:-$(id -u):$(id -g)}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
@@ -60,7 +67,7 @@ emit_json_log "run" "started" "run-kaseki.sh starting"
 run_preflight() {
   local mode="$1"
   local preflight_script
-  preflight_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/kaseki-preflight.sh"
+  preflight_script="$SCRIPT_DIR/scripts/kaseki-preflight.sh"
   if [ ! -x "$preflight_script" ]; then
     printf 'Error: preflight script not found or not executable: %s\n' "$preflight_script" >&2
     exit 1
@@ -330,17 +337,24 @@ doctor() {
   if [ "$image_present" -eq 1 ]; then
     local mismatch=0
     local pairs
+    if docker run --rm --entrypoint test "$IMAGE" -f /app/run-kaseki.sh >/dev/null 2>&1; then
+      printf 'Docker image template payload: ok\n'
+    else
+      printf 'Docker image template payload: missing /app/run-kaseki.sh; deploy will need a local rebuild or a newer image.\n' >&2
+      status=1
+    fi
     pairs='kaseki-agent.sh:/usr/local/bin/kaseki-agent lib/pi-event-filter.js:/usr/local/bin/kaseki-pi-event-filter lib/pi-progress-stream.js:/usr/local/bin/kaseki-pi-progress-stream lib/kaseki-report.js:/usr/local/bin/kaseki-report lib/github-app-token.js:/usr/local/bin/github-app-token'
     for pair in $pairs; do
       local host_file="${pair%%:*}"
       local image_file="${pair#*:}"
+      local host_path="$SCRIPT_DIR/$host_file"
       local host_sum image_sum
-      if [ ! -f "$host_file" ]; then
+      if [ ! -f "$host_path" ]; then
         printf 'Image/template parity: missing host file %s\n' "$host_file" >&2
         mismatch=1
         continue
       fi
-      host_sum="$(file_sha256 "$host_file" || true)"
+      host_sum="$(file_sha256 "$host_path" || true)"
       image_sum="$(docker run --rm --entrypoint sha256sum "$IMAGE" "$image_file" 2>/dev/null | awk '{print $1}' || true)"
       if [ -z "$host_sum" ] || [ -z "$image_sum" ] || [ "$host_sum" != "$image_sum" ]; then
         printf 'Image/template parity: mismatch for %s vs %s\n' "$host_file" "$image_file" >&2
@@ -760,7 +774,7 @@ persist_host_status "$DOCKER_EXIT"
 write_cleanup_log
 promote_staging_dirs
 
-METRICS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/kaseki-metrics.sh"
+METRICS_SCRIPT="$SCRIPT_DIR/scripts/kaseki-metrics.sh"
 if [ -x "$METRICS_SCRIPT" ] && [ -f "$RESULT_DIR/stage-timings.tsv" ] && [ -f "$RESULT_DIR/metadata.json" ]; then
   if "$METRICS_SCRIPT" "$RESULT_DIR/stage-timings.tsv" "$RESULT_DIR/metadata.json" "$RESULT_DIR/metrics.json" >/dev/null 2>&1; then
     if [ "$KASEKI_APPEND_METRICS_JSONL" = "1" ]; then

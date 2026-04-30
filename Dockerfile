@@ -54,11 +54,27 @@ COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 RUN npm ci --ignore-scripts && npm run build
 
+COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
+COPY kaseki run-kaseki.sh kaseki-agent.sh ./
+COPY docs ./docs
+COPY ops ./ops
+COPY scripts ./scripts
+COPY docker ./docker
+COPY test ./test
+RUN mkdir -p /app/lib \
+    && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
+    && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
+    && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
+    && cp dist/kaseki-cli.js /app/kaseki-cli.js \
+    && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
+    && cp dist/github-app-token.js /app/lib/github-app-token.js \
+    && chmod 0755 /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh /app/scripts/*.sh
+
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
-COPY dist/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter
-COPY dist/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream
-COPY dist/kaseki-report.js /usr/local/bin/kaseki-report
-COPY dist/github-app-token.js /usr/local/bin/github-app-token
+RUN install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
+    && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
+    && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token
 RUN ln -sf github-app-token /usr/local/bin/github-app-token.js
 RUN chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \
