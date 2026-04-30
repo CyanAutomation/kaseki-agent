@@ -122,7 +122,7 @@ run_kaseki() {
     emit_json_log "run" "error" "template is not deployed: $KASEKI_TEMPLATE_DIR"
     exit 2
   fi
-  emit_json_log "run" "started" "$*"
+  emit_json_log "run" "started" "run-kaseki.sh with $(($# > 0 ? $# : 0)) arguments"
   set +e
   "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" "$@"
   code=$?
