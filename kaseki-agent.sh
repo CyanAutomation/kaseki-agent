@@ -162,8 +162,13 @@ set_current_stage() {
 }
 
 write_result_summary() {
-  local changed_files validation_status pr_status
+  local changed_files changed_files_markdown validation_status pr_status
   changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
+  if [ -n "$changed_files" ]; then
+    changed_files_markdown="$(printf '%s\n' "$changed_files" | sed 's/^/  - /')"
+  else
+    changed_files_markdown="  - none"
+  fi
   validation_status="passed"
   [ "$VALIDATION_EXIT" -ne 0 ] && validation_status="failed"
   if grep -q 'skipped_after_agent_failure' "$STAGE_TIMINGS_FILE" 2>/dev/null; then
@@ -196,7 +201,7 @@ write_result_summary() {
 - GitHub PR: $pr_status
 - Diff non-empty: $DIFF_NONEMPTY
 - Changed files:
-$(printf '%s\n' "$changed_files" | sed 's/^/  - /')
+$changed_files_markdown
 
 Artifacts:
 - metadata.json
