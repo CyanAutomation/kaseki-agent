@@ -7,10 +7,10 @@ required_bins=(docker)
 optional_bins=()
 case "$mode" in
   run)
-    optional_bins=(wget sshpass git node npm)
+    optional_bins=(curl wget sshpass git node npm)
     ;;
   doctor)
-    optional_bins=(wget sshpass git node npm)
+    optional_bins=(curl wget sshpass git node npm)
     ;;
   *)
     printf 'Error: unknown preflight mode: %s\n' "$mode" >&2

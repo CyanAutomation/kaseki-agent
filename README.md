@@ -216,15 +216,35 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 First install over SSH can be a single remote command:
 
 ```sh
-ssh pi@192.168.88.201 'set -e; mkdir -p /agents; \
-  if [ -d /agents/kaseki-agent/.git ]; then git -C /agents/kaseki-agent pull --ff-only; \
-  else git clone https://github.com/CyanAutomation/kaseki-agent.git /agents/kaseki-agent; fi; \
-  KASEKI_LOG_DIR=/tmp/kaseki-log /agents/kaseki-agent/scripts/kaseki-activate.sh bootstrap'
+ssh pi@192.168.88.201 'curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | KASEKI_LOG_DIR=/tmp/kaseki-log sh'
 ```
 
 The activation script emits newline-delimited JSON status records around each
 major step, making it safer for another agent to parse than free-form shell
 output alone.
+
+Machine-readable controller examples:
+
+```sh
+cd /agents/kaseki-agent
+
+# Final JSON object only; progress records go to stderr.
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  ./scripts/kaseki-activate.sh --json doctor
+
+# Inspect/health tasks can succeed with no diff.
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  KASEKI_TASK_MODE=inspect \
+  KASEKI_VALIDATION_COMMANDS=none \
+  TASK_PROMPT='Inspect the repository and make no file changes.' \
+  ./scripts/kaseki-activate.sh --json run https://github.com/<org>/<repo> main
+
+# Patch tasks still require a diff by default.
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  KASEKI_TASK_MODE=patch \
+  TASK_PROMPT='Make the requested change and keep the diff focused.' \
+  ./scripts/kaseki-activate.sh --json run https://github.com/<org>/<repo> main
+```
 
 Controlled base-image refresh (monthly security review):
 
@@ -440,11 +460,14 @@ Useful environment variables:
 - `KASEKI_CONTAINER_USER` defaults to the current host UID/GID (`$(id -u):$(id -g)`).
 - `KASEKI_MODEL` defaults to `openrouter/free`.
 - `KASEKI_AGENT_TIMEOUT_SECONDS` defaults to `1200`.
-- `KASEKI_VALIDATION_COMMANDS` defaults to `npm run check;npm run test;npm run build`.
+- `KASEKI_VALIDATION_COMMANDS` defaults to `npm run check;npm run test;npm run build`. Set it to `none` or an explicit empty value to skip validation.
 - `KASEKI_DEBUG_RAW_EVENTS=1` stores raw Pi JSONL events as `pi-events.raw.jsonl`.
 - `KASEKI_KEEP_WORKSPACE=0` removes the per-run workspace after each run. Set to `1` only when you need to inspect the workspace after a failure.
 - `KASEKI_STREAM_PROGRESS=1` streams sanitized progress lines from Pi JSON events. Set to `0` to keep progress only in artifacts.
 - `KASEKI_VALIDATE_AFTER_AGENT_FAILURE=0` skips validation after the Pi agent fails or times out. Set to `1` to run validation anyway.
+- `KASEKI_TASK_MODE=patch` requires a non-empty diff. Set `KASEKI_TASK_MODE=inspect` for read-only or health-check tasks that are expected to produce no diff.
+- `KASEKI_ALLOW_EMPTY_DIFF=0` treats no-change runs as exit `3`. Set to `1` to allow an empty diff while keeping `KASEKI_TASK_MODE=patch`.
+- `KASEKI_VERIFY_OPENROUTER_AUTH=0` skips network key verification in `--doctor`. Set to `1` to verify the configured key against OpenRouter without printing the key.
 - `KASEKI_CHANGED_FILES_ALLOWLIST` defaults to `src/lib/parser.ts tests/parser.validation.ts`.
 - `KASEKI_MAX_DIFF_BYTES` defaults to `200000`.
 - `TASK_PROMPT` defaults to a bounded `crudmapper` code-fix task.
@@ -504,6 +527,14 @@ the configured Docker image. A parity warning means host scripts were deployed
 without rebuilding or pulling the matching image; set `KASEKI_IMAGE` to the
 matching local image or rebuild before trusting behavior changes inside the
 container.
+
+To verify the configured OpenRouter key without exposing it:
+
+```sh
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  KASEKI_VERIFY_OPENROUTER_AUTH=1 \
+  /agents/kaseki-template/run-kaseki.sh --doctor
+```
 
 ## Help and usage
 
@@ -586,7 +617,7 @@ artifact to inspect.
 Kaseki uses specific non-zero exit codes for validation/policy failures:
 
 - `2`: missing required runtime configuration (for example `OPENROUTER_API_KEY`) or invalid instance format in the wrapper script.
-- `3`: empty git diff (the agent produced no changes).
+- `3`: empty git diff (the agent produced no changes). Set `KASEKI_TASK_MODE=inspect` or `KASEKI_ALLOW_EMPTY_DIFF=1` when no changes are expected.
 - `4`: diff exceeds `KASEKI_MAX_DIFF_BYTES`.
 - `5`: a changed file is outside `KASEKI_CHANGED_FILES_ALLOWLIST`.
 - `6`: secret scan detected credential-like content.

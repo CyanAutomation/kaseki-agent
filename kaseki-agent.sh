@@ -9,10 +9,12 @@ GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
-KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run test;npm run build}"
+KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
+KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
+KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -128,6 +130,8 @@ write_metadata() {
   "git_ref": $(printf '%s' "$GIT_REF" | json_encode),
   "provider": $(printf '%s' "$KASEKI_PROVIDER" | json_encode),
   "model": $(printf '%s' "$KASEKI_MODEL" | json_encode),
+  "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
+  "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
   "current_stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "ended_at": $(printf '%s' "$end_iso" | json_encode),
@@ -652,7 +656,10 @@ printf '\n==> validation\n'
 set_current_stage "validation"
 emit_progress "validation" "started"
 stage_start="$(date +%s)"
-if [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
+if [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
+  printf 'Validation skipped because KASEKI_VALIDATION_COMMANDS=%s.\n' "${KASEKI_VALIDATION_COMMANDS:-<empty>}" | tee -a /results/validation.log
+  record_stage_timing "validation" 0 0 "skipped_by_config"
+elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
   printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
 else
@@ -687,7 +694,7 @@ set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 stage_start="$(date +%s)"
 : > /results/secret-scan.log
-if grep -R -n -E 'sk-or-[A-Za-z0-9._-]+' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
+if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
   SECRET_SCAN_EXIT=6
 fi
 record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
@@ -745,7 +752,10 @@ if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   FAILED_COMMAND="github push"
 fi
 
-if [ "$DIFF_NONEMPTY" != "true" ] && [ "$STATUS" -eq 0 ]; then
+if [ "$DIFF_NONEMPTY" != "true" ] &&
+  [ "$STATUS" -eq 0 ] &&
+  [ "$KASEKI_ALLOW_EMPTY_DIFF" != "1" ] &&
+  [ "$KASEKI_TASK_MODE" != "inspect" ]; then
   STATUS=3
   FAILED_COMMAND="empty git diff"
 fi

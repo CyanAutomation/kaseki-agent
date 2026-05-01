@@ -35,6 +35,7 @@ describe('kaseki-cli-lib', () => {
       validationTimings?: string;
       stageTimings?: string;
       piSummary?: Record<string, any>;
+      changedFiles?: string;
     } = {}
   ): void {
     const instanceDir = path.join(MOCK_RESULTS_DIR, name);
@@ -142,7 +143,7 @@ Done.
     );
 
     // Mock changed-files.txt
-    const changedFiles = `src/lib/parser.ts
+    const changedFiles = overrides.changedFiles ?? `src/lib/parser.ts
 tests/parser.test.ts
 `;
     fs.writeFileSync(path.join(instanceDir, 'changed-files.txt'), changedFiles);
@@ -281,5 +282,36 @@ tests/parser.test.ts
     expect(analysis.status).toBe('passed');
     expect(analysis.exit_code).toBe(0);
     expect(analysis.changed_files_count).toBeGreaterThan(0);
+  });
+
+  test('classifyFailure should identify empty diff outcomes', () => {
+    expect(
+      kasekiCli.classifyFailure({ failed_command: 'empty git diff' }, 3)
+    ).toBe('empty-diff');
+  });
+
+  test('detectErrors should explain empty diff exit code', () => {
+    createMockInstance('kaseki-4', {
+      metadata: {
+        exit_code: 3,
+        failed_command: 'empty git diff',
+        diff_nonempty: false,
+      },
+      changedFiles: '',
+    });
+
+    const errors = kasekiCli.detectErrors('kaseki-4');
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          source: 'empty-diff',
+        }),
+      ])
+    );
+
+    const analysis = kasekiCli.getAnalysis('kaseki-4');
+    expect(analysis.failure_class).toBe('empty-diff');
   });
 });
