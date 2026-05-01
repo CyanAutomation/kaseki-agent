@@ -132,6 +132,70 @@ The stamp file lives outside the repo directory to keep `git.status` clean.
 - Docker runtime: `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, non-root user (UID 10001)
 - Secret scan checks the results, workspace git metadata, and source dirs for `sk-or-*` patterns
 
+## Container Image Scanning
+
+Kaseki-agent container images are scanned for vulnerabilities using industry-standard tools:
+
+### Automated Scanning (CI/CD)
+
+GitHub Actions automatically scans images on every build using **Trivy**:
+
+```yaml
+- name: Run Trivy vulnerability scanner
+  uses: aquasecurity/trivy-action@master
+  with:
+    image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
+    format: 'sarif'
+    output: 'trivy-results.sarif'
+    severity: 'HIGH,CRITICAL'
+
+- name: Upload to GitHub Security tab
+  uses: github/codeql-action/upload-sarif@v2
+  with:
+    sarif_file: 'trivy-results.sarif'
+```
+
+Results are published to GitHub's **Security** → **Dependabot alerts** tab.
+
+### Manual Scanning
+
+To scan the image locally:
+
+```bash
+# Install Trivy (macOS)
+brew install trivy
+
+# Install Trivy (Linux)
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Scan latest image
+trivy image docker.io/cyanautomation/kaseki-agent:latest
+
+# Scan with severity filter
+trivy image --severity HIGH,CRITICAL docker.io/cyanautomation/kaseki-agent:latest
+
+# Generate JSON report
+trivy image --format json --output report.json docker.io/cyanautomation/kaseki-agent:latest
+```
+
+### Known Vulnerabilities
+
+Check GitHub Settings → Code security → Dependabot alerts for any discovered vulnerabilities. Most are transitive (in Pi CLI dependencies) and are addressed via dependency updates.
+
+### Image Integrity (Optional)
+
+Images can be signed using **cosign** for supply chain security:
+
+```bash
+# Verify signed image (requires public key)
+cosign verify --key cosign.pub docker.io/cyanautomation/kaseki-agent:latest
+
+# View image attestation
+cosign verify-attestation --key cosign.pub docker.io/cyanautomation/kaseki-agent:latest
+```
+
+See [SECURITY.md](SECURITY.md) for detailed vulnerability response procedures.
+
 ## Diagnosing Failures
 
 Recommended inspection order:

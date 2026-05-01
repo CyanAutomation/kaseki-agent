@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # npm dependency updates
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      # Check for updates weekly (Monday mornings)
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    # Only update direct dependencies (not transitive)
+    allow:
+      - dependency-type: "direct"
+    # Create pull requests
+    pull-requests:
+      # Increase if you want more concurrent PRs
+      open-pull-requests-limit: 5
+    # Reviewers and assignees
+    reviewers:
+      - "CyanAutomation/maintainers"
+    assignees:
+      - "CyanAutomation/maintainers"
+    # Add labels for easy filtering
+    labels:
+      - "infrastructure"
+      - "dependencies"
+    # Commit message style
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Group updates
+    groups:
+      development-dependencies:
+        dependency-types:
+          - "dev"
+      production-dependencies:
+        dependency-types:
+          - "prod"
