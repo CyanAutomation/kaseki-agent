@@ -8,6 +8,7 @@ REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
+KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
@@ -268,6 +269,17 @@ finish() {
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   collect_git_artifacts
+  
+  # Calculate and record maturity score
+  if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
+    /app/scripts/kaseki-maturity-score.sh /workspace/repo /results/maturity-score.json 2>/dev/null || true
+  fi
+  
+  # Calculate and record performance metrics
+  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f /results/stage-timings.tsv ]; then
+    /app/scripts/kaseki-performance-metrics.sh /results/stage-timings.tsv /results/performance-metrics.json 2>/dev/null || true
+  fi
+  
   write_result_summary
   write_failure_json "$STATUS"
   write_metadata "$STATUS"
@@ -298,6 +310,22 @@ run_step() {
     FAILED_COMMAND="$label"
   fi
   return "$code"
+}
+
+run_step_dry() {
+  local label="$1"
+  shift
+  local step_start step_end
+  step_start="$(date +%s)"
+  set_current_stage "$label"
+  printf '\n==> %s (DRY-RUN: simulated)\n' "$label"
+  emit_progress "$label" "started (dry-run)"
+  # Show what commands would be run without executing them
+  printf '%s\n' "$@" >> /results/validation.log
+  step_end="$(date +%s)"
+  emit_progress "$label" "finished (dry-run, simulated exit 0)"
+  record_stage_timing "$label" "0" "$((step_end - step_start))" "dry-run"
+  return 0
 }
 
 record_stage_timing() {
@@ -586,37 +614,57 @@ fi
 
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
-set +e
-printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
-export KASEKI_STREAM_PROGRESS
-PI_START_EPOCH="$(date +%s)"
-OPENROUTER_API_KEY="$openrouter_api_key" \
-  timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
-  pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
-  2> >(tee -a /results/pi-stderr.log >&2) \
-  | tee "$RAW_EVENTS" \
-  | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
-PI_EXIT="${PIPESTATUS[0]}"
-PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
-unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
-set -e
-record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  printf '🔄 DRY-RUN MODE: Skipping Pi coding agent execution\n'
+  PI_START_EPOCH="$(date +%s)"
+  PI_EXIT=0
+  PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
+  {
+    printf 'DRY-RUN: Pi agent would have been invoked with the following configuration:\n'
+    printf '  Provider: %s\n' "$KASEKI_PROVIDER"
+    printf '  Model: %s\n' "$KASEKI_MODEL"
+    printf '  Timeout: %s seconds\n' "$KASEKI_AGENT_TIMEOUT_SECONDS"
+    printf '  Task: %s\n' "$TASK_PROMPT"
+  } | tee -a /results/pi-stderr.log
+  emit_progress "pi coding agent" "skipped (dry-run)"
+  record_stage_timing "pi coding agent" "0" "$PI_DURATION_SECONDS" "dry_run=true"
+else
+  set +e
+  printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
+  export KASEKI_STREAM_PROGRESS
+  PI_START_EPOCH="$(date +%s)"
+  OPENROUTER_API_KEY="$openrouter_api_key" \
+    timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
+    2> >(tee -a /results/pi-stderr.log >&2) \
+    | tee "$RAW_EVENTS" \
+    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+  PI_EXIT="${PIPESTATUS[0]}"
+  PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
+  unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
+  set -e
+  record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
-if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
-  cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
-fi
-kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || true
-ACTUAL_MODEL="$(node -e "try{const s=require('/results/pi-summary.json'); console.log(s.selected_model||'')}catch{process.exit(0)}" 2>/dev/null)"
-
-if [ "$PI_EXIT" -eq 124 ]; then
-  printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a /results/pi-stderr.log >&2
-  if [ "$STATUS" -eq 0 ]; then
-    STATUS=124
-    FAILED_COMMAND="pi coding agent timeout"
+  if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
+    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
   fi
-elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
-  STATUS="$PI_EXIT"
-  FAILED_COMMAND="pi coding agent"
+  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || true
+  ACTUAL_MODEL="$(node -e "try{const s=require('/results/pi-summary.json'); console.log(s.selected_model||'')}catch{process.exit(0)}" 2>/dev/null)"
+fi
+
+
+
+if [ "$KASEKI_DRY_RUN" != "1" ]; then
+  if [ "$PI_EXIT" -eq 124 ]; then
+    printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a /results/pi-stderr.log >&2
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=124
+      FAILED_COMMAND="pi coding agent timeout"
+    fi
+  elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    STATUS="$PI_EXIT"
+    FAILED_COMMAND="pi coding agent"
+  fi
 fi
 
 printf '\n==> collect agent diff\n'
@@ -661,7 +709,17 @@ printf '\n==> validation\n'
 set_current_stage "validation"
 emit_progress "validation" "started"
 stage_start="$(date +%s)"
-if [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a /results/validation.log
+  IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
+  for command in "${VALIDATION_COMMANDS[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    printf '  - %s\n' "$trimmed" | tee -a /results/validation.log
+  done
+  VALIDATION_EXIT=0
+  record_stage_timing "validation" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
+elif [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
   printf 'Validation skipped because KASEKI_VALIDATION_COMMANDS=%s.\n' "${KASEKI_VALIDATION_COMMANDS:-<empty>}" | tee -a /results/validation.log
   record_stage_timing "validation" 0 0 "skipped_by_config"
 elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
@@ -699,10 +757,16 @@ set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 stage_start="$(date +%s)"
 : > /results/secret-scan.log
-if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
-  SECRET_SCAN_EXIT=6
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a /results/secret-scan.log
+  SECRET_SCAN_EXIT=0
+  record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
+else
+  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
+    SECRET_SCAN_EXIT=6
+  fi
+  record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
-record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 printf '\n==> github operations\n'

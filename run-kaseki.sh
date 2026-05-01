@@ -27,6 +27,7 @@ KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
+KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -165,6 +166,10 @@ EXAMPLES:
   # Via environment variables (legacy)
   REPO_URL=https://... GIT_REF=main ./run-kaseki.sh
 
+  # Dry-run mode (no agent execution, tests setup and validation)
+  ./run-kaseki.sh --dry-run
+  KASEKI_DRY_RUN=1 ./run-kaseki.sh
+
   # Health check
   ./run-kaseki.sh --doctor
 HELP
@@ -235,12 +240,19 @@ arg_idx=0
 
 for arg in "$@"; do
   if [ $arg_idx -eq 0 ]; then
-    # First argument could be: --doctor, --help, repo-url, or help
+    # First argument could be: --doctor, --help, --dry-run, repo-url, or help
     if [ "$arg" = "--doctor" ]; then
       if [ "$#" -gt 1 ]; then
         usage_error "--doctor does not accept positional arguments"
       fi
       SHOW_DOCTOR="1"
+      arg_idx=$((arg_idx + 1))
+      continue
+    elif [ "$arg" = "--dry-run" ]; then
+      if [ "$#" -gt 1 ]; then
+        usage_error "--dry-run does not accept positional arguments"
+      fi
+      KASEKI_DRY_RUN="1"
       arg_idx=$((arg_idx + 1))
       continue
     elif [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
@@ -674,6 +686,7 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "model": $(json_string "$KASEKI_MODEL"),
   "task_mode": $(json_string "$KASEKI_TASK_MODE"),
   "allow_empty_diff": $(json_string "$KASEKI_ALLOW_EMPTY_DIFF"),
+  "dry_run": $(json_string "$KASEKI_DRY_RUN"),
   "container_user": $(json_string "$KASEKI_CONTAINER_USER"),
   "changed_files_allowlist": $(json_string "$KASEKI_CHANGED_FILES_ALLOWLIST"),
   "max_diff_bytes": $MAX_DIFF_BYTES_VALUE,
@@ -776,6 +789,7 @@ docker_args=(
   -e KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF"
   -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST"
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
+  -e KASEKI_DRY_RUN="$KASEKI_DRY_RUN"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
   -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"
