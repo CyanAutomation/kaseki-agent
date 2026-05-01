@@ -9,6 +9,9 @@ KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_OUTPUT_FORMAT="${KASEKI_OUTPUT_FORMAT:-text}"
+KASEKI_CONTROLLER_MODE="${KASEKI_CONTROLLER_MODE:-0}"
+KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
+KASEKI_IMAGE_PULL_POLICY="${KASEKI_IMAGE_PULL_POLICY:-always}"
 KASEKI_JSON_LOG_COMPONENT="kaseki-activate"
 COMMAND=""
 COMMAND_ARGS=()
@@ -69,6 +72,15 @@ parse_args() {
         ;;
       --format=text)
         KASEKI_OUTPUT_FORMAT="text"
+        ;;
+      --controller)
+        KASEKI_CONTROLLER_MODE="1"
+        KASEKI_OUTPUT_FORMAT="json"
+        KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="0"
+        KASEKI_IMAGE_PULL_POLICY="always"
+        ;;
+      --no-build)
+        KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="0"
         ;;
       *)
         if [ -z "$COMMAND" ]; then
@@ -137,12 +149,19 @@ Output:
   --json     Print a final machine-readable JSON object for status, doctor, and run.
   --jsonl    Keep newline-delimited JSON progress logs on stdout.
 
+Controller options:
+  --controller  JSON output, pull registry image, and fail instead of building locally.
+  --no-build    Fail deployment if the registry image cannot be used.
+
 Useful environment:
   KASEKI_REPO_URL=$KASEKI_REPO_URL
   KASEKI_REF=$KASEKI_REF
   KASEKI_ROOT=$KASEKI_ROOT
   KASEKI_CHECKOUT_DIR=$KASEKI_CHECKOUT_DIR
   KASEKI_TEMPLATE_DIR=$KASEKI_TEMPLATE_DIR
+  KASEKI_CONTROLLER_MODE=$KASEKI_CONTROLLER_MODE
+  KASEKI_IMAGE_PULL_POLICY=$KASEKI_IMAGE_PULL_POLICY
+  KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=$KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING
 HELP
 }
 
@@ -159,21 +178,45 @@ install_checkout() {
   mkdir -p "$(dirname "$KASEKI_CHECKOUT_DIR")"
   if [ -d "$KASEKI_CHECKOUT_DIR/.git" ]; then
     emit_json_log "install" "started" "updating $KASEKI_CHECKOUT_DIR"
-    git -C "$KASEKI_CHECKOUT_DIR" fetch --prune origin
+    git -C "$KASEKI_CHECKOUT_DIR" fetch --prune origin >&2
   else
     rm -rf "$KASEKI_CHECKOUT_DIR"
     emit_json_log "install" "started" "cloning $KASEKI_REPO_URL to $KASEKI_CHECKOUT_DIR"
-    git clone "$KASEKI_REPO_URL" "$KASEKI_CHECKOUT_DIR"
+    git clone "$KASEKI_REPO_URL" "$KASEKI_CHECKOUT_DIR" >&2
   fi
-  git -C "$KASEKI_CHECKOUT_DIR" checkout "$KASEKI_REF"
-  git -C "$KASEKI_CHECKOUT_DIR" pull --ff-only origin "$KASEKI_REF" 2>/dev/null || true
+  git -C "$KASEKI_CHECKOUT_DIR" checkout "$KASEKI_REF" >&2
+  git -C "$KASEKI_CHECKOUT_DIR" pull --ff-only origin "$KASEKI_REF" >&2 || true
   emit_json_log "install" "finished" "$(git -C "$KASEKI_CHECKOUT_DIR" rev-parse --short HEAD)"
+  if [ "$KASEKI_OUTPUT_FORMAT" = "json" ] && [ "$COMMAND" = "install" ]; then
+    print_command_json "install" 0 "checkout installed" "" ""
+  fi
 }
 
 deploy_template() {
+  local code output_file
   require_bin docker
   emit_json_log "deploy" "started" "$KASEKI_TEMPLATE_DIR"
-  KASEKI_TEMPLATE_DIR="$KASEKI_TEMPLATE_DIR" "$KASEKI_CHECKOUT_DIR/scripts/deploy-pi-template.sh"
+  if [ "$KASEKI_OUTPUT_FORMAT" = "json" ]; then
+    output_file="$(mktemp)"
+    set +e
+    KASEKI_TEMPLATE_DIR="$KASEKI_TEMPLATE_DIR" \
+      KASEKI_IMAGE_PULL_POLICY="$KASEKI_IMAGE_PULL_POLICY" \
+      KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="$KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING" \
+      "$KASEKI_CHECKOUT_DIR/scripts/deploy-pi-template.sh" >"$output_file" 2>&1
+    code=$?
+    set -e
+    cat "$output_file" >&2
+    if [ "$COMMAND" = "deploy" ]; then
+      print_command_json "deploy" "$code" "$(tail -n 20 "$output_file")" "" ""
+    fi
+    rm -f "$output_file"
+    [ "$code" -eq 0 ] || exit "$code"
+  else
+    KASEKI_TEMPLATE_DIR="$KASEKI_TEMPLATE_DIR" \
+      KASEKI_IMAGE_PULL_POLICY="$KASEKI_IMAGE_PULL_POLICY" \
+      KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="$KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING" \
+      "$KASEKI_CHECKOUT_DIR/scripts/deploy-pi-template.sh"
+  fi
   emit_json_log "deploy" "finished" "$KASEKI_TEMPLATE_DIR"
 }
 
@@ -281,9 +324,17 @@ clean_all() {
     "$KASEKI_ROOT/kaseki-cache" \
     "$KASEKI_CHECKOUT_DIR"
   emit_json_log "clean" "finished" "$KASEKI_ROOT"
+  if [ "$KASEKI_OUTPUT_FORMAT" = "json" ]; then
+    print_command_json "clean" 0 "removed Kaseki checkout, template, runs, results, and cache" "" ""
+  fi
 }
 
 parse_args "$@"
+if [ "$KASEKI_CONTROLLER_MODE" = "1" ]; then
+  KASEKI_OUTPUT_FORMAT="json"
+  KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="0"
+  KASEKI_IMAGE_PULL_POLICY="always"
+fi
 setup_host_logging
 
 case "$COMMAND" in
