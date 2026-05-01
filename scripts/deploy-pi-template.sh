@@ -7,6 +7,7 @@ TARGET_DIR="${KASEKI_TEMPLATE_DIR:-$DEFAULT_TARGET_DIR}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 LOCAL_BUILD_IMAGE="${KASEKI_LOCAL_BUILD_IMAGE:-kaseki-agent:local}"
 KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
+KASEKI_IMAGE_PULL_POLICY="${KASEKI_IMAGE_PULL_POLICY:-always}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_JSON_LOG_COMPONENT="deploy-pi-template"
@@ -83,7 +84,9 @@ Idempotent behavior:
 - Preserves existing destination subdirectories named run, result, cache, and secrets.
 
 Image behavior:
-- Pulls KASEKI_IMAGE (default: $IMAGE).
+- Pulls KASEKI_IMAGE by default before using a local tag.
+- Set KASEKI_IMAGE_PULL_POLICY=missing to pull only when absent.
+- Set KASEKI_IMAGE_PULL_POLICY=never to use only local Docker images.
 - If the image lacks a deployable /app template and
   KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=1, builds this checkout as
   $LOCAL_BUILD_IMAGE and deploys that image instead.
@@ -157,12 +160,42 @@ image_has_template() {
 }
 
 ensure_deployable_image() {
-  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    emit_json_log "deploy" "started" "Using local Docker image: $IMAGE"
-  else
-    emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
-    docker pull "$IMAGE"
-  fi
+  local local_image_present=0
+
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || local_image_present=1
+
+  case "$KASEKI_IMAGE_PULL_POLICY" in
+    always)
+      emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
+      if ! docker pull "$IMAGE"; then
+        if [ "$local_image_present" -eq 0 ]; then
+          emit_json_log "deploy" "warning" "Pull failed; using existing local Docker image: $IMAGE"
+        else
+          return 1
+        fi
+      fi
+      ;;
+    missing|if-not-present)
+      if [ "$local_image_present" -eq 0 ]; then
+        emit_json_log "deploy" "started" "Using local Docker image: $IMAGE"
+      else
+        emit_json_log "deploy" "started" "Pulling Docker image: $IMAGE"
+        docker pull "$IMAGE"
+      fi
+      ;;
+    never)
+      if [ "$local_image_present" -eq 0 ]; then
+        emit_json_log "deploy" "started" "Using local Docker image: $IMAGE"
+      else
+        printf 'Error: image is not present locally and KASEKI_IMAGE_PULL_POLICY=never: %s\n' "$IMAGE" >&2
+        return 1
+      fi
+      ;;
+    *)
+      printf 'Error: invalid KASEKI_IMAGE_PULL_POLICY: %s (expected always, missing, if-not-present, or never)\n' "$KASEKI_IMAGE_PULL_POLICY" >&2
+      return 2
+      ;;
+  esac
 
   if image_has_template "$IMAGE"; then
     return 0
@@ -197,6 +230,20 @@ verify_template() {
   return "$missing"
 }
 
+write_image_metadata() {
+  local target="$1"
+  local image="$2"
+  local repo_digest=""
+
+  printf '%s\n' "$image" > "$target/.kaseki-image"
+  repo_digest="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -n 1 || true)"
+  if [ -n "$repo_digest" ]; then
+    printf '%s\n' "$repo_digest" > "$target/.kaseki-image-digest"
+  else
+    rm -f "$target/.kaseki-image-digest"
+  fi
+}
+
 printf 'Kaseki template deployment\n'
 printf 'Source: %s\n' "$SOURCE_DIR"
 printf 'Target: %s\n' "$TARGET_DIR"
@@ -216,7 +263,7 @@ emit_json_log "deploy" "started" "Cleaning up container"
 docker rm "$CONTAINER"
 CONTAINER=""
 
-printf '%s\n' "$IMAGE" > "$TARGET_DIR/.kaseki-image"
+write_image_metadata "$TARGET_DIR" "$IMAGE"
 verify_template "$TARGET_DIR"
 
 emit_json_log "deploy" "finished" "Deployment completed successfully"

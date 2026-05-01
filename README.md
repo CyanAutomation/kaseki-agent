@@ -154,10 +154,12 @@ contains the current observability and failure-handling fixes.
 Tag publication schedule:
 
 - **Stable version tags** (e.g., `0.1.0`): Published once via version tag push; never overwritten
-- **`latest` tag**: Updated on every version push **and** via weekly schedule every Sunday at 00:00 UTC
+- **`latest` tag**: Updated on every merge to `main`, every version push, and via weekly schedule every Sunday at 00:00 UTC
+- **Commit tags** (e.g., `main-3278b67abcd1`): Published on every merge to `main` for controller pinning
 
 The default wrapper image is `latest` until the next stable version tag is cut.
-Production deployments should pin that newer stable tag once it exists.
+Production deployments should pin a stable tag, a `main-<sha>` tag, or a digest
+once the desired image is verified.
 
 Local fallback build:
 
@@ -189,10 +191,15 @@ sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./scripts/deploy-pi-template.sh
 ```
 
 `scripts/deploy-pi-template.sh` treats the Git checkout as authoritative. It
-pulls `KASEKI_IMAGE`, verifies that the image contains a deployable `/app`
-template, and falls back to building the current checkout as
-`kaseki-agent:local` when the registry image is stale. Set
-`KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=0` to fail instead of building.
+pulls `KASEKI_IMAGE` by default, verifies that the image contains a deployable
+`/app` template, and falls back to building the current checkout as
+`kaseki-agent:local` when the registry image is stale or unavailable. For
+Raspberry Pi hosts where local builds are intentionally avoided, set
+`KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=0` so deployment fails fast instead of
+building. Set `KASEKI_IMAGE_PULL_POLICY=missing` to reuse a local image when it
+exists, or `KASEKI_IMAGE_PULL_POLICY=never` for offline-only deployments. The
+deployed template records the selected image in `.kaseki-image` and, when Docker
+reports one, its immutable registry digest in `.kaseki-image-digest`.
 
 ## Agent activation from local or remote hosts
 
@@ -200,8 +207,9 @@ For OpenClaw or a similar controller, prefer the host activation entrypoint:
 
 ```sh
 cd /agents/kaseki-agent
-KASEKI_LOG_DIR=/tmp/kaseki-log OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
-  ./scripts/kaseki-activate.sh bootstrap
+KASEKI_LOG_DIR=/tmp/kaseki-log \
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  ./scripts/kaseki-activate.sh --controller bootstrap
 ```
 
 Run a task after bootstrap:
@@ -216,12 +224,24 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 First install over SSH can be a single remote command:
 
 ```sh
-ssh pi@192.168.88.201 'curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | KASEKI_LOG_DIR=/tmp/kaseki-log sh'
+ssh pi@192.168.88.201 'set -o pipefail 2>/dev/null || true; curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | KASEKI_CONTROLLER_MODE=1 KASEKI_LOG_DIR=/tmp/kaseki-log OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key sh'
 ```
 
 The activation script emits newline-delimited JSON status records around each
 major step, making it safer for another agent to parse than free-form shell
 output alone.
+
+For fully reproducible activation, pin the image:
+
+```sh
+KASEKI_IMAGE=docker.io/cyanautomation/kaseki-agent:main-<sha> \
+KASEKI_CONTROLLER_MODE=1 \
+OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
+  ./scripts/kaseki-activate.sh bootstrap
+```
+
+Docker digest pins are also supported through `KASEKI_IMAGE`, for example
+`docker.io/cyanautomation/kaseki-agent@sha256:<digest>`.
 
 Machine-readable controller examples:
 
