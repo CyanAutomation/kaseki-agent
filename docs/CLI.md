@@ -93,12 +93,20 @@ Get detailed status of a specific instance (JSON format).
   "timeoutImminent": false,
   "timedOut": false,
   "exitCode": 0,
+  "failureClass": "none",
   "repo": "CyanAutomation/crudmapper",
   "ref": "main",
   "model": "openrouter/claude-3.5-sonnet"
 }
 ```
 `repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
+`failureClass` is `none` for successful runs and a stable controller-facing
+category such as `validation`, `timeout`, `empty-diff`, `quality`,
+`secret-scan`, `github`, or `credentials` for failures.
+
+For read-only controller tasks, launch with `KASEKI_TASK_MODE=inspect` or
+`KASEKI_ALLOW_EMPTY_DIFF=1` so an empty git diff is treated as success.
+Set `KASEKI_VALIDATION_COMMANDS=none` when validation should be skipped.
 
 ### `logs <instance> [options]`
 Display recent log lines (tail).
@@ -274,8 +282,9 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
   STAGE=$(echo $STATUS | jq -r '.stage')
   TIMEOUT_RISK=$(echo $STATUS | jq -r '.timeoutRiskPercent')
   EXIT_CODE=$(echo $STATUS | jq -r '.exitCode')
+  FAILURE_CLASS=$(echo $STATUS | jq -r '.failureClass')
   
-  echo "[$INSTANCE] Stage: $STAGE | Timeout Risk: ${TIMEOUT_RISK}%"
+  echo "[$INSTANCE] Stage: $STAGE | Timeout Risk: ${TIMEOUT_RISK}% | Failure: $FAILURE_CLASS"
   
   # Detect timeout imminent
   if (( $(echo "$TIMEOUT_RISK >= 85" | bc -l) )); then
