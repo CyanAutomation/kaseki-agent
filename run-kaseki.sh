@@ -19,11 +19,14 @@ GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
-KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS:-npm run check;npm run test;npm run build}"
+KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
+KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
+KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
+KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -135,6 +138,9 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
   KASEKI_VALIDATE_AFTER_AGENT_FAILURE
                                     Run validation even when the agent fails (default: 0)
+  KASEKI_TASK_MODE                  patch or inspect (inspect allows empty diffs)
+  KASEKI_ALLOW_EMPTY_DIFF           Treat no-change runs as success when 1 (default: 0)
+  KASEKI_VERIFY_OPENROUTER_AUTH     In --doctor, verify key with OpenRouter when 1
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
@@ -292,6 +298,8 @@ setup_host_logging "${INSTANCE:-session}"
 doctor() {
   local status=0
   local image_present=0
+  local openrouter_key_source=""
+  local openrouter_key_value=""
   printf 'Kaseki doctor\n'
   printf 'Root: %s\n' "$ROOT"
   printf 'Image: %s\n' "$IMAGE"
@@ -319,12 +327,40 @@ doctor() {
 
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
     printf 'OpenRouter API key: env\n'
+    openrouter_key_source="env"
+    openrouter_key_value="$OPENROUTER_API_KEY"
   elif [ -r "$HOST_SECRET_FILE" ] && [ -s "$HOST_SECRET_FILE" ]; then
     printf 'OpenRouter API key: secret file (%s)\n' "$HOST_SECRET_FILE"
+    openrouter_key_source="secret file"
+    openrouter_key_value="$(cat "$HOST_SECRET_FILE")"
   else
     printf 'OpenRouter API key: missing\n' >&2
     status=1
   fi
+
+  if [ "$KASEKI_VERIFY_OPENROUTER_AUTH" = "1" ]; then
+    if [ -z "$openrouter_key_value" ]; then
+      printf 'OpenRouter API key auth: skipped (missing key)\n' >&2
+    elif command -v curl >/dev/null 2>&1; then
+      if curl -fsS -H "Authorization: Bearer $openrouter_key_value" https://openrouter.ai/api/v1/auth/key >/dev/null 2>&1; then
+        printf 'OpenRouter API key auth: ok (%s)\n' "$openrouter_key_source"
+      else
+        printf 'OpenRouter API key auth: failed (%s)\n' "$openrouter_key_source" >&2
+        status=1
+      fi
+    elif command -v wget >/dev/null 2>&1; then
+      if wget -qO- --header="Authorization: Bearer $openrouter_key_value" https://openrouter.ai/api/v1/auth/key >/dev/null 2>&1; then
+        printf 'OpenRouter API key auth: ok (%s)\n' "$openrouter_key_source"
+      else
+        printf 'OpenRouter API key auth: failed (%s)\n' "$openrouter_key_source" >&2
+        status=1
+      fi
+    else
+      printf 'OpenRouter API key auth: skipped (curl or wget required)\n' >&2
+      status=1
+    fi
+  fi
+  unset openrouter_key_value
 
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
     printf 'Docker image: present\n'
@@ -636,6 +672,8 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "git_ref": $(json_string "$GIT_REF"),
   "provider": $(json_string "$KASEKI_PROVIDER"),
   "model": $(json_string "$KASEKI_MODEL"),
+  "task_mode": $(json_string "$KASEKI_TASK_MODE"),
+  "allow_empty_diff": $(json_string "$KASEKI_ALLOW_EMPTY_DIFF"),
   "container_user": $(json_string "$KASEKI_CONTAINER_USER"),
   "changed_files_allowlist": $(json_string "$KASEKI_CHANGED_FILES_ALLOWLIST"),
   "max_diff_bytes": $MAX_DIFF_BYTES_VALUE,
@@ -734,6 +772,8 @@ docker_args=(
   -e KASEKI_AGENT_TIMEOUT_SECONDS="$KASEKI_AGENT_TIMEOUT_SECONDS"
   -e KASEKI_VALIDATION_COMMANDS="$KASEKI_VALIDATION_COMMANDS"
   -e KASEKI_DEBUG_RAW_EVENTS="$KASEKI_DEBUG_RAW_EVENTS"
+  -e KASEKI_TASK_MODE="$KASEKI_TASK_MODE"
+  -e KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF"
   -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST"
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
   -e TASK_PROMPT="$TASK_PROMPT"

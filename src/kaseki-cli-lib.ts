@@ -73,6 +73,7 @@ interface InstanceStatus {
   timeoutImminent?: boolean;
   timedOut?: boolean;
   exitCode?: number | null;
+  failureClass?: string;
   repo?: string;
   ref?: string;
   model?: string;
@@ -98,6 +99,8 @@ interface AnalysisResult {
   error?: string;
   status?: string;
   exit_code?: number | string;
+  failure_class?: string;
+  failed_command?: string;
   duration_seconds?: number;
   pi_duration_seconds?: number;
   model?: string;
@@ -226,6 +229,25 @@ function resolveInstanceStage(
   }
   const parsedStage = getCurrentStage(instance);
   return parsedStage || fallback;
+}
+
+function classifyFailure(metadata: Metadata = {}, exitCode: number | string | null = null): string {
+  const normalizedExitCode = normalizeExitCodeCandidate(exitCode);
+  const failedCommand =
+    typeof metadata.failed_command === 'string' ? metadata.failed_command.trim() : '';
+  if (normalizedExitCode === 0) return 'none';
+  if (normalizedExitCode === 124) return 'timeout';
+  if (failedCommand === 'empty git diff' || normalizedExitCode === 3) return 'empty-diff';
+  if (failedCommand === 'validation') return 'validation';
+  if (failedCommand === 'quality checks') return 'quality';
+  if (failedCommand === 'secret scan') return 'secret-scan';
+  if (failedCommand.startsWith('github')) return 'github';
+  if (failedCommand.includes('OPENROUTER_API_KEY') || failedCommand.includes('OpenRouter')) {
+    return 'credentials';
+  }
+  if (failedCommand) return failedCommand.replace(/\s+/g, '-');
+  if (Number.isInteger(normalizedExitCode)) return 'nonzero-exit';
+  return 'unknown';
 }
 
 function isSkippableInstanceIoError(error: any): boolean {
@@ -543,6 +565,7 @@ function getInstanceStatus(instance: string): InstanceStatus {
     timeoutImminent: isRunning && stage === 'pi coding agent' && timeoutRiskPercent >= 85,
     timedOut,
     exitCode,
+    failureClass: classifyFailure(metadata, exitCode),
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
     model: hostStart.model || 'unknown',
@@ -571,6 +594,17 @@ function detectErrors(instance: string): DetectedError[] {
   const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
   if (!fs.existsSync(resultDir)) {
     return errors;
+  }
+
+  const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
+  const exitCode = resolveInstanceExitCode(resultDir, metadata);
+  if (classifyFailure(metadata, exitCode) === 'empty-diff') {
+    errors.push({
+      severity: ErrorSeverity.WARNING,
+      source: 'empty-diff',
+      line: 0,
+      message: 'Agent completed without producing a git diff; set KASEKI_TASK_MODE=inspect or KASEKI_ALLOW_EMPTY_DIFF=1 when this is expected.',
+    });
   }
 
   // Check stderr.log for error patterns
@@ -612,7 +646,8 @@ function detectErrors(instance: string): DetectedError[] {
 
   // Check secret-scan.log for secrets
   const secretScan = readArtifact(instance, 'secret-scan.log');
-  if (secretScan) {
+  const secretScanExitCode = normalizeExitCodeCandidate(metadata.secret_scan_exit_code);
+  if (secretScan && secretScanExitCode !== 0) {
     const lines = secretScan.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -667,16 +702,16 @@ function getAnalysis(instance: string): AnalysisResult {
   const changedFiles =
     changedFilesContent?.split('\n').filter(Boolean) || [];
   const errors = detectErrors(instance);
-  const exitCode =
-    metadata.exit_code !== null && metadata.exit_code !== undefined
-      ? metadata.exit_code
-      : 'unknown';
+  const resolvedExitCode = resolveInstanceExitCode(resultDir, metadata);
+  const exitCode = resolvedExitCode !== null ? resolvedExitCode : 'unknown';
   const status = exitCode === 0 ? 'passed' : 'failed';
 
   return {
     instance,
     status,
     exit_code: exitCode,
+    failure_class: classifyFailure(metadata, resolvedExitCode),
+    failed_command: metadata.failed_command || '',
     duration_seconds: metadata.duration_seconds || 0,
     pi_duration_seconds: metadata.pi_duration_seconds || 0,
     model: metadata.model || piSummary.selected_model || 'unknown',
@@ -716,6 +751,7 @@ export {
   normalizeExitCodeCandidate,
   resolveInstanceExitCode,
   resolveInstanceStage,
+  classifyFailure,
   // Types
   type Config,
   type KasekiInstance,
