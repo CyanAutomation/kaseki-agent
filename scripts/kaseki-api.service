@@ -1,0 +1,52 @@
+[Unit]
+Description=Kaseki Agent API Service
+Documentation=https://github.com/CyanAutomation/kaseki-agent
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+WorkingDirectory=/agents/kaseki-template
+EnvironmentFile=-/etc/kaseki-api/kaseki-api.env
+
+# Security hardening (match Docker settings)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/agents/kaseki-results /var/log/kaseki-api /tmp
+UMask=0077
+
+# Restart behavior
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kaseki-api
+
+# Timeout and graceful shutdown
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# NOTE: Actual command depends on deployment method:
+# Option 1: Run as Node.js process (on host)
+# ExecStart=/usr/bin/node /agents/kaseki-template/dist/kaseki-api-service.js
+
+# Option 2: Run in Docker container
+ExecStart=/usr/bin/docker run --rm \
+  --name kaseki-api-container \
+  -p 8080:8080 \
+  -v /agents/kaseki-results:/agents/kaseki-results:rw \
+  -v /var/log/kaseki-api:/var/log/kaseki-api:rw \
+  --env-file /etc/kaseki-api/kaseki-api.env \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  docker.io/cyanautomation/kaseki-agent:latest \
+  node dist/kaseki-api-service.js
+
+ExecStop=/usr/bin/docker stop -t 30 kaseki-api-container
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  kaseki-api:
+    image: docker.io/cyanautomation/kaseki-agent:latest
+    container_name: kaseki-api
+    command: node dist/kaseki-api-service.js
+    ports:
+      - "8080:8080"
+    environment:
+      KASEKI_API_PORT: "8080"
+      KASEKI_API_KEYS: "${KASEKI_API_KEYS:-sk-dev-key}"
+      KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
+      KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
+      KASEKI_RESULTS_DIR: /agents/kaseki-results
+      KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
+      KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
+    volumes:
+      - kaseki-results:/agents/kaseki-results
+      - kaseki-logs:/var/log/kaseki-api
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: on-failure
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+      - /run
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - kaseki-network
+
+volumes:
+  kaseki-results:
+    driver: local
+  kaseki-logs:
+    driver: local
+
+networks:
+  kaseki-network:
+    driver: bridge

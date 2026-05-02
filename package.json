@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsc && chmod 0755 dist/*.js",
     "type-check": "tsc --noEmit",
+    "check": "npm run type-check && npm run lint",
     "test": "npm run build && npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash scripts/test-github-app.sh",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -17,9 +18,15 @@
     "lint:js": "eslint . src/ --ignore-pattern dist/",
     "lint:js:fix": "eslint . src/ --fix --ignore-pattern dist/",
     "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh scripts/*.sh run-kaseki-json.test.sh",
-    "lint:fix": "npm run lint:js:fix && npm run lint:sh"
+    "lint:fix": "npm run lint:js:fix && npm run lint:sh",
+    "kaseki-api": "ts-node src/kaseki-api-service.ts"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.5",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
