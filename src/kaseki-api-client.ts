@@ -348,7 +348,7 @@ export class KasekiApiClient {
         id: run.id as string,
         status: run.status as RunsListResponse['runs'][number]['status'],
         createdAt: run.createdAt as string,
-        ...(typeof run.completedAt === 'string' ? { completedAt: run.completedAt } : {}),
+        ...(typeof run.completedAt === 'string' ? { completedAt: run.completedAt as string } : {}),
       }));
 
     if (runs.length !== data.runs.length) {
