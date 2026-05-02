@@ -127,7 +127,7 @@ try {
 
 ### General Principles
 
-- **Type Safety:** All code must pass `npm run type-check` with no errors. Strict mode is enforced.
+- **Type Safety:** `npm run type-check:changed` is the required PR gate. `npm run type-check` / `npm run type-check:full` report full-project debt and are currently non-blocking while debt is tracked.
 - **Explicit Types:** Function parameters, return types, and complex variables must have explicit type annotations. Never use implicit `any`.
 - **Clarity:** Type signatures should make code intent clear; avoid overly complex generic types.
 - **Consistency:** Follow the same patterns established in existing `.ts` files (e.g., `src/kaseki-cli-lib.ts`).
