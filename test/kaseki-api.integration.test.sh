@@ -118,7 +118,10 @@ for _ in $(seq 1 120); do
   STATUS_RESP="$(curl -sS -H "Authorization: Bearer $API_KEY" "$BASE_URL/runs/$JOB_ID/status")"
   cur="$(python3 - "$STATUS_RESP" <<'PY'
 import json, sys
-print(json.loads(sys.argv[1]).get('status',''))
+try:
+    print(json.loads(sys.argv[1]).get('status',''))
+except (json.JSONDecodeError, ValueError) as e:
+    raise SystemExit(f"API returned invalid JSON: {e}; response: {sys.argv[1][:200]}")
 PY
 )"
   [[ -n "$history" ]] && history+=" "
