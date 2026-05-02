@@ -9,14 +9,7 @@ jest.mock('child_process', () => ({
 
 class MockProcess extends EventEmitter {
   pid = 12345;
-  killed = false;
-
-  kill = jest.fn((signal?: NodeJS.Signals) => {
-    if (signal === 'SIGKILL') {
-      this.killed = true;
-    }
-    return true;
-  });
+  kill = jest.fn((_signal?: NodeJS.Signals) => true);
 }
 
 describe('JobScheduler finalization guard', () => {
@@ -145,7 +138,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     });
 
     scheduler.shutdown();
-    proc.killed = true;
+    proc.emit('exit', 0);
 
     jest.advanceTimersByTime(5000);
 

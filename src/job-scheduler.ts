@@ -13,6 +13,8 @@ export class JobScheduler {
   private queue: Job[] = [];
   private running = new Set<string>();
   private processes = new Map<string, ChildProcess>();
+  private processExited = new Map<string, boolean>();
+  private shutdownKillTimers = new Map<string, NodeJS.Timeout>();
   private config: KasekiApiConfig;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
@@ -109,6 +111,7 @@ export class JobScheduler {
       stdio: 'pipe',
     });
     this.processes.set(job.id, proc);
+    this.processExited.set(job.id, false);
 
     job.processId = proc.pid;
     let timeoutFired = false;
@@ -158,6 +161,7 @@ export class JobScheduler {
 
     // Handle process exit
     proc.on('exit', (code) => {
+      this.processExited.set(job.id, true);
       if (job.finalized) {
         return;
       }
@@ -177,6 +181,7 @@ export class JobScheduler {
 
     // Handle process error
     proc.on('error', (err) => {
+      this.processExited.set(job.id, true);
       if (job.finalized) {
         return;
       }
@@ -220,6 +225,13 @@ export class JobScheduler {
     }
     this.running.delete(job.id);
     this.processes.delete(job.id);
+    const processExited = this.processExited.get(job.id);
+    const shutdownKillTimer = this.shutdownKillTimers.get(job.id);
+    if (shutdownKillTimer) {
+      clearTimeout(shutdownKillTimer);
+      this.shutdownKillTimers.delete(job.id);
+    }
+    this.processExited.delete(job.id);
     this.processQueue();
   }
 
@@ -264,14 +276,16 @@ export class JobScheduler {
       }
 
       const proc = this.processes.get(jobId);
-      if (proc && !proc.killed) {
+      if (proc) {
         proc.kill('SIGTERM');
 
-        setTimeout(() => {
-          if (!proc.killed) {
+        const shutdownKillTimer = setTimeout(() => {
+          if (!this.processExited.get(jobId)) {
             proc.kill('SIGKILL');
           }
+          this.shutdownKillTimers.delete(jobId);
         }, JobScheduler.SHUTDOWN_GRACE_MS);
+        this.shutdownKillTimers.set(jobId, shutdownKillTimer);
       }
 
       if (j && !j.finalized) {
