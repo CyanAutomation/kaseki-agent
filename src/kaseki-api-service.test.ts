@@ -25,12 +25,49 @@ describe('Kaseki API Configuration', () => {
     expect(() => loadConfig()).toThrow(/KASEKI_API_KEYS.*required/i);
   });
 
-  test('loadConfig validates port number', () => {
+  test.each([
+    {
+      name: 'rejects non-numeric port string',
+      port: 'invalid',
+      expectedError: 'KASEKI_API_PORT must be a valid port number, got: invalid',
+    },
+    {
+      name: 'rejects zero port',
+      port: '0',
+      expectedError: 'KASEKI_API_PORT must be a valid port number, got: 0',
+    },
+    {
+      name: 'rejects negative port',
+      port: '-1',
+      expectedError: 'KASEKI_API_PORT must be a valid port number, got: -1',
+    },
+    {
+      name: 'rejects port above 65535',
+      port: '65536',
+      expectedError: 'KASEKI_API_PORT must be a valid port number, got: 65536',
+    },
+    {
+      name: 'accepts minimum valid port',
+      port: '1',
+      expectedPort: 1,
+    },
+    {
+      name: 'accepts maximum valid port',
+      port: '65535',
+      expectedPort: 65535,
+    },
+  ])('loadConfig port boundaries: $name', ({ port, expectedError, expectedPort }) => {
     process.env.KASEKI_API_KEYS = 'test-key';
-    process.env.KASEKI_API_PORT = 'invalid';
+    process.env.KASEKI_API_PORT = port;
     process.env.KASEKI_RESULTS_DIR = '/tmp';
 
-    expect(() => loadConfig()).toThrow(/port number/i);
+    if (expectedError) {
+      expect(() => loadConfig()).toThrow(expectedError);
+      return;
+    }
+
+    const config = loadConfig();
+    expect(config.port).toBe(expectedPort);
   });
 
   describe.each([
@@ -85,31 +122,6 @@ describe('Kaseki API Configuration', () => {
     }).toEqual(expectedConfig);
   });
 
-  test.each([
-    {
-      name: 'rejects out-of-range port below minimum',
-      env: {
-        KASEKI_API_KEYS: 'test-key',
-        KASEKI_API_PORT: '0',
-      },
-      errorPattern: /port number/i,
-    },
-    {
-      name: 'rejects out-of-range port above maximum',
-      env: {
-        KASEKI_API_KEYS: 'test-key',
-        KASEKI_API_PORT: '65536',
-      },
-      errorPattern: /port number/i,
-    },
-  ])('loadConfig invalid ranges: $name', ({ env, errorPattern }) => {
-    delete process.env.KASEKI_API_PORT;
-    delete process.env.KASEKI_API_MAX_CONCURRENT_RUNS;
-    process.env.KASEKI_RESULTS_DIR = '/tmp';
-    Object.assign(process.env, env);
-
-    expect(() => loadConfig()).toThrow(errorPattern);
-  });
 
   test('loadConfig parses API keys from file', () => {
     const keysFile = '/tmp/test-keys.txt';
