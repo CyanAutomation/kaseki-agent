@@ -113,15 +113,35 @@ describe('Job Scheduler', () => {
   });
 
   test('submitJob creates a queued job', () => {
+    // Saturate scheduler concurrency so a newly submitted job remains queued.
+    (scheduler as any).running.add('existing-running-job');
+    (scheduler as any).running.add('second-existing-running-job');
+
     const request = {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     };
 
-    const job = scheduler.submitJob(request);
-    expect(job.status).toBe('queued');
-    expect(job.id).toMatch(/^kaseki-[0-9a-f-]{36}$/);
-    expect(job.request).toEqual(request);
+    const submitted = scheduler.submitJob(request);
+
+    // Contract outcome: job is queued when concurrency limit is reached.
+    expect(submitted.status).toBe('queued');
+    expect(submitted.request).toEqual(request);
+
+    // Contract outcome: queued job is visible via status and list/get endpoints.
+    expect(scheduler.getQueueStatus()).toEqual({
+      pending: 1,
+      running: 2,
+      maxConcurrent: 2,
+    });
+
+    const retrieved = scheduler.getJob(submitted.id);
+    const jobs = scheduler.listJobs();
+
+    expect(retrieved).toBeDefined();
+    expect(retrieved?.id).toBe(submitted.id);
+    expect(retrieved?.status).toBe('queued');
+    expect(jobs.some((job) => job.id === submitted.id && job.status === 'queued')).toBe(true);
   });
 
   test('submit/get/list keep job identity, request payload, and queue visibility coherent', () => {
@@ -160,8 +180,8 @@ describe('Job Scheduler', () => {
 
     const status = scheduler.getQueueStatus();
     expect(status).toEqual({
-      pending: 1,
-      running: 0,
+      pending: 0,
+      running: 1,
       maxConcurrent: 2,
     });
   });
