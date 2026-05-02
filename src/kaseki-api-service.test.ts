@@ -148,14 +148,56 @@ describe('Kaseki API Request Validation', () => {
       request: { repoUrl: 'https://github.com/org/repo', taskMode: 'invalid' },
       shouldSucceed: false,
     },
-  ])('RunRequestSchema $name', ({ request, shouldSucceed, expected }) => {
+  ])('RunRequestSchema success cases: $name', ({ request, shouldSucceed, expected }) => {
     if (shouldSucceed) {
       const result = RunRequestSchema.parse(request);
       expect(result).toMatchObject(expected!);
       return;
     }
 
-    expect(() => RunRequestSchema.parse(request)).toThrow();
+    // Should not execute for success-case matrix rows.
+    expect(shouldSucceed).toBe(false);
+  });
+
+  test.each([
+    {
+      name: 'rejects invalid URL',
+      request: { repoUrl: 'not-a-url', ref: 'main' },
+      expectedIssue: {
+        path: ['repoUrl'],
+        messagePattern: /url/i,
+        value: 'not-a-url',
+      },
+    },
+    {
+      name: 'rejects invalid taskMode enum',
+      request: { repoUrl: 'https://github.com/org/repo', taskMode: 'invalid' },
+      expectedIssue: {
+        path: ['taskMode'],
+        messagePattern: /invalid (option|enum)|expected/i,
+        value: 'invalid',
+      },
+    },
+  ])('RunRequestSchema rejects invalid payloads: $name', ({ request, expectedIssue }) => {
+    const result = RunRequestSchema.safeParse(request);
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+
+    const matchingIssue = result.error.issues.find((issue) =>
+      expectedIssue.path.every((segment, index) => issue.path[index] === segment),
+    );
+
+    expect(matchingIssue).toBeDefined();
+    expect(matchingIssue?.path).toEqual(expectedIssue.path);
+    expect(matchingIssue?.message).toMatch(expectedIssue.messagePattern);
+    const valueAtIssuePath = expectedIssue.path.reduce<any>((acc, segment) =>
+      (acc as any)?.[segment],
+      request as any,
+    );
+    expect(valueAtIssuePath).toBe(expectedIssue.value);
   });
 });
 
