@@ -34,15 +34,20 @@ export function decodeUtf8TailSafely(buffer: Buffer): string {
   }
 
   let end = buffer.length;
-  while (end > start && isUtf8ContinuationByte(buffer[end - 1])) {
-    end--;
-  }
-
   if (end > start) {
-    const lastStart = end - 1;
-    const seqLen = utf8SequenceLength(buffer[lastStart]);
-    if (lastStart + seqLen > buffer.length) {
-      end = lastStart;
+    let leadIndex = end - 1;
+    while (leadIndex > start && isUtf8ContinuationByte(buffer[leadIndex])) {
+      leadIndex--;
+    }
+
+    if (isUtf8ContinuationByte(buffer[leadIndex])) {
+      end = leadIndex;
+    } else {
+      const seqLen = utf8SequenceLength(buffer[leadIndex]);
+      const availableBytes = end - leadIndex;
+      if (availableBytes < seqLen) {
+        end = leadIndex;
+      }
     }
   }
 
