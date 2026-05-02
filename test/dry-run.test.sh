@@ -42,9 +42,9 @@ run_once() {
     export KASEKI_ROOT="$root"
     export KASEKI_LOG_DIR="$root/host-logs"
     export OPENROUTER_API_KEY="dry-run-test-key"
-    export REPO_URL="https://github.com/CyanAutomation/crudmapper"
+    export REPO_URL=""
     export GIT_REF="main"
-    export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN_${marker} > /tmp/kaseki-validation-${marker}"
+    export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN_${marker} > /tmp/kaseki-validation-$$-${marker}"
     export TASK_PROMPT="dry-run behavior test"
     export KASEKI_IMAGE="docker.io/cyanautomation/kaseki-agent:latest"
 
