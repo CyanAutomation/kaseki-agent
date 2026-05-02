@@ -7,6 +7,10 @@ PORT="${KASEKI_TEST_API_PORT:-18080}"
 BASE_URL="http://127.0.0.1:${PORT}/api"
 
 TMP_ROOT="$(mktemp -d)"
+if [[ -z "$TMP_ROOT" || ! -d "$TMP_ROOT" ]]; then
+  echo "[$TEST_NAME] ERROR: Failed to create temporary directory"
+  exit 1
+fi
 RESULTS_DIR="${TMP_ROOT}/results"
 API_LOG_DIR="${TMP_ROOT}/api-logs"
 FAKE_REPO_ROOT="${TMP_ROOT}/fake-repo"
