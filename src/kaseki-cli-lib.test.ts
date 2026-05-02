@@ -189,7 +189,39 @@ tests/parser.test.ts
   test('getInstanceStatus should return error for missing instance', () => {
     const status = kasekiCli.getInstanceStatus('nonexistent');
 
-    expect(status.error).toBeDefined();
+    expect(status).toEqual(
+      expect.objectContaining({
+        instance: 'nonexistent',
+        status: 'pending',
+        error: {
+          kind: 'missing-instance',
+          message: 'Instance nonexistent not found',
+        },
+      })
+    );
+    // User-observable API shape used by CLI JSON output.
+    expect(status.running).toBe(false);
+  });
+
+  test('getInstanceStatus should keep typed status fields when metadata is malformed', () => {
+    createMockInstance('kaseki-malformed');
+    fs.writeFileSync(
+      path.join(MOCK_RESULTS_DIR, 'kaseki-malformed', 'metadata.json'),
+      '{ malformed-json'
+    );
+
+    const status = kasekiCli.getInstanceStatus('kaseki-malformed');
+
+    expect(status).toEqual(
+      expect.objectContaining({
+        instance: 'kaseki-malformed',
+        status: 'completed',
+        running: false,
+        stage: 'Collecting artifacts',
+        exitCode: 0,
+      })
+    );
+    expect(status.error).toBeUndefined();
   });
 
   test('readArtifact should read file contents', () => {
@@ -207,6 +239,24 @@ tests/parser.test.ts
     const content = kasekiCli.readArtifact('kaseki-1', 'nonexistent.log');
 
     expect(content).toBeNull();
+  });
+
+  test('readArtifact should return null for unreadable artifact', () => {
+    createMockInstance('kaseki-1');
+    const artifactPath = path.join(MOCK_RESULTS_DIR, 'kaseki-1', 'stdout.log');
+    const readSpy = jest.spyOn(fs, 'readFileSync').mockImplementation((filePath: fs.PathOrFileDescriptor, options?: any) => {
+      if (String(filePath) === artifactPath) {
+        const error = new Error('permission denied') as NodeJS.ErrnoException;
+        error.code = 'EACCES';
+        throw error;
+      }
+      return (jest.requireActual('fs').readFileSync as any)(filePath, options);
+    });
+
+    const content = kasekiCli.readArtifact('kaseki-1', 'stdout.log');
+
+    expect(content).toBeNull();
+    readSpy.mockRestore();
   });
 
   test('readProgressEvents should parse progress JSONL', () => {
@@ -282,6 +332,21 @@ tests/parser.test.ts
     expect(analysis.status).toBe('passed');
     expect(analysis.exit_code).toBe(0);
     expect(analysis.changed_files_count).toBeGreaterThan(0);
+  });
+
+  test('getAnalysis should return structured error for missing instance', () => {
+    const analysis = kasekiCli.getAnalysis('kaseki-missing');
+
+    expect(analysis).toEqual(
+      expect.objectContaining({
+        instance: 'kaseki-missing',
+        status: 'failed',
+        error: {
+          kind: 'missing-instance',
+          message: 'Instance kaseki-missing not found',
+        },
+      })
+    );
   });
 
   test('classifyFailure should identify empty diff outcomes', () => {
