@@ -19,7 +19,7 @@ export type RunRequest = z.infer<typeof RunRequestSchema>;
  * Response after triggering a run.
  */
 export interface RunResponse {
-  id: string; // kaseki-N instance ID
+  id: string; // kaseki-<uuidv4> instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   createdAt: string; // ISO 8601
   error?: string;
@@ -134,7 +134,7 @@ export interface HealthResponse {
  * Internal job representation.
  */
 export interface Job {
-  id: string; // kaseki-N instance ID
+  id: string; // kaseki-<uuidv4> instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   request: RunRequest;
   createdAt: Date;

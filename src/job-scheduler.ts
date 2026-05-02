@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Job, RunRequest } from './kaseki-api-types';
@@ -11,7 +12,6 @@ export class JobScheduler {
   private jobs = new Map<string, Job>();
   private queue: Job[] = [];
   private running = new Set<string>();
-  private instanceCounter = 0;
   private config: KasekiApiConfig;
 
   constructor(config: KasekiApiConfig) {
@@ -220,10 +220,22 @@ export class JobScheduler {
   }
 
   /**
-   * Generate a unique instance ID.
+   * Generate a unique, durable instance ID.
+   *
+   * Format: `kaseki-<uuidv4>`
    */
   private generateInstanceId(): string {
-    return `kaseki-${++this.instanceCounter}`;
+    const maxAttempts = 1000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const id = `kaseki-${randomUUID()}`;
+      const resultsPath = path.join(this.config.resultsDir, id);
+      if (!this.jobs.has(id) && !fs.existsSync(resultsPath)) {
+        return id;
+      }
+    }
+
+    throw new Error(`Failed to allocate unique job ID after ${maxAttempts} attempts`);
   }
 
   /**
