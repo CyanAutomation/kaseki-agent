@@ -82,6 +82,36 @@ describe('ResultCache', () => {
     expect(content).toBe('modified job data');
   });
 
+  test('clears cache entries for POSIX-style path strings by job segment', () => {
+    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number }> }).cache;
+    internalCache.set('/tmp/jobs/kaseki-1/result.txt', { content: 'a', timestamp: Date.now(), size: 1 });
+    internalCache.set('/tmp/jobs/kaseki-10/result.txt', { content: 'b', timestamp: Date.now(), size: 1 });
+
+    cache.clearForJob('kaseki-1');
+
+    expect(internalCache.has('/tmp/jobs/kaseki-1/result.txt')).toBe(false);
+    expect(internalCache.has('/tmp/jobs/kaseki-10/result.txt')).toBe(true);
+  });
+
+  test('clears cache entries for Windows-style path strings by job segment', () => {
+    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number }> }).cache;
+    internalCache.set('C:\\kaseki\\runs\\kaseki-1\\result.txt', {
+      content: 'a',
+      timestamp: Date.now(),
+      size: 1,
+    });
+    internalCache.set('C:\\kaseki\\runs\\kaseki-10\\result.txt', {
+      content: 'b',
+      timestamp: Date.now(),
+      size: 1,
+    });
+
+    cache.clearForJob('kaseki-1');
+
+    expect(internalCache.has('C:\\kaseki\\runs\\kaseki-1\\result.txt')).toBe(false);
+    expect(internalCache.has('C:\\kaseki\\runs\\kaseki-10\\result.txt')).toBe(true);
+  });
+
   test('provides cache statistics', () => {
     cache.getOrLoad(testFile);
 
