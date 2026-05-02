@@ -7,7 +7,6 @@ export interface KasekiApiConfig {
   port: number;
   apiKeys: string[];
   resultsDir: string;
-  logDir: string;
   maxConcurrentRuns: number;
   defaultTaskMode: 'patch' | 'inspect';
   maxDiffBytes: number;
@@ -59,15 +58,7 @@ export function loadConfig(): KasekiApiConfig {
     throw new Error(`KASEKI_RESULTS_DIR does not exist: ${resultsDir}`);
   }
 
-  const logDir = process.env.KASEKI_API_LOG_DIR || '/var/log/kaseki-api';
-  // Create log directory if it doesn't exist
-  if (!fs.existsSync(logDir)) {
-    try {
-      fs.mkdirSync(logDir, { recursive: true, mode: 0o755 });
-    } catch (err) {
-      console.warn(`Failed to create log directory ${logDir}:`, err);
-    }
-  }
+
 
   const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
   if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
@@ -78,7 +69,6 @@ export function loadConfig(): KasekiApiConfig {
     port,
     apiKeys,
     resultsDir,
-    logDir,
     maxConcurrentRuns,
     defaultTaskMode: taskMode,
     maxDiffBytes,
