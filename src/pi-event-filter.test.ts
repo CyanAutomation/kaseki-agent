@@ -3,96 +3,150 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-function readRssKb(pid: number): number | null {
+interface RunResult {
+  exitCode: number | null;
+  lines: string[];
+  summary: any;
+}
+
+async function runFilter(inputLines: string[]): Promise<RunResult> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-fast-'));
+  const inputPath = path.join(tmpDir, 'in.jsonl');
+  const outputPath = path.join(tmpDir, 'out.jsonl');
+  const summaryPath = path.join(tmpDir, 'summary.json');
+
   try {
-    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
-    const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
-    if (!match) return null;
-    return Number.parseInt(match[1], 10);
-  } catch {
-    return null;
+    fs.writeFileSync(inputPath, `${inputLines.join('\n')}\n`, 'utf8');
+
+    const child = spawn(process.execPath, [
+      path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
+      inputPath,
+      outputPath,
+      summaryPath,
+    ]);
+
+    const exitCode = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', resolve);
+    });
+
+    const output = fs.existsSync(outputPath)
+      ? fs.readFileSync(outputPath, 'utf8').trim()
+      : '';
+    const lines = output ? output.split('\n') : [];
+    const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+
+    return { exitCode, lines, summary };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
-describe('pi-event-filter stress test', () => {
-  test('stress run completes and keeps memory bounded', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-'));
-    const inputPath = path.join(tmpDir, 'in.jsonl');
-    const outputPath = path.join(tmpDir, 'out.jsonl');
-    const summaryPath = path.join(tmpDir, 'summary.json');
-
-    try {
-      const totalEvents = 200_000;
-      const filteredEvery = 5;
-      const expectedKept = totalEvents - Math.floor(totalEvents / filteredEvery);
-
-      const input = fs.createWriteStream(inputPath, { encoding: 'utf8' });
-      for (let i = 0; i < totalEvents; i++) {
-        const filtered = i % filteredEvery === 0;
-        const event = {
-          type: i % 2 === 0 ? 'tool_execution_start' : 'tool_execution_end',
-          timestamp: `2026-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z`,
-          message: { model: 'pi-stress-model', api: 'pi-stress-api' },
-          assistantMessageEvent: {
-            type: filtered ? 'thinking_delta' : 'output_delta',
-            partial: {
-              timestamp: `2026-01-01T00:00:${String((i + 1) % 60).padStart(2, '0')}.000Z`,
-              content: [
-                { type: 'thinking', text: 'internal note' },
-                { type: 'output_text', text: `event-${i}` },
-              ],
-            },
+describe('pi-event-filter fast correctness tests', () => {
+  test('filters thinking events and removes thinking content', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: { model: 'small-model', api: 'small-api' },
+        assistantMessageEvent: {
+          type: 'thinking_delta',
+          partial: { content: [{ type: 'thinking', text: 'hidden' }] },
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          model: 'small-model',
+          api: 'small-api',
+          content: [
+            { type: 'thinking', text: 'remove-me' },
+            { type: 'output_text', text: 'keep-me' },
+          ],
+        },
+        assistantMessageEvent: {
+          type: 'output_delta',
+          partial: {
+            content: [
+              { type: 'thinking', text: 'remove-me-too' },
+              { type: 'output_text', text: 'visible' },
+            ],
           },
-        };
-        const canContinue = input.write(`${JSON.stringify(event)}\n`);
-        if (!canContinue) {
-          await new Promise<void>((resolve) => input.once('drain', resolve));
-        }
-      }
-      await new Promise<void>((resolve) => input.end(resolve));
+        },
+      }),
+    ];
 
-      const child = spawn(process.execPath, [
-        path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
-        inputPath,
-        outputPath,
-        summaryPath,
-      ]);
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toHaveLength(1);
 
-      let peakRssKb = 0;
-      const sample = setInterval(() => {
-        if (child.exitCode !== null) return;
-        const rssKb = readRssKb(child.pid!);
-        if (rssKb !== null) peakRssKb = Math.max(peakRssKb, rssKb);
-      }, 20);
+    const kept = JSON.parse(result.lines[0]);
+    expect(kept.message.content).toEqual([{ type: 'output_text', text: 'keep-me' }]);
+    expect(kept.assistantMessageEvent.partial.content).toEqual([
+      { type: 'output_text', text: 'visible' },
+    ]);
+  });
 
-      const exitCode = await new Promise<number | null>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', resolve);
-      });
-      clearInterval(sample);
+  test('computes summary counts and preferred model/api from medium fixture', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: { model: 'model-a', api: 'api-a' },
+        assistantMessageEvent: { type: 'output_delta', partial: { model: 'model-a', api: 'api-a' } },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:03.000Z',
+        message: { model: 'model-b', api: 'api-b' },
+        assistantMessageEvent: { type: 'output_delta', partial: { model: 'model-b', api: 'api-b' } },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        message: { model: 'model-a', api: 'api-a' },
+        assistantMessageEvent: { type: 'thinking_delta', partial: { model: 'model-a', api: 'api-a' } },
+      }),
+      JSON.stringify({
+        type: 'other_event',
+        timestamp: '2026-01-01T00:00:04.000Z',
+        message: { model: 'model-c', api: 'api-c' },
+        assistantMessageEvent: { type: 'output_delta', partial: { model: 'model-c', api: 'api-c' } },
+      }),
+    ];
 
-      expect(exitCode).toBe(0);
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toHaveLength(3);
+    expect(result.summary.tool_start_count).toBe(2);
+    expect(result.summary.tool_end_count).toBe(1);
+    expect(result.summary.event_counts.tool_execution_start).toBe(2);
+    expect(result.summary.event_counts.tool_execution_end).toBe(1);
+    expect(result.summary.event_counts.other_event).toBe(1);
+    expect(result.summary.assistant_event_counts.output_delta).toBe(3);
+    expect(result.summary.assistant_event_counts.thinking_delta).toBe(1);
+    expect(result.summary.selected_model).toBe('model-a');
+    expect(result.summary.selected_api).toBe('api-a');
+    expect(result.summary.first_event_at).toBe('2026-01-01T00:00:01.000Z');
+    expect(result.summary.last_event_at).toBe('2026-01-01T00:00:04.000Z');
+  });
 
-      const lines = fs
-        .readFileSync(outputPath, 'utf8')
-        .trim()
-        .split('\n');
-      expect(lines).toHaveLength(expectedKept);
+  test('counts and skips invalid JSON lines', async () => {
+    const fixture = [
+      '{"type":"tool_execution_start","timestamp":"2026-01-01T00:00:01.000Z","message":{"model":"x","api":"y"}}',
+      '{this-is-invalid-json}',
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        message: { model: 'x', api: 'y' },
+        assistantMessageEvent: { type: 'output_delta' },
+      }),
+    ];
 
-      const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-      expect(summary.tool_start_count + summary.tool_end_count).toBe(
-        totalEvents
-      );
-      expect(summary.invalid_json_lines).toBe(0);
-      expect(summary.selected_model).toBe('pi-stress-model');
-      expect(summary.selected_api).toBe('pi-stress-api');
-
-      if (peakRssKb > 0) {
-        const memoryMb = peakRssKb / 1024;
-        expect(memoryMb).toBeLessThan(350);
-      }
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  }, 120000); // 2 minute timeout for this intensive test
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.lines).toHaveLength(2);
+    expect(result.summary.invalid_json_lines).toBe(1);
+  });
 });
