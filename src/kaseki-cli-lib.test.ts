@@ -157,7 +157,6 @@ tests/parser.test.ts
     return { instanceDir: path.join(MOCK_RESULTS_DIR, name), name };
   }
 
-
   test('listInstances should find and sort instances', () => {
     createMockInstance('kaseki-1', {
       metadata: { current_stage: 'validation' },
