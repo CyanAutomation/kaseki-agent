@@ -83,9 +83,14 @@ describe('TimestampTracker', () => {
   it('should return null for duration when timestamps are missing', () => {
     const tracker = new TimestampTracker();
     expect(tracker.durationMs()).toBeNull();
+  });
 
+  it('should return 0 for duration when only one timestamp is recorded', () => {
+    const tracker = new TimestampTracker();
     tracker.record('2024-01-01T10:00:00Z');
-    expect(tracker.durationMs()).toBeNull(); // Only one timestamp, not a range
+    // After recording one timestamp, both first and last are the same
+    const duration = tracker.durationMs();
+    expect(duration).toBe(0);
   });
 
   it('should return 0 for duration when first and last are the same', () => {

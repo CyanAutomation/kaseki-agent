@@ -146,9 +146,9 @@ describe('instance-metadata-reader', () => {
     fs.writeFileSync(metadataPath, '{}');
     
     // Override readFileSync to throw ENOENT
-    const originalReadFileSync = fs.readFileSync;
+    const originalReadFileSync = fs.readFileSync as any;
     let readCallCount = 0;
-    fs.readFileSync = jest.fn((filePath: any, ...args: any[]) => {
+    (fs.readFileSync as any) = jest.fn((filePath: any, ...args: any[]) => {
       readCallCount++;
       if (readCallCount === 1 && filePath === metadataPath) {
         const error = new Error('File not found') as any;
@@ -161,7 +161,7 @@ describe('instance-metadata-reader', () => {
     try {
       expect(() => readInstanceMetadata(tempDir)).toThrow();
     } finally {
-      fs.readFileSync = originalReadFileSync;
+      (fs.readFileSync as any) = originalReadFileSync;
     }
   });
 
@@ -169,9 +169,9 @@ describe('instance-metadata-reader', () => {
     const hostStartPath = path.join(tempDir, 'host-start.json');
     fs.writeFileSync(hostStartPath, '{}');
 
-    const originalReadFileSync = fs.readFileSync;
+    const originalReadFileSync = fs.readFileSync as any;
     let readCallCount = 0;
-    fs.readFileSync = jest.fn((filePath: any, ...args: any[]) => {
+    (fs.readFileSync as any) = jest.fn((filePath: any, ...args: any[]) => {
       readCallCount++;
       if (readCallCount === 1 && filePath === hostStartPath) {
         const error = new Error('Stale NFS file handle') as any;
@@ -184,7 +184,7 @@ describe('instance-metadata-reader', () => {
     try {
       expect(() => readInstanceMetadata(tempDir)).toThrow();
     } finally {
-      fs.readFileSync = originalReadFileSync;
+      (fs.readFileSync as any) = originalReadFileSync;
     }
   });
 });
