@@ -39,18 +39,28 @@ describe('ResultCache', () => {
     expect(content).toBe('test content');
   });
 
-  test('expires cached entries after TTL', (done) => {
+  test('expires cached entries after TTL using deterministic time control', () => {
+    jest.useFakeTimers();
+    const baseTime = new Date('2026-01-01T00:00:00.000Z');
+    jest.setSystemTime(baseTime);
+
     cache.getOrLoad(testFile);
 
-    // Wait for TTL to expire
-    setTimeout(() => {
-      fs.writeFileSync(testFile, 'modified content');
+    // Change file on disk while cache is still valid.
+    fs.writeFileSync(testFile, 'modified content');
 
-      // Cache should have expired and reloaded
-      const content = cache.getOrLoad(testFile);
-      expect(content).toBe('modified content');
-      done();
-    }, 1100); // Wait longer than TTL
+    // Before TTL boundary, cached content should still be served.
+    // Before TTL boundary, cached content should still be served.
+    jest.setSystemTime(new Date(baseTime.getTime() + 999));
+    const cachedContent = cache.getOrLoad(testFile);
+    expect(cachedContent).toBe('test content');
+
+    // Move past TTL boundary and verify cache miss/reload behavior.
+    jest.setSystemTime(new Date(baseTime.getTime() + 1001));
+    const reloadedContent = cache.getOrLoad(testFile);
+    expect(reloadedContent).toBe('modified content');
+
+    jest.useRealTimers();
   });
 
   test('evicts oldest entry when cache is full', () => {
