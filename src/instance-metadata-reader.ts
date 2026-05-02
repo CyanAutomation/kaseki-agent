@@ -59,9 +59,9 @@ function readElapsedSeconds(resultDir: string, metadata: Metadata): number | nul
 
   try {
     const content = fs.readFileSync(resourceTimePath, 'utf8');
-    const match = content.match(/elapsed_seconds=(\d+)/);
+    const match = content.match(/elapsed_seconds=([0-9]+(?:\.[0-9]+)?)/);
     if (match) {
-      return parseInt(match[1], 10);
+      return parseFloat(match[1]);
     }
   } catch {
     // File may be unreadable; return null
