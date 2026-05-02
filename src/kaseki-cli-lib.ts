@@ -61,7 +61,7 @@ interface HostStart {
 
 interface InstanceStatus {
   instance?: string;
-  error?: string;
+  error?: { kind: string; message: string };
   status?: 'running' | 'completed' | 'failed' | 'pending';
   running?: boolean;
   stage?: string;
@@ -96,7 +96,7 @@ interface DetectedError {
 
 interface AnalysisResult {
   instance?: string;
-  error?: string;
+  error?: { kind: string; message: string };
   status?: string;
   exit_code?: number | string;
   failure_class?: string;
@@ -502,7 +502,15 @@ function calculateTimeoutRiskPercent(
 function getInstanceStatus(instance: string): InstanceStatus {
   const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
   if (!fs.existsSync(resultDir)) {
-    return { error: `Instance ${instance} not found` };
+    return {
+      instance,
+      status: 'pending',
+      running: false,
+      error: {
+        kind: 'missing-instance',
+        message: `Instance ${instance} not found`,
+      },
+    };
   }
 
   const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
@@ -693,7 +701,14 @@ function detectErrors(instance: string): DetectedError[] {
 function getAnalysis(instance: string): AnalysisResult {
   const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
   if (!fs.existsSync(resultDir)) {
-    return { error: `Instance ${instance} not found` };
+    return {
+      instance,
+      status: 'failed',
+      error: {
+        kind: 'missing-instance',
+        message: `Instance ${instance} not found`,
+      },
+    };
   }
 
   const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
