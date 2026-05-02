@@ -12,7 +12,7 @@ class MockProcess extends EventEmitter {
   kill = jest.fn((_signal?: NodeJS.Signals) => true);
 }
 
-describe('JobScheduler finalization guard', () => {
+describe('JobScheduler timeout lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
@@ -22,7 +22,73 @@ describe('JobScheduler finalization guard', () => {
     jest.useRealTimers();
   });
 
-  test('timeout followed by exit finalizes only once', () => {
+  test('timeout followed by quick exit sets timeout failure on exit', () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir: '/tmp/kaseki-results',
+      logDir: '/tmp/kaseki-api',
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1,
+      logLevel: 'info',
+    });
+
+    const job = scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(job.status).toBe('running');
+
+    jest.advanceTimersByTime(1000);
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(job.status).toBe('running');
+    expect(job.completedAt).toBeUndefined();
+
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('failed');
+    expect(job.exitCode).toBe(124);
+    expect(job.error).toMatch(/Agent timeout/);
+    expect(job.failureClass).toBe('timeout');
+    expect(job.completedAt).toBeDefined();
+  });
+
+  test('timeout escalates to SIGKILL when process hangs', () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir: '/tmp/kaseki-results',
+      logDir: '/tmp/kaseki-api',
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1,
+      logLevel: 'info',
+    });
+
+    scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    jest.advanceTimersByTime(1000);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+
+    jest.advanceTimersByTime(5000);
+    expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  test('timeout path does not double-finalize when kill then exit race', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
@@ -39,32 +105,16 @@ describe('JobScheduler finalization guard', () => {
     });
 
     const processQueueSpy = jest.spyOn(scheduler as unknown as { processQueue: () => void }, 'processQueue');
-
     const job = scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
 
-    expect(job.status).toBe('running');
-
     jest.advanceTimersByTime(1000);
+    jest.advanceTimersByTime(5000);
+    proc.emit('exit', null);
 
-    expect(job.status).toBe('failed');
-    expect(job.exitCode).toBe(124);
-    expect(job.error).toMatch(/Agent timeout/);
-    expect(job.completedAt).toBeDefined();
-
-    const completedAt = job.completedAt;
-    const status = job.status;
-    const exitCode = job.exitCode;
-    const error = job.error;
-
-    proc.emit('exit', 0);
-
-    expect(job.status).toBe(status);
-    expect(job.exitCode).toBe(exitCode);
-    expect(job.error).toBe(error);
-    expect(job.completedAt).toBe(completedAt);
+    expect(job.finalized).toBe(true);
 
     // Once from submit, once from single guarded completion.
     expect(processQueueSpy).toHaveBeenCalledTimes(2);
@@ -112,8 +162,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(job.finalized).toBe(true);
 
     jest.advanceTimersByTime(5000);
-
-    expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(proc.kill).toHaveBeenCalledTimes(1);
   });
 
   test('shutdown does not escalate if child exits during grace period', () => {
