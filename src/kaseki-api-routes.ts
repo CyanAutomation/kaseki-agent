@@ -329,7 +329,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
 
       // Read from disk for non-terminal jobs; cache only terminal artifacts.
       const content = readArtifactContent(filePath, job.status, cache);
-      if (!content) {
+      if (content === null) {
         return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
       }
 
