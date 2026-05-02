@@ -312,6 +312,21 @@ export class JobScheduler {
         this.completeJob(j);
       }
     }
+
+    const now = new Date();
+    for (const queuedJob of this.queue) {
+      if (queuedJob.finalized) {
+        continue;
+      }
+      queuedJob.status = 'failed';
+      queuedJob.failureClass = 'shutdown_aborted';
+      queuedJob.error = 'Job dropped during scheduler shutdown before execution';
+      queuedJob.exitCode = 143;
+      queuedJob.completedAt = now;
+      queuedJob.finalized = true;
+      this.jobs.set(queuedJob.id, queuedJob);
+    }
+
     this.queue = [];
   }
 }
