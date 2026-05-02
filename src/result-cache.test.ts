@@ -21,10 +21,12 @@ describe('ResultCache', () => {
   test('API contract: cache miss returns null, does not affect stats, and does not crash', () => {
     const statsBefore = cache.getStats();
 
+    let content: string | null;
     expect(() => {
-      const content = cache.getOrLoad('/non/existent/file');
-      expect(content).toBeNull();
+      content = cache.getOrLoad('/non/existent/file');
     }).not.toThrow();
+
+    expect(content).toBeNull();
 
     const statsAfter = cache.getStats();
     expect(statsAfter.entries).toBe(statsBefore.entries);
