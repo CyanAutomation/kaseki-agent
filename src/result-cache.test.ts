@@ -18,9 +18,19 @@ describe('ResultCache', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('returns null for non-existent file', () => {
-    const content = cache.getOrLoad('/non/existent/file');
+  test('API contract: cache miss returns null, does not affect stats, and does not crash', () => {
+    const statsBefore = cache.getStats();
+
+    let content: string | null;
+    expect(() => {
+      content = cache.getOrLoad('/non/existent/file');
+    }).not.toThrow();
+
     expect(content).toBeNull();
+
+    const statsAfter = cache.getStats();
+    expect(statsAfter.entries).toBe(statsBefore.entries);
+    expect(statsAfter.bytes).toBe(statsBefore.bytes);
   });
 
   test('returns cached content on subsequent accesses', () => {
