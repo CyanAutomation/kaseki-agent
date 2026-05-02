@@ -13,14 +13,16 @@ This document describes the Docker image build architecture for `kaseki-agent`, 
 The Dockerfile uses a **two-stage build** pattern to optimize image size and build caching:
 
 ### Stage 1: `deps` (Dependencies)
+
 - **Base**: `node:24-bookworm-slim`
 - **Purpose**: Build Pi CLI agent and prepare workspace cache seed
-- **Artifacts**: 
+- **Artifacts**:
   - Global Pi CLI installation (`@mariozechner/pi-coding-agent@0.70.2`)
   - Pre-built Node modules cache seed
 - **Why separate**: Enables aggressive caching; these dependencies rarely change
 
 ### Stage 2: `runtime` (Application)
+
 - **Base**: `node:24-bookworm-slim` (fresh base)
 - **Purpose**: Build and package kaseki-agent application
 - **Artifacts**:
@@ -32,6 +34,7 @@ The Dockerfile uses a **two-stage build** pattern to optimize image size and bui
 ### Layer Consolidation
 
 **Multiple RUN statements consolidated into fewer layers**:
+
 - Deps setup: 5 RUN → 2 RUN (apt install + user setup in one layer)
 - Runtime setup: 4 RUN → 1 RUN (all binary installation/chmod in single layer)
 - **Benefit**: Reduces Docker layer count from 25+ to 19; faster build times and smaller final image
@@ -43,6 +46,7 @@ The Dockerfile uses a **two-stage build** pattern to optimize image size and bui
 ### GitHub Actions Cache
 
 **Current Configuration**:
+
 ```yaml
 cache-from: type=gha,scope=${{ github.ref_name }}
 cache-to: type=gha,scope=${{ github.ref_name }},mode=max
@@ -51,6 +55,7 @@ sbom: true
 ```
 
 **How it works**:
+
 1. Each branch maintains its own cache scope (e.g., `main`, `feature/branch`)
 2. Buildx stores layer cache in GitHub Actions cache storage (~10GB per repo)
 3. Subsequent builds on the same branch reuse layers (80-90% cache hit expected)
@@ -68,6 +73,7 @@ sbom: true
 ### Cache Invalidation Triggers
 
 Cache is automatically invalidated when:
+
 1. **Node base image changes** (monthly security updates planned)
 2. **package-lock.json changes** (npm install layer)
 3. **src/** changes (TypeScript compilation layer)
@@ -76,6 +82,7 @@ Cache is automatically invalidated when:
 ### Cache Performance Baseline (May 2026)
 
 From local testing with docker build:
+
 - **Cold build** (no cache): ~30-35 seconds
   - Base image pull + layer extraction: ~5-10s
   - npm ci + npm run build: ~12-15s
@@ -91,34 +98,42 @@ From local testing with docker build:
 ### Container Runtime Security
 
 **Read-only filesystem**:
+
 ```bash
 docker run --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m ...
 ```
+
 - Application cannot modify container filesystem
 - Only /tmp is writable (limited to 256MB, with security restrictions)
 
 **Capability dropping**:
+
 ```bash
 --cap-drop ALL
 ```
+
 - Removes all Linux capabilities (no network, process, filesystem privileges)
 - Kaseki agent runs with minimal privilege surface
 
 **Non-root user**:
+
 ```dockerfile
 USER kaseki  # UID 10001
 ```
+
 - Application runs as unprivileged user (not root)
 - Prevents privilege escalation if exploit occurs
 
 ### Base Image Security
 
 **Node.js base image** (`node:24-bookworm-slim`):
+
 - Regular security updates (monthly planned)
 - Debian bookworm-slim: minimal base (excludes build tools, docs)
 - See [SECURITY.md](../SECURITY.md) for vulnerability response procedures
 
 **Pi CLI Agent Security**:
+
 - Pinned to specific version (0.70.2) to ensure reproducible builds
 - Pre-installed globally in deps stage (immutable in runtime stage)
 - Telemetry disabled (`PI_TELEMETRY=0`)
@@ -137,6 +152,7 @@ USER kaseki  # UID 10001
 ### Workspace Dependency Cache
 
 A separate cache seeding mechanism (`docker/workspace-cache/`) pre-builds node_modules for fast runtime:
+
 - Kaski container instances use cached dependencies to avoid repeated npm install
 - See [DEVELOPMENT.md](DEVELOPMENT.md) for kaseki-agent.sh dependency caching strategy
 - Expected time savings: 20-30 seconds per kaseki run when cache is warm
@@ -144,6 +160,7 @@ A separate cache seeding mechanism (`docker/workspace-cache/`) pre-builds node_m
 ### CI/CD Pipeline Optimization (May 2026)
 
 **Job Parallelization**:
+
 ```
 type_check_changed (blocking)
     ↓
@@ -155,6 +172,7 @@ build (multi-arch amd64 + arm64)
 ```
 
 **Expected workflow duration**:
+
 - Before optimization: ~18-22 minutes
 - After optimization: ~15-18 minutes (2-4 min savings)
 - Cache hit reduces build time: -8-10 seconds per amd64 build
@@ -166,21 +184,24 @@ build (multi-arch amd64 + arm64)
 ### Node v24 Decision
 
 **When updated**: May 2026
-**Why Node v24**: 
+**Why Node v24**:
+
 - Stable LTS release with long support window
 - Performance improvements over Node 22
 - Full npm v10+ compatibility
 
 ### Monthly Security Review Process
 
-1. **Check Node.js security advisories** (https://nodejs.org/en/security)
+1. **Check Node.js security advisories** (<https://nodejs.org/en/security>)
 2. **Review base image CVEs** (bookworm-slim, Debian security)
 3. **Test locally**:
+
    ```bash
    docker build -t kaseki-agent:test .
    docker run --rm kaseki-agent:test node --version
    docker run --rm kaseki-agent:test pi --version
    ```
+
 4. **Update Dockerfile** with new pinned base image (if security patches available)
 5. **Trigger full CI pipeline** (workflow_dispatch)
 6. **Document in CLAUDE.md** and git commit message
@@ -204,10 +225,12 @@ For future Node version upgrades:
 **Symptom**: Build takes much longer than expected (~30s instead of ~10s)
 
 **Diagnosis**:
+
 1. Check GitHub Actions cache: Settings → Actions → Caches
 2. Look for scope matching `${{ github.ref_name }}` (e.g., `main`, `feature/xyz`)
 
 **Solutions**:
+
 - New branch: First build always cold; subsequent builds use cache
 - CI cache eviction: GitHub removes cache after 7 days of no access
 - Large PR: Different base can cause cache misses; merge main first
@@ -217,11 +240,13 @@ For future Node version upgrades:
 **Symptom**: Docker build fails on package installation or system dependency
 
 **Diagnosis**:
+
 ```bash
 docker build -t kaseki-agent:test . 2>&1 | grep -A5 "E:"
 ```
 
 **Solutions**:
+
 - Check Dockerfile apt-get line for typos
 - Test locally with new base image before committing
 - Verify bookworm-slim package availability (use `apt-cache search`)
@@ -231,10 +256,12 @@ docker build -t kaseki-agent:test . 2>&1 | grep -A5 "E:"
 **Symptom**: amd64 builds succeed, but arm64 fails with QEMU error
 
 **Diagnosis**:
+
 - QEMU emulation issues (rare on GitHub runners)
 - Incompatible binary or architecture-specific code
 
 **Solutions**:
+
 - Retry workflow (transient QEMU issue)
 - Use `docker run --platform linux/arm64 --rm <image>` to test locally (slow)
 - Fallback to amd64-only builds temporarily
@@ -267,6 +294,7 @@ docker build -t kaseki-agent:test . 2>&1 | grep -A5 "E:"
 Check GitHub → Settings → Code security → Dependabot alerts for any discovered CVEs.
 
 **Typical sources** (transitive dependencies):
+
 - Pi CLI dependencies (usually addressed via version updates)
 - Node.js base image vulnerabilities (patched monthly)
 
@@ -279,6 +307,7 @@ Check GitHub → Settings → Code security → Dependabot alerts for any discov
 ### What's Inside the Image
 
 **Binaries** (in `/usr/local/bin`):
+
 - `kaseki-agent` — Main entry point
 - `pi` — Pi CLI coding agent
 - `kaseki-report` — Result analysis tool
@@ -287,10 +316,12 @@ Check GitHub → Settings → Code security → Dependabot alerts for any discov
 - `github-app-token` — Token generation utility
 
 **Libraries** (in `/app/lib`):
+
 - Compiled TypeScript modules from `src/`
 - Pi CLI node_modules (from deps stage)
 
 **Working directories**:
+
 - `/workspace` — Where kaseki-agent clones target repo
 - `/results` — Where kaseki-agent writes artifacts (mounted at runtime)
 - `/tmp/kaseki-home` — kaseki user home (transient)
@@ -299,6 +330,7 @@ Check GitHub → Settings → Code security → Dependabot alerts for any discov
 ### Build Outputs
 
 **GitHub Container Registry** (GHCR):
+
 ```
 ghcr.io/cyanautomation/kaseki-agent:latest
 ghcr.io/cyanautomation/kaseki-agent:latest-arm64
@@ -306,6 +338,7 @@ ghcr.io/cyanautomation/kaseki-agent:v0.1.0
 ```
 
 **Docker Hub**:
+
 ```
 cyanautomation/kaseki-agent:latest
 cyanautomation/kaseki-agent:latest-arm64
