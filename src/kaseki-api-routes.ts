@@ -28,30 +28,29 @@ function utf8SequenceLength(leadingByte: number): number {
 }
 
 export function decodeUtf8TailSafely(buffer: Buffer): string {
-  let start = 0;
-  while (start < buffer.length && isUtf8ContinuationByte(buffer[start])) {
-    start++;
-  }
-
   let end = buffer.length;
-  if (end > start) {
-    let leadIndex = end - 1;
-    while (leadIndex > start && isUtf8ContinuationByte(buffer[leadIndex])) {
-      leadIndex--;
+  if (end > 0) {
+    let continuationCount = 0;
+    let candidateLead = end - 1;
+
+    while (candidateLead >= 0 && isUtf8ContinuationByte(buffer[candidateLead])) {
+      continuationCount++;
+      candidateLead--;
     }
 
-    if (isUtf8ContinuationByte(buffer[leadIndex])) {
-      end = leadIndex;
+    if (candidateLead < 0) {
+      end = 0;
     } else {
-      const seqLen = utf8SequenceLength(buffer[leadIndex]);
-      const availableBytes = end - leadIndex;
-      if (availableBytes < seqLen) {
-        end = leadIndex;
+      const sequenceLength = utf8SequenceLength(buffer[candidateLead]);
+      const expectedContinuationCount = sequenceLength - 1;
+
+      if (sequenceLength > 1 && continuationCount < expectedContinuationCount) {
+        end = candidateLead;
       }
     }
   }
 
-  return buffer.subarray(start, end).toString('utf-8');
+  return buffer.subarray(0, end).toString('utf-8');
 }
 
 export function tailLogByLines(content: string, maxLines: number): string {
