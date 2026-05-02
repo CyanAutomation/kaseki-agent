@@ -1,13 +1,6 @@
 name: Build Docker Image
 
 on:
-  pull_request:
-  workflow_dispatch:
-    inputs:
-      tags:
-        description: 'Docker image tags (comma-separated, e.g., latest,0.2.0)'
-        required: false
-        default: 'latest'
   schedule:
     # Weekly build every Sunday at 00:00 UTC, publishes 'latest' tag to both registries
     - cron: '0 0 * * 0'
