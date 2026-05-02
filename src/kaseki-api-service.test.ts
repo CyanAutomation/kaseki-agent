@@ -123,7 +123,7 @@ describe('Job Scheduler', () => {
 
     const job = scheduler.submitJob(request);
     expect(job.status).toBe('queued');
-    expect(job.id).toMatch(/^kaseki-\d+$/);
+    expect(job.id).toMatch(/^kaseki-[0-9a-f-]{36}$/);
     expect(job.request).toEqual(request);
   });
 
