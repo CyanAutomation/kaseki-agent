@@ -62,6 +62,21 @@ npm run type-check:changed     # Changed-file gate used for PR blocking
 4. Run `npm run build` to compile (or let `npm test` do it as part of the pre-test check)
 5. Test your changes with `npm test` (includes Jest tests + bash integration tests)
 
+### Running a single test file
+
+When you only need to run one unit test file, prefer the unit-test script (or direct Jest invocation) instead of `npm test`.
+
+```bash
+npm run test:unit -- src/result-cache.test.ts
+npx jest src/result-cache.test.ts
+```
+
+Use `npm test` when you want the full validation pipeline (build + type-check + jest + integration scripts).
+
+```bash
+npm test
+```
+
 ### Type Safety Standards
 
 - **Strict mode enabled** — All files compile with `"strict": true`
