@@ -56,6 +56,29 @@ const MAX_DISTINCT_SUMMARY_KEYS = 1000;
 const OTHER_BUCKET_KEY = '__other__';
 
 const eventCounts: EventCountMap = {};
+let rssSampler: NodeJS.Timeout | null = null;
+let maxRssBytes = 0;
+
+function startRssSampler(): void {
+  if (process.env.PI_EVENT_FILTER_TRACK_RSS !== '1') return;
+  maxRssBytes = process.memoryUsage().rss;
+  rssSampler = setInterval(() => {
+    maxRssBytes = Math.max(maxRssBytes, process.memoryUsage().rss);
+  }, 25);
+  rssSampler.unref();
+}
+
+function stopRssSampler(): void {
+  if (process.env.PI_EVENT_FILTER_TRACK_RSS !== '1') return;
+  if (rssSampler) {
+    clearInterval(rssSampler);
+    rssSampler = null;
+  }
+  maxRssBytes = Math.max(maxRssBytes, process.memoryUsage().rss);
+  process.stderr.write(`MAX_RSS_BYTES=${maxRssBytes}
+`);
+}
+
 const assistantEventCounts: EventCountMap = {};
 const models: EventCountMap = {};
 const apis: EventCountMap = {};
@@ -140,6 +163,7 @@ function sanitize(event: PiEvent): PiEvent {
 }
 
 async function main(): Promise<void> {
+  startRssSampler();
   const input = fs.createReadStream(inputPath, { encoding: 'utf8' });
   const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
@@ -212,9 +236,11 @@ async function main(): Promise<void> {
   };
 
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+  stopRssSampler();
 }
 
 main().catch((error: Error) => {
+  stopRssSampler();
   console.error(error);
   process.exit(1);
 });
