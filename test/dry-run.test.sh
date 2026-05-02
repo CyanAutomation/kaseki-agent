@@ -59,7 +59,9 @@ run_once() {
 echo "=== Testing --dry-run runtime behavior ==="
 
 tmp_root="$(mktemp -d)"
-trap 'rm -rf "$tmp_root" /tmp/kaseki-validation-first /tmp/kaseki-validation-second' EXIT
+validation_marker_first="/tmp/kaseki-validation-$$-first"
+validation_marker_second="/tmp/kaseki-validation-$$-second"
+trap 'rm -rf "$tmp_root" "$validation_marker_first" "$validation_marker_second"' EXIT
 
 run_once "$tmp_root" first
 run1_exit="$(cat "$tmp_root/exit-first.txt")"
