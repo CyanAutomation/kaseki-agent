@@ -32,16 +32,82 @@ describe('Kaseki API Configuration', () => {
     expect(() => loadConfig()).toThrow(/port number/i);
   });
 
-  test('loadConfig with valid environment', () => {
-    process.env.KASEKI_API_KEYS = 'key1,key2';
-    process.env.KASEKI_API_PORT = '8080';
-    process.env.KASEKI_MAX_CONCURRENT_RUNS = '3';
+  describe.each([
+    {
+      name: 'parses numeric strings and trims comma-delimited API keys',
+      env: {
+        KASEKI_API_KEYS: ' key1 , key2 , key3 ',
+        KASEKI_API_PORT: '3001',
+        KASEKI_API_MAX_CONCURRENT_RUNS: '7',
+      },
+      expectedConfig: {
+        port: 3001,
+        apiKeys: ['key1', 'key2', 'key3'],
+        maxConcurrentRuns: 7,
+      },
+    },
+    {
+      name: 'accepts boundary max port and keeps defaults for omitted values',
+      env: {
+        KASEKI_API_KEYS: 'solo-key',
+        KASEKI_API_PORT: '65535',
+      },
+      expectedConfig: {
+        port: 65535,
+        apiKeys: ['solo-key'],
+        maxConcurrentRuns: 3,
+      },
+    },
+    {
+      name: 'uses default port when unset and normalizes sparse key list',
+      env: {
+        KASEKI_API_KEYS: 'alpha,, beta,   ,gamma ',
+      },
+      expectedConfig: {
+        port: 8080,
+        apiKeys: ['alpha', 'beta', 'gamma'],
+        maxConcurrentRuns: 3,
+      },
+    },
+  ])('loadConfig normalization: $name', ({ env, expectedConfig }) => {
+    delete process.env.KASEKI_API_PORT;
+    delete process.env.KASEKI_API_MAX_CONCURRENT_RUNS;
     process.env.KASEKI_RESULTS_DIR = '/tmp';
+    Object.assign(process.env, env);
 
     const config = loadConfig();
-    expect(config.port).toBe(8080);
-    expect(config.apiKeys).toEqual(['key1', 'key2']);
-    expect(config.maxConcurrentRuns).toBe(3);
+
+    expect({
+      port: config.port,
+      apiKeys: config.apiKeys,
+      maxConcurrentRuns: config.maxConcurrentRuns,
+    }).toEqual(expectedConfig);
+  });
+
+  test.each([
+    {
+      name: 'rejects out-of-range port below minimum',
+      env: {
+        KASEKI_API_KEYS: 'test-key',
+        KASEKI_API_PORT: '0',
+      },
+      errorPattern: /port number/i,
+    },
+    {
+      name: 'rejects out-of-range port above maximum',
+      env: {
+        KASEKI_API_KEYS: 'test-key',
+        KASEKI_API_PORT: '65536',
+      },
+      errorPattern: /port number/i,
+    },
+  ])('loadConfig invalid ranges: $name', ({ env, errorPattern }) => {
+    delete process.env.KASEKI_API_PORT;
+    delete process.env.KASEKI_API_MAX_CONCURRENT_RUNS;
+    process.env.KASEKI_RESULTS_DIR = '/tmp';
+    Object.assign(process.env, env);
+
+    expect(() => loadConfig()).toThrow(errorPattern);
   });
 
   test('loadConfig parses API keys from file', () => {
