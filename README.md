@@ -468,6 +468,76 @@ When GitHub App is enabled:
 
 Additional exit codes for GitHub operations:
 
+## Kaseki API Service (REST HTTP)
+
+Kaseki includes a built-in REST API service that allows remote control and monitoring of kaseki-agent runs without requiring SSH/sshpass. The API is ideal for integration with external orchestration tools like OpenClaw.
+
+### Quick Start
+
+```bash
+# Start the API service
+KASEKI_API_KEYS=sk-your-api-key npm run kaseki-api
+
+# In another terminal, trigger a run
+curl -X POST http://localhost:8080/api/runs \
+  -H "Authorization: Bearer sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/org/repo",
+    "taskPrompt": "Fix the bug"
+  }'
+
+# Response: {"id":"kaseki-1","status":"queued",...}
+```
+
+### Key Features
+
+- **Async execution** — Submit tasks, poll for status via HTTP
+- **Job queue** — Multiple concurrent runs with concurrency limits
+- **Bearer token auth** — Simple API key authentication
+- **Result artifacts** — Download diffs, logs, metadata via HTTP
+- **Real-time progress** — Monitor queue status and timeout risk
+
+### Main Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/runs` | Submit a new task (202 Accepted) |
+| `GET` | `/api/runs/:id/status` | Poll run status and progress |
+| `GET` | `/api/runs/:id/analysis` | Get comprehensive summary |
+| `GET` | `/api/results/:id/:file` | Download artifacts (diff, metadata) |
+| `GET` | `/api/health` | Health check (no auth required) |
+
+### Documentation
+
+For complete API reference, deployment options, and integration examples:
+
+- [API Reference](docs/API.md) — OpenAPI-style endpoint specifications
+- [Deployment Guide](docs/DEPLOYMENT.md) — systemd, Docker, docker-compose options
+- [Integration Example](docs/INTEGRATION_EXAMPLE.md) — Real-world usage with TypeScript client
+
+### TypeScript Client
+
+For Node.js applications (including OpenClaw):
+
+```typescript
+import { KasekiApiClient } from 'kaseki-agent/src/kaseki-api-client';
+
+const client = new KasekiApiClient('http://localhost:8080', 'sk-api-key');
+
+const run = await client.submit({
+  repoUrl: 'https://github.com/org/repo',
+  taskPrompt: 'Fix bug'
+});
+
+const final = await client.waitForCompletion(run.id);
+console.log(`Result: ${final.status}`);
+```
+
+### Exit Codes
+
+Additional exit codes for GitHub operations:
+
 - `7`: GitHub push/PR setup failed (missing credentials, invalid key, etc.)
 - `8`: Failed to push branch to GitHub
 - `9`: Push succeeded but PR creation failed (non-blocking; push result is retained)
