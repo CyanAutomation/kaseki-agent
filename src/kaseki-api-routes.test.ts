@@ -29,9 +29,39 @@ describe('kaseki-api-routes log truncation helpers', () => {
     expect(decodeUtf8TailSafely(input)).toBe('line1\nline2\nASCII tail');
   });
 
-  test('tailLogByLines keeps trailing lines for readability', () => {
-    const content = 'a\nb\nc\nd\n最后😀';
-    expect(tailLogByLines(content, 2)).toBe('d\n最后😀');
+  test.each([
+    {
+      name: 'empty content',
+      content: '',
+      lineCount: 3,
+      expected: '',
+    },
+    {
+      name: 'exact boundary',
+      content: 'a\nb\nc',
+      lineCount: 3,
+      expected: 'a\nb\nc',
+    },
+    {
+      name: 'over-requested lines',
+      content: 'a\nb\nc',
+      lineCount: 10,
+      expected: 'a\nb\nc',
+    },
+    {
+      name: 'CRLF input',
+      content: 'a\r\nb\r\nc\r\nd',
+      lineCount: 2,
+      expected: 'c\nd',
+    },
+    {
+      name: 'trailing newline handling',
+      content: 'a\nb\nc\n',
+      lineCount: 2,
+      expected: 'c\n',
+    },
+  ])('tailLogByLines handles $name', ({ content, lineCount, expected }) => {
+    expect(tailLogByLines(content, lineCount)).toBe(expected);
   });
 });
 
