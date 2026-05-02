@@ -53,10 +53,10 @@ export class KasekiApiClient {
       if (!Array.isArray(value.errors) || !value.errors.every((item) => typeof item === 'string')) {
         throw new Error('Invalid health response errors payload');
       }
-      return { status: value.status, errors: value.errors };
+      return { status: value.status as string, errors: value.errors as string[] };
     }
 
-    return { status: value.status };
+    return { status: value.status as string };
   }
 
   /**
