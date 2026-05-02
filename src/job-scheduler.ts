@@ -227,7 +227,7 @@ export class JobScheduler {
     this.processes.delete(job.id);
     const processExited = this.processExited.get(job.id);
     const shutdownKillTimer = this.shutdownKillTimers.get(job.id);
-    if (shutdownKillTimer && processExited) {
+    if (shutdownKillTimer) {
       clearTimeout(shutdownKillTimer);
       this.shutdownKillTimers.delete(job.id);
     }
