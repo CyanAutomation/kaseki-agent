@@ -83,7 +83,7 @@ export class ResultCache {
    * Clear cache for a job (e.g., when cleaning up after completion).
    */
   clearForJob(jobId: string): void {
-    const normalizedJobId = path.normalize(jobId);
+    const normalizedJobId = path.basename(path.normalize(jobId));
 
     for (const key of this.cache.keys()) {
       const normalizedKey = path.normalize(key);
