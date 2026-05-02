@@ -60,7 +60,8 @@ npm run type-check:changed     # Changed-file gate used for PR blocking
 2. Run `npm run type-check:changed` to verify changed-file type safety (PR gate)
 3. Optionally run `npm run type-check` (or `npm run type-check:full`) to view full-project debt status
 4. Run `npm run build` to compile (or let `npm test` do it as part of the pre-test check)
-5. Test your changes with `npm test` (includes Jest tests + bash integration tests)
+5. Run focused unit tests while iterating (for example `npm run test:unit -- src/result-cache.test.ts` or `npm run test:unit -- -t "cache"`)
+6. Run `npm run test:ci` before submitting to execute full CI-style validation (build + type-check + Jest + bash integration tests)
 
 ### Type Safety Standards
 
