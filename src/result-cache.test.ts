@@ -128,10 +128,18 @@ describe('ResultCache', () => {
   });
 
   test('clears all cache', () => {
-    cache.getOrLoad(testFile);
+    const initialContent = cache.getOrLoad(testFile);
+    expect(initialContent).toBe('test content');
 
     cache.clearAll();
+
     const stats = cache.getStats();
     expect(stats.entries).toBe(0);
+    expect(stats.bytes).toBe(0);
+
+    // Mutate file after clearAll to prove subsequent load comes from disk, not stale cache.
+    fs.writeFileSync(testFile, 'content after clear');
+    const reloadedContent = cache.getOrLoad(testFile);
+    expect(reloadedContent).toBe('content after clear');
   });
 });
