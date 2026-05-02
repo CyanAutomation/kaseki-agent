@@ -87,8 +87,13 @@ export class KasekiApiClient {
     });
 
     if (!res.ok) {
-      const errorData: unknown = await res.json();
-      const errorDetail = this.parseErrorDetail(errorData);
+      let errorDetail: string | undefined;
+      try {
+        const errorData: unknown = await res.json();
+        errorDetail = this.parseErrorDetail(errorData);
+      } catch {
+        // Ignore non-JSON error payloads and fall back to statusText.
+      }
       throw new Error(`Failed to submit run: ${errorDetail ?? res.statusText}`);
     }
 
