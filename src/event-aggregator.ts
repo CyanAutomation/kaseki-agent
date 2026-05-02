@@ -24,7 +24,7 @@ export interface AggregatorSummary {
 
 /**
  * EventCounterAggregator manages counter maps for event stream aggregation.
- * 
+ *
  * Responsibilities:
  * - Track event type counts with cardinality cap
  * - Track assistant message type counts

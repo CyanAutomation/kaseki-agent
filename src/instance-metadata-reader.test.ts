@@ -141,10 +141,10 @@ describe('instance-metadata-reader', () => {
 
   it('should propagate ENOENT errors when reading metadata.json', () => {
     const metadataPath = path.join(tempDir, 'metadata.json');
-    
+
     // Create file, then delete it during read simulation
     fs.writeFileSync(metadataPath, '{}');
-    
+
     // Override readFileSync to throw ENOENT
     const originalReadFileSync = fs.readFileSync as any;
     let readCallCount = 0;
