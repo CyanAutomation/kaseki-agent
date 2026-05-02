@@ -21,7 +21,7 @@ describe('ResultCache', () => {
   test('API contract: cache miss returns null, does not affect stats, and does not crash', () => {
     const statsBefore = cache.getStats();
 
-    let content: string | null;
+    let content: string | null = null;
     expect(() => {
       content = cache.getOrLoad('/non/existent/file');
     }).not.toThrow();
