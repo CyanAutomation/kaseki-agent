@@ -87,8 +87,8 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const gracefulShutdown = createGracefulShutdown({ server, scheduler });
 
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
 
   // Catch unhandled errors
   process.on('uncaughtException', (err) => {
