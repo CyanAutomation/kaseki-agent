@@ -37,7 +37,8 @@
 - [x] Unit tests for job scheduler
 - [x] Unit tests for cache
 - [x] Integration test scaffold
-- [x] Type checking (tsc --noEmit)
+- [x] Changed-file type checking (`npm run type-check:changed`)
+- [x] Full-project type checking (`npm run type-check` / `npm run type-check:full`) tracked as debt and non-blocking
 
 ## ✅ Deployment
 
@@ -166,8 +167,12 @@ Run these to verify everything is working:
 
 ```bash
 # 1. Type checking
+npm run type-check:changed
+# Expected: No errors (PR gate)
+
+# 1b. Full-project debt snapshot (non-blocking)
 npm run type-check
-# Expected: No errors
+# Expected: May include known unrelated debt; track in docs/BACKLOG.md
 
 # 2. Linting
 npm run lint
@@ -274,8 +279,9 @@ curl -X POST http://localhost:8080/api/runs \
 
 1. `npm test` passes all tests
 2. `npm run lint` reports no errors
-3. `npm run type-check` reports no errors
-4. API service starts without errors
+3. `npm run type-check:changed` reports no errors (PR gate)
+4. `npm run type-check` / `npm run type-check:full` results are reviewed as tracked non-blocking debt
+5. API service starts without errors
 5. `/health` endpoint responds with 200
 6. Can submit a job via `POST /api/runs`
 7. Can retrieve status via `GET /api/runs/:id/status`

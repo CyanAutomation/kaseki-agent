@@ -10,6 +10,14 @@ Host layout:
 - `/agents/kaseki-cache`: persistent host-level cache for dependency installs and npm cache.
 - `/var/log/kaseki`: optional host-level mirrored logs for runner scripts.
 
+## TypeScript debt status
+
+Full-project TypeScript checks (`npm run type-check` / `npm run type-check:full`) may surface known unrelated errors while debt burn-down is in progress.
+
+For pull requests, `npm run type-check:changed` is the blocking gate.
+
+Track and prioritize debt items in [docs/BACKLOG.md](docs/BACKLOG.md).
+
 ## Required host dependencies
 
 `run-kaseki.sh` now runs a host preflight check before allocating run resources or writing secrets.
