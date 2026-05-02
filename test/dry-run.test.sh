@@ -37,6 +37,8 @@ assert_file_empty() {
 
 run_once() {
   local root="$1" marker="$2"
+  local start end elapsed_ms
+  start="$(date +%s%3N)"
   (
     cd "$REPO_ROOT"
     export KASEKI_ROOT="$root"
@@ -54,6 +56,9 @@ run_once() {
     set -e
     echo "$code" > "$root/exit-${marker}.txt"
   )
+  end="$(date +%s%3N)"
+  elapsed_ms=$((end-start))
+  echo "$elapsed_ms" > "$root/runtime-${marker}.ms"
 }
 
 echo "=== Testing --dry-run runtime behavior ==="
@@ -71,9 +76,12 @@ run1_exit="$(cat "$tmp_root/exit-first.txt")"
 
 if [ "$run1_exit" != "0" ] && grep -q "missing required host dependencies: docker" "$tmp_root/run-first.stderr.log"; then
   echo "⚠ Docker unavailable; running fallback dry-run smoke checks"
-  grep -q 'KASEKI_DRY_RUN' "$REPO_ROOT/run-kaseki.sh" || fail "Fallback smoke check failed: dry-run env wiring missing in run-kaseki.sh"
-  grep -q 'record_stage_timing "validation" "0" .*"dry_run=true"' "$REPO_ROOT/kaseki-agent.sh" || fail "Fallback smoke check failed: dry-run validation semantic status missing"
-  grep -q 'record_stage_timing "pi coding agent" "0" .*"dry_run=true"' "$REPO_ROOT/kaseki-agent.sh" || fail "Fallback smoke check failed: dry-run agent semantic status missing"
+  awk '
+    /KASEKI_DRY_RUN/ { seen_dry_run=1 }
+    /record_stage_timing "validation" "0" .*"dry_run=true"/ { seen_validation=1 }
+    /record_stage_timing "pi coding agent" "0" .*"dry_run=true"/ { seen_agent=1 }
+    END { exit (seen_dry_run && seen_validation && seen_agent) ? 0 : 1 }
+  ' "$REPO_ROOT/run-kaseki.sh" "$REPO_ROOT/kaseki-agent.sh" || fail "Fallback smoke check failed: dry-run behavior wiring incomplete"
   pass "fallback smoke checks passed under missing docker dependency"
   echo ""
   echo "✅ Dry-run fallback checks passed!"
@@ -113,6 +121,10 @@ require_file "$result2/metadata.json"
 [ -d "$tmp_root/kaseki-results/kaseki-1" ] || fail "First result directory missing after second run"
 [ -f "$tmp_root/kaseki-results/kaseki-1/host-start.json" ] || fail "First run outputs were overwritten"
 [ ! -f "/tmp/kaseki-validation-$$-second" ] || fail "Validation command should not execute on second dry-run"
+first_runtime_ms="$(cat "$tmp_root/runtime-first.ms")"
+second_runtime_ms="$(cat "$tmp_root/runtime-second.ms")"
+[ "$second_runtime_ms" -le $((first_runtime_ms + 1500)) ] || fail "Second run should stay within runtime guardrail (first=${first_runtime_ms}ms second=${second_runtime_ms}ms)"
+pass "runtime tracked (first=${first_runtime_ms}ms second=${second_runtime_ms}ms)"
 pass "second invocation creates kaseki-2 and preserves prior outputs"
 
 echo ""

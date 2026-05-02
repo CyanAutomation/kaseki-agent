@@ -5,6 +5,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+require_file() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    echo "Expected file missing: $file" >&2
+    exit 1
+  fi
+}
+
+require_artifacts() {
+  local result_dir="$1"
+  shift
+  for artifact in "$@"; do
+    require_file "$result_dir/$artifact"
+  done
+}
+
 KASEKI_ROOT="$TMP_DIR/kaseki"
 REPO_URL='https://example.com/repo"quoted"'
 GIT_REF='feature/"quoted"/branch'
@@ -38,15 +54,7 @@ if [ ! -d "$KASEKI_ROOT/kaseki-results/kaseki-1" ]; then
 fi
 result_dir="$KASEKI_ROOT/kaseki-results/kaseki-1"
 
-if [ ! -f "$result_dir/host-start.json" ]; then
-  echo "Expected $result_dir/host-start.json to exist" >&2
-  exit 1
-fi
-
-if [ ! -f "$result_dir/metadata.json" ]; then
-  echo "Expected $result_dir/metadata.json to exist" >&2
-  exit 1
-fi
+require_artifacts "$result_dir" host-start.json metadata.json
 
 node -e '
 const fs = require("node:fs");
@@ -64,12 +72,7 @@ if (metadata.git_ref !== expectedRef) throw new Error("metadata git_ref mismatch
   "$REPO_URL" \
   "$GIT_REF"
 
-for artifact in changed-files.txt validation-timings.tsv stage-timings.tsv dependency-cache.log quality.log secret-scan.log git-push.log progress.log progress.jsonl cleanup.log; do
-  if [ ! -f "$result_dir/$artifact" ]; then
-    echo "Expected artifact missing: $artifact" >&2
-    exit 1
-  fi
-done
+require_artifacts "$result_dir" changed-files.txt validation-timings.tsv stage-timings.tsv dependency-cache.log quality.log secret-scan.log git-push.log progress.log progress.jsonl cleanup.log
 
 if ! grep -q "missing OPENROUTER_API_KEY" "$result_dir/stage-timings.tsv"; then
   echo "Expected missing-key failure to be recorded in stage-timings.tsv" >&2
