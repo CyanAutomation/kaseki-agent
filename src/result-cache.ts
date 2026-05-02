@@ -83,8 +83,14 @@ export class ResultCache {
    * Clear cache for a job (e.g., when cleaning up after completion).
    */
   clearForJob(jobId: string): void {
+    const normalizedJobId = path.basename(path.normalize(jobId));
+
     for (const key of this.cache.keys()) {
-      if (key.includes(`/${jobId}/`)) {
+      const normalizedKey = path.normalize(key);
+      const keySegments = normalizedKey.split(/[\\/]+/).filter(Boolean);
+      const hasJobSegment = keySegments.includes(normalizedJobId);
+
+      if (hasJobSegment) {
         this.cache.delete(key);
       }
     }
