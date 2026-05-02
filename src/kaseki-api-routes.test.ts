@@ -91,7 +91,6 @@ describe('kaseki-api-routes artifact read behavior', () => {
   });
 });
 
-
 describe('kaseki-api-routes tail file descriptor cleanup', () => {
   afterEach(() => {
     jest.resetModules();
