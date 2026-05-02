@@ -31,7 +31,7 @@ describe('EventCounterAggregator', () => {
 
     const summary = aggregator.summary();
     const uniqueKeys = Object.keys(summary.event_counts).filter((k) => k !== '__other__');
-    
+
     // Should have at most 1000 unique keys (plus __other__)
     expect(uniqueKeys.length).toBe(1000);
     expect(summary.event_counts['__other__']).toBe(1);
@@ -85,7 +85,7 @@ describe('EventCounterAggregator', () => {
 
   it('should select top model/api by frequency', () => {
     const aggregator = new EventCounterAggregator();
-    
+
     // Model A more frequent
     aggregator.recordModelAndApi({ model: 'model-a', api: 'api-a' });
     aggregator.recordModelAndApi({ model: 'model-a', api: 'api-a' });
