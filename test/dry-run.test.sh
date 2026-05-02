@@ -95,7 +95,7 @@ pass "stage timing details capture semantic dry-run skips"
 
 assert_file_empty "$result1/pi-events.jsonl"
 assert_file_empty "$result1/validation-timings.tsv"
-[ ! -f /tmp/kaseki-validation-first ] || fail "Validation command should not execute during dry-run"
+[ ! -f "/tmp/kaseki-validation-$$-first" ] || fail "Validation command should not execute during dry-run"
 pass "no external side effects (no real agent output / validation command execution)"
 
 run_once "$tmp_root" second
