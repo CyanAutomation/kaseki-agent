@@ -62,15 +62,17 @@ PWD="$FAKE_REPO_ROOT" \
 node dist/kaseki-api-service.js >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
+health_ready=false
 for _ in $(seq 1 80); do
   code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/health" || true)"
   if [[ "$code" == "200" ]]; then
+    health_ready=true
     break
   fi
   sleep 0.1
 done
 
-if [[ "$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/health" || true)" != "200" ]]; then
+if [[ "$health_ready" != "true" ]]; then
   echo "[$TEST_NAME] health endpoint did not become ready"
   exit 1
 fi
