@@ -110,6 +110,7 @@ describe('kaseki-api-routes tail file descriptor cleanup', () => {
         closeSync: closeSyncMock,
       }));
 
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { readTailBytes } = require('./kaseki-api-routes') as typeof import('./kaseki-api-routes');
       expect(() => readTailBytes('/tmp/fake.log', 200, 100)).toThrow('read failed');
     });
