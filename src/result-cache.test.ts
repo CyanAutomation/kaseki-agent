@@ -50,12 +50,13 @@ describe('ResultCache', () => {
     fs.writeFileSync(testFile, 'modified content');
 
     // Before TTL boundary, cached content should still be served.
-    jest.advanceTimersByTime(999);
+    // Before TTL boundary, cached content should still be served.
+    jest.setSystemTime(new Date(baseTime.getTime() + 999));
     const cachedContent = cache.getOrLoad(testFile);
     expect(cachedContent).toBe('test content');
 
     // Move past TTL boundary and verify cache miss/reload behavior.
-    jest.advanceTimersByTime(2);
+    jest.setSystemTime(new Date(baseTime.getTime() + 1001));
     const reloadedContent = cache.getOrLoad(testFile);
     expect(reloadedContent).toBe('modified content');
 
