@@ -61,6 +61,25 @@ export function tailLogByLines(content: string, maxLines: number): string {
   return lines.slice(-maxLines).join('\n');
 }
 
+function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'failed'): boolean {
+  return status === 'completed' || status === 'failed';
+}
+
+export function readArtifactContent(
+  filePath: string,
+  jobStatus: 'queued' | 'running' | 'completed' | 'failed',
+  cache: ResultCache
+): string | null {
+  if (!isTerminalJobStatus(jobStatus)) {
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+  return cache.getOrLoad(filePath);
+}
+
 /**
  * Create the API routes.
  */
@@ -308,8 +327,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         contentType = 'text/plain';
       }
 
-      // Read from cache or disk
-      const content = cache.getOrLoad(filePath);
+      // Read from disk for non-terminal jobs; cache only terminal artifacts.
+      const content = readArtifactContent(filePath, job.status, cache);
       if (!content) {
         return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
       }
