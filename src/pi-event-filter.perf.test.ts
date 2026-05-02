@@ -83,7 +83,7 @@ describePerf('pi-event-filter perf/stress suite', () => {
       expect(maxRssMatch).not.toBeNull();
       if (!maxRssMatch) return;
 
-      const memoryMb = Number.parseInt(maxRssMatch[1], 10) / 1024;
+      const memoryMb = Number.parseInt(maxRssMatch[1]!, 10) / 1024;
 
       // Threshold guidance:
       // - default (developer laptops/unknown CI): loose guardrail for regressions
