@@ -58,8 +58,6 @@ export function loadConfig(): KasekiApiConfig {
     throw new Error(`KASEKI_RESULTS_DIR does not exist: ${resultsDir}`);
   }
 
-
-
   const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
   if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
     throw new Error(`KASEKI_API_LOG_LEVEL must be debug/info/warn/error, got: ${logLevel}`);

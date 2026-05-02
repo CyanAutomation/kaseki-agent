@@ -5,7 +5,7 @@
   "private": true,
   "license": "MIT",
   "engines": {
-    "node": ">=22.22.2"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc && chmod 0755 dist/*.js",

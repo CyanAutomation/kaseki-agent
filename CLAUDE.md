@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docker container, clones a target Git repository inside it, invokes the Pi CLI coding agent via OpenRouter, runs validation commands, and collects artifacts. Each run is a numbered instance (kaseki-1, kaseki-2, …).
 
+## Current Infrastructure Status (May 2026)
+
+- **Node.js**: v24 (bookworm-slim base image)
+- **Docker Build**: Optimized multi-stage with consolidated RUN layers
+- **CI/CD**: Parallelized pipeline with GHA caching (80-90% hit rate)
+- **Security**: Trivy scanning with SBOM generation
+
 ## Architecture: Host-Container Separation
 
 Two layers, each with its own script:
