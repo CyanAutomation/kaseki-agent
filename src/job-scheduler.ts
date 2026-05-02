@@ -114,7 +114,6 @@ export class JobScheduler {
       if (job.finalized) {
         return;
       }
-      this.completeJob(job);
       if (updates.status !== undefined) {
         job.status = updates.status;
       }
@@ -130,6 +129,7 @@ export class JobScheduler {
       if (updates.completedAt !== undefined) {
         job.completedAt = updates.completedAt;
       }
+      this.completeJob(job);
     };
 
     // Note: stdout/stderr collection omitted per kaseki-agent design
