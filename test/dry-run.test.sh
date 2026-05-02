@@ -107,7 +107,7 @@ require_file "$result2/host-start.json"
 require_file "$result2/metadata.json"
 [ -d "$tmp_root/kaseki-results/kaseki-1" ] || fail "First result directory missing after second run"
 [ -f "$tmp_root/kaseki-results/kaseki-1/host-start.json" ] || fail "First run outputs were overwritten"
-[ ! -f /tmp/kaseki-validation-second ] || fail "Validation command should not execute on second dry-run"
+[ ! -f "/tmp/kaseki-validation-$$-second" ] || fail "Validation command should not execute on second dry-run"
 pass "second invocation creates kaseki-2 and preserves prior outputs"
 
 echo ""
