@@ -31,6 +31,7 @@ assert_stage_detail() {
 
 assert_file_empty() {
   local file="$1"
+  [ -f "$file" ] || fail "Expected file to exist: $file"
   [ ! -s "$file" ] || fail "Expected empty file: $file"
 }
 
