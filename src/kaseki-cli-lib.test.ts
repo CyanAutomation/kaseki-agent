@@ -149,6 +149,15 @@ tests/parser.test.ts
     fs.writeFileSync(path.join(instanceDir, 'changed-files.txt'), changedFiles);
   }
 
+  function createResultFixture(
+    name: string,
+    overrides: Parameters<typeof createMockInstance>[1] = {}
+  ): { instanceDir: string; name: string } {
+    createMockInstance(name, overrides);
+    return { instanceDir: path.join(MOCK_RESULTS_DIR, name), name };
+  }
+
+
   test('listInstances should find and sort instances', () => {
     createMockInstance('kaseki-1', {
       metadata: { current_stage: 'validation' },
@@ -223,22 +232,13 @@ tests/parser.test.ts
     );
     expect(status.error).toBeUndefined();
   });
-
-  test('readArtifact should read file contents', () => {
-    createMockInstance('kaseki-1');
-
-    const content = kasekiCli.readArtifact('kaseki-1', 'stdout.log');
-
-    expect(content).toBeDefined();
-    expect(content).toContain('Cloning repository');
-  });
-
-  test('readArtifact should return null for missing file', () => {
-    createMockInstance('kaseki-1');
-
-    const content = kasekiCli.readArtifact('kaseki-1', 'nonexistent.log');
-
-    expect(content).toBeNull();
+  test.each([
+    { artifact: 'nonexistent.log', expected: null as string | null, description: 'missing file' },
+    { artifact: 'stdout.log', expected: expect.stringContaining('Cloning repository'), description: 'existing file' },
+  ])('readArtifact should handle $description', ({ artifact, expected }) => {
+    createResultFixture('kaseki-1');
+    const content = kasekiCli.readArtifact('kaseki-1', artifact);
+    expect(content).toEqual(expected);
   });
 
   test('readArtifact should return null for unreadable artifact', () => {
