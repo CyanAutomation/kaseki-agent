@@ -336,7 +336,7 @@ function cmdStatus(args: string[]): void {
   const status = kasekiCliLib.getInstanceStatus(instance);
 
   if (status.error) {
-    printError(status.error);
+    printError(status.error.message);
   }
 
   printJson(status);
@@ -443,7 +443,7 @@ function cmdAnalysis(args: string[]): void {
   const analysis = kasekiCliLib.getAnalysis(instance);
 
   if (analysis.error) {
-    printError(analysis.error);
+    printError(analysis.error.message);
   }
 
   printJson(analysis);
