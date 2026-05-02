@@ -207,7 +207,6 @@ env PATH="$TMP_DIR:/usr/bin:/bin" \
 run_status=$?
 set -e
 
-[ -f "$TMP_DIR/run.stderr" ] || true
 result_dir="$KASEKI_ROOT/kaseki-results/kaseki-1"
 [ -d "$result_dir" ] || { echo "Expected result dir" >&2; exit 1; }
 
