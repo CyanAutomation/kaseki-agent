@@ -54,10 +54,9 @@ run_once() {
     "$RUNNER" --dry-run >"$root/run-${marker}.stdout.log" 2>"$root/run-${marker}.stderr.log"
     code=$?
     set -e
-    echo "$code" > "$root/exit-${marker}.txt"
-  )
   end="$(date +%s%3N)"
   elapsed_ms=$((end-start))
+  echo "$code" > "$root/exit-${marker}.txt"
   echo "$elapsed_ms" > "$root/runtime-${marker}.ms"
 }
 
