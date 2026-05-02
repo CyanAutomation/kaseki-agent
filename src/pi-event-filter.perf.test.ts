@@ -47,17 +47,15 @@ describePerf('pi-event-filter perf/stress suite', () => {
       await new Promise<void>((resolve) => input.end(resolve));
 
       const script = [
-        '/usr/bin/time',
-        '-f',
-        'MAX_RSS_KB=%M',
-        process.execPath,
         path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
         inputPath,
         outputPath,
         summaryPath,
       ];
 
-      const child = spawn(script[0], script.slice(1));
+      const child = spawn(process.execPath, script, {
+        env: { ...process.env, PI_EVENT_FILTER_TRACK_RSS: '1' },
+      });
       let stderr = '';
       child.stderr.on('data', (chunk) => {
         stderr += chunk.toString();
@@ -79,11 +77,11 @@ describePerf('pi-event-filter perf/stress suite', () => {
       expect(summary.selected_model).toBe('pi-stress-model');
       expect(summary.selected_api).toBe('pi-stress-api');
 
-      const maxRssMatch = stderr.match(/MAX_RSS_KB=(\d+)/);
+      const maxRssMatch = stderr.match(/MAX_RSS_BYTES=(\d+)/);
       expect(maxRssMatch).not.toBeNull();
       if (!maxRssMatch) return;
 
-      const memoryMb = Number.parseInt(maxRssMatch[1]!, 10) / 1024;
+      const memoryMb = Number.parseInt(maxRssMatch[1], 10) / (1024 * 1024);
 
       // Threshold guidance:
       // - default (developer laptops/unknown CI): loose guardrail for regressions
