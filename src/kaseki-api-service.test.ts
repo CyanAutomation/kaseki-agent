@@ -124,7 +124,7 @@ describe('Job Scheduler', () => {
     expect(job.request).toEqual(request);
   });
 
-  test('getJob retrieves a submitted job', () => {
+  test('submit/get/list keep job identity, request payload, and queue visibility coherent', () => {
     const request = {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
@@ -132,9 +132,14 @@ describe('Job Scheduler', () => {
 
     const submitted = scheduler.submitJob(request);
     const retrieved = scheduler.getJob(submitted.id);
+    const jobs = scheduler.listJobs();
 
     expect(retrieved).toBeDefined();
     expect(retrieved?.id).toBe(submitted.id);
+    expect(retrieved?.request).toEqual(request);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].id).toBe(submitted.id);
+    expect(jobs[0].request).toEqual(request);
   });
 
   test('listJobs returns all jobs sorted by creation time (newest first)', () => {
