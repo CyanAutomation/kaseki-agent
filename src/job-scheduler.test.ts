@@ -9,7 +9,14 @@ jest.mock('child_process', () => ({
 
 class MockProcess extends EventEmitter {
   pid = 12345;
-  kill = jest.fn();
+  killed = false;
+
+  kill = jest.fn((signal?: NodeJS.Signals) => {
+    if (signal === 'SIGKILL') {
+      this.killed = true;
+    }
+    return true;
+  });
 }
 
 describe('JobScheduler finalization guard', () => {
@@ -68,5 +75,81 @@ describe('JobScheduler finalization guard', () => {
 
     // Once from submit, once from single guarded completion.
     expect(processQueueSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('JobScheduler shutdown lifecycle', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('shutdown terminates running children and marks jobs as shutdown-aborted', () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir: '/tmp/kaseki-results',
+      logDir: '/tmp/kaseki-api',
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info',
+    });
+
+    const job = scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    scheduler.shutdown();
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(job.status).toBe('failed');
+    expect(job.failureClass).toBe('shutdown_aborted');
+    expect(job.error).toBe('Job aborted during scheduler shutdown');
+    expect(job.exitCode).toBe(143);
+    expect(job.finalized).toBe(true);
+
+    jest.advanceTimersByTime(5000);
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  test('shutdown does not escalate if child exits during grace period', () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir: '/tmp/kaseki-results',
+      logDir: '/tmp/kaseki-api',
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info',
+    });
+
+    scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    scheduler.shutdown();
+    proc.killed = true;
+
+    jest.advanceTimersByTime(5000);
+
+    expect(proc.kill).toHaveBeenCalledTimes(1);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });

@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,7 +12,9 @@ export class JobScheduler {
   private jobs = new Map<string, Job>();
   private queue: Job[] = [];
   private running = new Set<string>();
+  private processes = new Map<string, ChildProcess>();
   private config: KasekiApiConfig;
+  private static readonly SHUTDOWN_GRACE_MS = 5000;
 
   constructor(config: KasekiApiConfig) {
     this.config = config;
@@ -106,6 +108,7 @@ export class JobScheduler {
       env,
       stdio: 'pipe',
     });
+    this.processes.set(job.id, proc);
 
     job.processId = proc.pid;
     let timeoutFired = false;
@@ -216,6 +219,7 @@ export class JobScheduler {
       job.completedAt = new Date();
     }
     this.running.delete(job.id);
+    this.processes.delete(job.id);
     this.processQueue();
   }
 
@@ -253,13 +257,32 @@ export class JobScheduler {
    * Shutdown the scheduler, aborting running jobs.
    */
   shutdown(): void {
-    for (const job of this.running) {
-      const j = this.jobs.get(job);
+    for (const jobId of this.running) {
+      const j = this.jobs.get(jobId);
       if (j?.timeout) {
         clearTimeout(j.timeout);
       }
+
+      const proc = this.processes.get(jobId);
+      if (proc && !proc.killed) {
+        proc.kill('SIGTERM');
+
+        setTimeout(() => {
+          if (!proc.killed) {
+            proc.kill('SIGKILL');
+          }
+        }, JobScheduler.SHUTDOWN_GRACE_MS);
+      }
+
+      if (j && !j.finalized) {
+        j.status = 'failed';
+        j.failureClass = 'shutdown_aborted';
+        j.error = 'Job aborted during scheduler shutdown';
+        j.exitCode = 143;
+        j.completedAt = new Date();
+        this.completeJob(j);
+      }
     }
-    this.running.clear();
     this.queue = [];
   }
 }
