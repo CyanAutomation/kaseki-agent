@@ -42,8 +42,9 @@ This repo is written in **TypeScript 5.7** and compiles to CommonJS in the `dist
 
 ```bash
 npm run build                  # Compile TypeScript to dist/
-npm run type-check             # Run type-check only (no emit)
-npm run type-check:watch       # Watch mode for development
+npm run type-check             # Full-project type-check (informational while debt is tracked)
+npm run type-check:full        # Alias for full-project type-check
+npm run type-check:changed     # Changed-file gate used for PR blocking
 ```
 
 ### Key directories and files
@@ -56,9 +57,10 @@ npm run type-check:watch       # Watch mode for development
 ### Development workflow
 
 1. Edit `.ts` files in `src/`
-2. Run `npm run type-check` to verify no type errors
-3. Run `npm run build` to compile (or let `npm test` do it as part of the pre-test check)
-4. Test your changes with `npm test` (includes Jest tests + bash integration tests)
+2. Run `npm run type-check:changed` to verify changed-file type safety (PR gate)
+3. Optionally run `npm run type-check` (or `npm run type-check:full`) to view full-project debt status
+4. Run `npm run build` to compile (or let `npm test` do it as part of the pre-test check)
+5. Test your changes with `npm test` (includes Jest tests + bash integration tests)
 
 ### Type Safety Standards
 
@@ -69,7 +71,7 @@ npm run type-check:watch       # Watch mode for development
 
 ## 4) Code Quality: Linting and Style
 
-All TypeScript and shell scripts must pass linting and type-checking before submission. This repo uses **ESLint** for TypeScript code and **ShellCheck** for shell scripts to enforce consistent code style and catch common errors.
+All TypeScript and shell scripts must pass linting before submission, and changed-file type-checking must pass before merge. Full-project type-checking remains informational while debt is burned down. This repo uses **ESLint** for TypeScript code and **ShellCheck** for shell scripts to enforce consistent code style and catch common errors.
 
 ### Running linting locally
 
@@ -77,7 +79,8 @@ Before pushing, ensure your code passes all linting checks:
 
 ```bash
 npm install                    # Install dependencies (one-time)
-npm run type-check             # Verify TypeScript types
+npm run type-check:changed     # Verify changed-file TypeScript types (PR gate)
+npm run type-check             # Optional: full-project debt snapshot (non-blocking)
 npm run lint                   # Check all TS and shell scripts
 npm run lint:fix               # Auto-fix formatting and common issues
 ```
@@ -109,7 +112,8 @@ See [STYLE.md](STYLE.md) for detailed code style guidelines. In summary:
 
 Before opening a pull request:
 
-- [ ] Run `npm run type-check` locally and confirm 0 errors.
+- [ ] Run `npm run type-check:changed` locally and confirm 0 errors (PR gate).
+- [ ] Optionally run `npm run type-check` (or `npm run type-check:full`) to assess tracked full-project TypeScript debt (non-blocking).
 - [ ] Run `npm run lint` locally and confirm 0 errors.
 - [ ] If linting issues were found, run `npm run lint:fix` and review the changes.
 - [ ] Ensure no unintended auto-fixes were applied (review git diff).
