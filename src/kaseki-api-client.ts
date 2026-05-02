@@ -33,7 +33,7 @@ export class KasekiApiClient {
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private parseErrorDetail(value: unknown): string | undefined {
