@@ -63,6 +63,9 @@ validation_marker_first="/tmp/kaseki-validation-$$-first"
 validation_marker_second="/tmp/kaseki-validation-$$-second"
 trap 'rm -rf "$tmp_root" "$validation_marker_first" "$validation_marker_second"' EXIT
 
+[ ! -e "$validation_marker_first" ] || fail "Pre-existing validation marker found: $validation_marker_first"
+[ ! -e "$validation_marker_second" ] || fail "Pre-existing validation marker found: $validation_marker_second"
+
 run_once "$tmp_root" first
 run1_exit="$(cat "$tmp_root/exit-first.txt")"
 
@@ -79,6 +82,8 @@ fi
 
 [ "$run1_exit" = "0" ] || fail "First dry-run invocation should exit 0 (got $run1_exit)"
 pass "dry-run exits with expected code (0)"
+
+command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions in dry-run integration checks"
 
 result1="$tmp_root/kaseki-results/kaseki-1"
 require_file "$result1/host-start.json"
