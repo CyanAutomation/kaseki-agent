@@ -191,7 +191,6 @@ describe('Job Scheduler', () => {
       port: 8080,
       apiKeys: ['test-key'],
       resultsDir: '/tmp/kaseki-results',
-      logDir: '/tmp/kaseki-api',
       maxConcurrentRuns: 2,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 200000,
