@@ -44,7 +44,7 @@ export function decodeUtf8TailSafely(buffer: Buffer): string {
       const sequenceLength = utf8SequenceLength(buffer[candidateLead]);
       const expectedContinuationCount = sequenceLength - 1;
 
-      if (sequenceLength > 1 && continuationCount < expectedContinuationCount) {
+      if (sequenceLength > 1 && continuationCount !== expectedContinuationCount) {
         end = candidateLead;
       }
     }
