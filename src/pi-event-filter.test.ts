@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+jest.setTimeout(20000);
+
 interface RunResult {
   exitCode: number | null;
   lines: string[];
@@ -19,7 +21,9 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
     fs.writeFileSync(inputPath, `${inputLines.join('\n')}\n`, 'utf8');
 
     const child = spawn(process.execPath, [
-      path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
+      '-r',
+      'ts-node/register',
+      path.join(__dirname, 'pi-event-filter.ts'),
       inputPath,
       outputPath,
       summaryPath,
