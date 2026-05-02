@@ -99,7 +99,10 @@ PY
 LIST_RESP="$(curl -sS -H "Authorization: Bearer $API_KEY" "$BASE_URL/runs")"
 python3 - "$LIST_RESP" "$JOB_ID" <<'PY'
 import json, sys
-obj=json.loads(sys.argv[1])
+try:
+    obj=json.loads(sys.argv[1])
+except (json.JSONDecodeError, ValueError) as e:
+    raise SystemExit(f"API returned invalid JSON: {e}; response: {sys.argv[1][:200]}")
 job_id=sys.argv[2]
 if obj.get('total',0) < 1:
     raise SystemExit('runs total is < 1')
