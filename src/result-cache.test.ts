@@ -18,11 +18,6 @@ describe('ResultCache', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('loads file on first access', () => {
-    const content = cache.getOrLoad(testFile);
-    expect(content).toBe('test content');
-  });
-
   test('returns null for non-existent file', () => {
     const content = cache.getOrLoad('/non/existent/file');
     expect(content).toBeNull();
@@ -44,7 +39,8 @@ describe('ResultCache', () => {
     const baseTime = new Date('2026-01-01T00:00:00.000Z');
     jest.setSystemTime(baseTime);
 
-    cache.getOrLoad(testFile);
+    const initialContent = cache.getOrLoad(testFile);
+    expect(initialContent).toBe('test content');
 
     // Change file on disk while cache is still valid.
     fs.writeFileSync(testFile, 'modified content');
@@ -68,11 +64,12 @@ describe('ResultCache', () => {
     for (let i = 0; i < 4; i++) {
       const file = path.join(testDir, `file-${i}.txt`);
       fs.writeFileSync(file, `content-${i}`);
-      cache.getOrLoad(file);
+      const initialContent = cache.getOrLoad(file);
+      expect(initialContent).toBe(`content-${i}`);
       files.push(file);
     }
 
-    // First file should be evicted
+    // First file should be evicted after initial load of all entries.
     fs.writeFileSync(files[0], 'evicted content');
     const content = cache.getOrLoad(files[0]);
     expect(content).toBe('evicted content');
