@@ -15,6 +15,7 @@ export class JobScheduler {
   private processes = new Map<string, ChildProcess>();
   private processExited = new Map<string, boolean>();
   private shutdownKillTimers = new Map<string, NodeJS.Timeout>();
+  private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private config: KasekiApiConfig;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
@@ -114,7 +115,7 @@ export class JobScheduler {
     this.processExited.set(job.id, false);
 
     job.processId = proc.pid;
-    let timeoutFired = false;
+    let timedOut = false;
 
     const finalizeJob = (updates: Partial<Job>): void => {
       if (job.finalized) {
@@ -146,15 +147,15 @@ export class JobScheduler {
       if (job.finalized) {
         return;
       }
-      timeoutFired = true;
+      timedOut = true;
       proc.kill('SIGTERM');
-      finalizeJob({
-        status: 'failed',
-        exitCode: 124,
-        failureClass: 'timeout',
-        error: `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`,
-        completedAt: new Date(),
-      });
+      const timeoutKillTimer = setTimeout(() => {
+        if (!this.processExited.get(job.id) && !job.finalized) {
+          proc.kill('SIGKILL');
+        }
+        this.timeoutKillTimers.delete(job.id);
+      }, JobScheduler.SHUTDOWN_GRACE_MS);
+      this.timeoutKillTimers.set(job.id, timeoutKillTimer);
     }, this.config.agentTimeoutSeconds * 1000);
 
     job.timeout = timeout;
@@ -166,11 +167,21 @@ export class JobScheduler {
         return;
       }
       clearTimeout(timeout);
+      const timeoutKillTimer = this.timeoutKillTimers.get(job.id);
+      if (timeoutKillTimer) {
+        clearTimeout(timeoutKillTimer);
+        this.timeoutKillTimers.delete(job.id);
+      }
       const updates: Partial<Job> = {
         completedAt: new Date(),
         exitCode: code ?? -1,
       };
-      if (code === 0 && !timeoutFired) {
+      if (timedOut) {
+        updates.status = 'failed';
+        updates.exitCode = 124;
+        updates.failureClass = 'timeout';
+        updates.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
+      } else if (code === 0) {
         updates.status = 'completed';
       } else {
         updates.status = 'failed';
@@ -225,11 +236,15 @@ export class JobScheduler {
     }
     this.running.delete(job.id);
     this.processes.delete(job.id);
-    const processExited = this.processExited.get(job.id);
     const shutdownKillTimer = this.shutdownKillTimers.get(job.id);
     if (shutdownKillTimer) {
       clearTimeout(shutdownKillTimer);
       this.shutdownKillTimers.delete(job.id);
+    }
+    const timeoutKillTimer = this.timeoutKillTimers.get(job.id);
+    if (timeoutKillTimer) {
+      clearTimeout(timeoutKillTimer);
+      this.timeoutKillTimers.delete(job.id);
     }
     this.processExited.delete(job.id);
     this.processQueue();
