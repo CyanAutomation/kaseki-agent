@@ -145,4 +145,5 @@ export interface Job {
   error?: string;
   processId?: number;
   timeout?: NodeJS.Timeout;
+  finalized?: boolean;
 }
