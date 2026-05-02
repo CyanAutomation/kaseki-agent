@@ -83,7 +83,10 @@ RUN_RESP="$(curl -sS -X POST "$BASE_URL/runs" \
 
 JOB_ID="$(python3 - "$RUN_RESP" <<'PY'
 import json, re, sys
-obj=json.loads(sys.argv[1])
+try:
+    obj=json.loads(sys.argv[1])
+except (json.JSONDecodeError, ValueError) as e:
+    raise SystemExit(f"API returned invalid JSON: {e}; response: {sys.argv[1][:200]}")
 if obj.get('status') not in {'queued','running'}:
     raise SystemExit(f"expected status queued|running, got {obj.get('status')}")
 idv=obj.get('id','')
