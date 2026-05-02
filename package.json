@@ -19,7 +19,9 @@
     "lint:js:fix": "eslint . src/ --fix --ignore-pattern dist/",
     "lint:sh": "shellcheck run-kaseki.sh kaseki-agent.sh scripts/*.sh run-kaseki-json.test.sh",
     "lint:fix": "npm run lint:js:fix && npm run lint:sh",
-    "kaseki-api": "ts-node src/kaseki-api-service.ts"
+    "kaseki-api": "ts-node src/kaseki-api-service.ts",
+    "type-check:full": "npm run type-check",
+    "type-check:changed": "tsc --noEmit -p tsconfig.changed.json"
   },
   "dependencies": {
     "express": "^4.18.2",
