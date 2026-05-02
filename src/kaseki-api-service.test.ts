@@ -129,34 +129,16 @@ describe('Kaseki API Request Validation', () => {
     {
       name: 'accepts minimal required fields',
       request: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
-      shouldSucceed: true,
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
     },
     {
       name: 'applies default ref when omitted',
       request: { repoUrl: 'https://github.com/org/repo' },
-      shouldSucceed: true,
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
     },
-    {
-      name: 'rejects invalid URL',
-      request: { repoUrl: 'not-a-url', ref: 'main' },
-      shouldSucceed: false,
-    },
-    {
-      name: 'rejects invalid taskMode enum',
-      request: { repoUrl: 'https://github.com/org/repo', taskMode: 'invalid' },
-      shouldSucceed: false,
-    },
-  ])('RunRequestSchema success cases: $name', ({ request, shouldSucceed, expected }) => {
-    if (shouldSucceed) {
-      const result = RunRequestSchema.parse(request);
-      expect(result).toMatchObject(expected!);
-      return;
-    }
-
-    // Should not execute for success-case matrix rows.
-    expect(shouldSucceed).toBe(false);
+  ])('RunRequestSchema success cases: $name', ({ request, expected }) => {
+    const result = RunRequestSchema.parse(request);
+    expect(result).toMatchObject(expected);
   });
 
   test.each([
