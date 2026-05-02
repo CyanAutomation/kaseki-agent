@@ -96,7 +96,7 @@ export function resolveInstanceStage(
     return metadata.current_stage;
   }
   const parsedStage = getCurrentStage(resultsDir, instanceName);
-  return parsedStage || fallback;
+  return parsedStage !== 'unknown' ? parsedStage : fallback;
 }
 
 /**

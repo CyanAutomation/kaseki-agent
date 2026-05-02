@@ -1,5 +1,4 @@
 // fallow-ignore-next-line unused-files
-// fallow-ignore-next-line unused-files
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -352,7 +351,7 @@ tests/parser.test.ts
 
   test('classifyFailure should identify empty diff outcomes', () => {
     expect(
-      kasekiCli.classifyFailure({ failed_command: 'empty git diff' }, 3)
+      kasekiCli.classifyFailureLocal({ failed_command: 'empty git diff' }, 3)
     ).toBe('empty-diff');
   });
 
