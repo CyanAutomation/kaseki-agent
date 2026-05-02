@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import type { Server } from 'http';
+import { createGracefulShutdown } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { RunRequestSchema } from './kaseki-api-types';
@@ -162,5 +164,48 @@ describe('Job Scheduler', () => {
       running: 0,
       maxConcurrent: 2,
     });
+  });
+});
+
+describe('Kaseki API graceful shutdown', () => {
+  test('waits for server close before scheduler shutdown and exit', async () => {
+    const callOrder: string[] = [];
+    let closeCallback: ((err?: Error) => void) | undefined;
+
+    const server = {
+      close: jest.fn((cb: (err?: Error) => void) => {
+        closeCallback = cb;
+      }),
+    } as unknown as Server;
+
+    const scheduler = {
+      shutdown: jest.fn(() => {
+        callOrder.push('scheduler.shutdown');
+      }),
+    };
+
+    const exit = jest.fn((code: number) => {
+      callOrder.push(`exit:${code}`);
+      return undefined as never;
+    }) as unknown as (code: number) => never;
+
+    const gracefulShutdown = createGracefulShutdown({
+      server,
+      scheduler,
+      forceExitAfterMs: 1000,
+      exit,
+    });
+
+    const shutdownPromise = gracefulShutdown('SIGTERM');
+
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(scheduler.shutdown).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+
+    closeCallback?.();
+
+    await shutdownPromise;
+
+    expect(callOrder).toEqual(['scheduler.shutdown', 'exit:0']);
   });
 });
