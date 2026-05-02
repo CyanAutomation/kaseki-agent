@@ -22,16 +22,41 @@ import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResp
  */
 export class KasekiApiClient {
   private baseUrl: string;
-  private apiKey: string;
   private baseHeaders: Record<string, string>;
 
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
-    this.apiKey = apiKey;
     this.baseHeaders = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     };
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private parseErrorDetail(value: unknown): string | undefined {
+    if (!this.isRecord(value)) {
+      return undefined;
+    }
+    const detail = value.detail;
+    return typeof detail === 'string' ? detail : undefined;
+  }
+
+  private parseHealthResponse(value: unknown): { status: string; errors?: string[] } {
+    if (!this.isRecord(value) || typeof value.status !== 'string') {
+      throw new Error('Invalid health response payload');
+    }
+
+    if (value.errors !== undefined) {
+      if (!Array.isArray(value.errors) || !value.errors.every((item) => typeof item === 'string')) {
+        throw new Error('Invalid health response errors payload');
+      }
+      return { status: value.status as string, errors: value.errors as string[] };
+    }
+
+    return { status: value.status as string };
   }
 
   /**
@@ -47,7 +72,8 @@ export class KasekiApiClient {
       throw new Error(`Health check failed: ${res.status}`);
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    return this.parseHealthResponse(data);
   }
 
   /**
@@ -61,11 +87,13 @@ export class KasekiApiClient {
     });
 
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(`Failed to submit run: ${error.detail || res.statusText}`);
+      const errorData: unknown = await res.json();
+      const errorDetail = this.parseErrorDetail(errorData);
+      throw new Error(`Failed to submit run: ${errorDetail ?? res.statusText}`);
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    return this.parseRunResponse(data);
   }
 
   /**
@@ -85,7 +113,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to get status: ${res.status}`);
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    return this.parseStatusResponse(data);
   }
 
   /**
@@ -105,7 +134,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to get analysis: ${res.status}`);
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    return this.parseAnalysisResponse(data);
   }
 
   /**
@@ -128,7 +158,10 @@ export class KasekiApiClient {
       throw new Error(`Failed to get log: ${res.status}`);
     }
 
-    const data = await res.json();
+    const data: unknown = await res.json();
+    if (!this.isRecord(data) || typeof data.content !== 'string') {
+      throw new Error(`Invalid log payload: ${runId}/${logType}`);
+    }
     return data.content;
   }
 
@@ -152,7 +185,10 @@ export class KasekiApiClient {
       throw new Error(`Failed to get artifact: ${res.status}`);
     }
 
-    const data = await res.json();
+    const data: unknown = await res.json();
+    if (!this.isRecord(data) || typeof data.content !== 'string') {
+      throw new Error(`Invalid artifact payload: ${runId}/${file}`);
+    }
     return data.content;
   }
 
@@ -169,7 +205,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to list runs: ${res.status}`);
     }
 
-    return res.json();
+    const data: unknown = await res.json();
+    return this.parseRunsListResponse(data);
   }
 
   /**
@@ -208,6 +245,117 @@ export class KasekiApiClient {
       // Sleep before next poll
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
+  }
+
+  private parseRunResponse(data: unknown): RunResponse {
+    if (!this.isRecord(data)) throw new Error('Invalid run response payload');
+    if (typeof data.id !== 'string' || typeof data.createdAt !== 'string') {
+      throw new Error('Invalid run response payload');
+    }
+    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
+      throw new Error('Invalid run response status');
+    }
+    if (data.error !== undefined && typeof data.error !== 'string') {
+      throw new Error('Invalid run response error');
+    }
+
+    return {
+      id: data.id,
+      status: data.status as RunResponse['status'],
+      createdAt: data.createdAt,
+      ...(data.error !== undefined ? { error: data.error } : {}),
+    };
+  }
+
+  private parseStatusResponse(data: unknown): StatusResponse {
+    if (!this.isRecord(data)) throw new Error('Invalid status response payload');
+    if (typeof data.id !== 'string') throw new Error('Invalid status response payload');
+    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
+      throw new Error('Invalid status response status');
+    }
+
+    const optionalStringFields: Array<keyof Pick<StatusResponse, 'progress' | 'failureClass' | 'error'>> = [
+      'progress',
+      'failureClass',
+      'error',
+    ];
+    for (const field of optionalStringFields) {
+      if (data[field] !== undefined && typeof data[field] !== 'string') {
+        throw new Error(`Invalid status response ${field}`);
+      }
+    }
+
+    const optionalNumberFields: Array<keyof Pick<StatusResponse, 'elapsedSeconds' | 'timeoutRiskPercent' | 'exitCode'>> = [
+      'elapsedSeconds',
+      'timeoutRiskPercent',
+      'exitCode',
+    ];
+    for (const field of optionalNumberFields) {
+      if (data[field] !== undefined && typeof data[field] !== 'number') {
+        throw new Error(`Invalid status response ${field}`);
+      }
+    }
+
+    return {
+      id: data.id,
+      status: data.status as StatusResponse['status'],
+      ...(typeof data.progress === 'string' ? { progress: data.progress } : {}),
+      ...(typeof data.elapsedSeconds === 'number' ? { elapsedSeconds: data.elapsedSeconds } : {}),
+      ...(typeof data.timeoutRiskPercent === 'number' ? { timeoutRiskPercent: data.timeoutRiskPercent } : {}),
+      ...(typeof data.exitCode === 'number' ? { exitCode: data.exitCode } : {}),
+      ...(typeof data.failureClass === 'string' ? { failureClass: data.failureClass } : {}),
+      ...(typeof data.error === 'string' ? { error: data.error } : {}),
+    };
+  }
+
+  private parseAnalysisResponse(data: unknown): AnalysisResponse {
+    if (!this.isRecord(data)) throw new Error('Invalid analysis response payload');
+    if (typeof data.id !== 'string' || typeof data.createdAt !== 'string') {
+      throw new Error('Invalid analysis response payload');
+    }
+    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
+      throw new Error('Invalid analysis response status');
+    }
+    return {
+      id: data.id,
+      status: data.status as AnalysisResponse['status'],
+      createdAt: data.createdAt,
+      ...(typeof data.completedAt === 'string' ? { completedAt: data.completedAt } : {}),
+      ...(typeof data.elapsedSeconds === 'number' ? { elapsedSeconds: data.elapsedSeconds } : {}),
+      ...(typeof data.exitCode === 'number' ? { exitCode: data.exitCode } : {}),
+      ...(typeof data.failureClass === 'string' ? { failureClass: data.failureClass } : {}),
+      ...(this.isRecord(data.metadata) ? { metadata: data.metadata as AnalysisResponse['metadata'] } : {}),
+      ...(this.isRecord(data.changes) ? { changes: data.changes as AnalysisResponse['changes'] } : {}),
+      ...(this.isRecord(data.validation) ? { validation: data.validation as AnalysisResponse['validation'] } : {}),
+      ...(Array.isArray(data.errors) && data.errors.every((item) => typeof item === 'string') ? { errors: data.errors } : {}),
+    };
+  }
+
+  private parseRunsListResponse(data: unknown): RunsListResponse {
+    if (!this.isRecord(data) || !Array.isArray(data.runs) || typeof data.total !== 'number') {
+      throw new Error('Invalid runs list response payload');
+    }
+    const runs = data.runs
+      .filter((run): run is Record<string, unknown> => this.isRecord(run))
+      .filter(
+        (run) =>
+          typeof run.id === 'string' &&
+          typeof run.createdAt === 'string' &&
+          ['queued', 'running', 'completed', 'failed'].includes(String(run.status)) &&
+          (run.completedAt === undefined || typeof run.completedAt === 'string')
+      )
+      .map((run) => ({
+        id: run.id as string,
+        status: run.status as RunsListResponse['runs'][number]['status'],
+        createdAt: run.createdAt as string,
+        ...(typeof run.completedAt === 'string' ? { completedAt: run.completedAt as string } : {}),
+      }));
+
+    if (runs.length !== data.runs.length) {
+      throw new Error('Invalid runs list entries');
+    }
+
+    return { runs, total: data.total };
   }
 }
 
