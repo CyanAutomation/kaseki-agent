@@ -59,40 +59,35 @@ describe('Kaseki API Configuration', () => {
 });
 
 describe('Kaseki API Request Validation', () => {
-  test('RunRequestSchema validates required fields', async () => {
-    const request = {
-      repoUrl: 'https://github.com/org/repo',
-      ref: 'main',
-    };
-
-    const result = RunRequestSchema.parse(request);
-    expect(result.repoUrl).toBe('https://github.com/org/repo');
-    expect(result.ref).toBe('main');
-  });
-
-  test('RunRequestSchema rejects invalid URL', async () => {
-    const request = {
-      repoUrl: 'not-a-url',
-      ref: 'main',
-    };
-
-    expect(() => RunRequestSchema.parse(request)).toThrow();
-  });
-
-  test('RunRequestSchema provides default ref', async () => {
-    const request = {
-      repoUrl: 'https://github.com/org/repo',
-    };
-
-    const result = RunRequestSchema.parse(request);
-    expect(result.ref).toBe('main');
-  });
-
-  test('RunRequestSchema validates taskMode enum', async () => {
-    const request = {
-      repoUrl: 'https://github.com/org/repo',
-      taskMode: 'invalid',
-    };
+  test.each([
+    {
+      name: 'accepts minimal required fields',
+      request: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
+      shouldSucceed: true,
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
+    },
+    {
+      name: 'applies default ref when omitted',
+      request: { repoUrl: 'https://github.com/org/repo' },
+      shouldSucceed: true,
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
+    },
+    {
+      name: 'rejects invalid URL',
+      request: { repoUrl: 'not-a-url', ref: 'main' },
+      shouldSucceed: false,
+    },
+    {
+      name: 'rejects invalid taskMode enum',
+      request: { repoUrl: 'https://github.com/org/repo', taskMode: 'invalid' },
+      shouldSucceed: false,
+    },
+  ])('RunRequestSchema $name', ({ request, shouldSucceed, expected }) => {
+    if (shouldSucceed) {
+      const result = RunRequestSchema.parse(request);
+      expect(result).toMatchObject(expected!);
+      return;
+    }
 
     expect(() => RunRequestSchema.parse(request)).toThrow();
   });
