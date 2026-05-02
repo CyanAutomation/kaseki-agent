@@ -5,7 +5,6 @@ import { JobScheduler } from './job-scheduler';
 import { ResultCache } from './result-cache';
 import {
   RunRequestSchema,
-  RunRequest,
   RunResponse,
   StatusResponse,
   LogResponse,
@@ -15,6 +14,52 @@ import {
   ErrorResponse,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
+
+function isUtf8ContinuationByte(byte: number): boolean {
+  return (byte & 0xc0) === 0x80;
+}
+
+function utf8SequenceLength(leadingByte: number): number {
+  if ((leadingByte & 0x80) === 0) return 1;
+  if ((leadingByte & 0xe0) === 0xc0) return 2;
+  if ((leadingByte & 0xf0) === 0xe0) return 3;
+  if ((leadingByte & 0xf8) === 0xf0) return 4;
+  return 1;
+}
+
+export function decodeUtf8TailSafely(buffer: Buffer): string {
+  let start = 0;
+  while (start < buffer.length && isUtf8ContinuationByte(buffer[start])) {
+    start++;
+  }
+
+  let end = buffer.length;
+  while (end > start && isUtf8ContinuationByte(buffer[end - 1])) {
+    end--;
+  }
+
+  if (end > start) {
+    const lastStart = end - 1;
+    const seqLen = utf8SequenceLength(buffer[lastStart]);
+    if (lastStart + seqLen > buffer.length) {
+      end = lastStart;
+    }
+  }
+
+  return buffer.subarray(start, end).toString('utf-8');
+}
+
+export function tailLogByLines(content: string, maxLines: number): string {
+  if (maxLines <= 0) {
+    return '';
+  }
+
+  const lines = content.split(/\r?\n/);
+  if (lines.length <= maxLines) {
+    return content;
+  }
+  return lines.slice(-maxLines).join('\n');
+}
 
 /**
  * Create the API routes.
@@ -48,7 +93,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
   /**
    * Health check endpoint.
    */
-  router.get('/health', (req: Request, res: Response) => {
+  router.get('/health', (_req: Request, res: Response) => {
     const queueStatus = scheduler.getQueueStatus();
     const errors: string[] = [];
 
@@ -98,7 +143,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
   /**
    * GET /api/runs - List all runs.
    */
-  router.get('/runs', (req: Request, res: Response) => {
+  router.get('/runs', (_req: Request, res: Response) => {
     const allJobs = scheduler.listJobs();
 
     const response: RunsListResponse = {
@@ -200,7 +245,15 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         const fd = fs.openSync(logFile, 'r');
         fs.readSync(fd, truncated, 0, maxSize, size - maxSize);
         fs.closeSync(fd);
-        content = `[... truncated, showing last ${maxSize} bytes ...]\n${truncated.toString('utf-8')}`;
+
+        let tailContent = decodeUtf8TailSafely(truncated);
+        if (req.query.tail === 'lines') {
+          const lineCount = Number(req.query.lines ?? 200);
+          const maxLines = Number.isFinite(lineCount) ? Math.max(1, Math.floor(lineCount)) : 200;
+          tailContent = tailLogByLines(tailContent, maxLines);
+        }
+
+        content = `[... truncated, showing last ${maxSize} bytes ...]\n${tailContent}`;
       } else {
         content = fs.readFileSync(logFile, 'utf-8');
       }
