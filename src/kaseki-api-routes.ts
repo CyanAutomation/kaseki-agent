@@ -66,6 +66,18 @@ export function tailLogByLines(content: string, maxLines: number): string {
   return lines.slice(-maxLines).join('\n');
 }
 
+export function readTailBytes(logFile: string, size: number, maxSize: number): Buffer {
+  const truncated = Buffer.alloc(maxSize);
+  const fd = fs.openSync(logFile, 'r');
+  try {
+    fs.readSync(fd, truncated, 0, maxSize, size - maxSize);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  return truncated;
+}
+
 function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'failed'): boolean {
   return status === 'completed' || status === 'failed';
 }
@@ -265,10 +277,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       let content = '';
 
       if (size > maxSize) {
-        const truncated = Buffer.alloc(maxSize);
-        const fd = fs.openSync(logFile, 'r');
-        fs.readSync(fd, truncated, 0, maxSize, size - maxSize);
-        fs.closeSync(fd);
+        const truncated = readTailBytes(logFile, size, maxSize);
 
         let tailContent = decodeUtf8TailSafely(truncated);
         if (req.query.tail === 'lines') {

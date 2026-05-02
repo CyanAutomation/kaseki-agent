@@ -64,3 +64,31 @@ describe('kaseki-api-routes artifact read behavior', () => {
     expect(secondRead).toBe('{"version":2}');
   });
 });
+
+
+describe('kaseki-api-routes tail file descriptor cleanup', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.dontMock('fs');
+  });
+
+  test('closes file descriptor when readSync throws', () => {
+    const closeSyncMock = jest.fn();
+
+    jest.isolateModules(() => {
+      jest.doMock('fs', () => ({
+        ...jest.requireActual('fs'),
+        openSync: jest.fn(() => 42),
+        readSync: jest.fn(() => {
+          throw new Error('read failed');
+        }),
+        closeSync: closeSyncMock,
+      }));
+
+      const { readTailBytes } = require('./kaseki-api-routes');
+      expect(() => readTailBytes('/tmp/fake.log', 200, 100)).toThrow('read failed');
+    });
+
+    expect(closeSyncMock).toHaveBeenCalledWith(42);
+  });
+});
