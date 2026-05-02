@@ -16,6 +16,16 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import {
+  readInstanceMetadata,
+  Metadata,
+  HostStart,
+} from './instance-metadata-reader';
+import {
+  deriveInstanceLifecycleStatus,
+  resolveInstanceExitCode as importedResolveInstanceExitCode,
+  classifyFailure as importedClassifyFailure,
+} from './instance-state-derivation';
 
 // ============================================================================
 // Types
@@ -36,27 +46,6 @@ interface KasekiInstance {
   model: string;
   repo: string;
   ref: string;
-}
-
-interface Metadata {
-  current_stage?: string;
-  exit_code?: number | string;
-  duration_seconds?: number;
-  started_at?: string;
-  start_time?: string;
-  model?: string;
-  pi_duration_seconds?: number;
-  [key: string]: any;
-}
-
-interface HostStart {
-  model?: string;
-  repo_url?: string;
-  repo?: string;
-  git_ref?: string;
-  ref?: string;
-  agentTimeoutSeconds?: number;
-  [key: string]: any;
 }
 
 interface InstanceStatus {
@@ -168,21 +157,13 @@ function isInstanceRunning(instance: string): boolean {
   }
 }
 
-/**
- * Derive lifecycle status from running flag and exit code.
- */
-function deriveInstanceLifecycleStatus(
-  isRunning: boolean,
-  exitCode: number | null
-): 'running' | 'completed' | 'failed' | 'pending' {
-  if (isRunning) return 'running';
-  if (exitCode === 0) return 'completed';
-  if (Number.isInteger(exitCode)) return 'failed';
-  return 'pending';
+function isSkippableInstanceIoError(error: any): boolean {
+  return error && (error.code === 'ENOENT' || error.code === 'ESTALE');
 }
 
 /**
  * Normalize an exit code candidate into an integer or null.
+ * (Used for local exit code parsing)
  */
 function normalizeExitCodeCandidate(value: any): number | null {
   if (typeof value === 'number' && Number.isInteger(value)) {
@@ -195,31 +176,32 @@ function normalizeExitCodeCandidate(value: any): number | null {
 }
 
 /**
- * Resolve exit code from metadata first, then prefer /exit_code when readable/valid.
- * Returns null only when neither source has a valid integer.
+ * Derive lifecycle status from running flag and exit code.
  */
-function resolveInstanceExitCode(
-  resultDir: string,
-  metadata: Metadata = {}
-): number | null {
-  const metadataExitCode = normalizeExitCodeCandidate(metadata.exit_code);
-  const exitCodePath = path.join(resultDir, 'exit_code');
-  if (!fs.existsSync(exitCodePath)) {
-    return metadataExitCode;
-  }
-
-  try {
-    const fileExitCode = normalizeExitCodeCandidate(fs.readFileSync(exitCodePath, 'utf8'));
-    return fileExitCode !== null ? fileExitCode : metadataExitCode;
-  } catch {
-    return metadataExitCode;
-  }
+function deriveInstanceLifecycleStatusLocal(
+  isRunning: boolean,
+  exitCode: number | null
+): 'running' | 'completed' | 'failed' | 'pending' {
+  return deriveInstanceLifecycleStatus(isRunning, exitCode);
 }
 
 /**
- * Resolve stage from metadata first, then fallback to stdout markers.
+ * Wrapper around resolveInstanceExitCode from instance-state-derivation.
+ * Kept for API compatibility; delegates to imported function.
  */
-function resolveInstanceStage(
+function resolveInstanceExitCodeLocal(
+  resultDir: string,
+  metadata: Metadata = {}
+): number | null {
+  return importedResolveInstanceExitCode(resultDir, metadata);
+}
+
+/**
+ * Wrapper around resolveInstanceStage from instance-state-derivation.
+ * Adapts the interface to match existing call sites.
+ * Note: The imported function requires resultsDir, but this wrapper uses the config.
+ */
+function resolveInstanceStageLocal(
   instance: string,
   metadata: Metadata = {},
   fallback: string = 'unknown'
@@ -231,27 +213,15 @@ function resolveInstanceStage(
   return parsedStage || fallback;
 }
 
-function classifyFailure(metadata: Metadata = {}, exitCode: number | string | null = null): string {
-  const normalizedExitCode = normalizeExitCodeCandidate(exitCode);
-  const failedCommand =
-    typeof metadata.failed_command === 'string' ? metadata.failed_command.trim() : '';
-  if (normalizedExitCode === 0) return 'none';
-  if (normalizedExitCode === 124) return 'timeout';
-  if (failedCommand === 'empty git diff' || normalizedExitCode === 3) return 'empty-diff';
-  if (failedCommand === 'validation') return 'validation';
-  if (failedCommand === 'quality checks') return 'quality';
-  if (failedCommand === 'secret scan') return 'secret-scan';
-  if (failedCommand.startsWith('github')) return 'github';
-  if (failedCommand.includes('OPENROUTER_API_KEY') || failedCommand.includes('OpenRouter')) {
-    return 'credentials';
-  }
-  if (failedCommand) return failedCommand.replace(/\s+/g, '-');
-  if (Number.isInteger(normalizedExitCode)) return 'nonzero-exit';
-  return 'unknown';
-}
-
-function isSkippableInstanceIoError(error: any): boolean {
-  return error && (error.code === 'ENOENT' || error.code === 'ESTALE');
+/**
+ * Wrapper around classifyFailure from instance-state-derivation.
+ * Kept for API compatibility; delegates to imported function.
+ */
+function classifyFailureLocal(
+  metadata: Metadata = {},
+  exitCode: number | string | null = null
+): string {
+  return importedClassifyFailure(metadata, exitCode);
 }
 
 /**
@@ -276,71 +246,23 @@ function listInstances(): KasekiInstance[] {
     try {
       const instance = dir;
       const resultDir = path.join(config.KASEKI_RESULTS_DIR, instance);
-      const metadataPath = path.join(resultDir, 'metadata.json');
-      const hostStartPath = path.join(resultDir, 'host-start.json');
 
-      let metadata: Metadata = {};
-      let hostStart: HostStart = {};
-      let isRunning = false;
-      let exitCode: number | null = null;
-
-      // Read metadata
-      if (fs.existsSync(metadataPath)) {
-        try {
-          metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-        } catch (e) {
-          if (isSkippableInstanceIoError(e)) {
-            throw e;
-          }
-          // Metadata may still be incomplete if run is in progress
-        }
-      }
-
-      // Read host start config
-      if (fs.existsSync(hostStartPath)) {
-        try {
-          hostStart = JSON.parse(fs.readFileSync(hostStartPath, 'utf8'));
-        } catch (e) {
-          if (isSkippableInstanceIoError(e)) {
-            throw e;
-          }
-        }
-      }
+      // Read metadata and host config
+      const { metadata, hostStart, elapsedSeconds } = readInstanceMetadata(resultDir);
 
       // Check if currently running via Docker (exact name match)
-      isRunning = isInstanceRunning(instance);
+      const isRunning = isInstanceRunning(instance);
 
-      // Read exit code from metadata fallback and /exit_code when available
-      exitCode = resolveInstanceExitCode(resultDir, metadata);
-
-      // Calculate elapsed time
-      let elapsedSeconds: number | null = null;
-      if (metadata.duration_seconds !== undefined) {
-        elapsedSeconds = metadata.duration_seconds;
-      } else {
-        const resourceTimePath = path.join(resultDir, 'resource.time');
-        if (fs.existsSync(resourceTimePath)) {
-          try {
-            const content = fs.readFileSync(resourceTimePath, 'utf8');
-            const match = content.match(/elapsed_seconds=(\d+)/);
-            if (match) {
-              elapsedSeconds = parseInt(match[1], 10);
-            }
-          } catch (e) {
-            if (isSkippableInstanceIoError(e)) {
-              throw e;
-            }
-          }
-        }
-      }
+      // Read exit code from metadata and optional /exit_code file
+      const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
 
       instances.push({
         name: instance,
-        status: deriveInstanceLifecycleStatus(isRunning, exitCode),
+        status: deriveInstanceLifecycleStatusLocal(isRunning, exitCode),
         running: isRunning,
         exitCode,
         elapsedSeconds,
-        stage: resolveInstanceStage(instance, metadata, 'unknown'),
+        stage: resolveInstanceStageLocal(instance, metadata, 'unknown'),
         model: hostStart.model || metadata.model || 'unknown',
         repo: hostStart.repo_url || hostStart.repo || 'unknown',
         ref: hostStart.git_ref || hostStart.ref || 'unknown',
@@ -535,10 +457,10 @@ function getInstanceStatus(instance: string): InstanceStatus {
   }
 
   // Get stage
-  const stage = resolveInstanceStage(instance, metadata, 'unknown');
+  const stage = resolveInstanceStageLocal(instance, metadata, 'unknown');
 
   // Get exit code from metadata fallback and /exit_code when available
-  const exitCode = resolveInstanceExitCode(resultDir, metadata);
+  const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
 
   let agentElapsedSeconds: number | null = null;
   if (metadata.pi_duration_seconds !== undefined) {
@@ -573,7 +495,7 @@ function getInstanceStatus(instance: string): InstanceStatus {
     timeoutImminent: isRunning && stage === 'pi coding agent' && timeoutRiskPercent >= 85,
     timedOut,
     exitCode,
-    failureClass: classifyFailure(metadata, exitCode),
+    failureClass: classifyFailureLocal(metadata, exitCode),
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
     model: hostStart.model || 'unknown',
@@ -605,8 +527,8 @@ function detectErrors(instance: string): DetectedError[] {
   }
 
   const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
-  const exitCode = resolveInstanceExitCode(resultDir, metadata);
-  if (classifyFailure(metadata, exitCode) === 'empty-diff') {
+  const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
+  if (classifyFailureLocal(metadata, exitCode) === 'empty-diff') {
     errors.push({
       severity: ErrorSeverity.WARNING,
       source: 'empty-diff',
@@ -717,7 +639,7 @@ function getAnalysis(instance: string): AnalysisResult {
   const changedFiles =
     changedFilesContent?.split('\n').filter(Boolean) || [];
   const errors = detectErrors(instance);
-  const resolvedExitCode = resolveInstanceExitCode(resultDir, metadata);
+  const resolvedExitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
   const exitCode = resolvedExitCode !== null ? resolvedExitCode : 'unknown';
   const status = exitCode === 0 ? 'passed' : 'failed';
 
@@ -725,7 +647,7 @@ function getAnalysis(instance: string): AnalysisResult {
     instance,
     status,
     exit_code: exitCode,
-    failure_class: classifyFailure(metadata, resolvedExitCode),
+    failure_class: classifyFailureLocal(metadata, resolvedExitCode),
     failed_command: metadata.failed_command || '',
     duration_seconds: metadata.duration_seconds || 0,
     pi_duration_seconds: metadata.pi_duration_seconds || 0,
@@ -764,9 +686,9 @@ export {
   isInstanceRunning,
   deriveInstanceLifecycleStatus,
   normalizeExitCodeCandidate,
-  resolveInstanceExitCode,
-  resolveInstanceStage,
-  classifyFailure,
+  resolveInstanceExitCodeLocal,
+  resolveInstanceStageLocal,
+  classifyFailureLocal,
   // Types
   type Config,
   type KasekiInstance,

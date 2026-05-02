@@ -2,6 +2,8 @@
 import fs from 'node:fs';
 import { once } from 'node:events';
 import readline from 'node:readline';
+import { EventCounterAggregator } from './event-aggregator';
+import { TimestampTracker } from './timestamp-tracker';
 
 interface PiEvent {
   type?: string;
@@ -49,13 +51,6 @@ const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
 const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
 const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
 
-// Maximum number of distinct keys tracked per dynamic summary map.
-// Once this cap is reached, unseen keys are folded into "__other__" so
-// summary objects stay bounded and may truncate long-tail categories.
-const MAX_DISTINCT_SUMMARY_KEYS = 1000;
-const OTHER_BUCKET_KEY = '__other__';
-
-const eventCounts: EventCountMap = {};
 let rssSampler: NodeJS.Timeout | null = null;
 let maxRssBytes = 0;
 
@@ -79,46 +74,6 @@ function stopRssSampler(): void {
 `);
 }
 
-const assistantEventCounts: EventCountMap = {};
-const models: EventCountMap = {};
-const apis: EventCountMap = {};
-let toolStartCount = 0;
-let toolEndCount = 0;
-let invalidJsonLines = 0;
-let firstTimestamp: string | null = null;
-let lastTimestamp: string | null = null;
-let minTimestampMs: number | null = null;
-let maxTimestampMs: number | null = null;
-
-interface IncrementOptions {
-  maxDistinctKeys?: number;
-}
-
-function increment(
-  map: EventCountMap,
-  key: string | undefined,
-  options: IncrementOptions = {}
-): void {
-  if (!key) return;
-  const { maxDistinctKeys } = options;
-  let targetKey = key;
-  if (
-    Number.isInteger(maxDistinctKeys) &&
-    maxDistinctKeys! > 0 &&
-    map[key] === undefined &&
-    Object.keys(map).filter((k) => k !== OTHER_BUCKET_KEY).length >= maxDistinctKeys!
-  ) {
-    targetKey = OTHER_BUCKET_KEY;
-  }
-  map[targetKey] = (map[targetKey] ?? 0) + 1;
-}
-
-function observeModelAndApi(message: any): void {
-  if (!message || typeof message !== 'object') return;
-  increment(models, message.model, { maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS });
-  increment(apis, message.api, { maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS });
-}
-
 function eventTimestamp(event: PiEvent): string | null {
   const candidates = [
     event.timestamp,
@@ -132,12 +87,6 @@ function eventTimestamp(event: PiEvent): string | null {
       return new Date(value).toISOString();
   }
   return null;
-}
-
-function toEpochMilliseconds(timestamp: string | null): number | null {
-  if (!timestamp) return null;
-  const epochMs = Date.parse(timestamp);
-  return Number.isFinite(epochMs) ? epochMs : null;
 }
 
 function shouldKeep(event: PiEvent): boolean {
@@ -168,6 +117,10 @@ async function main(): Promise<void> {
   const output = fs.createWriteStream(filteredPath, { encoding: 'utf8' });
   const lines = readline.createInterface({ input, crlfDelay: Infinity });
 
+  const aggregator = new EventCounterAggregator();
+  const tracker = new TimestampTracker();
+  let invalidJsonLines = 0;
+
   for await (const line of lines) {
     if (!line.trim()) continue;
     let event: PiEvent;
@@ -178,34 +131,29 @@ async function main(): Promise<void> {
       continue;
     }
 
-    increment(eventCounts, event.type ?? '<missing>', {
-      maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS,
-    });
+    // Record event type
+    aggregator.recordEventType(event.type);
+
+    // Track timestamp
     const timestamp = eventTimestamp(event);
     if (timestamp) {
-      firstTimestamp ??= timestamp;
-      lastTimestamp = timestamp;
-
-      const epochMs = toEpochMilliseconds(timestamp);
-      if (epochMs !== null) {
-        minTimestampMs =
-          minTimestampMs === null ? epochMs : Math.min(minTimestampMs, epochMs);
-        maxTimestampMs =
-          maxTimestampMs === null ? epochMs : Math.max(maxTimestampMs, epochMs);
-      }
+      tracker.record(timestamp);
     }
 
-    observeModelAndApi(event.message);
-    observeModelAndApi(event.assistantMessageEvent?.message);
-    observeModelAndApi(event.assistantMessageEvent?.partial);
+    // Record model and API observations
+    aggregator.recordModelAndApi(event.message);
+    aggregator.recordModelAndApi(event.assistantMessageEvent?.message);
+    aggregator.recordModelAndApi(event.assistantMessageEvent?.partial);
 
+    // Record assistant event type
     const assistantType = event.assistantMessageEvent?.type;
-    increment(assistantEventCounts, assistantType, {
-      maxDistinctKeys: MAX_DISTINCT_SUMMARY_KEYS,
-    });
-    if (event.type === 'tool_execution_start') toolStartCount++;
-    if (event.type === 'tool_execution_end') toolEndCount++;
+    aggregator.recordAssistantEventType(assistantType);
 
+    // Track tool executions
+    if (event.type === 'tool_execution_start') aggregator.recordToolStart();
+    if (event.type === 'tool_execution_end') aggregator.recordToolEnd();
+
+    // Write event if it should be kept
     if (shouldKeep(event)) {
       const canContinue = output.write(`${JSON.stringify(sanitize(event))}\n`);
       if (!canContinue) {
@@ -216,23 +164,12 @@ async function main(): Promise<void> {
 
   await new Promise<void>((resolve) => output.end(resolve));
 
-  const selectedModel =
-    Object.entries(models).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
-  const selectedApi =
-    Object.entries(apis).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
-
+  // Generate summary
   const summary: Summary = {
-    selected_model: selectedModel,
-    selected_api: selectedApi,
-    event_counts: eventCounts,
-    assistant_event_counts: assistantEventCounts,
-    tool_start_count: toolStartCount,
-    tool_end_count: toolEndCount,
+    ...aggregator.summary(),
     invalid_json_lines: invalidJsonLines,
-    first_event_at:
-      minTimestampMs !== null ? new Date(minTimestampMs).toISOString() : firstTimestamp,
-    last_event_at:
-      maxTimestampMs !== null ? new Date(maxTimestampMs).toISOString() : lastTimestamp,
+    first_event_at: tracker.firstEpochMs() !== null ? new Date(tracker.firstEpochMs()!).toISOString() : tracker.firstTimestamp(),
+    last_event_at: tracker.lastEpochMs() !== null ? new Date(tracker.lastEpochMs()!).toISOString() : tracker.lastTimestamp(),
   };
 
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);

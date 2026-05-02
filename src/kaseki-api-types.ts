@@ -116,21 +116,6 @@ export interface ErrorResponse {
 }
 
 /**
- * Health check response.
- */
-export interface HealthResponse {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  timestamp: string;
-  version?: string;
-  queue?: {
-    pending: number;
-    running: number;
-    maxConcurrent: number;
-  };
-  errors?: string[];
-}
-
-/**
  * Internal job representation.
  */
 export interface Job {
