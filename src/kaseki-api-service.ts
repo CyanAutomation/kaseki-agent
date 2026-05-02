@@ -1,7 +1,56 @@
 import express from 'express';
+import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { createApiRouter } from './kaseki-api-routes';
+
+type ShutdownDeps = {
+  server: Server;
+  scheduler: Pick<JobScheduler, 'shutdown'>;
+  forceExitAfterMs?: number;
+  exit?: (code: number) => never;
+};
+
+export function createGracefulShutdown({
+  server,
+  scheduler,
+  forceExitAfterMs = 8000,
+  exit = process.exit,
+}: ShutdownDeps): (signal: string) => Promise<void> {
+  return async (signal: string) => {
+    console.log(`\nReceived ${signal}, shutting down gracefully...`);
+
+    const hardTimeout = setTimeout(() => {
+      console.error(
+        `Graceful shutdown timeout after ${forceExitAfterMs}ms, forcing exit`,
+      );
+      exit(1);
+    }, forceExitAfterMs);
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err?: Error) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          console.log('HTTP server closed');
+          resolve();
+        });
+      });
+
+      scheduler.shutdown();
+      console.log('Job scheduler shutdown');
+
+      exit(0);
+    } catch (err) {
+      console.error('Error during graceful shutdown:', err);
+      exit(1);
+    } finally {
+      clearTimeout(hardTimeout);
+    }
+  };
+}
 
 /**
  * Main Kaseki API service.
@@ -36,20 +85,7 @@ async function main(): Promise<void> {
   });
 
   // Graceful shutdown
-  const gracefulShutdown = async (signal: string) => {
-    console.log(`\nReceived ${signal}, shutting down gracefully...`);
-
-    // Stop accepting new requests
-    server.close(() => {
-      console.log('HTTP server closed');
-    });
-
-    // Abort running jobs
-    scheduler.shutdown();
-    console.log('Job scheduler shutdown');
-
-    process.exit(0);
-  };
+  const gracefulShutdown = createGracefulShutdown({ server, scheduler });
 
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
@@ -66,4 +102,6 @@ async function main(): Promise<void> {
   });
 }
 
-main();
+if (require.main === module) {
+  void main();
+}
