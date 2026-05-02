@@ -74,7 +74,7 @@ export class JobScheduler {
     const resultsDir = path.join(this.config.resultsDir, job.id);
 
     // Prepare environment
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       KASEKI_LOG_DIR: resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
@@ -108,46 +108,81 @@ export class JobScheduler {
     });
 
     job.processId = proc.pid;
+    let timeoutFired = false;
+
+    const finalizeJob = (updates: Partial<Job>): void => {
+      if (job.finalized) {
+        return;
+      }
+      if (updates.status !== undefined) {
+        job.status = updates.status;
+      }
+      if (updates.exitCode !== undefined) {
+        job.exitCode = updates.exitCode;
+      }
+      if (updates.error !== undefined) {
+        job.error = updates.error;
+      }
+      if (updates.failureClass !== undefined) {
+        job.failureClass = updates.failureClass;
+      }
+      if (updates.completedAt !== undefined) {
+        job.completedAt = updates.completedAt;
+      }
+      this.completeJob(job);
+    };
 
     // Note: stdout/stderr collection omitted per kaseki-agent design
     // (logs are written directly to disk by kaseki-agent.sh)
 
     // Set timeout
     const timeout = setTimeout(() => {
+      if (job.finalized) {
+        return;
+      }
+      timeoutFired = true;
       proc.kill('SIGTERM');
-      job.status = 'failed';
-      job.exitCode = 124;
-      job.failureClass = 'timeout';
-      job.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
-      this.completeJob(job);
+      finalizeJob({
+        status: 'failed',
+        exitCode: 124,
+        failureClass: 'timeout',
+        error: `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`,
+        completedAt: new Date(),
+      });
     }, this.config.agentTimeoutSeconds * 1000);
 
     job.timeout = timeout;
 
     // Handle process exit
     proc.on('exit', (code) => {
+      if (job.finalized) {
+        return;
+      }
       clearTimeout(timeout);
-      job.completedAt = new Date();
-      job.exitCode = code ?? -1;
-
-      if (code === 0) {
-        job.status = 'completed';
+      const updates: Partial<Job> = {
+        completedAt: new Date(),
+        exitCode: code ?? -1,
+      };
+      if (code === 0 && !timeoutFired) {
+        updates.status = 'completed';
       } else {
-        job.status = 'failed';
-        // Try to parse failure from results
+        updates.status = 'failed';
         this.parseFailureFromResults(job);
       }
-
-      this.completeJob(job);
+      finalizeJob(updates);
     });
 
     // Handle process error
     proc.on('error', (err) => {
+      if (job.finalized) {
+        return;
+      }
       clearTimeout(timeout);
-      job.status = 'failed';
-      job.error = `Failed to spawn process: ${err.message}`;
-      job.completedAt = new Date();
-      this.completeJob(job);
+      finalizeJob({
+        status: 'failed',
+        error: `Failed to spawn process: ${err.message}`,
+        completedAt: new Date(),
+      });
     });
   }
 
@@ -173,6 +208,13 @@ export class JobScheduler {
    * Clean up after job completion.
    */
   private completeJob(job: Job): void {
+    if (job.finalized) {
+      return;
+    }
+    job.finalized = true;
+    if (!job.completedAt) {
+      job.completedAt = new Date();
+    }
     this.running.delete(job.id);
     this.processQueue();
   }
