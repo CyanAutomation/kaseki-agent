@@ -207,6 +207,12 @@ env PATH="$TMP_DIR:/usr/bin:/bin" \
 run_status=$?
 set -e
 
+if [ "$run_status" -ne 0 ]; then
+  echo "Expected run-kaseki.sh to exit 0, got $run_status" >&2
+  cat "$TMP_DIR/run.stderr" >&2 || true
+  exit 1
+fi
+
 result_dir="$KASEKI_ROOT/kaseki-results/kaseki-1"
 [ -d "$result_dir" ] || { echo "Expected result dir" >&2; exit 1; }
 
@@ -231,11 +237,6 @@ if (!found) throw new Error("no JSON artifact includes github_pr_url/github_push
 
 if ! grep -q "workspace_removed=" "$result_dir/cleanup.log"; then
   echo "Expected cleanup.log to include workspace removal status" >&2
-  exit 1
-fi
-
-if [ ! -f "$result_dir/cleanup.log" ]; then
-  echo "Expected cleanup.log artifact" >&2
   exit 1
 fi
 
