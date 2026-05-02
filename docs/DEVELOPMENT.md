@@ -135,9 +135,11 @@ npm run type-check  # TypeScript validation
 ### Test
 
 ```bash
-npm test           # Full suite (build + type-check + jest + bash tests)
-npm run test:watch # Jest watch mode
-npm run test:coverage  # Coverage report
+npm run test:unit -- src/result-cache.test.ts      # Run a single Jest test file
+npm run test:unit -- -t "caches successful result" # Run tests matching a name pattern
+npm run test:ci                                     # Full CI-style validation (build + type-check + jest + bash tests)
+npm run test:watch                                  # Jest watch mode
+npm run test:coverage                               # Coverage report
 ```
 
 ### Lint
