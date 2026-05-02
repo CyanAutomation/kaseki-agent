@@ -103,7 +103,7 @@ curl -X POST http://localhost:8080/api/runs \
 **Response (202 Accepted):**
 ```json
 {
-  "id": "kaseki-42",
+  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
   "status": "queued",
   "createdAt": "2026-05-02T14:30:00Z"
 }
@@ -120,12 +120,12 @@ List recent kaseki runs, newest first.
 {
   "runs": [
     {
-      "id": "kaseki-42",
+      "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
       "status": "running",
       "createdAt": "2026-05-02T14:30:00Z"
     },
     {
-      "id": "kaseki-41",
+      "id": "kaseki-1d0dcf2b-f26e-40e3-97d3-d6fd15f7d087",
       "status": "completed",
       "createdAt": "2026-05-02T14:20:00Z",
       "completedAt": "2026-05-02T14:28:00Z"
@@ -144,7 +144,7 @@ Poll the status of a specific run. Returns progress and timeout risk.
 **Response (200 OK):**
 ```json
 {
-  "id": "kaseki-42",
+  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
   "status": "running",
   "progress": "Invoking Pi agent...",
   "elapsedSeconds": 45,
@@ -177,14 +177,14 @@ Retrieve specific log files from a run.
 **Example:**
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/runs/kaseki-42/logs/stdout
+  http://localhost:8080/api/runs/kaseki-550e8400-e29b-41d4-a716-446655440000/logs/stdout
 ```
 
 **Response (200 OK):**
 ```json
 {
   "logType": "stdout",
-  "content": "[kaseki-42] Cloning repo...\n[kaseki-42] Installing dependencies...\n...",
+  "content": "[kaseki-550e8400-e29b-41d4-a716-446655440000] Cloning repo...\n[kaseki-550e8400-e29b-41d4-a716-446655440000] Installing dependencies...\n...",
   "size": 45678
 }
 ```
@@ -200,7 +200,7 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 **Response (200 OK):**
 ```json
 {
-  "id": "kaseki-42",
+  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
   "createdAt": "2026-05-02T14:30:00Z",
   "completedAt": "2026-05-02T14:40:00Z",
@@ -208,7 +208,7 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
   "exitCode": 0,
   "metadata": {
     "model": "openrouter/free",
-    "instance": "kaseki-42",
+    "instance": "kaseki-550e8400-e29b-41d4-a716-446655440000",
     "repo": "https://github.com/org/repo",
     "ref": "main"
   },
@@ -250,7 +250,7 @@ Download specific result artifacts.
 **Example:**
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/results/kaseki-42/git.diff -o patch.diff
+  http://localhost:8080/api/results/kaseki-550e8400-e29b-41d4-a716-446655440000/git.diff -o patch.diff
 ```
 
 ## Error Handling
