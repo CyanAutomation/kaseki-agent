@@ -290,12 +290,22 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 
 Download specific result artifacts.
 
-**Allowed Files:**
+**Allowed Files (always-safe summary artifacts):**
 - `git.diff` — Unified diff of changes
 - `metadata.json` — Full run metadata
 - `result-summary.md` — Human-readable summary
 - `pi-events.jsonl` — Pi agent events (newline-delimited JSON)
 - `pi-summary.json` — Pi agent statistics
+- `progress.log` — Execution progress log
+
+**Allowed Files (failure-only diagnostics):**
+- `failure.json` — Failure classification and details
+- `stderr.log` — Captured standard error output
+- `stdout.log` — Captured standard output
+- `validation.log` — Validation command output (if validation configured)
+- `quality.log` — Quality-gate output (if quality checks configured)
+
+Failure-only diagnostics are returned only when the run status is `failed`.
 
 **Example:**
 ```bash

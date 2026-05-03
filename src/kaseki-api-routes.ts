@@ -376,7 +376,22 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     const fileName = req.params.file;
-    const allowedFiles = ['git.diff', 'metadata.json', 'result-summary.md', 'pi-events.jsonl', 'pi-summary.json'];
+    const alwaysSafeSummaryArtifacts = [
+      'git.diff',
+      'metadata.json',
+      'result-summary.md',
+      'pi-events.jsonl',
+      'pi-summary.json',
+      'progress.log',
+    ];
+    const failureOnlyDiagnosticsArtifacts = [
+      'failure.json',
+      'stderr.log',
+      'stdout.log',
+      'validation.log',
+      'quality.log',
+    ];
+    const allowedFiles = [...alwaysSafeSummaryArtifacts, ...failureOnlyDiagnosticsArtifacts];
 
     if (!allowedFiles.includes(fileName)) {
       return sendErrorResponse(
@@ -384,6 +399,15 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         400,
         'Bad Request',
         `Artifact not allowed: ${fileName}. Allowed: ${allowedFiles.join(', ')}`
+      );
+    }
+
+    if (failureOnlyDiagnosticsArtifacts.includes(fileName) && job.status !== 'failed') {
+      return sendErrorResponse(
+        res,
+        400,
+        'Bad Request',
+        `Artifact only available for failed runs: ${fileName}`
       );
     }
 
@@ -400,6 +424,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         contentType = 'application/json';
       } else if (fileName.endsWith('.md')) {
         contentType = 'text/markdown';
+      } else if (fileName.endsWith('.log')) {
+        contentType = 'text/plain';
       } else if (fileName === 'git.diff') {
         contentType = 'text/plain';
       }
