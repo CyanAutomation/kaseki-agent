@@ -21,7 +21,7 @@ services:
       - kaseki-results:/agents/kaseki-results
       - kaseki-logs:/var/log/kaseki-api
       - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless stopped
+    restart: unless-stopped
     cap_drop:
       - ALL
     security_opt:
