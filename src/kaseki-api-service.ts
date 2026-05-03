@@ -52,10 +52,28 @@ export function createGracefulShutdown({
   };
 }
 
+
+export function assertSupportedNodeVersion(
+  version: string = process.versions.node,
+  minimumMajor: number = 24,
+): void {
+  const major = Number.parseInt(version.split('.')[0] ?? '', 10);
+  console.log(`Node runtime detected: v${version}`);
+
+  if (!Number.isFinite(major) || major < minimumMajor) {
+    console.error(
+      `Unsupported Node.js runtime v${version}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:24-bookworm-slim).`,
+    );
+    process.exit(1);
+  }
+}
+
 /**
  * Main Kaseki API service.
  */
 async function main(): Promise<void> {
+  assertSupportedNodeVersion();
+
   // Load configuration
   let config;
   try {
