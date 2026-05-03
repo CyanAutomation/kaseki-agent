@@ -47,7 +47,7 @@ export class JobScheduler {
    */
   submitJob(request: RunRequest): Job {
     const instanceId = this.generateInstanceId();
-    
+
     // Generate tracing IDs if not provided
     const correlationId = request.tracing?.correlationId || uuidv4();
     const requestId = request.tracing?.requestId || uuidv4();
@@ -66,7 +66,7 @@ export class JobScheduler {
     this.jobs.set(instanceId, job);
     this.queue.push(job);
     this.persistJobs();
-    
+
     // Emit webhook event for job submission
     if (job.webhookConfig) {
       const payload: WebhookPayload = {
@@ -79,7 +79,7 @@ export class JobScheduler {
       };
       this.webhookManager.enqueueWebhook(instanceId, payload, job.webhookConfig);
     }
-    
+
     this.processQueue();
 
     // Log job submission
@@ -345,7 +345,7 @@ export class JobScheduler {
           exitCode: 124,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
-        
+
         // Emit webhook event for failure
         if (job.webhookConfig) {
           const payload: WebhookPayload = {
@@ -368,7 +368,7 @@ export class JobScheduler {
           exitCode: code,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
-        
+
         // Emit webhook event for completion
         if (job.webhookConfig) {
           const payload: WebhookPayload = {
@@ -393,7 +393,7 @@ export class JobScheduler {
           error: job.error,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
-        
+
         // Emit webhook event for failure
         if (job.webhookConfig) {
           const payload: WebhookPayload = {
