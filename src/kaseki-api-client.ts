@@ -162,7 +162,7 @@ export class KasekiApiClient {
       throw new Error('Invalid validation response payload');
     }
 
-    return (data as unknown) as ValidationResponse;
+    return data as unknown as ValidationResponse;
   }
 
   /**
