@@ -145,11 +145,25 @@ Poll the status of a specific run. Returns progress and timeout risk.
 ```json
 {
   "id": "kaseki-42",
-  "status": "running",
-  "progress": "Invoking Pi agent...",
-  "elapsedSeconds": 45,
-  "timeoutRiskPercent": 4,
-  "resultDir": "/agents/kaseki-results/kaseki-42"
+  "status": "failed",
+  "elapsedSeconds": 315,
+  "timeoutRiskPercent": 26,
+  "exitCode": 1,
+  "failureClass": "validation",
+  "resultDir": "/agents/kaseki-results/kaseki-42",
+  "artifacts": {
+    "metadataJson": true,
+    "resultSummaryMd": true,
+    "failureJson": true,
+    "stderrLog": true,
+    "availableFiles": [
+      "metadata.json",
+      "result-summary.md",
+      "failure.json",
+      "stderr.log"
+    ]
+  },
+  "diagnosticEntryPoint": "failure.json"
 }
 ```
 
@@ -158,6 +172,16 @@ Poll the status of a specific run. Returns progress and timeout risk.
 - `running` — Currently executing
 - `completed` — Finished successfully (check exitCode)
 - `failed` — Failed validation, timeout, or quality gate
+
+For terminal states (`completed` and `failed`), the response includes an `artifacts` object so clients can branch without probing `/api/results/:id/:file` and handling avoidable `404` responses. `availableFiles` is deterministic and ordered as:
+1) `metadata.json`
+2) `result-summary.md`
+3) `failure.json`
+4) `stderr.log`
+
+For failed runs, `diagnosticEntryPoint` is included:
+- `failure.json` when present
+- otherwise `result-summary.md`
 
 **Timeout Risk:** Percentage of agent timeout elapsed. Monitor for >85% and consider canceling if needed.
 

@@ -365,3 +365,105 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     }
   });
 });
+
+describe('kaseki-api-routes status artifact hints', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-status-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('failed run reports deterministic artifact availability and prefers failure.json as diagnostic entrypoint', async () => {
+    const jobId = 'kaseki-failed-status-1';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"id":"meta"}');
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"failureClass":"validation"}');
+    fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId
+          ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
+          : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
+      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
+    }));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.status).toBe('failed');
+      expect(body.artifacts).toEqual({
+        metadataJson: true,
+        resultSummaryMd: false,
+        failureJson: true,
+        stderrLog: true,
+        availableFiles: ['metadata.json', 'failure.json', 'stderr.log'],
+      });
+      expect(body.diagnosticEntryPoint).toBe('failure.json');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test('failed run falls back to result-summary.md diagnostic entrypoint when failure.json is missing', async () => {
+    const jobId = 'kaseki-failed-status-2';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
+      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
+    }));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.artifacts).toEqual({
+        metadataJson: false,
+        resultSummaryMd: true,
+        failureJson: false,
+        stderrLog: false,
+        availableFiles: ['result-summary.md'],
+      });
+      expect(body.diagnosticEntryPoint).toBe('result-summary.md');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

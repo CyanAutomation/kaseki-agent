@@ -38,6 +38,14 @@ export interface StatusResponse {
   failureClass?: string;
   error?: string;
   resultDir?: string;
+  artifacts?: {
+    metadataJson: boolean;
+    resultSummaryMd: boolean;
+    failureJson: boolean;
+    stderrLog: boolean;
+    availableFiles: string[];
+  };
+  diagnosticEntryPoint?: 'failure.json' | 'result-summary.md';
 }
 
 /**
