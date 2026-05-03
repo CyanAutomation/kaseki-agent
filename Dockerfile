@@ -23,7 +23,7 @@ COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.jso
 RUN npm ci --ignore-scripts \
     && mkdir -p node_modules
 
-RUN npm install -g @mariozechner/pi-coding-agent@0.70.2
+RUN npm install -g @mariozechner/pi-coding-agent@0.72.0
 
 
 FROM node:24-bookworm-slim AS runtime
