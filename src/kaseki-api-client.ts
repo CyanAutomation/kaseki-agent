@@ -1,5 +1,6 @@
 // fallow-ignore-next-line unused-files
-import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse } from './kaseki-api-types';
+import { v4 as uuidv4 } from 'uuid';
+import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse, ValidationResponse } from './kaseki-api-types';
 
 /**
  * Kaseki API client for TypeScript/Node.js applications.
@@ -24,13 +25,21 @@ import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResp
 export class KasekiApiClient {
   private baseUrl: string;
   private baseHeaders: Record<string, string>;
+  private retryConfig = {
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 8000,
+  };
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, apiKey: string, retryConfig?: Partial<typeof KasekiApiClient.prototype.retryConfig>) {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     this.baseHeaders = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     };
+    if (retryConfig) {
+      this.retryConfig = { ...this.retryConfig, ...retryConfig };
+    }
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,10 +87,54 @@ export class KasekiApiClient {
   }
 
   /**
-   * Submit a new kaseki run.
+   * Retry helper with exponential backoff.
    */
-  async submit(request: RunRequest): Promise<RunResponse> {
-    const res = await fetch(`${this.baseUrl}/api/runs`, {
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    description: string = 'Operation'
+  ): Promise<T> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt < this.retryConfig.maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Don't retry on 4xx errors (except 429 Too Many Requests)
+        if (
+          lastError.message.includes('400') ||
+          lastError.message.includes('401') ||
+          lastError.message.includes('403') ||
+          lastError.message.includes('404')
+        ) {
+          throw lastError;
+        }
+
+        // If this is the last attempt, throw
+        if (attempt === this.retryConfig.maxAttempts - 1) {
+          throw lastError;
+        }
+
+        // Calculate backoff
+        const delayMs = Math.min(
+          this.retryConfig.initialDelayMs * Math.pow(2, attempt),
+          this.retryConfig.maxDelayMs
+        );
+
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw lastError || new Error(`${description} failed after ${this.retryConfig.maxAttempts} attempts`);
+  }
+
+  /**
+   * Validate a job request before submission.
+   */
+  async validate(request: RunRequest): Promise<ValidationResponse> {
+    const res = await fetch(`${this.baseUrl}/api/validate`, {
       method: 'POST',
       headers: this.baseHeaders,
       body: JSON.stringify(request),
@@ -93,13 +146,55 @@ export class KasekiApiClient {
         const errorData: unknown = await res.json();
         errorDetail = this.parseErrorDetail(errorData);
       } catch {
-        // Ignore non-JSON error payloads and fall back to statusText.
+        // Ignore
       }
-      throw new Error(`Failed to submit run: ${errorDetail ?? res.statusText}`);
+      throw new Error(`Validation failed: ${errorDetail ?? res.statusText}`);
     }
 
     const data: unknown = await res.json();
-    return this.parseRunResponse(data);
+    if (
+      !this.isRecord(data) ||
+      typeof data.isValid !== 'boolean' ||
+      !Array.isArray(data.checks) ||
+      !Array.isArray(data.warnings) ||
+      !Array.isArray(data.errors)
+    ) {
+      throw new Error('Invalid validation response payload');
+    }
+
+    return (data as unknown) as ValidationResponse;
+  }
+
+  /**
+   * Submit a new kaseki run with automatic retry and idempotency support.
+   */
+  async submit(request: RunRequest): Promise<RunResponse> {
+    // Auto-generate idempotency key if not provided
+    const idempotencyKey = request.idempotencyKey || uuidv4();
+    const requestWithIdempotency = { ...request, idempotencyKey };
+
+    // Perform submission with retry logic
+    return this.retryWithBackoff(async () => {
+      const res = await fetch(`${this.baseUrl}/api/runs`, {
+        method: 'POST',
+        headers: this.baseHeaders,
+        body: JSON.stringify(requestWithIdempotency),
+      });
+
+      if (!res.ok) {
+        let errorDetail: string | undefined;
+        try {
+          const errorData: unknown = await res.json();
+          errorDetail = this.parseErrorDetail(errorData);
+        } catch {
+          // Ignore non-JSON error payloads and fall back to statusText.
+        }
+        throw new Error(`Failed to submit run: ${errorDetail ?? res.statusText}`);
+      }
+
+      const data: unknown = await res.json();
+      return this.parseRunResponse(data);
+    }, 'Run submission');
   }
 
   /**

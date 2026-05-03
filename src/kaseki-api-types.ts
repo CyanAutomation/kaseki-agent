@@ -69,6 +69,7 @@ export const RunRequestSchema = z.object({
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
+  idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
 });
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
@@ -108,6 +109,27 @@ export interface StatusResponse {
     availableFiles: string[];
   };
   diagnosticEntryPoint?: 'failure.json' | 'result-summary.md';
+}
+
+/**
+ * Pre-flight validation check result.
+ */
+export interface ValidationCheck {
+  name: string; // e.g., 'repo-reachable', 'ref-exists', 'repo-size'
+  status: 'pass' | 'fail' | 'warning';
+  message: string;
+  detail?: string;
+}
+
+/**
+ * Pre-flight validation response.
+ */
+export interface ValidationResponse {
+  isValid: boolean;
+  checks: ValidationCheck[];
+  warnings: string[];
+  errors: string[];
+  estimatedDurationSeconds?: number;
 }
 
 /**
@@ -223,4 +245,5 @@ export interface Job {
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
   currentStage?: string; // Current job stage for progress tracking
+  idempotencyKey?: string; // Idempotency key for deduplication
 }

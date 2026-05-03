@@ -1,8 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { JobScheduler } from './job-scheduler';
 import { ResultCache } from './result-cache';
+import { IdempotencyStore } from './idempotency-store';
+import { PreFlightValidator } from './pre-flight-validator';
 import {
   RunRequestSchema,
   RunResponse,
@@ -13,6 +16,7 @@ import {
   AnalysisResponse,
   RunsListResponse,
   ErrorResponse,
+  ValidationResponse,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
 import { createEventLogger } from './logger';
@@ -126,7 +130,12 @@ export function readArtifactContent(
 /**
  * Create the API routes.
  */
-export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig): Router {
+export function createApiRouter(
+  scheduler: JobScheduler,
+  config: KasekiApiConfig,
+  idempotencyStore: IdempotencyStore,
+  preFlightValidator: PreFlightValidator,
+): Router {
   const router = Router();
   const cache = new ResultCache();
   const logger = createEventLogger('api');
@@ -217,15 +226,32 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       // Validate request body
       const runRequest = RunRequestSchema.parse(req.body);
 
+      // Auto-generate idempotency key if not provided
+      const idempotencyKey = runRequest.idempotencyKey || uuidv4();
+
+      // Check idempotency cache
+      const cachedResponse = idempotencyStore.getCachedResponse(idempotencyKey);
+      if (cachedResponse) {
+        logger.event('api_idempotent_resubmission', {
+          jobId: cachedResponse.id,
+          idempotencyKey,
+        });
+        return res.status(200).json(cachedResponse); // 200 OK, not 202
+      }
+
       // Log request
       logger.event('api_run_request', {
         repoUrl: runRequest.repoUrl,
         ref: runRequest.ref,
         taskMode: runRequest.taskMode,
+        idempotencyKey,
       });
 
       // Submit to scheduler
       const job = scheduler.submitJob(runRequest);
+
+      // Store idempotency key on job
+      job.idempotencyKey = idempotencyKey;
 
       const response: RunResponse = {
         id: job.id,
@@ -234,6 +260,9 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         correlationId: job.correlationId,
         requestId: job.requestId,
       };
+
+      // Store in idempotency cache
+      idempotencyStore.storeResponse(idempotencyKey, response);
 
       res.status(202).json(response); // 202 Accepted
     } catch (err: unknown) {
@@ -331,6 +360,43 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
     } catch (err) {
       logger.event('api_error', {
         path: '/webhooks/test',
+        error: (err as Error).message,
+      });
+      return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
+    }
+  });
+
+  /**
+   * POST /api/validate - Pre-flight validation of job request (dry-run).
+   */
+  router.post('/validate', async (req: Request, res: Response) => {
+    try {
+      // Validate request body
+      const runRequest = RunRequestSchema.parse(req.body);
+
+      logger.event('api_validation_request', {
+        repoUrl: runRequest.repoUrl,
+        ref: runRequest.ref,
+      });
+
+      // Run pre-flight validation
+      const validationResult = await preFlightValidator.validate(runRequest);
+
+      const response: ValidationResponse = validationResult;
+
+      res.json(response);
+    } catch (err: unknown) {
+      if (err instanceof Error && 'errors' in err) {
+        // Zod validation error
+        const details = (err as any).errors.map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`).join('; ');
+        logger.event('api_validation_error', {
+          path: '/validate',
+          details,
+        });
+        return sendErrorResponse(res, 400, 'Bad Request', details);
+      }
+      logger.event('api_error', {
+        path: '/validate',
         error: (err as Error).message,
       });
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
