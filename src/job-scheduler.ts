@@ -489,7 +489,7 @@ export class JobScheduler {
 
   private decodeUtf8Tail(tail: Buffer<ArrayBufferLike>): string {
     const decoder = new StringDecoder('utf8');
-    return decoder.write(tail);
+    return decoder.end(tail);
   }
 
   /**
