@@ -353,6 +353,18 @@ describe('Node runtime precheck', () => {
     expect(() => assertSupportedNodeVersion('25.1.2')).not.toThrow();
   });
 
+
+  test.each(['x.y.z', '24.x.1', 'v24.0.0', '24.0.0-beta'])(
+    'exits early for malformed Node version string %s',
+    (version) => {
+      const exitMock = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new Error(`exit:${code}`);
+      }) as never);
+
+      expect(() => assertSupportedNodeVersion(version)).toThrow('exit:1');
+      expect(exitMock).toHaveBeenCalledWith(1);
+    },
+  );
   test('exits early for unsupported Node major versions', () => {
     const exitMock = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${code}`);

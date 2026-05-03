@@ -57,12 +57,14 @@ export function assertSupportedNodeVersion(
   version: string = process.versions.node,
   minimumMajor: number = 24,
 ): void {
-  const major = Number.parseInt(version.split('.')[0] ?? '', 10);
-  console.log(`Node runtime detected: v${version}`);
+  const normalizedVersion = version.trim();
+  const isValidVersion = /^\d+(?:\.\d+){0,2}$/.test(normalizedVersion);
+  const major = Number.parseInt(normalizedVersion.split('.')[0] ?? '', 10);
+  console.log(`Node runtime detected: v${normalizedVersion}`);
 
-  if (!Number.isFinite(major) || major < minimumMajor) {
+  if (!isValidVersion || !Number.isFinite(major) || major < minimumMajor) {
     console.error(
-      `Unsupported Node.js runtime v${version}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:24-bookworm-slim).`,
+      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:24-bookworm-slim).`,
     );
     process.exit(1);
   }
