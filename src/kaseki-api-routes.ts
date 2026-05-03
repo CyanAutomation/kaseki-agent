@@ -289,6 +289,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       };
 
       if (job.status === 'failed') {
+        // Keep failed-job diagnostic entry-point selection in this terminal-status scope
+        // where keyFileAvailability is defined to avoid duplicate/out-of-scope assignments.
         response.diagnosticEntryPoint = keyFileAvailability['failure.json']
           ? 'failure.json'
           : 'result-summary.md';
