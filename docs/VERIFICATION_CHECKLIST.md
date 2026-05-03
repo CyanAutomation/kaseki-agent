@@ -103,6 +103,7 @@ curl http://localhost:8080/health
 Choose one deployment option (Docker runtime is authoritative):
 
 **Option A: Docker Compose (Recommended)**
+
 ```bash
 # Copy files to target host
 scp docker-compose.yml user@kaseki-host:/agents/kaseki-template/
@@ -114,6 +115,7 @@ KASEKI_API_KEYS=sk-your-key docker-compose up -d
 ```
 
 **Option B: systemd Service (Docker mode)**
+
 ```bash
 # Build/pull the image first (required for /app/dist artifact)
 docker build -t kaseki-agent:node24-local .
@@ -214,6 +216,7 @@ pkill -f "kaseki-api-service"
 ### Issue: `npm install` fails
 
 **Solution**: Ensure Node.js 22.22.2+ is installed
+
 ```bash
 node --version  # Should be v22.22.2 or higher
 ```
@@ -221,6 +224,7 @@ node --version  # Should be v22.22.2 or higher
 ### Issue: Port 8080 already in use
 
 **Solution**: Use different port or kill existing process
+
 ```bash
 lsof -i :8080  # List processes
 KASEKI_API_PORT=9000 npm run kaseki-api
@@ -229,6 +233,7 @@ KASEKI_API_PORT=9000 npm run kaseki-api
 ### Issue: `/agents/kaseki-results` doesn't exist
 
 **Solution**: Create it
+
 ```bash
 sudo mkdir -p /agents/kaseki-results
 sudo chown $USER:$USER /agents/kaseki-results
@@ -237,6 +242,7 @@ sudo chown $USER:$USER /agents/kaseki-results
 ### Issue: Type errors in IDE
 
 **Solution**: Rebuild TypeScript
+
 ```bash
 npm run build
 ```
@@ -287,12 +293,12 @@ curl -X POST http://localhost:8080/api/runs \
 3. `npm run type-check:changed` reports no errors (PR gate)
 4. `npm run type-check` / `npm run type-check:full` results are reviewed as tracked non-blocking debt
 5. API service starts without errors
-5. `/health` endpoint responds with 200
-6. Can submit a job via `POST /api/runs`
-7. Can retrieve status via `GET /api/runs/:id/status`
-8. Can download artifacts via `GET /api/results/:id/:file`
-9. TypeScript client library imports and types correctly
-10. Documentation is complete and references work
+6. `/health` endpoint responds with 200
+7. Can submit a job via `POST /api/runs`
+8. Can retrieve status via `GET /api/runs/:id/status`
+9. Can download artifacts via `GET /api/results/:id/:file`
+10. TypeScript client library imports and types correctly
+11. Documentation is complete and references work
 
 All criteria are ✅ met. Ready for production!
 
