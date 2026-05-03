@@ -9,6 +9,7 @@ import {
   StatusResponse,
   LogResponse,
   ArtifactResponse,
+  RunArtifactsResponse,
   AnalysisResponse,
   RunsListResponse,
   ErrorResponse,
@@ -79,6 +80,12 @@ export function readTailBytes(logFile: string, size: number, maxSize: number): B
 
 function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'failed'): boolean {
   return status === 'completed' || status === 'failed';
+}
+
+function artifactContentType(fileName: string): string {
+  if (fileName.endsWith('.json')) return 'application/json';
+  if (fileName.endsWith('.md')) return 'text/markdown';
+  return 'text/plain';
 }
 
 export function readArtifactContent(
@@ -418,17 +425,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         return sendErrorResponse(res, 404, 'Not Found', `Artifact not found: ${fileName}`);
       }
 
-      // Determine content type
-      let contentType = 'text/plain';
-      if (fileName.endsWith('.json')) {
-        contentType = 'application/json';
-      } else if (fileName.endsWith('.md')) {
-        contentType = 'text/markdown';
-      } else if (fileName.endsWith('.log')) {
-        contentType = 'text/plain';
-      } else if (fileName === 'git.diff') {
-        contentType = 'text/plain';
-      }
+      const contentType = artifactContentType(fileName);
 
       // Read from disk for non-terminal jobs; cache only terminal artifacts.
       const content = readArtifactContent(filePath, job.status, cache);
@@ -455,6 +452,62 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         `Failed to read artifact: ${(err as Error).message}`
       );
     }
+  });
+
+  /**
+   * GET /api/runs/:id/artifacts - Enumerate allowlisted artifacts and availability.
+   */
+  router.get('/runs/:id/artifacts', (req: Request, res: Response) => {
+    const job = scheduler.getJob(req.params.id);
+    if (!job) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+
+    const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+    const alwaysSafeSummaryArtifacts = [
+      'git.diff',
+      'metadata.json',
+      'result-summary.md',
+      'pi-events.jsonl',
+      'pi-summary.json',
+      'progress.log',
+    ];
+    const failureOnlyDiagnosticsArtifacts = [
+      'failure.json',
+      'stderr.log',
+      'stdout.log',
+      'validation.log',
+      'quality.log',
+    ];
+    const allowedFiles = [...alwaysSafeSummaryArtifacts, ...failureOnlyDiagnosticsArtifacts];
+
+    const artifacts = allowedFiles.map((fileName) => {
+      const filePath = path.join(runDir, fileName);
+      const exists = fs.existsSync(filePath);
+      const stat = exists ? fs.statSync(filePath) : undefined;
+      const isFailureOnly = failureOnlyDiagnosticsArtifacts.includes(fileName);
+      const available = exists && (!isFailureOnly || job.status === 'failed');
+
+      return {
+        name: fileName,
+        size: stat?.size ?? 0,
+        contentType: artifactContentType(fileName),
+        available,
+      };
+    });
+
+    const response: RunArtifactsResponse = {
+      id: job.id,
+      runStatus: job.status,
+      exitCode: job.exitCode,
+      artifacts,
+      recommended:
+        job.status === 'failed'
+          ? ['failure.json', 'stderr.log', 'stdout.log', 'validation.log', 'quality.log']
+          : ['result-summary.md', 'metadata.json', 'pi-summary.json', 'git.diff'],
+    };
+
+    res.json(response);
   });
 
   /**
