@@ -281,12 +281,23 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       cancelJob: jest.fn(),
     } as any;
 
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
     const app = express();
     app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
-      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
-      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
-    }));
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
 
@@ -324,12 +335,23 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       cancelJob: jest.fn(),
     } as any;
 
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
     const app = express();
     app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
-      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
-      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
-    }));
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
 
@@ -359,12 +381,23 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       cancelJob: jest.fn(),
     } as any;
 
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir: fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-notfound-test-')),
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
     const app = express();
     app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
-      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
-      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
-    }));
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
     try {
@@ -408,12 +441,23 @@ describe('kaseki-api-routes status artifact hints', () => {
       cancelJob: jest.fn(),
     } as any;
 
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
     const app = express();
     app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
-      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
-      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
-    }));
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
 
@@ -451,12 +495,23 @@ describe('kaseki-api-routes status artifact hints', () => {
       cancelJob: jest.fn(),
     } as any;
 
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
     const app = express();
     app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
-      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
-      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
-    }));
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
 

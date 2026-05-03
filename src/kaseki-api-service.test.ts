@@ -5,6 +5,7 @@ import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
+import { IdempotencyStore } from './idempotency-store';
 import { RunRequestSchema } from './kaseki-api-types';
 
 describe('Kaseki API Configuration', () => {
@@ -314,6 +315,14 @@ describe('Kaseki API graceful shutdown', () => {
       }),
     };
 
+    const webhookManager = {
+      shutdown: jest.fn(),
+    } as any;
+
+    const idempotencyStore = {
+      shutdown: jest.fn(),
+    } as any;
+
     const exit = jest.fn((code: number) => {
       callOrder.push(`exit:${code}`);
       return undefined as never;
@@ -322,6 +331,8 @@ describe('Kaseki API graceful shutdown', () => {
     const gracefulShutdown = createGracefulShutdown({
       server,
       scheduler,
+      webhookManager,
+      idempotencyStore,
       forceExitAfterMs: 1000,
       exit,
     });
