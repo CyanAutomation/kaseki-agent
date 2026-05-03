@@ -14,7 +14,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
@@ -29,8 +28,8 @@
   },
   "ts-node": {
     "compilerOptions": {
-      "module": "ESNext",
-      "allowImportingTsExtensions": true
+      "module": "CommonJS",
+      "moduleResolution": "node"
     }
   },
   "include": ["src/**/*.ts"],
