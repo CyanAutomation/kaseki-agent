@@ -1,5 +1,4 @@
 const fs = require('fs');
-const path = require('path');
 
 const filePath = 'src/kaseki-api-routes.test.ts';
 let content = fs.readFileSync(filePath, 'utf-8');
@@ -16,8 +15,8 @@ while ((match = pattern.exec(content)) !== null) {
 console.log(`Found ${matches.length} matches to fix`);
 
 // Replace all instances
-matches.forEach((m, idx) => {
-  const oldText = m.text;
+matches.forEach((_m, _idx) => {
+  const oldText = _m.text;
   const configMatch = oldText.match(/\{\s*(port: 0.*?)\s*\}/s);
   if (configMatch) {
     const configContent = configMatch[1];

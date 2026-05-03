@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { JobScheduler } from './job-scheduler';
 import { ResultCache } from './result-cache';
@@ -318,7 +319,6 @@ export function createApiRouter(
         // Generate HMAC signature if secret provided
         let signature: string | null = null;
         if (secret && typeof secret === 'string') {
-          const crypto = require('crypto');
           const body = JSON.stringify(testPayload);
           signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
         }
