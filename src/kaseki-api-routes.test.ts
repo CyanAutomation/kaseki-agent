@@ -192,4 +192,49 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  test('non-failed run is blocked from retrieving failure diagnostics artifacts', async () => {
+    const jobId = 'kaseki-running-1';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ failureClass: 'validation' }));
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) => id === jobId
+        ? { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir }
+        : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info',
+    }));
+
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key' };
+
+    try {
+      const failureRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/failure.json`, { headers });
+      expect(failureRes.status).toBe(400);
+      const failureBody = (await failureRes.json()) as any;
+      expect(failureBody.title).toBe('Bad Request');
+      expect(failureBody.status).toBe(400);
+      expect(failureBody.detail).toContain('Artifact only available for failed runs: failure.json');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });
