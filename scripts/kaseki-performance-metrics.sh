@@ -33,7 +33,7 @@ while IFS=$'\t' read -r stage _exit_code duration _detail; do
 done < "$STAGE_TIMINGS_FILE"
 
 # Calculate statistics
-if [ $STAGE_COUNT -eq 0 ]; then
+if [ "$STAGE_COUNT" -eq 0 ]; then
   cat > "$OUTPUT_FILE" <<EOF
 {
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -72,11 +72,11 @@ MIN_DURATION="${sorted_durations[0]:-0}"
 MAX_DURATION="${sorted_durations[$((STAGE_COUNT - 1))]:-0}"
 
 # Determine performance rating
-if [ $TOTAL_TIME -lt 300 ]; then
+if [ "$TOTAL_TIME" -lt 300 ]; then
   RATING="Excellent"
-elif [ $TOTAL_TIME -lt 600 ]; then
+elif [ "$TOTAL_TIME" -lt 600 ]; then
   RATING="Good"
-elif [ $TOTAL_TIME -lt 1200 ]; then
+elif [ "$TOTAL_TIME" -lt 1200 ]; then
   RATING="Acceptable"
 else
   RATING="Slow"
@@ -109,7 +109,7 @@ cat > "$OUTPUT_FILE" <<EOF
       if [ "$P99" -gt 60 ]; then
         echo '"Some stages exceed 1 minute; review for parallelization",'
       fi
-      if [ $AVG_DURATION -gt 30 ]; then
+      if [ "$AVG_DURATION" -gt 30 ]; then
         echo '"Average stage duration is high; profile for bottlenecks",'
       fi
       echo '"Good performance baseline"'
