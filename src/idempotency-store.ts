@@ -157,10 +157,11 @@ export class IdempotencyStore {
       return;
     }
 
-    // Run cleanup every hour
+    // Run cleanup every hour (but allow process to exit even if interval is pending)
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 3600000);
+    this.cleanupInterval.unref();
   }
 
   /**
