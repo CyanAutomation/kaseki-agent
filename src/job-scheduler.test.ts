@@ -1,5 +1,6 @@
 // fallow-ignore-next-line unused-files
 import { EventEmitter } from 'events';
+import * as fs from 'fs';
 import { JobScheduler } from './job-scheduler';
 
 const mockSpawn = jest.fn();
@@ -13,6 +14,23 @@ class MockProcess extends EventEmitter {
   kill = jest.fn((_signal?: NodeJS.Signals) => true);
 }
 
+const tempDirs: string[] = [];
+
+function createResultsDir(): string {
+  const dir = fs.mkdtempSync('/tmp/kaseki-job-scheduler-test-');
+  tempDirs.push(dir);
+  return dir;
+}
+
+function cleanupResultsDirs(): void {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+}
+
 describe('JobScheduler timeout lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -21,6 +39,7 @@ describe('JobScheduler timeout lifecycle', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    cleanupResultsDirs();
   });
 
   test('timeout followed by quick exit sets timeout failure on exit', () => {
@@ -30,7 +49,7 @@ describe('JobScheduler timeout lifecycle', () => {
     const scheduler = new JobScheduler({
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir: createResultsDir(),
 
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
@@ -61,6 +80,39 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.completedAt).toBeDefined();
   });
 
+  test('passes parent results directory as host log directory', () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler({
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info',
+    });
+
+    const job = scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main', job.id]),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_LOG_DIR: resultsDir,
+        }),
+      }),
+    );
+    expect(fs.existsSync(job.resultDir || '')).toBe(false);
+  });
+
   test('timeout escalates to SIGKILL when process hangs', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -68,7 +120,7 @@ describe('JobScheduler timeout lifecycle', () => {
     const scheduler = new JobScheduler({
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir: createResultsDir(),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
       maxDiffBytes: 200000,
@@ -95,7 +147,7 @@ describe('JobScheduler timeout lifecycle', () => {
     const scheduler = new JobScheduler({
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir: createResultsDir(),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
       maxDiffBytes: 200000,
@@ -128,6 +180,7 @@ describe('JobScheduler shutdown lifecycle', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    cleanupResultsDirs();
   });
 
   test('shutdown terminates running children and marks jobs as shutdown-aborted', () => {
@@ -137,7 +190,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     const scheduler = new JobScheduler({
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir: createResultsDir(),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
       maxDiffBytes: 200000,
@@ -170,7 +223,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     const scheduler = new JobScheduler({
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir: createResultsDir(),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch',
       maxDiffBytes: 200000,

@@ -235,6 +235,11 @@ First install over SSH can be a single remote command:
 ssh pi@192.168.88.201 'set -o pipefail 2>/dev/null || true; curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | KASEKI_CONTROLLER_MODE=1 KASEKI_LOG_DIR=/tmp/kaseki-log OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key sh'
 ```
 
+If an existing remote checkout has local edits or stale generated files,
+activation fails with a JSON error instead of overwriting it. Controllers that
+intend to replace the checkout can set `KASEKI_REPLACE_STALE=1` or pass
+`--replace-stale` to `scripts/kaseki-activate.sh`.
+
 The activation script emits newline-delimited JSON status records around each
 major step, making it safer for another agent to parse than free-form shell
 output alone.
@@ -504,7 +509,7 @@ curl -X POST http://localhost:8080/api/runs \
 - **Job queue** — Multiple concurrent runs with concurrency limits
 - **Bearer token auth** — Simple API key authentication
 - **Result artifacts** — Download diffs, logs, metadata via HTTP
-- **Real-time progress** — Monitor queue status and timeout risk
+- **Real-time progress** — Monitor queue status, sanitized progress, and timeout risk
 
 ### Main Endpoints
 
@@ -512,9 +517,11 @@ curl -X POST http://localhost:8080/api/runs \
 |--------|----------|---------|
 | `POST` | `/api/runs` | Submit a new task (202 Accepted) |
 | `GET` | `/api/runs/:id/status` | Poll run status and progress |
+| `GET` | `/api/runs/:id/progress` | Fetch sanitized progress events |
+| `POST` | `/api/runs/:id/cancel` | Cancel a queued or running run |
 | `GET` | `/api/runs/:id/analysis` | Get comprehensive summary |
 | `GET` | `/api/results/:id/:file` | Download artifacts (diff, metadata) |
-| `GET` | `/api/health` | Health check (no auth required) |
+| `GET` | `/health`, `/api/health` | Health check (no auth required) |
 
 ### Documentation
 

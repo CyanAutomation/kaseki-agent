@@ -1,9 +1,14 @@
 import { ChildProcess, spawn } from 'child_process';
-import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Job, RunRequest } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
+
+type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+};
 
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
@@ -17,10 +22,15 @@ export class JobScheduler {
   private shutdownKillTimers = new Map<string, NodeJS.Timeout>();
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private config: KasekiApiConfig;
+  private indexPath: string;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
   constructor(config: KasekiApiConfig) {
     this.config = config;
+    this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
+    this.loadPersistedJobs();
+    this.persistJobs();
+    this.processQueue();
   }
 
   /**
@@ -33,10 +43,12 @@ export class JobScheduler {
       status: 'queued',
       request,
       createdAt: new Date(),
+      resultDir: this.getResultDir(instanceId),
     };
 
     this.jobs.set(instanceId, job);
     this.queue.push(job);
+    this.persistJobs();
     this.processQueue();
 
     return job;
@@ -57,6 +69,41 @@ export class JobScheduler {
   }
 
   /**
+   * Cancel a queued or running job.
+   */
+  cancelJob(id: string): Job | undefined {
+    const job = this.jobs.get(id);
+    if (!job || job.status === 'completed' || job.status === 'failed') {
+      return job;
+    }
+
+    const completedAt = new Date();
+    if (job.status === 'queued') {
+      this.queue = this.queue.filter((queued) => queued.id !== id);
+      job.status = 'failed';
+      job.exitCode = 143;
+      job.failureClass = 'cancelled';
+      job.error = 'Job cancelled before execution';
+      job.completedAt = completedAt;
+      job.finalized = true;
+      this.persistJobs();
+      return job;
+    }
+
+    const proc = this.processes.get(id);
+    if (proc) {
+      proc.kill('SIGTERM');
+    }
+    job.status = 'failed';
+    job.exitCode = 143;
+    job.failureClass = 'cancelled';
+    job.error = 'Job cancelled by API request';
+    job.completedAt = completedAt;
+    this.completeJob(job);
+    return job;
+  }
+
+  /**
    * Process the queue, respecting max concurrent limit.
    */
   private processQueue(): void {
@@ -74,14 +121,16 @@ export class JobScheduler {
   private executeJob(job: Job): void {
     job.status = 'running';
     job.startedAt = new Date();
+    job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
-
-    const resultsDir = path.join(this.config.resultsDir, job.id);
 
     // Prepare environment
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      KASEKI_LOG_DIR: resultsDir,
+      // run-kaseki.sh owns creation of the per-instance result directory and
+      // refuses to overwrite it. Keep host log mirroring at the parent results
+      // directory so the API does not accidentally reserve the final result path.
+      KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(this.config.agentTimeoutSeconds),
@@ -107,7 +156,7 @@ export class JobScheduler {
     }
 
     // Invoke kaseki-activate.sh with --controller flag
-    const proc = spawn('bash', [activateScript, '--controller', 'run', job.request.repoUrl, job.request.ref], {
+    const proc = spawn('bash', [activateScript, '--controller', 'run', job.request.repoUrl, job.request.ref, job.id], {
       env,
       stdio: 'pipe',
     });
@@ -116,6 +165,7 @@ export class JobScheduler {
 
     job.processId = proc.pid;
     let timedOut = false;
+    this.persistJobs();
 
     const finalizeJob = (updates: Partial<Job>): void => {
       if (job.finalized) {
@@ -135,6 +185,9 @@ export class JobScheduler {
       }
       if (updates.completedAt !== undefined) {
         job.completedAt = updates.completedAt;
+      }
+      if (updates.resultDir !== undefined) {
+        job.resultDir = updates.resultDir;
       }
       this.completeJob(job);
     };
@@ -210,7 +263,7 @@ export class JobScheduler {
    */
   private parseFailureFromResults(job: Job): void {
     try {
-      const metadataPath = path.join(this.config.resultsDir, job.id, 'metadata.json');
+      const metadataPath = path.join(this.getResultDir(job.id), 'metadata.json');
       if (fs.existsSync(metadataPath)) {
         const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
         if (metadata.failure) {
@@ -247,26 +300,97 @@ export class JobScheduler {
       this.timeoutKillTimers.delete(job.id);
     }
     this.processExited.delete(job.id);
+    this.persistJobs();
     this.processQueue();
   }
 
   /**
    * Generate a unique, durable instance ID.
    *
-   * Format: `kaseki-<uuidv4>`
+   * Format: `kaseki-N`, matching run-kaseki.sh and result directory names.
    */
   private generateInstanceId(): string {
     const maxAttempts = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const id = `kaseki-${randomUUID()}`;
-      const resultsPath = path.join(this.config.resultsDir, id);
+      const id = `kaseki-${attempt + 1}`;
+      const resultsPath = this.getResultDir(id);
       if (!this.jobs.has(id) && !fs.existsSync(resultsPath)) {
         return id;
       }
     }
 
     throw new Error(`Failed to allocate unique job ID after ${maxAttempts} attempts`);
+  }
+
+  private getResultDir(id: string): string {
+    return path.join(this.config.resultsDir, id);
+  }
+
+  private serializeJob(job: Job): PersistedJob {
+    const serializableJob = { ...job };
+    delete serializableJob.timeout;
+    return {
+      ...serializableJob,
+      createdAt: job.createdAt.toISOString(),
+      startedAt: job.startedAt?.toISOString(),
+      completedAt: job.completedAt?.toISOString(),
+    };
+  }
+
+  private deserializeJob(job: PersistedJob): Job {
+    return {
+      ...job,
+      createdAt: new Date(job.createdAt),
+      startedAt: job.startedAt ? new Date(job.startedAt) : undefined,
+      completedAt: job.completedAt ? new Date(job.completedAt) : undefined,
+      resultDir: job.resultDir || this.getResultDir(job.id),
+      finalized: job.status === 'completed' || job.status === 'failed' ? true : job.finalized,
+    };
+  }
+
+  private loadPersistedJobs(): void {
+    if (!fs.existsSync(this.indexPath)) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+      for (const persisted of parsed.jobs || []) {
+        const job = this.deserializeJob(persisted);
+        if (job.status === 'running') {
+          job.status = 'failed';
+          job.exitCode = 143;
+          job.failureClass = 'api_restart';
+          job.error = 'API service restarted while job was running';
+          job.completedAt = job.completedAt || new Date();
+          job.finalized = true;
+        }
+        if (job.status === 'queued') {
+          this.queue.push(job);
+        }
+        this.jobs.set(job.id, job);
+      }
+    } catch {
+      // A corrupt index should not prevent the API from starting; existing
+      // artifacts remain available on disk for direct inspection.
+    }
+  }
+
+  private persistJobs(): void {
+    try {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
+      const payload = {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        jobs: this.listJobs().map((job) => this.serializeJob(job)),
+      };
+      const tmpPath = `${this.indexPath}.tmp`;
+      fs.writeFileSync(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+      fs.renameSync(tmpPath, this.indexPath);
+    } catch {
+      // Keep scheduler progress alive even if persistence is unavailable.
+    }
   }
 
   /**
@@ -328,5 +452,6 @@ export class JobScheduler {
     }
 
     this.queue = [];
+    this.persistJobs();
   }
 }

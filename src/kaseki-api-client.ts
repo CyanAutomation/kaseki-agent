@@ -124,6 +124,52 @@ export class KasekiApiClient {
   }
 
   /**
+   * Cancel a queued or running run.
+   */
+  async cancel(runId: string): Promise<StatusResponse> {
+    const res = await fetch(`${this.baseUrl}/api/runs/${runId}/cancel`, {
+      method: 'POST',
+      headers: this.baseHeaders,
+    });
+
+    if (res.status === 404) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(`Failed to cancel run: ${res.status}`);
+    }
+
+    const data: unknown = await res.json();
+    return this.parseStatusResponse(data);
+  }
+
+  /**
+   * Get sanitized progress events for a run.
+   */
+  async getProgress(runId: string, tail?: number): Promise<Array<Record<string, unknown>>> {
+    const suffix = typeof tail === 'number' ? `?tail=${encodeURIComponent(String(tail))}` : '';
+    const res = await fetch(`${this.baseUrl}/api/runs/${runId}/progress${suffix}`, {
+      method: 'GET',
+      headers: this.baseHeaders,
+    });
+
+    if (res.status === 404) {
+      throw new Error(`Progress not found: ${runId}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(`Failed to get progress: ${res.status}`);
+    }
+
+    const data: unknown = await res.json();
+    if (!this.isRecord(data) || !Array.isArray(data.events)) {
+      throw new Error(`Invalid progress payload: ${runId}`);
+    }
+    return data.events.filter(this.isRecord);
+  }
+
+  /**
    * Get comprehensive analysis of a run.
    */
   async getAnalysis(runId: string): Promise<AnalysisResponse> {

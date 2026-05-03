@@ -75,6 +75,7 @@ async function main(): Promise<void> {
   // Mount API routes
   const apiRouter = createApiRouter(scheduler, config);
   app.use('/api', apiRouter);
+  app.use('/', apiRouter);
 
   // Start server
   const server = app.listen(config.port, () => {
