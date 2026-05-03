@@ -2,20 +2,18 @@
 
 ## Overview
 
-The Kaseki API Service allows remote execution and monitoring of kaseki-agent runs via HTTP REST API. This guide covers deployment options.
+The Kaseki API Service allows remote execution and monitoring of kaseki-agent runs via HTTP REST API. This guide covers deployment options, with **docker-compose** as the preferred approach.
 
 ## Prerequisites
 
-- Node.js ≥ 22.22.2 (when running as Node process)
-- Docker (when running in container)
+- Docker + Docker Compose (for docker-compose deployment)
+- Node.js ≥ 22.22.2 (for Node.js fallback deployment)
 - `/agents/kaseki-results` directory must exist or be creatable
 - OpenRouter API key for Pi agent invocation (inherited from kaseki-agent)
 
-## Deployment Options
+## Quick Start
 
-### Option 1: Docker Compose (Recommended)
-
-Simplest deployment using docker-compose:
+### ✅ Recommended: Docker Compose
 
 ```bash
 # Navigate to kaseki-agent repository
@@ -52,9 +50,43 @@ KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
-### Option 2: systemd Service (Host Process)
+---
 
-Deploy as a systemd service on the host:
+## Fallback Deployment Options
+
+### Option 1: Node.js Process (Fallback)
+
+Quick alternative if Docker/docker-compose is unavailable:
+
+```bash
+cd /agents/kaseki-template
+
+# Install dependencies
+npm install
+
+# Start API
+KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
+```
+
+**Environment variables:**
+
+```bash
+KASEKI_API_KEYS=sk-key1,sk-key2            # Required
+KASEKI_API_PORT=8080                        # Default: 8080
+KASEKI_API_LOG_LEVEL=info                  # Default: info
+KASEKI_API_MAX_CONCURRENT_RUNS=3           # Default: 3
+KASEKI_AGENT_TIMEOUT_SECONDS=1200          # Default: 1200
+KASEKI_MAX_DIFF_BYTES=200000               # Default: 200000
+```
+
+**Production considerations:**
+- Use a process manager (systemd, supervisor, PM2) for restart/recovery
+- Run with `NODE_ENV=production` for optimal performance
+- Monitor logs and uptime independently
+
+### Option 2: systemd Service (Alternative)
+
+Deploy as a systemd service on the host (advanced):
 
 ```bash
 # 1. Build the project
@@ -88,9 +120,9 @@ sudo systemctl status kaseki-api
 sudo journalctl -u kaseki-api -f
 ```
 
-### Option 3: Manual Docker Container
+### Option 3: Manual Docker Container (Advanced)
 
-Run the API container directly:
+Run the API container directly without docker-compose:
 
 ```bash
 docker run --rm \
@@ -113,24 +145,12 @@ docker run --rm \
   /app/dist/kaseki-api-service.js
 ```
 
-### Option 4: Node.js Process (Development)
-
-Quick development setup:
-
-```bash
-cd /agents/kaseki-template
-
-# Install dependencies
-npm install
-
-# Start API
-KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
-```
+---
 
 ## Security Best Practices
 
 1. **API Key Management**
-   - Store keys in `/etc/kaseki-api/kaseki-api.env` with mode `0600`
+   - Store keys in environment files with mode `0600` (or use Docker secrets)
    - Never commit keys to version control
    - Rotate keys regularly
    - Use separate keys for different environments (dev/staging/prod)
@@ -171,6 +191,8 @@ KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
      }
      ```
 
+---
+
 ## Health Checks
 
 All deployments should monitor health:
@@ -194,6 +216,8 @@ Expected response:
 }
 ```
 
+---
+
 ## Monitoring
 
 ### Docker Compose
@@ -204,6 +228,16 @@ docker-compose logs -f kaseki-api
 
 # Check resource usage
 docker stats kaseki-api
+```
+
+### Node.js Process
+
+```bash
+# Check process status
+ps aux | grep kaseki-api
+
+# View recent logs (depends on logging setup)
+tail -f /var/log/kaseki-api.log
 ```
 
 ### systemd Service
@@ -227,9 +261,38 @@ Metrics endpoint coming in Phase 8:
 curl http://localhost:8080/metrics
 ```
 
+---
+
 ## Log Rotation
 
-For the host deployment option, configure logrotate:
+### Docker Compose
+
+Logs are managed by Docker automatically. To configure retention:
+
+```bash
+# Edit daemon.json
+sudo nano /etc/docker/daemon.json
+```
+
+Add:
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+```
+
+Then restart Docker:
+```bash
+sudo systemctl restart docker
+```
+
+### Host Deployment (systemd/Node.js)
+
+Configure logrotate:
 
 ```bash
 sudo tee /etc/logrotate.d/kaseki-api << EOF
@@ -249,6 +312,8 @@ sudo tee /etc/logrotate.d/kaseki-api << EOF
 EOF
 ```
 
+---
+
 ## Troubleshooting
 
 ### API won't start
@@ -261,13 +326,16 @@ echo $KASEKI_API_KEYS  # Should not be empty
 ls -la /agents/kaseki-results  # Directory must exist
 ```
 
-### "Pod is crashing"
+### Container/process is crashing
 
 View logs for detailed error:
 
 ```bash
 # Docker Compose
 docker-compose logs kaseki-api | head -50
+
+# Node.js
+npm run kaseki-api  # Run in foreground to see errors
 
 # systemd
 journalctl -u kaseki-api -n 50
@@ -277,6 +345,8 @@ Common issues:
 - Missing `/agents/kaseki-results` directory
 - Invalid port (not between 1-65535)
 - API key environment variable not set
+- Docker daemon not running (for docker-compose)
+- Node.js not installed or wrong version
 
 ### Slow performance
 
@@ -291,9 +361,11 @@ watch -n2 'curl -s http://localhost:8080/health | jq ".queue"'
 
 Increase `KASEKI_API_MAX_CONCURRENT_RUNS` if jobs are queueing unnecessarily.
 
+---
+
 ## Cleanup
 
-### Stop Docker Compose
+### Docker Compose
 
 ```bash
 cd /agents/kaseki-template
@@ -301,7 +373,17 @@ docker-compose down
 docker volume prune  # Optional: delete unused volumes
 ```
 
-### Disable systemd Service
+### Node.js Process
+
+```bash
+# Stop the process
+pkill -f "kaseki-api"
+
+# Or if using npm:
+# Ctrl+C in the terminal
+```
+
+### systemd Service
 
 ```bash
 sudo systemctl stop kaseki-api
@@ -310,9 +392,12 @@ sudo rm /etc/systemd/system/kaseki-api.service
 sudo systemctl daemon-reload
 ```
 
+---
+
 ## Next Steps
 
-1. **Configure for your network** — Update firewall rules, reverse proxy settings
-2. **Set up monitoring** — Add health checks, alerts
-3. **Test integration** — Use TypeScript client library to submit test runs
-4. **Deploy kaseki-agent** — Ensure Docker base image and OpenRouter credentials are configured
+1. **Choose your deployment path** — Docker Compose (recommended) or Node.js
+2. **Configure for your network** — Update firewall rules, reverse proxy settings
+3. **Set up monitoring** — Add health checks, alerts
+4. **Test integration** — Use TypeScript client library to submit test runs
+5. **Deploy kaseki-agent** — Ensure Docker base image and OpenRouter credentials are configured
