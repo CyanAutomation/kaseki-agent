@@ -213,6 +213,22 @@ export interface RunsListResponse {
   total: number;
 }
 
+export interface PreflightCheck {
+  name: string;
+  ok: boolean;
+  detail?: string;
+  remediation?: string;
+}
+
+export interface PreflightResponse {
+  status: 'ok' | 'degraded' | 'error';
+  timestamp: string;
+  checks: PreflightCheck[];
+  image?: string;
+  templateDir?: string;
+  resultsDir: string;
+}
+
 /**
  * Error response (RFC 7807 Problem Details).
  */

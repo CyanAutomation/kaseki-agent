@@ -27,6 +27,7 @@ KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
+KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
@@ -347,7 +348,11 @@ doctor() {
     openrouter_key_value="$(cat "$HOST_SECRET_FILE")"
   else
     printf 'OpenRouter API key: missing\n' >&2
-    status=1
+    if [ "$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" = "1" ]; then
+      status=1
+    else
+      printf 'OpenRouter API key: warning only for doctor (KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY=0)\n' >&2
+    fi
   fi
 
   if [ "$KASEKI_VERIFY_OPENROUTER_AUTH" = "1" ]; then
@@ -374,11 +379,19 @@ doctor() {
   fi
   unset openrouter_key_value
 
+  local docker_image_error=""
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then
     printf 'Docker image: present\n'
     image_present=1
   else
-    printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
+    docker_image_error="$(docker image inspect "$IMAGE" 2>&1 >/dev/null || true)"
+    if printf '%s' "$docker_image_error" | grep -qi 'permission denied'; then
+      printf 'Docker image: unavailable because Docker socket permission was denied (%s)\n' "$IMAGE" >&2
+    elif printf '%s' "$docker_image_error" | grep -Eqi 'cannot connect|is the docker daemon running'; then
+      printf 'Docker image: unavailable because Docker daemon is unreachable (%s)\n' "$IMAGE" >&2
+    else
+      printf 'Docker image: missing locally (%s)\n' "$IMAGE" >&2
+    fi
     status=1
   fi
 
@@ -721,8 +734,15 @@ if ! command -v docker >/dev/null 2>&1; then
   fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker" "Docker is required but was not found on the host."
 fi
 
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker image" "Docker image is missing locally: $IMAGE. Pull it or set KASEKI_IMAGE to an available image."
+docker_image_error="$(docker image inspect "$IMAGE" 2>&1 >/dev/null || true)"
+if [ -n "$docker_image_error" ]; then
+  if printf '%s' "$docker_image_error" | grep -qi 'permission denied'; then
+    fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker socket" "Docker socket permission denied while inspecting $IMAGE. Add the API container user to the host Docker socket group, for example group_add with DOCKER_GID."
+  elif printf '%s' "$docker_image_error" | grep -Eqi 'cannot connect|is the docker daemon running'; then
+    fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker daemon" "Docker daemon is unreachable while inspecting $IMAGE. Verify /var/run/docker.sock is mounted and the host daemon is running."
+  else
+    fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker image" "Docker image is missing locally: $IMAGE. Pull it or set KASEKI_IMAGE to an available image."
+  fi
 fi
 
 if command -v git >/dev/null 2>&1; then
