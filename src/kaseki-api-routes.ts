@@ -677,6 +677,24 @@ export function createApiRouter(
       const logFile = path.join(config.resultsDir, job.id, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
 
       if (!fs.existsSync(logFile)) {
+        if (logType === 'stderr' && job.status === 'failed') {
+          const syntheticStderr = [
+            '[kaseki] Synthetic stderr fallback',
+            `job id: ${job.id}`,
+            `exit code: ${job.exitCode ?? 'unknown'}`,
+            `failure class: ${job.failureClass ?? 'unknown'}`,
+            `job.error: ${job.error ?? 'unknown'}`,
+            'canonical stderr.log was not generated for this failed run.',
+          ].join('\n');
+
+          const fallbackResponse: LogResponse = {
+            logType: 'stderr',
+            content: syntheticStderr,
+            size: Buffer.byteLength(syntheticStderr, 'utf-8'),
+          };
+
+          return res.status(200).json(fallbackResponse);
+        }
         return sendErrorResponse(res, 404, 'Not Found', `Log file not found: ${logType}`);
       }
 
