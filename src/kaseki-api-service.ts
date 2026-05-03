@@ -2,12 +2,14 @@ import express from 'express';
 import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
+import { WebhookManager } from './webhook-manager';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
 
 type ShutdownDeps = {
   server: Server;
   scheduler: Pick<JobScheduler, 'shutdown'>;
+  webhookManager: WebhookManager;
   forceExitAfterMs?: number;
   exit?: (code: number) => never;
 };
@@ -15,6 +17,7 @@ type ShutdownDeps = {
 export function createGracefulShutdown({
   server,
   scheduler,
+  webhookManager,
   forceExitAfterMs = 8000,
   exit = process.exit,
 }: ShutdownDeps): (signal: string) => Promise<void> {
@@ -44,6 +47,9 @@ export function createGracefulShutdown({
 
       scheduler.shutdown();
       logger.info('Job scheduler shutdown');
+
+      await webhookManager.shutdown();
+      logger.info('Webhook manager shutdown');
 
       exit(0);
     } catch (err) {
@@ -117,8 +123,11 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // Create webhook manager
+  const webhookManager = new WebhookManager(config.resultsDir);
+
   // Create scheduler
-  const scheduler = new JobScheduler(config);
+  const scheduler = new JobScheduler(config, webhookManager);
 
   // Mount API routes
   const apiRouter = createApiRouter(scheduler, config);
@@ -137,7 +146,7 @@ async function main(): Promise<void> {
   });
 
   // Graceful shutdown
-  const gracefulShutdown = createGracefulShutdown({ server, scheduler });
+  const gracefulShutdown = createGracefulShutdown({ server, scheduler, webhookManager });
 
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));

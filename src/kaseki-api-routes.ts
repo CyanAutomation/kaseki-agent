@@ -231,6 +231,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         id: job.id,
         status: job.status,
         createdAt: job.createdAt.toISOString(),
+        correlationId: job.correlationId,
+        requestId: job.requestId,
       };
 
       res.status(202).json(response); // 202 Accepted
@@ -246,6 +248,89 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       }
       logger.event('api_error', {
         path: '/runs',
+        error: (err as Error).message,
+      });
+      return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
+    }
+  });
+
+  /**
+   * POST /api/webhooks/test - Test webhook configuration.
+   */
+  router.post('/webhooks/test', async (req: Request, res: Response) => {
+    try {
+      const { url, secret } = req.body;
+
+      if (!url || typeof url !== 'string') {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Webhook URL is required');
+      }
+
+      // Validate URL format
+      try {
+        new URL(url);
+      } catch {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Invalid webhook URL format');
+      }
+
+      // Send test webhook
+      let statusCode: number | undefined;
+      let error: string | undefined;
+      let durationMs = 0;
+      const startTime = Date.now();
+
+      try {
+        const testPayload = {
+          eventType: 'webhook.test',
+          jobId: 'test',
+          timestamp: new Date().toISOString(),
+          data: { message: 'This is a test webhook from kaseki-agent API' },
+        };
+
+        // Generate HMAC signature if secret provided
+        let signature: string | null = null;
+        if (secret && typeof secret === 'string') {
+          const crypto = require('crypto');
+          const body = JSON.stringify(testPayload);
+          signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+        }
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Kaseki-Event': 'webhook.test',
+            'X-Kaseki-Job-Id': 'test',
+            ...(signature && { 'X-Kaseki-Signature': `sha256=${signature}` }),
+          },
+          body: JSON.stringify(testPayload),
+          signal: AbortSignal.timeout(10000),
+        });
+
+        durationMs = Date.now() - startTime;
+        statusCode = response.status;
+
+        if (!response.ok) {
+          error = `HTTP ${response.status} ${response.statusText}`;
+        }
+      } catch (err) {
+        durationMs = Date.now() - startTime;
+        error = err instanceof Error ? err.message : String(err);
+      }
+
+      const result = {
+        url,
+        statusCode,
+        durationMs,
+        success: !error,
+        error,
+      };
+
+      logger.event('webhook_test', result);
+
+      res.json(result);
+    } catch (err) {
+      logger.event('api_error', {
+        path: '/webhooks/test',
         error: (err as Error).message,
       });
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
@@ -286,6 +371,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       status: job.status,
       exitCode: job.exitCode,
       failureClass: job.failureClass,
+      correlationId: job.correlationId,
+      requestId: job.requestId,
       error: job.error,
       resultDir: job.resultDir,
     };
@@ -365,6 +452,8 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       status: job.status,
       exitCode: job.exitCode,
       failureClass: job.failureClass,
+      correlationId: job.correlationId,
+      requestId: job.requestId,
       error: job.error,
       resultDir: job.resultDir,
     };
@@ -373,7 +462,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
   });
 
   /**
-   * GET /api/runs/:id/progress - Retrieve sanitized progress events.
+   * GET /api/runs/:id/progress - Retrieve progress events (supports Server-Sent Events streaming).
    */
   router.get('/runs/:id/progress', (req: Request, res: Response) => {
     const job = scheduler.getJob(req.params.id);
@@ -381,6 +470,90 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
     }
 
+    // Check if client wants SSE streaming
+    const wantsSSE = req.query.stream === 'sse' || req.get('Accept')?.includes('text/event-stream');
+
+    if (wantsSSE) {
+      // Server-Sent Events streaming
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      let lastEventCount = 0;
+      let noChangeCount = 0;
+      const maxNoChangeAttempts = 10; // Stop after 10 checks with no change
+
+      const sendProgressUpdate = () => {
+        const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+        if (!fs.existsSync(progressFile)) {
+          return;
+        }
+
+        try {
+          const content = fs.readFileSync(progressFile, 'utf-8');
+          const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
+
+          if (lines.length > lastEventCount) {
+            // Send new events
+            const newLines = lines.slice(lastEventCount);
+            for (const line of newLines) {
+              try {
+                const event = JSON.parse(line);
+                res.write(`data: ${JSON.stringify(event)}\n\n`);
+              } catch {
+                // Skip invalid JSON lines
+              }
+            }
+            lastEventCount = lines.length;
+            noChangeCount = 0;
+          } else if (job.status !== 'running') {
+            // Job is not running anymore, send final status
+            const currentJob = scheduler.getJob(job.id);
+            if (currentJob) {
+              res.write(
+                `data: ${JSON.stringify({
+                  type: 'status',
+                  status: currentJob.status,
+                  elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
+                })}\n\n`
+              );
+            }
+            res.end();
+            return;
+          } else {
+            noChangeCount++;
+            if (noChangeCount >= maxNoChangeAttempts) {
+              // No new events for a while, close connection
+              res.end();
+              return;
+            }
+          }
+        } catch {
+          // Ignore file read errors
+        }
+      };
+
+      // Send initial status
+      res.write(`data: ${JSON.stringify({ type: 'start', jobId: job.id, status: job.status })}\n\n`);
+
+      // Send progress updates every 2 seconds
+      const interval = setInterval(() => {
+        if (res.destroyed) {
+          clearInterval(interval);
+          return;
+        }
+        sendProgressUpdate();
+      }, 2000);
+
+      // Clean up on client disconnect
+      req.on('close', () => {
+        clearInterval(interval);
+      });
+
+      return;
+    }
+
+    // Regular JSONL response
     const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
     if (!fs.existsSync(progressFile)) {
       return sendErrorResponse(res, 404, 'Not Found', 'Progress file not found');

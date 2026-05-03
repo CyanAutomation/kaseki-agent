@@ -1,9 +1,11 @@
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Job, RunRequest } from './kaseki-api-types';
+import { v4 as uuidv4 } from 'uuid';
+import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
+import { WebhookManager } from './webhook-manager';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -26,12 +28,14 @@ export class JobScheduler {
   private indexPath: string;
   private nextInstanceNumber = 1;
   private logger: EventLogger;
+  private webhookManager: WebhookManager;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
-  constructor(config: KasekiApiConfig) {
+  constructor(config: KasekiApiConfig, webhookManager: WebhookManager) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
     this.logger = createEventLogger('job-scheduler');
+    this.webhookManager = webhookManager;
     this.loadPersistedJobs();
     this.initializeInstanceCounter();
     this.persistJobs();
@@ -43,22 +47,46 @@ export class JobScheduler {
    */
   submitJob(request: RunRequest): Job {
     const instanceId = this.generateInstanceId();
+    
+    // Generate tracing IDs if not provided
+    const correlationId = request.tracing?.correlationId || uuidv4();
+    const requestId = request.tracing?.requestId || uuidv4();
+
     const job: Job = {
       id: instanceId,
       status: 'queued',
       request,
       createdAt: new Date(),
       resultDir: this.getResultDir(instanceId),
+      webhookConfig: request.webhookConfig,
+      correlationId,
+      requestId,
     };
 
     this.jobs.set(instanceId, job);
     this.queue.push(job);
     this.persistJobs();
+    
+    // Emit webhook event for job submission
+    if (job.webhookConfig) {
+      const payload: WebhookPayload = {
+        eventType: WebhookEventType.JOB_SUBMITTED,
+        jobId: instanceId,
+        timestamp: new Date().toISOString(),
+        data: {
+          status: 'queued',
+        },
+      };
+      this.webhookManager.enqueueWebhook(instanceId, payload, job.webhookConfig);
+    }
+    
     this.processQueue();
 
     // Log job submission
     this.logger.event('job_submitted', {
       jobId: instanceId,
+      correlationId,
+      requestId,
       repoUrl: request.repoUrl,
       ref: request.ref,
       queueDepth: this.queue.length,
@@ -102,6 +130,21 @@ export class JobScheduler {
       job.finalized = true;
       this.persistJobs();
 
+      // Emit webhook event for cancellation
+      if (job.webhookConfig) {
+        const payload: WebhookPayload = {
+          eventType: WebhookEventType.JOB_CANCELLED,
+          jobId: id,
+          timestamp: new Date().toISOString(),
+          data: {
+            status: 'failed',
+            failureClass: 'cancelled',
+            error: job.error,
+          },
+        };
+        this.webhookManager.enqueueWebhook(id, payload, job.webhookConfig);
+      }
+
       this.logger.event('job_cancelled', {
         jobId: id,
         reason: 'cancelled_before_execution',
@@ -119,6 +162,21 @@ export class JobScheduler {
     job.failureClass = 'cancelled';
     job.error = 'Job cancelled by API request';
     job.completedAt = completedAt;
+
+    // Emit webhook event for cancellation
+    if (job.webhookConfig) {
+      const payload: WebhookPayload = {
+        eventType: WebhookEventType.JOB_CANCELLED,
+        jobId: id,
+        timestamp: new Date().toISOString(),
+        data: {
+          status: 'failed',
+          failureClass: 'cancelled',
+          error: job.error,
+        },
+      };
+      this.webhookManager.enqueueWebhook(id, payload, job.webhookConfig);
+    }
 
     this.logger.event('job_cancelled', {
       jobId: id,
@@ -150,6 +208,19 @@ export class JobScheduler {
     job.startedAt = new Date();
     job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
+
+    // Emit webhook event for job start
+    if (job.webhookConfig) {
+      const payload: WebhookPayload = {
+        eventType: WebhookEventType.JOB_STARTED,
+        jobId: job.id,
+        timestamp: new Date().toISOString(),
+        data: {
+          status: 'running',
+        },
+      };
+      this.webhookManager.enqueueWebhook(job.id, payload, job.webhookConfig);
+    }
 
     // Log job start
     this.logger.event('job_started', {
@@ -274,6 +345,22 @@ export class JobScheduler {
           exitCode: 124,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
+        
+        // Emit webhook event for failure
+        if (job.webhookConfig) {
+          const payload: WebhookPayload = {
+            eventType: WebhookEventType.JOB_FAILED,
+            jobId: job.id,
+            timestamp: new Date().toISOString(),
+            data: {
+              status: 'failed',
+              failureClass: 'timeout',
+              error: updates.error,
+              elapsed: Math.round(((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000),
+            },
+          };
+          this.webhookManager.enqueueWebhook(job.id, payload, job.webhookConfig);
+        }
       } else if (code === 0) {
         updates.status = 'completed';
         this.logger.event('job_completed', {
@@ -281,6 +368,21 @@ export class JobScheduler {
           exitCode: code,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
+        
+        // Emit webhook event for completion
+        if (job.webhookConfig) {
+          const payload: WebhookPayload = {
+            eventType: WebhookEventType.JOB_COMPLETED,
+            jobId: job.id,
+            timestamp: new Date().toISOString(),
+            data: {
+              status: 'completed',
+              exitCode: code,
+              elapsed: Math.round(((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000),
+            },
+          };
+          this.webhookManager.enqueueWebhook(job.id, payload, job.webhookConfig);
+        }
       } else {
         updates.status = 'failed';
         this.parseFailureFromResults(job);
@@ -291,6 +393,23 @@ export class JobScheduler {
           error: job.error,
           durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
         });
+        
+        // Emit webhook event for failure
+        if (job.webhookConfig) {
+          const payload: WebhookPayload = {
+            eventType: WebhookEventType.JOB_FAILED,
+            jobId: job.id,
+            timestamp: new Date().toISOString(),
+            data: {
+              status: 'failed',
+              exitCode: code ?? undefined,
+              failureClass: job.failureClass,
+              error: job.error,
+              elapsed: Math.round(((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000),
+            },
+          };
+          this.webhookManager.enqueueWebhook(job.id, payload, job.webhookConfig);
+        }
       }
       finalizeJob(updates);
     });
