@@ -43,7 +43,7 @@
 ## ✅ Deployment
 
 - [x] docker-compose.yml ready
-- [x] systemd service template ready
+- [x] systemd service template ready (Docker runtime authoritative)
 - [x] Environment variable documentation
 - [x] Health checks configured
 - [x] Log rotation guidance provided
@@ -100,7 +100,7 @@ curl http://localhost:8080/health
 
 ### Step 3: Deploy to Target Host
 
-Choose one deployment option:
+Choose one deployment option (Docker runtime is authoritative):
 
 **Option A: Docker Compose (Recommended)**
 ```bash
@@ -113,14 +113,19 @@ cd /agents/kaseki-template
 KASEKI_API_KEYS=sk-your-key docker-compose up -d
 ```
 
-**Option B: systemd Service**
+**Option B: systemd Service (Docker mode)**
 ```bash
+# Build/pull the image first (required for /app/dist artifact)
+docker build -t kaseki-agent:node24-local .
+# Or: docker pull <registry>/kaseki-agent:<tag>
+
 # Copy service file
 sudo cp scripts/kaseki-api.service /etc/systemd/system/
 
 # Create env file
 sudo tee /etc/kaseki-api/kaseki-api.env << EOF
 KASEKI_API_KEYS=sk-your-key
+KASEKI_API_IMAGE=kaseki-agent:node24-local
 EOF
 
 # Enable and start
