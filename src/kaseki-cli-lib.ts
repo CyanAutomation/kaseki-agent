@@ -20,12 +20,12 @@ import {
   readInstanceMetadata,
   Metadata,
   HostStart,
-} from './instance-metadata-reader.js';
+} from './instance-metadata-reader';
 import {
   deriveInstanceLifecycleStatus,
   resolveInstanceExitCode as importedResolveInstanceExitCode,
   classifyFailure as importedClassifyFailure,
-} from './instance-state-derivation.js';
+} from './instance-state-derivation';
 
 // ============================================================================
 // Types

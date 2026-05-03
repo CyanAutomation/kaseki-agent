@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { RunResponse } from './kaseki-api-types.js';
-import { createEventLogger, EventLogger } from './logger.js';
+import { RunResponse } from './kaseki-api-types';
+import { createEventLogger, EventLogger } from './logger';
 
 /**
  * Idempotency cache entry.
