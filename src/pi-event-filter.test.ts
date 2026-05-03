@@ -23,9 +23,7 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
 
     let stderrOutput = '';
     const child = spawn(process.execPath, [
-      '-r',
-      'ts-node/register',
-      path.join(__dirname, 'pi-event-filter.ts'),
+      path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
       inputPath,
       outputPath,
       summaryPath,
