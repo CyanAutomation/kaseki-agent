@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
-import { ValidationCheck, ValidationResponse, RunRequest } from './kaseki-api-types';
-import { createEventLogger, EventLogger } from './logger';
+import { ValidationCheck, ValidationResponse, RunRequest } from './kaseki-api-types.js';
+import { createEventLogger, EventLogger } from './logger.js';
 
 /**
  * Pre-flight validator performs checks on job requests before submission.

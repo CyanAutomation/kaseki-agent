@@ -6,7 +6,7 @@ import {
   resolveInstanceExitCode,
   resolveInstanceStage,
   classifyFailure,
-} from './instance-state-derivation';
+} from './instance-state-derivation.js';
 
 describe('instance-state-derivation', () => {
   let tempDir: string;

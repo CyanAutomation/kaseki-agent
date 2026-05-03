@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { readInstanceMetadata } from './instance-metadata-reader';
+import { readInstanceMetadata } from './instance-metadata-reader.js';
 
 describe('instance-metadata-reader', () => {
   let tempDir: string;

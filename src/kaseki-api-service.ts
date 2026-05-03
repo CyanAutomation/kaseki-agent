@@ -1,12 +1,12 @@
 import express from 'express';
 import type { Server } from 'http';
-import { loadConfig } from './kaseki-api-config';
-import { JobScheduler } from './job-scheduler';
-import { WebhookManager } from './webhook-manager';
-import { IdempotencyStore } from './idempotency-store';
-import { PreFlightValidator } from './pre-flight-validator';
-import { createApiRouter } from './kaseki-api-routes';
-import { createEventLogger } from './logger';
+import { loadConfig } from './kaseki-api-config.js';
+import { JobScheduler } from './job-scheduler.js';
+import { WebhookManager } from './webhook-manager.js';
+import { IdempotencyStore } from './idempotency-store.js';
+import { PreFlightValidator } from './pre-flight-validator.js';
+import { createApiRouter } from './kaseki-api-routes.js';
+import { createEventLogger } from './logger.js';
 
 type ShutdownDeps = {
   server: Server;

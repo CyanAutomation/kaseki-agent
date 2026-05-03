@@ -3,10 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'node:crypto';
-import { JobScheduler } from './job-scheduler';
-import { ResultCache } from './result-cache';
-import { IdempotencyStore } from './idempotency-store';
-import { PreFlightValidator } from './pre-flight-validator';
+import { JobScheduler } from './job-scheduler.js';
+import { ResultCache } from './result-cache.js';
+import { IdempotencyStore } from './idempotency-store.js';
+import { PreFlightValidator } from './pre-flight-validator.js';
 import {
   RunRequestSchema,
   RunResponse,
@@ -18,9 +18,9 @@ import {
   RunsListResponse,
   ErrorResponse,
   ValidationResponse,
-} from './kaseki-api-types';
-import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
-import { createEventLogger } from './logger';
+} from './kaseki-api-types.js';
+import { KasekiApiConfig, validateApiKey } from './kaseki-api-config.js';
+import { createEventLogger } from './logger.js';
 
 function isUtf8ContinuationByte(byte: number): boolean {
   return (byte & 0xc0) === 0x80;

@@ -21,7 +21,7 @@
  *   kaseki-cli follow <instance> [--tail=<log_name>]
  */
 
-import * as kasekiCliLib from './kaseki-cli-lib';
+import * as kasekiCliLib from './kaseki-cli-lib.js';
 import fs from 'fs';
 import path from 'path';
 import { Stats } from 'fs';
