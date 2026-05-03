@@ -20,7 +20,7 @@ function addJsExtensions(filePath: string): void {
   // Pattern: from './path' or from "./path"
   // But not: from './path.js' or from 'npm-package' or from 'npm-package/subpath'
   content = content.replace(
-    /from\s+['"](\.[\/\\][^'"]*?)['"](?!\.js\b)/g,
+    /from\s+['"](\.[/\\][^'"]*?)['"](?!\.js\b)/g,
     (match: string, importPath: string) => {
       // Skip if already has .js extension
       if (importPath.endsWith('.js')) {
