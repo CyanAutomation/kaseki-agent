@@ -52,6 +52,7 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
 RUN npm ci --ignore-scripts && npm run build
+RUN test -f /app/dist/kaseki-api-service.js
 
 COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./

@@ -104,6 +104,15 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Verify API service build artifact
+        shell: bash
+        run: |
+          test -f dist/kaseki-api-service.js
+          ls -l dist/kaseki-api-service.js
+
   build:
     needs: [checks, type_check_full]
     runs-on: ubuntu-latest

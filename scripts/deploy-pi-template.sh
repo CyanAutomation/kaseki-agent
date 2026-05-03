@@ -13,6 +13,19 @@ KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_JSON_LOG_COMPONENT="deploy-pi-template"
 CONTAINER=""
 
+is_probably_digest_ref() {
+  local image_ref="$1"
+  case "$image_ref" in
+    *@sha256:*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_local_repo_digest() {
+  local image_ref="$1"
+  docker image inspect "$image_ref" --format '{{index .RepoDigests 0}}' 2>/dev/null || true
+}
+
 json_escape() {
   local value="${1-}"
   value="${value//\\/\\\\}"
@@ -85,6 +98,7 @@ Idempotent behavior:
 
 Image behavior:
 - Pulls KASEKI_IMAGE by default before using a local tag.
+- Prefer immutable refs for KASEKI_IMAGE (digest or commit-SHA tag) to avoid ':latest' drift.
 - Set KASEKI_IMAGE_PULL_POLICY=missing to pull only when absent.
 - Set KASEKI_IMAGE_PULL_POLICY=never to use only local Docker images.
 - If the image lacks a deployable /app template and
@@ -161,6 +175,7 @@ image_has_template() {
 
 ensure_deployable_image() {
   local local_image_present=0
+  local resolved_digest=""
 
   docker image inspect "$IMAGE" >/dev/null 2>&1 || local_image_present=1
 
@@ -196,6 +211,14 @@ ensure_deployable_image() {
       return 2
       ;;
   esac
+
+  resolved_digest="$(resolve_local_repo_digest "$IMAGE")"
+  if [ -n "$resolved_digest" ] && ! is_probably_digest_ref "$IMAGE"; then
+    emit_json_log "deploy" "started" "Resolved image tag to immutable digest: $resolved_digest"
+    IMAGE="$resolved_digest"
+  elif [ -z "$resolved_digest" ] && ! is_probably_digest_ref "$IMAGE"; then
+    emit_json_log "deploy" "warning" "No repo digest found for image reference; continuing with tag: $IMAGE"
+  fi
 
   if image_has_template "$IMAGE"; then
     return 0
