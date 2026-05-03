@@ -22,8 +22,10 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
     fs.writeFileSync(inputPath, `${inputLines.join('\n')}\n`, 'utf8');
 
     let stderrOutput = '';
-    const child = spawn(process.execPath, [
-      path.join(__dirname, '..', 'dist', 'pi-event-filter.js'),
+    const tsNodeBin = path.join(__dirname, '..', 'node_modules', '.bin', 'ts-node');
+    const child = spawn(tsNodeBin, [
+      '--compiler-options', '{"module":"CommonJS","moduleResolution":"node"}',
+      path.join(__dirname, 'pi-event-filter.ts'),
       inputPath,
       outputPath,
       summaryPath,
