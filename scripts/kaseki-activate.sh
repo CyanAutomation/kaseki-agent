@@ -12,6 +12,7 @@ KASEKI_OUTPUT_FORMAT="${KASEKI_OUTPUT_FORMAT:-text}"
 KASEKI_CONTROLLER_MODE="${KASEKI_CONTROLLER_MODE:-0}"
 KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
 KASEKI_IMAGE_PULL_POLICY="${KASEKI_IMAGE_PULL_POLICY:-always}"
+KASEKI_REPLACE_STALE="${KASEKI_REPLACE_STALE:-0}"
 KASEKI_JSON_LOG_COMPONENT="kaseki-activate"
 COMMAND=""
 COMMAND_ARGS=()
@@ -81,6 +82,9 @@ parse_args() {
         ;;
       --no-build)
         KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="0"
+        ;;
+      --replace-stale)
+        KASEKI_REPLACE_STALE="1"
         ;;
       *)
         if [ -z "$COMMAND" ]; then
@@ -152,6 +156,8 @@ Output:
 Controller options:
   --controller  JSON output, pull registry image, and fail instead of building locally.
   --no-build    Fail deployment if the registry image cannot be used.
+  --replace-stale
+              Reset and clean an existing dirty checkout before updating it.
 
 Useful environment:
   KASEKI_REPO_URL=$KASEKI_REPO_URL
@@ -162,6 +168,7 @@ Useful environment:
   KASEKI_CONTROLLER_MODE=$KASEKI_CONTROLLER_MODE
   KASEKI_IMAGE_PULL_POLICY=$KASEKI_IMAGE_PULL_POLICY
   KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=$KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING
+  KASEKI_REPLACE_STALE=$KASEKI_REPLACE_STALE
 HELP
 }
 
@@ -177,6 +184,17 @@ install_checkout() {
   require_bin git
   mkdir -p "$(dirname "$KASEKI_CHECKOUT_DIR")"
   if [ -d "$KASEKI_CHECKOUT_DIR/.git" ]; then
+    if [ -n "$(git -C "$KASEKI_CHECKOUT_DIR" status --porcelain)" ]; then
+      if [ "$KASEKI_REPLACE_STALE" = "1" ]; then
+        emit_json_log "install" "warning" "dirty checkout detected; resetting because KASEKI_REPLACE_STALE=1"
+        git -C "$KASEKI_CHECKOUT_DIR" reset --hard HEAD >&2
+        git -C "$KASEKI_CHECKOUT_DIR" clean -fdx >&2
+      else
+        emit_json_log "install" "error" "dirty checkout at $KASEKI_CHECKOUT_DIR; rerun with --replace-stale or KASEKI_REPLACE_STALE=1 to reset it"
+        [ "$KASEKI_OUTPUT_FORMAT" = "json" ] && print_command_json "install" 3 "dirty checkout; use --replace-stale to reset stale local files" "" ""
+        exit 3
+      fi
+    fi
     emit_json_log "install" "started" "updating $KASEKI_CHECKOUT_DIR"
     git -C "$KASEKI_CHECKOUT_DIR" fetch --prune origin >&2
   else

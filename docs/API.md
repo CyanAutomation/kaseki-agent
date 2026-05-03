@@ -36,7 +36,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 
 ## Authentication
 
-All endpoints (except `/health`) require Bearer token authentication:
+All endpoints (except `/health` and `/api/health`) require Bearer token authentication:
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
@@ -48,7 +48,7 @@ If the token is missing or invalid, the API returns `401 Unauthorized`.
 
 ### Health Check
 
-**GET `/health`**
+**GET `/health`** or **GET `/api/health`**
 
 No authentication required. Check service health and queue status.
 
@@ -103,7 +103,7 @@ curl -X POST http://localhost:8080/api/runs \
 **Response (202 Accepted):**
 ```json
 {
-  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
+  "id": "kaseki-42",
   "status": "queued",
   "createdAt": "2026-05-02T14:30:00Z"
 }
@@ -120,12 +120,12 @@ List recent kaseki runs, newest first.
 {
   "runs": [
     {
-      "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
+      "id": "kaseki-42",
       "status": "running",
       "createdAt": "2026-05-02T14:30:00Z"
     },
     {
-      "id": "kaseki-1d0dcf2b-f26e-40e3-97d3-d6fd15f7d087",
+      "id": "kaseki-41",
       "status": "completed",
       "createdAt": "2026-05-02T14:20:00Z",
       "completedAt": "2026-05-02T14:28:00Z"
@@ -144,11 +144,12 @@ Poll the status of a specific run. Returns progress and timeout risk.
 **Response (200 OK):**
 ```json
 {
-  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
+  "id": "kaseki-42",
   "status": "running",
   "progress": "Invoking Pi agent...",
   "elapsedSeconds": 45,
-  "timeoutRiskPercent": 4
+  "timeoutRiskPercent": 4,
+  "resultDir": "/agents/kaseki-results/kaseki-42"
 }
 ```
 
@@ -159,6 +160,55 @@ Poll the status of a specific run. Returns progress and timeout risk.
 - `failed` — Failed validation, timeout, or quality gate
 
 **Timeout Risk:** Percentage of agent timeout elapsed. Monitor for >85% and consider canceling if needed.
+
+### Get Progress Events
+
+**GET `/api/runs/:id/progress`**
+
+Returns sanitized progress events from `progress.jsonl`. Assistant text, environment values, and secrets are not included.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" \
+  "http://localhost:8080/api/runs/kaseki-42/progress?tail=25"
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "kaseki-42",
+  "status": "running",
+  "events": [
+    {
+      "timestamp": "2026-05-02T14:31:00Z",
+      "stage": "pi coding agent",
+      "message": "working; events=65, tool starts=4, tool ends=3"
+    }
+  ],
+  "total": 120
+}
+```
+
+### Cancel a Run
+
+**POST `/api/runs/:id/cancel`**
+
+Cancels a queued or running job. Completed jobs are returned unchanged.
+
+```bash
+curl -X POST -H "Authorization: Bearer sk-your-api-key" \
+  http://localhost:8080/api/runs/kaseki-42/cancel
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "kaseki-42",
+  "status": "failed",
+  "exitCode": 143,
+  "failureClass": "cancelled",
+  "error": "Job cancelled by API request"
+}
+```
 
 ### Get Logs
 
@@ -177,14 +227,14 @@ Retrieve specific log files from a run.
 **Example:**
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/runs/kaseki-550e8400-e29b-41d4-a716-446655440000/logs/stdout
+  http://localhost:8080/api/runs/kaseki-42/logs/stdout
 ```
 
 **Response (200 OK):**
 ```json
 {
   "logType": "stdout",
-  "content": "[kaseki-550e8400-e29b-41d4-a716-446655440000] Cloning repo...\n[kaseki-550e8400-e29b-41d4-a716-446655440000] Installing dependencies...\n...",
+  "content": "[kaseki-42] Cloning repo...\n[kaseki-42] Installing dependencies...\n...",
   "size": 45678
 }
 ```
@@ -200,7 +250,7 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 **Response (200 OK):**
 ```json
 {
-  "id": "kaseki-550e8400-e29b-41d4-a716-446655440000",
+  "id": "kaseki-42",
   "status": "completed",
   "createdAt": "2026-05-02T14:30:00Z",
   "completedAt": "2026-05-02T14:40:00Z",
@@ -208,7 +258,7 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
   "exitCode": 0,
   "metadata": {
     "model": "openrouter/free",
-    "instance": "kaseki-550e8400-e29b-41d4-a716-446655440000",
+    "instance": "kaseki-42",
     "repo": "https://github.com/org/repo",
     "ref": "main"
   },
@@ -250,7 +300,7 @@ Download specific result artifacts.
 **Example:**
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/results/kaseki-550e8400-e29b-41d4-a716-446655440000/git.diff -o patch.diff
+  http://localhost:8080/api/results/kaseki-42/git.diff -o patch.diff
 ```
 
 ## Error Handling

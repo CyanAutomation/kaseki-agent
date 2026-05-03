@@ -198,12 +198,14 @@ describe('Kaseki API Request Validation', () => {
 
 describe('Job Scheduler', () => {
   let scheduler: JobScheduler;
+  let resultsDir: string;
 
   beforeEach(() => {
+    resultsDir = fs.mkdtempSync('/tmp/kaseki-api-service-test-');
     const config = {
       port: 8080,
       apiKeys: ['test-key'],
-      resultsDir: '/tmp/kaseki-results',
+      resultsDir,
       maxConcurrentRuns: 2,
       defaultTaskMode: 'patch' as const,
       maxDiffBytes: 200000,
@@ -212,6 +214,11 @@ describe('Job Scheduler', () => {
     };
 
     scheduler = new JobScheduler(config);
+  });
+
+  afterEach(() => {
+    scheduler.shutdown();
+    fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
   test('submitJob creates a queued job', () => {

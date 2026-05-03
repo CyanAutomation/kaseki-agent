@@ -29,7 +29,7 @@ RUN npm install -g @mariozechner/pi-coding-agent@0.70.2
 FROM node:24-bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates git procps \
+    && apt-get install -y --no-install-recommends bash ca-certificates docker.io git procps \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 kaseki \
     && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
@@ -69,6 +69,7 @@ RUN mkdir -p /app/lib \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
+    && chmod 0755 /app/dist/*.js \
     && chmod 0755 /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh /app/scripts/*.sh \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \

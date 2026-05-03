@@ -181,15 +181,16 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
   router.get('/runs', (_req: Request, res: Response) => {
     const allJobs = scheduler.listJobs();
 
-    const response: RunsListResponse = {
-      runs: allJobs.map((job) => ({
-        id: job.id,
-        status: job.status,
-        createdAt: job.createdAt.toISOString(),
-        completedAt: job.completedAt?.toISOString(),
-      })),
-      total: allJobs.length,
-    };
+      const response: RunsListResponse = {
+        runs: allJobs.map((job) => ({
+          id: job.id,
+          status: job.status,
+          createdAt: job.createdAt.toISOString(),
+          completedAt: job.completedAt?.toISOString(),
+          resultDir: job.resultDir,
+        })),
+        total: allJobs.length,
+      };
 
     res.json(response);
   });
@@ -209,6 +210,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       exitCode: job.exitCode,
       failureClass: job.failureClass,
       error: job.error,
+      resultDir: job.resultDir,
     };
 
     // Add timing information if available
@@ -238,6 +240,68 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     res.json(response);
+  });
+
+  /**
+   * POST /api/runs/:id/cancel - Cancel a queued or running run.
+   */
+  router.post('/runs/:id/cancel', (req: Request, res: Response) => {
+    const job = scheduler.cancelJob(req.params.id);
+    if (!job) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+
+    const response: StatusResponse = {
+      id: job.id,
+      status: job.status,
+      exitCode: job.exitCode,
+      failureClass: job.failureClass,
+      error: job.error,
+      resultDir: job.resultDir,
+    };
+
+    res.json(response);
+  });
+
+  /**
+   * GET /api/runs/:id/progress - Retrieve sanitized progress events.
+   */
+  router.get('/runs/:id/progress', (req: Request, res: Response) => {
+    const job = scheduler.getJob(req.params.id);
+    if (!job) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+
+    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+    if (!fs.existsSync(progressFile)) {
+      return sendErrorResponse(res, 404, 'Not Found', 'Progress file not found');
+    }
+
+    try {
+      const content = fs.readFileSync(progressFile, 'utf-8');
+      const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
+      const tailParam = Number(req.query.tail ?? lines.length);
+      const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : lines.length;
+      const selectedLines = tail > 0 ? lines.slice(-tail) : [];
+      const events = selectedLines
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter((event): event is Record<string, unknown> => event !== null);
+
+      res.json({
+        id: job.id,
+        status: job.status,
+        events,
+        total: lines.length,
+      });
+    } catch (err) {
+      sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read progress: ${(err as Error).message}`);
+    }
   });
 
   /**

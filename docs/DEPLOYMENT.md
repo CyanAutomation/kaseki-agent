@@ -96,16 +96,21 @@ Run the API container directly:
 docker run --rm \
   --name kaseki-api \
   -p 8080:8080 \
+  -v /agents:/agents:rw \
   -v /agents/kaseki-results:/agents/kaseki-results:rw \
   -v /var/log/kaseki-api:/var/log/kaseki-api:rw \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -e KASEKI_API_KEYS=sk-your-key \
   -e KASEKI_API_PORT=8080 \
+  -e KASEKI_CONTAINER_USER=1000:1000 \
   -e KASEKI_AGENT_TIMEOUT_SECONDS=1200 \
+  --user 0:0 \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
+  --entrypoint node \
   docker.io/cyanautomation/kaseki-agent:latest \
-  node dist/kaseki-api-service.js
+  /app/dist/kaseki-api-service.js
 ```
 
 ### Option 4: Node.js Process (Development)
@@ -172,6 +177,8 @@ All deployments should monitor health:
 
 ```bash
 curl http://localhost:8080/health
+# Equivalent namespaced endpoint:
+curl http://localhost:8080/api/health
 ```
 
 Expected response:
@@ -279,7 +286,7 @@ Check queue status:
 curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs
 
 # Monitor running jobs
-watch -n2 'curl -s -H "Authorization: Bearer sk-key" http://localhost:8080/health | jq ".queue"'
+watch -n2 'curl -s http://localhost:8080/health | jq ".queue"'
 ```
 
 Increase `KASEKI_API_MAX_CONCURRENT_RUNS` if jobs are queueing unnecessarily.

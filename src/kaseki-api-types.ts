@@ -19,7 +19,7 @@ export type RunRequest = z.infer<typeof RunRequestSchema>;
  * Response after triggering a run.
  */
 export interface RunResponse {
-  id: string; // kaseki-<uuidv4> instance ID
+  id: string; // kaseki-N instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   createdAt: string; // ISO 8601
   error?: string;
@@ -37,6 +37,7 @@ export interface StatusResponse {
   exitCode?: number;
   failureClass?: string;
   error?: string;
+  resultDir?: string;
 }
 
 /**
@@ -100,6 +101,7 @@ export interface RunsListResponse {
     status: 'queued' | 'running' | 'completed' | 'failed';
     createdAt: string;
     completedAt?: string;
+    resultDir?: string;
   }>;
   total: number;
 }
@@ -119,7 +121,7 @@ export interface ErrorResponse {
  * Internal job representation.
  */
 export interface Job {
-  id: string; // kaseki-<uuidv4> instance ID
+  id: string; // kaseki-N instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   request: RunRequest;
   createdAt: Date;
@@ -128,6 +130,7 @@ export interface Job {
   exitCode?: number;
   failureClass?: string;
   error?: string;
+  resultDir?: string;
   processId?: number;
   timeout?: NodeJS.Timeout;
   finalized?: boolean;

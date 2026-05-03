@@ -769,6 +769,21 @@ if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
 fi
 unset GITHUB_APP_PRIVATE_KEY
 
+prepare_worker_paths() {
+  if [ "$(id -u)" -ne 0 ]; then
+    return 0
+  fi
+
+  chown -R "$KASEKI_CONTAINER_USER" "$RUN_DIR" "$RESULT_DIR"
+  for secret_path in "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"; do
+    if [ -f "$secret_path" ]; then
+      chown "$KASEKI_CONTAINER_USER" "$secret_path"
+    fi
+  done
+}
+
+prepare_worker_paths
+
 docker_args=(
   run --rm
   --name "$INSTANCE"

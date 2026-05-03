@@ -37,14 +37,18 @@ KillSignal=SIGTERM
 ExecStart=/usr/bin/docker run --rm \
   --name kaseki-api-container \
   -p 8080:8080 \
+  -v /agents:/agents:rw \
   -v /agents/kaseki-results:/agents/kaseki-results:rw \
   -v /var/log/kaseki-api:/var/log/kaseki-api:rw \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   --env-file /etc/kaseki-api/kaseki-api.env \
+  --user 0:0 \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
+  --entrypoint node \
   docker.io/cyanautomation/kaseki-agent:latest \
-  node dist/kaseki-api-service.js
+  /app/dist/kaseki-api-service.js
 
 ExecStop=/usr/bin/docker stop -t 30 kaseki-api-container
 
