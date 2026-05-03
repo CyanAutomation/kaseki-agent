@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2024",
-    "module": "Node16",
+    "module": "ESNext",
     "lib": ["ES2024"],
     "outDir": "./dist",
     "rootDir": "./src",
@@ -13,7 +13,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node16",
+    "moduleResolution": "bundler",
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
