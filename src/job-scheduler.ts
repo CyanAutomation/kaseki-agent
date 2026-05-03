@@ -453,7 +453,7 @@ export class JobScheduler {
     if (incoming.length >= limitBytes) {
       return incoming.subarray(incoming.length - limitBytes);
     }
-    const combined = currentTail.length > 0 ? Buffer.concat([currentTail, incoming]) : incoming;
+    const combined = currentTail.length > 0 ? Buffer.concat([Buffer.from(currentTail), incoming]) : incoming;
     if (combined.length <= limitBytes) {
       return combined;
     }
