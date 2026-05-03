@@ -495,18 +495,18 @@ if [ "$INSTANCE_AUTO_RESERVED" -eq 0 ] && [ -n "${INSTANCE:-}" ] && [ -d "$FINAL
   exit 2
 fi
 
-# shellcheck disable=SC2317
+# shellcheck disable=SC2329
 # Invoked via trap in the unified exit handler.
 cleanup_secret() {
   rm -f "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
 }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2329
 # Invoked via trap in the unified exit handler.
 cleanup_staging_dirs() {
   [ "$PROMOTED_RESULT_DIR" -eq 1 ] || rm -rf "$RESULT_STAGE_DIR"
   [ "$PROMOTED_RUN_DIR" -eq 1 ] || rm -rf "$RUN_STAGE_DIR"
 }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2329
 # Invoked via trap on process exit/signals.
 unified_exit_handler() {
   local code=$?
