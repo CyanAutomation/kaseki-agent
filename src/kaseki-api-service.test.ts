@@ -122,7 +122,6 @@ describe('Kaseki API Configuration', () => {
     }).toEqual(expectedConfig);
   });
 
-
   test('loadConfig parses API keys from file', () => {
     const keysFile = '/tmp/test-keys.txt';
     fs.writeFileSync(keysFile, 'key1\n# comment\nkey2\n');
@@ -339,7 +338,6 @@ describe('Kaseki API graceful shutdown', () => {
   });
 });
 
-
 describe('Node runtime precheck', () => {
   const originalExit = process.exit;
 
@@ -352,7 +350,6 @@ describe('Node runtime precheck', () => {
     expect(() => assertSupportedNodeVersion('24.0.0')).not.toThrow();
     expect(() => assertSupportedNodeVersion('25.1.2')).not.toThrow();
   });
-
 
   test.each(['x.y.z', '24.x.1', 'v24.0.0', '24.0.0-beta'])(
     'exits early for malformed Node version string %s',

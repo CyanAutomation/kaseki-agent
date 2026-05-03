@@ -19,7 +19,7 @@ export function createGracefulShutdown({
   exit = process.exit,
 }: ShutdownDeps): (signal: string) => Promise<void> {
   const logger = createEventLogger('kaseki-api');
-  
+
   return async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
 
@@ -55,7 +55,6 @@ export function createGracefulShutdown({
   };
 }
 
-
 export function assertSupportedNodeVersion(
   version: string = process.versions.node,
   minimumMajor: number = 24,
@@ -63,7 +62,7 @@ export function assertSupportedNodeVersion(
   const normalizedVersion = version.trim();
   const isValidVersion = /^\d+(?:\.\d+){0,2}$/.test(normalizedVersion);
   const major = Number.parseInt(normalizedVersion.split('.')[0] ?? '', 10);
-  
+
   const logger = createEventLogger('kaseki-api');
   logger.info(`Node runtime detected: v${normalizedVersion}`);
 
@@ -80,7 +79,7 @@ export function assertSupportedNodeVersion(
  */
 async function main(): Promise<void> {
   const logger = createEventLogger('kaseki-api');
-  
+
   assertSupportedNodeVersion();
 
   // Load configuration
