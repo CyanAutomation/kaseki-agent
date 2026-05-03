@@ -1,12 +1,14 @@
 services:
   kaseki-api:
-    image: "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}"
+    image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
     container_name: kaseki-api
-    user: "0:0"
+    user: "${KASEKI_API_USER:-1000:1000}"
+    group_add:
+      - "${DOCKER_GID:-985}"
     entrypoint: ["node"]
     command: ["/app/dist/kaseki-api-service.js"]
     ports:
-      - "8080:8080"
+      - "${KASEKI_API_PORT:-8080}:8080"
     environment:
       KASEKI_API_PORT: "8080"
       KASEKI_API_KEYS: "${KASEKI_API_KEYS:-sk-dev-key}"
@@ -16,9 +18,9 @@ services:
       KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-1000:1000}"
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
     volumes:
       - /agents:/agents:rw
-      - kaseki-results:/agents/kaseki-results
       - kaseki-logs:/var/log/kaseki-api
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
@@ -41,8 +43,6 @@ services:
       - kaseki-network
 
 volumes:
-  kaseki-results:
-    driver: local
   kaseki-logs:
     driver: local
 

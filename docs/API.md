@@ -65,6 +65,37 @@ No authentication required. Check service health and queue status.
 }
 ```
 
+### Controller Preflight
+
+**GET `/api/preflight`**
+
+Requires authentication. Run this before submitting jobs from OpenClaw or another remote controller. It validates the runtime dependencies that the API needs in order to launch ephemeral Kaseki containers.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" \
+  http://localhost:8080/api/preflight
+```
+
+**Response (200 OK or 503 Service Unavailable):**
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-05-03T21:30:00.000Z",
+  "image": "docker.io/cyanautomation/kaseki-agent:latest",
+  "templateDir": "/agents/kaseki-template",
+  "resultsDir": "/agents/kaseki-results",
+  "checks": [
+    {
+      "name": "docker-daemon",
+      "ok": true,
+      "detail": "20.10.24 -> 29.4.1"
+    }
+  ]
+}
+```
+
+If Docker socket access is denied, the response includes remediation such as adding `group_add: ["${DOCKER_GID:-985}"]` to the API container.
+
 ### Trigger a Run
 
 **POST `/api/runs`**
@@ -190,6 +221,7 @@ For failed runs, `diagnosticEntryPoint` is included:
 **GET `/api/runs/:id/progress`**
 
 Returns sanitized progress events from `progress.jsonl`. Assistant text, environment values, and secrets are not included.
+For running jobs whose result directory has not been promoted yet, the API falls back to sanitized `[progress]` lines from the live Docker container logs.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
