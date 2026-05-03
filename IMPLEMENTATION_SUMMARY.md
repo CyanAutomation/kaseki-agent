@@ -94,6 +94,7 @@ GET    /health                      200 OK       — Health check (no auth)
 ### 1. Job Scheduler
 
 Manages in-memory FIFO queue with concurrency control:
+
 - Submits jobs asynchronously
 - Respects max concurrent limit
 - Spawns `kaseki-activate.sh` child processes
@@ -109,6 +110,7 @@ const job = scheduler.submitJob(request);  // Returns immediately
 ### 2. Result Cache
 
 Lazy-loads and caches artifacts to avoid repeated filesystem reads:
+
 - Max 20 entries, 5-minute TTL
 - 10 MB per file limit
 - LRU eviction when full
@@ -117,6 +119,7 @@ Lazy-loads and caches artifacts to avoid repeated filesystem reads:
 ### 3. Express Routing
 
 8 route handlers with:
+
 - Bearer token middleware (all routes except `/health`)
 - Zod request validation
 - RFC 7807 error responses
@@ -125,6 +128,7 @@ Lazy-loads and caches artifacts to avoid repeated filesystem reads:
 ### 4. TypeScript Client
 
 High-level HTTP client for integration libraries:
+
 ```typescript
 const client = new KasekiApiClient(baseUrl, apiKey);
 const run = await client.submit({...});
@@ -180,22 +184,26 @@ KASEKI_API_KEYS=sk-dev npm run kaseki-api
 ## Security Features
 
 ✅ **API Key Management**
+
 - Keys stored in environment or file
 - Never logged or included in responses
 - Bearer token validation on all protected endpoints
 
 ✅ **Input Validation**
+
 - All external inputs validated via Zod
 - URL format validation
 - File path sanitization
 - Enum validation for task modes
 
 ✅ **Output Sanitization**
+
 - RFC 7807 error format (no internal details)
 - Log files truncated if >100 KB
 - Artifact size limits enforced
 
 ✅ **Docker Hardening**
+
 - `--cap-drop ALL` — No Linux capabilities
 - `--read-only` root filesystem
 - `--security-opt no-new-privileges:true`
@@ -213,6 +221,7 @@ npm test
 ```
 
 Covers:
+
 - Configuration loading and validation
 - Request schema validation (Zod)
 - Job scheduler operations (submit, query, lifecycle)
@@ -229,6 +238,7 @@ npm run type-check
 ```
 
 Full TypeScript strict mode enabled:
+
 - `noImplicitAny`, `strictNullChecks`, `noUnusedLocals`, etc.
 
 ### Linting
@@ -256,6 +266,7 @@ KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
 ```
 
 Output:
+
 ```
 Kaseki API service running on port 8080
 Log level: info
@@ -282,6 +293,7 @@ curl -X POST http://localhost:8080/api/runs \
 ```
 
 Response:
+
 ```json
 {
   "id": "kaseki-1",
@@ -379,11 +391,13 @@ curl -H "Authorization: Bearer sk-key" \
 ### Logs
 
 **Docker Compose:**
+
 ```bash
 docker-compose logs -f kaseki-api
 ```
 
 **systemd:**
+
 ```bash
 journalctl -u kaseki-api -f
 ```
