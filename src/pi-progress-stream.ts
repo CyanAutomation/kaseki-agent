@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import readline from 'readline';
+import { sanitizeToolName } from './progress-stream-utils.js';
 
 interface EventCountMap {
   [key: string]: number;
@@ -45,14 +46,14 @@ function eventType(event: PiEvent | any): string {
 }
 
 function toolName(event: PiEvent | any): string {
-  return (
+  const raw =
     event?.tool_name ||
     event?.toolName ||
     event?.tool?.name ||
     event?.name ||
     event?.call?.name ||
-    'tool'
-  );
+    'tool';
+  return sanitizeToolName(raw);
 }
 
 function emit(stage: string, message: string, extra: Record<string, any> = {}): void {
