@@ -1,8 +1,11 @@
 // fallow-ignore-next-line unused-files
 import * as fs from 'fs';
 import * as path from 'path';
+import express from 'express';
+import { AddressInfo } from 'net';
 import { decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes';
 import { ResultCache } from './result-cache';
+import { createApiRouter } from './kaseki-api-routes';
 
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {
@@ -117,5 +120,76 @@ describe('kaseki-api-routes tail file descriptor cleanup', () => {
     });
 
     expect(closeSyncMock).toHaveBeenCalledWith(42);
+  });
+});
+
+describe('kaseki-api-routes results artifacts endpoint', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-api-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('failed run can retrieve failure diagnostics artifacts', async () => {
+    const jobId = 'kaseki-failed-1';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ failureClass: 'validation' }));
+    fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr output');
+    fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout output');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => id === jobId
+        ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir }
+        : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch',
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info',
+    }));
+
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key' };
+
+    try {
+      const failureRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/failure.json`, { headers });
+      expect(failureRes.status).toBe(200);
+      const failureBody = (await failureRes.json()) as any;
+      expect(failureBody.file).toBe('failure.json');
+      expect(failureBody.contentType).toBe('application/json');
+
+      const stderrRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/stderr.log`, { headers });
+      expect(stderrRes.status).toBe(200);
+      const stderrBody = (await stderrRes.json()) as any;
+      expect(stderrBody.file).toBe('stderr.log');
+      expect(stderrBody.contentType).toBe('text/plain');
+      expect(stderrBody.content).toBe('stderr output');
+
+      const stdoutRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/stdout.log`, { headers });
+      expect(stdoutRes.status).toBe(200);
+      const stdoutBody = (await stdoutRes.json()) as any;
+      expect(stdoutBody.file).toBe('stdout.log');
+      expect(stdoutBody.content).toBe('stdout output');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
