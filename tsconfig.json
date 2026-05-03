@@ -34,6 +34,6 @@
       "moduleResolution": "bundler"
     }
   },
-  "include": ["src/**/*.ts", "add-js-extensions.ts", "fix-tests.ts"],
+  "include": ["src/**/*.ts", "add-js-extensions.ts"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "coverage"]
 }
