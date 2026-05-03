@@ -2,8 +2,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { WebhookPayload, WebhookConfig } from './kaseki-api-types.js';
-import { createEventLogger, EventLogger } from './logger.js';
+import { WebhookPayload, WebhookConfig } from './kaseki-api-types';
+import { createEventLogger, EventLogger } from './logger';
 
 /**
  * Webhook delivery attempt record.

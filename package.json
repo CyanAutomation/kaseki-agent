@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc && chmod 0755 dist/*.js",
+    "build": "tsc && node dist/add-js-extensions.js && chmod 0755 dist/*.js",
     "type-check": "tsc --noEmit",
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",

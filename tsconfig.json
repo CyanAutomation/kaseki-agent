@@ -4,7 +4,7 @@
     "module": "ESNext",
     "lib": ["ES2024"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -27,11 +27,13 @@
     "noFallthroughCasesInSwitch": true
   },
   "ts-node": {
+    "esm": true,
+    "experimentalEsm": true,
     "compilerOptions": {
-      "module": "CommonJS",
-      "moduleResolution": "node"
+      "module": "ESNext",
+      "moduleResolution": "bundler"
     }
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "coverage"]
+  "include": ["src/**/*.ts", "add-js-extensions.ts", "fix-tests.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "coverage"]
 }

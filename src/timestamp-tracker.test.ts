@@ -1,4 +1,4 @@
-import { TimestampTracker } from './timestamp-tracker.js';
+import { TimestampTracker } from './timestamp-tracker';
 
 describe('TimestampTracker', () => {
   it('should record and retrieve first and last ISO timestamps', () => {
