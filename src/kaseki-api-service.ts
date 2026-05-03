@@ -3,6 +3,8 @@ import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
+import { IdempotencyStore } from './idempotency-store';
+import { PreFlightValidator } from './pre-flight-validator';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
 
@@ -10,6 +12,7 @@ type ShutdownDeps = {
   server: Server;
   scheduler: Pick<JobScheduler, 'shutdown'>;
   webhookManager: WebhookManager;
+  idempotencyStore: IdempotencyStore;
   forceExitAfterMs?: number;
   exit?: (code: number) => never;
 };
@@ -18,6 +21,7 @@ export function createGracefulShutdown({
   server,
   scheduler,
   webhookManager,
+  idempotencyStore,
   forceExitAfterMs = 8000,
   exit = process.exit,
 }: ShutdownDeps): (signal: string) => Promise<void> {
@@ -50,6 +54,9 @@ export function createGracefulShutdown({
 
       await webhookManager.shutdown();
       logger.info('Webhook manager shutdown');
+
+      idempotencyStore.shutdown();
+      logger.info('Idempotency store shutdown');
 
       exit(0);
     } catch (err) {
@@ -126,11 +133,17 @@ async function main(): Promise<void> {
   // Create webhook manager
   const webhookManager = new WebhookManager(config.resultsDir);
 
+  // Create idempotency store
+  const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+
+  // Create pre-flight validator
+  const preFlightValidator = new PreFlightValidator();
+
   // Create scheduler
   const scheduler = new JobScheduler(config, webhookManager);
 
   // Mount API routes
-  const apiRouter = createApiRouter(scheduler, config);
+  const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator);
   app.use('/api', apiRouter);
   app.use('/', apiRouter);
 
@@ -146,7 +159,7 @@ async function main(): Promise<void> {
   });
 
   // Graceful shutdown
-  const gracefulShutdown = createGracefulShutdown({ server, scheduler, webhookManager });
+  const gracefulShutdown = createGracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
 
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));

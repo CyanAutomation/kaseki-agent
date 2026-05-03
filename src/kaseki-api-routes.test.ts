@@ -6,6 +6,8 @@ import { AddressInfo } from 'net';
 import { decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes';
 import { ResultCache } from './result-cache';
 import { createApiRouter } from './kaseki-api-routes';
+import { IdempotencyStore } from './idempotency-store';
+import { PreFlightValidator } from './pre-flight-validator';
 
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {
@@ -152,18 +154,23 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       cancelJob: jest.fn(),
     } as any;
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
+    const config = {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
       maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
+      defaultTaskMode: 'patch' as const,
       maxDiffBytes: 200000,
       agentTimeoutSeconds: 1200,
-      logLevel: 'info',
-    }));
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
 
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;
@@ -209,18 +216,23 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       cancelJob: jest.fn(),
     } as any;
 
-    const app = express();
-    app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, {
+    const config = {
       port: 0,
       apiKeys: ['test-key'],
       resultsDir,
       maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
+      defaultTaskMode: 'patch' as const,
       maxDiffBytes: 200000,
       agentTimeoutSeconds: 1200,
-      logLevel: 'info',
-    }));
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
 
     const server = app.listen(0);
     const port = (server.address() as AddressInfo).port;

@@ -4,6 +4,7 @@ import type { Server } from 'http';
 import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
+import { WebhookManager } from './webhook-manager';
 import { RunRequestSchema } from './kaseki-api-types';
 
 describe('Kaseki API Configuration', () => {
@@ -212,7 +213,8 @@ describe('Job Scheduler', () => {
       logLevel: 'info' as const,
     };
 
-    scheduler = new JobScheduler(config);
+    const webhookManager = new WebhookManager(resultsDir);
+    scheduler = new JobScheduler(config, webhookManager);
   });
 
   afterEach(() => {

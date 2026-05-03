@@ -2,6 +2,7 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import { JobScheduler } from './job-scheduler';
+import { WebhookManager } from './webhook-manager';
 
 const mockSpawn = jest.fn();
 
@@ -31,6 +32,10 @@ function cleanupResultsDirs(): void {
   }
 }
 
+function createMockWebhookManager(): WebhookManager {
+  return new WebhookManager(createResultsDir());
+}
+
 describe('JobScheduler timeout lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -46,17 +51,20 @@ describe('JobScheduler timeout lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir: createResultsDir(),
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
 
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1,
-      logLevel: 'info',
-    });
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     const job = scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
@@ -85,16 +93,19 @@ describe('JobScheduler timeout lifecycle', () => {
     mockSpawn.mockReturnValue(proc);
     const resultsDir = createResultsDir();
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir,
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 30,
-      logLevel: 'info',
-    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     const job = scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
@@ -117,16 +128,19 @@ describe('JobScheduler timeout lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir: createResultsDir(),
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1,
-      logLevel: 'info',
-    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
@@ -144,16 +158,19 @@ describe('JobScheduler timeout lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir: createResultsDir(),
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1,
-      logLevel: 'info',
-    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     const processQueueSpy = jest.spyOn(scheduler as unknown as { processQueue: () => void }, 'processQueue');
     const job = scheduler.submitJob({
@@ -187,16 +204,19 @@ describe('JobScheduler shutdown lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir: createResultsDir(),
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 30,
-      logLevel: 'info',
-    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     const job = scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
@@ -220,16 +240,19 @@ describe('JobScheduler shutdown lifecycle', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
 
-    const scheduler = new JobScheduler({
-      port: 8080,
-      apiKeys: ['test-key'],
-      resultsDir: createResultsDir(),
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch',
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 30,
-      logLevel: 'info',
-    });
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
 
     scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
