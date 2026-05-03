@@ -1,5 +1,5 @@
 // fallow-ignore-next-line unused-files
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse, ValidationResponse } from './kaseki-api-types';
 
 /**
@@ -170,7 +170,7 @@ export class KasekiApiClient {
    */
   async submit(request: RunRequest): Promise<RunResponse> {
     // Auto-generate idempotency key if not provided
-    const idempotencyKey = request.idempotencyKey || uuidv4();
+    const idempotencyKey = request.idempotencyKey || randomUUID();
     const requestWithIdempotency = { ...request, idempotencyKey };
 
     // Perform submission with retry logic

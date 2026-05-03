@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { JobScheduler } from './job-scheduler';
 import { ResultCache } from './result-cache';
 import { IdempotencyStore } from './idempotency-store';
@@ -228,7 +228,7 @@ export function createApiRouter(
       const runRequest = RunRequestSchema.parse(req.body);
 
       // Auto-generate idempotency key if not provided
-      const idempotencyKey = runRequest.idempotencyKey || uuidv4();
+      const idempotencyKey = runRequest.idempotencyKey || randomUUID();
 
       // Check idempotency cache
       const cachedResponse = idempotencyStore.getCachedResponse(idempotencyKey);
