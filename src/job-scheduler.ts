@@ -17,6 +17,7 @@ type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeo
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
 export class JobScheduler {
+  private static readonly STREAM_TAIL_LIMIT_BYTES = 64 * 1024;
   private jobs = new Map<string, Job>();
   private queue: Job[] = [];
   private running = new Set<string>();
@@ -267,6 +268,8 @@ export class JobScheduler {
     });
     this.processes.set(job.id, proc);
     this.processExited.set(job.id, false);
+    let stdoutTail: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+    let stderrTail: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
 
     job.processId = proc.pid;
     let timedOut = false;
@@ -297,8 +300,14 @@ export class JobScheduler {
       this.completeJob(job);
     };
 
-    // Note: stdout/stderr collection omitted per kaseki-agent design
-    // (logs are written directly to disk by kaseki-agent.sh)
+    proc.stdout?.on('data', (chunk: Buffer | string) => {
+      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      stdoutTail = this.appendBoundedTail(stdoutTail, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+    });
+    proc.stderr?.on('data', (chunk: Buffer | string) => {
+      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      stderrTail = this.appendBoundedTail(stderrTail, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+    });
 
     // Set timeout
     const timeout = setTimeout(() => {
@@ -386,6 +395,7 @@ export class JobScheduler {
       } else {
         updates.status = 'failed';
         this.parseFailureFromResults(job);
+        this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
         this.logger.event('job_failed', {
           jobId: job.id,
           exitCode: code,
@@ -433,6 +443,47 @@ export class JobScheduler {
         completedAt: new Date(),
       });
     });
+  }
+
+  private appendBoundedTail(
+    currentTail: Uint8Array<ArrayBufferLike>,
+    incoming: Uint8Array<ArrayBufferLike>,
+    limitBytes: number
+  ): Uint8Array<ArrayBufferLike> {
+    if (incoming.length >= limitBytes) {
+      return incoming.subarray(incoming.length - limitBytes);
+    }
+    const combined = currentTail.length > 0 ? Buffer.concat([currentTail, incoming]) : incoming;
+    if (combined.length <= limitBytes) {
+      return combined;
+    }
+    return combined.subarray(combined.length - limitBytes);
+  }
+
+  private writeControllerBootstrapLogs(
+    job: Job,
+    stdoutTail: Uint8Array<ArrayBufferLike>,
+    stderrTail: Uint8Array<ArrayBufferLike>
+  ): void {
+    const resultDir = this.getResultDir(job.id);
+    const stderrPath = path.join(resultDir, 'stderr.log');
+    if (fs.existsSync(stderrPath)) {
+      return;
+    }
+
+    try {
+      fs.mkdirSync(resultDir, { recursive: true });
+      const stderrContent = `controller bootstrap stderr (captured by api wrapper)\n${Buffer.from(stderrTail).toString('utf-8')}`;
+      fs.writeFileSync(stderrPath, stderrContent, 'utf-8');
+
+      const stdoutPath = path.join(resultDir, 'stdout.log');
+      if (!fs.existsSync(stdoutPath)) {
+        const stdoutContent = `controller bootstrap stdout (captured by api wrapper)\n${Buffer.from(stdoutTail).toString('utf-8')}`;
+        fs.writeFileSync(stdoutPath, stdoutContent, 'utf-8');
+      }
+    } catch {
+      // Best effort fallback: avoid masking original run failure.
+    }
   }
 
   /**
