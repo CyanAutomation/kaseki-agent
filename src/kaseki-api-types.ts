@@ -1,6 +1,62 @@
 import { z } from 'zod';
 
 /**
+ * Webhook event types.
+ */
+export enum WebhookEventType {
+  JOB_SUBMITTED = 'job.submitted',
+  JOB_STARTED = 'job.started',
+  JOB_PROGRESS = 'job.progress',
+  JOB_COMPLETED = 'job.completed',
+  JOB_FAILED = 'job.failed',
+  JOB_CANCELLED = 'job.cancelled',
+}
+
+/**
+ * Webhook configuration for a run.
+ */
+export const WebhookConfigSchema = z.object({
+  url: z.string().url('Webhook URL must be valid'),
+  secret: z.string().min(16).optional().describe('HMAC secret for signature verification'),
+  events: z.array(z.nativeEnum(WebhookEventType)).optional().describe('Event types to deliver'),
+  retryPolicy: z.object({
+    maxAttempts: z.number().int().min(1).max(10).default(5),
+    initialDelayMs: z.number().int().min(100).max(5000).default(1000),
+    maxDelayMs: z.number().int().min(1000).max(60000).default(30000),
+  }).optional(),
+});
+
+export type WebhookConfig = z.infer<typeof WebhookConfigSchema>;
+
+/**
+ * Webhook payload event.
+ */
+export interface WebhookPayload {
+  eventType: WebhookEventType;
+  jobId: string;
+  timestamp: string; // ISO 8601
+  data: {
+    status?: 'queued' | 'running' | 'completed' | 'failed';
+    stage?: string;
+    elapsed?: number; // seconds
+    timeoutRiskPercent?: number;
+    exitCode?: number;
+    failureClass?: string;
+    error?: string;
+  };
+}
+
+/**
+ * Request tracing info.
+ */
+export const RequestTracingSchema = z.object({
+  correlationId: z.string().uuid().optional().describe('Correlation ID for tracking'),
+  requestId: z.string().uuid().optional().describe('Unique request ID'),
+});
+
+export type RequestTracing = z.infer<typeof RequestTracingSchema>;
+
+/**
  * Request to trigger a new kaseki run.
  */
 export const RunRequestSchema = z.object({
@@ -11,6 +67,8 @@ export const RunRequestSchema = z.object({
   maxDiffBytes: z.number().int().positive().optional().describe('Max diff size in bytes'),
   validationCommands: z.array(z.string()).optional().describe('Validation commands to run'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
+  webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
+  tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
 });
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
@@ -22,6 +80,8 @@ export interface RunResponse {
   id: string; // kaseki-N instance ID
   status: 'queued' | 'running' | 'completed' | 'failed';
   createdAt: string; // ISO 8601
+  correlationId?: string; // Request correlation ID
+  requestId?: string; // Unique request ID
   error?: string;
 }
 
@@ -38,6 +98,8 @@ export interface StatusResponse {
   failureClass?: string;
   error?: string;
   resultDir?: string;
+  correlationId?: string; // Request correlation ID
+  requestId?: string; // Unique request ID
   artifacts?: {
     metadataJson: boolean;
     resultSummaryMd: boolean;
@@ -157,4 +219,8 @@ export interface Job {
   processId?: number;
   timeout?: NodeJS.Timeout;
   finalized?: boolean;
+  webhookConfig?: WebhookConfig; // Webhook delivery config
+  correlationId?: string; // Request correlation ID
+  requestId?: string; // Unique request ID
+  currentStage?: string; // Current job stage for progress tracking
 }
