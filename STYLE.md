@@ -2,7 +2,7 @@
 
 This document outlines the code style expectations for contributions to the Kaseki Agent repository. All code must pass linting checks before submission. See [CONTRIBUTING.md](CONTRIBUTING.md#3-code-quality-linting-and-style) for how to run linters locally.
 
-## JavaScript Style
+## TypeScript Style
 
 ### General Principles
 
