@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Kaseki API Service allows remote execution and monitoring of kaseki-agent runs via HTTP REST API. This guide covers deployment options, with **docker-compose** as the preferred approach.
+The Kaseki API Service allows remote execution and monitoring of kaseki-agent runs via HTTP REST API.
+
+**Authoritative deployment mode: Docker container runtime** (docker-compose, systemd+docker, or manual `docker run`). Host Node.js process mode is fallback/dev-only and is not the production reference path.
 
 ## Prerequisites
 
@@ -96,18 +98,18 @@ KASEKI_MAX_DIFF_BYTES=200000               # Default: 200000
 Deploy as a systemd service on the host (advanced):
 
 ```bash
-# 1. Check what runtime the unit is using
-systemctl cat kaseki-api | sed -n "1,220p"
-# If ExecStart contains `docker run`, service runtime is Docker.
-# If ExecStart contains `/usr/bin/node ...kaseki-api-service.js`, service runtime is host Node.
-
-# 2. Build the project
+# 1. Build image from this repository
 cd /agents/kaseki-template
 npm install
 npm run build
 docker build -t kaseki-agent:node24-local .
 
-# 3. Install systemd service
+# 2. (Registry workflow) push/pull image before service restart
+# docker tag kaseki-agent:node24-local registry.example.com/kaseki-agent:node24-2026-05-03
+# docker push registry.example.com/kaseki-agent:node24-2026-05-03
+# On target host: docker pull registry.example.com/kaseki-agent:node24-2026-05-03
+
+# 3. Install systemd service (Docker mode only)
 sudo cp scripts/kaseki-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
@@ -133,6 +135,11 @@ sudo systemctl start kaseki-api
 sudo systemctl status kaseki-api
 sudo journalctl -u kaseki-api -f
 ```
+
+**Important behavior in Docker mode:**
+- The unit executes `node /app/dist/kaseki-api-service.js` inside the container image.
+- `/etc/kaseki-api/kaseki-api.env` only supplies environment variables; it does not mount over `/app/dist`.
+- Mounted host volumes are `/agents`, `/agents/kaseki-results`, `/var/log/kaseki-api`, and `/var/run/docker.sock`; none are mounted at `/app`, so `/app/dist` always comes from the image artifact.
 
 ### Option 3: Manual Docker Container (Advanced)
 
