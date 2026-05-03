@@ -284,6 +284,43 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 }
 ```
 
+### List Run Artifacts (Discovery Endpoint)
+
+**GET `/api/runs/:id/artifacts`**
+
+List only allowlisted artifact files, whether they currently exist, and whether each file is currently available to download.
+This endpoint is designed to remove guesswork before calling `GET /api/results/:id/:file`.
+
+Resolution logic:
+- Uses `job.resultDir` when present.
+- Falls back to `${KASEKI_RESULTS_DIR}/${runId}` when `job.resultDir` is not set.
+
+**Example (failed run):**
+```bash
+curl -s -H "Authorization: Bearer sk-your-api-key" \
+  http://localhost:8080/api/runs/kaseki-42/artifacts | jq '.'
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "kaseki-42",
+  "runStatus": "failed",
+  "exitCode": 1,
+  "artifacts": [
+    { "name": "result-summary.md", "size": 1382, "contentType": "text/markdown", "available": true },
+    { "name": "failure.json", "size": 224, "contentType": "application/json", "available": true },
+    { "name": "stderr.log", "size": 9821, "contentType": "text/plain", "available": true },
+    { "name": "validation.log", "size": 0, "contentType": "text/plain", "available": false }
+  ],
+  "recommended": ["failure.json", "stderr.log", "stdout.log", "validation.log", "quality.log"]
+}
+```
+
+`recommended` is status-aware:
+- `failed`: triage artifacts (`failure.json`, logs, quality/validation output)
+- non-failed (`queued`, `running`, `completed`): summary artifacts (`result-summary.md`, `metadata.json`, `pi-summary.json`, `git.diff`)
+
 ### Download Artifact
 
 **GET `/api/results/:id/:file`**
