@@ -118,6 +118,43 @@ emit_progress() {
   printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a /results/progress.log
 }
 
+emit_event() {
+  local event_type="$1"
+  shift
+  local detail_json="{}"
+  if [ $# -gt 0 ]; then
+    # Build detail object from key=value pairs
+    local -a pairs=("$@")
+    detail_json="{"
+    for i in "${!pairs[@]}"; do
+      local pair="${pairs[$i]}"
+      local key="${pair%%=*}"
+      local value="${pair#*=}"
+      if [ $i -gt 0 ]; then
+        detail_json="${detail_json},"
+      fi
+      detail_json="${detail_json}$(printf '%s' "$key" | json_encode):$(printf '%s' "$value" | json_encode)"
+    done
+    detail_json="${detail_json}}"
+  fi
+  local now
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"timestamp":%s,"component":%s,"event_type":%s,"instance":%s,%s}\n' \
+    "$(printf '%s' "$now" | json_encode)" \
+    "$(printf '%s' "kaseki-agent" | json_encode)" \
+    "$(printf '%s' "$event_type" | json_encode)" \
+    "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
+    "$(printf '%s' "$detail_json" | sed 's/^{\(.*\)}$/\1/')" >> /results/progress.jsonl
+}
+
+emit_error_event() {
+  local error_type="$1"
+  local detail="$2"
+  local recovery="${3:-continue}"
+  emit_event "error" "error_type=$error_type" "detail=$detail" "recovery_action=$recovery"
+  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a /results/progress.log
+}
+
 write_metadata() {
   local end_epoch end_iso duration exit_code
   end_epoch="$(date +%s)"
@@ -540,6 +577,7 @@ prepare_dependencies() {
     if grep -qx "$lock_hash" "$stamp_file"; then
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
       set_dependency_cache_status "existing-node-modules" "lock_hash=$lock_hash cache_key=$cache_key"
+      emit_event "dependency_cache_decision" "strategy=existing_node_modules" "reason=lock_hash_match" "location=repo"
       exec {cache_lock_fd}>&-
       return 0
     fi
@@ -548,6 +586,7 @@ prepare_dependencies() {
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s).\n' "$workspace_cache_dir"
     set_dependency_cache_status "workspace-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
+    emit_event "dependency_cache_decision" "strategy=workspace_cache_hit" "reason=cache_available" "location=$workspace_cache_dir"
     if ! cp -a "$workspace_cache_dir" ./node_modules; then
       exec {cache_lock_fd}>&-
       return 1
@@ -555,6 +594,7 @@ prepare_dependencies() {
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
     set_dependency_cache_status "image-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
+    emit_event "dependency_cache_decision" "strategy=image_cache_hit" "reason=cache_available" "location=$image_cache_dir"
     if ! cp -a "$image_cache_dir" ./node_modules; then
       exec {cache_lock_fd}>&-
       return 1
@@ -564,6 +604,7 @@ prepare_dependencies() {
   if [ ! -d node_modules ]; then
     printf 'Dependency cache status: cache miss, running install.\n'
     set_dependency_cache_status "cache-miss" "lock_hash=$lock_hash cache_key=$cache_key"
+    emit_event "dependency_cache_decision" "strategy=fresh_install" "reason=no_cache_available" "location=none"
     if ! npm ci --prefer-offline; then
       if ! npm install; then
         exec {cache_lock_fd}>&-
@@ -573,6 +614,7 @@ prepare_dependencies() {
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
     set_dependency_cache_status "install-skipped" "lock_hash=$lock_hash cache_key=$cache_key"
+    emit_event "dependency_cache_decision" "strategy=skip_install" "reason=cache_hit" "location=local"
   fi
 
   if ! mkdir -p "$workspace_cache_root"; then
@@ -660,10 +702,12 @@ if [ "$KASEKI_DRY_RUN" != "1" ]; then
     if [ "$STATUS" -eq 0 ]; then
       STATUS=124
       FAILED_COMMAND="pi coding agent timeout"
+      emit_error_event "pi_timeout" "Coding agent exceeded timeout of $KASEKI_AGENT_TIMEOUT_SECONDS seconds" "exit"
     fi
   elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     STATUS="$PI_EXIT"
     FAILED_COMMAND="pi coding agent"
+    emit_error_event "pi_agent_failed" "Coding agent exited with non-zero code: $PI_EXIT" "exit"
   fi
 fi
 
@@ -683,6 +727,9 @@ diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_EXIT=4
   printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a /results/quality.log
+  emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
+else
+  emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=true" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
 fi
 emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
 
@@ -695,6 +742,9 @@ if [ -n "$allowlist_regex" ]; then
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       QUALITY_EXIT=5
       printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a /results/quality.log
+      emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=false" "file=$changed_file"
+    else
+      emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=true" "file=$changed_file"
     fi
   done < /results/changed-files.txt
 fi
@@ -732,6 +782,7 @@ else
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
     validation_start="$(date +%s)"
+    emit_event "validation_command_started" "command=$trimmed"
     {
       printf '\n==> %s\n' "$trimmed"
       unset OPENROUTER_API_KEY
@@ -742,7 +793,9 @@ else
     } 2>&1 | tee -a /results/validation.log
     command_exit="${PIPESTATUS[0]}"
     validation_end="$(date +%s)"
-    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$((validation_end - validation_start))" >> "$VALIDATION_TIMINGS_FILE"
+    duration=$((validation_end - validation_start))
+    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$VALIDATION_TIMINGS_FILE"
+    emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "duration_seconds=$duration"
     if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
       VALIDATION_EXIT="$command_exit"
     fi
@@ -804,21 +857,25 @@ record_stage_timing "github operations" "$GITHUB_PUSH_EXIT" "$(($(date +%s) - st
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$VALIDATION_EXIT"
   FAILED_COMMAND="validation"
+  emit_error_event "validation_failed" "Validation command exited with code $VALIDATION_EXIT" "exit"
 fi
 
 if [ "$QUALITY_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$QUALITY_EXIT"
   FAILED_COMMAND="quality checks"
+  emit_error_event "quality_gate_failed" "Quality gate rule failed (exit code $QUALITY_EXIT)" "exit"
 fi
 
 if [ "$SECRET_SCAN_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$SECRET_SCAN_EXIT"
   FAILED_COMMAND="secret scan"
+  emit_error_event "secret_scan_failed" "Secret scan detected potential credential leak" "exit"
 fi
 
 if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$GITHUB_PUSH_EXIT"
   FAILED_COMMAND="github push"
+  emit_error_event "github_operation_failed" "GitHub push or PR creation failed (exit code $GITHUB_PUSH_EXIT)" "exit"
 fi
 
 if [ "$DIFF_NONEMPTY" != "true" ] &&
@@ -827,6 +884,7 @@ if [ "$DIFF_NONEMPTY" != "true" ] &&
   [ "$KASEKI_TASK_MODE" != "inspect" ]; then
   STATUS=3
   FAILED_COMMAND="empty git diff"
+  emit_error_event "empty_diff" "Agent produced no changes to the repository" "exit"
 fi
 
 set_current_stage "complete"
