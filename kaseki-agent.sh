@@ -690,8 +690,18 @@ else
   if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
     cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
   fi
-  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || true
-  ACTUAL_MODEL="$(node -e "try{const s=require('/results/pi-summary.json'); console.log(s.selected_model||'')}catch{process.exit(0)}" 2>/dev/null)"
+  FILTER_EXIT=0
+  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || FILTER_EXIT=$?
+  if [ "$FILTER_EXIT" -ne 0 ]; then
+    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a /results/quality.log
+    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl 2>/dev/null || true
+  fi
+  ACTUAL_MODEL="$(node -e "
+    var m='';
+    try{m=require('/results/pi-summary.json').selected_model||''}catch{}
+    if(!m){try{var lines=require('fs').readFileSync('$RAW_EVENTS','utf8').split('\n');for(var i=0;i<lines.length;i++){try{var e=JSON.parse(lines[i]);if(e&&e.model){m=e.model;break}}catch{}}}catch{}}
+    console.log(m||'');
+  " 2>/dev/null)"
 fi
 
 
