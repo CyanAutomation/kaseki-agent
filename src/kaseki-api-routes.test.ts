@@ -197,6 +197,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(stdoutBody.content).toBe('stdout output');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
     }
   });
 
@@ -247,6 +248,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(failureBody.detail).toContain('Artifact only available for failed runs: failure.json');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
     }
   });
 });
@@ -317,6 +319,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(missingFile.available).toBe(false);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
     }
   });
 
@@ -369,6 +372,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(summaryFile.available).toBe(true);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
     }
   });
 
@@ -407,6 +411,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(response.status).toBe(404);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
     }
   });
 });
@@ -478,6 +483,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.diagnosticEntryPoint).toBe('failure.json');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
     }
   });
 
@@ -531,6 +538,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.diagnosticEntryPoint).toBe('result-summary.md');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
     }
   });
 });
