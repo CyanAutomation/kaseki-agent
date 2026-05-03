@@ -1,4 +1,4 @@
-import { EventCounterAggregator } from './event-aggregator.js';
+import { EventCounterAggregator } from './event-aggregator';
 
 describe('EventCounterAggregator', () => {
   it('should record event types and increment counts', () => {

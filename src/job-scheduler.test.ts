@@ -1,8 +1,8 @@
 // fallow-ignore-next-line unused-files
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
-import { JobScheduler } from './job-scheduler.js';
-import { WebhookManager } from './webhook-manager.js';
+import { JobScheduler } from './job-scheduler';
+import { WebhookManager } from './webhook-manager';
 
 const mockSpawn = jest.fn();
 

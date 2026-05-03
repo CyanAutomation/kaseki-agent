@@ -2,10 +2,10 @@ import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
-import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types.js';
-import { KasekiApiConfig } from './kaseki-api-config.js';
-import { createEventLogger, EventLogger } from './logger.js';
-import { WebhookManager } from './webhook-manager.js';
+import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
+import { KasekiApiConfig } from './kaseki-api-config';
+import { createEventLogger, EventLogger } from './logger';
+import { WebhookManager } from './webhook-manager';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
