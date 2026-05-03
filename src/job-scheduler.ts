@@ -23,12 +23,14 @@ export class JobScheduler {
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private config: KasekiApiConfig;
   private indexPath: string;
+  private nextInstanceNumber = 1;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
   constructor(config: KasekiApiConfig) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
     this.loadPersistedJobs();
+    this.initializeInstanceCounter();
     this.persistJobs();
     this.processQueue();
   }
@@ -313,7 +315,8 @@ export class JobScheduler {
     const maxAttempts = 1000;
 
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const id = `kaseki-${attempt + 1}`;
+      const id = `kaseki-${this.nextInstanceNumber}`;
+      this.nextInstanceNumber += 1;
       const resultsPath = this.getResultDir(id);
       if (!this.jobs.has(id) && !fs.existsSync(resultsPath)) {
         return id;
@@ -375,6 +378,45 @@ export class JobScheduler {
       // A corrupt index should not prevent the API from starting; existing
       // artifacts remain available on disk for direct inspection.
     }
+  }
+
+  private initializeInstanceCounter(): void {
+    const usedNumbers = new Set<number>();
+
+    for (const id of this.jobs.keys()) {
+      const num = this.parseInstanceNumber(id);
+      if (num !== null) {
+        usedNumbers.add(num);
+      }
+    }
+
+    if (fs.existsSync(this.config.resultsDir)) {
+      try {
+        for (const entry of fs.readdirSync(this.config.resultsDir, { withFileTypes: true })) {
+          if (!entry.isDirectory()) {
+            continue;
+          }
+          const num = this.parseInstanceNumber(entry.name);
+          if (num !== null) {
+            usedNumbers.add(num);
+          }
+        }
+      } catch {
+        // Best effort only; generateInstanceId still validates on disk.
+      }
+    }
+
+    const maxUsed = usedNumbers.size ? Math.max(...usedNumbers) : 0;
+    this.nextInstanceNumber = maxUsed + 1;
+  }
+
+  private parseInstanceNumber(id: string): number | null {
+    const match = /^kaseki-(\d+)$/.exec(id);
+    if (!match) {
+      return null;
+    }
+    const value = Number.parseInt(match[1], 10);
+    return Number.isFinite(value) && value > 0 ? value : null;
   }
 
   private persistJobs(): void {
