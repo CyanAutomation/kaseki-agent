@@ -81,9 +81,13 @@ For SSH/controller-driven setup and execution. Used by OpenClaw and similar orch
 # Single SSH command to bootstrap a Pi (install, deploy, doctor)
 ssh pi@192.168.1.100 'curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | \
   KASEKI_CONTROLLER_MODE=1 \
-  OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
   sh'
 ```
+
+Controller bootstrap can install, deploy, and run host diagnostics without an
+OpenRouter key. Actual `run` commands still require `OPENROUTER_API_KEY` or
+`OPENROUTER_API_KEY_FILE`, unless the API container provides the key for
+HTTP-triggered runs.
 
 #### Local Activation (No SSH)
 
@@ -91,8 +95,7 @@ ssh pi@192.168.1.100 'curl -fsSL https://raw.githubusercontent.com/CyanAutomatio
 cd /agents/kaseki-agent
 
 # Bootstrap: install, deploy, doctor
-OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
-  ./scripts/kaseki-activate.sh --controller bootstrap
+./scripts/kaseki-activate.sh --controller bootstrap
 
 # Install checkout only
 KASEKI_REPO_URL=https://github.com/org/repo \
@@ -276,6 +279,9 @@ KASEKI_API_KEYS=sk-dev npm run kaseki-api
 # In another terminal:
 curl http://localhost:8080/health
 
+curl -H "Authorization: Bearer sk-dev" \
+  http://localhost:8080/api/preflight
+
 curl -X POST http://localhost:8080/api/runs \
   -H "Authorization: Bearer sk-dev" \
   -H "Content-Type: application/json" \
@@ -307,6 +313,7 @@ docker-compose down
 
 **Features:**
 - Health checks included
+- Authenticated `/api/preflight` controller readiness diagnostics
 - Log aggregation
 - Volume management for results
 - Automatic restart on host reboot

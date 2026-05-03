@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
@@ -28,7 +28,8 @@ export class JobScheduler {
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private config: KasekiApiConfig;
   private indexPath: string;
-  private nextInstanceNumber = 1;
+  private nextIdPath: string;
+  private idLockPath: string;
   private logger: EventLogger;
   private webhookManager: WebhookManager;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
@@ -36,10 +37,11 @@ export class JobScheduler {
   constructor(config: KasekiApiConfig, webhookManager: WebhookManager) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
+    this.nextIdPath = path.join(config.resultsDir, '.kaseki-api-next-id');
+    this.idLockPath = path.join(config.resultsDir, '.kaseki-api-id.lock');
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.loadPersistedJobs();
-    this.initializeInstanceCounter();
     this.persistJobs();
     this.processQueue();
   }
@@ -159,6 +161,7 @@ export class JobScheduler {
     if (proc) {
       proc.kill('SIGTERM');
     }
+    this.cleanupContainer(id);
     job.status = 'failed';
     job.exitCode = 143;
     job.failureClass = 'cancelled';
@@ -349,6 +352,7 @@ export class JobScheduler {
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
         updates.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
+        this.cleanupContainer(job.id);
         this.logger.event('job_failed', {
           jobId: job.id,
           failureClass: 'timeout',
@@ -544,18 +548,122 @@ export class JobScheduler {
    * Format: `kaseki-N`, matching run-kaseki.sh and result directory names.
    */
   private generateInstanceId(): string {
-    const maxAttempts = 1000;
+    return this.withIdLock(() => {
+      let nextId = this.readNextId();
+      const maxAttempts = 10000;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const id = `kaseki-${this.nextInstanceNumber}`;
-      this.nextInstanceNumber += 1;
-      const resultsPath = this.getResultDir(id);
-      if (!this.jobs.has(id) && !fs.existsSync(resultsPath)) {
-        return id;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const id = `kaseki-${nextId}`;
+        if (!this.jobs.has(id) && !fs.existsSync(this.getResultDir(id))) {
+          fs.writeFileSync(this.nextIdPath, `${nextId + 1}\n`, { mode: 0o600 });
+          return id;
+        }
+        nextId += 1;
+      }
+
+      throw new Error(`Failed to allocate unique job ID after ${maxAttempts} attempts`);
+    });
+  }
+
+  private withIdLock<T>(callback: () => T): T {
+    fs.mkdirSync(this.config.resultsDir, { recursive: true });
+    let acquired = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        fs.mkdirSync(this.idLockPath, { mode: 0o700 });
+        acquired = true;
+        break;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'EEXIST') {
+          throw err;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
       }
     }
 
-    throw new Error(`Failed to allocate unique job ID after ${maxAttempts} attempts`);
+    if (!acquired) {
+      throw new Error(`Failed to acquire Kaseki instance ID lock: ${this.idLockPath}`);
+    }
+
+    try {
+      return callback();
+    } finally {
+      fs.rmSync(this.idLockPath, { recursive: true, force: true });
+    }
+  }
+
+  private readNextId(): number {
+    const persisted = this.readPositiveIntFile(this.nextIdPath);
+    const discovered = this.discoverNextId();
+    return Math.max(persisted ?? 1, discovered);
+  }
+
+  private readPositiveIntFile(filePath: string): number | undefined {
+    try {
+      const value = parseInt(fs.readFileSync(filePath, 'utf-8').trim(), 10);
+      return Number.isInteger(value) && value > 0 ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private discoverNextId(): number {
+    let maxId = 0;
+    for (const id of this.jobs.keys()) {
+      maxId = Math.max(maxId, this.parseInstanceNumber(id) ?? 0);
+    }
+    try {
+      for (const entry of fs.readdirSync(this.config.resultsDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          maxId = Math.max(maxId, this.parseInstanceNumber(entry.name) ?? 0);
+        }
+      }
+    } catch {
+      // Missing/unreadable results dir is handled elsewhere; keep allocation best-effort.
+    }
+    return maxId + 1;
+  }
+
+  private cleanupContainer(id: string): void {
+    if (!/^kaseki-\d+$/.test(id)) {
+      return;
+    }
+    spawn('docker', ['rm', '-f', id], {
+      stdio: 'ignore',
+      detached: true,
+    }).unref();
+  }
+
+  getLiveDockerLogTail(id: string, lines = 200): string | null {
+    if (!/^kaseki-\d+$/.test(id)) {
+      return null;
+    }
+    const result = spawnSync('docker', ['logs', '--tail', String(lines), id], {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    const output = `${result.stdout || ''}${result.stderr || ''}`;
+    return output.trim().length > 0 ? output : null;
+  }
+
+  getLiveProgressEvents(id: string, tail = 25): Array<Record<string, unknown>> {
+    const output = this.getLiveDockerLogTail(id, Math.max(tail * 8, 80));
+    if (!output) {
+      return [];
+    }
+    const events: Array<Record<string, unknown>> = [];
+    for (const line of output.split(/\r?\n/)) {
+      const match = /^\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
+      if (match) {
+        events.push({
+          source: 'docker-logs',
+          stage: match[1].trim(),
+          message: match[2].trim(),
+        });
+      }
+    }
+    return tail > 0 ? events.slice(-tail) : [];
   }
 
   private getResultDir(id: string): string {
@@ -610,36 +718,6 @@ export class JobScheduler {
       // A corrupt index should not prevent the API from starting; existing
       // artifacts remain available on disk for direct inspection.
     }
-  }
-
-  private initializeInstanceCounter(): void {
-    const usedNumbers = new Set<number>();
-
-    for (const id of this.jobs.keys()) {
-      const num = this.parseInstanceNumber(id);
-      if (num !== null) {
-        usedNumbers.add(num);
-      }
-    }
-
-    if (fs.existsSync(this.config.resultsDir)) {
-      try {
-        for (const entry of fs.readdirSync(this.config.resultsDir, { withFileTypes: true })) {
-          if (!entry.isDirectory()) {
-            continue;
-          }
-          const num = this.parseInstanceNumber(entry.name);
-          if (num !== null) {
-            usedNumbers.add(num);
-          }
-        }
-      } catch {
-        // Best effort only; generateInstanceId still validates on disk.
-      }
-    }
-
-    const maxUsed = usedNumbers.size ? Math.max(...usedNumbers) : 0;
-    this.nextInstanceNumber = maxUsed + 1;
   }
 
   private parseInstanceNumber(id: string): number | null {

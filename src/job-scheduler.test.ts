@@ -5,14 +5,17 @@ import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
 
 const mockSpawn = jest.fn();
+const mockSpawnSync = jest.fn();
 
 jest.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
+  spawnSync: (...args: unknown[]) => mockSpawnSync(...args),
 }));
 
 class MockProcess extends EventEmitter {
   pid = 12345;
   kill = jest.fn((_signal?: NodeJS.Signals) => true);
+  unref = jest.fn(() => this);
 }
 
 const tempDirs: string[] = [];
@@ -50,6 +53,7 @@ describe('JobScheduler timeout lifecycle', () => {
   test('timeout followed by quick exit sets timeout failure on exit', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {
@@ -91,6 +95,7 @@ describe('JobScheduler timeout lifecycle', () => {
   test('passes parent results directory as host log directory', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
 
     const scheduler = new JobScheduler(
@@ -127,6 +132,7 @@ describe('JobScheduler timeout lifecycle', () => {
   test('timeout escalates to SIGKILL when process hangs', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {
@@ -157,6 +163,7 @@ describe('JobScheduler timeout lifecycle', () => {
   test('timeout path does not double-finalize when kill then exit race', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {
@@ -189,6 +196,75 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 });
 
+describe('JobScheduler instance allocation and live progress', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSpawn.mockReturnValue(new MockProcess());
+  });
+
+  afterEach(() => {
+    cleanupResultsDirs();
+  });
+
+  test('allocates after existing result directories and persists monotonic next id', () => {
+    const resultsDir = createResultsDir();
+    fs.mkdirSync(`${resultsDir}/kaseki-12`);
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const first = scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const second = scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    expect(first.id).toBe('kaseki-13');
+    expect(second.id).toBe('kaseki-14');
+    expect(fs.readFileSync(`${resultsDir}/.kaseki-api-next-id`, 'utf-8').trim()).toBe('15');
+
+    scheduler.shutdown();
+  });
+
+  test('parses live docker progress lines', () => {
+    mockSpawnSync.mockReturnValue({
+      stdout: '[progress] clone repository info: started\n[progress] pi coding agent: working; events=42\n',
+      stderr: '',
+      status: 0,
+    });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
+      {
+        source: 'docker-logs',
+        stage: 'pi coding agent',
+        message: 'working; events=42',
+      },
+    ]);
+  });
+});
+
 describe('JobScheduler shutdown lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -203,6 +279,7 @@ describe('JobScheduler shutdown lifecycle', () => {
   test('shutdown terminates running children and marks jobs as shutdown-aborted', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {
@@ -239,6 +316,7 @@ describe('JobScheduler shutdown lifecycle', () => {
   test('shutdown does not escalate if child exits during grace period', () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
     const scheduler = new JobScheduler(
       {

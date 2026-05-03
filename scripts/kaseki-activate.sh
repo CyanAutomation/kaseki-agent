@@ -13,6 +13,7 @@ KASEKI_CONTROLLER_MODE="${KASEKI_CONTROLLER_MODE:-0}"
 KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
 KASEKI_IMAGE_PULL_POLICY="${KASEKI_IMAGE_PULL_POLICY:-always}"
 KASEKI_REPLACE_STALE="${KASEKI_REPLACE_STALE:-0}"
+KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}"
 KASEKI_JSON_LOG_COMPONENT="kaseki-activate"
 COMMAND=""
 COMMAND_ARGS=()
@@ -249,14 +250,16 @@ run_doctor() {
   if [ "$KASEKI_OUTPUT_FORMAT" = "json" ]; then
     output_file="$(mktemp)"
     set +e
-    "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor >"$output_file" 2>&1
+    KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" \
+      "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor >"$output_file" 2>&1
     code=$?
     set -e
     print_command_json "doctor" "$code" "$(tail -n 20 "$output_file")" "" ""
     rm -f "$output_file"
     [ "$code" -eq 0 ] || exit "$code"
   else
-    "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor
+    KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" \
+      "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor
   fi
   emit_json_log "doctor" "finished" "$KASEKI_TEMPLATE_DIR"
 }
@@ -352,6 +355,9 @@ if [ "$KASEKI_CONTROLLER_MODE" = "1" ]; then
   KASEKI_OUTPUT_FORMAT="json"
   KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="0"
   KASEKI_IMAGE_PULL_POLICY="always"
+  if [ -z "${OPENROUTER_API_KEY:-}" ] && [ -z "${OPENROUTER_API_KEY_FILE:-}" ]; then
+    KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="0"
+  fi
 fi
 setup_host_logging
 

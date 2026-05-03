@@ -37,6 +37,33 @@ docker-compose logs -f kaseki-api
 docker-compose down
 ```
 
+The API container runs as the `/agents` owner by default (`1000:1000`) and must also be able to use the host Docker socket so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID` to the group owner of `/var/run/docker.sock`:
+
+```bash
+export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+docker-compose up -d
+```
+
+In Dockhand, Portainer, or another compose manager, keep the same shape:
+
+```yaml
+services:
+  kaseki-api:
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID:-985}"
+    volumes:
+      - /agents:/agents:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+```
+
+After deployment, verify controller readiness with the authenticated preflight endpoint:
+
+```bash
+curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
+  http://localhost:8080/api/preflight
+```
+
 **Configuration** (via environment variables):
 
 ```bash
@@ -157,7 +184,8 @@ docker run --rm \
   -e KASEKI_API_PORT=8080 \
   -e KASEKI_CONTAINER_USER=1000:1000 \
   -e KASEKI_AGENT_TIMEOUT_SECONDS=1200 \
-  --user 0:0 \
+  --user 1000:1000 \
+  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
@@ -190,7 +218,8 @@ docker run --rm \
      - `--security-opt no-new-privileges:true` — Prevent privilege escalation
      - `--read-only` — Read-only root filesystem
      - `tmpfs` — Temporary write-able directories
-   - API runs as non-root user (UID 10001)
+   - API runs as a non-root user that owns `/agents`
+   - Add only the host Docker socket group as a supplemental group; do not run the API as root just to reach Docker
 
 4. **TLS/HTTPS**
    - Forward HTTPS traffic via reverse proxy (e.g., nginx):
