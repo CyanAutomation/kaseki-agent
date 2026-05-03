@@ -238,3 +238,130 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     }
   });
 });
+
+describe('kaseki-api-routes run artifacts inventory endpoint', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-artifacts-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('failed run reports partial artifacts with failure-triage recommendations', async () => {
+    const jobId = 'kaseki-failed-artifacts';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ failureClass: 'validation' }));
+    fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr output');
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId
+          ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 }
+          : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
+      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
+    }));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.runStatus).toBe('failed');
+      expect(body.exitCode).toBe(1);
+      expect(body.recommended).toContain('failure.json');
+      expect(body.recommended).toContain('stderr.log');
+      const failureFile = body.artifacts.find((artifact: any) => artifact.name === 'failure.json');
+      const missingFile = body.artifacts.find((artifact: any) => artifact.name === 'stdout.log');
+      expect(failureFile.available).toBe(true);
+      expect(missingFile.available).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test('running run does not expose failure-only artifacts as available', async () => {
+    const jobId = 'kaseki-running-artifacts';
+    const fallbackDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(fallbackDir, { recursive: true });
+    fs.writeFileSync(path.join(fallbackDir, 'result-summary.md'), '# running summary');
+    fs.writeFileSync(path.join(fallbackDir, 'stderr.log'), 'not yet final');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
+      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
+    }));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.runStatus).toBe('running');
+      expect(body.recommended).toContain('result-summary.md');
+      const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
+      const summaryFile = body.artifacts.find((artifact: any) => artifact.name === 'result-summary.md');
+      expect(stderrFile.available).toBe(false);
+      expect(summaryFile.available).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test('returns 404 when run does not exist', async () => {
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: () => undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, {
+      port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch',
+      maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info',
+    }));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/missing-run/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(404);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

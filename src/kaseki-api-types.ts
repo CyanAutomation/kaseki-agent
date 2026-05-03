@@ -60,6 +60,21 @@ export interface ArtifactResponse {
   url?: string; // For large artifacts, provide signed URL
 }
 
+export interface RunArtifactFileMetadata {
+  name: string;
+  size: number;
+  contentType: string;
+  available: boolean;
+}
+
+export interface RunArtifactsResponse {
+  id: string;
+  runStatus: 'queued' | 'running' | 'completed' | 'failed';
+  exitCode?: number;
+  artifacts: RunArtifactFileMetadata[];
+  recommended: string[];
+}
+
 /**
  * Run analysis response (comprehensive summary).
  */
