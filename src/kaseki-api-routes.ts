@@ -15,6 +15,7 @@ import {
   ErrorResponse,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
+import { createEventLogger } from './logger';
 
 function isUtf8ContinuationByte(byte: number): boolean {
   return (byte & 0xc0) === 0x80;
@@ -128,6 +129,33 @@ export function readArtifactContent(
 export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig): Router {
   const router = Router();
   const cache = new ResultCache();
+  const logger = createEventLogger('api');
+
+  /**
+   * Middleware: Request/Response logging.
+   */
+  router.use((req: Request, res: Response, next: NextFunction) => {
+    const startTime = Date.now();
+    const originalSend = res.send;
+
+    res.send = function (data: any) {
+      const duration = Date.now() - startTime;
+      const statusCode = res.statusCode;
+
+      // Log request/response event
+      logger.event('api_request_complete', {
+        method: req.method,
+        path: req.path,
+        statusCode,
+        durationMs: duration,
+        query: Object.keys(req.query).length > 0 ? req.query : undefined,
+      });
+
+      return originalSend.call(this, data);
+    };
+
+    next();
+  });
 
   /**
    * Middleware: API key validation.
@@ -140,11 +168,19 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
 
     const authHeader = req.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      logger.event('api_auth_failed', {
+        path: req.path,
+        reason: 'missing_or_invalid_header',
+      });
       return sendErrorResponse(res, 401, 'Unauthorized', 'Missing or invalid Authorization header');
     }
 
     const token = authHeader.slice(7);
     if (!validateApiKey(config, token)) {
+      logger.event('api_auth_failed', {
+        path: req.path,
+        reason: 'invalid_api_key',
+      });
       return sendErrorResponse(res, 401, 'Unauthorized', 'Invalid API key');
     }
 
@@ -181,6 +217,13 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       // Validate request body
       const runRequest = RunRequestSchema.parse(req.body);
 
+      // Log request
+      logger.event('api_run_request', {
+        repoUrl: runRequest.repoUrl,
+        ref: runRequest.ref,
+        taskMode: runRequest.taskMode,
+      });
+
       // Submit to scheduler
       const job = scheduler.submitJob(runRequest);
 
@@ -195,8 +238,16 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       if (err instanceof Error && 'errors' in err) {
         // Zod validation error
         const details = (err as any).errors.map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`).join('; ');
+        logger.event('api_validation_error', {
+          path: '/runs',
+          details,
+        });
         return sendErrorResponse(res, 400, 'Bad Request', details);
       }
+      logger.event('api_error', {
+        path: '/runs',
+        error: (err as Error).message,
+      });
       return sendErrorResponse(res, 400, 'Bad Request', (err as Error).message);
     }
   });

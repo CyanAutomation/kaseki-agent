@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Job, RunRequest } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
+import { createEventLogger, EventLogger } from './logger';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -24,11 +25,13 @@ export class JobScheduler {
   private config: KasekiApiConfig;
   private indexPath: string;
   private nextInstanceNumber = 1;
+  private logger: EventLogger;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
   constructor(config: KasekiApiConfig) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
+    this.logger = createEventLogger('job-scheduler');
     this.loadPersistedJobs();
     this.initializeInstanceCounter();
     this.persistJobs();
@@ -52,6 +55,15 @@ export class JobScheduler {
     this.queue.push(job);
     this.persistJobs();
     this.processQueue();
+
+    // Log job submission
+    this.logger.event('job_submitted', {
+      jobId: instanceId,
+      repoUrl: request.repoUrl,
+      ref: request.ref,
+      queueDepth: this.queue.length,
+      runningCount: this.running.size,
+    });
 
     return job;
   }
@@ -89,6 +101,12 @@ export class JobScheduler {
       job.completedAt = completedAt;
       job.finalized = true;
       this.persistJobs();
+
+      this.logger.event('job_cancelled', {
+        jobId: id,
+        reason: 'cancelled_before_execution',
+      });
+
       return job;
     }
 
@@ -101,6 +119,13 @@ export class JobScheduler {
     job.failureClass = 'cancelled';
     job.error = 'Job cancelled by API request';
     job.completedAt = completedAt;
+
+    this.logger.event('job_cancelled', {
+      jobId: id,
+      reason: 'cancelled_by_request',
+      processId: job.processId,
+    });
+
     this.completeJob(job);
     return job;
   }
@@ -126,7 +151,14 @@ export class JobScheduler {
     job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
 
-    // Prepare environment
+    // Log job start
+    this.logger.event('job_started', {
+      jobId: job.id,
+      repoUrl: job.request.repoUrl,
+      ref: job.request.ref,
+      processId: job.processId,
+      runningCount: this.running.size,
+    });
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       // run-kaseki.sh owns creation of the per-instance result directory and
@@ -236,11 +268,29 @@ export class JobScheduler {
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
         updates.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
+        this.logger.event('job_failed', {
+          jobId: job.id,
+          failureClass: 'timeout',
+          exitCode: 124,
+          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        });
       } else if (code === 0) {
         updates.status = 'completed';
+        this.logger.event('job_completed', {
+          jobId: job.id,
+          exitCode: code,
+          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        });
       } else {
         updates.status = 'failed';
         this.parseFailureFromResults(job);
+        this.logger.event('job_failed', {
+          jobId: job.id,
+          exitCode: code,
+          failureClass: job.failureClass,
+          error: job.error,
+          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        });
       }
       finalizeJob(updates);
     });
@@ -252,9 +302,15 @@ export class JobScheduler {
         return;
       }
       clearTimeout(timeout);
+      const errorMsg = `Failed to spawn process: ${err.message}`;
+      this.logger.event('job_failed', {
+        jobId: job.id,
+        failureClass: 'spawn_error',
+        error: errorMsg,
+      });
       finalizeJob({
         status: 'failed',
-        error: `Failed to spawn process: ${err.message}`,
+        error: errorMsg,
         completedAt: new Date(),
       });
     });
