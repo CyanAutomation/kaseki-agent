@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import express from 'express';
 import { AddressInfo } from 'net';
-import { decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes';
+import { classifyDockerFailure, decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes';
 import { ResultCache } from './result-cache';
 import { createApiRouter } from './kaseki-api-routes';
 import { IdempotencyStore } from './idempotency-store';
@@ -94,6 +94,24 @@ describe('kaseki-api-routes artifact read behavior', () => {
     fs.writeFileSync(artifactPath, '{"version":2}');
     const secondRead = readArtifactContent(artifactPath, 'running', cache);
     expect(secondRead).toBe('{"version":2}');
+  });
+});
+
+describe('kaseki-api-routes preflight diagnostics', () => {
+  test('classifies Docker socket permission failures with actionable remediation', () => {
+    const result = classifyDockerFailure(
+      'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock'
+    );
+
+    expect(result.detail).toMatch(/socket is not accessible/);
+    expect(result.remediation).toMatch(/group_add/);
+  });
+
+  test('classifies unreachable Docker daemon separately from image misses', () => {
+    const result = classifyDockerFailure('Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+
+    expect(result.detail).toMatch(/unreachable/);
+    expect(result.remediation).toMatch(/daemon/);
   });
 });
 

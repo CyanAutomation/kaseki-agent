@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -18,6 +19,8 @@ import {
   RunsListResponse,
   ErrorResponse,
   ValidationResponse,
+  PreflightCheck,
+  PreflightResponse,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
 import { createEventLogger } from './logger';
@@ -128,6 +131,136 @@ export function readArtifactContent(
   return cache.getOrLoad(filePath);
 }
 
+function readKasekiImage(templateDir = '/agents/kaseki-template'): string {
+  if (process.env.KASEKI_IMAGE) {
+    return process.env.KASEKI_IMAGE;
+  }
+  const imageFile = path.join(templateDir, '.kaseki-image');
+  try {
+    const value = fs.readFileSync(imageFile, 'utf-8').trim();
+    if (value) {
+      return value;
+    }
+  } catch {
+    // Fall through to the registry default.
+  }
+  return 'docker.io/cyanautomation/kaseki-agent:latest';
+}
+
+export function classifyDockerFailure(stderr: string): { detail: string; remediation: string } {
+  const normalized = stderr.toLowerCase();
+  if (normalized.includes('permission denied') || normalized.includes('connect: permission denied')) {
+    return {
+      detail: 'Docker daemon socket is not accessible from the API process.',
+      remediation:
+        'Add the API container user to the host Docker socket group, for example group_add: ["${DOCKER_GID:-985}"].',
+    };
+  }
+  if (normalized.includes('cannot connect') || normalized.includes('is the docker daemon running')) {
+    return {
+      detail: 'Docker daemon is unreachable from the API process.',
+      remediation: 'Mount /var/run/docker.sock and verify the host Docker daemon is running.',
+    };
+  }
+  return {
+    detail: stderr.trim() || 'Docker command failed.',
+    remediation: 'Verify Docker CLI, daemon access, and the mounted Docker socket.',
+  };
+}
+
+function checkOpenRouterKey(): PreflightCheck {
+  if (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.length > 0) {
+    return { name: 'openrouter-key', ok: true, detail: 'OPENROUTER_API_KEY is present in the API environment.' };
+  }
+
+  const keyFile = process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/openrouter_api_key';
+  try {
+    const stat = fs.statSync(keyFile);
+    if (stat.isFile() && stat.size > 0) {
+      return { name: 'openrouter-key', ok: true, detail: `Readable key file: ${keyFile}` };
+    }
+  } catch {
+    // Handled below.
+  }
+
+  return {
+    name: 'openrouter-key',
+    ok: false,
+    detail: 'No OpenRouter API key was found in env or the configured key file.',
+    remediation: 'Set OPENROUTER_API_KEY for API-triggered runs or mount OPENROUTER_API_KEY_FILE.',
+  };
+}
+
+export function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
+  const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  const image = readKasekiImage(templateDir);
+  const checks: PreflightCheck[] = [];
+
+  try {
+    fs.accessSync(config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
+    checks.push({ name: 'results-dir', ok: true, detail: `${config.resultsDir} is readable and writable.` });
+  } catch (err) {
+    checks.push({
+      name: 'results-dir',
+      ok: false,
+      detail: `${config.resultsDir} is not readable and writable: ${(err as Error).message}`,
+      remediation: 'Create the results directory and make it writable by the API container user.',
+    });
+  }
+
+  checks.push(checkOpenRouterKey());
+
+  const dockerVersion = spawnSync('docker', ['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}'], {
+    encoding: 'utf-8',
+    timeout: 5000,
+  });
+  if (dockerVersion.status === 0) {
+    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersion.stdout.trim() });
+  } else {
+    const classified = classifyDockerFailure(dockerVersion.stderr || dockerVersion.stdout || dockerVersion.error?.message || '');
+    checks.push({ name: 'docker-daemon', ok: false, ...classified });
+  }
+
+  const imageInspect = spawnSync('docker', ['image', 'inspect', image], {
+    encoding: 'utf-8',
+    timeout: 5000,
+  });
+  if (imageInspect.status === 0) {
+    checks.push({ name: 'docker-image', ok: true, detail: `Image is present: ${image}` });
+  } else {
+    const classified = classifyDockerFailure(imageInspect.stderr || imageInspect.stdout || imageInspect.error?.message || '');
+    const daemonFailed = checks.some((check) => check.name === 'docker-daemon' && !check.ok);
+    checks.push({
+      name: 'docker-image',
+      ok: false,
+      detail: daemonFailed ? classified.detail : `Docker image is not present locally: ${image}`,
+      remediation: daemonFailed ? classified.remediation : `Pull ${image} or set KASEKI_IMAGE to an available image.`,
+    });
+  }
+
+  const runScript = path.join(templateDir, 'run-kaseki.sh');
+  checks.push({
+    name: 'template',
+    ok: fs.existsSync(runScript),
+    detail: fs.existsSync(runScript) ? `Template runner exists: ${runScript}` : `Missing template runner: ${runScript}`,
+    remediation: fs.existsSync(runScript) ? undefined : 'Run scripts/kaseki-activate.sh --controller bootstrap.',
+  });
+
+  const status = checks.every((check) => check.ok)
+    ? 'ok'
+    : checks.some((check) => check.name === 'docker-daemon' && !check.ok)
+      ? 'error'
+      : 'degraded';
+  return {
+    status,
+    timestamp: new Date().toISOString(),
+    checks,
+    image,
+    templateDir,
+    resultsDir: config.resultsDir,
+  };
+}
+
 /**
  * Create the API routes.
  */
@@ -217,6 +350,14 @@ export function createApiRouter(
       queue: queueStatus,
       errors: errors.length > 0 ? errors : undefined,
     });
+  });
+
+  /**
+   * GET /api/preflight - Controller-oriented readiness diagnostics.
+   */
+  router.get('/preflight', (_req: Request, res: Response) => {
+    const response = buildPreflightResponse(config);
+    res.status(response.status === 'error' ? 503 : 200).json(response);
   });
 
   /**
@@ -463,6 +604,12 @@ export function createApiRouter(
             const lastEvent = JSON.parse(lines[lines.length - 1]);
             response.progress = lastEvent.detail || lastEvent.stage;
           }
+        } else if (typeof scheduler.getLiveProgressEvents === 'function') {
+          const liveEvents = scheduler.getLiveProgressEvents(job.id, 1);
+          const lastEvent = liveEvents[liveEvents.length - 1];
+          if (lastEvent) {
+            response.progress = String(lastEvent.message || lastEvent.stage || 'running');
+          }
         }
       } catch {
         // Ignore progress file errors
@@ -622,6 +769,19 @@ export function createApiRouter(
     // Regular JSONL response
     const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
     if (!fs.existsSync(progressFile)) {
+      const tailParam = Number(req.query.tail ?? 25);
+      const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 25;
+      const events =
+        typeof scheduler.getLiveProgressEvents === 'function' ? scheduler.getLiveProgressEvents(job.id, tail) : [];
+      if (events.length > 0) {
+        return res.json({
+          id: job.id,
+          status: job.status,
+          events,
+          total: events.length,
+          source: 'docker-logs',
+        });
+      }
       return sendErrorResponse(res, 404, 'Not Found', 'Progress file not found');
     }
 
@@ -677,6 +837,21 @@ export function createApiRouter(
       const logFile = path.join(config.resultsDir, job.id, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
 
       if (!fs.existsSync(logFile)) {
+        if (
+          job.status === 'running' &&
+          (logType === 'stdout' || logType === 'stderr' || logType === 'progress') &&
+          typeof scheduler.getLiveDockerLogTail === 'function'
+        ) {
+          const liveContent = scheduler.getLiveDockerLogTail(job.id, 300);
+          if (liveContent) {
+            const response: LogResponse = {
+              logType: logType as any,
+              content: liveContent,
+              size: Buffer.byteLength(liveContent, 'utf-8'),
+            };
+            return res.json(response);
+          }
+        }
         if (logType === 'stderr' && job.status === 'failed') {
           const syntheticStderr = [
             '[kaseki] Synthetic stderr fallback',
