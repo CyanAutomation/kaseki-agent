@@ -3,11 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import express from 'express';
 import { AddressInfo } from 'net';
-import { decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes.js';
-import { ResultCache } from './result-cache.js';
-import { createApiRouter } from './kaseki-api-routes.js';
-import { IdempotencyStore } from './idempotency-store.js';
-import { PreFlightValidator } from './pre-flight-validator.js';
+import { decodeUtf8TailSafely, readArtifactContent, tailLogByLines } from './kaseki-api-routes';
+import { ResultCache } from './result-cache';
+import { createApiRouter } from './kaseki-api-routes';
+import { IdempotencyStore } from './idempotency-store';
+import { PreFlightValidator } from './pre-flight-validator';
 
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {

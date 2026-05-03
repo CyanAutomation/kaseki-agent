@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import * as kasekiCli from './kaseki-cli-lib.js';
+import * as kasekiCli from './kaseki-cli-lib';
 
 describe('kaseki-cli-lib', () => {
   const TEST_DIR = path.join(__dirname, '..', '..', 'tmp-kaseki-cli-test');

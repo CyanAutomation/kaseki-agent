@@ -8,7 +8,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { Metadata } from './instance-metadata-reader.js';
+import { Metadata } from './instance-metadata-reader';
 
 export type InstanceLifecycleStatus = 'running' | 'completed' | 'failed' | 'pending';
 
