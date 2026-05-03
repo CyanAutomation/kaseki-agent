@@ -23,7 +23,7 @@ TOTAL_TIME=0
 STAGE_COUNT=0
 declare -a DURATIONS
 
-while IFS=$'\t' read -r stage exit_code duration detail; do
+while IFS=$'\t' read -r stage _exit_code duration _detail; do
   [ -z "$stage" ] && continue
   [ -z "$duration" ] && continue
   
@@ -49,7 +49,7 @@ fi
 AVG_DURATION=$((TOTAL_TIME / STAGE_COUNT))
 
 # Sort durations for percentile calculation
-IFS=$'\n' sorted_durations=($(printf '%s\n' "${DURATIONS[@]}" | sort -n))
+mapfile -t sorted_durations < <(printf '%s\n' "${DURATIONS[@]}" | sort -n)
 
 # Calculate percentiles
 P50_INDEX=$((STAGE_COUNT * 50 / 100))
@@ -103,10 +103,10 @@ cat > "$OUTPUT_FILE" <<EOF
   },
   "recommendations": [
     $(
-      if [ $MAX_DURATION -gt 300 ]; then
+      if [ "$MAX_DURATION" -gt 300 ]; then
         echo '"Consider optimizing stages taking >5 minutes",'
       fi
-      if [ $P99 -gt 60 ]; then
+      if [ "$P99" -gt 60 ]; then
         echo '"Some stages exceed 1 minute; review for parallelization",'
       fi
       if [ $AVG_DURATION -gt 30 ]; then

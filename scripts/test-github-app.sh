@@ -50,17 +50,17 @@ assert_token_error_contract() {
     return
   fi
 
-  node -e '
-const fs = require("node:fs");
+  node - "$stdout_file" "$expected_substring" <<'NODEEOF'
+const fs = require('node:fs');
 const stdoutPath = process.argv[1];
 const expected = process.argv[2];
-const raw = fs.readFileSync(stdoutPath, "utf8").trim();
-if (!raw) throw new Error("expected JSON output on stdout");
+const raw = fs.readFileSync(stdoutPath, 'utf8').trim();
+if (!raw) throw new Error('expected JSON output on stdout');
 let parsed;
-try { parsed = JSON.parse(raw); } catch (err) { throw new Error(`invalid JSON output: ${err.message}`); }
-if (!parsed.error || typeof parsed.error !== "string") throw new Error("missing string error field");
-if (!parsed.error.includes(expected)) throw new Error(`error field missing expected substring: ${expected}`);
-' "$stdout_file" "$expected_substring"
+try { parsed = JSON.parse(raw); } catch (err) { throw new Error('invalid JSON output: ' + err.message); }
+if (!parsed.error || typeof parsed.error !== 'string') throw new Error('missing string error field');
+if (!parsed.error.includes(expected)) throw new Error('error field missing expected substring: ' + expected);
+NODEEOF
 }
 
 echo "Test 1: helper arg validation + structured failures"
