@@ -267,10 +267,16 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
 
     if (isTerminalJobStatus(job.status)) {
       const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+    if (isTerminalJobStatus(job.status)) {
+      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
       const keyFileAvailability = STATUS_KEY_FILES.reduce(
         (acc, fileName) => {
-          const filePath = path.join(runDir, fileName);
-          acc[fileName] = fs.existsSync(filePath);
+          try {
+            const filePath = path.join(runDir, fileName);
+            acc[fileName] = fs.existsSync(filePath);
+          } catch {
+            acc[fileName] = false;
+          }
           return acc;
         },
         {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
@@ -283,6 +289,13 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         stderrLog: keyFileAvailability['stderr.log'],
         availableFiles: STATUS_KEY_FILES.filter((fileName) => keyFileAvailability[fileName]),
       };
+
+      if (job.status === 'failed') {
+        response.diagnosticEntryPoint = keyFileAvailability['failure.json']
+          ? 'failure.json'
+          : 'result-summary.md';
+      }
+    }
 
       if (job.status === 'failed') {
         response.diagnosticEntryPoint = keyFileAvailability['failure.json']
