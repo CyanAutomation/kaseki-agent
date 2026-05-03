@@ -4,7 +4,7 @@
     "module": "ESNext",
     "lib": ["ES2024"],
     "outDir": "./dist",
-    "rootDir": ".",
+    "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -34,6 +34,6 @@
       "moduleResolution": "bundler"
     }
   },
-  "include": ["src/**/*.ts", "add-js-extensions.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "coverage"]
 }
