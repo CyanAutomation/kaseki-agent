@@ -1,6 +1,6 @@
 // fallow-ignore-next-line unused-files
 import { randomUUID } from 'node:crypto';
-import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse, ValidationResponse } from './kaseki-api-types';
+import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse, ValidationResponse } from './kaseki-api-types.js';
 
 /**
  * Kaseki API client for TypeScript/Node.js applications.

@@ -1,11 +1,11 @@
 // fallow-ignore-next-line unused-files
 import * as fs from 'fs';
 import type { Server } from 'http';
-import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
-import { loadConfig } from './kaseki-api-config';
-import { JobScheduler } from './job-scheduler';
-import { WebhookManager } from './webhook-manager';
-import { RunRequestSchema } from './kaseki-api-types';
+import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service.js';
+import { loadConfig } from './kaseki-api-config.js';
+import { JobScheduler } from './job-scheduler.js';
+import { WebhookManager } from './webhook-manager.js';
+import { RunRequestSchema } from './kaseki-api-types.js';
 
 describe('Kaseki API Configuration', () => {
   const originalEnv = process.env;

@@ -1,5 +1,5 @@
 // fallow-ignore-next-line unused-files
-import { ResultCache } from './result-cache';
+import { ResultCache } from './result-cache.js';
 import * as fs from 'fs';
 import * as path from 'path';
 

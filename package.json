@@ -2,6 +2,7 @@
   "name": "kaseki-agent",
   "version": "0.1.0",
   "description": "Ephemeral coding-agent runner with Pi CLI and OpenRouter",
+  "type": "module",
   "private": true,
   "license": "MIT",
   "engines": {
