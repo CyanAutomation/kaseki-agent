@@ -47,7 +47,7 @@ ExecStart=/usr/bin/docker run --rm \
   --security-opt no-new-privileges:true \
   --read-only \
   --entrypoint node \
-  docker.io/cyanautomation/kaseki-agent:latest \
+  ${KASEKI_API_IMAGE:-kaseki-agent:node24-local} \
   /app/dist/kaseki-api-service.js
 
 ExecStop=/usr/bin/docker stop -t 30 kaseki-api-container
