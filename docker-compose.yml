@@ -4,7 +4,9 @@ services:
   kaseki-api:
     image: docker.io/cyanautomation/kaseki-agent:latest
     container_name: kaseki-api
-    command: node dist/kaseki-api-service.js
+    user: "0:0"
+    entrypoint: ["node"]
+    command: ["/app/dist/kaseki-api-service.js"]
     ports:
       - "8080:8080"
     environment:
@@ -13,12 +15,14 @@ services:
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
+      KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-1000:1000}"
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
     volumes:
+      - /agents:/agents:rw
       - kaseki-results:/agents/kaseki-results
       - kaseki-logs:/var/log/kaseki-api
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: on-failure
     cap_drop:
       - ALL
@@ -30,7 +34,7 @@ services:
       - /var/tmp
       - /run
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
