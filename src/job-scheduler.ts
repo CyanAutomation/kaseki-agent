@@ -1,7 +1,7 @@
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
@@ -49,8 +49,8 @@ export class JobScheduler {
     const instanceId = this.generateInstanceId();
 
     // Generate tracing IDs if not provided
-    const correlationId = request.tracing?.correlationId || uuidv4();
-    const requestId = request.tracing?.requestId || uuidv4();
+    const correlationId = request.tracing?.correlationId || randomUUID();
+    const requestId = request.tracing?.requestId || randomUUID();
 
     const job: Job = {
       id: instanceId,
