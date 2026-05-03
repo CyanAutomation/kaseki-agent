@@ -21,6 +21,7 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
   try {
     fs.writeFileSync(inputPath, `${inputLines.join('\n')}\n`, 'utf8');
 
+    let stderrOutput = '';
     const child = spawn(process.execPath, [
       '-r',
       'ts-node/register',
@@ -30,10 +31,20 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
       summaryPath,
     ]);
 
+    if (child.stderr) {
+      child.stderr.on('data', (data: Buffer) => {
+        stderrOutput += data.toString();
+      });
+    }
+
     const exitCode = await new Promise<number | null>((resolve, reject) => {
       child.once('error', reject);
       child.once('close', resolve);
     });
+
+    if (exitCode !== 0 && stderrOutput) {
+      console.error(`pi-event-filter stderr (exit ${exitCode}):`, stderrOutput);
+    }
 
     const output = fs.existsSync(outputPath)
       ? fs.readFileSync(outputPath, 'utf8').trim()
