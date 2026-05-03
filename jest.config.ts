@@ -16,13 +16,14 @@ const config: Config = {
   transform: {
     '^.+\\.ts$': ['ts-jest', {
       useESM: true,
+      isolatedModules: true,
       tsconfig: {
         esModuleInterop: true,
         module: 'ESNext',
       },
     }],
   },
-  transformIgnorePatterns: ['node_modules/'],
+  transformIgnorePatterns: ['node_modules/(?!(uuid)/)'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
