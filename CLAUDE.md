@@ -12,6 +12,7 @@ Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docke
 - **Docker Build**: Optimized multi-stage with consolidated RUN layers
 - **CI/CD**: Parallelized pipeline with GHA caching (80-90% hit rate)
 - **Security**: Trivy scanning with SBOM generation
+- **Deployment**: Docker Compose (preferred) with Node.js fallback
 
 ## Architecture: Host-Container Separation
 
@@ -74,6 +75,30 @@ docker run --rm --entrypoint kaseki-report \
   -v /agents/kaseki-results/kaseki-4:/results:ro \
   kaseki-template:latest /results
 ```
+
+## Deploying the Kaseki API Service
+
+### ✅ Recommended: Docker Compose
+
+```bash
+# Start the API service (see docs/DEPLOYMENT.md for full options)
+export KASEKI_API_KEYS=sk-your-secret-key
+cd /agents/kaseki-template
+docker-compose up -d
+
+# Monitor
+docker-compose logs -f kaseki-api
+```
+
+### Fallback: Node.js Process
+
+```bash
+# Install and run (if Docker is unavailable)
+npm install
+KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
+```
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidance.
 
 ## Key Environment Variables
 
@@ -218,7 +243,7 @@ Recommended inspection order:
 
 ## CI/CD
 
-`.github/workflows/build-docker-image.yml` builds multi-arch images (amd64 + arm64 via QEMU), runs smoke tests (Pi CLI available, metadata structure valid), and publishes to `docker.io/cyanautomation/kaseki-agent` on version tags or manual dispatch.
+`.github/workflows/build-docker-image.yml` builds multi-arch images (amd64 + arm64 via QEMU), runs smoke tests (Pi CLI available, metadata structure valid), and publishes to `docker.io/cyanautomation/kaseki-agent:latest`.
 
 ## External Agent Monitoring with Kaseki CLI
 
