@@ -7,7 +7,7 @@ The Kaseki API Service allows remote execution and monitoring of kaseki-agent ru
 ## Prerequisites
 
 - Docker + Docker Compose (for docker-compose deployment)
-- Node.js ≥ 22.22.2 (for Node.js fallback deployment)
+- Node.js ≥ 24.x (for Node.js fallback deployment)
 - `/agents/kaseki-results` directory must exist or be creatable
 - OpenRouter API key for Pi agent invocation (inherited from kaseki-agent)
 
@@ -22,7 +22,10 @@ cd /agents/kaseki-template
 # Set API key
 export KASEKI_API_KEYS=sk-your-secret-key-here
 
-# Start services
+# Build image from this repo
+docker build -t kaseki-agent:node24-local .
+
+# Start services (uses KASEKI_API_IMAGE, default: kaseki-agent:node24-local)
 docker-compose up -d
 
 # View logs
@@ -39,6 +42,7 @@ docker-compose down
 KASEKI_API_KEYS=sk-key1,sk-key2            # Required: comma-separated API keys
 KASEKI_API_PORT=8080                        # API listen port (default: 8080)
 KASEKI_API_LOG_LEVEL=info                  # Log level: debug/info/warn/error
+KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from this repo's Dockerfile
 
 # Performance
 KASEKI_API_MAX_CONCURRENT_RUNS=3           # Max concurrent jobs (default: 3)
@@ -63,6 +67,9 @@ cd /agents/kaseki-template
 
 # Install dependencies
 npm install
+
+# Verify runtime
+node -v  # Must report v24.x or newer
 
 # Start API
 KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
@@ -89,33 +96,40 @@ KASEKI_MAX_DIFF_BYTES=200000               # Default: 200000
 Deploy as a systemd service on the host (advanced):
 
 ```bash
-# 1. Build the project
+# 1. Check what runtime the unit is using
+systemctl cat kaseki-api | sed -n "1,220p"
+# If ExecStart contains `docker run`, service runtime is Docker.
+# If ExecStart contains `/usr/bin/node ...kaseki-api-service.js`, service runtime is host Node.
+
+# 2. Build the project
 cd /agents/kaseki-template
 npm install
 npm run build
+docker build -t kaseki-agent:node24-local .
 
-# 2. Install systemd service
+# 3. Install systemd service
 sudo cp scripts/kaseki-api.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
-# 3. Create environment file
+# 4. Create environment file
 sudo mkdir -p /etc/kaseki-api
 sudo tee /etc/kaseki-api/kaseki-api.env << EOF
 KASEKI_API_KEYS=sk-your-secret-key
 KASEKI_API_PORT=8080
 KASEKI_API_LOG_LEVEL=info
 KASEKI_RESULTS_DIR=/agents/kaseki-results
+KASEKI_API_IMAGE=kaseki-agent:node24-local
 EOF
 
-# 4. Set appropriate permissions
+# 5. Set appropriate permissions
 sudo chown root:root /etc/kaseki-api/kaseki-api.env
 sudo chmod 600 /etc/kaseki-api/kaseki-api.env
 
-# 5. Start service
+# 6. Start service
 sudo systemctl enable kaseki-api
 sudo systemctl start kaseki-api
 
-# 6. Check status
+# 7. Check status
 sudo systemctl status kaseki-api
 sudo journalctl -u kaseki-api -f
 ```
@@ -141,7 +155,7 @@ docker run --rm \
   --security-opt no-new-privileges:true \
   --read-only \
   --entrypoint node \
-  docker.io/cyanautomation/kaseki-agent:latest \
+  ${KASEKI_API_IMAGE:-kaseki-agent:node24-local} \
   /app/dist/kaseki-api-service.js
 ```
 
@@ -401,3 +415,21 @@ sudo systemctl daemon-reload
 3. **Set up monitoring** — Add health checks, alerts
 4. **Test integration** — Use TypeScript client library to submit test runs
 5. **Deploy kaseki-agent** — Ensure Docker base image and OpenRouter credentials are configured
+
+
+## Runtime Verification
+
+Use these checks after deployment:
+
+```bash
+# Check whether systemd is launching Docker or host Node
+systemctl cat kaseki-api | sed -n "1,220p"
+
+# Docker path: verify container runtime Node major
+docker exec kaseki-api node -v
+
+# Host-Node path: verify service user runtime (example for nobody)
+sudo -u nobody /usr/bin/node -v
+```
+
+The service startup precheck logs detected Node version and exits with a clear error if the major version is less than 24.

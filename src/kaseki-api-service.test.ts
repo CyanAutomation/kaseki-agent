@@ -1,7 +1,7 @@
 // fallow-ignore-next-line unused-files
 import * as fs from 'fs';
 import type { Server } from 'http';
-import { createGracefulShutdown } from './kaseki-api-service';
+import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { RunRequestSchema } from './kaseki-api-types';
@@ -336,5 +336,29 @@ describe('Kaseki API graceful shutdown', () => {
     await shutdownPromise;
 
     expect(callOrder).toEqual(['scheduler.shutdown', 'exit:0']);
+  });
+});
+
+
+describe('Node runtime precheck', () => {
+  const originalExit = process.exit;
+
+  afterEach(() => {
+    process.exit = originalExit;
+    jest.restoreAllMocks();
+  });
+
+  test('allows supported Node major versions', () => {
+    expect(() => assertSupportedNodeVersion('24.0.0')).not.toThrow();
+    expect(() => assertSupportedNodeVersion('25.1.2')).not.toThrow();
+  });
+
+  test('exits early for unsupported Node major versions', () => {
+    const exitMock = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    expect(() => assertSupportedNodeVersion('22.22.2')).toThrow('exit:1');
+    expect(exitMock).toHaveBeenCalledWith(1);
   });
 });
