@@ -267,8 +267,6 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
 
     if (isTerminalJobStatus(job.status)) {
       const runDir = job.resultDir || path.join(config.resultsDir, job.id);
-    if (isTerminalJobStatus(job.status)) {
-      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
       const keyFileAvailability = STATUS_KEY_FILES.reduce(
         (acc, fileName) => {
           try {
@@ -289,13 +287,6 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
         stderrLog: keyFileAvailability['stderr.log'],
         availableFiles: STATUS_KEY_FILES.filter((fileName) => keyFileAvailability[fileName]),
       };
-
-      if (job.status === 'failed') {
-        response.diagnosticEntryPoint = keyFileAvailability['failure.json']
-          ? 'failure.json'
-          : 'result-summary.md';
-      }
-    }
 
       if (job.status === 'failed') {
         response.diagnosticEntryPoint = keyFileAvailability['failure.json']
