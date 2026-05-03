@@ -82,6 +82,25 @@ function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'faile
   return status === 'completed' || status === 'failed';
 }
 
+const ALWAYS_SAFE_SUMMARY_ARTIFACTS = [
+  'git.diff',
+  'metadata.json',
+  'result-summary.md',
+  'pi-events.jsonl',
+  'pi-summary.json',
+  'progress.log',
+] as const;
+
+const FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS = [
+  'failure.json',
+  'stderr.log',
+  'stdout.log',
+  'validation.log',
+  'quality.log',
+] as const;
+
+const STATUS_KEY_FILES = ['metadata.json', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
+
 function artifactContentType(fileName: string): string {
   if (fileName.endsWith('.json')) return 'application/json';
   if (fileName.endsWith('.md')) return 'text/markdown';
@@ -246,6 +265,45 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       }
     }
 
+    if (isTerminalJobStatus(job.status)) {
+      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+    if (isTerminalJobStatus(job.status)) {
+      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+      const keyFileAvailability = STATUS_KEY_FILES.reduce(
+        (acc, fileName) => {
+          try {
+            const filePath = path.join(runDir, fileName);
+            acc[fileName] = fs.existsSync(filePath);
+          } catch {
+            acc[fileName] = false;
+          }
+          return acc;
+        },
+        {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
+      );
+
+      response.artifacts = {
+        metadataJson: keyFileAvailability['metadata.json'],
+        resultSummaryMd: keyFileAvailability['result-summary.md'],
+        failureJson: keyFileAvailability['failure.json'],
+        stderrLog: keyFileAvailability['stderr.log'],
+        availableFiles: STATUS_KEY_FILES.filter((fileName) => keyFileAvailability[fileName]),
+      };
+
+      if (job.status === 'failed') {
+        response.diagnosticEntryPoint = keyFileAvailability['failure.json']
+          ? 'failure.json'
+          : 'result-summary.md';
+      }
+    }
+
+      if (job.status === 'failed') {
+        response.diagnosticEntryPoint = keyFileAvailability['failure.json']
+          ? 'failure.json'
+          : 'result-summary.md';
+      }
+    }
+
     res.json(response);
   });
 
@@ -383,24 +441,9 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     const fileName = req.params.file;
-    const alwaysSafeSummaryArtifacts = [
-      'git.diff',
-      'metadata.json',
-      'result-summary.md',
-      'pi-events.jsonl',
-      'pi-summary.json',
-      'progress.log',
-    ];
-    const failureOnlyDiagnosticsArtifacts = [
-      'failure.json',
-      'stderr.log',
-      'stdout.log',
-      'validation.log',
-      'quality.log',
-    ];
-    const allowedFiles = [...alwaysSafeSummaryArtifacts, ...failureOnlyDiagnosticsArtifacts];
+    const allowedFiles = [...ALWAYS_SAFE_SUMMARY_ARTIFACTS, ...FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS];
 
-    if (!allowedFiles.includes(fileName)) {
+    if (!allowedFiles.some((allowedFile) => allowedFile === fileName)) {
       return sendErrorResponse(
         res,
         400,
@@ -409,7 +452,7 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
       );
     }
 
-    if (failureOnlyDiagnosticsArtifacts.includes(fileName) && job.status !== 'failed') {
+    if (FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS.some((artifact) => artifact === fileName) && job.status !== 'failed') {
       return sendErrorResponse(
         res,
         400,
@@ -464,28 +507,13 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     const runDir = job.resultDir || path.join(config.resultsDir, job.id);
-    const alwaysSafeSummaryArtifacts = [
-      'git.diff',
-      'metadata.json',
-      'result-summary.md',
-      'pi-events.jsonl',
-      'pi-summary.json',
-      'progress.log',
-    ];
-    const failureOnlyDiagnosticsArtifacts = [
-      'failure.json',
-      'stderr.log',
-      'stdout.log',
-      'validation.log',
-      'quality.log',
-    ];
-    const allowedFiles = [...alwaysSafeSummaryArtifacts, ...failureOnlyDiagnosticsArtifacts];
+    const allowedFiles = [...ALWAYS_SAFE_SUMMARY_ARTIFACTS, ...FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS];
 
     const artifacts = allowedFiles.map((fileName) => {
       const filePath = path.join(runDir, fileName);
       const exists = fs.existsSync(filePath);
       const stat = exists ? fs.statSync(filePath) : undefined;
-      const isFailureOnly = failureOnlyDiagnosticsArtifacts.includes(fileName);
+      const isFailureOnly = FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS.some((artifact) => artifact === fileName);
       const available = exists && (!isFailureOnly || job.status === 'failed');
 
       return {
