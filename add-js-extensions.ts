@@ -11,7 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.join(__dirname, 'dist');
+const distDir = __dirname;
 
 function addJsExtensions(filePath: string): void {
   let content = fs.readFileSync(filePath, 'utf8');
