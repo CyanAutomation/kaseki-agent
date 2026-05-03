@@ -5,7 +5,6 @@ import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
-import { IdempotencyStore } from './idempotency-store';
 import { RunRequestSchema } from './kaseki-api-types';
 
 describe('Kaseki API Configuration', () => {
