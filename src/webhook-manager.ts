@@ -91,6 +91,7 @@ export class WebhookManager extends EventEmitter {
     this.processInterval = setInterval(() => {
       this.processQueue();
     }, 500); // Check every 500ms
+    this.processInterval.unref();
   }
 
   /**

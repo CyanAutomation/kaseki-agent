@@ -485,7 +485,6 @@ describe('kaseki-api-routes status artifact hints', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
     }
-    }
   });
 
   test('failed run falls back to result-summary.md diagnostic entrypoint when failure.json is missing', async () => {
@@ -539,7 +538,6 @@ describe('kaseki-api-routes status artifact hints', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
-    }
     }
   });
 });
