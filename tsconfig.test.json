@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "moduleResolution": "node16",
-    "module": "node16",
-    "outDir": "./dist-test"
-  },
-  "include": ["src/**/*.ts"]
-}
