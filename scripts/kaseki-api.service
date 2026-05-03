@@ -34,6 +34,8 @@ KillSignal=SIGTERM
 # ExecStart=/usr/bin/node /agents/kaseki-template/dist/kaseki-api-service.js
 
 # Option 2: Run in Docker container
+ExecStartPre=/usr/bin/bash -lc 'printf "KASEKI_API_IMAGE=%s\n" "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}"; docker image inspect "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}" --format "ImageId={{.Id}} RepoDigests={{join .RepoDigests \",\"}}"'
+ExecStartPre=/usr/bin/docker run --rm --entrypoint /bin/bash ${KASEKI_API_IMAGE:-kaseki-agent:node24-local} -lc 'test -f /app/dist/kaseki-api-service.js && ls -l /app/dist/kaseki-api-service.js'
 ExecStart=/usr/bin/docker run --rm \
   --name kaseki-api-container \
   -p 8080:8080 \
@@ -46,9 +48,9 @@ ExecStart=/usr/bin/docker run --rm \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
   --read-only \
-  --entrypoint node \
+  --entrypoint /bin/bash \
   ${KASEKI_API_IMAGE:-kaseki-agent:node24-local} \
-  /app/dist/kaseki-api-service.js
+  -lc 'set -euo pipefail; test -f /app/dist/kaseki-api-service.js; ls -l /app/dist/kaseki-api-service.js; exec node /app/dist/kaseki-api-service.js'
 
 ExecStop=/usr/bin/docker stop -t 30 kaseki-api-container
 
