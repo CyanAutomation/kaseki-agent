@@ -50,10 +50,10 @@ assert_token_error_contract() {
     return
   fi
 
-  node - "$stdout_file" "$expected_substring" <<'NODEEOF'
+  node --input-type=commonjs - "$stdout_file" "$expected_substring" <<'NODEEOF'
 const fs = require('node:fs');
-const stdoutPath = process.argv[1];
-const expected = process.argv[2];
+const stdoutPath = process.argv[2];
+const expected = process.argv[3];
 const raw = fs.readFileSync(stdoutPath, 'utf8').trim();
 if (!raw) throw new Error('expected JSON output on stdout');
 let parsed;
@@ -137,7 +137,7 @@ EOF_JS
 echo "Test 2: helper token-generation flow with stubbed GitHub API"
 run_helper_with_https_mock success-installation
 [ "$(cat "$TMP_DIR/mock-success-installation.status")" -eq 0 ] || { echo "Expected success fixture to exit 0" >&2; exit 1; }
-node -e '
+node --input-type=commonjs -e '
 const fs = require("node:fs");
 const out = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 if (out.token !== "ghu_fixture_token") throw new Error("token mismatch");
@@ -146,11 +146,11 @@ if (out.expires_at !== "2026-06-01T00:00:00Z") throw new Error("expires_at misma
 
 run_helper_with_https_mock installation-failure
 [ "$(cat "$TMP_DIR/mock-installation-failure.status")" -eq 1 ] || { echo "Expected installation failure exit 1" >&2; exit 1; }
-node -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (!out.error.includes("Failed to get installation ID")) throw new Error("missing installation error");' "$TMP_DIR/mock-installation-failure.stdout"
+node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (!out.error.includes("Failed to get installation ID")) throw new Error("missing installation error");' "$TMP_DIR/mock-installation-failure.stdout"
 
 run_helper_with_https_mock token-failure
 [ "$(cat "$TMP_DIR/mock-token-failure.status")" -eq 1 ] || { echo "Expected token failure exit 1" >&2; exit 1; }
-node -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (!out.error.includes("Failed to get access token")) throw new Error("missing token error");' "$TMP_DIR/mock-token-failure.stdout"
+node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (!out.error.includes("Failed to get access token")) throw new Error("missing token error");' "$TMP_DIR/mock-token-failure.stdout"
 
 echo "Test 3/4: run-kaseki metadata + credential artifact handling"
 DOCKER_BIN="$TMP_DIR/docker"
@@ -217,7 +217,7 @@ fi
 result_dir="$KASEKI_ROOT/kaseki-results/kaseki-1"
 [ -d "$result_dir" ] || { echo "Expected result dir" >&2; exit 1; }
 
-node -e '
+node --input-type=commonjs -e '
 const fs = require("node:fs");
 const path = require("node:path");
 const dir = process.argv[1];
