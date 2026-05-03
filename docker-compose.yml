@@ -1,6 +1,6 @@
 services:
   kaseki-api:
-    image: docker.io/cyanautomation/kaseki-agent:latest
+    image: "${KASEKI_API_IMAGE:-kaseki-agent:node24-local}"
     container_name: kaseki-api
     user: "0:0"
     entrypoint: ["node"]
