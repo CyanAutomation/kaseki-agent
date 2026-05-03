@@ -258,16 +258,16 @@ export function createApiRouter(scheduler: JobScheduler, config: KasekiApiConfig
   router.get('/runs', (_req: Request, res: Response) => {
     const allJobs = scheduler.listJobs();
 
-      const response: RunsListResponse = {
-        runs: allJobs.map((job) => ({
-          id: job.id,
-          status: job.status,
-          createdAt: job.createdAt.toISOString(),
-          completedAt: job.completedAt?.toISOString(),
-          resultDir: job.resultDir,
-        })),
-        total: allJobs.length,
-      };
+    const response: RunsListResponse = {
+      runs: allJobs.map((job) => ({
+        id: job.id,
+        status: job.status,
+        createdAt: job.createdAt.toISOString(),
+        completedAt: job.completedAt?.toISOString(),
+        resultDir: job.resultDir,
+      })),
+      total: allJobs.length,
+    };
 
     res.json(response);
   });
