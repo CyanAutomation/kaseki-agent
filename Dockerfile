@@ -51,6 +51,7 @@ COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/works
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
+COPY add-js-extensions.ts ./
 RUN npm ci --ignore-scripts && npm run build
 RUN test -f /app/dist/kaseki-api-service.js
 
