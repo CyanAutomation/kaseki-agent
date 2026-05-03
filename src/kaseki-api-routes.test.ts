@@ -416,6 +416,133 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
   });
 });
 
+describe('kaseki-api-routes logs endpoint stderr fallback', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-logs-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('failed run with missing stderr returns synthetic fallback payload', async () => {
+    const jobId = 'kaseki-failed-missing-stderr';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId
+          ? {
+              id: jobId,
+              status: 'failed',
+              createdAt: new Date(),
+              resultDir: jobDir,
+              exitCode: 17,
+              failureClass: 'validator_error',
+              error: 'Validation step crashed',
+            }
+          : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/stderr`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.logType).toBe('stderr');
+      expect(body.content).toContain(`job id: ${jobId}`);
+      expect(body.content).toContain('exit code: 17');
+      expect(body.content).toContain('failure class: validator_error');
+      expect(body.content).toContain('job.error: Validation step crashed');
+      expect(body.content).toContain('canonical stderr.log was not generated');
+      expect(body.size).toBeGreaterThan(0);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('non-failed run with missing stderr remains 404', async () => {
+    const jobId = 'kaseki-running-missing-stderr';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId
+          ? {
+              id: jobId,
+              status: 'running',
+              createdAt: new Date(),
+              resultDir: jobDir,
+            }
+          : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/stderr`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('Log file not found: stderr');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+});
+
 describe('kaseki-api-routes status artifact hints', () => {
   let resultsDir: string;
 
