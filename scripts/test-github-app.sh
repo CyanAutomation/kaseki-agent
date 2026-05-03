@@ -164,6 +164,7 @@ if [ "$1" = "run" ]; then
       shift
       case "$1" in
         *:/results) result_dir="${1%%:/results}" ;;
+        *:/results:*) result_dir="${1%%:/results:*}" ;;
       esac
     fi
     shift || true
