@@ -131,7 +131,7 @@ prepare_target_dir() {
 
   if ! is_allowed_target_dir "$abs_target"; then
     printf 'Error: target directory is not allowed: %s\n' "$abs_target" >&2
-    printf 'Allowed paths: /agents/kaseki-template, $HOME/kaseki-template\n' >&2
+    printf 'Allowed paths: /agents/kaseki-template, %s/kaseki-template\n' "$HOME" >&2
     exit 2
   fi
 
@@ -147,7 +147,7 @@ prepare_target_dir() {
   fi
 
   mkdir -p "$target"
-  rm -rf "$target"/*
+  rm -rf "${target:?}"/*
   mkdir -p "$target"
 
   if [ -n "$backup_root" ]; then

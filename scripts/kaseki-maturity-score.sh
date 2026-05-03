@@ -87,13 +87,13 @@ evaluate_cicd() {
   [ -d "$REPO_PATH/.github/workflows" ] && score=$((score + 2))
   
   # Check for build workflow (1 point)
-  find "$REPO_PATH/.github/workflows" -name "*.yml" -o -name "*.yaml" 2>/dev/null | xargs grep -l "build\|docker" 2>/dev/null | grep -q . && score=$((score + 1))
+  find "$REPO_PATH/.github/workflows" \( -name "*.yml" -o -name "*.yaml" \) -print0 2>/dev/null | xargs -0 grep -l "build\|docker" 2>/dev/null | grep -q . && score=$((score + 1))
   
   # Check for Dependabot config (1 point)
   [ -f "$REPO_PATH/.github/dependabot.yml" ] && score=$((score + 1))
   
   # Check for shell linting in workflows (1 point)
-  find "$REPO_PATH/.github/workflows" -name "*.yml" 2>/dev/null | xargs grep -l "shellcheck" 2>/dev/null | grep -q . && score=$((score + 1))
+  find "$REPO_PATH/.github/workflows" -name "*.yml" -print0 2>/dev/null | xargs -0 grep -l "shellcheck" 2>/dev/null | grep -q . && score=$((score + 1))
   
   CICD_SCORE="$score"
 }
@@ -138,10 +138,10 @@ evaluate_security() {
   local score=0
   
   # Check for Trivy scanning in CI (1.5 points, rounded to 1 or 2)
-  find "$REPO_PATH/.github/workflows" -name "*.yml" 2>/dev/null | xargs grep -l "trivy\|Trivy" 2>/dev/null | grep -q . && score=$((score + 2))
+  find "$REPO_PATH/.github/workflows" -name "*.yml" -print0 2>/dev/null | xargs -0 grep -l "trivy\|Trivy" 2>/dev/null | grep -q . && score=$((score + 2))
   
   # Check for no hardcoded secrets (1 point)
-  ! find "$REPO_PATH/src" -type f \( -name "*.ts" -o -name "*.js" \) 2>/dev/null | xargs grep -l "sk-or-\|OPENROUTER_API_KEY=" 2>/dev/null | grep -q . && score=$((score + 1))
+  ! find "$REPO_PATH/src" -type f \( -name "*.ts" -o -name "*.js" \) -print0 2>/dev/null | xargs -0 grep -l "sk-or-\|OPENROUTER_API_KEY=" 2>/dev/null | grep -q . && score=$((score + 1))
   
   # Check for Dockerfile security flags (1 point)
   grep -q "cap-drop\|read-only\|security-opt" "$REPO_PATH/Dockerfile" 2>/dev/null && score=$((score + 1))

@@ -130,7 +130,7 @@ emit_event() {
       local pair="${pairs[$i]}"
       local key="${pair%%=*}"
       local value="${pair#*=}"
-      if [ $i -gt 0 ]; then
+      if [ "$i" -gt 0 ]; then
         detail_json="${detail_json},"
       fi
       detail_json="${detail_json}$(printf '%s' "$key" | json_encode):$(printf '%s' "$value" | json_encode)"
