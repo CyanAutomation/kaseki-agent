@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
@@ -268,8 +269,8 @@ export class JobScheduler {
     });
     this.processes.set(job.id, proc);
     this.processExited.set(job.id, false);
-    let stdoutTail: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
-    let stderrTail: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+    let stdoutTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
     job.processId = proc.pid;
     let timedOut = false;
@@ -446,14 +447,14 @@ export class JobScheduler {
   }
 
   private appendBoundedTail(
-    currentTail: Uint8Array<ArrayBufferLike>,
-    incoming: Uint8Array<ArrayBufferLike>,
+    currentTail: Buffer<ArrayBufferLike>,
+    incoming: Buffer<ArrayBufferLike>,
     limitBytes: number
-  ): Uint8Array<ArrayBufferLike> {
+  ): Buffer<ArrayBufferLike> {
     if (incoming.length >= limitBytes) {
       return incoming.subarray(incoming.length - limitBytes);
     }
-    const combined = currentTail.length > 0 ? Buffer.concat([Buffer.from(currentTail), incoming]) : incoming;
+    const combined = currentTail.length > 0 ? Buffer.concat([currentTail, incoming]) : incoming;
     if (combined.length <= limitBytes) {
       return combined;
     }
@@ -462,8 +463,8 @@ export class JobScheduler {
 
   private writeControllerBootstrapLogs(
     job: Job,
-    stdoutTail: Uint8Array<ArrayBufferLike>,
-    stderrTail: Uint8Array<ArrayBufferLike>
+    stdoutTail: Buffer<ArrayBufferLike>,
+    stderrTail: Buffer<ArrayBufferLike>
   ): void {
     const resultDir = this.getResultDir(job.id);
     const stderrPath = path.join(resultDir, 'stderr.log');
@@ -473,17 +474,22 @@ export class JobScheduler {
 
     try {
       fs.mkdirSync(resultDir, { recursive: true });
-      const stderrContent = `controller bootstrap stderr (captured by api wrapper)\n${Buffer.from(stderrTail).toString('utf-8')}`;
+      const stderrContent = `controller bootstrap stderr (captured by api wrapper)\n${this.decodeUtf8Tail(stderrTail)}`;
       fs.writeFileSync(stderrPath, stderrContent, 'utf-8');
 
       const stdoutPath = path.join(resultDir, 'stdout.log');
       if (!fs.existsSync(stdoutPath)) {
-        const stdoutContent = `controller bootstrap stdout (captured by api wrapper)\n${Buffer.from(stdoutTail).toString('utf-8')}`;
+        const stdoutContent = `controller bootstrap stdout (captured by api wrapper)\n${this.decodeUtf8Tail(stdoutTail)}`;
         fs.writeFileSync(stdoutPath, stdoutContent, 'utf-8');
       }
     } catch {
       // Best effort fallback: avoid masking original run failure.
     }
+  }
+
+  private decodeUtf8Tail(tail: Buffer<ArrayBufferLike>): string {
+    const decoder = new StringDecoder('utf8');
+    return decoder.end(tail);
   }
 
   /**
