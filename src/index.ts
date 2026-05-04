@@ -54,3 +54,9 @@ export {
 } from './utils/webhook-event-builder';
 export { HttpClientFactory } from './utils/http-client-factory';
 export type { HttpRequestOptions, RetryConfig } from './utils/http-client-factory';
+
+// Route modules (Phase 3 refactoring)
+export { createStatusRoutes } from './routes/status-routes';
+export { createLogRoutes } from './routes/log-routes';
+export { createArtifactRoutes, readArtifactContent } from './routes/artifact-routes';
+export { createWebhookRoutes } from './routes/webhook-routes';
