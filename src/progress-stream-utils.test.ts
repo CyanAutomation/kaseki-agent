@@ -17,10 +17,14 @@ describe('sanitizeToolName', () => {
     expect(sanitizeToolName('  read_file  ')).toBe('read_file');
   });
 
-  it('truncates to 80 characters', () => {
-    expect(sanitizeToolName('a'.repeat(100))).toHaveLength(80);
-    expect(sanitizeToolName('a'.repeat(80))).toHaveLength(80);
-    expect(sanitizeToolName('a'.repeat(79))).toHaveLength(79);
+  it('collapses whitespace and strips control characters', () => {
+    expect(sanitizeToolName('bash\n\t\r  -lc\u0000echo hi\u0007')).toBe('bash -lc echo hi');
+  });
+
+  it('truncates to 100 characters', () => {
+    expect(sanitizeToolName('a'.repeat(120))).toHaveLength(100);
+    expect(sanitizeToolName('a'.repeat(100))).toHaveLength(100);
+    expect(sanitizeToolName('a'.repeat(99))).toHaveLength(99);
   });
 
   it('preserves valid tool names unchanged', () => {
