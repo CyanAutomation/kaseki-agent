@@ -68,7 +68,24 @@ export class IdempotencyStore {
     // Check if entry has expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(idempotencyKey);
-      return this.claimOrGet(idempotencyKey, requestFingerprint);
+
+      const pendingEntry: IdempotencyCacheEntry = {
+        idempotencyKey,
+        requestFingerprint,
+        state: 'pending',
+        jobId: '',
+        requestTime: new Date().toISOString(),
+        responsePayload: {
+          id: '',
+          status: 'queued',
+          createdAt: new Date().toISOString(),
+        },
+        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+      };
+
+      this.cache.set(idempotencyKey, pendingEntry);
+      this.persistToDisk(pendingEntry);
+      return { kind: 'claimed' };
     }
 
     if (entry.requestFingerprint !== requestFingerprint) {
