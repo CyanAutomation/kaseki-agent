@@ -767,4 +767,71 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       await idempotencyStore.shutdown();
     }
   });
+
+  test('health endpoint remains responsive while run submission is contended', async () => {
+    let resolveSubmission: any;
+    const submissionGate = new Promise<any>((resolve) => {
+      resolveSubmission = resolve;
+    });
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: jest.fn(),
+      submitJob: jest.fn(async () => submissionGate),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const runPromise = fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/example/repo', ref: 'main' }),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const healthResponse = await fetch(`http://127.0.0.1:${port}/api/health`);
+      expect(healthResponse.status).toBe(200);
+      const healthBody = (await healthResponse.json()) as any;
+      expect(healthBody.status).toBeDefined();
+
+      if (resolveSubmission) resolveSubmission({
+        id: 'job-1',
+        status: 'queued',
+        createdAt: new Date(),
+        resultDir: path.join(resultsDir, 'job-1'),
+        requestId: 'req-1',
+        correlationId: 'corr-1',
+      });
+
+      const runResponse = await runPromise;
+      expect(runResponse.status).toBe(202);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
 });

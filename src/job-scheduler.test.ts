@@ -50,7 +50,7 @@ describe('JobScheduler timeout lifecycle', () => {
     cleanupResultsDirs();
   });
 
-  test('timeout followed by quick exit sets timeout failure on exit', () => {
+  test('timeout followed by quick exit sets timeout failure on exit', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -70,7 +70,7 @@ describe('JobScheduler timeout lifecycle', () => {
       createMockWebhookManager()
     );
 
-    const job = scheduler.submitJob({
+    const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -92,7 +92,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.completedAt).toBeDefined();
   });
 
-  test('passes parent results directory as host log directory', () => {
+  test('passes parent results directory as host log directory', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -112,7 +112,7 @@ describe('JobScheduler timeout lifecycle', () => {
       createMockWebhookManager()
     );
 
-    const job = scheduler.submitJob({
+    const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -129,7 +129,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
-  test('timeout escalates to SIGKILL when process hangs', () => {
+  test('timeout escalates to SIGKILL when process hangs', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -148,7 +148,7 @@ describe('JobScheduler timeout lifecycle', () => {
       createMockWebhookManager()
     );
 
-    scheduler.submitJob({
+    await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -160,7 +160,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
-  test('timeout path does not double-finalize when kill then exit race', () => {
+  test('timeout path does not double-finalize when kill then exit race', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -180,7 +180,7 @@ describe('JobScheduler timeout lifecycle', () => {
     );
 
     const processQueueSpy = jest.spyOn(scheduler as unknown as { processQueue: () => void }, 'processQueue');
-    const job = scheduler.submitJob({
+    const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -206,7 +206,7 @@ describe('JobScheduler instance allocation and live progress', () => {
     cleanupResultsDirs();
   });
 
-  test('allocates after existing result directories and persists monotonic next id', () => {
+  test('allocates after existing result directories and persists monotonic next id', async () => {
     const resultsDir = createResultsDir();
     fs.mkdirSync(`${resultsDir}/kaseki-12`);
 
@@ -224,8 +224,8 @@ describe('JobScheduler instance allocation and live progress', () => {
       createMockWebhookManager()
     );
 
-    const first = scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
-    const second = scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const first = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const second = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
 
     expect(first.id).toBe('kaseki-13');
     expect(second.id).toBe('kaseki-14');
@@ -234,7 +234,7 @@ describe('JobScheduler instance allocation and live progress', () => {
     scheduler.shutdown();
   });
 
-  test('parses live docker progress lines', () => {
+  test('parses live docker progress lines', async () => {
     mockSpawnSync.mockReturnValue({
       stdout: '[progress] clone repository info: started\n[progress] pi coding agent: working; events=42\n',
       stderr: '',
@@ -276,7 +276,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     cleanupResultsDirs();
   });
 
-  test('shutdown terminates running children and marks jobs as shutdown-aborted', () => {
+  test('shutdown terminates running children and marks jobs as shutdown-aborted', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -295,7 +295,7 @@ describe('JobScheduler shutdown lifecycle', () => {
       createMockWebhookManager()
     );
 
-    const job = scheduler.submitJob({
+    const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -313,7 +313,7 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledTimes(1);
   });
 
-  test('shutdown does not escalate if child exits during grace period', () => {
+  test('shutdown does not escalate if child exits during grace period', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -332,7 +332,7 @@ describe('JobScheduler shutdown lifecycle', () => {
       createMockWebhookManager()
     );
 
-    scheduler.submitJob({
+    await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     });
@@ -358,7 +358,7 @@ describe('JobScheduler persistence merge safety', () => {
     cleanupResultsDirs();
   });
 
-  test('interleaved persist writes do not regress newer job state', () => {
+  test('interleaved persist writes do not regress newer job state', async () => {
     const resultsDir = createResultsDir();
     const config = {
       port: 8080,
@@ -372,7 +372,7 @@ describe('JobScheduler persistence merge safety', () => {
     };
 
     const schedulerA = new JobScheduler(config, createMockWebhookManager());
-    const first = schedulerA.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const first = await schedulerA.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
 
     const schedulerB = new JobScheduler(config, createMockWebhookManager());
     const staleCopy = schedulerB.getJob(first.id);
@@ -388,7 +388,7 @@ describe('JobScheduler persistence merge safety', () => {
     firstFromA.completedAt = new Date('2026-05-04T00:00:01.000Z');
     (schedulerA as unknown as { persistJobs: () => void }).persistJobs();
 
-    schedulerB.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/branch' });
+    await schedulerB.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/branch' });
     (schedulerB as unknown as { persistJobs: () => void }).persistJobs();
 
     const raw = JSON.parse(fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8')) as {
