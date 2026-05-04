@@ -710,7 +710,7 @@ else
     missing_helpers_joined="${missing_helpers[*]}"
     [ -z "$missing_execs_joined" ] && missing_execs_joined="none"
     [ -z "$missing_helpers_joined" ] && missing_helpers_joined="none"
-    extraction_error=$(printf '{"error":"pi_extraction_dependency_missing","missing_executables":"%s","missing_helpers":"%s","action":"Ensure required Pi binaries are on PATH and helper files exist in the image before running extraction"}' "$missing_execs_joined" "$missing_helpers_joined")
+    extraction_error=$(node -e "console.log(JSON.stringify({error:'pi_extraction_dependency_missing',missing_executables:process.argv[1],missing_helpers:process.argv[2],action:'Ensure required Pi binaries are on PATH and helper files exist in the image before running extraction'}))" "$missing_execs_joined" "$missing_helpers_joined")
     printf '%s
 ' "$extraction_error" | tee -a /results/pi-stderr.log /results/quality.log >&2
     emit_error_event "pi_extraction_dependency_missing" "missing executables: $missing_execs_joined; missing helpers: $missing_helpers_joined; ensure Pi binaries are in PATH and /app/lib helpers are present" "abort_extraction"
