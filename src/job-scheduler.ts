@@ -30,6 +30,7 @@ export class JobScheduler {
   private indexPath: string;
   private nextIdPath: string;
   private idLockPath: string;
+  private indexLockPath: string;
   private logger: EventLogger;
   private webhookManager: WebhookManager;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
@@ -39,6 +40,7 @@ export class JobScheduler {
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
     this.nextIdPath = path.join(config.resultsDir, '.kaseki-api-next-id');
     this.idLockPath = path.join(config.resultsDir, '.kaseki-api-id.lock');
+    this.indexLockPath = path.join(config.resultsDir, '.kaseki-api-jobs.lock');
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.loadPersistedJobs();
@@ -566,11 +568,15 @@ export class JobScheduler {
   }
 
   private withIdLock<T>(callback: () => T): T {
+    return this.withLock(this.idLockPath, 'Kaseki instance ID', callback);
+  }
+
+  private withLock<T>(lockPath: string, lockName: string, callback: () => T): T {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
     let acquired = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       try {
-        fs.mkdirSync(this.idLockPath, { mode: 0o700 });
+        fs.mkdirSync(lockPath, { mode: 0o700 });
         acquired = true;
         break;
       } catch (err) {
@@ -583,13 +589,13 @@ export class JobScheduler {
     }
 
     if (!acquired) {
-      throw new Error(`Failed to acquire Kaseki instance ID lock: ${this.idLockPath}`);
+      throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
     }
 
     try {
       return callback();
     } finally {
-      fs.rmSync(this.idLockPath, { recursive: true, force: true });
+      fs.rmSync(lockPath, { recursive: true, force: true });
     }
   }
 
@@ -693,31 +699,33 @@ export class JobScheduler {
   }
 
   private loadPersistedJobs(): void {
-    if (!fs.existsSync(this.indexPath)) {
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
-      for (const persisted of parsed.jobs || []) {
-        const job = this.deserializeJob(persisted);
-        if (job.status === 'running') {
-          job.status = 'failed';
-          job.exitCode = 143;
-          job.failureClass = 'api_restart';
-          job.error = 'API service restarted while job was running';
-          job.completedAt = job.completedAt || new Date();
-          job.finalized = true;
-        }
-        if (job.status === 'queued') {
-          this.queue.push(job);
-        }
-        this.jobs.set(job.id, job);
+    this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      if (!fs.existsSync(this.indexPath)) {
+        return;
       }
-    } catch {
-      // A corrupt index should not prevent the API from starting; existing
-      // artifacts remain available on disk for direct inspection.
-    }
+
+      try {
+        const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+        for (const persisted of parsed.jobs || []) {
+          const job = this.deserializeJob(persisted);
+          if (job.status === 'running') {
+            job.status = 'failed';
+            job.exitCode = 143;
+            job.failureClass = 'api_restart';
+            job.error = 'API service restarted while job was running';
+            job.completedAt = job.completedAt || new Date();
+            job.finalized = true;
+          }
+          if (job.status === 'queued') {
+            this.queue.push(job);
+          }
+          this.jobs.set(job.id, job);
+        }
+      } catch {
+        // A corrupt index should not prevent the API from starting; existing
+        // artifacts remain available on disk for direct inspection.
+      }
+    });
   }
 
   private parseInstanceNumber(id: string): number | null {
@@ -731,18 +739,72 @@ export class JobScheduler {
 
   private persistJobs(): void {
     try {
-      fs.mkdirSync(this.config.resultsDir, { recursive: true });
-      const payload = {
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        jobs: this.listJobs().map((job) => this.serializeJob(job)),
-      };
-      const tmpPath = `${this.indexPath}.tmp`;
-      fs.writeFileSync(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
-      fs.renameSync(tmpPath, this.indexPath);
+      this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+        fs.mkdirSync(this.config.resultsDir, { recursive: true });
+        const current = this.readPersistedJobsIndex();
+        const merged = this.mergePersistedJobs(
+          current.jobs || [],
+          this.listJobs().map((job) => this.serializeJob(job)),
+        );
+        const payload = {
+          version: 1,
+          updatedAt: new Date().toISOString(),
+          jobs: merged,
+        };
+        const tmpPath = `${this.indexPath}.tmp`;
+        fs.writeFileSync(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+        fs.renameSync(tmpPath, this.indexPath);
+      });
     } catch {
       // Keep scheduler progress alive even if persistence is unavailable.
     }
+  }
+
+  private readPersistedJobsIndex(): { jobs?: PersistedJob[] } {
+    if (!fs.existsSync(this.indexPath)) {
+      return {};
+    }
+    try {
+      return JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+    } catch {
+      return {};
+    }
+  }
+
+  private mergePersistedJobs(existing: PersistedJob[], incoming: PersistedJob[]): PersistedJob[] {
+    const byId = new Map<string, PersistedJob>();
+    for (const job of existing) {
+      byId.set(job.id, job);
+    }
+    for (const job of incoming) {
+      const prev = byId.get(job.id);
+      if (!prev) {
+        byId.set(job.id, job);
+        continue;
+      }
+      byId.set(job.id, this.selectMostRecentPersistedJob(prev, job));
+    }
+    return Array.from(byId.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }
+
+  private selectMostRecentPersistedJob(a: PersistedJob, b: PersistedJob): PersistedJob {
+    const aUpdated = this.persistedJobUpdatedAt(a);
+    const bUpdated = this.persistedJobUpdatedAt(b);
+    if (aUpdated !== bUpdated) {
+      return bUpdated > aUpdated ? b : a;
+    }
+    const statusPriority: Record<Job['status'], number> = { queued: 0, running: 1, failed: 2, completed: 2 };
+    return (statusPriority[b.status] || 0) >= (statusPriority[a.status] || 0) ? b : a;
+  }
+
+  private persistedJobUpdatedAt(job: PersistedJob): number {
+    return Math.max(
+      new Date(job.createdAt).getTime(),
+      job.startedAt ? new Date(job.startedAt).getTime() : 0,
+      job.completedAt ? new Date(job.completedAt).getTime() : 0,
+    );
   }
 
   /**

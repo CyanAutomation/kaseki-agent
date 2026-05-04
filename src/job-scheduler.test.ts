@@ -346,3 +346,57 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
 });
+
+describe('JobScheduler persistence merge safety', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSpawn.mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+  });
+
+  afterEach(() => {
+    cleanupResultsDirs();
+  });
+
+  test('interleaved persist writes do not regress newer job state', () => {
+    const resultsDir = createResultsDir();
+    const config = {
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 0,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info' as const,
+    };
+
+    const schedulerA = new JobScheduler(config, createMockWebhookManager());
+    const first = schedulerA.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    const schedulerB = new JobScheduler(config, createMockWebhookManager());
+    const staleCopy = schedulerB.getJob(first.id);
+    expect(staleCopy?.status).toBe('queued');
+
+    const firstFromA = schedulerA.getJob(first.id);
+    expect(firstFromA).toBeDefined();
+    if (!firstFromA) {
+      throw new Error('Expected first job from scheduler A');
+    }
+    firstFromA.status = 'completed';
+    firstFromA.exitCode = 0;
+    firstFromA.completedAt = new Date('2026-05-04T00:00:01.000Z');
+    (schedulerA as unknown as { persistJobs: () => void }).persistJobs();
+
+    schedulerB.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/branch' });
+    (schedulerB as unknown as { persistJobs: () => void }).persistJobs();
+
+    const raw = JSON.parse(fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8')) as {
+      jobs: Array<{ id: string; status: string; completedAt?: string; exitCode?: number }>;
+    };
+    const mergedFirst = raw.jobs.find((job) => job.id === first.id);
+    expect(mergedFirst?.status).toBe('completed');
+    expect(mergedFirst?.exitCode).toBe(0);
+    expect(mergedFirst?.completedAt).toBe('2026-05-04T00:00:01.000Z');
+  });
+});
