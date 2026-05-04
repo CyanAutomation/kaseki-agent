@@ -124,21 +124,21 @@ export class IdempotencyStore {
     const existing = this.cache.get(idempotencyKey);
     const entry: IdempotencyCacheEntry = existing
       ? {
-          ...existing,
-          requestFingerprint,
-          state: 'fulfilled',
-          jobId: response.id,
-          responsePayload: response,
-        }
+        ...existing,
+        requestFingerprint,
+        state: 'fulfilled',
+        jobId: response.id,
+        responsePayload: response,
+      }
       : {
-          idempotencyKey,
-          requestFingerprint,
-          state: 'fulfilled',
-          jobId: response.id,
-          requestTime: new Date().toISOString(),
-          responsePayload: response,
-          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-        };
+        idempotencyKey,
+        requestFingerprint,
+        state: 'fulfilled',
+        jobId: response.id,
+        requestTime: new Date().toISOString(),
+        responsePayload: response,
+        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+      };
 
     this.cache.set(idempotencyKey, entry);
     this.persistToDisk(entry);
