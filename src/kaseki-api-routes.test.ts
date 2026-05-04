@@ -686,3 +686,85 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 });
+
+describe('kaseki-api-routes idempotency concurrency', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-idem-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('parallel requests with same idempotency key create exactly one job', async () => {
+    let submitted = 0;
+    const submitJob = jest.fn((runRequest: any) => {
+      submitted += 1;
+      return {
+        id: `job-${submitted}`,
+        status: 'queued',
+        createdAt: new Date(),
+        resultDir: path.join(resultsDir, `job-${submitted}`),
+        requestId: runRequest.requestId,
+        correlationId: runRequest.correlationId,
+      };
+    });
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: jest.fn(),
+      submitJob,
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
+    const body = {
+      repoUrl: 'https://github.com/example/repo',
+      ref: 'main',
+      issueNumber: 123,
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    };
+
+    try {
+      const requests = Array.from({ length: 8 }, () =>
+        fetch(`http://127.0.0.1:${port}/api/runs`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        })
+      );
+      const responses = await Promise.all(requests);
+      const payloads = await Promise.all(responses.map((r) => r.json() as Promise<any>));
+
+      expect(submitJob).toHaveBeenCalledTimes(1);
+      expect(responses.every((r) => r.status === 200 || r.status === 202)).toBe(true);
+      expect(new Set(payloads.map((p) => p.id)).size).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+});
