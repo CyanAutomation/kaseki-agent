@@ -706,8 +706,10 @@ else
   done
   if [ ${#missing_executables[@]} -gt 0 ] || [ ${#missing_helpers[@]} -gt 0 ]; then
     PI_EXTRACTION_DEPS_OK=0
-    missing_execs_joined="${missing_executables[*]:-none}"
-    missing_helpers_joined="${missing_helpers[*]:-none}"
+    missing_execs_joined="${missing_executables[*]}"
+    missing_helpers_joined="${missing_helpers[*]}"
+    [ -z "$missing_execs_joined" ] && missing_execs_joined="none"
+    [ -z "$missing_helpers_joined" ] && missing_helpers_joined="none"
     extraction_error=$(printf '{"error":"pi_extraction_dependency_missing","missing_executables":"%s","missing_helpers":"%s","action":"Ensure required Pi binaries are on PATH and helper files exist in the image before running extraction"}' "$missing_execs_joined" "$missing_helpers_joined")
     printf '%s
 ' "$extraction_error" | tee -a /results/pi-stderr.log /results/quality.log >&2
