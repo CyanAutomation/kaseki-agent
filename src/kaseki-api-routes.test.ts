@@ -455,14 +455,14 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       getJob: (id: string) =>
         id === jobId
           ? {
-              id: jobId,
-              status: 'failed',
-              createdAt: new Date(),
-              resultDir: jobDir,
-              exitCode: 17,
-              failureClass: 'validator_error',
-              error: 'Validation step crashed',
-            }
+            id: jobId,
+            status: 'failed',
+            createdAt: new Date(),
+            resultDir: jobDir,
+            exitCode: 17,
+            failureClass: 'validator_error',
+            error: 'Validation step crashed',
+          }
           : undefined,
       submitJob: jest.fn(),
       listJobs: () => [],
@@ -517,11 +517,11 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       getJob: (id: string) =>
         id === jobId
           ? {
-              id: jobId,
-              status: 'running',
-              createdAt: new Date(),
-              resultDir: jobDir,
-            }
+            id: jobId,
+            status: 'running',
+            createdAt: new Date(),
+            resultDir: jobDir,
+          }
           : undefined,
       submitJob: jest.fn(),
       listJobs: () => [],
