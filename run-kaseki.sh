@@ -845,10 +845,29 @@ if [ "$GITHUB_APP_ENABLED" = "1" ]; then
     -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/github_app_private_key:ro"
   )
 fi
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  docker_args+=(--entrypoint /bin/bash)
+fi
 docker_args+=(
   -w /workspace
   "$IMAGE"
 )
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  docker_args+=(
+    -lc
+    'set -euo pipefail
+printf "[progress] startup check: container booted\n"
+node --version
+git --version
+pi --version >/dev/null
+test -r /run/secrets/openrouter_api_key
+test -w /workspace
+test -w /results
+test -w /cache
+printf "startup_check=ok\n" > /results/startup-check.txt
+printf "[progress] startup check: completed\n"'
+  )
+fi
 
 set +e
 docker "${docker_args[@]}"

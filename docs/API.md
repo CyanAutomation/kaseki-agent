@@ -82,8 +82,23 @@ curl -H "Authorization: Bearer sk-your-api-key" \
   "status": "ok",
   "timestamp": "2026-05-03T21:30:00.000Z",
   "image": "docker.io/cyanautomation/kaseki-agent:latest",
+  "imageDigest": "docker.io/cyanautomation/kaseki-agent@sha256:...",
+  "templateImage": "docker.io/cyanautomation/kaseki-agent:latest",
+  "templateImageDigest": "docker.io/cyanautomation/kaseki-agent@sha256:...",
   "templateDir": "/agents/kaseki-template",
+  "templateRef": "abc1234",
   "resultsDir": "/agents/kaseki-results",
+  "runtime": {
+    "nodeVersion": "v24.15.0",
+    "uid": 1000,
+    "gid": 1000,
+    "groups": [1000, 985]
+  },
+  "docker": {
+    "version": "20.10.24 -> 29.4.1",
+    "clientVersion": "20.10.24",
+    "serverVersion": "29.4.1"
+  },
   "checks": [
     {
       "name": "docker-daemon",
@@ -128,8 +143,11 @@ curl -X POST http://localhost:8080/api/runs \
   maxDiffBytes?: number;     // Max diff size in bytes
   validationCommands?: string[];     // Commands to run after agent completes
   taskMode?: "patch" | "inspect";    // "patch" (default) = require changes
+  startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
 }
 ```
+
+For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. This starts the same worker path as a normal run, verifies the cloned repo, OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI, then exits before spending a full agent run.
 
 **Response (202 Accepted):**
 ```json
@@ -139,6 +157,8 @@ curl -X POST http://localhost:8080/api/runs \
   "createdAt": "2026-05-02T14:30:00Z"
 }
 ```
+
+Idempotency replays return `200 OK` with `cached: true` and the current job status when the original job is still known to the scheduler. This prevents controllers from seeing stale `running` or `queued` responses after a retry of a completed, failed, or cancelled run.
 
 ### List All Runs
 
@@ -211,8 +231,10 @@ For terminal states (`completed` and `failed`), the response includes an `artifa
 4) `stderr.log`
 
 For failed runs, `diagnosticEntryPoint` is included:
-- `failure.json` when present
-- otherwise `result-summary.md`
+- `failure.json` when present and non-empty
+- otherwise `result-summary.md` when present and non-empty
+
+Zero-byte key artifacts are reported as unavailable, so controller clients can trust artifact hints instead of downloading empty placeholders.
 
 **Timeout Risk:** Percentage of agent timeout elapsed. Monitor for >85% and consider canceling if needed.
 
@@ -244,11 +266,40 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 }
 ```
 
+### Get Controller Events
+
+**GET `/api/runs/:id/events`**
+
+Returns a controller-friendly event snapshot. It reads promoted `progress.jsonl` events when available and appends sanitized live Docker progress events while the worker container is still running.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" \
+  "http://localhost:8080/api/runs/kaseki-42/events?tail=50"
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "kaseki-42",
+  "status": "running",
+  "events": [
+    {
+      "source": "docker-logs",
+      "stage": "startup check",
+      "message": "container booted"
+    }
+  ],
+  "total": 1,
+  "sources": ["docker-logs"]
+}
+```
+
 ### Cancel a Run
 
 **POST `/api/runs/:id/cancel`**
 
 Cancels a queued or running job. Completed jobs are returned unchanged.
+Cancelled jobs get API-written fallback diagnostics when the worker exits before writing its own final artifacts: `failure.json` and `result-summary.md` are non-empty and include cancellation/error details plus container cleanup status.
 
 ```bash
 curl -X POST -H "Authorization: Bearer sk-your-api-key" \

@@ -21,6 +21,7 @@ import {
   ValidationResponse,
   PreflightCheck,
   PreflightResponse,
+  Job,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
 import { createEventLogger } from './logger';
@@ -133,6 +134,35 @@ function artifactContentType(fileName: string): string {
   return 'text/plain';
 }
 
+function isNonEmptyFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function readFirstLine(filePath: string): string | undefined {
+  try {
+    const value = fs.readFileSync(filePath, 'utf-8').trim().split(/\r?\n/)[0];
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function commandOutput(command: string, args: string[], cwd?: string): string | undefined {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf-8',
+    timeout: 5000,
+  });
+  if (result.status !== 0) {
+    return undefined;
+  }
+  return result.stdout.trim() || undefined;
+}
+
 export function readArtifactContent(
   filePath: string,
   jobStatus: 'queued' | 'running' | 'completed' | 'failed',
@@ -162,6 +192,12 @@ function readKasekiImage(templateDir = '/agents/kaseki-template'): string {
     // Fall through to the registry default.
   }
   return 'docker.io/cyanautomation/kaseki-agent:latest';
+}
+
+function inspectImageDigest(image: string): string | undefined {
+  return commandOutput('docker', ['image', 'inspect', image, '--format', '{{range .RepoDigests}}{{println .}}{{end}}'])
+    ?.split(/\r?\n/)
+    .find((line) => line.trim().length > 0);
 }
 
 export function classifyDockerFailure(stderr: string): { detail: string; remediation: string } {
@@ -211,6 +247,11 @@ function checkOpenRouterKey(): PreflightCheck {
 export function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
   const image = readKasekiImage(templateDir);
+  const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
+  const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+  const templateRef = fs.existsSync(path.join(checkoutDir, '.git'))
+    ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
+    : undefined;
   const checks: PreflightCheck[] = [];
 
   try {
@@ -231,8 +272,9 @@ export function buildPreflightResponse(config: KasekiApiConfig): PreflightRespon
     encoding: 'utf-8',
     timeout: 5000,
   });
+  const dockerVersionText = dockerVersion.status === 0 ? dockerVersion.stdout.trim() : undefined;
   if (dockerVersion.status === 0) {
-    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersion.stdout.trim() });
+    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersionText });
   } else {
     const classified = classifyDockerFailure(dockerVersion.stderr || dockerVersion.stdout || dockerVersion.error?.message || '');
     checks.push({ name: 'docker-daemon', ok: false, ...classified });
@@ -273,8 +315,38 @@ export function buildPreflightResponse(config: KasekiApiConfig): PreflightRespon
     timestamp: new Date().toISOString(),
     checks,
     image,
+    imageDigest: templateImageDigest,
+    templateImage: image,
+    templateImageDigest,
     templateDir,
+    templateRef,
     resultsDir: config.resultsDir,
+    runtime: {
+      nodeVersion: process.version,
+      uid: process.getuid?.(),
+      gid: process.getgid?.(),
+      groups: process.getgroups?.(),
+    },
+    docker: {
+      version: dockerVersionText,
+      clientVersion: dockerVersionText?.split(' -> ')[0],
+      serverVersion: dockerVersionText?.split(' -> ')[1],
+    },
+  };
+}
+
+function buildRunResponse(job: Job, cached = false): RunResponse {
+  return {
+    id: job.id,
+    status: job.status,
+    createdAt: job.createdAt.toISOString(),
+    correlationId: job.correlationId,
+    requestId: job.requestId,
+    cached: cached || undefined,
+    completedAt: job.completedAt?.toISOString(),
+    exitCode: job.exitCode,
+    failureClass: job.failureClass,
+    error: job.error,
   };
 }
 
@@ -383,7 +455,13 @@ export function createApiRouter(
   router.post('/runs', async (req: Request, res: Response) => {
     try {
       // Validate request body
-      const runRequest = RunRequestSchema.parse(req.body);
+      const runRequest = RunRequestSchema.parse({
+        ...req.body,
+        startupCheck:
+          req.query.dryRun === 'true' || req.query.startupCheck === 'true'
+            ? true
+            : req.body?.startupCheck,
+      });
 
       // Auto-generate idempotency key if not provided
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
@@ -391,11 +469,19 @@ export function createApiRouter(
 
       const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
       if (claimResult.kind === 'fulfilled') {
+        const currentJob = scheduler.getJob(claimResult.response.id);
+        const response = currentJob
+          ? buildRunResponse(currentJob, true)
+          : {
+              ...claimResult.response,
+              cached: true,
+            };
         logger.event('api_idempotent_resubmission', {
-          jobId: claimResult.response.id,
+          jobId: response.id,
           idempotencyKey,
+          currentStatus: currentJob?.status,
         });
-        return res.status(200).json(claimResult.response); // 200 OK, not 202
+        return res.status(200).json(response); // 200 OK, not 202
       }
       if (claimResult.kind === 'pending') {
         return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
@@ -406,6 +492,7 @@ export function createApiRouter(
         repoUrl: runRequest.repoUrl,
         ref: runRequest.ref,
         taskMode: runRequest.taskMode,
+        startupCheck: runRequest.startupCheck,
         idempotencyKey,
       });
 
@@ -415,13 +502,7 @@ export function createApiRouter(
       // Store idempotency key on job
       job.idempotencyKey = idempotencyKey;
 
-      const response: RunResponse = {
-        id: job.id,
-        status: job.status,
-        createdAt: job.createdAt.toISOString(),
-        correlationId: job.correlationId,
-        requestId: job.requestId,
-      };
+      const response = buildRunResponse(job);
 
       // Store in idempotency cache
       idempotencyStore.storeResponse(idempotencyKey, response, requestFingerprint);
@@ -642,7 +723,7 @@ export function createApiRouter(
         (acc, fileName) => {
           try {
             const filePath = path.join(runDir, fileName);
-            acc[fileName] = fs.existsSync(filePath);
+            acc[fileName] = isNonEmptyFile(filePath);
           } catch {
             acc[fileName] = false;
           }
@@ -662,9 +743,11 @@ export function createApiRouter(
       if (job.status === 'failed') {
         // Keep failed-job diagnostic entry-point selection in this terminal-status scope
         // where keyFileAvailability is defined to avoid duplicate/out-of-scope assignments.
-        response.diagnosticEntryPoint = keyFileAvailability['failure.json']
-          ? 'failure.json'
-          : 'result-summary.md';
+        if (keyFileAvailability['failure.json']) {
+          response.diagnosticEntryPoint = 'failure.json';
+        } else if (keyFileAvailability['result-summary.md']) {
+          response.diagnosticEntryPoint = 'result-summary.md';
+        }
       }
     }
 
@@ -830,6 +913,60 @@ export function createApiRouter(
     } catch (err) {
       sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read progress: ${(err as Error).message}`);
     }
+  });
+
+  /**
+   * GET /api/runs/:id/events - Controller-friendly event stream snapshot.
+   *
+   * This endpoint always prefers promoted progress.jsonl events, then appends
+   * live Docker progress while a worker is still running.
+   */
+  router.get('/runs/:id/events', (req: Request, res: Response) => {
+    const job = scheduler.getJob(req.params.id);
+    if (!job) {
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+    }
+
+    const tailParam = Number(req.query.tail ?? 50);
+    const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 50;
+    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+    const events: Array<Record<string, unknown>> = [];
+    const sources = new Set<string>();
+
+    if (fs.existsSync(progressFile) && isNonEmptyFile(progressFile)) {
+      try {
+        const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
+        for (const line of lines) {
+          try {
+            events.push(JSON.parse(line));
+          } catch {
+            // Skip partial or malformed progress records.
+          }
+        }
+        sources.add('progress.jsonl');
+      } catch {
+        // Live Docker fallback below keeps the endpoint useful while a run is active.
+      }
+    }
+
+    if (job.status === 'running' && typeof scheduler.getLiveProgressEvents === 'function') {
+      const liveEvents = scheduler.getLiveProgressEvents(job.id, tail);
+      for (const event of liveEvents) {
+        events.push(event);
+      }
+      if (liveEvents.length > 0) {
+        sources.add('docker-logs');
+      }
+    }
+
+    const selectedEvents = tail > 0 ? events.slice(-tail) : [];
+    res.json({
+      id: job.id,
+      status: job.status,
+      events: selectedEvents,
+      total: events.length,
+      sources: Array.from(sources),
+    });
   });
 
   /**
@@ -1010,7 +1147,8 @@ export function createApiRouter(
       const exists = fs.existsSync(filePath);
       const stat = exists ? fs.statSync(filePath) : undefined;
       const isFailureOnly = FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS.some((artifact) => artifact === fileName);
-      const available = exists && (!isFailureOnly || job.status === 'failed');
+      const hasContent = exists && (stat?.size ?? 0) > 0;
+      const available = hasContent && (!isFailureOnly || job.status === 'failed');
 
       return {
         name: fileName,
