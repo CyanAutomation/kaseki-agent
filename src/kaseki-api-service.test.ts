@@ -18,7 +18,7 @@ describe('Kaseki API Configuration', () => {
     process.env = originalEnv;
   });
 
-  test('loadConfig requires KASEKI_API_KEYS or KASEKI_API_KEYS_FILE', () => {
+  test('loadConfig requires KASEKI_API_KEYS or KASEKI_API_KEYS_FILE', async () => {
     delete process.env.KASEKI_API_KEYS;
     delete process.env.KASEKI_API_KEYS_FILE;
     process.env.KASEKI_RESULTS_DIR = '/tmp';
@@ -123,7 +123,7 @@ describe('Kaseki API Configuration', () => {
     }).toEqual(expectedConfig);
   });
 
-  test('loadConfig parses API keys from file', () => {
+  test('loadConfig parses API keys from file', async () => {
     const keysFile = '/tmp/test-keys.txt';
     fs.writeFileSync(keysFile, 'key1\n# comment\nkey2\n');
 
@@ -222,7 +222,7 @@ describe('Job Scheduler', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
-  test('submitJob creates a queued job', () => {
+  test('submitJob creates a queued job', async () => {
     // Saturate scheduler concurrency so a newly submitted job remains queued.
     (scheduler as any).running.add('existing-running-job');
     (scheduler as any).running.add('second-existing-running-job');
@@ -232,7 +232,7 @@ describe('Job Scheduler', () => {
       ref: 'main',
     };
 
-    const submitted = scheduler.submitJob(request);
+    const submitted = await scheduler.submitJob(request);
 
     // Contract outcome: job is queued when concurrency limit is reached.
     expect(submitted.status).toBe('queued');
@@ -254,13 +254,13 @@ describe('Job Scheduler', () => {
     expect(jobs.some((job) => job.id === submitted.id && job.status === 'queued')).toBe(true);
   });
 
-  test('submit/get/list keep job identity, request payload, and queue visibility coherent', () => {
+  test('submit/get/list keep job identity, request payload, and queue visibility coherent', async () => {
     const request = {
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
     };
 
-    const submitted = scheduler.submitJob(request);
+    const submitted = await scheduler.submitJob(request);
     const retrieved = scheduler.getJob(submitted.id);
     const jobs = scheduler.listJobs();
 
@@ -272,12 +272,12 @@ describe('Job Scheduler', () => {
     expect(jobs[0].request).toEqual(request);
   });
 
-  test('listJobs returns all jobs sorted by creation time (newest first)', () => {
+  test('listJobs returns all jobs sorted by creation time (newest first)', async () => {
     const request1 = { repoUrl: 'https://github.com/org/repo1', ref: 'main' };
     const request2 = { repoUrl: 'https://github.com/org/repo2', ref: 'main' };
 
-    scheduler.submitJob(request1);
-    scheduler.submitJob(request2);
+    await scheduler.submitJob(request1);
+    await scheduler.submitJob(request2);
 
     const jobs = scheduler.listJobs();
     expect(jobs.length).toBe(2);
@@ -285,8 +285,8 @@ describe('Job Scheduler', () => {
     expect(jobs[1].request.repoUrl).toBe(request1.repoUrl);
   });
 
-  test('getQueueStatus reports pending and running count', () => {
-    scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+  test('getQueueStatus reports pending and running count', async () => {
+    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
 
     const status = scheduler.getQueueStatus();
     expect(status).toEqual({
@@ -358,7 +358,7 @@ describe('Node runtime precheck', () => {
     jest.restoreAllMocks();
   });
 
-  test('allows supported Node major versions', () => {
+  test('allows supported Node major versions', async () => {
     expect(() => assertSupportedNodeVersion('24.0.0')).not.toThrow();
     expect(() => assertSupportedNodeVersion('25.1.2')).not.toThrow();
   });
@@ -374,7 +374,7 @@ describe('Node runtime precheck', () => {
       expect(exitMock).toHaveBeenCalledWith(1);
     },
   );
-  test('exits early for unsupported Node major versions', () => {
+  test('exits early for unsupported Node major versions', async () => {
     const exitMock = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`exit:${code}`);
     }) as never);
