@@ -16,6 +16,18 @@ interface IdempotencyCacheEntry {
   expiresAt: number; // Unix timestamp
 }
 
+interface PersistedIdempotencyEntry {
+  idempotencyKey: string;
+  requestFingerprint?: string;
+  state?: 'pending' | 'fulfilled';
+  jobId?: string;
+  requestTime?: string;
+  responsePayload?: RunResponse;
+  requestId?: string;
+  correlationId?: string;
+  expiresAt: number;
+}
+
 export type ClaimResult =
   | { kind: 'claimed' }
   | { kind: 'pending' }
@@ -175,27 +187,31 @@ export class IdempotencyStore {
 
       for (const line of lines) {
         try {
-          const entry = JSON.parse(line);
+          const entry = JSON.parse(line) as PersistedIdempotencyEntry;
 
           // Skip expired entries
           if (Date.now() > entry.expiresAt) {
             continue;
           }
 
-          // Store in cache (without response payload, as it's large)
+          const requestTime = entry.requestTime || '1970-01-01T00:00:00.000Z';
+          const jobId = entry.jobId || entry.responsePayload?.id || '';
+          const restoredResponse: RunResponse = entry.responsePayload || {
+            id: jobId,
+            status: 'queued',
+            createdAt: requestTime,
+            requestId: entry.requestId,
+            correlationId: entry.correlationId,
+          };
+
+          // Store in cache
           this.cache.set(entry.idempotencyKey, {
             idempotencyKey: entry.idempotencyKey,
             requestFingerprint: entry.requestFingerprint || '',
             state: entry.state || 'fulfilled',
-            jobId: entry.jobId,
-            requestTime: entry.requestTime,
-            responsePayload: entry.responsePayload || {
-              id: entry.jobId,
-              status: 'queued',
-              createdAt: entry.requestTime,
-              requestId: entry.requestId,
-              correlationId: entry.correlationId,
-            },
+            jobId,
+            requestTime,
+            responsePayload: restoredResponse,
             expiresAt: entry.expiresAt,
           });
         } catch {
