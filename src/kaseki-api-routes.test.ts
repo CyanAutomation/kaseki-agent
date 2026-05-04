@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unused-files
 import * as fs from 'fs';
 import * as path from 'path';
 import express from 'express';

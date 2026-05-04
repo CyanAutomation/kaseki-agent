@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unused-files
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import { JobScheduler } from './job-scheduler';
