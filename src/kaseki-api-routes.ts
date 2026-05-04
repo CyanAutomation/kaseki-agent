@@ -380,7 +380,7 @@ export function createApiRouter(
   /**
    * POST /api/runs - Trigger a new kaseki run.
    */
-  router.post('/runs', (req: Request, res: Response) => {
+  router.post('/runs', async (req: Request, res: Response) => {
     try {
       // Validate request body
       const runRequest = RunRequestSchema.parse(req.body);
@@ -410,7 +410,7 @@ export function createApiRouter(
       });
 
       // Submit to scheduler
-      const job = scheduler.submitJob(runRequest);
+      const job = await scheduler.submitJob(runRequest);
 
       // Store idempotency key on job
       job.idempotencyKey = idempotencyKey;

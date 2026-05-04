@@ -51,8 +51,8 @@ export class JobScheduler {
   /**
    * Submit a new job to the queue.
    */
-  submitJob(request: RunRequest): Job {
-    const instanceId = this.generateInstanceId();
+  async submitJob(request: RunRequest): Promise<Job> {
+    const instanceId = await this.generateInstanceId();
 
     // Generate tracing IDs if not provided
     const correlationId = request.tracing?.correlationId || randomUUID();
@@ -549,8 +549,8 @@ export class JobScheduler {
    *
    * Format: `kaseki-N`, matching run-kaseki.sh and result directory names.
    */
-  private generateInstanceId(): string {
-    return this.withIdLock(() => {
+  private async generateInstanceId(): Promise<string> {
+    return this.withIdLock(async () => {
       let nextId = this.readNextId();
       const maxAttempts = 10000;
 
@@ -567,11 +567,11 @@ export class JobScheduler {
     });
   }
 
-  private withIdLock<T>(callback: () => T): T {
+  private withIdLock<T>(callback: () => Promise<T>): Promise<T> {
     return this.withLock(this.idLockPath, 'Kaseki instance ID', callback);
   }
 
-  private withLock<T>(lockPath: string, lockName: string, callback: () => T): T {
+  private async withLock<T>(lockPath: string, lockName: string, callback: () => Promise<T>): Promise<T> {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
     let acquired = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -584,12 +584,28 @@ export class JobScheduler {
         if (code !== 'EEXIST') {
           throw err;
         }
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+        await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
 
     if (!acquired) {
       throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
+    }
+
+    try {
+      return await callback();
+    } finally {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+    }
+  }
+
+
+  private withSyncLock<T>(lockPath: string, _lockName: string, callback: () => T): T {
+    fs.mkdirSync(this.config.resultsDir, { recursive: true });
+    try {
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+    } catch {
+      return callback();
     }
 
     try {
@@ -699,7 +715,7 @@ export class JobScheduler {
   }
 
   private loadPersistedJobs(): void {
-    this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+    this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
       if (!fs.existsSync(this.indexPath)) {
         return;
       }
@@ -739,7 +755,7 @@ export class JobScheduler {
 
   private persistJobs(): void {
     try {
-      this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
         fs.mkdirSync(this.config.resultsDir, { recursive: true });
         const current = this.readPersistedJobsIndex();
         const merged = this.mergePersistedJobs(
