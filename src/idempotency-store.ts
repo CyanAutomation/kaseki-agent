@@ -194,7 +194,7 @@ export class IdempotencyStore {
             continue;
           }
 
-          const requestTime = entry.requestTime || new Date().toISOString();
+          const requestTime = entry.requestTime || '1970-01-01T00:00:00.000Z';
           const jobId = entry.jobId || entry.responsePayload?.id || '';
           const restoredResponse: RunResponse = entry.responsePayload || {
             id: jobId,
