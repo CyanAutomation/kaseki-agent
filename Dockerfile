@@ -77,6 +77,9 @@ RUN mkdir -p /app/lib \
     && chmod 0755 /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh /app/scripts/*.sh \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
+    && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
+    && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
+    && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
