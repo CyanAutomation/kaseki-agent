@@ -691,10 +691,27 @@ else
     cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
   fi
   FILTER_EXIT=0
-  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json || FILTER_EXIT=$?
+  set +e
+  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json
+  FILTER_EXIT=$?
+  set -e
   if [ "$FILTER_EXIT" -ne 0 ]; then
     printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a /results/quality.log
+    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a /results/pi-stderr.log >&2
+    emit_error_event "pi_event_filter_failed" "kaseki-pi-event-filter exited with code $FILTER_EXIT" "continue"
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS="$FILTER_EXIT"
+      FAILED_COMMAND="kaseki-pi-event-filter"
+    fi
     cp "$RAW_EVENTS" /results/pi-events.raw.jsonl 2>/dev/null || true
+  fi
+  if [ -s "$RAW_EVENTS" ] && { [ ! -s /results/pi-events.jsonl ] || [ ! -s /results/pi-summary.json ]; }; then
+    printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a /results/pi-stderr.log >&2
+    emit_error_event "pi_event_export_incomplete" "RAW_EVENTS has data but exported artifacts are empty or missing" "continue"
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=86
+      FAILED_COMMAND="pi event export incomplete"
+    fi
   fi
   ACTUAL_MODEL="$(node -e "
     var m='';
