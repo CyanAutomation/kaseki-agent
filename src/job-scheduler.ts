@@ -599,7 +599,6 @@ export class JobScheduler {
     }
   }
 
-
   private withSyncLock<T>(lockPath: string, _lockName: string, callback: () => T): T {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
     try {
