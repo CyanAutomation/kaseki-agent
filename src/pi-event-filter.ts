@@ -2,8 +2,8 @@
 import fs from 'node:fs';
 import { once } from 'node:events';
 import readline from 'node:readline';
-import { EventCounterAggregator } from './event-aggregator';
-import { TimestampTracker } from './timestamp-tracker';
+import { EventCounterAggregator } from './event-aggregator.js';
+import { TimestampTracker } from './timestamp-tracker.js';
 
 interface PiEvent {
   type?: string;
