@@ -473,9 +473,9 @@ export function createApiRouter(
         const response = currentJob
           ? buildRunResponse(currentJob, true)
           : {
-              ...claimResult.response,
-              cached: true,
-            };
+            ...claimResult.response,
+            cached: true,
+          };
         logger.event('api_idempotent_resubmission', {
           jobId: response.id,
           idempotencyKey,
