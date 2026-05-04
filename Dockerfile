@@ -65,7 +65,10 @@ COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 
 RUN mkdir -p /app/lib \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
+    && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
+    && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \
     && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
+    && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
