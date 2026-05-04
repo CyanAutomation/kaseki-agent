@@ -129,6 +129,87 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
+  test('startup check requests run the worker in dry-run inspect mode', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      startupCheck: true,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main']),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_DRY_RUN: '1',
+          KASEKI_TASK_MODE: 'inspect',
+          KASEKI_VALIDATION_COMMANDS: 'none',
+        }),
+      }),
+    );
+  });
+
+  test('cancelled running jobs get non-empty API failure artifacts', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: 'kaseki-1\n', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    scheduler.cancelJob(job.id);
+
+    const failurePath = `${resultsDir}/${job.id}/failure.json`;
+    const summaryPath = `${resultsDir}/${job.id}/result-summary.md`;
+    expect(fs.statSync(failurePath).size).toBeGreaterThan(0);
+    expect(fs.statSync(summaryPath).size).toBeGreaterThan(0);
+    expect(JSON.parse(fs.readFileSync(failurePath, 'utf-8'))).toMatchObject({
+      failureClass: 'cancelled',
+      exitCode: 143,
+      apiFinalized: true,
+      cleanup: {
+        attempted: true,
+        ok: true,
+      },
+    });
+  });
+
   test('timeout escalates to SIGKILL when process hangs', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

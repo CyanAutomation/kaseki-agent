@@ -67,6 +67,7 @@ export const RunRequestSchema = z.object({
   maxDiffBytes: z.number().int().positive().optional().describe('Max diff size in bytes'),
   validationCommands: z.array(z.string()).optional().describe('Validation commands to run'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
+  startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
   idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
@@ -83,6 +84,10 @@ export interface RunResponse {
   createdAt: string; // ISO 8601
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
+  cached?: boolean; // True when returned from an idempotency replay
+  completedAt?: string; // ISO 8601 when replaying a terminal run
+  exitCode?: number;
+  failureClass?: string;
   error?: string;
 }
 
@@ -225,8 +230,23 @@ export interface PreflightResponse {
   timestamp: string;
   checks: PreflightCheck[];
   image?: string;
+  imageDigest?: string;
+  templateImage?: string;
+  templateImageDigest?: string;
   templateDir?: string;
+  templateRef?: string;
   resultsDir: string;
+  runtime?: {
+    nodeVersion: string;
+    uid?: number;
+    gid?: number;
+    groups?: number[];
+  };
+  docker?: {
+    version?: string;
+    clientVersion?: string;
+    serverVersion?: string;
+  };
 }
 
 /**

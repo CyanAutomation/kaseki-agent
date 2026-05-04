@@ -561,6 +561,181 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
   });
 });
 
+describe('kaseki-api-routes controller replay and events', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-controller-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('idempotency replay returns the current job status instead of the original queued response', async () => {
+    const job = {
+      id: 'kaseki-99',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'kaseki-99'),
+      correlationId: '11111111-1111-4111-8111-111111111111',
+      requestId: '22222222-2222-4222-8222-222222222222',
+    } as any;
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 1, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === job.id ? job : undefined),
+      submitJob: jest.fn(() => job),
+      listJobs: () => [job],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
+    const body = JSON.stringify({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      idempotencyKey: '33333333-3333-4333-8333-333333333333',
+    });
+
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/runs`, { method: 'POST', headers, body });
+      expect(first.status).toBe(202);
+
+      job.status = 'failed';
+      job.completedAt = new Date();
+      job.exitCode = 143;
+      job.failureClass = 'cancelled';
+      job.error = 'Job cancelled by API request';
+
+      const replay = await fetch(`http://127.0.0.1:${port}/api/runs`, { method: 'POST', headers, body });
+      expect(replay.status).toBe(200);
+      const replayBody = (await replay.json()) as any;
+      expect(replayBody).toMatchObject({
+        id: job.id,
+        status: 'failed',
+        cached: true,
+        exitCode: 143,
+        failureClass: 'cancelled',
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('events endpoint falls back to live docker progress for active runs', async () => {
+    const jobId = 'kaseki-live-events';
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
+      getLiveProgressEvents: jest.fn(() => [{ source: 'docker-logs', stage: 'startup check', message: 'container booted' }]),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/events`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.sources).toEqual(['docker-logs']);
+      expect(body.events[0]).toMatchObject({ stage: 'startup check', message: 'container booted' });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('artifact listing treats zero-byte diagnostics as unavailable', async () => {
+    const jobId = 'kaseki-zero-artifacts';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '');
+    fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      const failureFile = body.artifacts.find((artifact: any) => artifact.name === 'failure.json');
+      const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
+      expect(failureFile.available).toBe(false);
+      expect(stderrFile.available).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+});
+
 describe('kaseki-api-routes status artifact hints', () => {
   let resultsDir: string;
 
