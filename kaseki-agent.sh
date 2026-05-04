@@ -35,7 +35,7 @@ QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
 GITHUB_PUSH_EXIT=0
 GITHUB_PR_EXIT=0
-ACTUAL_MODEL=""
+ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
 STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
@@ -714,11 +714,46 @@ else
     fi
   fi
   ACTUAL_MODEL="$(node -e "
+    var fs=require('fs');
+    function clean(v){
+      if(v===undefined||v===null) return '';
+      v=String(v).trim();
+      if(!v) return '';
+      var low=v.toLowerCase();
+      if(low==='unknown'||low==='null') return '';
+      return v;
+    }
+    function fromSummaryModels(summary){
+      var counters=summary&&summary.counters&&summary.counters.models;
+      if(!counters||typeof counters!=='object'||Array.isArray(counters)) return '';
+      var entries=Object.entries(counters).filter(function(ent){
+        return clean(ent[0]) && Number(ent[1]) > 0;
+      });
+      if(entries.length!==1) return '';
+      return clean(entries[0][0]);
+    }
     var m='';
-    try{m=require('/results/pi-summary.json').selected_model||''}catch{}
-    if(!m){try{var lines=require('fs').readFileSync('$RAW_EVENTS','utf8').split('\n');for(var i=0;i<lines.length;i++){try{var e=JSON.parse(lines[i]);if(e&&e.model){m=e.model;break}}catch{}}}catch{}}
-    console.log(m||'');
+    try{
+      var summary=require('/results/pi-summary.json');
+      m=clean(summary.selected_model)||clean(summary.model)||fromSummaryModels(summary);
+    }catch{}
+    if(!m){
+      try{
+        var lines=fs.readFileSync('$RAW_EVENTS','utf8').split('\n');
+        for(var i=0;i<lines.length;i++){
+          try{
+            var e=JSON.parse(lines[i]);
+            m=clean(e&&e.model);
+            if(m) break;
+          }catch{}
+        }
+      }catch{}
+    }
+    console.log(m||'unknown');
   " 2>/dev/null)"
+  if [ "$ACTUAL_MODEL" = "unknown" ]; then
+    emit_event "warning" "warning_type=model_attribution_missing" "detail=Unable to resolve model from pi-summary.json or raw events"
+  fi
 fi
 
 
