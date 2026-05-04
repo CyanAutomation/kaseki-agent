@@ -37,23 +37,24 @@ assert_file_empty() {
 
 run_once() {
   local root="$1" marker="$2"
-  local start end elapsed_ms
+  local start end elapsed_ms code oldpwd
   start="$(date +%s%3N)"
-  (
-    cd "$REPO_ROOT"
-    export KASEKI_ROOT="$root"
-    export KASEKI_LOG_DIR="$root/host-logs"
-    export OPENROUTER_API_KEY="dry-run-test-key"
-    export REPO_URL=""
-    export GIT_REF="main"
-    export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN_${marker} > /tmp/kaseki-validation-$$-${marker}"
-    export TASK_PROMPT="dry-run behavior test"
-    export KASEKI_IMAGE="docker.io/cyanautomation/kaseki-agent:latest"
+  oldpwd="$(pwd)"
+  cd "$REPO_ROOT"
+  export KASEKI_ROOT="$root"
+  export KASEKI_LOG_DIR="$root/host-logs"
+  export OPENROUTER_API_KEY="dry-run-test-key"
+  export REPO_URL=""
+  export GIT_REF="main"
+  export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN_${marker} > /tmp/kaseki-validation-$$-${marker}"
+  export TASK_PROMPT="dry-run behavior test"
+  export KASEKI_IMAGE="docker.io/cyanautomation/kaseki-agent:latest"
 
-    set +e
-    "$RUNNER" --dry-run >"$root/run-${marker}.stdout.log" 2>"$root/run-${marker}.stderr.log"
-    code=$?
-    set -e
+  set +e
+  "$RUNNER" --dry-run >"$root/run-${marker}.stdout.log" 2>"$root/run-${marker}.stderr.log"
+  code=$?
+  set -e
+  cd "$oldpwd"
   end="$(date +%s%3N)"
   elapsed_ms=$((end-start))
   echo "$code" > "$root/exit-${marker}.txt"
