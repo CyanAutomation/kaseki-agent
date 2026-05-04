@@ -23,6 +23,7 @@ interface WebhookQueueEntry {
   jobId: string;
   payload: WebhookPayload;
   config: WebhookConfig;
+  deliveryAttempts: number;
   attempts: WebhookDeliveryAttempt[];
   nextRetryTime?: number; // Unix timestamp
 }
@@ -60,6 +61,7 @@ export class WebhookManager extends EventEmitter {
       jobId,
       payload,
       config,
+      deliveryAttempts: 0,
       attempts: [
         {
           timestamp: new Date().toISOString(),
@@ -119,7 +121,7 @@ export class WebhookManager extends EventEmitter {
       const lastAttempt = e.attempts[e.attempts.length - 1];
       const isCompleted = lastAttempt.status === 'success';
       const shouldRetry = e.nextRetryTime && e.nextRetryTime <= now;
-      const exceedsMaxAttempts = e.attempts.length > (e.config.retryPolicy?.maxAttempts || 5);
+      const exceedsMaxAttempts = e.deliveryAttempts >= (e.config.retryPolicy?.maxAttempts || 5);
       return !isCompleted && shouldRetry && !exceedsMaxAttempts;
     });
 
@@ -144,6 +146,7 @@ export class WebhookManager extends EventEmitter {
     const startTime = Date.now();
 
     try {
+      entry.deliveryAttempts++;
       const response = await fetch(config.url, {
         method: 'POST',
         headers: {
@@ -172,7 +175,7 @@ export class WebhookManager extends EventEmitter {
           eventType: payload.eventType,
           statusCode: response.status,
           durationMs,
-          attempts: entry.attempts.length,
+          attempts: entry.deliveryAttempts,
         });
 
         // Remove from queue
@@ -187,19 +190,20 @@ export class WebhookManager extends EventEmitter {
         };
 
         const backoffMs = Math.min(
-          retryPolicy.initialDelayMs * Math.pow(2, entry.attempts.length - 1),
+          retryPolicy.initialDelayMs * Math.pow(2, entry.deliveryAttempts - 1),
           retryPolicy.maxDelayMs
         );
+        const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
 
         entry.attempts.push({
           timestamp: new Date().toISOString(),
-          status: entry.attempts.length < retryPolicy.maxAttempts ? 'retry' : 'failed',
+          status: hasRemainingAttempts ? 'retry' : 'failed',
           statusCode: response.status,
           durationMs,
           error: `HTTP ${response.status}`,
         });
 
-        if (entry.attempts.length < retryPolicy.maxAttempts) {
+        if (hasRemainingAttempts) {
           entry.nextRetryTime = Date.now() + backoffMs;
 
           this.logger.event('webhook_retry_scheduled', {
@@ -207,14 +211,14 @@ export class WebhookManager extends EventEmitter {
             eventType: payload.eventType,
             statusCode: response.status,
             nextRetryMs: backoffMs,
-            attemptNumber: entry.attempts.length,
+            attemptNumber: entry.deliveryAttempts,
           });
         } else {
           this.logger.event('webhook_delivery_failed', {
             jobId,
             eventType: payload.eventType,
             statusCode: response.status,
-            attempts: entry.attempts.length,
+            attempts: entry.deliveryAttempts,
           });
 
           // Remove from queue after max attempts
@@ -233,18 +237,19 @@ export class WebhookManager extends EventEmitter {
       };
 
       const backoffMs = Math.min(
-        retryPolicy.initialDelayMs * Math.pow(2, entry.attempts.length - 1),
+        retryPolicy.initialDelayMs * Math.pow(2, entry.deliveryAttempts - 1),
         retryPolicy.maxDelayMs
       );
+      const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
 
       entry.attempts.push({
         timestamp: new Date().toISOString(),
-        status: entry.attempts.length < retryPolicy.maxAttempts ? 'retry' : 'failed',
+        status: hasRemainingAttempts ? 'retry' : 'failed',
         error: errorMsg,
         durationMs,
       });
 
-      if (entry.attempts.length < retryPolicy.maxAttempts) {
+      if (hasRemainingAttempts) {
         entry.nextRetryTime = Date.now() + backoffMs;
 
         this.logger.event('webhook_delivery_error', {
@@ -252,14 +257,14 @@ export class WebhookManager extends EventEmitter {
           eventType: payload.eventType,
           error: errorMsg,
           nextRetryMs: backoffMs,
-          attemptNumber: entry.attempts.length,
+          attemptNumber: entry.deliveryAttempts,
         });
       } else {
         this.logger.event('webhook_delivery_failed', {
           jobId,
           eventType: payload.eventType,
           error: errorMsg,
-          attempts: entry.attempts.length,
+          attempts: entry.deliveryAttempts,
         });
 
         // Remove from queue after max attempts
@@ -292,6 +297,7 @@ export class WebhookManager extends EventEmitter {
         jobId: entry.jobId,
         eventType: entry.payload.eventType,
         webhookUrl: entry.config.url,
+        deliveryAttempts: entry.deliveryAttempts,
         attempts: entry.attempts,
         nextRetryTime: entry.nextRetryTime,
       }));
