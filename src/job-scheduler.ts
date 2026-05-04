@@ -14,6 +14,12 @@ type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeo
   completedAt?: string;
 };
 
+type CleanupResult = {
+  attempted: boolean;
+  ok?: boolean;
+  detail?: string;
+};
+
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
@@ -134,6 +140,10 @@ export class JobScheduler {
       job.error = 'Job cancelled before execution';
       job.completedAt = completedAt;
       job.finalized = true;
+      this.writeApiFailureArtifacts(job, {
+        attempted: false,
+        detail: 'Job never started; no worker container was created.',
+      });
       this.persistJobs();
 
       // Emit webhook event for cancellation
@@ -163,12 +173,13 @@ export class JobScheduler {
     if (proc) {
       proc.kill('SIGTERM');
     }
-    this.cleanupContainer(id);
+    const cleanup = this.cleanupContainer(id);
     job.status = 'failed';
     job.exitCode = 143;
     job.failureClass = 'cancelled';
     job.error = 'Job cancelled by API request';
     job.completedAt = completedAt;
+    this.writeApiFailureArtifacts(job, cleanup);
 
     // Emit webhook event for cancellation
     if (job.webhookConfig) {
@@ -247,6 +258,15 @@ export class JobScheduler {
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(this.config.agentTimeoutSeconds),
     };
+
+    if (job.request.startupCheck) {
+      env.KASEKI_DRY_RUN = '1';
+      env.KASEKI_TASK_MODE = 'inspect';
+      env.KASEKI_VALIDATION_COMMANDS = 'none';
+      env.TASK_PROMPT =
+        job.request.taskPrompt ||
+        'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.';
+    }
 
     if (job.request.changedFilesAllowlist) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = job.request.changedFilesAllowlist.join(' ');
@@ -354,7 +374,8 @@ export class JobScheduler {
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
         updates.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
-        this.cleanupContainer(job.id);
+        const cleanup = this.cleanupContainer(job.id);
+        this.writeApiFailureArtifacts(job, cleanup);
         this.logger.event('job_failed', {
           jobId: job.id,
           failureClass: 'timeout',
@@ -646,14 +667,67 @@ export class JobScheduler {
     return maxId + 1;
   }
 
-  private cleanupContainer(id: string): void {
-    if (!/^kaseki-\d+$/.test(id)) {
+  private writeApiFailureArtifacts(job: Job, cleanup: CleanupResult): void {
+    if (job.status !== 'failed') {
       return;
     }
-    spawn('docker', ['rm', '-f', id], {
-      stdio: 'ignore',
-      detached: true,
-    }).unref();
+
+    const resultDir = this.getResultDir(job.id);
+    const now = (job.completedAt || new Date()).toISOString();
+    try {
+      fs.mkdirSync(resultDir, { recursive: true });
+
+      const failurePath = path.join(resultDir, 'failure.json');
+      const shouldWriteFailure = !fs.existsSync(failurePath) || fs.statSync(failurePath).size === 0;
+      if (shouldWriteFailure) {
+        const payload = {
+          failureClass: job.failureClass || 'api_finalized',
+          error: job.error || 'Job failed before runner failure metadata was written',
+          exitCode: job.exitCode,
+          cancelledAt: job.failureClass === 'cancelled' ? now : undefined,
+          completedAt: now,
+          apiFinalized: true,
+          cleanup,
+        };
+        fs.writeFileSync(failurePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+      }
+
+      const summaryPath = path.join(resultDir, 'result-summary.md');
+      const shouldWriteSummary = !fs.existsSync(summaryPath) || fs.statSync(summaryPath).size === 0;
+      if (shouldWriteSummary) {
+        fs.writeFileSync(
+          summaryPath,
+          [
+            `# ${job.id} failed`,
+            '',
+            `Failure class: ${job.failureClass || 'unknown'}`,
+            `Exit code: ${job.exitCode ?? 'unknown'}`,
+            `Error: ${job.error || 'unknown'}`,
+            `Completed at: ${now}`,
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+      }
+    } catch {
+      // Best effort diagnostics; never mask the primary job failure.
+    }
+  }
+
+  private cleanupContainer(id: string): CleanupResult {
+    if (!/^kaseki-\d+$/.test(id)) {
+      return { attempted: false, ok: false, detail: 'Invalid Kaseki container id.' };
+    }
+    const result = spawnSync('docker', ['rm', '-f', id], {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    const detail = `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.trim();
+    return {
+      attempted: true,
+      ok: result.status === 0,
+      detail: detail || undefined,
+    };
   }
 
   getLiveDockerLogTail(id: string, lines = 200): string | null {

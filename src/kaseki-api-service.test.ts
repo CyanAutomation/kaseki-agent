@@ -149,6 +149,11 @@ describe('Kaseki API Request Validation', () => {
       request: { repoUrl: 'https://github.com/org/repo' },
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
     },
+    {
+      name: 'accepts startup check mode',
+      request: { repoUrl: 'https://github.com/org/repo', startupCheck: true },
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', startupCheck: true },
+    },
   ])('RunRequestSchema success cases: $name', ({ request, expected }) => {
     const result = RunRequestSchema.parse(request);
     expect(result).toMatchObject(expected);
