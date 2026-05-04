@@ -38,7 +38,7 @@ describe('http-client-factory', () => {
     // Integration test example (can be expanded with proper fetch mocking)
     it('should handle successful requests with proper parsing', async () => {
       const factory = new HttpClientFactory();
-      
+
       // This is a placeholder test - real integration tests would need proper fetch mocking
       expect(factory).toBeDefined();
     });
