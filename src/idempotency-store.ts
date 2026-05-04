@@ -8,11 +8,18 @@ import { createEventLogger, EventLogger } from './logger';
  */
 interface IdempotencyCacheEntry {
   idempotencyKey: string;
+  requestFingerprint: string;
+  state: 'pending' | 'fulfilled';
   jobId: string;
   requestTime: string; // ISO 8601
   responsePayload: RunResponse;
   expiresAt: number; // Unix timestamp
 }
+
+export type ClaimResult =
+  | { kind: 'claimed' }
+  | { kind: 'pending' }
+  | { kind: 'fulfilled'; response: RunResponse };
 
 /**
  * Idempotency store manages request deduplication with persistent storage.
@@ -36,16 +43,40 @@ export class IdempotencyStore {
   /**
    * Check if idempotency key has been seen before and return cached response.
    */
-  getCachedResponse(idempotencyKey: string): RunResponse | undefined {
+  claimOrGet(idempotencyKey: string, requestFingerprint: string): ClaimResult {
     const entry = this.cache.get(idempotencyKey);
     if (!entry) {
-      return undefined;
+      const pendingEntry: IdempotencyCacheEntry = {
+        idempotencyKey,
+        requestFingerprint,
+        state: 'pending',
+        jobId: '',
+        requestTime: new Date().toISOString(),
+        responsePayload: {
+          id: '',
+          status: 'queued',
+          createdAt: new Date().toISOString(),
+        },
+        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+      };
+
+      this.cache.set(idempotencyKey, pendingEntry);
+      this.persistToDisk(pendingEntry);
+      return { kind: 'claimed' };
     }
 
     // Check if entry has expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(idempotencyKey);
-      return undefined;
+      return this.claimOrGet(idempotencyKey, requestFingerprint);
+    }
+
+    if (entry.requestFingerprint !== requestFingerprint) {
+      throw new Error('Idempotency key has already been used with a different request payload');
+    }
+
+    if (entry.state === 'pending') {
+      return { kind: 'pending' };
     }
 
     this.logger.event('idempotency_cache_hit', {
@@ -54,20 +85,31 @@ export class IdempotencyStore {
       ageSeconds: Math.round((Date.now() - new Date(entry.requestTime).getTime()) / 1000),
     });
 
-    return entry.responsePayload;
+    return { kind: 'fulfilled', response: entry.responsePayload };
   }
 
   /**
    * Store a new idempotency entry.
    */
-  storeResponse(idempotencyKey: string, response: RunResponse): void {
-    const entry: IdempotencyCacheEntry = {
-      idempotencyKey,
-      jobId: response.id,
-      requestTime: new Date().toISOString(),
-      responsePayload: response,
-      expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-    };
+  storeResponse(idempotencyKey: string, response: RunResponse, requestFingerprint: string): void {
+    const existing = this.cache.get(idempotencyKey);
+    const entry: IdempotencyCacheEntry = existing
+      ? {
+          ...existing,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          responsePayload: response,
+        }
+      : {
+          idempotencyKey,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          requestTime: new Date().toISOString(),
+          responsePayload: response,
+          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+        };
 
     this.cache.set(idempotencyKey, entry);
     this.persistToDisk(entry);
@@ -86,8 +128,11 @@ export class IdempotencyStore {
     try {
       const line = JSON.stringify({
         idempotencyKey: entry.idempotencyKey,
+        requestFingerprint: entry.requestFingerprint,
+        state: entry.state,
         jobId: entry.jobId,
         requestTime: entry.requestTime,
+        responsePayload: entry.responsePayload,
         expiresAt: entry.expiresAt,
       });
 
@@ -123,11 +168,13 @@ export class IdempotencyStore {
           // Store in cache (without response payload, as it's large)
           this.cache.set(entry.idempotencyKey, {
             idempotencyKey: entry.idempotencyKey,
+            requestFingerprint: entry.requestFingerprint || '',
+            state: entry.state || 'fulfilled',
             jobId: entry.jobId,
             requestTime: entry.requestTime,
-            responsePayload: {
+            responsePayload: entry.responsePayload || {
               id: entry.jobId,
-              status: 'queued', // Placeholder; actual status will be looked up separately
+              status: 'queued',
               createdAt: entry.requestTime,
               requestId: entry.requestId,
               correlationId: entry.correlationId,
@@ -187,8 +234,11 @@ export class IdempotencyStore {
           validEntries.push(
             JSON.stringify({
               idempotencyKey: entry.idempotencyKey,
+              requestFingerprint: entry.requestFingerprint,
+              state: entry.state,
               jobId: entry.jobId,
               requestTime: entry.requestTime,
+              responsePayload: entry.responsePayload,
               expiresAt: entry.expiresAt,
             })
           );

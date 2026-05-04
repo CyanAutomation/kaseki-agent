@@ -91,6 +91,23 @@ function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'faile
   return status === 'completed' || status === 'failed';
 }
 
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function buildRequestFingerprint(runRequest: Record<string, unknown>): string {
+  const requestForFingerprint = { ...runRequest };
+  delete requestForFingerprint.idempotencyKey;
+  return crypto.createHash('sha256').update(stableStringify(requestForFingerprint)).digest('hex');
+}
+
 const ALWAYS_SAFE_SUMMARY_ARTIFACTS = [
   'git.diff',
   'metadata.json',
@@ -370,15 +387,18 @@ export function createApiRouter(
 
       // Auto-generate idempotency key if not provided
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
+      const requestFingerprint = buildRequestFingerprint(runRequest as Record<string, unknown>);
 
-      // Check idempotency cache
-      const cachedResponse = idempotencyStore.getCachedResponse(idempotencyKey);
-      if (cachedResponse) {
+      const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
+      if (claimResult.kind === 'fulfilled') {
         logger.event('api_idempotent_resubmission', {
-          jobId: cachedResponse.id,
+          jobId: claimResult.response.id,
           idempotencyKey,
         });
-        return res.status(200).json(cachedResponse); // 200 OK, not 202
+        return res.status(200).json(claimResult.response); // 200 OK, not 202
+      }
+      if (claimResult.kind === 'pending') {
+        return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
       }
 
       // Log request
@@ -404,7 +424,7 @@ export function createApiRouter(
       };
 
       // Store in idempotency cache
-      idempotencyStore.storeResponse(idempotencyKey, response);
+      idempotencyStore.storeResponse(idempotencyKey, response, requestFingerprint);
 
       res.status(202).json(response); // 202 Accepted
     } catch (err: unknown) {
