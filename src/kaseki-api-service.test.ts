@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unused-files
 import * as fs from 'fs';
 import type { Server } from 'http';
 import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';

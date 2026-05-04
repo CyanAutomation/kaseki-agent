@@ -1,0 +1,141 @@
+import {
+  createJobSubmittedEvent,
+  createJobStartedEvent,
+  createJobCompletedEvent,
+  createJobCancelledEvent,
+  createJobFailedEvent,
+} from './webhook-event-builder';
+import { WebhookEventType } from '../kaseki-api-types';
+
+describe('webhook-event-builder', () => {
+  describe('createJobSubmittedEvent', () => {
+    it('should create a JOB_SUBMITTED event', () => {
+      const event = createJobSubmittedEvent('job-123');
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_SUBMITTED);
+      expect(event.jobId).toBe('job-123');
+      expect(event.data.status).toBe('queued');
+      expect(event.timestamp).toBeTruthy();
+    });
+
+    it('should have ISO timestamp', () => {
+      const event = createJobSubmittedEvent('job-123');
+      const timestamp = new Date(event.timestamp);
+
+      expect(timestamp).toBeInstanceOf(Date);
+      expect(timestamp.getTime()).toBeGreaterThan(0);
+    });
+  });
+
+  describe('createJobStartedEvent', () => {
+    it('should create a JOB_STARTED event', () => {
+      const event = createJobStartedEvent('job-456');
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_STARTED);
+      expect(event.jobId).toBe('job-456');
+      expect(event.data.status).toBe('running');
+    });
+  });
+
+  describe('createJobCompletedEvent', () => {
+    it('should create a JOB_COMPLETED event without exit code', () => {
+      const event = createJobCompletedEvent('job-789');
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_COMPLETED);
+      expect(event.jobId).toBe('job-789');
+      expect(event.data.status).toBe('completed');
+      expect((event.data as any).exitCode).toBeUndefined();
+    });
+
+    it('should include exit code when provided', () => {
+      const event = createJobCompletedEvent('job-789', 0);
+
+      expect((event.data as any).exitCode).toBe(0);
+    });
+
+    it('should not include null exit code', () => {
+      const event = createJobCompletedEvent('job-789', null);
+
+      expect((event.data as any).exitCode).toBeUndefined();
+    });
+  });
+
+  describe('createJobCancelledEvent', () => {
+    it('should create a JOB_CANCELLED event', () => {
+      const event = createJobCancelledEvent('job-111');
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_CANCELLED);
+      expect(event.jobId).toBe('job-111');
+      expect(event.data.status).toBe('failed');
+      expect((event.data as any).failureClass).toBe('cancelled');
+    });
+
+    it('should include error message when provided', () => {
+      const event = createJobCancelledEvent('job-111', 'User requested cancellation');
+
+      expect((event.data as any).error).toBe('User requested cancellation');
+    });
+
+    it('should not include error when not provided', () => {
+      const event = createJobCancelledEvent('job-111');
+
+      expect((event.data as any).error).toBeUndefined();
+    });
+  });
+
+  describe('createJobFailedEvent', () => {
+    it('should create a JOB_FAILED event with all details', () => {
+      const event = createJobFailedEvent('job-222', 'validation-error', 'Validation failed', 1);
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_FAILED);
+      expect(event.jobId).toBe('job-222');
+      expect(event.data.status).toBe('failed');
+      expect((event.data as any).failureClass).toBe('validation-error');
+      expect((event.data as any).error).toBe('Validation failed');
+      expect((event.data as any).exitCode).toBe(1);
+    });
+
+    it('should create a JOB_FAILED event with minimal details', () => {
+      const event = createJobFailedEvent('job-222');
+
+      expect(event.eventType).toBe(WebhookEventType.JOB_FAILED);
+      expect(event.data.status).toBe('failed');
+      expect((event.data as any).failureClass).toBeUndefined();
+      expect((event.data as any).error).toBeUndefined();
+      expect((event.data as any).exitCode).toBeUndefined();
+    });
+
+    it('should not include null exit code', () => {
+      const event = createJobFailedEvent('job-222', 'error', 'Failed', null as any);
+
+      expect((event.data as any).exitCode).toBeUndefined();
+    });
+
+    it('should not include undefined failureClass', () => {
+      const event = createJobFailedEvent('job-222', undefined, 'Error message');
+
+      expect((event.data as any).failureClass).toBeUndefined();
+      expect((event.data as any).error).toBe('Error message');
+    });
+  });
+
+  describe('Event payload structure', () => {
+    it('should have consistent timestamp format', () => {
+      const events = [
+        createJobSubmittedEvent('job-1'),
+        createJobStartedEvent('job-2'),
+        createJobCompletedEvent('job-3'),
+        createJobCancelledEvent('job-4'),
+        createJobFailedEvent('job-5'),
+      ];
+
+      for (const event of events) {
+        // All events should have ISO 8601 format timestamp
+        expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        expect(event.jobId).toBeTruthy();
+        expect(event.eventType).toBeTruthy();
+        expect(event.data).toBeTruthy();
+      }
+    });
+  });
+});
