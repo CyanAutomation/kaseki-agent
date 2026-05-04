@@ -690,11 +690,42 @@ else
   if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
     cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
   fi
+
+  PI_EXTRACTION_DEPS_OK=1
+  missing_executables=()
+  missing_helpers=()
+  for required_exec in kaseki-pi-event-filter kaseki-pi-progress-stream; do
+    if ! command -v "$required_exec" >/dev/null 2>&1; then
+      missing_executables+=("$required_exec")
+    fi
+  done
+  for helper_file in /app/lib/event-aggregator.js /app/lib/timestamp-tracker.js /app/lib/progress-stream-utils.js; do
+    if [ ! -f "$helper_file" ]; then
+      missing_helpers+=("$helper_file")
+    fi
+  done
+  if [ ${#missing_executables[@]} -gt 0 ] || [ ${#missing_helpers[@]} -gt 0 ]; then
+    PI_EXTRACTION_DEPS_OK=0
+    missing_execs_joined="${missing_executables[*]:-none}"
+    missing_helpers_joined="${missing_helpers[*]:-none}"
+    extraction_error=$(printf '{"error":"pi_extraction_dependency_missing","missing_executables":"%s","missing_helpers":"%s","action":"Ensure required Pi binaries are on PATH and helper files exist in the image before running extraction"}' "$missing_execs_joined" "$missing_helpers_joined")
+    printf '%s
+' "$extraction_error" | tee -a /results/pi-stderr.log /results/quality.log >&2
+    emit_error_event "pi_extraction_dependency_missing" "missing executables: $missing_execs_joined; missing helpers: $missing_helpers_joined; ensure Pi binaries are in PATH and /app/lib helpers are present" "abort_extraction"
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=87
+      FAILED_COMMAND="pi artifact extraction dependency validation"
+    fi
+    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl 2>/dev/null || true
+  fi
+
   FILTER_EXIT=0
-  set +e
-  kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json
-  FILTER_EXIT=$?
-  set -e
+  if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
+    set +e
+    kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json
+    FILTER_EXIT=$?
+    set -e
+  fi
   if [ "$FILTER_EXIT" -ne 0 ]; then
     printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a /results/quality.log
     printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a /results/pi-stderr.log >&2
