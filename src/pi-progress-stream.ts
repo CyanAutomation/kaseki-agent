@@ -46,14 +46,29 @@ function eventType(event: PiEvent | any): string {
 }
 
 function toolName(event: PiEvent | any): string {
-  const raw =
-    event?.tool_name ||
-    event?.toolName ||
-    event?.tool?.name ||
-    event?.name ||
-    event?.call?.name ||
-    'tool';
-  return sanitizeToolName(raw);
+  const candidates = [
+    event?.tool_name,
+    event?.toolName,
+    event?.tool?.name,
+    event?.name,
+    event?.call?.name,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const sanitized = sanitizeToolLabel(candidate);
+    if (sanitized !== 'tool') {
+      return sanitized;
+    }
+  }
+
+  return 'tool';
+}
+
+function sanitizeToolLabel(value: string): string {
+  return sanitizeToolName(value);
 }
 
 function emit(stage: string, message: string, extra: Record<string, any> = {}): void {
