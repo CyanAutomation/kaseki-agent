@@ -8,6 +8,12 @@ import { ResultCache } from './result-cache';
 import { createApiRouter } from './kaseki-api-routes';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
+import {
+  createMockScheduler,
+  createTestConfig,
+  createTestApp,
+  cleanupTestApp,
+} from './test-utils';
 
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {
@@ -162,36 +168,11 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr output');
     fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout output');
 
-    const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
-      getJob: (id: string) => id === jobId
-        ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir }
-        : undefined,
-      submitJob: jest.fn(),
-      listJobs: () => [],
-      cancelJob: jest.fn(),
-    } as any;
-
-    const config = {
-      port: 0,
-      apiKeys: ['test-key'],
-      resultsDir,
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1200,
-      logLevel: 'info' as const,
-    };
-
-    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
-    const preFlightValidator = new PreFlightValidator();
-
-    const app = express();
-    app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir },
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
@@ -214,8 +195,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(stdoutBody.file).toBe('stdout.log');
       expect(stdoutBody.content).toBe('stdout output');
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await idempotencyStore.shutdown();
+      await cleanupTestApp(server, idempotencyStore);
     }
   });
 
@@ -225,36 +205,11 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     fs.mkdirSync(jobDir, { recursive: true });
     fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ failureClass: 'validation' }));
 
-    const scheduler = {
-      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
-      getJob: (id: string) => id === jobId
-        ? { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir }
-        : undefined,
-      submitJob: jest.fn(),
-      listJobs: () => [],
-      cancelJob: jest.fn(),
-    } as any;
-
-    const config = {
-      port: 0,
-      apiKeys: ['test-key'],
-      resultsDir,
-      maxConcurrentRuns: 1,
-      defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1200,
-      logLevel: 'info' as const,
-    };
-
-    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
-    const preFlightValidator = new PreFlightValidator();
-
-    const app = express();
-    app.use(express.json());
-    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'running' as const, createdAt: new Date(), resultDir: jobDir },
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
@@ -265,8 +220,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(failureBody.status).toBe(400);
       expect(failureBody.detail).toContain('Artifact only available for failed runs: failure.json');
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await idempotencyStore.shutdown();
+      await cleanupTestApp(server, idempotencyStore);
     }
   });
 });
