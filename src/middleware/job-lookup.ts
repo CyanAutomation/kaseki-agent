@@ -7,6 +7,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
  * Extend Express Request to include the job from middleware.
  */
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       job?: Job;

@@ -102,8 +102,6 @@ function buildRequestFingerprint(runRequest: Record<string, unknown>): string {
   return crypto.createHash('sha256').update(stableStringify(requestForFingerprint)).digest('hex');
 }
 
-
-
 function readFirstLine(filePath: string): string | undefined {
   try {
     const value = fs.readFileSync(filePath, 'utf-8').trim().split(/\r?\n/)[0];
@@ -124,8 +122,6 @@ function commandOutput(command: string, args: string[], cwd?: string): string | 
   }
   return result.stdout.trim() || undefined;
 }
-
-
 
 function readKasekiImage(templateDir = '/agents/kaseki-template'): string {
   if (process.env.KASEKI_IMAGE) {
@@ -193,7 +189,7 @@ function checkOpenRouterKey(): PreflightCheck {
   };
 }
 
-export function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
+function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
   const image = readKasekiImage(templateDir);
   const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
