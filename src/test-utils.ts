@@ -117,5 +117,3 @@ export async function cleanupTestApp(server: Server, idempotencyStore: Idempoten
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await idempotencyStore.shutdown();
 }
-
-
