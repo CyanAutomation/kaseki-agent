@@ -915,7 +915,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
-  test('running status returns structured progressV2 from progress.jsonl', async () => {
+  test('running status returns structured progress from progress.jsonl', async () => {
     const jobId = 'kaseki-running-status-progress-file';
     const jobDir = path.join(resultsDir, jobId);
     fs.mkdirSync(jobDir, { recursive: true });
@@ -958,8 +958,7 @@ describe('kaseki-api-routes status artifact hints', () => {
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
-      expect(body.progress).toBe('pi coding agent');
-      expect(body.progressV2).toEqual({
+      expect(body.progress).toEqual({
         stage: 'pi coding agent',
         percentComplete: 42,
         message: 'pi coding agent',
@@ -971,7 +970,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
-  test('running status returns structured progressV2 from live docker fallback', async () => {
+  test('running status returns structured progress from live docker fallback', async () => {
     const jobId = 'kaseki-running-status-progress-live';
     const scheduler = {
       getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
@@ -1006,8 +1005,7 @@ describe('kaseki-api-routes status artifact hints', () => {
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
-      expect(body.progress).toBe('container booted');
-      expect(body.progressV2).toEqual({
+      expect(body.progress).toEqual({
         stage: 'startup check',
         message: 'container booted',
         updatedAt: '2026-05-05T00:00:02.000Z',

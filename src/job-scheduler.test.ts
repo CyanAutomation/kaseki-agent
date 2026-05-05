@@ -598,7 +598,6 @@ describe('JobScheduler persistence merge safety', () => {
     cleanupResultsDirs();
   });
 
-  
   test('persistJobs skips writes when index lock is already held', async () => {
     const resultsDir = createResultsDir();
     const config = {
@@ -652,7 +651,7 @@ describe('JobScheduler persistence merge safety', () => {
 
     expect(scheduler.getJob('kaseki-1')).toBeUndefined();
   });
-test('interleaved persist writes do not regress newer job state', async () => {
+  test('interleaved persist writes do not regress newer job state', async () => {
     const resultsDir = createResultsDir();
     const config = {
       port: 8080,

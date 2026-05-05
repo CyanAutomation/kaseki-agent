@@ -239,19 +239,23 @@ List recent kaseki runs, newest first.
 
 Poll the status of a specific run. Returns progress and timeout risk.
 
-`progressV2` is now available for running jobs with structured fields:
+`progress` is now a structured object available for running jobs with the following fields:
 - `stage` (string, required)
 - `percentComplete` (number, optional)
 - `message` (string, optional)
 - `updatedAt` (ISO-8601 string, optional)
-
-Compatibility note: the legacy string `progress` field is still returned for one release and mirrors `progressV2.message` (or `stage` when message is unavailable).
 
 **Response (200 OK):**
 ```json
 {
   "id": "kaseki-42",
   "status": "failed",
+  "progress": {
+    "stage": "pi coding agent",
+    "percentComplete": 85,
+    "message": "Refactoring implementation",
+    "updatedAt": "2026-05-05T12:34:00.000Z"
+  },
   "elapsedSeconds": 315,
   "timeoutRiskPercent": 26,
   "exitCode": 1,

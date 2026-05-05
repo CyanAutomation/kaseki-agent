@@ -420,8 +420,8 @@ export class KasekiApiClient {
       throw new Error('Invalid status response status');
     }
 
-    const optionalStringFields: Array<keyof Pick<StatusResponse, 'progress' | 'failureClass' | 'error'>> = [
-      'progress',
+    // Validate optional string fields
+    const optionalStringFields: Array<keyof Pick<StatusResponse, 'failureClass' | 'error'>> = [
       'failureClass',
       'error',
     ];
@@ -431,6 +431,7 @@ export class KasekiApiClient {
       }
     }
 
+    // Validate optional number fields
     const optionalNumberFields: Array<keyof Pick<StatusResponse, 'elapsedSeconds' | 'timeoutRiskPercent' | 'exitCode'>> = [
       'elapsedSeconds',
       'timeoutRiskPercent',
@@ -442,10 +443,29 @@ export class KasekiApiClient {
       }
     }
 
+    // Validate optional progress object
+    if (data.progress !== undefined) {
+      if (!this.isRecord(data.progress)) {
+        throw new Error('Invalid status response progress');
+      }
+      if (typeof data.progress.stage !== 'string') {
+        throw new Error('Invalid status response progress stage');
+      }
+      if (data.progress.percentComplete !== undefined && typeof data.progress.percentComplete !== 'number') {
+        throw new Error('Invalid status response progress percentComplete');
+      }
+      if (data.progress.message !== undefined && typeof data.progress.message !== 'string') {
+        throw new Error('Invalid status response progress message');
+      }
+      if (data.progress.updatedAt !== undefined && typeof data.progress.updatedAt !== 'string') {
+        throw new Error('Invalid status response progress updatedAt');
+      }
+    }
+
     return {
       id: data.id,
       status: data.status as StatusResponse['status'],
-      ...(typeof data.progress === 'string' ? { progress: data.progress } : {}),
+      ...(this.isRecord(data.progress) && typeof data.progress.stage === 'string' ? { progress: data.progress as any } : {}),
       ...(typeof data.elapsedSeconds === 'number' ? { elapsedSeconds: data.elapsedSeconds } : {}),
       ...(typeof data.timeoutRiskPercent === 'number' ? { timeoutRiskPercent: data.timeoutRiskPercent } : {}),
       ...(typeof data.exitCode === 'number' ? { exitCode: data.exitCode } : {}),

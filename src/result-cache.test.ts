@@ -33,7 +33,6 @@ describe('ResultCache', () => {
     expect(statsAfter.bytes).toBe(statsBefore.bytes);
   });
 
-
   test('reloads content when file is updated within TTL', () => {
     jest.useFakeTimers();
     const baseTime = new Date('2026-01-01T00:00:00.000Z');

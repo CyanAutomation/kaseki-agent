@@ -3,13 +3,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { StatusResponse, RunsListResponse } from '../kaseki-api-types';
+import { StatusResponse, StructuredProgress, RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
-type ProgressV2 = NonNullable<StatusResponse['progressV2']>;
 
-function toProgressV2(event: Record<string, unknown>): ProgressV2 | null {
+function toStructuredProgress(event: Record<string, unknown>): StructuredProgress | null {
   const stage = typeof event.stage === 'string' ? event.stage.trim() : '';
   if (!stage) {
     return null;
@@ -112,22 +111,18 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
           const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
           if (lines.length > 0) {
             const lastEvent = JSON.parse(lines[lines.length - 1]);
-            const progressV2 = toProgressV2(lastEvent);
-            if (progressV2) {
-              response.progressV2 = progressV2;
-              response.progress = progressV2.message || progressV2.stage;
+            const structuredProgress = toStructuredProgress(lastEvent);
+            if (structuredProgress) {
+              response.progress = structuredProgress;
             }
           }
         } else if (typeof scheduler.getLiveProgressEvents === 'function') {
           const liveEvents = scheduler.getLiveProgressEvents(job.id, 1);
           const lastEvent = liveEvents[liveEvents.length - 1];
           if (lastEvent) {
-            const progressV2 = toProgressV2(lastEvent);
-            if (progressV2) {
-              response.progressV2 = progressV2;
-              response.progress = progressV2.message || progressV2.stage;
-            } else {
-              response.progress = String(lastEvent.message || lastEvent.stage || 'running');
+            const structuredProgress = toStructuredProgress(lastEvent);
+            if (structuredProgress) {
+              response.progress = structuredProgress;
             }
           }
         }

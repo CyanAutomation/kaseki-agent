@@ -16,6 +16,7 @@ export type {
   RunRequest,
   RunResponse,
   StatusResponse,
+  StructuredProgress,
   LogResponse,
   ArtifactResponse,
   RunsListResponse,
