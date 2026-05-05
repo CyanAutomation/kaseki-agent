@@ -97,9 +97,47 @@ setup_host_logging() {
   printf 'Warning: host logging disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
 }
 
+read_secret_value() {
+  local inline_value="$1"
+  local file_path="$2"
+  if [ -n "$inline_value" ]; then
+    printf '%s' "$inline_value"
+    return 0
+  fi
+  if [ -n "$file_path" ] && [ -r "$file_path" ]; then
+    sed -e '1{s/^\xef\xbb\xbf//}' "$file_path" | sed -e '${s/[[:space:]]*$//;}'
+    return 0
+  fi
+  return 1
+}
+
+normalize_private_key_pem() {
+  if ! command -v node >/dev/null 2>&1; then
+    cat
+    return 0
+  fi
+  node -e 'const fs = require("node:fs");
+let value = fs.readFileSync(0, "utf8").trim();
+if (!value) process.exit(0);
+value = value.replace(/\\n/g, "\n");
+const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/);
+if (!match) {
+  process.stdout.write(value);
+  if (!value.endsWith("\n")) process.stdout.write("\n");
+  process.exit(0);
+}
+const body = match[2].replace(/\s+/g, "");
+const lines = body.match(/.{1,64}/g) || [];
+process.stdout.write(`-----BEGIN ${match[1]}-----\n${lines.join("\n")}\n-----END ${match[1]}-----\n`);'
+}
+
 # GitHub App credentials (optional, for auto PR creation)
 GITHUB_APP_ID="${GITHUB_APP_ID:-}"
+GITHUB_APP_ID_FILE="${GITHUB_APP_ID_FILE:-}"
+GITHUB_APP_ID_INPUT_FILE="$GITHUB_APP_ID_FILE"
 GITHUB_APP_CLIENT_ID="${GITHUB_APP_CLIENT_ID:-}"
+GITHUB_APP_CLIENT_ID_FILE="${GITHUB_APP_CLIENT_ID_FILE:-}"
+GITHUB_APP_CLIENT_ID_INPUT_FILE="$GITHUB_APP_CLIENT_ID_FILE"
 GITHUB_APP_PRIVATE_KEY_FILE="${GITHUB_APP_PRIVATE_KEY_FILE:-}"
 GITHUB_APP_PRIVATE_KEY="${GITHUB_APP_PRIVATE_KEY:-}"
 
@@ -147,9 +185,11 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
+  GITHUB_APP_ID_FILE                Path to file containing GitHub App ID
   GITHUB_APP_CLIENT_ID              GitHub App Client ID (optional)
-  GITHUB_APP_PRIVATE_KEY_FILE       Path to GitHub App private key PEM file (optional)
-  GITHUB_APP_PRIVATE_KEY            GitHub App private key inline (optional, fallback)
+  GITHUB_APP_CLIENT_ID_FILE         Path to file containing GitHub App Client ID
+  GITHUB_APP_PRIVATE_KEY_FILE       Path to GitHub App private key PEM file (preferred)
+  GITHUB_APP_PRIVATE_KEY            GitHub App private key inline (fallback; avoid for production)
 
 EXAMPLES:
   # All defaults
@@ -431,15 +471,18 @@ doctor() {
 
   # Check GitHub App credentials (optional)
   github_app_ready=0
-  if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
+  github_app_id_value="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
+  github_app_client_id_value="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
+  if [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
     if [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
       printf 'GitHub App credentials: configured\n'
       github_app_ready=1
     fi
   fi
-  if [ "$github_app_ready" -eq 0 ] && { [ -n "$GITHUB_APP_ID" ] || [ -n "$GITHUB_APP_CLIENT_ID" ] || [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]; }; then
-    printf 'GitHub App credentials: incomplete (need APP_ID, CLIENT_ID, and PRIVATE_KEY or PRIVATE_KEY_FILE)\n' >&2
+  if [ "$github_app_ready" -eq 0 ] && { [ -n "$GITHUB_APP_ID" ] || [ -n "$GITHUB_APP_ID_FILE" ] || [ -n "$GITHUB_APP_CLIENT_ID" ] || [ -n "$GITHUB_APP_CLIENT_ID_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] || [ -n "$GITHUB_APP_PRIVATE_KEY" ]; }; then
+    printf 'GitHub App credentials: incomplete (need APP_ID or APP_ID_FILE, CLIENT_ID or CLIENT_ID_FILE, and PRIVATE_KEY_FILE or PRIVATE_KEY)\n' >&2
   fi
+  unset github_app_id_value github_app_client_id_value
 
   return "$status"
 }
@@ -767,7 +810,9 @@ fi
 
 # Handle GitHub App credentials (optional)
 GITHUB_APP_ENABLED="0"
-if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
+github_app_id_value="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
+github_app_client_id_value="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
+if [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
   github_private_key_value=""
   if [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] && [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
     github_private_key_value="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE")"
@@ -778,16 +823,16 @@ if [ -n "$GITHUB_APP_ID" ] && [ -n "$GITHUB_APP_CLIENT_ID" ]; then
   if [ -n "$github_private_key_value" ]; then
     printf 'GitHub App credentials: configured\n'
     GITHUB_APP_ENABLED="1"
-    printf '%s' "$GITHUB_APP_ID" > "$GITHUB_APP_ID_FILE"
+    printf '%s\n' "$github_app_id_value" > "$GITHUB_APP_ID_FILE"
     chmod 0600 "$GITHUB_APP_ID_FILE"
-    printf '%s' "$GITHUB_APP_CLIENT_ID" > "$GITHUB_APP_CLIENT_ID_FILE"
+    printf '%s\n' "$github_app_client_id_value" > "$GITHUB_APP_CLIENT_ID_FILE"
     chmod 0600 "$GITHUB_APP_CLIENT_ID_FILE"
-    printf '%s' "$github_private_key_value" > "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
+    printf '%s' "$github_private_key_value" | normalize_private_key_pem > "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     chmod 0600 "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     unset github_private_key_value
   fi
 fi
-unset GITHUB_APP_PRIVATE_KEY
+unset GITHUB_APP_PRIVATE_KEY github_app_id_value github_app_client_id_value
 
 prepare_worker_paths() {
   if [ "$(id -u)" -ne 0 ]; then

@@ -662,6 +662,10 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 ## GitHub App Integration (Optional)
 
 Kaseki can automatically push changes and create draft pull requests using a GitHub App.
+Use file-mounted secrets for the private key. It is acceptable to provide the App ID
+and Client ID as environment variables, but production deployments should keep all
+three values in files or Docker secrets and pass only `*_FILE` paths through the
+container environment.
 
 ### Prerequisites
 
@@ -681,7 +685,7 @@ mkdir -p ~/secrets
 chmod 0700 ~/secrets
 
 echo "YOUR_APP_ID" > ~/secrets/github_app_id
-echo "YOUR_CLIENT_ID" > ~/secrets/github_app_client_id
+echo "YOUR_CLIENT_ID" > ~/secrets/github_client_id
 cp ~/path/to/private-key.pem ~/secrets/github_app_private_key
 chmod 0600 ~/secrets/github_app_*
 ```
@@ -691,10 +695,27 @@ chmod 0600 ~/secrets/github_app_*
 ```bash
 OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 GITHUB_APP_ID_FILE=~/secrets/github_app_id \
-GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id \
+GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_client_id \
 GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key \
   /agents/kaseki-template/run-kaseki.sh https://github.com/org/repo
 ```
+
+For Docker Compose or Dockhand deployments, mount the secret files under `/agents`
+and pass paths rather than embedding the PEM in `.env`:
+
+```yaml
+environment:
+  GITHUB_APP_ID_FILE: /agents/secrets/github_app_id
+  GITHUB_APP_CLIENT_ID_FILE: /agents/secrets/github_client_id
+  GITHUB_APP_PRIVATE_KEY_FILE: /agents/secrets/github_app_private_key
+volumes:
+  - /agents:/agents:rw
+```
+
+`GITHUB_APP_PRIVATE_KEY` is still accepted as a fallback for local experiments,
+including escaped `\n` or single-line PEM values, but avoid it for shared hosts:
+environment variables are easier to leak through process inspection, logs, and
+orchestration UIs.
 
 ### Behavior
 
