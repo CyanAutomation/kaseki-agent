@@ -191,7 +191,7 @@ describe('file-helpers', () => {
 
     it('should support working directory', () => {
       const output = commandOutput('pwd', [], tempDir);
-      expect(output).toBe(tempDir);
+      expect(output).toBe(fs.realpathSync(tempDir));
     });
   });
 });
