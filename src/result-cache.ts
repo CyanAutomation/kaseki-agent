@@ -8,6 +8,8 @@ interface CacheEntry {
   content: string;
   timestamp: number;
   size: number;
+  mtimeMs: number;
+  inode?: number;
 }
 
 /**
@@ -33,10 +35,24 @@ export class ResultCache {
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < this.ttlMs) {
-        return cached.content;
+        try {
+          const stat = fs.statSync(filePath);
+          const inode = typeof stat.ino === 'number' ? stat.ino : undefined;
+          const unchanged =
+            stat.mtimeMs === cached.mtimeMs &&
+            stat.size === cached.size &&
+            (cached.inode === undefined || inode === cached.inode);
+
+          if (unchanged) {
+            return cached.content;
+          }
+        } catch {
+          return null;
+        }
+      } else {
+        // Expired, remove from cache
+        this.cache.delete(filePath);
       }
-      // Expired, remove from cache
-      this.cache.delete(filePath);
     }
 
     // Load from disk
@@ -45,13 +61,13 @@ export class ResultCache {
     }
 
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
       const stat = fs.statSync(filePath);
+      const content = fs.readFileSync(filePath, 'utf-8');
 
       // Only cache reasonable-sized files to avoid memory bloat
       if (stat.size < 10 * 1024 * 1024) {
         // 10 MB limit per file
-        this.set(filePath, content, stat.size);
+        this.set(filePath, content, stat.size, stat.mtimeMs, typeof stat.ino === 'number' ? stat.ino : undefined);
       }
 
       return content;
@@ -63,7 +79,7 @@ export class ResultCache {
   /**
    * Set a cache entry.
    */
-  private set(filePath: string, content: string, size: number): void {
+  private set(filePath: string, content: string, size: number, mtimeMs: number, inode?: number): void {
     // Evict oldest entry if cache is full
     if (this.cache.size >= this.maxEntries) {
       const oldest = Array.from(this.cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
@@ -76,6 +92,8 @@ export class ResultCache {
       content,
       timestamp: Date.now(),
       size,
+      mtimeMs,
+      inode,
     });
   }
 
