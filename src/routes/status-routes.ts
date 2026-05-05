@@ -72,7 +72,8 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
       response.elapsedSeconds = Math.round(elapsed / 1000);
 
       // Calculate timeout risk
-      const timeoutMs = config.agentTimeoutSeconds * 1000;
+      const timeoutSeconds = job.effectiveTimeoutSeconds ?? config.agentTimeoutSeconds;
+      const timeoutMs = timeoutSeconds * 1000;
       response.timeoutRiskPercent = Math.round((elapsed / timeoutMs) * 100);
     }
 

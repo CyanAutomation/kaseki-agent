@@ -53,7 +53,7 @@ describe('kaseki-api-config load configuration', () => {
 
     expect(config.port).toBe(8080); // default
     expect(config.maxConcurrentRuns).toBe(3); // default
-    expect(config.agentTimeoutSeconds).toBe(1200); // default
+    expect(config.agentTimeoutSeconds).toBe(1800); // default
     expect(config.maxDiffBytes).toBe(200000); // default
     expect(config.defaultTaskMode).toBe('patch'); // default
     expect(config.logLevel).toBe('info'); // default
