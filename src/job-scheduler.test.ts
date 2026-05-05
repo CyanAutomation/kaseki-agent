@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import * as path from 'path';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
 
@@ -130,6 +131,71 @@ describe('JobScheduler timeout lifecycle', () => {
       }),
     );
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
+  });
+
+  test('hydrates GitHub App ID values from configured secret files for controller runs', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+    const secretsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-github-secrets-'));
+    const appIdFile = path.join(secretsDir, 'github_app_id');
+    const clientIdFile = path.join(secretsDir, 'github_client_id');
+    const previousEnv = {
+      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
+      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
+      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
+      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
+    };
+    fs.writeFileSync(appIdFile, '12345\n');
+    fs.writeFileSync(clientIdFile, 'Iv123client\n');
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_CLIENT_ID;
+    process.env.GITHUB_APP_ID_FILE = appIdFile;
+    process.env.GITHUB_APP_CLIENT_ID_FILE = clientIdFile;
+
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir,
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 200000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager()
+      );
+
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'bash',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            GITHUB_APP_ID: '12345',
+            GITHUB_APP_CLIENT_ID: 'Iv123client',
+            GITHUB_APP_ID_FILE: appIdFile,
+            GITHUB_APP_CLIENT_ID_FILE: clientIdFile,
+          }),
+        }),
+      );
+    } finally {
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+      fs.rmSync(secretsDir, { recursive: true, force: true });
+    }
   });
 
   test('uses configured default timeout when request timeoutSeconds is omitted', async () => {

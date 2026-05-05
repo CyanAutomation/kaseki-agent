@@ -33,6 +33,9 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
 | `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error |
+| `GITHUB_APP_ID_FILE` | — | Path to file containing GitHub App ID for PR creation |
+| `GITHUB_APP_CLIENT_ID_FILE` | — | Path to file containing GitHub App Client ID |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | — | Path to GitHub App private key file; preferred over inline private key env |
 
 ## Authentication
 
@@ -110,6 +113,11 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 If Docker socket access is denied, the response includes remediation such as adding `group_add: ["${DOCKER_GID:-985}"]` to the API container.
+
+When GitHub App settings are present, preflight also validates that the App ID,
+Client ID, and private key are readable and structurally valid. A partial GitHub
+configuration returns `503` so controllers can fail early before starting a run
+that cannot publish its patch.
 
 ### Readiness Check
 

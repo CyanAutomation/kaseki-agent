@@ -256,6 +256,7 @@ export class JobScheduler {
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
+    this.populateGitHubAppEnv(env);
 
     if (job.request.startupCheck) {
       env.KASEKI_DRY_RUN = '1';
@@ -407,6 +408,40 @@ export class JobScheduler {
         completedAt: new Date(),
       });
     });
+  }
+
+  private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
+    const githubAppId = this.readSecretValue(env.GITHUB_APP_ID, env.GITHUB_APP_ID_FILE);
+    if (githubAppId) {
+      env.GITHUB_APP_ID = githubAppId;
+    }
+
+    const githubClientId = this.readSecretValue(env.GITHUB_APP_CLIENT_ID, env.GITHUB_APP_CLIENT_ID_FILE);
+    if (githubClientId) {
+      env.GITHUB_APP_CLIENT_ID = githubClientId;
+    }
+
+    if (!env.GITHUB_APP_PRIVATE_KEY && env.GITHUB_APP_PRIVATE_KEY_FILE && !fs.existsSync(env.GITHUB_APP_PRIVATE_KEY_FILE)) {
+      this.logger.event('github_app_private_key_file_unreadable', {
+        path: env.GITHUB_APP_PRIVATE_KEY_FILE,
+      });
+    }
+  }
+
+  private readSecretValue(inlineValue?: string, filePath?: string): string | undefined {
+    const trimmedInline = inlineValue?.trim();
+    if (trimmedInline) {
+      return trimmedInline;
+    }
+    if (!filePath) {
+      return undefined;
+    }
+    try {
+      const value = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '').trim();
+      return value || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private finalizeJobIfNeeded(job: Job, updates: Partial<Job>): void {
