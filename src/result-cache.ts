@@ -47,7 +47,8 @@ export class ResultCache {
             return cached.content;
           }
         } catch {
-          return null;
+          // Fall through to reload from disk
+        }
         }
       } else {
         // Expired, remove from cache
