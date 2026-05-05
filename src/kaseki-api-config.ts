@@ -36,7 +36,7 @@ export function loadConfig(): KasekiApiConfig {
     throw new Error(`KASEKI_API_MAX_CONCURRENT_RUNS must be >= 1, got: ${process.env.KASEKI_API_MAX_CONCURRENT_RUNS}`);
   }
 
-  const agentTimeoutSeconds = parseInt(process.env.KASEKI_AGENT_TIMEOUT_SECONDS || '1200', 10);
+  const agentTimeoutSeconds = parseInt(process.env.KASEKI_AGENT_TIMEOUT_SECONDS || '1800', 10);
   if (isNaN(agentTimeoutSeconds) || agentTimeoutSeconds < 1) {
     throw new Error(
       `KASEKI_AGENT_TIMEOUT_SECONDS must be >= 1, got: ${process.env.KASEKI_AGENT_TIMEOUT_SECONDS}`
