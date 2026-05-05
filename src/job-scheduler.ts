@@ -1,4 +1,4 @@
-import { ChildProcess, spawn, spawnSync } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +8,7 @@ import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
+import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
@@ -703,15 +704,11 @@ export class JobScheduler {
     if (!/^kaseki-\d+$/.test(id)) {
       return { attempted: false, ok: false, detail: 'Invalid Kaseki container id.' };
     }
-    const result = spawnSync('docker', ['rm', '-f', id], {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    const detail = `${result.stdout || ''}${result.stderr || ''}${result.error?.message || ''}`.trim();
+    const result = execSubprocess('docker', ['rm', '-f', id]);
     return {
       attempted: true,
-      ok: result.status === 0,
-      detail: detail || undefined,
+      ok: result.ok,
+      detail: result.detail || undefined,
     };
   }
 
@@ -719,11 +716,8 @@ export class JobScheduler {
     if (!/^kaseki-\d+$/.test(id)) {
       return null;
     }
-    const result = spawnSync('docker', ['logs', '--tail', String(lines), id], {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    const output = `${result.stdout || ''}${result.stderr || ''}`;
+    const result = execSubprocess('docker', ['logs', '--tail', String(lines), id]);
+    const output = [result.stdout || '', result.stderr || ''].join('');
     return output.trim().length > 0 ? output : null;
   }
 
