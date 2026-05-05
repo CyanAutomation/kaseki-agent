@@ -20,7 +20,10 @@ export class MetricsRegistry {
     this.durationCount += 1;
     for (let i = 0; i < this.durationBuckets.length; i += 1) {
       if (value <= this.durationBuckets[i]) {
-        this.durationBucketCounts[i] += 1;
+        for (let j = i; j < this.durationBuckets.length; j += 1) {
+          this.durationBucketCounts[j] += 1;
+        }
+        break;
       }
     }
   }
