@@ -22,6 +22,7 @@ import { createStatusRoutes } from './routes/status-routes';
 import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
+import { metricsRegistry } from './metrics';
 
 function isUtf8ContinuationByte(byte: number): boolean {
   return (byte & 0xc0) === 0x80;
@@ -338,7 +339,7 @@ export function createApiRouter(
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
     // Skip auth for health check
-    if (req.path === '/health') {
+    if (req.path === '/health' || req.path === '/ready') {
       return next();
     }
 
@@ -383,6 +384,23 @@ export function createApiRouter(
       queue: queueStatus,
       errors: errors.length > 0 ? errors : undefined,
     });
+  });
+
+  router.get('/ready', (_req: Request, res: Response) => {
+    const readiness = scheduler.getReadiness();
+    if (readiness.ready) {
+      return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+    }
+    return res.status(503).json({
+      status: 'not_ready',
+      timestamp: new Date().toISOString(),
+      reasons: readiness.reasons,
+    });
+  });
+
+  router.get('/metrics', (_req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.status(200).send(metricsRegistry.renderPrometheus());
   });
 
   /**
