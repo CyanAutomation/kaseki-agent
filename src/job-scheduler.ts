@@ -209,8 +209,10 @@ export class JobScheduler {
    * Execute a single job.
    */
   private executeJob(job: Job): void {
+    const effectiveTimeoutSeconds = job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
     job.status = 'running';
     job.startedAt = new Date();
+    job.effectiveTimeoutSeconds = effectiveTimeoutSeconds;
     job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
 
@@ -243,7 +245,7 @@ export class JobScheduler {
       KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
-      KASEKI_AGENT_TIMEOUT_SECONDS: String(this.config.agentTimeoutSeconds),
+      KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
 
     if (job.request.startupCheck) {
@@ -311,7 +313,7 @@ export class JobScheduler {
         this.timeoutKillTimers.delete(job.id);
       }, JobScheduler.SHUTDOWN_GRACE_MS);
       this.timeoutKillTimers.set(job.id, timeoutKillTimer);
-    }, this.config.agentTimeoutSeconds * 1000);
+    }, effectiveTimeoutSeconds * 1000);
 
     job.timeout = timeout;
 
@@ -335,7 +337,7 @@ export class JobScheduler {
         updates.status = 'failed';
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
-        updates.error = `Agent timeout after ${this.config.agentTimeoutSeconds} seconds`;
+        updates.error = `Agent timeout after ${effectiveTimeoutSeconds} seconds`;
         const cleanup = this.cleanupContainer(job.id);
         this.writeApiFailureArtifacts(job, cleanup);
         this.logger.event('job_failed', {

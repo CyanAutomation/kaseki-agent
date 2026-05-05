@@ -128,6 +128,79 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
+  test('uses configured default timeout when request timeoutSeconds is omitted', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 42,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(job.effectiveTimeoutSeconds).toBe(42);
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_AGENT_TIMEOUT_SECONDS: '42',
+        }),
+      }),
+    );
+  });
+
+  test('uses explicit request timeoutSeconds when provided', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 42,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      timeoutSeconds: 90,
+    });
+
+    expect(job.effectiveTimeoutSeconds).toBe(90);
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_AGENT_TIMEOUT_SECONDS: '90',
+        }),
+      }),
+    );
+  });
+
   test('startup check requests run the worker in dry-run inspect mode', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
