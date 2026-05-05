@@ -8,6 +8,7 @@ import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
+import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -40,6 +41,7 @@ export class JobScheduler {
   private indexLockPath: string;
   private logger: EventLogger;
   private webhookManager: WebhookManager;
+  private failureArtifactWriter: FailureArtifactWriter;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
   constructor(config: KasekiApiConfig, webhookManager: WebhookManager) {
@@ -50,6 +52,7 @@ export class JobScheduler {
     this.indexLockPath = path.join(config.resultsDir, '.kaseki-api-jobs.lock');
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
+    this.failureArtifactWriter = new FailureArtifactWriter(config.resultsDir);
     this.loadPersistedJobs();
     this.persistJobs();
     this.processQueue();
@@ -144,7 +147,7 @@ export class JobScheduler {
       job.error = 'Job cancelled before execution';
       job.completedAt = completedAt;
       job.finalized = true;
-      this.writeApiFailureArtifacts(job, {
+      this.failureArtifactWriter.writeFailureArtifacts(job, {
         attempted: false,
         detail: 'Job never started; no worker container was created.',
       });
@@ -186,7 +189,7 @@ export class JobScheduler {
       completedAt,
     };
     this.finalizeJobIfNeeded(job, updates);
-    this.writeApiFailureArtifacts(job, cleanup);
+    this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
 
     this.logger.event('job_cancelled', {
       jobId: id,
@@ -363,7 +366,7 @@ export class JobScheduler {
         updates.status = 'failed';
         this.parseFailureFromResults(job);
         this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
-        this.writeApiFailureArtifacts(job, { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' }, {
+        this.failureArtifactWriter.writeFailureArtifacts(job, { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' }, {
           stdoutTail,
           stderrTail,
           lastStage: 'worker_exit',
@@ -380,7 +383,7 @@ export class JobScheduler {
       this.finalizeJobIfNeeded(job, updates);
       if (timedOut) {
         const cleanup = this.cleanupContainer(job.id);
-        this.writeApiFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
+        this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
       }
     });
 
@@ -694,146 +697,6 @@ export class JobScheduler {
       // Missing/unreadable results dir is handled elsewhere; keep allocation best-effort.
     }
     return maxId + 1;
-  }
-
-  private writeApiFailureArtifacts(
-    job: Job,
-    cleanup: CleanupResult,
-    options?: { stdoutTail?: Buffer<ArrayBufferLike>; stderrTail?: Buffer<ArrayBufferLike>; lastStage?: string }
-  ): void {
-    if (job.status !== 'failed' && !job.failureClass) {
-      return;
-    }
-
-    const resultDir = this.getResultDir(job.id);
-    const now = (job.completedAt || new Date()).toISOString();
-    try {
-      fs.mkdirSync(resultDir, { recursive: true });
-
-      const failurePath = path.join(resultDir, 'failure.json');
-      const shouldWriteFailure = !fs.existsSync(failurePath) || fs.statSync(failurePath).size === 0;
-      if (shouldWriteFailure) {
-        const payload = {
-          failureClass: job.failureClass || 'api_finalized',
-          error: job.error || 'Job failed before runner failure metadata was written',
-          exitCode: job.exitCode,
-          cancelledAt: job.failureClass === 'cancelled' ? now : undefined,
-          completedAt: now,
-          apiFinalized: true,
-          cleanup,
-        };
-        fs.writeFileSync(failurePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
-      }
-
-      const summaryPath = path.join(resultDir, 'result-summary.md');
-      const shouldWriteSummary = !fs.existsSync(summaryPath) || fs.statSync(summaryPath).size === 0;
-      if (shouldWriteSummary) {
-        fs.writeFileSync(
-          summaryPath,
-          [
-            `# ${job.id} failed`,
-            '',
-            `Failure class: ${job.failureClass || 'unknown'}`,
-            `Exit code: ${job.exitCode ?? 'unknown'}`,
-            `Error: ${job.error || 'unknown'}`,
-            `Completed at: ${now}`,
-            '',
-          ].join('\n'),
-          'utf-8'
-        );
-      }
-
-      const analysisPath = path.join(resultDir, 'analysis.md');
-      const shouldWriteAnalysis = !fs.existsSync(analysisPath) || fs.statSync(analysisPath).size === 0;
-      if (shouldWriteAnalysis) {
-        fs.writeFileSync(
-          analysisPath,
-          [
-            `# Failure analysis for ${job.id}`,
-            '',
-            '## Completed work',
-            `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
-            '- API finalization fallback written: yes',
-            '',
-            '## Failure classification',
-            `- Failure class: ${job.failureClass || 'unknown'}`,
-            `- Exit code: ${job.exitCode ?? 'unknown'}`,
-            `- Error: ${job.error || 'unknown'}`,
-            `- Last stage: ${options?.lastStage || 'unknown'}`,
-            '',
-            '## Known warnings',
-            `- Container cleanup attempted: ${cleanup.attempted ? 'yes' : 'no'}`,
-            `- Container cleanup ok: ${cleanup.ok ? 'yes' : 'no'}`,
-            `- Cleanup detail: ${cleanup.detail || 'none'}`,
-            '',
-            `Completed at: ${now}`,
-            '',
-          ].join('\n'),
-          'utf-8'
-        );
-      }
-
-      const metadataPath = path.join(resultDir, 'metadata.json');
-      const shouldWriteMetadata = !fs.existsSync(metadataPath) || fs.statSync(metadataPath).size === 0;
-      if (shouldWriteMetadata) {
-        const startedAt = job.startedAt?.toISOString();
-        const completedAt = job.completedAt?.toISOString() || now;
-        const durationSeconds =
-          job.startedAt && (job.completedAt || now)
-            ? Math.max(0, Math.round((new Date(completedAt).getTime() - job.startedAt.getTime()) / 1000))
-            : undefined;
-        const payload = {
-          id: job.id,
-          status: job.status,
-          timestamps: {
-            createdAt: job.createdAt.toISOString(),
-            startedAt,
-            completedAt,
-          },
-          durations: {
-            totalSeconds: durationSeconds,
-          },
-          runtime: {
-            timeoutSeconds: job.effectiveTimeoutSeconds ?? this.config.agentTimeoutSeconds,
-            pid: job.processId,
-            nodeVersion: process.version,
-            platform: process.platform,
-          },
-          env: {
-            taskMode: job.request.taskMode || this.config.defaultTaskMode,
-            startupCheck: !!job.request.startupCheck,
-          },
-          failure: {
-            failureClass: job.failureClass || 'api_finalized',
-            error: job.error || 'Job failed before runner failure metadata was written',
-            exitCode: job.exitCode,
-          },
-        };
-        fs.writeFileSync(metadataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
-      }
-
-      const stderrPath = path.join(resultDir, 'stderr.log');
-      const shouldWriteStderr = !fs.existsSync(stderrPath) || fs.statSync(stderrPath).size === 0;
-      if (shouldWriteStderr) {
-        const stderrTail = options?.stderrTail ? this.decodeUtf8Tail(options.stderrTail) : '';
-        const stdoutTail = options?.stdoutTail ? this.decodeUtf8Tail(options.stdoutTail) : '';
-        const content = [
-          'stderr fallback generated by API finalization',
-          `failureClass=${job.failureClass || 'unknown'} exitCode=${job.exitCode ?? 'unknown'}`,
-          `error=${job.error || 'unknown'}`,
-          '',
-          stderrTail ? '--- captured stderr tail ---' : '',
-          stderrTail,
-          stdoutTail ? '--- captured stdout tail ---' : '',
-          stdoutTail,
-        ]
-          .filter(Boolean)
-          .join('\n');
-        fs.writeFileSync(stderrPath, `${content}\n`, 'utf-8');
-      }
-    } catch {
-      // Best effort diagnostics; never mask the primary job failure.
-    }
   }
 
   private cleanupContainer(id: string): CleanupResult {
