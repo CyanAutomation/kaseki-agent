@@ -38,14 +38,14 @@ const StatusResponseSchema = z.object({
   resultDir: z.string().optional(),
   progress: StructuredProgressSchema.optional(),
   artifacts: z.object({
-    metadataJson: z.boolean().optional(),
-    analysisMd: z.boolean().optional(),
-    resultSummaryMd: z.boolean().optional(),
-    failureJson: z.boolean().optional(),
-    stderrLog: z.boolean().optional(),
-    availableFiles: z.array(z.string()).optional(),
+    metadataJson: z.boolean(),
+    analysisMd: z.boolean(),
+    resultSummaryMd: z.boolean(),
+    failureJson: z.boolean(),
+    stderrLog: z.boolean(),
+    availableFiles: z.array(z.string()),
   }).optional(),
-  diagnosticEntryPoint: z.string().optional(),
+  diagnosticEntryPoint: z.enum(['failure.json', 'analysis.md', 'result-summary.md']).optional(),
 });
 
 const RunResponseSchema = z.object({
@@ -67,9 +67,24 @@ const AnalysisResponseSchema = z.object({
   elapsedSeconds: z.number().optional(),
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
-  changes: z.record(z.unknown()).optional(),
-  validation: z.record(z.unknown()).optional(),
+  metadata: z.object({
+    model: z.string().optional(),
+    instance: z.string().optional(),
+    repo: z.string().optional(),
+    ref: z.string().optional(),
+  }).optional(),
+  changes: z.object({
+    changedFiles: z.array(z.string()),
+    diffSize: z.number(),
+  }).optional(),
+  validation: z.object({
+    passed: z.boolean(),
+    commandResults: z.array(z.object({
+      command: z.string(),
+      exitCode: z.number(),
+      elapsed: z.number(),
+    })),
+  }).optional(),
   errors: z.array(z.string()).optional(),
 });
 
@@ -411,7 +426,6 @@ export class KasekiApiClient {
     const data = await res.json();
     return RunsListResponseSchema.parse(data);
   }
-
 
   /**
    * Poll a run until completion.
