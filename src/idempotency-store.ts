@@ -44,6 +44,8 @@ export class IdempotencyStore {
   private logger: EventLogger;
   private ttlHours: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private lastReadPosition = 0;
+  private readRemainder = '';
 
   constructor(resultsDir: string, ttlHours: number = 24) {
     this.persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
@@ -144,39 +146,39 @@ export class IdempotencyStore {
     }
   }
 
-private acquireLock(): void {
-  const maxRetries = 600; // 3 seconds total (600 * 5ms)
-  const staleThresholdMs = 30000; // 30 seconds
-  let retries = 0;
-  
-  while (retries < maxRetries) {
-    try {
-      fs.mkdirSync(this.lockPath);
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw error;
-      }
-      
-      // Check for stale lock
+  private acquireLock(): void {
+    const maxRetries = 600; // 3 seconds total (600 * 5ms)
+    const staleThresholdMs = 30000; // 30 seconds
+    let retries = 0;
+
+    while (retries < maxRetries) {
       try {
-        const stats = fs.statSync(this.lockPath);
-        if (Date.now() - stats.mtimeMs > staleThresholdMs) {
-          fs.rmdirSync(this.lockPath);
-          continue; // Try again without incrementing retry count
+        fs.mkdirSync(this.lockPath);
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
         }
-      } catch {
-        // Lock was removed, try again
-        continue;
+
+          if (Date.now() - stats.mtimeMs > staleThresholdMs) {
+            fs.rmdirSync(this.lockPath);
+            continue;
+          }
+        } catch {
+          continue;
+        }
+
+        this.sleepSync(5);
+        retries++;
       }
-      
-      this.sleepSync(5);
-      retries++;
     }
+
+    throw new Error('Failed to acquire lock after maximum retries');
   }
-  
-  throw new Error('Failed to acquire lock after maximum retries');
-}
+    }
+
+    throw new Error('Failed to acquire lock after maximum retries');
+  }
 
   private releaseLock(): void {
     try {
@@ -186,12 +188,12 @@ private acquireLock(): void {
     }
   }
 
-private sleepSync(ms: number): void {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    // Busy wait
+  private sleepSync(ms: number): void {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
+      // Busy wait
+    }
   }
-}
 
   /**
    * Persist a single entry to disk (append-only log).
@@ -221,15 +223,44 @@ private sleepSync(ms: number): void {
    */
   private loadFromDisk(): void {
     try {
-      this.cache.clear();
       if (!fs.existsSync(this.persistencePath)) {
         return;
       }
 
-      const content = fs.readFileSync(this.persistencePath, 'utf-8');
-      const lines = content.split('\n').filter((line) => line.trim());
+      const stats = fs.statSync(this.persistencePath);
+      if (stats.size < this.lastReadPosition) {
+        this.lastReadPosition = 0;
+        this.readRemainder = '';
+        this.cache.clear();
+      }
+
+      if (stats.size === this.lastReadPosition) {
+        return;
+      }
+
+      const fileDescriptor = fs.openSync(this.persistencePath, 'r');
+      try {
+        const bytesToRead = stats.size - this.lastReadPosition;
+        const buffer = Buffer.alloc(bytesToRead);
+        fs.readSync(fileDescriptor, buffer, 0, bytesToRead, this.lastReadPosition);
+        this.lastReadPosition = stats.size;
+
+        const content = this.readRemainder + buffer.toString('utf-8');
+        const lines = content.split('\n');
+        this.readRemainder = lines.pop() ?? '';
+      } finally {
+        fs.closeSync(fileDescriptor);
+      }
+      this.lastReadPosition = stats.size;
+
+      const content = this.readRemainder + buffer.toString('utf-8');
+      const lines = content.split('\n');
+      this.readRemainder = lines.pop() ?? '';
 
       for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
         try {
           const entry = JSON.parse(line) as PersistedIdempotencyEntry;
 
