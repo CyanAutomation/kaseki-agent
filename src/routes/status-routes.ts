@@ -7,6 +7,33 @@ import { StatusResponse, RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 
 const STATUS_KEY_FILES = ['metadata.json', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
+type ProgressV2 = NonNullable<StatusResponse['progressV2']>;
+
+function toProgressV2(event: Record<string, unknown>): ProgressV2 | null {
+  const stage = typeof event.stage === 'string' ? event.stage.trim() : '';
+  if (!stage) {
+    return null;
+  }
+
+  const message =
+    typeof event.message === 'string'
+      ? event.message
+      : typeof event.detail === 'string'
+        ? event.detail
+        : undefined;
+
+  const numericPercent = typeof event.percentComplete === 'number' ? event.percentComplete : undefined;
+  const percentFromPercent = typeof event.percent === 'number' ? event.percent : undefined;
+  const percentComplete = numericPercent ?? percentFromPercent;
+  const updatedAt = typeof event.updatedAt === 'string' ? event.updatedAt : typeof event.timestamp === 'string' ? event.timestamp : undefined;
+
+  return {
+    stage,
+    percentComplete,
+    message: message || stage,
+    updatedAt,
+  };
+}
 
 function isNonEmptyFile(filePath: string): boolean {
   try {
@@ -85,13 +112,23 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
           const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
           if (lines.length > 0) {
             const lastEvent = JSON.parse(lines[lines.length - 1]);
-            response.progress = lastEvent.detail || lastEvent.stage;
+            const progressV2 = toProgressV2(lastEvent);
+            if (progressV2) {
+              response.progressV2 = progressV2;
+              response.progress = progressV2.message || progressV2.stage;
+            }
           }
         } else if (typeof scheduler.getLiveProgressEvents === 'function') {
           const liveEvents = scheduler.getLiveProgressEvents(job.id, 1);
           const lastEvent = liveEvents[liveEvents.length - 1];
           if (lastEvent) {
-            response.progress = String(lastEvent.message || lastEvent.stage || 'running');
+            const progressV2 = toProgressV2(lastEvent);
+            if (progressV2) {
+              response.progressV2 = progressV2;
+              response.progress = progressV2.message || progressV2.stage;
+            } else {
+              response.progress = String(lastEvent.message || lastEvent.stage || 'running');
+            }
           }
         }
       } catch {

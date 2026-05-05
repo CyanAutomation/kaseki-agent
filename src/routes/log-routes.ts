@@ -76,6 +76,22 @@ function readTailBytes(logFile: string, size: number, maxSize: number): Buffer {
   return truncated;
 }
 
+function normalizeProgressEvent(event: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...event };
+  if (typeof normalized.stage === 'string') {
+    if (typeof normalized.message !== 'string' && typeof normalized.detail === 'string') {
+      normalized.message = normalized.detail;
+    }
+    if (typeof normalized.message !== 'string') {
+      normalized.message = normalized.stage;
+    }
+  }
+  if (typeof normalized.updatedAt !== 'string' && typeof normalized.timestamp === 'string') {
+    normalized.updatedAt = normalized.timestamp;
+  }
+  return normalized;
+}
+
 /**
  * Create log-related routes (progress, events, logs, analysis).
  */
@@ -119,7 +135,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
             const newLines = lines.slice(lastEventCount);
             for (const line of newLines) {
               try {
-                const event = JSON.parse(line);
+                const event = normalizeProgressEvent(JSON.parse(line));
                 res.write(`data: ${JSON.stringify(event)}\n\n`);
               } catch {
                 // Skip invalid JSON lines
@@ -180,7 +196,9 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       const tailParam = Number(req.query.tail ?? 25);
       const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 25;
       const events =
-        typeof scheduler.getLiveProgressEvents === 'function' ? scheduler.getLiveProgressEvents(job.id, tail) : [];
+        typeof scheduler.getLiveProgressEvents === 'function'
+          ? scheduler.getLiveProgressEvents(job.id, tail).map((event) => normalizeProgressEvent(event))
+          : [];
       if (events.length > 0) {
         return res.json({
           id: job.id,
@@ -202,7 +220,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       const events = selectedLines
         .map((line) => {
           try {
-            return JSON.parse(line);
+            return normalizeProgressEvent(JSON.parse(line));
           } catch {
             return null;
           }
@@ -243,7 +261,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
         const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
         for (const line of lines) {
           try {
-            events.push(JSON.parse(line));
+            events.push(normalizeProgressEvent(JSON.parse(line)));
           } catch {
             // Skip partial or malformed progress records.
           }
@@ -257,7 +275,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
     if (job.status === 'running' && typeof scheduler.getLiveProgressEvents === 'function') {
       const liveEvents = scheduler.getLiveProgressEvents(job.id, tail);
       for (const event of liveEvents) {
-        events.push(event);
+        events.push(normalizeProgressEvent(event));
       }
       if (liveEvents.length > 0) {
         sources.add('docker-logs');
