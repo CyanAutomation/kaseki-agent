@@ -115,6 +115,10 @@ export class WebhookManager extends EventEmitter {
     }
   }
 
+  isHealthy(): boolean {
+    return this.processInterval !== null && this.activeDeliveries <= this.maxConcurrentDeliveries;
+  }
+
   /**
    * Process the delivery queue.
    */

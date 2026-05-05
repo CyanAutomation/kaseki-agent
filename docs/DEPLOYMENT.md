@@ -316,13 +316,34 @@ journalctl -u kaseki-api -n 100
 journalctl -u kaseki-api -f
 ```
 
-### Prometheus Metrics (Future)
+### Prometheus Metrics
 
 Metrics endpoint coming in Phase 8:
 
 ```bash
-curl http://localhost:8080/metrics
+curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/metrics
 ```
+
+Example Prometheus scrape config:
+```yaml
+scrape_configs:
+  - job_name: kaseki_api
+    metrics_path: /api/metrics
+    scheme: http
+    static_configs:
+      - targets: ['kaseki-api:8080']
+    authorization:
+      credentials: ${KASEKI_API_KEY}
+```
+
+Readiness probe (no auth required):
+```bash
+curl -f http://localhost:8080/ready
+# or
+curl -f http://localhost:8080/api/ready
+```
+`/ready` returns `503` with machine-readable `reasons` when dependencies like results-dir writability,
+scheduler queue introspection, or webhook processing health are unavailable.
 
 ---
 
