@@ -19,6 +19,8 @@ KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
+KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
+KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -43,6 +45,7 @@ DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
+KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
@@ -285,7 +288,12 @@ FAILURE
 }
 
 collect_git_artifacts() {
+  DIFF_NONEMPTY=false
   if [ -d /workspace/repo/.git ]; then
+    while IFS= read -r untracked_file || [ -n "$untracked_file" ]; do
+      [ -z "$untracked_file" ] && continue
+      git -C /workspace/repo add -N -- "$untracked_file" 2>/dev/null || true
+    done < <(git -C /workspace/repo ls-files --others --exclude-standard 2>/dev/null || true)
     git -C /workspace/repo status --short > /results/git.status 2>/dev/null || true
     git -C /workspace/repo diff -- . > /results/git.diff 2>/dev/null || true
     git -C /workspace/repo diff --name-only -- . > /results/changed-files.txt 2>/dev/null || true
@@ -296,6 +304,41 @@ collect_git_artifacts() {
     : > /results/git.status
     : > /results/git.diff
     : > /results/changed-files.txt
+  fi
+}
+
+build_allowlist_regex() {
+  printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" \
+    | tr ' ' '\n' \
+    | sed '/^$/d' \
+    | sed 's/[.[\*^$()+?{}|\\]/\\&/g' \
+    | paste -sd '|' -
+}
+
+restore_disallowed_changes() {
+  if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
+    return 0
+  fi
+
+  local allowlist_regex restored_any
+  allowlist_regex="$(build_allowlist_regex)"
+  [ -z "$allowlist_regex" ] && return 0
+  restored_any=0
+
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    if printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+      continue
+    fi
+    printf 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a /results/quality.log
+    emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
+    git -C /workspace/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+    git -C /workspace/repo clean -f -- "$changed_file" 2>/dev/null || true
+    restored_any=1
+  done < /results/changed-files.txt
+
+  if [ "$restored_any" -eq 1 ]; then
+    collect_git_artifacts
   fi
 }
 
@@ -380,6 +423,26 @@ set_dependency_cache_status() {
   printf '%s\t%s\n' "$status" "$detail" >> "$DEPENDENCY_CACHE_LOG"
 }
 
+build_agent_prompt() {
+  if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
+    printf '%s' "$TASK_PROMPT"
+    return 0
+  fi
+
+  cat <<EOF
+You are editing inside a Kaseki-managed ephemeral workspace.
+
+Operational guardrails:
+- Do not run git add, git commit, git push, gh, hub, or create pull requests. Kaseki owns commit, push, and PR creation after validation passes.
+- Do not run npm install, npm ci, yarn install, pnpm install, or package-manager commands that modify lockfiles. Kaseki owns dependency setup and validation.
+- Keep edits limited to the requested source and test files. If a tool or command changes unrelated files, restore those unrelated files before finishing.
+- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+
+Task:
+$TASK_PROMPT
+EOF
+}
+
 run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data
   
@@ -431,7 +494,19 @@ run_github_operations() {
   
   # Commit changes (git should already have changes from pi agent)
   printf 'Committing changes...\n' | tee -a /results/git-push.log
-  git add -A
+  if [ ! -s /results/changed-files.txt ]; then
+    printf 'No changed files to stage\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  fi
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    git add -- "$changed_file" || {
+      printf 'Failed to stage changed file: %s\n' "$changed_file" | tee -a /results/git-push.log >&2
+      GITHUB_PUSH_EXIT=7
+      return 7
+    }
+  done < /results/changed-files.txt
   if ! git commit -m "Kaseki: $INSTANCE_NAME"; then
     printf 'No changes to commit or commit failed\n' | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=7
@@ -575,7 +650,10 @@ prepare_dependencies() {
   cache_reused="false"
   cache_source="none"
   install_mode="skipped"
-  install_flags="--omit=dev"
+  install_flags=""
+  if [ "$KASEKI_NPM_OMIT_DEV" = "1" ]; then
+    install_flags="--omit=dev"
+  fi
   if [ "$KASEKI_INSTALL_IGNORE_SCRIPTS" = "1" ]; then
     install_flags="$install_flags --ignore-scripts"
   fi
@@ -618,6 +696,14 @@ prepare_dependencies() {
     fi
     cache_reused="true"
     cache_source="workspace"
+    if ! npm ls --depth=0 >/dev/null 2>&1; then
+      printf 'Dependency cache status: workspace cache failed npm ls validation; reinstalling.\n'
+      set_dependency_cache_status "workspace-cache-invalid" "lock_hash=$lock_hash cache_key=$cache_key reason=npm_ls_failed"
+      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=npm_ls_failed" "location=$workspace_cache_dir"
+      rm -rf node_modules
+      cache_reused="false"
+      cache_source="none"
+    fi
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
     set_dependency_cache_status "image-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
@@ -628,6 +714,14 @@ prepare_dependencies() {
     fi
     cache_reused="true"
     cache_source="image"
+    if ! npm ls --depth=0 >/dev/null 2>&1; then
+      printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
+      set_dependency_cache_status "image-cache-invalid" "lock_hash=$lock_hash cache_key=$cache_key reason=npm_ls_failed"
+      emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "reason=npm_ls_failed" "location=$image_cache_dir"
+      rm -rf node_modules
+      cache_reused="false"
+      cache_source="none"
+    fi
   fi
 
   if [ ! -d node_modules ]; then
@@ -636,7 +730,7 @@ prepare_dependencies() {
     emit_event "dependency_cache_decision" "strategy=fresh_install" "reason=no_cache_available" "location=none"
     emit_progress "dependency install" "started cache_hit=false lockfile=$lock_source node_major=$node_major"
     install_start="$(date +%s)"
-    if ! npm ci --prefer-offline --omit=dev $([ "$KASEKI_INSTALL_IGNORE_SCRIPTS" = "1" ] && printf '%s' '--ignore-scripts'); then
+    if ! npm ci --prefer-offline $install_flags; then
       exec {cache_lock_fd}>&-
       return 1
     fi
@@ -711,14 +805,16 @@ else
   set +e
   printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
   export KASEKI_STREAM_PROGRESS
+  agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$TASK_PROMPT" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$agent_prompt" \
     2> >(tee -a /results/pi-stderr.log >&2) \
     | tee "$RAW_EVENTS" \
     | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
   PI_EXIT="${PIPESTATUS[0]}"
+  unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
   unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
   set -e
@@ -848,6 +944,7 @@ set_current_stage "collect agent diff"
 emit_progress "collect agent diff" "started"
 stage_start="$(date +%s)"
 collect_git_artifacts
+restore_disallowed_changes
 record_stage_timing "collect agent diff" 0 "$(($(date +%s) - stage_start))" "diff_nonempty=$DIFF_NONEMPTY"
 emit_progress "collect agent diff" "finished"
 
@@ -867,7 +964,7 @@ emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
 
 # The sed expression is a literal regex character class used to escape allowlist entries.
 # shellcheck disable=SC2016
-allowlist_regex="$(printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" | tr ' ' '\n' | sed '/^$/d' | sed 's/[.[\*^$()+?{}|\\]/\\&/g' | paste -sd '|' -)"
+allowlist_regex="$(build_allowlist_regex)"
 if [ -n "$allowlist_regex" ]; then
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
