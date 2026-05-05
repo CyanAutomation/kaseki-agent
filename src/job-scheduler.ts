@@ -338,8 +338,6 @@ export class JobScheduler {
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
         updates.error = `Agent timeout after ${effectiveTimeoutSeconds} seconds`;
-        const cleanup = this.cleanupContainer(job.id);
-        this.writeApiFailureArtifacts(job, cleanup);
         this.logger.event('job_failed', {
           jobId: job.id,
           failureClass: 'timeout',
@@ -359,6 +357,11 @@ export class JobScheduler {
         updates.status = 'failed';
         this.parseFailureFromResults(job);
         this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
+        this.writeApiFailureArtifacts(job, { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' }, {
+          stdoutTail,
+          stderrTail,
+          lastStage: 'worker_exit',
+        });
         this.logger.event('job_failed', {
           jobId: job.id,
           exitCode: code,
@@ -369,6 +372,10 @@ export class JobScheduler {
 
       }
       this.finalizeJobIfNeeded(job, updates);
+      if (timedOut) {
+        const cleanup = this.cleanupContainer(job.id);
+        this.writeApiFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
+      }
     });
 
     // Handle process error
@@ -673,8 +680,12 @@ export class JobScheduler {
     return maxId + 1;
   }
 
-  private writeApiFailureArtifacts(job: Job, cleanup: CleanupResult): void {
-    if (job.status !== 'failed') {
+  private writeApiFailureArtifacts(
+    job: Job,
+    cleanup: CleanupResult,
+    options?: { stdoutTail?: Buffer<ArrayBufferLike>; stderrTail?: Buffer<ArrayBufferLike>; lastStage?: string }
+  ): void {
+    if (job.status !== 'failed' && !job.failureClass) {
       return;
     }
 
@@ -714,6 +725,95 @@ export class JobScheduler {
           ].join('\n'),
           'utf-8'
         );
+      }
+
+      const analysisPath = path.join(resultDir, 'analysis.md');
+      const shouldWriteAnalysis = !fs.existsSync(analysisPath) || fs.statSync(analysisPath).size === 0;
+      if (shouldWriteAnalysis) {
+        fs.writeFileSync(
+          analysisPath,
+          [
+            `# Failure analysis for ${job.id}`,
+            '',
+            '## Completed work',
+            `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
+            `- API finalization fallback written: yes`,
+            '',
+            '## Failure classification',
+            `- Failure class: ${job.failureClass || 'unknown'}`,
+            `- Exit code: ${job.exitCode ?? 'unknown'}`,
+            `- Error: ${job.error || 'unknown'}`,
+            `- Last stage: ${options?.lastStage || 'unknown'}`,
+            '',
+            '## Known warnings',
+            `- Container cleanup attempted: ${cleanup.attempted ? 'yes' : 'no'}`,
+            `- Container cleanup ok: ${cleanup.ok ? 'yes' : 'no'}`,
+            `- Cleanup detail: ${cleanup.detail || 'none'}`,
+            '',
+            `Completed at: ${now}`,
+            '',
+          ].join('\n'),
+          'utf-8'
+        );
+      }
+
+      const metadataPath = path.join(resultDir, 'metadata.json');
+      const shouldWriteMetadata = !fs.existsSync(metadataPath) || fs.statSync(metadataPath).size === 0;
+      if (shouldWriteMetadata) {
+        const startedAt = job.startedAt?.toISOString();
+        const completedAt = job.completedAt?.toISOString() || now;
+        const durationSeconds =
+          job.startedAt && (job.completedAt || now)
+            ? Math.max(0, Math.round((new Date(completedAt).getTime() - job.startedAt.getTime()) / 1000))
+            : undefined;
+        const payload = {
+          id: job.id,
+          status: job.status,
+          timestamps: {
+            createdAt: job.createdAt.toISOString(),
+            startedAt,
+            completedAt,
+          },
+          durations: {
+            totalSeconds: durationSeconds,
+          },
+          runtime: {
+            timeoutSeconds: job.effectiveTimeoutSeconds ?? this.config.agentTimeoutSeconds,
+            pid: job.processId,
+            nodeVersion: process.version,
+            platform: process.platform,
+          },
+          env: {
+            taskMode: job.request.taskMode || this.config.defaultTaskMode,
+            startupCheck: !!job.request.startupCheck,
+          },
+          failure: {
+            failureClass: job.failureClass || 'api_finalized',
+            error: job.error || 'Job failed before runner failure metadata was written',
+            exitCode: job.exitCode,
+          },
+        };
+        fs.writeFileSync(metadataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+      }
+
+      const stderrPath = path.join(resultDir, 'stderr.log');
+      const shouldWriteStderr = !fs.existsSync(stderrPath) || fs.statSync(stderrPath).size === 0;
+      if (shouldWriteStderr) {
+        const stderrTail = options?.stderrTail ? this.decodeUtf8Tail(options.stderrTail) : '';
+        const stdoutTail = options?.stdoutTail ? this.decodeUtf8Tail(options.stdoutTail) : '';
+        const content = [
+          'stderr fallback generated by API finalization',
+          `failureClass=${job.failureClass || 'unknown'} exitCode=${job.exitCode ?? 'unknown'}`,
+          `error=${job.error || 'unknown'}`,
+          '',
+          stderrTail ? '--- captured stderr tail ---' : '',
+          stderrTail,
+          stdoutTail ? '--- captured stdout tail ---' : '',
+          stdoutTail,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        fs.writeFileSync(stderrPath, `${content}\n`, 'utf-8');
       }
     } catch {
       // Best effort diagnostics; never mask the primary job failure.

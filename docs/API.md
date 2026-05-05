@@ -213,11 +213,13 @@ Compatibility note: the legacy string `progress` field is still returned for one
   "resultDir": "/agents/kaseki-results/kaseki-42",
   "artifacts": {
     "metadataJson": true,
+    "analysisMd": true,
     "resultSummaryMd": true,
     "failureJson": true,
     "stderrLog": true,
     "availableFiles": [
       "metadata.json",
+      "analysis.md",
       "result-summary.md",
       "failure.json",
       "stderr.log"
@@ -235,12 +237,14 @@ Compatibility note: the legacy string `progress` field is still returned for one
 
 For terminal states (`completed` and `failed`), the response includes an `artifacts` object so clients can branch without probing `/api/results/:id/:file` and handling avoidable `404` responses. `availableFiles` is deterministic and ordered as:
 1) `metadata.json`
-2) `result-summary.md`
-3) `failure.json`
-4) `stderr.log`
+2) `analysis.md`
+3) `result-summary.md`
+4) `failure.json`
+5) `stderr.log`
 
 For failed runs, `diagnosticEntryPoint` is included:
 - `failure.json` when present and non-empty
+- otherwise `analysis.md` when present and non-empty
 - otherwise `result-summary.md` when present and non-empty
 
 Zero-byte key artifacts are reported as unavailable, so controller clients can trust artifact hints instead of downloading empty placeholders.
@@ -308,7 +312,7 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 **POST `/api/runs/:id/cancel`**
 
 Cancels a queued or running job. Completed jobs are returned unchanged.
-Cancelled jobs get API-written fallback diagnostics when the worker exits before writing its own final artifacts: `failure.json` and `result-summary.md` are non-empty and include cancellation/error details plus container cleanup status.
+Cancelled jobs get API-written fallback diagnostics when the worker exits before writing its own final artifacts. Guaranteed non-empty files on failure are: `analysis.md`, `metadata.json`, `stderr.log`, `failure.json`, and `result-summary.md` (kept for backward compatibility during migration).
 
 ```bash
 curl -X POST -H "Authorization: Bearer sk-your-api-key" \
@@ -446,6 +450,7 @@ Download specific result artifacts.
 **Allowed Files (always-safe summary artifacts):**
 - `git.diff` — Unified diff of changes
 - `metadata.json` — Full run metadata
+- `analysis.md` — Canonical failure-minimum analysis summary (when run fails)
 - `result-summary.md` — Human-readable summary
 - `pi-events.jsonl` — Pi agent events (newline-delimited JSON)
 - `pi-summary.json` — Pi agent statistics
