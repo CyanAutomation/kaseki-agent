@@ -103,6 +103,71 @@ describe('kaseki-api-routes artifact read behavior', () => {
   });
 });
 
+describe('kaseki-api-routes readiness and metrics endpoints', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-ready-metrics-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('GET /api/ready returns 200 when scheduler dependencies are ready', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.getReadiness.mockReturnValue({ ready: true, reasons: [] });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/ready`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as any;
+      expect(body.status).toBe('ready');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/ready returns 503 with machine-readable reasons when not ready', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.getReadiness.mockReturnValue({ ready: false, reasons: ['results_dir_unwritable:EACCES'] });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/ready`);
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as any;
+      expect(body.status).toBe('not_ready');
+      expect(body.reasons).toContain('results_dir_unwritable:EACCES');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/metrics returns prometheus content type and expected metric keys', async () => {
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/metrics`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/plain');
+      const body = await res.text();
+      expect(body).toContain('kaseki_queue_pending');
+      expect(body).toContain('kaseki_runs_total');
+      expect(body).toContain('kaseki_run_duration_seconds');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
 describe('kaseki-api-routes preflight diagnostics', () => {
   test('classifies Docker socket permission failures with actionable remediation', () => {
     const result = classifyDockerFailure(

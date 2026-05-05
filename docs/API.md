@@ -36,7 +36,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 
 ## Authentication
 
-All endpoints (except `/health` and `/api/health`) require Bearer token authentication:
+All endpoints (except `/health`, `/api/health`, `/ready`, and `/api/ready`) require Bearer token authentication:
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
@@ -110,6 +110,50 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 If Docker socket access is denied, the response includes remediation such as adding `group_add: ["${DOCKER_GID:-985}"]` to the API container.
+
+### Readiness Check
+
+**GET `/ready`** or **GET `/api/ready`**
+
+No authentication required. Returns readiness for queue/scheduler dependencies used to accept and execute runs.
+
+- `200` when:
+  - results directory is readable+writable,
+  - scheduler queue status is available,
+  - webhook manager loop is healthy.
+- `503` when one or more dependencies are not ready.
+
+**Response (200 OK):**
+```json
+{
+  "status": "ready",
+  "timestamp": "2026-05-05T12:00:00.000Z"
+}
+```
+
+**Response (503 Service Unavailable):**
+```json
+{
+  "status": "not_ready",
+  "timestamp": "2026-05-05T12:00:00.000Z",
+  "reasons": [
+    "results_dir_unwritable:EACCES: permission denied, access '/agents/kaseki-results'"
+  ]
+}
+```
+
+### Prometheus Metrics
+
+**GET `/api/metrics`**
+
+Requires authentication. Returns Prometheus text exposition (`text/plain; version=0.0.4`) including:
+
+- `kaseki_queue_pending` (gauge)
+- `kaseki_running_jobs` (gauge)
+- `kaseki_runs_total{result="success|failure"}` (counter)
+- `kaseki_run_duration_seconds` (histogram)
+- `kaseki_timeouts_total` (counter)
+- `kaseki_timeout_rate` (gauge)
 
 ### Trigger a Run
 
