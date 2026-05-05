@@ -7,6 +7,7 @@ import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-
 import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
+import { metricsRegistry } from './metrics';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -52,6 +53,8 @@ export class JobScheduler {
     this.loadPersistedJobs();
     this.persistJobs();
     this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
+    metricsRegistry.setRunningJobs(this.running.size);
   }
 
   /**
@@ -93,6 +96,7 @@ export class JobScheduler {
     }
 
     this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
 
     // Log job submission
     this.logger.event('job_submitted', {
@@ -215,6 +219,7 @@ export class JobScheduler {
     job.effectiveTimeoutSeconds = effectiveTimeoutSeconds;
     job.resultDir = this.getResultDir(job.id);
     this.running.add(job.id);
+    metricsRegistry.setRunningJobs(this.running.size);
 
     // Emit webhook event for job start
     if (job.webhookConfig) {
@@ -334,6 +339,7 @@ export class JobScheduler {
         exitCode: code ?? -1,
       };
       if (timedOut) {
+        metricsRegistry.incTimeout();
         updates.status = 'failed';
         updates.exitCode = 124;
         updates.failureClass = 'timeout';
@@ -557,7 +563,16 @@ export class JobScheduler {
     if (!job.completedAt) {
       job.completedAt = new Date();
     }
+    if (job.startedAt && job.completedAt) {
+      metricsRegistry.observeRunDuration((job.completedAt.getTime() - job.startedAt.getTime()) / 1000);
+    }
+    if (job.status === 'completed') {
+      metricsRegistry.incRunSuccess();
+    } else if (job.status === 'failed') {
+      metricsRegistry.incRunFailure();
+    }
     this.running.delete(job.id);
+    metricsRegistry.setRunningJobs(this.running.size);
     this.processes.delete(job.id);
     const shutdownKillTimer = this.shutdownKillTimers.get(job.id);
     if (shutdownKillTimer) {
@@ -572,6 +587,7 @@ export class JobScheduler {
     this.processExited.delete(job.id);
     this.persistJobs();
     this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
   }
 
   /**
@@ -1016,6 +1032,27 @@ export class JobScheduler {
       running: this.running.size,
       maxConcurrent: this.config.maxConcurrentRuns,
     };
+  }
+
+  getReadiness(): { ready: boolean; reasons: string[] } {
+    const reasons: string[] = [];
+    try {
+      fs.accessSync(this.config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
+    } catch (error) {
+      reasons.push(`results_dir_unwritable:${(error as Error).message}`);
+    }
+    if (!this.webhookManager.isHealthy()) {
+      reasons.push('webhook_manager_unhealthy');
+    }
+    try {
+      const status = this.getQueueStatus();
+      if (!Number.isFinite(status.pending) || !Number.isFinite(status.running)) {
+        reasons.push('scheduler_status_invalid');
+      }
+    } catch {
+      reasons.push('scheduler_unavailable');
+    }
+    return { ready: reasons.length === 0, reasons };
   }
 
   /**

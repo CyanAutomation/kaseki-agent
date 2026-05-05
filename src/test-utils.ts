@@ -18,6 +18,7 @@ import type { KasekiApiConfig } from './kaseki-api-config';
  */
 export interface TestScheduler {
   getQueueStatus: jest.Mock;
+  getReadiness: jest.Mock;
   getJob: jest.Mock;
   submitJob: jest.Mock;
   listJobs: jest.Mock;
@@ -49,6 +50,7 @@ export interface MockJob {
 export function createMockScheduler(jobData?: { [jobId: string]: MockJob }): TestScheduler {
   return {
     getQueueStatus: jest.fn(() => ({ pending: 0, running: 0, maxConcurrent: 1 })),
+    getReadiness: jest.fn(() => ({ ready: true, reasons: [] })),
     getJob: jest.fn((id: string) => jobData?.[id]),
     submitJob: jest.fn(),
     listJobs: jest.fn(() => []),
