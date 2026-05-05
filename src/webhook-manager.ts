@@ -28,6 +28,15 @@ interface WebhookQueueEntry {
   nextRetryTime?: number; // Unix timestamp
 }
 
+interface PersistedWebhookQueueEntry {
+  jobId: string;
+  payload: WebhookPayload;
+  config: WebhookConfig;
+  deliveryAttempts: number;
+  attempts?: WebhookDeliveryAttempt[];
+  nextRetryTime?: number;
+}
+
 /**
  * Webhook manager handles async delivery of webhook events with retry logic.
  */
@@ -295,8 +304,8 @@ export class WebhookManager extends EventEmitter {
     try {
       const logEntries = this.deliveryQueue.map((entry) => ({
         jobId: entry.jobId,
-        eventType: entry.payload.eventType,
-        webhookUrl: entry.config.url,
+        payload: entry.payload,
+        config: entry.config,
         deliveryAttempts: entry.deliveryAttempts,
         attempts: entry.attempts,
         nextRetryTime: entry.nextRetryTime,
@@ -326,10 +335,69 @@ export class WebhookManager extends EventEmitter {
       const content = fs.readFileSync(this.deliveryLogPath, 'utf-8');
       const lines = content.split('\n').filter((line) => line.trim());
 
-      // For now, we discard pending deliveries on restart
-      // In a production system, you might want to reload them
+      const now = Date.now();
+      for (const line of lines) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(line);
+        } catch (error) {
+          this.logger.warn('Skipping malformed webhook delivery log line', {
+            reason: 'invalid_json',
+            error: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+
+        const candidate = parsed as Partial<PersistedWebhookQueueEntry>;
+        const hasRequiredFields =
+          typeof candidate.jobId === 'string' &&
+          !!candidate.payload &&
+          typeof candidate.payload.eventType === 'string' &&
+          !!candidate.config &&
+          typeof candidate.config.url === 'string' &&
+          typeof candidate.deliveryAttempts === 'number';
+
+        if (!hasRequiredFields) {
+          this.logger.warn('Skipping malformed webhook delivery log line', {
+            reason: 'missing_required_fields',
+            hasJobId: typeof candidate.jobId === 'string',
+            hasPayload: !!candidate.payload,
+            hasEventType: !!candidate.payload && typeof candidate.payload.eventType === 'string',
+            hasConfigUrl: !!candidate.config && typeof candidate.config.url === 'string',
+            hasDeliveryAttempts: typeof candidate.deliveryAttempts === 'number',
+          });
+          continue;
+        }
+
+        const retryPolicy = candidate.config!.retryPolicy || {
+          maxAttempts: 5,
+          initialDelayMs: 1000,
+          maxDelayMs: 30000,
+        };
+        const lastAttempt = candidate.attempts?.[candidate.attempts.length - 1];
+        const isTerminalSuccess = lastAttempt?.status === 'success';
+        const hasRemainingAttempts = candidate.deliveryAttempts! < retryPolicy.maxAttempts;
+
+        if (isTerminalSuccess || !hasRemainingAttempts) {
+          continue;
+        }
+
+        this.deliveryQueue.push({
+          jobId: candidate.jobId!,
+          payload: candidate.payload!,
+          config: candidate.config!,
+          deliveryAttempts: candidate.deliveryAttempts!,
+          attempts: candidate.attempts || [],
+          nextRetryTime:
+            typeof candidate.nextRetryTime === 'number' && candidate.nextRetryTime > now
+              ? candidate.nextRetryTime
+              : now,
+        });
+      }
+
       this.logger.event('webhook_log_loaded', {
         pendingDeliveries: lines.length,
+        requeuedDeliveries: this.deliveryQueue.length,
       });
     } catch (error) {
       this.logger.error('Failed to load webhook delivery log', {
