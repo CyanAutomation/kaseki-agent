@@ -24,6 +24,8 @@ KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
+KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
+KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
@@ -31,6 +33,7 @@ KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
+KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
@@ -178,12 +181,16 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
   KASEKI_VALIDATE_AFTER_AGENT_FAILURE
                                     Run validation even when the agent fails (default: 0)
+  KASEKI_AGENT_GUARDRAILS          Prepend safety instructions to the agent prompt (default: 1)
+  KASEKI_RESTORE_DISALLOWED_CHANGES
+                                    Restore changes outside the allowlist before validation (default: 1)
   KASEKI_TASK_MODE                  patch or inspect (inspect allows empty diffs)
   KASEKI_ALLOW_EMPTY_DIFF           Treat no-change runs as success when 1 (default: 0)
   KASEKI_VERIFY_OPENROUTER_AUTH     In --doctor, verify key with OpenRouter when 1
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
+  KASEKI_NPM_OMIT_DEV              Set to 1 to omit dev dependencies during npm ci (default: 0)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
   GITHUB_APP_ID_FILE                Path to file containing GitHub App ID
   GITHUB_APP_CLIENT_ID              GitHub App Client ID (optional)
@@ -869,7 +876,11 @@ docker_args=(
   -e KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF"
   -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST"
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
+  -e KASEKI_AGENT_GUARDRAILS="$KASEKI_AGENT_GUARDRAILS"
+  -e KASEKI_RESTORE_DISALLOWED_CHANGES="$KASEKI_RESTORE_DISALLOWED_CHANGES"
+  -e KASEKI_NPM_OMIT_DEV="$KASEKI_NPM_OMIT_DEV"
   -e KASEKI_DRY_RUN="$KASEKI_DRY_RUN"
+  -e KASEKI_LOG_DIR="/results"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
   -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"

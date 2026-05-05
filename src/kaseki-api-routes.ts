@@ -93,6 +93,92 @@ function checkOpenRouterKey(): PreflightCheck {
   };
 }
 
+function readSecretValue(inlineValue?: string, filePath?: string): string | undefined {
+  const trimmedInline = inlineValue?.trim();
+  if (trimmedInline) {
+    return trimmedInline;
+  }
+  if (!filePath) {
+    return undefined;
+  }
+  try {
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size === 0) {
+      return undefined;
+    }
+    const value = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '').trim();
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function checkGitHubAppCredentials(): PreflightCheck {
+  const configured =
+    Boolean(process.env.GITHUB_APP_ID || process.env.GITHUB_APP_ID_FILE) ||
+    Boolean(process.env.GITHUB_APP_CLIENT_ID || process.env.GITHUB_APP_CLIENT_ID_FILE) ||
+    Boolean(process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_FILE);
+
+  if (!configured) {
+    return {
+      name: 'github-app',
+      ok: true,
+      detail: 'GitHub App credentials are not configured; PR creation will be disabled.',
+    };
+  }
+
+  const appId = readSecretValue(process.env.GITHUB_APP_ID, process.env.GITHUB_APP_ID_FILE);
+  const clientId = readSecretValue(process.env.GITHUB_APP_CLIENT_ID, process.env.GITHUB_APP_CLIENT_ID_FILE);
+  const privateKey =
+    process.env.GITHUB_APP_PRIVATE_KEY?.trim() ||
+    readSecretValue(undefined, process.env.GITHUB_APP_PRIVATE_KEY_FILE);
+
+  const missing: string[] = [];
+  if (!appId) {
+    missing.push('GITHUB_APP_ID or GITHUB_APP_ID_FILE');
+  }
+  if (!clientId) {
+    missing.push('GITHUB_APP_CLIENT_ID or GITHUB_APP_CLIENT_ID_FILE');
+  }
+  if (!privateKey) {
+    missing.push('GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE');
+  }
+
+  if (missing.length > 0) {
+    return {
+      name: 'github-app',
+      ok: false,
+      detail: `GitHub App credentials are incomplete: missing ${missing.join(', ')}.`,
+      remediation: 'Mount readable GitHub App secret files or set the corresponding environment variables.',
+    };
+  }
+  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey);
+
+  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey);
+  if (!/^\d+$/.test(appId)) {
+    return {
+      name: 'github-app',
+      ok: false,
+      detail: 'GitHub App ID is present but is not numeric.',
+      remediation: 'Set GITHUB_APP_ID or GITHUB_APP_ID_FILE to the numeric GitHub App ID.',
+    };
+  }
+  if (!keyLooksLikePem) {
+    return {
+      name: 'github-app',
+      ok: false,
+      detail: 'GitHub App private key is present but does not look like a PEM private key.',
+      remediation: 'Mount the GitHub App private key PEM file and point GITHUB_APP_PRIVATE_KEY_FILE at it.',
+    };
+  }
+
+  return {
+    name: 'github-app',
+    ok: true,
+    detail: 'GitHub App credentials are readable and structurally valid for PR creation.',
+  };
+}
+
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
   const image = readKasekiImage(templateDir);
@@ -116,6 +202,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   }
 
   checks.push(checkOpenRouterKey());
+  checks.push(checkGitHubAppCredentials());
 
   const dockerVersion = execDockerCommand(['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}']);
   if (dockerVersion.ok) {
