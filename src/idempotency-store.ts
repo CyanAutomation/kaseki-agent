@@ -236,6 +236,7 @@ export class IdempotencyStore {
       }
 
       const fileDescriptor = fs.openSync(this.persistencePath, 'r');
+      let lines: string[] = [];
       try {
         const bytesToRead = stats.size - this.lastReadPosition;
         const buffer = Buffer.alloc(bytesToRead);
@@ -243,16 +244,11 @@ export class IdempotencyStore {
         this.lastReadPosition = stats.size;
 
         const content = this.readRemainder + buffer.toString('utf-8');
-        const lines = content.split('\n');
+        lines = content.split('\n');
         this.readRemainder = lines.pop() ?? '';
       } finally {
         fs.closeSync(fileDescriptor);
       }
-      this.lastReadPosition = stats.size;
-
-      const content = this.readRemainder + buffer.toString('utf-8');
-      const lines = content.split('\n');
-      this.readRemainder = lines.pop() ?? '';
 
       for (const line of lines) {
         if (!line.trim()) {
