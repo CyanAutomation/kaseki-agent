@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { IdempotencyStore } from './idempotency-store';
 import { RunResponse } from './kaseki-api-types';
 
@@ -67,18 +68,50 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
-  test('only one simulated concurrent claimer gets claimed for the same key', async () => {
-    const store1 = new IdempotencyStore(resultsDir, 24);
-    const store2 = new IdempotencyStore(resultsDir, 24);
+  test('only one parallel claimer gets claimed for the same key', async () => {
+    const workerPath = path.join(resultsDir, 'claim-worker.ts');
+    fs.writeFileSync(
+      workerPath,
+      `
+      import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
+      const [resultsDir, key, fingerprint] = process.argv.slice(2);
+      const store = new IdempotencyStore(resultsDir, 24);
+      const result = store.claimOrGet(key, fingerprint);
+      store.shutdown();
+      process.stdout.write(JSON.stringify(result));
+    `,
+      'utf-8'
+    );
 
-    const [result1, result2] = await Promise.all([
-      Promise.resolve().then(() => store1.claimOrGet('concurrent-key', 'same-fp')),
-      Promise.resolve().then(() => store2.claimOrGet('concurrent-key', 'same-fp')),
-    ]);
+    const claimFromProcess = (): Promise<{ kind: string }> =>
+      new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['--import', 'tsx', workerPath, resultsDir, 'concurrent-key', 'same-fp']);
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`worker exited with code ${code}: ${stderr}`));
+            return;
+          }
+          const lines = stdout
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith('{') && line.endsWith('}'));
+          resolve(JSON.parse(lines[lines.length - 1]) as { kind: string });
+        });
+      });
+
+    const [result1, result2] = await Promise.all([claimFromProcess(), claimFromProcess()]);
     const kinds = [result1.kind, result2.kind].sort();
 
     expect(kinds).toEqual(['claimed', 'pending']);
-    store1.shutdown();
-    store2.shutdown();
-  });
+  }, 15000);
 });
