@@ -186,9 +186,12 @@ private acquireLock(): void {
     }
   }
 
-  private sleepSync(ms: number): void {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+private sleepSync(ms: number): void {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    // Busy wait
   }
+}
 
   /**
    * Persist a single entry to disk (append-only log).
