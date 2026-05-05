@@ -238,10 +238,18 @@ export class IdempotencyStore {
       }
 
       const fileDescriptor = fs.openSync(this.persistencePath, 'r');
-      const bytesToRead = stats.size - this.lastReadPosition;
-      const buffer = Buffer.alloc(bytesToRead);
-      fs.readSync(fileDescriptor, buffer, 0, bytesToRead, this.lastReadPosition);
-      fs.closeSync(fileDescriptor);
+      try {
+        const bytesToRead = stats.size - this.lastReadPosition;
+        const buffer = Buffer.alloc(bytesToRead);
+        fs.readSync(fileDescriptor, buffer, 0, bytesToRead, this.lastReadPosition);
+        this.lastReadPosition = stats.size;
+
+        const content = this.readRemainder + buffer.toString('utf-8');
+        const lines = content.split('\n');
+        this.readRemainder = lines.pop() ?? '';
+      } finally {
+        fs.closeSync(fileDescriptor);
+      }
       this.lastReadPosition = stats.size;
 
       const content = this.readRemainder + buffer.toString('utf-8');
