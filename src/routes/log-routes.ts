@@ -8,22 +8,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
 import { isNonEmptyFile } from '../utils/file-helpers';
 import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
-
-function normalizeProgressEvent(event: Record<string, unknown>): Record<string, unknown> {
-  const normalized: Record<string, unknown> = { ...event };
-  if (typeof normalized.stage === 'string') {
-    if (typeof normalized.message !== 'string' && typeof normalized.detail === 'string') {
-      normalized.message = normalized.detail;
-    }
-    if (typeof normalized.message !== 'string') {
-      normalized.message = normalized.stage;
-    }
-  }
-  if (typeof normalized.updatedAt !== 'string' && typeof normalized.timestamp === 'string') {
-    normalized.updatedAt = normalized.timestamp;
-  }
-  return normalized;
-}
+import { normalizeProgressEvent } from '../utils/progress-normalizer';
 
 /**
  * Create log-related routes (progress, events, logs, analysis).
