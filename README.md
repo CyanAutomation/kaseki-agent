@@ -766,6 +766,9 @@ When credentials are configured:
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_ALLOW_EMPTY_DIFF` | 0 | Set to `1` to allow empty diff with `KASEKI_TASK_MODE=patch` |
+| `KASEKI_AGENT_GUARDRAILS` | 1 | Prepend safety instructions that reserve commit/push/PR actions for Kaseki |
+| `KASEKI_RESTORE_DISALLOWED_CHANGES` | 1 | Restore changes outside `KASEKI_CHANGED_FILES_ALLOWLIST` before validation and GitHub publishing |
+| `KASEKI_NPM_OMIT_DEV` | 0 | Set to `1` to omit dev dependencies during `npm ci`; default keeps test/build tools available |
 
 ### Paths and Caching
 
@@ -803,6 +806,9 @@ When credentials are configured:
 | `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent jobs |
 | `KASEKI_RESULTS_DIR` | `/agents/kaseki-results` | Results artifact directory |
+| `GITHUB_APP_ID_FILE` | — | Path to file containing GitHub App ID for PR creation |
+| `GITHUB_APP_CLIENT_ID_FILE` | — | Path to file containing GitHub App Client ID |
+| `GITHUB_APP_PRIVATE_KEY_FILE` | — | Path to GitHub App private key file; preferred over inline private key env |
 
 ### Metrics
 
