@@ -5,6 +5,8 @@ import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { StatusResponse, StructuredProgress, RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
+import { isNonEmptyFile } from '../utils/file-helpers';
+import { getJobOrRespond } from '../utils/route-helpers';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 
@@ -37,14 +39,6 @@ function toStructuredProgress(event: Record<string, unknown>, fallbackStage: str
     message: message || stage,
     updatedAt,
   };
-}
-
-function isNonEmptyFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).size > 0;
-  } catch {
-    return false;
-  }
 }
 
 function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'failed'): boolean {
@@ -81,9 +75,9 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
    * GET /api/runs/:id/status - Get run status.
    */
   router.get('/runs/:id/status', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     const response: StatusResponse = {

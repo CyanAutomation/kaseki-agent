@@ -18,73 +18,15 @@ import {
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
 import { createEventLogger } from './logger';
 import { sendErrorResponse } from './utils/response-helpers';
+import { readFirstLine, commandOutput } from './utils/file-helpers';
 import { createStatusRoutes } from './routes/status-routes';
 import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
 import { metricsRegistry } from './metrics';
 
-function isUtf8ContinuationByte(byte: number): boolean {
-  return (byte & 0xc0) === 0x80;
-}
-
-function utf8SequenceLength(leadingByte: number): number {
-  if ((leadingByte & 0x80) === 0) return 1;
-  if ((leadingByte & 0xe0) === 0xc0) return 2;
-  if ((leadingByte & 0xf0) === 0xe0) return 3;
-  if ((leadingByte & 0xf8) === 0xf0) return 4;
-  return 1;
-}
-
-export function decodeUtf8TailSafely(buffer: Buffer): string {
-  let end = buffer.length;
-  if (end > 0) {
-    let continuationCount = 0;
-    let candidateLead = end - 1;
-
-    while (candidateLead >= 0 && isUtf8ContinuationByte(buffer[candidateLead])) {
-      continuationCount++;
-      candidateLead--;
-    }
-
-    if (candidateLead < 0) {
-      end = 0;
-    } else {
-      const sequenceLength = utf8SequenceLength(buffer[candidateLead]);
-      const expectedContinuationCount = sequenceLength - 1;
-
-      if (sequenceLength > 1 && continuationCount !== expectedContinuationCount) {
-        end = candidateLead;
-      }
-    }
-  }
-
-  return buffer.subarray(0, end).toString('utf-8');
-}
-
-export function tailLogByLines(content: string, maxLines: number): string {
-  if (maxLines <= 0) {
-    return '';
-  }
-
-  const lines = content.split(/\r?\n/);
-  if (lines.length <= maxLines) {
-    return content;
-  }
-  return lines.slice(-maxLines).join('\n');
-}
-
-export function readTailBytes(logFile: string, size: number, maxSize: number): Buffer {
-  const truncated = Buffer.alloc(maxSize);
-  const fd = fs.openSync(logFile, 'r');
-  try {
-    fs.readSync(fd, truncated, 0, maxSize, size - maxSize);
-  } finally {
-    fs.closeSync(fd);
-  }
-
-  return truncated;
-}
+// Re-export UTF-8 helpers for backward compatibility
+export { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from './utils/utf8-helpers';
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
@@ -101,27 +43,6 @@ function buildRequestFingerprint(runRequest: Record<string, unknown>): string {
   const requestForFingerprint = { ...runRequest };
   delete requestForFingerprint.idempotencyKey;
   return crypto.createHash('sha256').update(stableStringify(requestForFingerprint)).digest('hex');
-}
-
-function readFirstLine(filePath: string): string | undefined {
-  try {
-    const value = fs.readFileSync(filePath, 'utf-8').trim().split(/\r?\n/)[0];
-    return value || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function commandOutput(command: string, args: string[], cwd?: string): string | undefined {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf-8',
-    timeout: 5000,
-  });
-  if (result.status !== 0) {
-    return undefined;
-  }
-  return result.stdout.trim() || undefined;
 }
 
 function readKasekiImage(templateDir = '/agents/kaseki-template'): string {

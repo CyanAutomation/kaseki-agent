@@ -33,8 +33,9 @@ export type {
 export { KasekiApiClient } from './kaseki-api-client';
 
 // Utilities (Phase 1 extractions)
-export { sendErrorResponse, buildStatusResponse, detectContentType, isNonEmptyFile } from './utils/response-helpers';
+export { sendErrorResponse, buildStatusResponse, detectContentType } from './utils/response-helpers';
 export {
+  isNonEmptyFile,
   isNonEmptyFile as fileIsNonEmpty,
   readFirstLine,
   readTailLines,
@@ -43,6 +44,22 @@ export {
   readFileContent,
   getFileStats,
 } from './utils/file-helpers';
+export {
+  isString,
+  isNumber,
+  isBoolean,
+  isRecord,
+  isArray,
+  isStringArray,
+  isRecordArray,
+  hasKeys,
+} from './utils/type-guards';
+export {
+  decodeUtf8TailSafely,
+  tailLogByLines,
+  readTailBytes,
+} from './utils/utf8-helpers';
+export { getJobOrRespond } from './utils/route-helpers';
 export { jobLookupMiddleware } from './middleware/job-lookup';
 
 // Utilities (Phase 2 consolidations)

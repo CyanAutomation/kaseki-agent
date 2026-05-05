@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { sendErrorResponse, buildStatusResponse, detectContentType, isNonEmptyFile } from './response-helpers';
+import { sendErrorResponse, buildStatusResponse, detectContentType } from './response-helpers';
+import { isNonEmptyFile } from './file-helpers';
 
 describe('response-helpers', () => {
   describe('sendErrorResponse', () => {
