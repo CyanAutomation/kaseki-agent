@@ -6,6 +6,7 @@ import { ResultCache } from '../result-cache';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { ArtifactResponse, RunArtifactsResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
+import { getJobOrRespond } from '../utils/route-helpers';
 
 const ALWAYS_SAFE_SUMMARY_ARTIFACTS = [
   'git.diff',
@@ -61,9 +62,9 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
    * GET /api/results/:id/:file - Download artifact.
    */
   router.get('/results/:id/:file', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     const fileName = req.params.file;
@@ -127,9 +128,9 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
    * GET /api/runs/:id/artifacts - Enumerate allowlisted artifacts and availability.
    */
   router.get('/runs/:id/artifacts', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     const runDir = job.resultDir || path.join(config.resultsDir, job.id);

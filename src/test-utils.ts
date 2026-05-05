@@ -3,8 +3,6 @@
  * Consolidates common test setup patterns to reduce duplication.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import express, { Express } from 'express';
 import { Server } from 'http';
 import { AddressInfo } from 'net';
@@ -16,7 +14,7 @@ import type { KasekiApiConfig } from './kaseki-api-config';
 /**
  * Test-specific config type with jest.fn() mocks.
  */
-export interface TestScheduler {
+interface TestScheduler {
   getQueueStatus: jest.Mock;
   getReadiness: jest.Mock;
   getJob: jest.Mock;
@@ -28,12 +26,12 @@ export interface TestScheduler {
 /**
  * Possible job statuses for mock scheduler.
  */
-export type MockJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+type MockJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 /**
  * Mock job object for tests.
  */
-export interface MockJob {
+interface MockJob {
   id: string;
   status: MockJobStatus;
   createdAt: Date;
@@ -120,19 +118,4 @@ export async function cleanupTestApp(server: Server, idempotencyStore: Idempoten
   await idempotencyStore.shutdown();
 }
 
-/**
- * Creates a temporary test directory for file-based tests.
- * Remember to clean up with fs.rmSync(..., { recursive: true, force: true }).
- */
-export function createTestDir(prefix = 'kaseki-test-'): string {
-  return fs.mkdtempSync(path.join('/tmp', prefix));
-}
 
-/**
- * Cleans up a temporary test directory.
- */
-export function cleanupTestDir(testDir: string): void {
-  if (fs.existsSync(testDir)) {
-    fs.rmSync(testDir, { recursive: true, force: true });
-  }
-}

@@ -5,76 +5,9 @@ import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { LogResponse, AnalysisResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
-
-function isNonEmptyFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).size > 0;
-  } catch {
-    return false;
-  }
-}
-
-function isUtf8ContinuationByte(byte: number): boolean {
-  return (byte & 0xc0) === 0x80;
-}
-
-function utf8SequenceLength(leadingByte: number): number {
-  if ((leadingByte & 0x80) === 0) return 1;
-  if ((leadingByte & 0xe0) === 0xc0) return 2;
-  if ((leadingByte & 0xf0) === 0xe0) return 3;
-  if ((leadingByte & 0xf8) === 0xf0) return 4;
-  return 1;
-}
-
-function decodeUtf8TailSafely(buffer: Buffer): string {
-  let end = buffer.length;
-  if (end > 0) {
-    let continuationCount = 0;
-    let candidateLead = end - 1;
-
-    while (candidateLead >= 0 && isUtf8ContinuationByte(buffer[candidateLead])) {
-      continuationCount++;
-      candidateLead--;
-    }
-
-    if (candidateLead < 0) {
-      end = 0;
-    } else {
-      const sequenceLength = utf8SequenceLength(buffer[candidateLead]);
-      const expectedContinuationCount = sequenceLength - 1;
-
-      if (sequenceLength > 1 && continuationCount !== expectedContinuationCount) {
-        end = candidateLead;
-      }
-    }
-  }
-
-  return buffer.subarray(0, end).toString('utf-8');
-}
-
-function tailLogByLines(content: string, maxLines: number): string {
-  if (maxLines <= 0) {
-    return '';
-  }
-
-  const lines = content.split(/\r?\n/);
-  if (lines.length <= maxLines) {
-    return content;
-  }
-  return lines.slice(-maxLines).join('\n');
-}
-
-function readTailBytes(logFile: string, size: number, maxSize: number): Buffer {
-  const truncated = Buffer.alloc(maxSize);
-  const fd = fs.openSync(logFile, 'r');
-  try {
-    fs.readSync(fd, truncated, 0, maxSize, size - maxSize);
-  } finally {
-    fs.closeSync(fd);
-  }
-
-  return truncated;
-}
+import { isNonEmptyFile } from '../utils/file-helpers';
+import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
+import { getJobOrRespond } from '../utils/route-helpers';
 
 function normalizeProgressEvent(event: Record<string, unknown>): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...event };
@@ -102,9 +35,9 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
    * GET /api/runs/:id/progress - Retrieve progress events (supports Server-Sent Events streaming).
    */
   router.get('/runs/:id/progress', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     // Check if client wants SSE streaming
@@ -245,9 +178,9 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
    * live Docker progress while a worker is still running.
    */
   router.get('/runs/:id/events', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     const tailParam = Number(req.query.tail ?? 50);
@@ -296,9 +229,9 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
    * GET /api/runs/:id/logs/:logtype - Retrieve logs.
    */
   router.get('/runs/:id/logs/:logtype', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     const logType = req.params.logtype;
@@ -391,9 +324,9 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
    * GET /api/runs/:id/analysis - Comprehensive run analysis.
    */
   router.get('/runs/:id/analysis', (req: Request, res: Response) => {
-    const job = scheduler.getJob(req.params.id);
+    const job = getJobOrRespond(scheduler, req.params.id, res);
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      return;
     }
 
     try {

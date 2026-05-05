@@ -1,5 +1,96 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { RunRequest, RunResponse, StatusResponse, AnalysisResponse, RunsListResponse, ValidationResponse } from './kaseki-api-types';
+
+/**
+ * Zod schemas for response validation.
+ * Replaces manual type-checking with declarative schema validation.
+ */
+const HealthResponseSchema = z.object({
+  status: z.string(),
+  errors: z.array(z.string()).optional(),
+});
+
+const ValidationResponseSchema = z.object({
+  isValid: z.boolean(),
+  checks: z.array(z.any()),
+  warnings: z.array(z.any()),
+  errors: z.array(z.any()),
+});
+
+const StructuredProgressSchema = z.object({
+  stage: z.string(),
+  percentComplete: z.number().optional(),
+  message: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+const StatusResponseSchema = z.object({
+  id: z.string(),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  failureClass: z.string().optional(),
+  error: z.string().optional(),
+  exitCode: z.number().optional(),
+  elapsedSeconds: z.number().optional(),
+  timeoutRiskPercent: z.number().optional(),
+  correlationId: z.string().optional(),
+  requestId: z.string().optional(),
+  resultDir: z.string().optional(),
+  progress: StructuredProgressSchema.optional(),
+  artifacts: z.object({
+    metadataJson: z.boolean().optional(),
+    analysisMd: z.boolean().optional(),
+    resultSummaryMd: z.boolean().optional(),
+    failureJson: z.boolean().optional(),
+    stderrLog: z.boolean().optional(),
+    availableFiles: z.array(z.string()).optional(),
+  }).optional(),
+  diagnosticEntryPoint: z.string().optional(),
+});
+
+const RunResponseSchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  error: z.string().optional(),
+});
+
+const ProgressResponseSchema = z.object({
+  events: z.array(z.record(z.unknown())),
+});
+
+const AnalysisResponseSchema = z.object({
+  id: z.string(),
+  createdAt: z.string(),
+  status: z.enum(['queued', 'running', 'completed', 'failed']),
+  completedAt: z.string().optional(),
+  elapsedSeconds: z.number().optional(),
+  exitCode: z.number().optional(),
+  failureClass: z.string().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  changes: z.record(z.unknown()).optional(),
+  validation: z.record(z.unknown()).optional(),
+  errors: z.array(z.string()).optional(),
+});
+
+const LogResponseSchema = z.object({
+  content: z.string(),
+});
+
+const ArtifactResponseSchema = z.object({
+  content: z.string(),
+});
+
+const RunsListResponseSchema = z.object({
+  runs: z.array(z.object({
+    id: z.string(),
+    status: z.enum(['queued', 'running', 'completed', 'failed']),
+    createdAt: z.string(),
+    completedAt: z.string().optional(),
+    resultDir: z.string().optional(),
+  })),
+  total: z.number(),
+});
 
 /**
  * Kaseki API client for TypeScript/Node.js applications.
@@ -41,31 +132,13 @@ export class KasekiApiClient {
     }
   }
 
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
   private parseErrorDetail(value: unknown): string | undefined {
-    if (!this.isRecord(value)) {
+    try {
+      const parsed = z.object({ detail: z.string() }).safeParse(value);
+      return parsed.success ? parsed.data.detail : undefined;
+    } catch {
       return undefined;
     }
-    const detail = value.detail;
-    return typeof detail === 'string' ? detail : undefined;
-  }
-
-  private parseHealthResponse(value: unknown): { status: string; errors?: string[] } {
-    if (!this.isRecord(value) || typeof value.status !== 'string') {
-      throw new Error('Invalid health response payload');
-    }
-
-    if (value.errors !== undefined) {
-      if (!Array.isArray(value.errors) || !value.errors.every((item) => typeof item === 'string')) {
-        throw new Error('Invalid health response errors payload');
-      }
-      return { status: value.status as string, errors: value.errors as string[] };
-    }
-
-    return { status: value.status as string };
   }
 
   /**
@@ -81,8 +154,8 @@ export class KasekiApiClient {
       throw new Error(`Health check failed: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    return this.parseHealthResponse(data);
+    const data = await res.json();
+    return HealthResponseSchema.parse(data);
   }
 
   /**
@@ -142,7 +215,7 @@ export class KasekiApiClient {
     if (!res.ok) {
       let errorDetail: string | undefined;
       try {
-        const errorData: unknown = await res.json();
+        const errorData = await res.json();
         errorDetail = this.parseErrorDetail(errorData);
       } catch {
         // Ignore
@@ -150,18 +223,8 @@ export class KasekiApiClient {
       throw new Error(`Validation failed: ${errorDetail ?? res.statusText}`);
     }
 
-    const data: unknown = await res.json();
-    if (
-      !this.isRecord(data) ||
-      typeof data.isValid !== 'boolean' ||
-      !Array.isArray(data.checks) ||
-      !Array.isArray(data.warnings) ||
-      !Array.isArray(data.errors)
-    ) {
-      throw new Error('Invalid validation response payload');
-    }
-
-    return data as unknown as ValidationResponse;
+    const data = await res.json();
+    return ValidationResponseSchema.parse(data);
   }
 
   /**
@@ -183,7 +246,7 @@ export class KasekiApiClient {
       if (!res.ok) {
         let errorDetail: string | undefined;
         try {
-          const errorData: unknown = await res.json();
+          const errorData = await res.json();
           errorDetail = this.parseErrorDetail(errorData);
         } catch {
           // Ignore non-JSON error payloads and fall back to statusText.
@@ -191,8 +254,8 @@ export class KasekiApiClient {
         throw new Error(`Failed to submit run: ${errorDetail ?? res.statusText}`);
       }
 
-      const data: unknown = await res.json();
-      return this.parseRunResponse(data);
+      const data = await res.json();
+      return RunResponseSchema.parse(data);
     }, 'Run submission');
   }
 
@@ -213,8 +276,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to get status: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    return this.parseStatusResponse(data);
+    const data = await res.json();
+    return StatusResponseSchema.parse(data);
   }
 
   /**
@@ -234,8 +297,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to cancel run: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    return this.parseStatusResponse(data);
+    const data = await res.json();
+    return StatusResponseSchema.parse(data);
   }
 
   /**
@@ -256,11 +319,9 @@ export class KasekiApiClient {
       throw new Error(`Failed to get progress: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    if (!this.isRecord(data) || !Array.isArray(data.events)) {
-      throw new Error(`Invalid progress payload: ${runId}`);
-    }
-    return data.events.filter(this.isRecord);
+    const data = await res.json();
+    const parsed = ProgressResponseSchema.parse(data);
+    return parsed.events;
   }
 
   /**
@@ -280,8 +341,8 @@ export class KasekiApiClient {
       throw new Error(`Failed to get analysis: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    return this.parseAnalysisResponse(data);
+    const data = await res.json();
+    return AnalysisResponseSchema.parse(data);
   }
 
   /**
@@ -304,11 +365,9 @@ export class KasekiApiClient {
       throw new Error(`Failed to get log: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    if (!this.isRecord(data) || typeof data.content !== 'string') {
-      throw new Error(`Invalid log payload: ${runId}/${logType}`);
-    }
-    return data.content;
+    const data = await res.json();
+    const parsed = LogResponseSchema.parse(data);
+    return parsed.content;
   }
 
   /**
@@ -331,11 +390,9 @@ export class KasekiApiClient {
       throw new Error(`Failed to get artifact: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    if (!this.isRecord(data) || typeof data.content !== 'string') {
-      throw new Error(`Invalid artifact payload: ${runId}/${file}`);
-    }
-    return data.content;
+    const data = await res.json();
+    const parsed = ArtifactResponseSchema.parse(data);
+    return parsed.content;
   }
 
   /**
@@ -351,9 +408,10 @@ export class KasekiApiClient {
       throw new Error(`Failed to list runs: ${res.status}`);
     }
 
-    const data: unknown = await res.json();
-    return this.parseRunsListResponse(data);
+    const data = await res.json();
+    return RunsListResponseSchema.parse(data);
   }
+
 
   /**
    * Poll a run until completion.
@@ -391,137 +449,6 @@ export class KasekiApiClient {
       // Sleep before next poll
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
-  }
-
-  private parseRunResponse(data: unknown): RunResponse {
-    if (!this.isRecord(data)) throw new Error('Invalid run response payload');
-    if (typeof data.id !== 'string' || typeof data.createdAt !== 'string') {
-      throw new Error('Invalid run response payload');
-    }
-    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
-      throw new Error('Invalid run response status');
-    }
-    if (data.error !== undefined && typeof data.error !== 'string') {
-      throw new Error('Invalid run response error');
-    }
-
-    return {
-      id: data.id,
-      status: data.status as RunResponse['status'],
-      createdAt: data.createdAt,
-      ...(data.error !== undefined ? { error: data.error } : {}),
-    };
-  }
-
-  private parseStatusResponse(data: unknown): StatusResponse {
-    if (!this.isRecord(data)) throw new Error('Invalid status response payload');
-    if (typeof data.id !== 'string') throw new Error('Invalid status response payload');
-    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
-      throw new Error('Invalid status response status');
-    }
-
-    // Validate optional string fields
-    const optionalStringFields: Array<keyof Pick<StatusResponse, 'failureClass' | 'error'>> = [
-      'failureClass',
-      'error',
-    ];
-    for (const field of optionalStringFields) {
-      if (data[field] !== undefined && typeof data[field] !== 'string') {
-        throw new Error(`Invalid status response ${field}`);
-      }
-    }
-
-    // Validate optional number fields
-    const optionalNumberFields: Array<keyof Pick<StatusResponse, 'elapsedSeconds' | 'timeoutRiskPercent' | 'exitCode'>> = [
-      'elapsedSeconds',
-      'timeoutRiskPercent',
-      'exitCode',
-    ];
-    for (const field of optionalNumberFields) {
-      if (data[field] !== undefined && typeof data[field] !== 'number') {
-        throw new Error(`Invalid status response ${field}`);
-      }
-    }
-
-    // Validate optional progress object
-    if (data.progress !== undefined) {
-      if (!this.isRecord(data.progress)) {
-        throw new Error('Invalid status response progress');
-      }
-      if (typeof data.progress.stage !== 'string') {
-        throw new Error('Invalid status response progress stage');
-      }
-      if (data.progress.percentComplete !== undefined && typeof data.progress.percentComplete !== 'number') {
-        throw new Error('Invalid status response progress percentComplete');
-      }
-      if (data.progress.message !== undefined && typeof data.progress.message !== 'string') {
-        throw new Error('Invalid status response progress message');
-      }
-      if (data.progress.updatedAt !== undefined && typeof data.progress.updatedAt !== 'string') {
-        throw new Error('Invalid status response progress updatedAt');
-      }
-    }
-
-    return {
-      id: data.id,
-      status: data.status as StatusResponse['status'],
-      ...(this.isRecord(data.progress) && typeof data.progress.stage === 'string' ? { progress: data.progress as any } : {}),
-      ...(typeof data.elapsedSeconds === 'number' ? { elapsedSeconds: data.elapsedSeconds } : {}),
-      ...(typeof data.timeoutRiskPercent === 'number' ? { timeoutRiskPercent: data.timeoutRiskPercent } : {}),
-      ...(typeof data.exitCode === 'number' ? { exitCode: data.exitCode } : {}),
-      ...(typeof data.failureClass === 'string' ? { failureClass: data.failureClass } : {}),
-      ...(typeof data.error === 'string' ? { error: data.error } : {}),
-    };
-  }
-
-  private parseAnalysisResponse(data: unknown): AnalysisResponse {
-    if (!this.isRecord(data)) throw new Error('Invalid analysis response payload');
-    if (typeof data.id !== 'string' || typeof data.createdAt !== 'string') {
-      throw new Error('Invalid analysis response payload');
-    }
-    if (!['queued', 'running', 'completed', 'failed'].includes(String(data.status))) {
-      throw new Error('Invalid analysis response status');
-    }
-    return {
-      id: data.id,
-      status: data.status as AnalysisResponse['status'],
-      createdAt: data.createdAt,
-      ...(typeof data.completedAt === 'string' ? { completedAt: data.completedAt } : {}),
-      ...(typeof data.elapsedSeconds === 'number' ? { elapsedSeconds: data.elapsedSeconds } : {}),
-      ...(typeof data.exitCode === 'number' ? { exitCode: data.exitCode } : {}),
-      ...(typeof data.failureClass === 'string' ? { failureClass: data.failureClass } : {}),
-      ...(this.isRecord(data.metadata) ? { metadata: data.metadata as AnalysisResponse['metadata'] } : {}),
-      ...(this.isRecord(data.changes) ? { changes: data.changes as AnalysisResponse['changes'] } : {}),
-      ...(this.isRecord(data.validation) ? { validation: data.validation as AnalysisResponse['validation'] } : {}),
-      ...(Array.isArray(data.errors) && data.errors.every((item) => typeof item === 'string') ? { errors: data.errors } : {}),
-    };
-  }
-
-  private parseRunsListResponse(data: unknown): RunsListResponse {
-    if (!this.isRecord(data) || !Array.isArray(data.runs) || typeof data.total !== 'number') {
-      throw new Error('Invalid runs list response payload');
-    }
-    const runs = data.runs
-      .filter((run): run is Record<string, unknown> => this.isRecord(run))
-      .filter(
-        (run) =>
-          typeof run.id === 'string' &&
-          typeof run.createdAt === 'string' &&
-          ['queued', 'running', 'completed', 'failed'].includes(String(run.status)) &&
-          (run.completedAt === undefined || typeof run.completedAt === 'string')
-      )
-      .map((run) => ({
-        id: run.id as string,
-        status: run.status as RunsListResponse['runs'][number]['status'],
-        createdAt: run.createdAt as string,
-        ...(typeof run.completedAt === 'string' ? { completedAt: run.completedAt as string } : {}),
-      }));
-
-    if (runs.length !== data.runs.length) {
-      throw new Error('Invalid runs list entries');
-    }
-
-    return { runs, total: data.total };
   }
 }
 

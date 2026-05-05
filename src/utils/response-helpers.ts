@@ -99,15 +99,3 @@ export function detectContentType(fileName: string): string {
   if (fileName.endsWith('.diff')) return 'text/plain';
   return 'text/plain';
 }
-
-/**
- * Check if a file exists and is non-empty.
- * Used for artifact availability checks.
- */
-export function isNonEmptyFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).size > 0;
-  } catch {
-    return false;
-  }
-}
