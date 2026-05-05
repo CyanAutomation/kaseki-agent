@@ -144,19 +144,39 @@ export class IdempotencyStore {
     }
   }
 
-  private acquireLock(): void {
-    while (true) {
-      try {
-        fs.mkdirSync(this.lockPath);
-        return;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw error;
-        }
-        this.sleepSync(5);
+private acquireLock(): void {
+  const maxRetries = 600; // 3 seconds total (600 * 5ms)
+  const staleThresholdMs = 30000; // 30 seconds
+  let retries = 0;
+  
+  while (retries < maxRetries) {
+    try {
+      fs.mkdirSync(this.lockPath);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw error;
       }
+      
+      // Check for stale lock
+      try {
+        const stats = fs.statSync(this.lockPath);
+        if (Date.now() - stats.mtimeMs > staleThresholdMs) {
+          fs.rmdirSync(this.lockPath);
+          continue; // Try again without incrementing retry count
+        }
+      } catch {
+        // Lock was removed, try again
+        continue;
+      }
+      
+      this.sleepSync(5);
+      retries++;
     }
   }
+  
+  throw new Error('Failed to acquire lock after maximum retries');
+}
 
   private releaseLock(): void {
     try {
