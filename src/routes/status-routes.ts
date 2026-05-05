@@ -8,8 +8,13 @@ import { sendErrorResponse } from '../utils/response-helpers';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 
-function toStructuredProgress(event: Record<string, unknown>): StructuredProgress | null {
-  const stage = typeof event.stage === 'string' ? event.stage.trim() : '';
+/**
+ * Convert a progress event to a StructuredProgress object.
+ * Always ensures stage is present; returns null only if event is invalid.
+ * No versioned fields (e.g., progressV2) — unified under the `progress` field.
+ */
+function toStructuredProgress(event: Record<string, unknown>, fallbackStage: string = 'running'): StructuredProgress | null {
+  const stage = typeof event.stage === 'string' ? event.stage.trim() : fallbackStage;
   if (!stage) {
     return null;
   }
@@ -103,7 +108,8 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
       response.timeoutRiskPercent = Math.round((elapsed / timeoutMs) * 100);
     }
 
-    // Add progress from progress.jsonl if available
+    // Populate progress field for running jobs with structured progress (no separate progressV2 field)
+    // Fallback: try progress.jsonl first, then scheduler live events
     if (job.status === 'running') {
       try {
         const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
@@ -120,14 +126,15 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
           const liveEvents = scheduler.getLiveProgressEvents(job.id, 1);
           const lastEvent = liveEvents[liveEvents.length - 1];
           if (lastEvent) {
-            const structuredProgress = toStructuredProgress(lastEvent);
+            // Always create a StructuredProgress with at least a stage; use 'running' as fallback
+            const structuredProgress = toStructuredProgress(lastEvent, 'running');
             if (structuredProgress) {
               response.progress = structuredProgress;
             }
           }
         }
       } catch {
-        // Ignore progress file errors
+        // Ignore progress file errors; status remains resilient when progress artifacts are malformed or missing
       }
     }
 

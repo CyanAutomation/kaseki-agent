@@ -239,17 +239,20 @@ List recent kaseki runs, newest first.
 
 Poll the status of a specific run. Returns progress and timeout risk.
 
-`progress` is now a structured object available for running jobs with the following fields:
-- `stage` (string, required)
-- `percentComplete` (number, optional)
-- `message` (string, optional)
-- `updatedAt` (ISO-8601 string, optional)
+**Progress Object** (only present for running jobs):
+The `progress` field contains a structured object describing the current execution stage with the following fields:
+- `stage` (string, required) — Current execution stage name (e.g., "pi coding agent", "validation")
+- `percentComplete` (number, optional) — Progress percentage (0-100)
+- `message` (string, optional) — Detailed status message or stage name fallback
+- `updatedAt` (ISO-8601 string, optional) — Timestamp when progress was last updated
+
+For non-running jobs, `progress` is omitted.
 
 **Response (200 OK):**
 ```json
 {
   "id": "kaseki-42",
-  "status": "failed",
+  "status": "running",
   "progress": {
     "stage": "pi coding agent",
     "percentComplete": 85,
@@ -258,6 +261,17 @@ Poll the status of a specific run. Returns progress and timeout risk.
   },
   "elapsedSeconds": 315,
   "timeoutRiskPercent": 26,
+  "resultDir": "/agents/kaseki-results/kaseki-42"
+}
+```
+
+**Response (Terminal Status - 200 OK):**
+```json
+{
+  "id": "kaseki-42",
+  "status": "failed",
+  "elapsedSeconds": 500,
+  "timeoutRiskPercent": 41,
   "exitCode": 1,
   "failureClass": "validation",
   "resultDir": "/agents/kaseki-results/kaseki-42",
