@@ -438,22 +438,33 @@ run_github_operations() {
     return 7
   fi
   
-  # Configure git credential helper for pushing
-  git config credential.helper store
-  mkdir -p ~/.git-credentials-temp
-  printf 'https://%s:%s@github.com\n' "x-access-token" "$token" > ~/.git-credentials-temp/credentials
-  export GIT_ASKPASS=:
-  export GIT_ASKPASS_ALWAYS=1
-  
   # Push branch
   printf 'Pushing branch to GitHub...\n' | tee -a /results/git-push.log
-  if git push https://x-access-token:"$token"@github.com/"$owner"/"$repo".git "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log; then
+  local askpass_file
+  askpass_file="$(mktemp /tmp/kaseki-github-askpass.XXXXXX)" || {
+    printf 'Failed to create GitHub credential helper\n' | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=8
+    return 8
+  }
+  cat > "$askpass_file" <<'EOF_ASKPASS'
+#!/usr/bin/env bash
+case "$1" in
+  *Username*) printf '%s\n' x-access-token ;;
+  *) printf '%s\n' "$KASEKI_GITHUB_TOKEN" ;;
+esac
+EOF_ASKPASS
+  chmod 0700 "$askpass_file"
+
+  if KASEKI_GITHUB_TOKEN="$token" GIT_ASKPASS="$askpass_file" GIT_TERMINAL_PROMPT=0 \
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log; then
     printf 'Branch pushed successfully\n' | tee -a /results/git-push.log
   else
+    rm -f "$askpass_file"
     printf 'Failed to push branch\n' | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=8
     return 8
   fi
+  rm -f "$askpass_file"
   
   # Create pull request
   printf 'Creating pull request...\n' | tee -a /results/git-push.log
@@ -493,7 +504,6 @@ EOF
   
   # Clean up token
   unset token
-  rm -f ~/.git-credentials-temp/credentials
 }
 
 printf 'Kaseki instance: %s\n' "$INSTANCE_NAME"

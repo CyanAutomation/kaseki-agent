@@ -19,6 +19,9 @@ services:
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
+      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_client_id}"
+      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
     volumes:
       - /agents:/agents:rw
       - kaseki-logs:/var/log/kaseki-api
