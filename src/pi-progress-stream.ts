@@ -21,8 +21,10 @@ interface PiEvent {
 
 interface ProgressPayload {
   timestamp: string;
+  updatedAt: string;
   stage: string;
   message: string;
+  percentComplete?: number;
   [key: string]: any;
 }
 
@@ -72,8 +74,10 @@ function sanitizeToolLabel(value: string): string {
 }
 
 function emit(stage: string, message: string, extra: Record<string, any> = {}): void {
+  const now = new Date().toISOString();
   const payload: ProgressPayload = {
-    timestamp: new Date().toISOString(),
+    timestamp: now,
+    updatedAt: now,
     stage,
     message,
     ...extra,

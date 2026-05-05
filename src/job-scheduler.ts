@@ -761,6 +761,7 @@ export class JobScheduler {
           source: 'docker-logs',
           stage: match[1].trim(),
           message: match[2].trim(),
+          timestamp: new Date().toISOString(),
         });
       }
     }

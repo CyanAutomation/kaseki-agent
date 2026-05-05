@@ -193,6 +193,14 @@ List recent kaseki runs, newest first.
 
 Poll the status of a specific run. Returns progress and timeout risk.
 
+`progressV2` is now available for running jobs with structured fields:
+- `stage` (string, required)
+- `percentComplete` (number, optional)
+- `message` (string, optional)
+- `updatedAt` (ISO-8601 string, optional)
+
+Compatibility note: the legacy string `progress` field is still returned for one release and mirrors `progressV2.message` (or `stage` when message is unavailable).
+
 **Response (200 OK):**
 ```json
 {
