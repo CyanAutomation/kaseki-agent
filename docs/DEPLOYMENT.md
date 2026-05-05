@@ -94,8 +94,8 @@ Quick alternative if Docker/docker-compose is unavailable:
 ```bash
 cd /agents/kaseki-template
 
-# Install dependencies
-npm install
+# Install dependencies (lockfile-enforced)
+npm ci --omit=dev
 
 # Verify runtime
 node -v  # Must report v24.x or newer
@@ -127,7 +127,7 @@ Deploy as a systemd service on the host (advanced):
 ```bash
 # 1. Build image from this repository
 cd /agents/kaseki-template
-npm install
+npm ci --omit=dev
 npm run build
 docker build -t kaseki-agent:node24-local .
 
@@ -269,6 +269,19 @@ Expected response:
 ---
 
 ## Monitoring
+
+### Dependency Cache Behavior
+
+- Worker installs are lockfile-only (`npm ci --omit=dev`) and will fail when no `package-lock.json` or `npm-shrinkwrap.json` is present.
+- Scheduler/runner containers must keep a persistent cache mount at `/agents/kaseki-cache` (or override with `KASEKI_CACHE_DIR`) so dependency cache data survives between runs.
+- `run-kaseki.sh` mounts that directory into workers at `/cache`, and workers use:
+  - `KASEKI_DEPENDENCY_CACHE_DIR=/cache/dependencies`
+  - `NPM_CONFIG_CACHE=/cache/npm-cache`
+- Cache key is deterministic: `sha256(repo_url) + lockfile sha256 + Node major version`.
+- Progress + timing artifacts include install/cache signals:
+  - `progress.jsonl` / `progress.log`: dependency install stage, cache hit/miss, elapsed seconds.
+  - `stage-timings.tsv`: `dependency install` row with cache source and install flags.
+  - `dependency-cache.log`: summarized cache status.
 
 ### Docker Compose
 

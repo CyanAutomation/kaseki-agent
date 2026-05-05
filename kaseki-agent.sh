@@ -42,6 +42,7 @@ STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
+KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
@@ -543,19 +544,31 @@ prepare_dependencies() {
   elif [ -f npm-shrinkwrap.json ]; then
     lock_source="npm-shrinkwrap.json"
   else
-    lock_source="package.json"
+    printf 'Dependency install requires package-lock.json or npm-shrinkwrap.json; lockfile missing.\n' >&2
+    set_dependency_cache_status "lockfile-missing" "cache_key=none"
+    emit_progress "dependency install" "failed lockfile missing; refusing non-deterministic install" "error"
+    return 1
   fi
 
   local repo_key lock_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file
-  local lock_file cache_lock_fd tmp_cache_dir old_cache_dir
-  repo_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
+  local lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags
+  local node_major cache_reused cache_source install_mode
+  repo_key="$(printf '%s' "$REPO_URL" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
-  cache_key="${repo_key}/${lock_hash}"
+  node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "unknown")"
+  cache_key="${repo_key}/${lock_hash}/node-${node_major}"
   workspace_cache_root="${KASEKI_DEPENDENCY_CACHE_DIR}/${cache_key}"
   workspace_cache_dir="${workspace_cache_root}/node_modules"
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
   stamp_file="${workspace_cache_root}/stamp.txt"
   lock_file="${workspace_cache_root}.lock"
+  cache_reused="false"
+  cache_source="none"
+  install_mode="skipped"
+  install_flags="--omit=dev"
+  if [ "$KASEKI_INSTALL_IGNORE_SCRIPTS" = "1" ]; then
+    install_flags="$install_flags --ignore-scripts"
+  fi
 
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
     return 1
@@ -578,6 +591,8 @@ prepare_dependencies() {
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s.\n' "$lock_hash"
       set_dependency_cache_status "existing-node-modules" "lock_hash=$lock_hash cache_key=$cache_key"
       emit_event "dependency_cache_decision" "strategy=existing_node_modules" "reason=lock_hash_match" "location=repo"
+      emit_progress "dependency install" "cache hit source=repo lockfile=$lock_source node_major=$node_major"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped lockfile=$lock_source node_major=$node_major"
       exec {cache_lock_fd}>&-
       return 0
     fi
@@ -591,6 +606,8 @@ prepare_dependencies() {
       exec {cache_lock_fd}>&-
       return 1
     fi
+    cache_reused="true"
+    cache_source="workspace"
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s).\n' "$image_cache_dir"
     set_dependency_cache_status "image-cache-hit" "lock_hash=$lock_hash cache_key=$cache_key"
@@ -599,22 +616,32 @@ prepare_dependencies() {
       exec {cache_lock_fd}>&-
       return 1
     fi
+    cache_reused="true"
+    cache_source="image"
   fi
 
   if [ ! -d node_modules ]; then
     printf 'Dependency cache status: cache miss, running install.\n'
     set_dependency_cache_status "cache-miss" "lock_hash=$lock_hash cache_key=$cache_key"
     emit_event "dependency_cache_decision" "strategy=fresh_install" "reason=no_cache_available" "location=none"
-    if ! npm ci --prefer-offline; then
-      if ! npm install; then
-        exec {cache_lock_fd}>&-
-        return 1
-      fi
+    emit_progress "dependency install" "started cache_hit=false lockfile=$lock_source node_major=$node_major"
+    install_start="$(date +%s)"
+    if ! npm ci --prefer-offline --omit=dev $([ "$KASEKI_INSTALL_IGNORE_SCRIPTS" = "1" ] && printf '%s' '--ignore-scripts'); then
+      exec {cache_lock_fd}>&-
+      return 1
     fi
+    install_elapsed="$(($(date +%s) - install_start))"
+    install_mode="npm_ci_lockfile"
+    emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false lockfile=$lock_source node_major=$node_major flags=$install_flags"
+    record_stage_timing "dependency install" "0" "$install_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode lockfile=$lock_source node_major=$node_major flags=$install_flags"
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
     set_dependency_cache_status "install-skipped" "lock_hash=$lock_hash cache_key=$cache_key"
     emit_event "dependency_cache_decision" "strategy=skip_install" "reason=cache_hit" "location=local"
+    if [ "$cache_reused" = "true" ]; then
+      emit_progress "dependency install" "cache hit source=$cache_source lockfile=$lock_source node_major=$node_major"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped lockfile=$lock_source node_major=$node_major"
+    fi
   fi
 
   if ! mkdir -p "$workspace_cache_root"; then

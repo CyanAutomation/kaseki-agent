@@ -150,6 +150,8 @@ curl -X POST http://localhost:8080/api/runs \
 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. This starts the same worker path as a normal run, verifies the cloned repo, OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI, then exits before spending a full agent run.
 
+Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.
+
 **Response (202 Accepted):**
 ```json
 {
