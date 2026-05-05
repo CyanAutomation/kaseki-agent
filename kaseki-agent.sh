@@ -311,7 +311,7 @@ build_allowlist_regex() {
   printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" \
     | tr ' ' '\n' \
     | sed '/^$/d' \
-    | sed 's/[.[\*^$()+?{}|\\]/\\&/g' \
+    | sed "s/[.[\*^$()+?{}|\\\\]/\\\\&/g" \
     | paste -sd '|' -
 }
 
@@ -730,7 +730,7 @@ prepare_dependencies() {
     emit_event "dependency_cache_decision" "strategy=fresh_install" "reason=no_cache_available" "location=none"
     emit_progress "dependency install" "started cache_hit=false lockfile=$lock_source node_major=$node_major"
     install_start="$(date +%s)"
-    if ! npm ci --prefer-offline $install_flags; then
+    if ! npm ci --prefer-offline "$install_flags"; then
       exec {cache_lock_fd}>&-
       return 1
     fi

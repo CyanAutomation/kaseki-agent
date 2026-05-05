@@ -108,7 +108,7 @@ read_secret_value() {
     return 0
   fi
   if [ -n "$file_path" ] && [ -r "$file_path" ]; then
-    sed -e '1{s/^\xef\xbb\xbf//}' "$file_path" | sed -e '${s/[[:space:]]*$//;}'
+    sed -e '1{s/^\xef\xbb\xbf//}' "$file_path" | sed -e "\${s/[[:space:]]*$//;}"
     return 0
   fi
   return 1
@@ -119,11 +119,11 @@ normalize_private_key_pem() {
     cat
     return 0
   fi
-  node -e 'const fs = require("node:fs");
-let value = fs.readFileSync(0, "utf8").trim();
+  node -e "const fs = require('node:fs');
+let value = fs.readFileSync(0, 'utf8').trim();
 if (!value) process.exit(0);
-value = value.replace(/\\n/g, "\n");
-const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/);
+value = value.replace(/\\\\n/g, '\n');
+const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----(\[\\s\\S\\]*?)-----END \\1-----/);
 if (!match) {
   process.stdout.write(value);
   if (!value.endsWith("\n")) process.stdout.write("\n");
