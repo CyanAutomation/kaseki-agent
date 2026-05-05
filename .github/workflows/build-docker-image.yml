@@ -12,7 +12,6 @@ on:
     - cron: '0 0 * * 0'
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOCKER_IMAGE: cyanautomation/kaseki-agent
 
 permissions:
@@ -24,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.22.2'
           cache: npm
@@ -43,10 +42,10 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.22.2'
           cache: npm
@@ -67,7 +66,7 @@ jobs:
 
       - name: Upload full type-check report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: type-check-full-report
           path: |
@@ -81,10 +80,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.22.2'
           cache: npm
@@ -119,7 +118,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -227,7 +226,7 @@ jobs:
 
     steps:
       - name: Run Trivy vulnerability scanner (HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'sarif'
@@ -235,27 +234,27 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
       - name: Run Trivy vulnerability scanner (all severities)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'json'
           output: 'trivy-results-all.json'
 
       - name: Generate SBOM (SPDX format)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.20.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'spdx-json'
           output: 'sbom-spdx.json'
 
       - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
 
       - name: Upload SBOM and detailed scan results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: vulnerability-scan-results
