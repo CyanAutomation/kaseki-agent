@@ -159,22 +159,19 @@ export class IdempotencyStore {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
           throw error;
         }
-
+        try {
+          const stats = fs.statSync(this.lockPath);
           if (Date.now() - stats.mtimeMs > staleThresholdMs) {
             fs.rmdirSync(this.lockPath);
             continue;
           }
         } catch {
-          continue;
+          // If stale-lock check/removal fails, proceed to retry sleep.
         }
 
         this.sleepSync(5);
         retries++;
       }
-    }
-
-    throw new Error('Failed to acquire lock after maximum retries');
-  }
     }
 
     throw new Error('Failed to acquire lock after maximum retries');
