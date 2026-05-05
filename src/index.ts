@@ -73,6 +73,15 @@ export {
 export { HttpClientFactory } from './utils/http-client-factory';
 export type { HttpRequestOptions, RetryConfig } from './utils/http-client-factory';
 
+// Utilities (Phase 3 refactoring)
+export { FailureArtifactWriter } from './utils/failure-artifact-writer';
+export type { CleanupResult } from './utils/failure-artifact-writer';
+export { StatusResponseBuilder } from './utils/status-response-builder';
+export {
+  normalizeProgressEvent,
+  toStructuredProgress,
+} from './utils/progress-normalizer';
+
 // Route modules (Phase 3 refactoring)
 export { createStatusRoutes } from './routes/status-routes';
 export { createLogRoutes } from './routes/log-routes';
