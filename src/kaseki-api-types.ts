@@ -99,6 +99,12 @@ export interface StatusResponse {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   progress?: string;
+  progressV2?: {
+    stage: string;
+    percentComplete?: number;
+    message?: string;
+    updatedAt?: string;
+  };
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
   exitCode?: number;

@@ -814,6 +814,109 @@ describe('kaseki-api-routes status artifact hints', () => {
       await idempotencyStore.shutdown();
     }
   });
+
+  test('running status returns structured progressV2 from progress.jsonl', async () => {
+    const jobId = 'kaseki-running-status-progress-file';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobDir, 'progress.jsonl'),
+      `${JSON.stringify({ stage: 'pi coding agent', percentComplete: 42, timestamp: '2026-05-05T00:00:00.000Z' })}\n`
+    );
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir, startedAt: new Date() } : undefined,
+      getLiveProgressEvents: jest.fn(() => []),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.progress).toBe('pi coding agent');
+      expect(body.progressV2).toEqual({
+        stage: 'pi coding agent',
+        percentComplete: 42,
+        message: 'pi coding agent',
+        updatedAt: '2026-05-05T00:00:00.000Z',
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('running status returns structured progressV2 from live docker fallback', async () => {
+    const jobId = 'kaseki-running-status-progress-live';
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date(), startedAt: new Date() } : undefined),
+      getLiveProgressEvents: jest.fn(() => [{ stage: 'startup check', message: 'container booted', timestamp: '2026-05-05T00:00:02.000Z' }]),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.progress).toBe('container booted');
+      expect(body.progressV2).toEqual({
+        stage: 'startup check',
+        message: 'container booted',
+        updatedAt: '2026-05-05T00:00:02.000Z',
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
 });
 
 describe('kaseki-api-routes idempotency concurrency', () => {
