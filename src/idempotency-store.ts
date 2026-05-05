@@ -40,12 +40,14 @@ export type ClaimResult =
 export class IdempotencyStore {
   private cache = new Map<string, IdempotencyCacheEntry>();
   private persistencePath: string;
+  private lockPath: string;
   private logger: EventLogger;
   private ttlHours: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(resultsDir: string, ttlHours: number = 24) {
     this.persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
+    this.lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     this.logger = createEventLogger('idempotency-store');
     this.ttlHours = ttlHours;
     this.loadFromDisk();
@@ -56,98 +58,116 @@ export class IdempotencyStore {
    * Check if idempotency key has been seen before and return cached response.
    */
   claimOrGet(idempotencyKey: string, requestFingerprint: string): ClaimResult {
-    const entry = this.cache.get(idempotencyKey);
-    if (!entry) {
-      const pendingEntry: IdempotencyCacheEntry = {
+    return this.withLock(() => {
+      this.loadFromDisk();
+      const entry = this.cache.get(idempotencyKey);
+      if (!entry || Date.now() > entry.expiresAt) {
+        const pendingEntry: IdempotencyCacheEntry = {
+          idempotencyKey,
+          requestFingerprint,
+          state: 'pending',
+          jobId: '',
+          requestTime: new Date().toISOString(),
+          responsePayload: {
+            id: '',
+            status: 'queued',
+            createdAt: new Date().toISOString(),
+          },
+          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+        };
+
+        this.cache.set(idempotencyKey, pendingEntry);
+        this.persistToDisk(pendingEntry);
+        return { kind: 'claimed' };
+      }
+
+      if (entry.requestFingerprint !== requestFingerprint) {
+        throw new Error('Idempotency key has already been used with a different request payload');
+      }
+
+      if (entry.state === 'pending') {
+        return { kind: 'pending' };
+      }
+
+      this.logger.event('idempotency_cache_hit', {
         idempotencyKey,
-        requestFingerprint,
-        state: 'pending',
-        jobId: '',
-        requestTime: new Date().toISOString(),
-        responsePayload: {
-          id: '',
-          status: 'queued',
-          createdAt: new Date().toISOString(),
-        },
-        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-      };
+        jobId: entry.jobId,
+        ageSeconds: Math.round((Date.now() - new Date(entry.requestTime).getTime()) / 1000),
+      });
 
-      this.cache.set(idempotencyKey, pendingEntry);
-      this.persistToDisk(pendingEntry);
-      return { kind: 'claimed' };
-    }
-
-    // Check if entry has expired
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(idempotencyKey);
-
-      const pendingEntry: IdempotencyCacheEntry = {
-        idempotencyKey,
-        requestFingerprint,
-        state: 'pending',
-        jobId: '',
-        requestTime: new Date().toISOString(),
-        responsePayload: {
-          id: '',
-          status: 'queued',
-          createdAt: new Date().toISOString(),
-        },
-        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-      };
-
-      this.cache.set(idempotencyKey, pendingEntry);
-      this.persistToDisk(pendingEntry);
-      return { kind: 'claimed' };
-    }
-
-    if (entry.requestFingerprint !== requestFingerprint) {
-      throw new Error('Idempotency key has already been used with a different request payload');
-    }
-
-    if (entry.state === 'pending') {
-      return { kind: 'pending' };
-    }
-
-    this.logger.event('idempotency_cache_hit', {
-      idempotencyKey,
-      jobId: entry.jobId,
-      ageSeconds: Math.round((Date.now() - new Date(entry.requestTime).getTime()) / 1000),
+      return { kind: 'fulfilled', response: entry.responsePayload };
     });
-
-    return { kind: 'fulfilled', response: entry.responsePayload };
   }
 
   /**
    * Store a new idempotency entry.
    */
   storeResponse(idempotencyKey: string, response: RunResponse, requestFingerprint: string): void {
-    const existing = this.cache.get(idempotencyKey);
-    const entry: IdempotencyCacheEntry = existing
-      ? {
-        ...existing,
-        requestFingerprint,
-        state: 'fulfilled',
-        jobId: response.id,
-        responsePayload: response,
-      }
-      : {
+    this.withLock(() => {
+      this.loadFromDisk();
+      const existing = this.cache.get(idempotencyKey);
+      const entry: IdempotencyCacheEntry = existing
+        ? {
+          ...existing,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          responsePayload: response,
+        }
+        : {
+          idempotencyKey,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          requestTime: new Date().toISOString(),
+          responsePayload: response,
+          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+        };
+
+      this.cache.set(idempotencyKey, entry);
+      this.persistToDisk(entry);
+
+      this.logger.event('idempotency_cache_store', {
         idempotencyKey,
-        requestFingerprint,
-        state: 'fulfilled',
         jobId: response.id,
-        requestTime: new Date().toISOString(),
-        responsePayload: response,
-        expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-      };
-
-    this.cache.set(idempotencyKey, entry);
-    this.persistToDisk(entry);
-
-    this.logger.event('idempotency_cache_store', {
-      idempotencyKey,
-      jobId: response.id,
-      ttlHours: this.ttlHours,
+        ttlHours: this.ttlHours,
+      });
     });
+  }
+
+  private withLock<T>(fn: () => T): T {
+    this.acquireLock();
+    try {
+      return fn();
+    } finally {
+      this.releaseLock();
+    }
+  }
+
+  private acquireLock(): void {
+    while (true) {
+      try {
+        fs.mkdirSync(this.lockPath);
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
+        }
+        this.sleepSync(5);
+      }
+    }
+  }
+
+  private releaseLock(): void {
+    try {
+      fs.rmdirSync(this.lockPath);
+    } catch {
+      // Ignore lock release failures.
+    }
+  }
+
+  private sleepSync(ms: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   }
 
   /**
@@ -178,6 +198,7 @@ export class IdempotencyStore {
    */
   private loadFromDisk(): void {
     try {
+      this.cache.clear();
       if (!fs.existsSync(this.persistencePath)) {
         return;
       }
