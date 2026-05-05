@@ -42,7 +42,10 @@ export async function exampleBugFixWorkflow(): Promise<void> {
       interval: 5000, // Poll every 5 seconds
       onProgress: (status) => {
         const timeoutPercent = status.timeoutRiskPercent || 0;
-        console.log(`[${status.elapsedSeconds}s] ${status.status}: ${status.progress || ''} (${timeoutPercent}% timeout risk)`);
+        const progressMsg = status.progress
+          ? `${status.progress.stage} (${status.progress.percentComplete || 0}%)`
+          : 'running';
+        console.log(`[${status.elapsedSeconds}s] ${status.status}: ${progressMsg} (${timeoutPercent}% timeout risk)`);
       },
     });
 
