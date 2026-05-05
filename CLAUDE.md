@@ -12,7 +12,7 @@ Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docke
 - **Docker Build**: Optimized multi-stage with consolidated RUN layers
 - **CI/CD**: Parallelized pipeline with GHA caching (80-90% hit rate)
   - **GitHub Actions**: All actions updated to native Node.js 24 support (v6+ for checkout/setup-node, v7+ for upload-artifact)
-  - **Trivy Scanner**: Pinned to v0.20.0 (no floating @master refs)
+  - **Trivy Scanner**: Pinned to v0.36.0 (no floating @master refs)
 - **Security**: Trivy scanning with SBOM generation
 - **Deployment**: Docker Compose (preferred) with Node.js fallback
 
@@ -176,7 +176,7 @@ GitHub Actions automatically scans images on every build using **Trivy**:
 
 ```yaml
 - name: Run Trivy vulnerability scanner
-  uses: aquasecurity/trivy-action@0.20.0
+  uses: aquasecurity/trivy-action@v0.36.0
   with:
     image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
     format: 'sarif'
