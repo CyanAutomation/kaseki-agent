@@ -226,7 +226,7 @@ jobs:
 
     steps:
       - name: Run Trivy vulnerability scanner (HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'sarif'
@@ -234,14 +234,14 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
       - name: Run Trivy vulnerability scanner (all severities)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'json'
           output: 'trivy-results-all.json'
 
       - name: Generate SBOM (SPDX format)
-        uses: aquasecurity/trivy-action@0.20.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
           format: 'spdx-json'
