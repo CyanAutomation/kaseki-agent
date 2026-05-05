@@ -189,6 +189,10 @@ KASEKI_ROOT="$TMP_DIR/kaseki-root"
 mkdir -p "$KASEKI_ROOT"
 HOST_KEY_FILE="$TMP_DIR/github-app.pem"
 printf '%s\n' 'PRIVATEKEY' > "$HOST_KEY_FILE"
+HOST_APP_ID_FILE="$TMP_DIR/github-app-id"
+HOST_CLIENT_ID_FILE="$TMP_DIR/github-app-client-id"
+printf '%s\n' '1' > "$HOST_APP_ID_FILE"
+printf '%s\n' 'abc' > "$HOST_CLIENT_ID_FILE"
 
 mkdir -p "$TMP_DIR/scripts"
 cat > "$TMP_DIR/scripts/kaseki-preflight.sh" <<'EOF_PREFLIGHT'
@@ -201,8 +205,8 @@ set +e
 env PATH="$TMP_DIR:/usr/bin:/bin" \
   KASEKI_ROOT="$KASEKI_ROOT" \
   OPENROUTER_API_KEY="dummy" \
-  GITHUB_APP_ID="1" \
-  GITHUB_APP_CLIENT_ID="abc" \
+  GITHUB_APP_ID_FILE="$HOST_APP_ID_FILE" \
+  GITHUB_APP_CLIENT_ID_FILE="$HOST_CLIENT_ID_FILE" \
   GITHUB_APP_PRIVATE_KEY_FILE="$HOST_KEY_FILE" \
   "$RUNNER" >"$TMP_DIR/run.stdout" 2>"$TMP_DIR/run.stderr"
 run_status=$?

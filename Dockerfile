@@ -29,7 +29,7 @@ RUN npm install -g @mariozechner/pi-coding-agent@0.72.0
 FROM node:24-bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates docker.io git procps \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 kaseki \
     && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \

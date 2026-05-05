@@ -203,6 +203,11 @@ docker run --rm \
    - Never commit keys to version control
    - Rotate keys regularly
    - Use separate keys for different environments (dev/staging/prod)
+   - For GitHub App authentication, prefer mounted files:
+     `GITHUB_APP_ID_FILE`, `GITHUB_APP_CLIENT_ID_FILE`, and
+     `GITHUB_APP_PRIVATE_KEY_FILE`. Avoid placing the private key PEM directly
+     in `.env`; environment variables are more likely to appear in process
+     inspection output, container metadata, and deployment UI history.
 
 2. **Network Security**
    - Expose API only on trusted networks (localhost or VPN)
