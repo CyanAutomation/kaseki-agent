@@ -66,4 +66,19 @@ describe('IdempotencyStore persistence', () => {
     });
     store.shutdown();
   });
+
+  test('only one simulated concurrent claimer gets claimed for the same key', async () => {
+    const store1 = new IdempotencyStore(resultsDir, 24);
+    const store2 = new IdempotencyStore(resultsDir, 24);
+
+    const [result1, result2] = await Promise.all([
+      Promise.resolve().then(() => store1.claimOrGet('concurrent-key', 'same-fp')),
+      Promise.resolve().then(() => store2.claimOrGet('concurrent-key', 'same-fp')),
+    ]);
+    const kinds = [result1.kind, result2.kind].sort();
+
+    expect(kinds).toEqual(['claimed', 'pending']);
+    store1.shutdown();
+    store2.shutdown();
+  });
 });
