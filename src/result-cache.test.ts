@@ -33,15 +33,37 @@ describe('ResultCache', () => {
     expect(statsAfter.bytes).toBe(statsBefore.bytes);
   });
 
-  test('returns cached content on subsequent accesses', () => {
-    cache.getOrLoad(testFile);
 
-    // Modify file on disk
+  test('reloads content when file is updated within TTL', () => {
+    jest.useFakeTimers();
+    const baseTime = new Date('2026-01-01T00:00:00.000Z');
+    jest.setSystemTime(baseTime);
+
+    const initialContent = cache.getOrLoad(testFile);
+    expect(initialContent).toBe('test content');
+
+    jest.setSystemTime(new Date(baseTime.getTime() + 100));
     fs.writeFileSync(testFile, 'modified content');
 
-    // Cache should return original content
-    const content = cache.getOrLoad(testFile);
-    expect(content).toBe('test content');
+    const reloadedContent = cache.getOrLoad(testFile);
+    expect(reloadedContent).toBe('modified content');
+
+    jest.useRealTimers();
+  });
+
+  test('returns cached content when file is unchanged within TTL', () => {
+    jest.useFakeTimers();
+    const baseTime = new Date('2026-01-01T00:00:00.000Z');
+    jest.setSystemTime(baseTime);
+
+    const initialContent = cache.getOrLoad(testFile);
+    expect(initialContent).toBe('test content');
+
+    jest.setSystemTime(new Date(baseTime.getTime() + 999));
+    const cachedContent = cache.getOrLoad(testFile);
+    expect(cachedContent).toBe('test content');
+
+    jest.useRealTimers();
   });
 
   test('expires cached entries after TTL using deterministic time control', () => {
@@ -52,17 +74,9 @@ describe('ResultCache', () => {
     const initialContent = cache.getOrLoad(testFile);
     expect(initialContent).toBe('test content');
 
-    // Change file on disk while cache is still valid.
+    jest.setSystemTime(new Date(baseTime.getTime() + 1001));
     fs.writeFileSync(testFile, 'modified content');
 
-    // Before TTL boundary, cached content should still be served.
-    // Before TTL boundary, cached content should still be served.
-    jest.setSystemTime(new Date(baseTime.getTime() + 999));
-    const cachedContent = cache.getOrLoad(testFile);
-    expect(cachedContent).toBe('test content');
-
-    // Move past TTL boundary and verify cache miss/reload behavior.
-    jest.setSystemTime(new Date(baseTime.getTime() + 1001));
     const reloadedContent = cache.getOrLoad(testFile);
     expect(reloadedContent).toBe('modified content');
 
@@ -100,7 +114,7 @@ describe('ResultCache', () => {
   });
 
   test('clears cache entries for POSIX-style path strings by job segment', () => {
-    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number }> }).cache;
+    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number; mtimeMs?: number; inode?: number }> }).cache;
     internalCache.set('/tmp/jobs/kaseki-1/result.txt', { content: 'a', timestamp: Date.now(), size: 1 });
     internalCache.set('/tmp/jobs/kaseki-10/result.txt', { content: 'b', timestamp: Date.now(), size: 1 });
 
@@ -111,7 +125,7 @@ describe('ResultCache', () => {
   });
 
   test('clears cache entries for Windows-style path strings by job segment', () => {
-    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number }> }).cache;
+    const internalCache = (cache as unknown as { cache: Map<string, { content: string; timestamp: number; size: number; mtimeMs?: number; inode?: number }> }).cache;
     internalCache.set('C:\\kaseki\\runs\\kaseki-1\\result.txt', {
       content: 'a',
       timestamp: Date.now(),
