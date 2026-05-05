@@ -551,9 +551,9 @@ prepare_dependencies() {
   fi
 
   local repo_key lock_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file
-  local lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags
+  local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags
   local node_major cache_reused cache_source install_mode
-  repo_key="$(printf '%s' "$REPO_URL" | sha256sum | awk '{print $1}')"
+  repo_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
   node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo "unknown")"
   cache_key="${repo_key}/${lock_hash}/node-${node_major}"
@@ -573,7 +573,7 @@ prepare_dependencies() {
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
     return 1
   fi
-  if ! exec {cache_lock_fd}>"$lock_file"; then
+  if ! exec {cache_lock_fd}>"$cache_lock_file"; then
     return 1
   fi
   if ! flock "$cache_lock_fd"; then
