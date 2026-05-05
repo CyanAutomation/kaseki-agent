@@ -41,7 +41,7 @@ describe('kaseki-report', () => {
     stderr: string;
     code: number | null;
   } {
-    const result = spawnSync('node', ['-r', 'ts-node/register', 'src/kaseki-report.ts', fixtureDir], {
+    const result = spawnSync('npx', ['tsx', 'src/kaseki-report.ts', fixtureDir], {
       cwd: path.join(__dirname, '..'),
       encoding: 'utf8',
     });
