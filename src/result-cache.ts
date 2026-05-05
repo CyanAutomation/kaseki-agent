@@ -30,17 +30,19 @@ export class ResultCache {
    * Get or load a file from disk.
    */
   getOrLoad(filePath: string): string | null {
+    let fileStat: fs.Stats | undefined;
+
     // Check cache
     const cached = this.cache.get(filePath);
     if (cached) {
       const age = Date.now() - cached.timestamp;
       if (age < this.ttlMs) {
         try {
-          const stat = fs.statSync(filePath);
-          const inode = typeof stat.ino === 'number' ? stat.ino : undefined;
+          fileStat = fs.statSync(filePath);
+          const inode = typeof fileStat.ino === 'number' ? fileStat.ino : undefined;
           const unchanged =
-            stat.mtimeMs === cached.mtimeMs &&
-            stat.size === cached.size &&
+            fileStat.mtimeMs === cached.mtimeMs &&
+            fileStat.size === cached.size &&
             (cached.inode === undefined || inode === cached.inode);
 
           if (unchanged) {
@@ -48,7 +50,6 @@ export class ResultCache {
           }
         } catch {
           // Fall through to reload from disk
-        }
         }
       } else {
         // Expired, remove from cache
@@ -62,7 +63,7 @@ export class ResultCache {
     }
 
     try {
-      const stat = fs.statSync(filePath);
+      const stat = fileStat ?? fs.statSync(filePath);
       const content = fs.readFileSync(filePath, 'utf-8');
 
       // Only cache reasonable-sized files to avoid memory bloat
