@@ -152,10 +152,8 @@ function checkGitHubAppCredentials(): PreflightCheck {
       remediation: 'Mount readable GitHub App secret files or set the corresponding environment variables.',
     };
   }
-  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey);
-
-  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey);
-  if (!/^\d+$/.test(appId)) {
+  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey as string);
+  if (!/^\d+$/.test(appId as string)) {
     return {
       name: 'github-app',
       ok: false,
