@@ -1,5 +1,4 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -7,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
+import { execDockerCommand } from './lib/subprocess-helpers';
 import {
   RunRequestSchema,
   RunResponse,
@@ -67,26 +67,8 @@ function inspectImageDigest(image: string): string | undefined {
     .find((line) => line.trim().length > 0);
 }
 
-export function classifyDockerFailure(stderr: string): { detail: string; remediation: string } {
-  const normalized = stderr.toLowerCase();
-  if (normalized.includes('permission denied') || normalized.includes('connect: permission denied')) {
-    return {
-      detail: 'Docker daemon socket is not accessible from the API process.',
-      remediation:
-        'Add the API container user to the host Docker socket group, for example group_add: ["${DOCKER_GID:-985}"].',
-    };
-  }
-  if (normalized.includes('cannot connect') || normalized.includes('is the docker daemon running')) {
-    return {
-      detail: 'Docker daemon is unreachable from the API process.',
-      remediation: 'Mount /var/run/docker.sock and verify the host Docker daemon is running.',
-    };
-  }
-  return {
-    detail: stderr.trim() || 'Docker command failed.',
-    remediation: 'Verify Docker CLI, daemon access, and the mounted Docker socket.',
-  };
-}
+// Re-export from subprocess-helpers for backward compatibility with tests
+export { classifyDockerFailure } from './lib/subprocess-helpers';
 
 function checkOpenRouterKey(): PreflightCheck {
   if (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.length > 0) {
@@ -135,26 +117,19 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
 
   checks.push(checkOpenRouterKey());
 
-  const dockerVersion = spawnSync('docker', ['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}'], {
-    encoding: 'utf-8',
-    timeout: 5000,
-  });
-  const dockerVersionText = dockerVersion.status === 0 ? dockerVersion.stdout.trim() : undefined;
-  if (dockerVersion.status === 0) {
-    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersionText });
+  const dockerVersion = execDockerCommand(['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}']);
+  if (dockerVersion.ok) {
+    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersion.stdout });
   } else {
-    const classified = classifyDockerFailure(dockerVersion.stderr || dockerVersion.stdout || dockerVersion.error?.message || '');
+    const classified = dockerVersion.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
     checks.push({ name: 'docker-daemon', ok: false, ...classified });
   }
 
-  const imageInspect = spawnSync('docker', ['image', 'inspect', image], {
-    encoding: 'utf-8',
-    timeout: 5000,
-  });
-  if (imageInspect.status === 0) {
+  const imageInspect = execDockerCommand(['image', 'inspect', image]);
+  if (imageInspect.ok) {
     checks.push({ name: 'docker-image', ok: true, detail: `Image is present: ${image}` });
   } else {
-    const classified = classifyDockerFailure(imageInspect.stderr || imageInspect.stdout || imageInspect.error?.message || '');
+    const classified = imageInspect.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
     const daemonFailed = checks.some((check) => check.name === 'docker-daemon' && !check.ok);
     checks.push({
       name: 'docker-image',
@@ -195,9 +170,9 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
       groups: process.getgroups?.(),
     },
     docker: {
-      version: dockerVersionText,
-      clientVersion: dockerVersionText?.split(' -> ')[0],
-      serverVersion: dockerVersionText?.split(' -> ')[1],
+      version: dockerVersion.stdout,
+      clientVersion: dockerVersion.stdout?.split(' -> ')[0],
+      serverVersion: dockerVersion.stdout?.split(' -> ')[1],
     },
   };
 }

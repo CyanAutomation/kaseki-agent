@@ -1,20 +1,17 @@
 /**
- * Shared test utilities and fixtures for unit and integration tests.
+ * Shared generic test utilities and fixtures for unit and integration tests.
  * Consolidates common test setup patterns to reduce duplication.
+ *
+ * This module contains reusable test factories and types that can be imported
+ * by multiple test files. For API-route-specific test setup, see kaseki-api-routes.test.ts.
  */
 
-import express, { Express } from 'express';
-import { Server } from 'http';
-import { AddressInfo } from 'net';
-import { IdempotencyStore } from './idempotency-store';
-import { PreFlightValidator } from './pre-flight-validator';
-import { createApiRouter } from './kaseki-api-routes';
 import type { KasekiApiConfig } from './kaseki-api-config';
 
 /**
  * Test-specific config type with jest.fn() mocks.
  */
-interface TestScheduler {
+export interface TestScheduler {
   getQueueStatus: jest.Mock;
   getReadiness: jest.Mock;
   getJob: jest.Mock;
@@ -26,12 +23,12 @@ interface TestScheduler {
 /**
  * Possible job statuses for mock scheduler.
  */
-type MockJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type MockJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 /**
  * Mock job object for tests.
  */
-interface MockJob {
+export interface MockJob {
   id: string;
   status: MockJobStatus;
   createdAt: Date;
@@ -44,6 +41,10 @@ interface MockJob {
 /**
  * Creates a mock scheduler with standard behavior for tests.
  * Customize by providing jobData to override default getJob behavior.
+ *
+ * @example
+ * const scheduler = createMockScheduler();
+ * scheduler.getReadiness.mockReturnValue({ ready: false, reasons: ['error'] });
  */
 export function createMockScheduler(jobData?: { [jobId: string]: MockJob }): TestScheduler {
   return {
@@ -59,6 +60,9 @@ export function createMockScheduler(jobData?: { [jobId: string]: MockJob }): Tes
 /**
  * Creates a standard test configuration object.
  * Pass resultsDir to set the directory; other params use reasonable defaults.
+ *
+ * @example
+ * const config = createTestConfig('/tmp/results');
  */
 export function createTestConfig(resultsDir: string): KasekiApiConfig {
   return {
@@ -71,49 +75,4 @@ export function createTestConfig(resultsDir: string): KasekiApiConfig {
     agentTimeoutSeconds: 1200,
     logLevel: 'info' as const,
   };
-}
-
-/**
- * Complete test app setup: returns { app, server, port, idempotencyStore, preFlightValidator }.
- * Call server.close() in finally block to clean up.
- *
- * @param scheduler Mock scheduler (use createMockScheduler)
- * @param config Test config (use createTestConfig)
- * @returns Object with Express app, HTTP server, port number, and stores
- */
-export async function createTestApp(
-  scheduler: TestScheduler,
-  config: KasekiApiConfig,
-): Promise<{
-  app: Express;
-  server: Server;
-  port: number;
-  idempotencyStore: IdempotencyStore;
-  preFlightValidator: PreFlightValidator;
-}> {
-  const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
-  const preFlightValidator = new PreFlightValidator();
-
-  const app = express();
-  app.use(express.json());
-  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
-
-  const server = app.listen(0);
-  const port = (server.address() as AddressInfo).port;
-
-  return {
-    app,
-    server,
-    port,
-    idempotencyStore,
-    preFlightValidator,
-  };
-}
-
-/**
- * Clean shutdown of server and idempotency store.
- */
-export async function cleanupTestApp(server: Server, idempotencyStore: IdempotencyStore): Promise<void> {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  await idempotencyStore.shutdown();
 }

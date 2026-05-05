@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import express from 'express';
-import { AddressInfo } from 'net';
+import express, { Express } from 'express';
+import { AddressInfo, Server } from 'net';
 import { classifyDockerFailure, decodeUtf8TailSafely, tailLogByLines } from './kaseki-api-routes';
 import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
@@ -11,9 +11,54 @@ import { PreFlightValidator } from './pre-flight-validator';
 import {
   createMockScheduler,
   createTestConfig,
-  createTestApp,
-  cleanupTestApp,
+  type TestScheduler,
 } from './test-utils';
+
+/**
+ * Complete test app setup for kaseki-api-routes testing.
+ * Returns { app, server, port, idempotencyStore, preFlightValidator }.
+ * Call server.close() in finally block to clean up.
+ *
+ * @param scheduler Mock scheduler (use createMockScheduler from test-utils)
+ * @param config Test config (use createTestConfig from test-utils)
+ * @returns Object with Express app, HTTP server, port number, and stores
+ */
+async function createTestApp(
+  scheduler: TestScheduler,
+  config: ReturnType<typeof createTestConfig>,
+): Promise<{
+  app: Express;
+  server: Server;
+  port: number;
+  idempotencyStore: IdempotencyStore;
+  preFlightValidator: PreFlightValidator;
+}> {
+  const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+  const preFlightValidator = new PreFlightValidator();
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
+
+  const server = app.listen(0);
+  const port = (server.address() as AddressInfo).port;
+
+  return {
+    app,
+    server,
+    port,
+    idempotencyStore,
+    preFlightValidator,
+  };
+}
+
+/**
+ * Clean shutdown of server and idempotency store.
+ */
+async function cleanupTestApp(server: Server, idempotencyStore: IdempotencyStore): Promise<void> {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await idempotencyStore.shutdown();
+}
 
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {

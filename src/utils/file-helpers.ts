@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { spawnSync } from 'child_process';
+import { commandOutput as executeCommand } from '../lib/subprocess-helpers';
 
 /**
  * Check if a file exists and is non-empty.
@@ -44,18 +44,11 @@ export function readTailLines(content: string, maxLines: number): string {
 
 /**
  * Execute a shell command and return its output.
+ * Delegates to subprocess-helpers for consolidated subprocess handling.
  * Used for system diagnostics (e.g., git commands, docker info).
  */
 export function commandOutput(command: string, args: string[], cwd?: string): string | undefined {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf-8',
-    timeout: 5000,
-  });
-  if (result.status !== 0) {
-    return undefined;
-  }
-  return result.stdout.trim() || undefined;
+  return executeCommand(command, args, cwd);
 }
 
 /**
