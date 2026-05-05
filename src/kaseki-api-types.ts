@@ -93,18 +93,22 @@ export interface RunResponse {
 }
 
 /**
+ * Structured progress information for a run.
+ */
+export interface StructuredProgress {
+  stage: string; // Required: current stage name
+  percentComplete?: number; // Optional: 0-100
+  message?: string; // Optional: detailed message
+  updatedAt?: string; // Optional: ISO 8601 timestamp
+}
+
+/**
  * Status poll response.
  */
 export interface StatusResponse {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
-  progress?: string;
-  progressV2?: {
-    stage: string;
-    percentComplete?: number;
-    message?: string;
-    updatedAt?: string;
-  };
+  progress?: StructuredProgress;
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
   exitCode?: number;

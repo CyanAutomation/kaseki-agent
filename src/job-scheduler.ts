@@ -753,7 +753,7 @@ export class JobScheduler {
             '',
             '## Completed work',
             `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
-            `- API finalization fallback written: yes`,
+            '- API finalization fallback written: yes',
             '',
             '## Failure classification',
             `- Failure class: ${job.failureClass || 'unknown'}`,
@@ -913,31 +913,31 @@ export class JobScheduler {
   private loadPersistedJobs(): void {
     try {
       this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
-      if (!fs.existsSync(this.indexPath)) {
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
-        for (const persisted of parsed.jobs || []) {
-          const job = this.deserializeJob(persisted);
-          if (job.status === 'running') {
-            job.status = 'failed';
-            job.exitCode = 143;
-            job.failureClass = 'api_restart';
-            job.error = 'API service restarted while job was running';
-            job.completedAt = job.completedAt || new Date();
-            job.finalized = true;
-          }
-          if (job.status === 'queued') {
-            this.queue.push(job);
-          }
-          this.jobs.set(job.id, job);
+        if (!fs.existsSync(this.indexPath)) {
+          return;
         }
-      } catch {
+
+        try {
+          const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+          for (const persisted of parsed.jobs || []) {
+            const job = this.deserializeJob(persisted);
+            if (job.status === 'running') {
+              job.status = 'failed';
+              job.exitCode = 143;
+              job.failureClass = 'api_restart';
+              job.error = 'API service restarted while job was running';
+              job.completedAt = job.completedAt || new Date();
+              job.finalized = true;
+            }
+            if (job.status === 'queued') {
+              this.queue.push(job);
+            }
+            this.jobs.set(job.id, job);
+          }
+        } catch {
         // A corrupt index should not prevent the API from starting; existing
         // artifacts remain available on disk for direct inspection.
-      }
+        }
       });
     } catch {
       // Lock contention during startup is best-effort; a future persist/load cycle will reconcile state.
