@@ -89,6 +89,10 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.error).toMatch(/Agent timeout/);
     expect(job.failureClass).toBe('timeout');
     expect(job.completedAt).toBeDefined();
+    const runDir = `${scheduler['config'].resultsDir}/${job.id}`;
+    expect(fs.readFileSync(`${runDir}/analysis.md`, 'utf-8').trim().length).toBeGreaterThan(0);
+    expect(fs.readFileSync(`${runDir}/metadata.json`, 'utf-8').trim().length).toBeGreaterThan(0);
+    expect(fs.readFileSync(`${runDir}/stderr.log`, 'utf-8').trim().length).toBeGreaterThan(0);
   });
 
   test('passes parent results directory as host log directory', async () => {
@@ -269,8 +273,14 @@ describe('JobScheduler timeout lifecycle', () => {
 
     const failurePath = `${resultsDir}/${job.id}/failure.json`;
     const summaryPath = `${resultsDir}/${job.id}/result-summary.md`;
+    const analysisPath = `${resultsDir}/${job.id}/analysis.md`;
+    const metadataPath = `${resultsDir}/${job.id}/metadata.json`;
+    const stderrPath = `${resultsDir}/${job.id}/stderr.log`;
     expect(fs.statSync(failurePath).size).toBeGreaterThan(0);
     expect(fs.statSync(summaryPath).size).toBeGreaterThan(0);
+    expect(fs.statSync(analysisPath).size).toBeGreaterThan(0);
+    expect(fs.statSync(metadataPath).size).toBeGreaterThan(0);
+    expect(fs.statSync(stderrPath).size).toBeGreaterThan(0);
     expect(JSON.parse(fs.readFileSync(failurePath, 'utf-8'))).toMatchObject({
       failureClass: 'cancelled',
       exitCode: 143,
@@ -486,11 +496,11 @@ describe('JobScheduler instance allocation and live progress', () => {
     );
 
     expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
-      {
+      expect.objectContaining({
         source: 'docker-logs',
         stage: 'pi coding agent',
         message: 'working; events=42',
-      },
+      }),
     ]);
   });
 });

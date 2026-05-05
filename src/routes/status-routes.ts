@@ -6,7 +6,7 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 import { StatusResponse, RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 
-const STATUS_KEY_FILES = ['metadata.json', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
+const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 type ProgressV2 = NonNullable<StatusResponse['progressV2']>;
 
 function toProgressV2(event: Record<string, unknown>): ProgressV2 | null {
@@ -153,6 +153,7 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
 
       response.artifacts = {
         metadataJson: keyFileAvailability['metadata.json'],
+        analysisMd: keyFileAvailability['analysis.md'],
         resultSummaryMd: keyFileAvailability['result-summary.md'],
         failureJson: keyFileAvailability['failure.json'],
         stderrLog: keyFileAvailability['stderr.log'],
@@ -164,6 +165,8 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
         // where keyFileAvailability is defined to avoid duplicate/out-of-scope assignments.
         if (keyFileAvailability['failure.json']) {
           response.diagnosticEntryPoint = 'failure.json';
+        } else if (keyFileAvailability['analysis.md']) {
+          response.diagnosticEntryPoint = 'analysis.md';
         } else if (keyFileAvailability['result-summary.md']) {
           response.diagnosticEntryPoint = 'result-summary.md';
         }

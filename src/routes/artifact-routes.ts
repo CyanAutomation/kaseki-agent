@@ -10,6 +10,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
 const ALWAYS_SAFE_SUMMARY_ARTIFACTS = [
   'git.diff',
   'metadata.json',
+  'analysis.md',
   'result-summary.md',
   'pi-events.jsonl',
   'pi-summary.json',

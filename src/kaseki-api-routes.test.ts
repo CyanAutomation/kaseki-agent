@@ -749,6 +749,7 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.status).toBe('failed');
       expect(body.artifacts).toEqual({
         metadataJson: true,
+        analysisMd: false,
         resultSummaryMd: false,
         failureJson: true,
         stderrLog: true,
@@ -803,12 +804,46 @@ describe('kaseki-api-routes status artifact hints', () => {
       const body = (await response.json()) as any;
       expect(body.artifacts).toEqual({
         metadataJson: false,
+        analysisMd: false,
         resultSummaryMd: true,
         failureJson: false,
         stderrLog: false,
         availableFiles: ['result-summary.md'],
       });
       expect(body.diagnosticEntryPoint).toBe('result-summary.md');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('failed run prefers analysis.md diagnostic entrypoint when failure.json is missing', async () => {
+    const jobId = 'kaseki-failed-status-analysis';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'analysis.md'), '# analysis');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+    const config = { port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch' as const, maxDiffBytes: 200000, agentTimeoutSeconds: 1200, logLevel: 'info' as const };
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, { headers: { Authorization: 'Bearer test-key' } });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.artifacts.analysisMd).toBe(true);
+      expect(body.diagnosticEntryPoint).toBe('analysis.md');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();

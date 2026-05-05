@@ -115,12 +115,13 @@ export interface StatusResponse {
   requestId?: string; // Unique request ID
   artifacts?: {
     metadataJson: boolean;
+    analysisMd: boolean;
     resultSummaryMd: boolean;
     failureJson: boolean;
     stderrLog: boolean;
     availableFiles: string[];
   };
-  diagnosticEntryPoint?: 'failure.json' | 'result-summary.md';
+  diagnosticEntryPoint?: 'failure.json' | 'analysis.md' | 'result-summary.md';
 }
 
 /**
