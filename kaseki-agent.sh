@@ -561,7 +561,7 @@ prepare_dependencies() {
   workspace_cache_dir="${workspace_cache_root}/node_modules"
   image_cache_dir="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR}/${cache_key}/node_modules"
   stamp_file="${workspace_cache_root}/stamp.txt"
-  lock_file="${workspace_cache_root}.lock"
+  cache_lock_file="${workspace_cache_root}.lock"
   cache_reused="false"
   cache_source="none"
   install_mode="skipped"
