@@ -274,6 +274,83 @@ describe('JobScheduler timeout lifecycle', () => {
     // Once from submit, once from single guarded completion.
     expect(processQueueSpy).toHaveBeenCalledTimes(2);
   });
+
+  test('cancel immediately before process exit emits one terminal webhook', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const webhookManager = {
+      enqueueWebhook: jest.fn(),
+    } as unknown as WebhookManager;
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      webhookManager
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      webhookConfig: { url: 'https://example.com/webhook' },
+    });
+
+    scheduler.cancelJob(job.id);
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('failed');
+    expect(job.failureClass).toBe('cancelled');
+    const terminalEvents = (webhookManager.enqueueWebhook as jest.Mock).mock.calls
+      .map((call) => call[1].eventType)
+      .filter((eventType) => ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType));
+    expect(terminalEvents).toEqual(['job.cancelled']);
+  });
+
+  test('cancel immediately after process exit keeps one terminal webhook', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const webhookManager = {
+      enqueueWebhook: jest.fn(),
+    } as unknown as WebhookManager;
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      webhookManager
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      webhookConfig: { url: 'https://example.com/webhook' },
+    });
+
+    proc.emit('exit', 0);
+    scheduler.cancelJob(job.id);
+
+    expect(job.status).toBe('completed');
+    const terminalEvents = (webhookManager.enqueueWebhook as jest.Mock).mock.calls
+      .map((call) => call[1].eventType)
+      .filter((eventType) => ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType));
+    expect(terminalEvents).toEqual(['job.completed']);
+  });
 });
 
 describe('JobScheduler instance allocation and live progress', () => {
