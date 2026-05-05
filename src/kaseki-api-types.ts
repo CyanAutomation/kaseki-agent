@@ -71,6 +71,7 @@ export const RunRequestSchema = z.object({
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
   idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
+  timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Per-run timeout in seconds'),
 });
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
@@ -282,4 +283,5 @@ export interface Job {
   requestId?: string; // Unique request ID
   currentStage?: string; // Current job stage for progress tracking
   idempotencyKey?: string; // Idempotency key for deduplication
+  effectiveTimeoutSeconds?: number; // Resolved timeout applied to this job
 }

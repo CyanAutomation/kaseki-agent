@@ -964,3 +964,39 @@ describe('kaseki-api-routes idempotency concurrency', () => {
   });
 
 });
+
+describe('kaseki-api-routes timeoutSeconds validation', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-timeout-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('rejects invalid timeoutSeconds with 400', async () => {
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/example/repo',
+          ref: 'main',
+          timeoutSeconds: 10,
+        }),
+      });
+      expect(response.status).toBe(400);
+      const payload = (await response.json()) as any;
+      expect(payload.detail).toMatch(/timeoutSeconds/);
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
