@@ -620,12 +620,16 @@ export class JobScheduler {
     }
   }
 
-  private withSyncLock<T>(lockPath: string, _lockName: string, callback: () => T): T {
+  private withSyncLock<T>(lockPath: string, lockName: string, callback: () => T): T {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
     try {
       fs.mkdirSync(lockPath, { mode: 0o700 });
-    } catch {
-      return callback();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') {
+        throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
+      }
+      throw err;
     }
 
     try {
@@ -788,7 +792,8 @@ export class JobScheduler {
   }
 
   private loadPersistedJobs(): void {
-    this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
+    try {
+      this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
       if (!fs.existsSync(this.indexPath)) {
         return;
       }
@@ -814,7 +819,10 @@ export class JobScheduler {
         // A corrupt index should not prevent the API from starting; existing
         // artifacts remain available on disk for direct inspection.
       }
-    });
+      });
+    } catch {
+      // Lock contention during startup is best-effort; a future persist/load cycle will reconcile state.
+    }
   }
 
   private parseInstanceNumber(id: string): number | null {

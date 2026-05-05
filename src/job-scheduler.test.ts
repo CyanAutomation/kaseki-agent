@@ -438,7 +438,61 @@ describe('JobScheduler persistence merge safety', () => {
     cleanupResultsDirs();
   });
 
-  test('interleaved persist writes do not regress newer job state', async () => {
+  
+  test('persistJobs skips writes when index lock is already held', async () => {
+    const resultsDir = createResultsDir();
+    const config = {
+      port: 8080,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 0,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 30,
+      logLevel: 'info' as const,
+    };
+
+    const scheduler = new JobScheduler(config, createMockWebhookManager());
+    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const indexPath = `${resultsDir}/.kaseki-api-jobs.json`;
+    const before = fs.readFileSync(indexPath, 'utf-8');
+
+    fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
+    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/locked' });
+    (scheduler as unknown as { persistJobs: () => void }).persistJobs();
+
+    const after = fs.readFileSync(indexPath, 'utf-8');
+    expect(after).toBe(before);
+  });
+
+  test('loadPersistedJobs does not read index when lock is already held', async () => {
+    const resultsDir = createResultsDir();
+    const indexPath = `${resultsDir}/.kaseki-api-jobs.json`;
+    fs.writeFileSync(
+      indexPath,
+      `${JSON.stringify({ version: 1, updatedAt: '2026-05-04T00:00:00.000Z', jobs: [{ id: 'kaseki-1', status: 'queued', request: { repoUrl: 'https://github.com/org/repo', ref: 'main' }, createdAt: '2026-05-04T00:00:00.000Z', resultDir: `${resultsDir}/kaseki-1`, correlationId: 'c1', requestId: 'r1' }] }, null, 2)}
+`,
+      'utf-8'
+    );
+    fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 0,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    expect(scheduler.getJob('kaseki-1')).toBeUndefined();
+  });
+test('interleaved persist writes do not regress newer job state', async () => {
     const resultsDir = createResultsDir();
     const config = {
       port: 8080,
