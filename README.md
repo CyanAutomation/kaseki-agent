@@ -50,7 +50,7 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 /agents/kaseki-agent/             # Checkout (source of truth for controllers)
 /agents/kaseki-runs/kaseki-N/     # Per-run workspace (cloned repo, node_modules)
 /agents/kaseki-results/kaseki-N/  # Artifacts (logs, diff, metadata, summary)
-/agents/kaseki-cache/             # Optional host-level dependency cache
+/agents/kaseki-cache/             # Optional host-level dependency cache (lockfile-first npm keys)
 ```
 
 ---
@@ -775,8 +775,8 @@ When credentials are configured:
 | Variable | Default | Notes |
 |---|---|---|
 | `KASEKI_ROOT` | `/agents` | Base directory for runs, results, cache |
-| `KASEKI_DEPENDENCY_CACHE_DIR` | `/workspace/.kaseki-cache` | Workspace cache for deps |
-| `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` | `/opt/kaseki/workspace-cache` | Image-provided seed cache |
+| `KASEKI_DEPENDENCY_CACHE_DIR` | `/workspace/.kaseki-cache` | Workspace dependency cache, keyed as `npm/<lock_hash>/node-<major>/flags-<flags_hash>` |
+| `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` | `/opt/kaseki/workspace-cache` | Image-provided seed cache using the same lockfile-first key layout |
 
 ### Docker and Images
 
@@ -895,11 +895,13 @@ Displays all invocation patterns, argument descriptions, environment variables, 
 `kaseki-agent.sh` prepares dependencies in this order:
 
 1. Skip if no `package.json`
-2. Skip if `node_modules` exists and lock hash matches
-3. Try workspace cache hit at `$KASEKI_DEPENDENCY_CACHE_DIR/<hash>/node_modules`
-4. Try image seed cache hit at `$KASEKI_IMAGE_DEPENDENCY_CACHE_DIR/<hash>/node_modules`
-5. Refresh with `npm ci --prefer-offline` (fallback: `npm install`)
-6. Write to workspace cache for reuse
+2. Skip if `node_modules` exists and the external dependency stamp matches the lock hash
+3. Try workspace cache hit at `$KASEKI_DEPENDENCY_CACHE_DIR/npm/<lock_hash>/node-<major>/flags-<flags_hash>/node_modules`
+4. Try image seed cache hit at `$KASEKI_IMAGE_DEPENDENCY_CACHE_DIR/npm/<lock_hash>/node-<major>/flags-<flags_hash>/node_modules`
+5. Refresh with `npm ci --prefer-offline` plus the active install-mode flags
+6. Atomically publish `node_modules` back to the workspace cache for reuse
+
+The primary cache boundary is lockfile-first: `npm/<lock_hash>/node-<major>/flags-<flags_hash>`. The `flags_hash` covers install-mode switches such as `KASEKI_NPM_OMIT_DEV` and `KASEKI_INSTALL_IGNORE_SCRIPTS`, so incompatible installs do not share `node_modules`. Repo/ref information is recorded as metadata in cache logs and `repo-ref-metadata.tsv`, but it is not part of the reuse key; two refs with the same lockfile, Node major version, and install flags can reuse the same dependency cache path.
 
 The dependency stamp is stored outside the repo, so git status/diff remain focused on target changes.
 
