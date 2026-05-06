@@ -1,11 +1,11 @@
 import * as path from 'path';
-import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { toStructuredProgress } from './progress-normalizer';
+import { readLastJsonlEvent } from './file-helpers';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 
@@ -59,16 +59,16 @@ export class StatusResponseBuilder {
 
     try {
       const progressFile = path.join(this.config.resultsDir, job.id, 'progress.jsonl');
-      if (fs.existsSync(progressFile)) {
-        const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
-        if (lines.length > 0) {
-          const lastEvent = JSON.parse(lines[lines.length - 1]);
-          const structuredProgress = toStructuredProgress(lastEvent);
-          if (structuredProgress) {
-            response.progress = structuredProgress;
-          }
+      const lastFileEvent = readLastJsonlEvent(progressFile);
+      if (lastFileEvent) {
+        const structuredProgress = toStructuredProgress(lastFileEvent);
+        if (structuredProgress) {
+          response.progress = structuredProgress;
         }
-      } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
+        return;
+      }
+
+      if (typeof this.scheduler.getLiveProgressEvents === 'function') {
         const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
         const lastEvent = liveEvents[liveEvents.length - 1];
         if (lastEvent) {

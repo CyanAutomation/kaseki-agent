@@ -43,6 +43,71 @@ export function readTailLines(content: string, maxLines: number): string {
 }
 
 /**
+ * Read the final complete non-empty JSONL event from a file tail.
+ * Reads at most maxBytes from the end of the file so large progress logs do not
+ * need to be loaded fully for status responses.
+ */
+export function readLastJsonlEvent(filePath: string, maxBytes = 65536): Record<string, unknown> | undefined {
+  if (maxBytes <= 0) {
+    return undefined;
+  }
+
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stats = fs.fstatSync(fd);
+    if (!stats.isFile() || stats.size === 0) {
+      return undefined;
+    }
+
+    const bytesToRead = Math.min(stats.size, maxBytes);
+    const start = stats.size - bytesToRead;
+    const buffer = Buffer.alloc(bytesToRead);
+    const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, start);
+    if (bytesRead <= 0) {
+      return undefined;
+    }
+
+    let tail = buffer.subarray(0, bytesRead).toString('utf-8');
+
+    const endsWithLineBreak = /[\r\n]$/.test(tail);
+    if (!endsWithLineBreak) {
+      const lastLineBreak = Math.max(tail.lastIndexOf('\n'), tail.lastIndexOf('\r'));
+      const shouldTreatOnlyLineAsComplete = start === 0 && lastLineBreak === -1;
+      if (!shouldTreatOnlyLineAsComplete) {
+        if (lastLineBreak === -1) {
+          return undefined;
+        }
+        tail = tail.slice(0, lastLineBreak + 1);
+      }
+    }
+
+    const lines = tail.split(/\r?\n/);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index].trim();
+      if (!line) {
+        continue;
+      }
+
+      const parsed = JSON.parse(line) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+    }
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors; callers treat the event as best-effort metadata.
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Execute a shell command and return its output.
  * Delegates to subprocess-helpers for consolidated subprocess handling.
  * Used for system diagnostics (e.g., git commands, docker info).

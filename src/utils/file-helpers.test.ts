@@ -5,6 +5,7 @@ import {
   isNonEmptyFile,
   readFirstLine,
   readTailLines,
+  readLastJsonlEvent,
   fileExists,
   readFileContent,
   getFileStats,
@@ -106,6 +107,52 @@ describe('file-helpers', () => {
       // The function splits on /\r?\n/ which handles both CRLF and LF
       // Then joins with \n, so CRLF is converted to LF in the output
       expect(readTailLines(content, 2)).toBe('line3\nline4');
+    });
+  });
+
+  describe('readLastJsonlEvent', () => {
+    it('should parse a small single-line JSONL file', () => {
+      const filePath = path.join(tempDir, 'small.jsonl');
+      fs.writeFileSync(filePath, JSON.stringify({ stage: 'small', percentComplete: 10 }));
+
+      expect(readLastJsonlEvent(filePath)).toEqual({ stage: 'small', percentComplete: 10 });
+    });
+
+    it('should parse the last complete event from a large JSONL file without requiring the whole file', () => {
+      const filePath = path.join(tempDir, 'large.jsonl');
+      const filler = `${JSON.stringify({ stage: 'filler', message: 'x'.repeat(70000) })}\n`;
+      const lastEvent = { stage: 'large-tail', percentComplete: 99 };
+      fs.writeFileSync(filePath, `${filler}${JSON.stringify(lastEvent)}\n`);
+
+      expect(readLastJsonlEvent(filePath)).toEqual(lastEvent);
+    });
+
+    it('should ignore trailing newline characters and parse the previous event', () => {
+      const filePath = path.join(tempDir, 'trailing-newline.jsonl');
+      fs.writeFileSync(
+        filePath,
+        `${JSON.stringify({ stage: 'first' })}\n${JSON.stringify({ stage: 'second', percentComplete: 50 })}\n\n`
+      );
+
+      expect(readLastJsonlEvent(filePath)).toEqual({ stage: 'second', percentComplete: 50 });
+    });
+
+    it('should ignore a partial final line and parse the previous complete event', () => {
+      const filePath = path.join(tempDir, 'partial-final-line.jsonl');
+      fs.writeFileSync(filePath, `${JSON.stringify({ stage: 'complete', percentComplete: 75 })}\n{"stage":`);
+
+      expect(readLastJsonlEvent(filePath)).toEqual({ stage: 'complete', percentComplete: 75 });
+    });
+
+    it('should return undefined for malformed JSON on the final complete line', () => {
+      const filePath = path.join(tempDir, 'malformed.jsonl');
+      fs.writeFileSync(filePath, `${JSON.stringify({ stage: 'older' })}\n{not-json}\n`);
+
+      expect(readLastJsonlEvent(filePath)).toBeUndefined();
+    });
+
+    it('should return undefined for missing files', () => {
+      expect(readLastJsonlEvent(path.join(tempDir, 'missing.jsonl'))).toBeUndefined();
     });
   });
 
