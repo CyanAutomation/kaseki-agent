@@ -44,6 +44,7 @@ STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
+KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-copy}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
@@ -423,6 +424,58 @@ set_dependency_cache_status() {
   printf '%s\t%s\n' "$status" "$detail" >> "$DEPENDENCY_CACHE_LOG"
 }
 
+same_filesystem() {
+  local left="$1"
+  local right="$2"
+  local left_device right_device
+  left_device="$(stat -c %d "$left" 2>/dev/null || true)"
+  right_device="$(stat -c %d "$right" 2>/dev/null || true)"
+  [ -n "$left_device" ] && [ "$left_device" = "$right_device" ]
+}
+
+restore_node_modules_from_cache() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local mode="${3:-copy}"
+  DEPENDENCY_RESTORE_METHOD="$mode"
+  case "$mode" in
+    copy)
+      cp -a "$source_dir" "$target_dir"
+      ;;
+    hardlink)
+      if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
+        if cp -al "$source_dir" "$target_dir"; then
+          DEPENDENCY_RESTORE_METHOD="hardlink"
+          return 0
+        fi
+        DEPENDENCY_RESTORE_METHOD="hardlink_fallback_copy"
+        printf 'Dependency cache status: hardlink restore failed; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        cp -a "$source_dir" "$target_dir"
+      else
+        DEPENDENCY_RESTORE_METHOD="hardlink_cross_fs_copy"
+        printf 'Dependency cache status: hardlink restore skipped because cache and workspace are on different filesystems; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        cp -a "$source_dir" "$target_dir"
+      fi
+      ;;
+    symlink)
+      # Experimental: only keep this restore if downstream validation confirms tooling
+      # tolerates a symlinked node_modules tree.
+      DEPENDENCY_RESTORE_METHOD="symlink_experimental"
+      ln -s "$source_dir" "$target_dir"
+      ;;
+    *)
+      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected copy, hardlink, or symlink)\n' "$mode" >&2
+      return 2
+      ;;
+  esac
+}
+
+publish_node_modules_cache() {
+  local source_dir="$1"
+  local tmp_cache_dir="$2"
+  rm -rf "$tmp_cache_dir"
+  mkdir -p "$tmp_cache_dir" && cp -a "$source_dir/." "$tmp_cache_dir/"
+}
 
 dependency_cache_flags_identity() {
   printf 'omit_dev=%s\nignore_scripts=%s\n' "${KASEKI_NPM_OMIT_DEV:-0}" "${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
@@ -653,7 +706,7 @@ prepare_dependencies() {
 
   local repo_ref_key lock_hash flags_hash cache_key workspace_cache_root workspace_cache_dir image_cache_dir stamp_file metadata_file
   local cache_lock_file cache_lock_fd tmp_cache_dir old_cache_dir install_start install_elapsed install_flags_display cache_detail
-  local node_major cache_reused cache_source install_mode
+  local node_major cache_reused cache_source install_mode restore_mode restore_method
   local -a install_flags
   repo_ref_key="$(printf '%s@%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}')"
   lock_hash="$(sha256sum "$lock_source" | awk '{print $1}')"
@@ -669,6 +722,17 @@ prepare_dependencies() {
   cache_reused="false"
   cache_source="none"
   install_mode="skipped"
+  restore_mode="$KASEKI_DEPENDENCY_RESTORE_MODE"
+  restore_method="$restore_mode"
+  case "$restore_mode" in
+    copy|hardlink|symlink) ;;
+    *)
+      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected copy, hardlink, or symlink)\n' "$restore_mode" >&2
+      set_dependency_cache_status "restore-mode-invalid" "restore_mode=$restore_mode repo_url=$REPO_URL git_ref=$GIT_REF"
+      emit_progress "dependency install" "failed invalid restore_mode=$restore_mode" "error"
+      return 1
+      ;;
+  esac
   install_flags=()
   install_flags_display="none"
   if [ "$KASEKI_NPM_OMIT_DEV" = "1" ]; then
@@ -680,7 +744,7 @@ prepare_dependencies() {
   if [ "${#install_flags[@]}" -gt 0 ]; then
     install_flags_display="${install_flags[*]}"
   fi
-  cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+  cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
 
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
     return 1
@@ -701,10 +765,10 @@ prepare_dependencies() {
   if [ -d node_modules ] && [ -f "$stamp_file" ]; then
     if grep -qx "$lock_hash" "$stamp_file"; then
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s (repo_ref_key=%s).\n' "$lock_hash" "$repo_ref_key"
-      set_dependency_cache_status "existing-node-modules" "$cache_detail"
-      emit_event "dependency_cache_decision" "strategy=existing_node_modules" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-      emit_progress "dependency install" "cache hit source=repo lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      set_dependency_cache_status "existing-node-modules" "$cache_detail restore_method=none"
+      emit_event "dependency_cache_decision" "strategy=existing_node_modules" "restore_mode=$restore_mode" "restore_method=none" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      emit_progress "dependency install" "cache hit source=repo restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
       exec {cache_lock_fd}>&-
       return 0
     fi
@@ -713,17 +777,20 @@ prepare_dependencies() {
   if [ ! -d node_modules ] && [ -d "$workspace_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from workspace cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$workspace_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "workspace-cache-hit" "$cache_detail"
-    emit_event "dependency_cache_decision" "strategy=workspace_cache_hit" "reason=cache_available" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-    if ! cp -a "$workspace_cache_dir" ./node_modules; then
+    emit_event "dependency_cache_decision" "strategy=workspace_cache_hit" "restore_mode=$restore_mode" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    if ! restore_node_modules_from_cache "$workspace_cache_dir" ./node_modules "$restore_mode"; then
       exec {cache_lock_fd}>&-
       return 1
     fi
+    restore_method="$DEPENDENCY_RESTORE_METHOD"
+    set_dependency_cache_status "workspace-cache-restored" "$cache_detail restore_method=$restore_method"
+    emit_event "dependency_cache_decision" "strategy=workspace_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     cache_reused="true"
     cache_source="workspace"
     if ! npm ls --depth=0 >/dev/null 2>&1; then
       printf 'Dependency cache status: workspace cache failed npm ls validation; reinstalling.\n'
-      set_dependency_cache_status "workspace-cache-invalid" "$cache_detail reason=npm_ls_failed"
-      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "reason=npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      set_dependency_cache_status "workspace-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
+      emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -731,17 +798,20 @@ prepare_dependencies() {
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "image-cache-hit" "$cache_detail"
-    emit_event "dependency_cache_decision" "strategy=image_cache_hit" "reason=cache_available" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-    if ! cp -a "$image_cache_dir" ./node_modules; then
+    emit_event "dependency_cache_decision" "strategy=image_cache_hit" "restore_mode=$restore_mode" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    if ! restore_node_modules_from_cache "$image_cache_dir" ./node_modules "$restore_mode"; then
       exec {cache_lock_fd}>&-
       return 1
     fi
+    restore_method="$DEPENDENCY_RESTORE_METHOD"
+    set_dependency_cache_status "image-cache-restored" "$cache_detail restore_method=$restore_method"
+    emit_event "dependency_cache_decision" "strategy=image_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     cache_reused="true"
     cache_source="image"
     if ! npm ls --depth=0 >/dev/null 2>&1; then
       printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
-      set_dependency_cache_status "image-cache-invalid" "$cache_detail reason=npm_ls_failed"
-      emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
+      emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -751,8 +821,8 @@ prepare_dependencies() {
   if [ ! -d node_modules ]; then
     printf 'Dependency cache status: cache miss for lock hash %s (repo_ref_key=%s), running install.\n' "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "cache-miss" "$cache_detail"
-    emit_event "dependency_cache_decision" "strategy=fresh_install" "reason=no_cache_available" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-    emit_progress "dependency install" "started cache_hit=false lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+    emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=no_cache_available" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then
       exec {cache_lock_fd}>&-
@@ -760,15 +830,15 @@ prepare_dependencies() {
     fi
     install_elapsed="$(($(date +%s) - install_start))"
     install_mode="npm_ci_lockfile"
-    emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
-    record_stage_timing "dependency install" "0" "$install_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+    emit_progress "dependency install" "finished elapsed=${install_elapsed}s cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+    record_stage_timing "dependency install" "0" "$install_elapsed" "cache_hit=false cache_source=none install_mode=$install_mode restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
   else
     printf 'Dependency cache status: install skipped due to cache hit.\n'
-    set_dependency_cache_status "install-skipped" "$cache_detail"
-    emit_event "dependency_cache_decision" "strategy=skip_install" "reason=cache_hit" "location=local" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    set_dependency_cache_status "install-skipped" "$cache_detail restore_method=$restore_method"
+    emit_event "dependency_cache_decision" "strategy=skip_install" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=cache_hit" "location=local" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     if [ "$cache_reused" = "true" ]; then
-      emit_progress "dependency install" "cache hit source=$cache_source lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      emit_progress "dependency install" "cache hit source=$cache_source restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
     fi
   fi
 
@@ -779,7 +849,7 @@ prepare_dependencies() {
   tmp_cache_dir="${workspace_cache_dir}.tmp.$$"
   old_cache_dir="${workspace_cache_dir}.old.$$"
   rm -rf "$tmp_cache_dir" "$old_cache_dir"
-  if ! cp -a node_modules "$tmp_cache_dir"; then
+  if ! publish_node_modules_cache node_modules "$tmp_cache_dir"; then
     exec {cache_lock_fd}>&-
     return 1
   fi
@@ -800,8 +870,8 @@ prepare_dependencies() {
     exec {cache_lock_fd}>&-
     return 1
   fi
-  if ! printf 'repo_ref_key=%s	repo_url=%s	git_ref=%s	lock_hash=%s	cache_key=%s	flags_hash=%s\n' \
-    "$repo_ref_key" "$REPO_URL" "$GIT_REF" "$lock_hash" "$cache_key" "$flags_hash" > "$metadata_file"; then
+  if ! printf 'repo_ref_key=%s	repo_url=%s	git_ref=%s	lock_hash=%s	cache_key=%s	flags_hash=%s	restore_mode=%s	restore_method=%s\n' \
+    "$repo_ref_key" "$REPO_URL" "$GIT_REF" "$lock_hash" "$cache_key" "$flags_hash" "$restore_mode" "$restore_method" > "$metadata_file"; then
     exec {cache_lock_fd}>&-
     return 1
   fi
