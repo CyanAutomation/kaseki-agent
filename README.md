@@ -779,6 +779,9 @@ When credentials are configured:
 | `KASEKI_DEPENDENCY_CACHE_DIR` | `/workspace/.kaseki-cache` | Workspace dependency cache, keyed as `npm/<lock_hash>/node-<major>/flags-<flags_hash>` |
 | `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` | `/opt/kaseki/workspace-cache` | Image-provided seed cache using the same lockfile-first key layout |
 | `KASEKI_GIT_CACHE_MODE` | `mirror` | Git object cache mode: `mirror` uses host-mounted bare mirrors under `/cache/git`; `off` keeps the direct shallow clone path |
+| `KASEKI_REPO_MEMORY_MODE` | `off` | Opt-in repository prompt memory: `off` disables it; `summary` appends a compact prior-context summary when fresh |
+| `KASEKI_REPO_MEMORY_TTL_DAYS` | `30` | Maximum age for a repository memory summary before it is ignored |
+| `KASEKI_REPO_MEMORY_MAX_BYTES` | `8000` | Maximum bytes to read/write for the repository memory prompt section |
 
 ### Docker and Images
 
@@ -904,6 +907,14 @@ Displays all invocation patterns, argument descriptions, environment variables, 
 6. If the mirror is disabled, unavailable, corrupt, or cannot be refreshed/populated, fall back to the existing direct shallow clone.
 
 Set `KASEKI_GIT_CACHE_MODE=off` to disable Git mirror caching. Clone duration plus cache mode/status/hit/key/strategy data are emitted to `stage-timings.tsv`, `progress.jsonl`, and `metadata.json`.
+
+### Repository Memory Cache
+
+Repository memory is disabled by default. Set `KASEKI_REPO_MEMORY_MODE=summary` to opt in to a compact prompt-context cache for the target repository and ref. Kaseki stores this summary at `/cache/repo-memory/<repo-key>/summary.md`, where `<repo-key>` is derived from the repository URL and default ref. Before invoking the agent, Kaseki appends a clearly labeled “Prior repository context” section only when the summary exists, is within `KASEKI_REPO_MEMORY_TTL_DAYS`, and is no larger than `KASEKI_REPO_MEMORY_MAX_BYTES`.
+
+After a successful run, or an inspect-mode run where the agent completed and the secret scan passed, Kaseki rewrites the summary from bounded, sanitized artifacts: `result-summary.md`, `analysis.md`, `changed-files.txt`, and validation timing/status outcomes. The summary records the repo URL, default ref, commit SHA, and timestamp so stale context is visible to the next agent. Kaseki does not blindly persist raw logs or user prompts, and lines resembling secrets, credentials, API keys, tokens, or prompt text are filtered out before writing memory.
+
+This memory is an efficiency feature, not an authoritative source of truth. Agents should use it only as hints and must inspect the current repository state before relying on prior context.
 
 ---
 
