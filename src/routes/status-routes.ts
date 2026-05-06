@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { JobScheduler } from '../job-scheduler';
-import { KasekiApiConfig } from '../kaseki-api-config';
+import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from '../kaseki-api-config';
 import { RunsListResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
@@ -28,6 +28,10 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
         resultDir: job.resultDir,
       })),
       total: allJobs.length,
+      retention: {
+        terminalJobIndexMaxEntries: config.jobIndexMaxEntries ?? DEFAULT_JOB_INDEX_MAX_ENTRIES,
+        note: 'Older terminal runs may be omitted from this API index after compaction; their artifacts remain on disk under the results directory.',
+      },
     };
 
     res.json(response);

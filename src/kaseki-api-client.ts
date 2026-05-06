@@ -105,6 +105,10 @@ const RunsListResponseSchema = z.object({
     resultDir: z.string().optional(),
   })),
   total: z.number(),
+  retention: z.object({
+    terminalJobIndexMaxEntries: z.number(),
+    note: z.string(),
+  }).optional(),
 });
 
 /**
