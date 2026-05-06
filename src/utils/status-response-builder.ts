@@ -4,7 +4,7 @@ import { Job } from '../kaseki-api-types';
 import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
-import { isNonEmptyFile } from './file-helpers';
+import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { toStructuredProgress } from './progress-normalizer';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
@@ -89,14 +89,10 @@ export class StatusResponseBuilder {
     }
 
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const metadata = getRunArtifactMetadata(job.id, runDir, STATUS_KEY_FILES, true);
     const keyFileAvailability = STATUS_KEY_FILES.reduce(
       (acc, fileName) => {
-        try {
-          const filePath = path.join(runDir, fileName);
-          acc[fileName] = isNonEmptyFile(filePath);
-        } catch {
-          acc[fileName] = false;
-        }
+        acc[fileName] = metadata[fileName]?.exists === true && metadata[fileName].size > 0;
         return acc;
       },
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
