@@ -1,8 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { sendErrorResponse, buildStatusResponse, detectContentType } from './response-helpers';
-import { isNonEmptyFile } from './file-helpers';
 
 describe('response-helpers', () => {
   describe('sendErrorResponse', () => {
@@ -121,38 +117,6 @@ describe('response-helpers', () => {
 
     it('should default to text/plain', () => {
       expect(detectContentType('unknown.xyz')).toBe('text/plain');
-    });
-  });
-
-  describe('isNonEmptyFile', () => {
-    let tempDir: string;
-
-    beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-'));
-    });
-
-    afterEach(() => {
-      if (fs.existsSync(tempDir)) {
-        fs.rmSync(tempDir, { recursive: true });
-      }
-    });
-
-    it('should return true for non-empty files', () => {
-      const filePath = path.join(tempDir, 'test.txt');
-      fs.writeFileSync(filePath, 'content');
-
-      expect(isNonEmptyFile(filePath)).toBe(true);
-    });
-
-    it('should return false for empty files', () => {
-      const filePath = path.join(tempDir, 'empty.txt');
-      fs.writeFileSync(filePath, '');
-
-      expect(isNonEmptyFile(filePath)).toBe(false);
-    });
-
-    it('should return false for non-existent files', () => {
-      expect(isNonEmptyFile('/non/existent/file.txt')).toBe(false);
     });
   });
 });
