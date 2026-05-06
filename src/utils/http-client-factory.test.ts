@@ -85,12 +85,6 @@ describe('http-client-factory', () => {
       }
     });
 
-    it('should have request method', () => {
-      const factory = new HttpClientFactory();
-      expect(factory.request).toBeDefined();
-      expect(typeof factory.request).toBe('function');
-    });
-
     it('should have requestText method', () => {
       const factory = new HttpClientFactory();
       expect(factory.requestText).toBeDefined();
@@ -103,18 +97,27 @@ describe('http-client-factory', () => {
       expect(typeof factory.requestBlob).toBe('function');
     });
 
-    it('should handle successful requests with proper parsing', async () => {
+    it('should handle successful requests with proper parsing and JSON request error semantics', async () => {
       const factory = new HttpClientFactory({ maxAttempts: 1 });
       const originalFetch = global.fetch;
       const jsonPayload = { id: 'run-123', nested: { status: 'ok' } };
+      const jsonErrorPayload = { detail: 'invalid run id' };
       const textPayload = 'plain text response';
       const blobPayload = new Blob(['binary response'], { type: 'application/octet-stream' });
+      const successJson = jest.fn().mockResolvedValue(jsonPayload);
+      const errorJson = jest.fn().mockResolvedValue(jsonErrorPayload);
       const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
           statusText: 'OK',
-          json: jest.fn().mockResolvedValue(jsonPayload),
+          json: successJson,
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          statusText: 'Bad Request',
+          json: errorJson,
         } as unknown as Response)
         .mockResolvedValueOnce({
           ok: true,
@@ -137,11 +140,23 @@ describe('http-client-factory', () => {
             { method: 'GET' },
             (data) => {
               expect(data).toEqual(jsonPayload);
-              return { runId: (data as typeof jsonPayload).id };
+              return { runId: (data as typeof jsonPayload).id, status: (data as typeof jsonPayload).nested.status };
             },
             'JSON request'
           )
-        ).resolves.toEqual({ runId: 'run-123' });
+        ).resolves.toEqual({ runId: 'run-123', status: 'ok' });
+        expect(successJson).toHaveBeenCalledTimes(1);
+
+        await expect(
+          factory.request(
+            'https://api.example.test/json-error',
+            { method: 'POST', body: '{"id":"missing"}' },
+            (data) => data,
+            'JSON request'
+          )
+        ).rejects.toThrow('JSON request failed: invalid run id');
+        expect(errorJson).toHaveBeenCalledTimes(1);
+
         await expect(
           factory.requestText('https://api.example.test/text', { method: 'POST', body: '{}' }, 'Text request')
         ).resolves.toBe(textPayload);
@@ -150,8 +165,12 @@ describe('http-client-factory', () => {
         ).resolves.toBe(blobPayload);
 
         expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.example.test/json', { method: 'GET' });
-        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/text', { method: 'POST', body: '{}' });
-        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.example.test/blob', { method: 'DELETE' });
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/json-error', {
+          method: 'POST',
+          body: '{"id":"missing"}',
+        });
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.example.test/text', { method: 'POST', body: '{}' });
+        expect(fetchMock).toHaveBeenNthCalledWith(4, 'https://api.example.test/blob', { method: 'DELETE' });
       } finally {
         global.fetch = originalFetch;
       }
