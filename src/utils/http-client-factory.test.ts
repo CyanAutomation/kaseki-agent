@@ -35,12 +35,58 @@ describe('http-client-factory', () => {
       expect(typeof factory.requestBlob).toBe('function');
     });
 
-    // Integration test example (can be expanded with proper fetch mocking)
     it('should handle successful requests with proper parsing', async () => {
-      const factory = new HttpClientFactory();
+      const factory = new HttpClientFactory({ maxAttempts: 1 });
+      const originalFetch = global.fetch;
+      const jsonPayload = { id: 'run-123', nested: { status: 'ok' } };
+      const textPayload = 'plain text response';
+      const blobPayload = new Blob(['binary response'], { type: 'application/octet-stream' });
+      const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: jest.fn().mockResolvedValue(jsonPayload),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: jest.fn().mockResolvedValue(textPayload),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          blob: jest.fn().mockResolvedValue(blobPayload),
+        } as unknown as Response);
+      global.fetch = fetchMock;
 
-      // This is a placeholder test - real integration tests would need proper fetch mocking
-      expect(factory).toBeDefined();
+      try {
+        await expect(
+          factory.request(
+            'https://api.example.test/json',
+            { method: 'GET' },
+            (data) => {
+              expect(data).toEqual(jsonPayload);
+              return { runId: (data as typeof jsonPayload).id };
+            },
+            'JSON request'
+          )
+        ).resolves.toEqual({ runId: 'run-123' });
+        await expect(
+          factory.requestText('https://api.example.test/text', { method: 'POST', body: '{}' }, 'Text request')
+        ).resolves.toBe(textPayload);
+        await expect(
+          factory.requestBlob('https://api.example.test/blob', { method: 'DELETE' }, 'Blob request')
+        ).resolves.toBe(blobPayload);
+
+        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.example.test/json', { method: 'GET' });
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/text', { method: 'POST', body: '{}' });
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.example.test/blob', { method: 'DELETE' });
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 });
