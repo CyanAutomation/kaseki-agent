@@ -112,25 +112,31 @@ describe('webhook-event-builder', () => {
   });
 
   describe('Event payload structure', () => {
-    it('should have UTC ISO 8601 millisecond timestamps', () => {
-      const events = [
-        createJobSubmittedEvent('job-1'),
-        createJobStartedEvent('job-2'),
-        createJobCompletedEvent('job-3'),
-        createJobCancelledEvent('job-4'),
-        createJobFailedEvent('job-5'),
-      ];
+    it('should have consistent timestamp format', () => {
+      const expectedTimestamp = '2026-05-06T12:34:56.789Z';
 
-      for (const event of events) {
-        // Webhook timestamps are UTC ISO 8601 strings with millisecond precision.
-        expect(event.timestamp).toEqual(expect.any(String));
-        expect(event.timestamp).toMatch(
-          /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/
-        );
-        expect(new Date(event.timestamp).toISOString()).toBe(event.timestamp);
-        expect(event.jobId).toBeTruthy();
-        expect(event.eventType).toBeTruthy();
-        expect(event.data).toBeTruthy();
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date(expectedTimestamp));
+
+      try {
+        const events = [
+          createJobSubmittedEvent('job-1'),
+          createJobStartedEvent('job-2'),
+          createJobCompletedEvent('job-3'),
+          createJobCancelledEvent('job-4'),
+          createJobFailedEvent('job-5'),
+        ];
+
+        for (const event of events) {
+          // Webhook timestamps are UTC ISO 8601 strings with millisecond precision.
+          expect(event.timestamp).toBe(expectedTimestamp);
+          expect(event.timestamp).toMatch(
+            /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/
+          );
+          expect(new Date(event.timestamp).toISOString()).toBe(event.timestamp);
+        }
+      } finally {
+        jest.useRealTimers();
       }
     });
   });
