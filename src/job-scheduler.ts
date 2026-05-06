@@ -334,8 +334,10 @@ export class JobScheduler {
         }
         this.timeoutKillTimers.delete(job.id);
       }, JobScheduler.SHUTDOWN_GRACE_MS);
+      this.unrefTimer(timeoutKillTimer);
       this.timeoutKillTimers.set(job.id, timeoutKillTimer);
     }, effectiveTimeoutSeconds * 1000);
+    this.unrefTimer(timeout);
 
     job.timeout = timeout;
 
@@ -420,6 +422,10 @@ export class JobScheduler {
         completedAt: new Date(),
       });
     });
+  }
+
+  private unrefTimer(timer: NodeJS.Timeout): void {
+    timer.unref();
   }
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
@@ -1033,6 +1039,7 @@ export class JobScheduler {
           }
           this.shutdownKillTimers.delete(jobId);
         }, JobScheduler.SHUTDOWN_GRACE_MS);
+        this.unrefTimer(shutdownKillTimer);
         this.shutdownKillTimers.set(jobId, shutdownKillTimer);
       }
 

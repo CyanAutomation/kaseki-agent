@@ -514,6 +514,32 @@ describe('JobScheduler instance allocation and live progress', () => {
     cleanupResultsDirs();
   });
 
+  test('run timeout timers do not keep the event loop alive', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    expect(job.timeout?.hasRef()).toBe(false);
+
+    scheduler.shutdown();
+  });
+
   test('allocates after existing result directories and persists monotonic next id', async () => {
     const resultsDir = createResultsDir();
     fs.mkdirSync(`${resultsDir}/kaseki-12`);
