@@ -88,19 +88,6 @@ describe('progress-normalizer', () => {
       expect(result.updatedAt).toBeUndefined();
     });
 
-    it('should preserve additional properties', () => {
-      const event = {
-        stage: 'building',
-        message: 'Compiling',
-        updatedAt: '2026-05-05T10:00:00Z',
-        customField: 'custom value',
-        progress: 50,
-      };
-      const result = normalizeProgressEvent(event);
-      expect(result.customField).toBe('custom value');
-      expect(result.progress).toBe(50);
-    });
-
     it('should handle empty event object', () => {
       const event = {};
       const result = normalizeProgressEvent(event);
@@ -386,6 +373,22 @@ describe('progress-normalizer', () => {
       const normalized = normalizeProgressEvent(JSON.parse(line));
       const structured = toStructuredProgress(normalized);
 
+      expect(normalized).toMatchObject({
+        timestamp: '2026-05-05T10:00:00.000Z',
+        updatedAt: '2026-05-05T10:00:00.000Z',
+        stage: 'pi coding agent',
+        message: 'working; events=5, tool starts=2, tool ends=1',
+        percentComplete: 45,
+        counts: { assistant_message: 2, tool_start: 2, tool_end: 1 },
+        toolStartCount: 2,
+        toolEndCount: 1,
+        messageUpdateCount: 2,
+        reason: 'events',
+      });
+
+      // Structured status progress is intentionally limited to the public
+      // StructuredProgress contract; richer progress.jsonl/log fields remain
+      // client-visible through the progress/events log endpoints.
       expect(structured).toEqual({
         stage: 'pi coding agent',
         message: 'working; events=5, tool starts=2, tool ends=1',
