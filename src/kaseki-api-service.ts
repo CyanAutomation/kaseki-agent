@@ -7,6 +7,7 @@ import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
+import { ResultCache } from './result-cache';
 
 type ShutdownDeps = {
   server: Server;
@@ -112,6 +113,9 @@ async function main(): Promise<void> {
     resultsDir: config.resultsDir,
     maxDiffBytes: config.maxDiffBytes,
     agentTimeoutSeconds: config.agentTimeoutSeconds,
+    artifactCacheMaxEntries: config.artifactCacheMaxEntries,
+    artifactCacheTtlMs: config.artifactCacheTtlMs,
+    artifactCacheMaxFileBytes: config.artifactCacheMaxFileBytes,
     nodeVersion: process.versions.node,
     npmVersion: process.versions.npm || 'unknown',
     platform: process.platform,
@@ -130,6 +134,13 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // Create shared artifact content cache
+  const artifactCache = new ResultCache({
+    maxEntries: config.artifactCacheMaxEntries,
+    ttlMs: config.artifactCacheTtlMs,
+    maxFileBytes: config.artifactCacheMaxFileBytes,
+  });
+
   // Create webhook manager
   const webhookManager = new WebhookManager(config.resultsDir);
 
@@ -140,10 +151,10 @@ async function main(): Promise<void> {
   const preFlightValidator = new PreFlightValidator();
 
   // Create scheduler
-  const scheduler = new JobScheduler(config, webhookManager);
+  const scheduler = new JobScheduler(config, webhookManager, artifactCache);
 
   // Mount API routes
-  const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator);
+  const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
   app.use('/api', apiRouter);
   app.use('/', apiRouter);
 

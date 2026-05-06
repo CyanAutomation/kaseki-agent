@@ -1395,3 +1395,113 @@ describe('kaseki-api-routes timeoutSeconds validation', () => {
     }
   });
 });
+
+describe('artifact content cache configuration in routes', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-artifact-cache-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('uses the injected artifact cache and exposes its stats on metrics', async () => {
+    const jobId = 'kaseki-artifact-cache-stats';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), 'cached summary');
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'completed',
+        createdAt: new Date(),
+        resultDir: jobDir,
+      },
+    });
+    const config = {
+      ...createTestConfig(resultsDir),
+      artifactCacheMaxEntries: 1,
+      artifactCacheTtlMs: 60_000,
+      artifactCacheMaxFileBytes: 1024,
+    };
+    const artifactCache = new ResultCache({
+      maxEntries: config.artifactCacheMaxEntries,
+      ttlMs: config.artifactCacheTtlMs,
+      maxFileBytes: config.artifactCacheMaxFileBytes,
+    });
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, artifactCache));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key' };
+
+    try {
+      const first = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      expect(first.status).toBe(200);
+      const second = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      expect(second.status).toBe(200);
+
+      const metrics = await fetch(`http://127.0.0.1:${port}/api/metrics`, { headers });
+      expect(metrics.status).toBe(200);
+      const body = await metrics.text();
+      expect(body).toContain('kaseki_artifact_cache_entries 1');
+      expect(body).toContain('kaseki_artifact_cache_hits_total 1');
+      expect(body).toContain('kaseki_artifact_cache_misses_total 1');
+      expect(body).toContain('kaseki_artifact_cache_max_entries 1');
+      expect(body).toContain('kaseki_artifact_cache_max_file_bytes 1024');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('honors configured max file bytes passed through artifact routes', async () => {
+    const jobId = 'kaseki-artifact-cache-size-limit';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), 'too large for cache');
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'completed',
+        createdAt: new Date(),
+        resultDir: jobDir,
+      },
+    });
+    const config = {
+      ...createTestConfig(resultsDir),
+      artifactCacheMaxEntries: 3,
+      artifactCacheTtlMs: 60_000,
+      artifactCacheMaxFileBytes: 4,
+    };
+    const artifactCache = new ResultCache({
+      maxEntries: config.artifactCacheMaxEntries,
+      ttlMs: config.artifactCacheTtlMs,
+      maxFileBytes: config.artifactCacheMaxFileBytes,
+    });
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, artifactCache));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const headers = { Authorization: 'Bearer test-key' };
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      expect(response.status).toBe(200);
+      expect(artifactCache.getStats()).toMatchObject({ entries: 0, misses: 1, maxFileBytes: 4 });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+});
