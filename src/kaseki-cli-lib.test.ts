@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import childProcess from 'child_process';
 import * as kasekiCli from './kaseki-cli-lib';
 
 describe('kaseki-cli-lib', () => {
@@ -280,11 +281,57 @@ tests/parser.test.ts
     expect(errors[0].source).toBe('stderr');
   });
 
-  test('parseDockerContainerNames should parse docker output', () => {
-    const output = 'kaseki-1\nkaseki-2\nother-container';
-    const names = kasekiCli.parseDockerContainerNames(output);
+  test('listInstances and getInstanceStatus should derive running state from representative docker output', () => {
+    createMockInstance('kaseki-1', {
+      metadata: { exit_code: null },
+    });
+    createMockInstance('kaseki-2');
+    createMockInstance('kaseki-10', {
+      metadata: { exit_code: null },
+    });
+    const dockerOutput = `
+other-container
+kaseki-1
 
-    expect(names).toEqual(['kaseki-1', 'kaseki-2', 'other-container']);
+kaseki-2
+kaseki-10-suffix
+`;
+    const execSpy = jest
+      .spyOn(childProcess, 'execSync')
+      .mockImplementation((command: string) => {
+        expect(command).toBe('docker ps --format "{{.Names}}" 2>/dev/null || true');
+        return dockerOutput;
+      });
+
+    try {
+      const instances = kasekiCli.listInstances();
+      const status = kasekiCli.getInstanceStatus('kaseki-10');
+
+      expect(instances.map((instance) => instance.name)).toEqual([
+        'kaseki-10',
+        'kaseki-2',
+        'kaseki-1',
+      ]);
+      expect(instances.find((instance) => instance.name === 'kaseki-1')).toEqual(
+        expect.objectContaining({ running: true, status: 'running' })
+      );
+      expect(instances.find((instance) => instance.name === 'kaseki-2')).toEqual(
+        expect.objectContaining({ running: true, status: 'running' })
+      );
+      expect(instances.find((instance) => instance.name === 'kaseki-10')).toEqual(
+        expect.objectContaining({ running: false, status: 'pending' })
+      );
+      expect(status).toEqual(
+        expect.objectContaining({
+          instance: 'kaseki-10',
+          running: false,
+          status: 'pending',
+        })
+      );
+      expect(instances.some((instance) => instance.name === 'other-container')).toBe(false);
+    } finally {
+      execSpy.mockRestore();
+    }
   });
 
   test('isExactContainerNameMatch should not match partial names', () => {
