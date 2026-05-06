@@ -85,10 +85,47 @@ describe('http-client-factory', () => {
       }
     });
 
-    it('should have requestText method', () => {
-      const factory = new HttpClientFactory();
-      expect(factory.requestText).toBeDefined();
-      expect(typeof factory.requestText).toBe('function');
+    it('should return text payloads exactly and surface status-based requestText errors', async () => {
+      const factory = new HttpClientFactory({ maxAttempts: 3 });
+      const originalFetch = global.fetch;
+      const textPayload = 'plain text response\nwith exact whitespace and symbols: π ✓';
+      const successText = jest.fn().mockResolvedValue(textPayload);
+      const errorText = jest.fn().mockResolvedValue('not found body should not be read');
+      const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          text: successText,
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          text: errorText,
+        } as unknown as Response);
+      global.fetch = fetchMock;
+
+      try {
+        await expect(
+          factory.requestText('https://api.example.test/text', { method: 'POST', body: 'raw-body' }, 'Text request')
+        ).resolves.toBe(textPayload);
+        expect(successText).toHaveBeenCalledTimes(1);
+
+        await expect(
+          factory.requestText('https://api.example.test/missing-text', { method: 'GET' }, 'Missing text request')
+        ).rejects.toThrow('Missing text request failed: 404');
+        expect(errorText).not.toHaveBeenCalled();
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.example.test/text', {
+          method: 'POST',
+          body: 'raw-body',
+        });
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/missing-text', { method: 'GET' });
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
     it('should have requestBlob method', () => {
