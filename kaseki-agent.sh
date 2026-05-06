@@ -50,6 +50,16 @@ KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
+KASEKI_GIT_CACHE_MODE="${KASEKI_GIT_CACHE_MODE:-mirror}"
+KASEKI_GIT_CACHE_ROOT="${KASEKI_GIT_CACHE_ROOT:-/cache/git}"
+KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS="${KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS:-120}"
+GIT_CACHE_KEY=""
+GIT_CACHE_MIRROR=""
+GIT_CACHE_HIT="false"
+GIT_CACHE_STATUS="not_started"
+GIT_CACHE_MODE_USED="$KASEKI_GIT_CACHE_MODE"
+GIT_CLONE_STRATEGY="not_started"
+GIT_CLONE_DURATION_SECONDS=0
 
 setup_host_logging_mirror() {
   local base_name="$1"
@@ -102,6 +112,15 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : >> "$STAGE_TIMINGS_FILE"
 : > "$DEPENDENCY_CACHE_LOG"
 setup_host_logging_mirror "$INSTANCE_NAME"
+case "$KASEKI_GIT_CACHE_MODE" in
+  off|mirror)
+    ;;
+  *)
+    printf 'Warning: unsupported KASEKI_GIT_CACHE_MODE=%s; falling back to off. Expected off or mirror.\n' "$KASEKI_GIT_CACHE_MODE" >&2
+    KASEKI_GIT_CACHE_MODE="off"
+    GIT_CACHE_MODE_USED="off"
+    ;;
+esac
 
 json_encode() {
   node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
@@ -192,6 +211,13 @@ write_metadata() {
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
+  "git_cache_mode": $(printf '%s' "$GIT_CACHE_MODE_USED" | json_encode),
+  "git_cache_status": $(printf '%s' "$GIT_CACHE_STATUS" | json_encode),
+  "git_cache_hit": $GIT_CACHE_HIT,
+  "git_cache_key": $(printf '%s' "$GIT_CACHE_KEY" | json_encode),
+  "git_cache_mirror": $(printf '%s' "$GIT_CACHE_MIRROR" | json_encode),
+  "git_clone_strategy": $(printf '%s' "$GIT_CLONE_STRATEGY" | json_encode),
+  "git_clone_duration_seconds": $GIT_CLONE_DURATION_SECONDS,
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
@@ -423,6 +449,156 @@ set_dependency_cache_status() {
   local detail="${2:-}"
   printf '%s\t%s\n' "$status" "$detail" >> "$DEPENDENCY_CACHE_LOG"
 }
+
+compute_git_cache_key() {
+  local hash
+  hash="$(printf '%s' "$REPO_URL" | sha256sum | awk '{print $1}')"
+  printf 'repo-%s' "$hash"
+}
+
+is_valid_git_mirror() {
+  local mirror="$1"
+  [ -d "$mirror" ] || return 1
+  [ "$(git -C "$mirror" rev-parse --is-bare-repository 2>/dev/null || true)" = "true" ] || return 1
+  git -C "$mirror" remote get-url origin >/dev/null 2>&1 || return 1
+}
+
+run_direct_clone() {
+  rm -rf /workspace/repo
+  GIT_CLONE_STRATEGY="direct_shallow"
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
+}
+
+clone_with_git_cache() {
+  local cache_root="$KASEKI_GIT_CACHE_ROOT"
+  local mirror lock_file tmp_mirror lock_rc fetch_rc mirror_rc clone_rc
+
+  if [ "$KASEKI_GIT_CACHE_MODE" != "mirror" ]; then
+    GIT_CACHE_STATUS="disabled"
+    GIT_CACHE_HIT="false"
+    emit_progress "clone repository" "git cache disabled mode=$KASEKI_GIT_CACHE_MODE"
+    run_direct_clone
+    return $?
+  fi
+
+  GIT_CACHE_KEY="$(compute_git_cache_key)"
+  mirror="$cache_root/${GIT_CACHE_KEY}.git"
+  lock_file="$cache_root/${GIT_CACHE_KEY}.lock"
+  GIT_CACHE_MIRROR="$mirror"
+
+  if ! mkdir -p "$cache_root" 2>/dev/null; then
+    GIT_CACHE_STATUS="unavailable"
+    GIT_CACHE_HIT="false"
+    emit_error_event "git_cache_unavailable" "Cannot create git cache directory $cache_root; using direct clone" "fallback_direct_clone"
+    run_direct_clone
+    return $?
+  fi
+
+  exec 9>"$lock_file"
+  flock 9
+  lock_rc=$?
+  if [ "$lock_rc" -ne 0 ]; then
+    GIT_CACHE_STATUS="lock_failed"
+    GIT_CACHE_HIT="false"
+    emit_error_event "git_cache_lock_failed" "Cannot lock $lock_file; using direct clone" "fallback_direct_clone"
+    run_direct_clone
+    return $?
+  fi
+
+  if is_valid_git_mirror "$mirror"; then
+    GIT_CACHE_STATUS="hit"
+    GIT_CACHE_HIT="true"
+    emit_progress "clone repository" "git cache hit key=$GIT_CACHE_KEY mirror=$mirror"
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git -C "$mirror" fetch --prune --tags origin
+    fetch_rc=$?
+    if [ "$fetch_rc" -ne 0 ]; then
+      flock -u 9 || true
+      GIT_CACHE_STATUS="fetch_failed"
+      GIT_CACHE_HIT="true"
+      emit_error_event "git_cache_fetch_failed" "Mirror fetch failed or timed out for key=$GIT_CACHE_KEY exit=$fetch_rc; using direct clone" "fallback_direct_clone"
+      run_direct_clone
+      return $?
+    fi
+  else
+    GIT_CACHE_STATUS="miss"
+    GIT_CACHE_HIT="false"
+    emit_progress "clone repository" "git cache miss key=$GIT_CACHE_KEY mirror=$mirror"
+    if [ -e "$mirror" ]; then
+      rm -rf "$mirror"
+    fi
+    tmp_mirror="${mirror}.tmp.$$"
+    rm -rf "$tmp_mirror"
+    timeout "$KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS" git clone --mirror "$REPO_URL" "$tmp_mirror"
+    mirror_rc=$?
+    if [ "$mirror_rc" -eq 0 ] && is_valid_git_mirror "$tmp_mirror"; then
+      mv "$tmp_mirror" "$mirror"
+    else
+      rm -rf "$tmp_mirror"
+      flock -u 9 || true
+      GIT_CACHE_STATUS="populate_failed"
+      emit_error_event "git_cache_populate_failed" "Mirror populate failed or timed out for key=$GIT_CACHE_KEY exit=$mirror_rc; using direct clone" "fallback_direct_clone"
+      run_direct_clone
+      return $?
+    fi
+  fi
+  flock -u 9 || true
+
+  rm -rf /workspace/repo
+  GIT_CLONE_STRATEGY="reference_shallow"
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
+  clone_rc=$?
+  if [ "$clone_rc" -eq 0 ]; then
+    return 0
+  fi
+
+  rm -rf /workspace/repo
+  GIT_CLONE_STRATEGY="mirror_local"
+  emit_error_event "git_cache_reference_clone_failed" "Reference clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; trying local mirror clone" "try_mirror_clone"
+  git clone --branch "$GIT_REF" "$mirror" /workspace/repo
+  clone_rc=$?
+  if [ "$clone_rc" -eq 0 ] && git -C /workspace/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C /workspace/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  rm -rf /workspace/repo
+  GIT_CACHE_STATUS="mirror_clone_failed"
+  emit_error_event "git_cache_mirror_clone_failed" "Mirror clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; using direct clone" "fallback_direct_clone"
+  run_direct_clone
+}
+
+run_clone_repository() {
+  local step_start step_end code detail
+  step_start="$(date +%s)"
+  set_current_stage "clone repository"
+  printf '\n==> clone repository\n'
+  emit_progress "clone repository" "started cache_mode=$KASEKI_GIT_CACHE_MODE"
+  if clone_with_git_cache; then
+    code=0
+  else
+    code=$?
+  fi
+  step_end="$(date +%s)"
+  GIT_CLONE_DURATION_SECONDS="$((step_end - step_start))"
+  detail="cache_mode=$GIT_CACHE_MODE_USED cache_status=$GIT_CACHE_STATUS cache_hit=$GIT_CACHE_HIT cache_key=$GIT_CACHE_KEY strategy=$GIT_CLONE_STRATEGY mirror=$GIT_CACHE_MIRROR"
+  emit_progress "clone repository" "finished with exit $code elapsed=${GIT_CLONE_DURATION_SECONDS}s $detail"
+  emit_event "git_clone_cache" \
+    "mode=$GIT_CACHE_MODE_USED" \
+    "status=$GIT_CACHE_STATUS" \
+    "cache_hit=$GIT_CACHE_HIT" \
+    "cache_key=$GIT_CACHE_KEY" \
+    "strategy=$GIT_CLONE_STRATEGY" \
+    "mirror=$GIT_CACHE_MIRROR" \
+    "duration_seconds=$GIT_CLONE_DURATION_SECONDS" \
+    "exit_code=$code"
+  record_stage_timing "clone repository" "$code" "$GIT_CLONE_DURATION_SECONDS" "$detail"
+  if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    STATUS="$code"
+    FAILED_COMMAND="clone repository"
+  fi
+  return "$code"
+}
+
 
 same_filesystem() {
   local left="$1"
@@ -709,7 +885,7 @@ if [ -z "$openrouter_api_key" ]; then
   exit 0
 fi
 
-if ! run_step "clone repository" git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo; then
+if ! run_clone_repository; then
   exit 0
 fi
 cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
