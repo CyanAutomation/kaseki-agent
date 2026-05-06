@@ -298,15 +298,23 @@ describe('PreFlightValidator validation logic', () => {
         repoUrl: 'https://github.com/example/repo',
         ref: 'feature/my-branch',
       };
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 15,
+        output: 'abc123\trefs/heads/feature/my-branch\n',
+        timedOut: false,
+      });
 
       const response = await validator.validate(request);
 
-      // If repo is reachable, ref check should be included; otherwise it may be skipped
       const reachableCheck = response.checks.find((c) => c.name === 'repo-reachable');
-      if (reachableCheck?.status === 'pass') {
-        const refCheck = response.checks.find((c) => c.name === 'ref-exists');
-        expect(refCheck).toBeDefined();
-      }
+      expect(reachableCheck?.status).toBe('pass');
+      const refCheck = response.checks.find((c) => c.name === 'ref-exists');
+      expect(refCheck).toEqual({
+        name: 'ref-exists',
+        status: 'pass',
+        message: "Git ref 'feature/my-branch' exists",
+      });
     });
 
     test('includes repo size check', async () => {
