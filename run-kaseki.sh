@@ -119,19 +119,20 @@ normalize_private_key_pem() {
     cat
     return 0
   fi
-  node -e "const fs = require('node:fs');
-let value = fs.readFileSync(0, 'utf8').trim();
+  # shellcheck disable=SC2016
+  node -e 'const fs = require('"'"'node:fs'"'"');
+let value = fs.readFileSync(0, '"'"'utf8'"'"').trim();
 if (!value) process.exit(0);
-value = value.replace(/\\\\n/g, '\n');
-const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----(\[\\s\\S\\]*?)-----END \\1-----/);
+value = value.replace(/\\n/g, '"'"'\n'"'"');
+const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\\s\\S]*?)-----END \\1-----/);
 if (!match) {
   process.stdout.write(value);
-  if (!value.endsWith("\n")) process.stdout.write("\n");
+  if (!value.endsWith('"'"'\n'"'"')) process.stdout.write('"'"'\n'"'"');
   process.exit(0);
 }
-const body = match[2].replace(/\s+/g, "");
+const body = match[2].replace(/\s+/g, '"'"''"'"');
 const lines = body.match(/.{1,64}/g) || [];
-process.stdout.write(`-----BEGIN ${match[1]}-----\n${lines.join("\n")}\n-----END ${match[1]}-----\n`);'
+process.stdout.write(`-----BEGIN ${match[1]}-----\n${lines.join('"'"'\n'"'"')}\n-----END ${match[1]}-----\n`);'
 }
 
 # GitHub App credentials (optional, for auto PR creation)
