@@ -280,17 +280,55 @@ describe('PreFlightValidator validation logic', () => {
   });
 
   describe('git validation (git operations)', () => {
-    test('includes repo reachability check', async () => {
+    test('marks repository reachable when git ls-remote succeeds', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
         ref: 'main',
       };
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 23,
+        output: 'abc123\trefs/heads/main\n',
+        timedOut: false,
+      });
 
       const response = await validator.validate(request);
 
       const reachableCheck = response.checks.find((c) => c.name === 'repo-reachable');
-      expect(reachableCheck).toBeDefined();
-      expect(reachableCheck?.status).toMatch(/pass|fail|warning/);
+      expect(reachableCheck).toEqual({
+        name: 'repo-reachable',
+        status: 'pass',
+        message: 'Git repository is reachable (23ms)',
+      });
+      expect(response.isValid).toBe(true);
+      expect(response.errors).not.toContain('Git repository is reachable (23ms)');
+    });
+
+    test('marks repository unreachable when git ls-remote fails', async () => {
+      const repoUrl = 'https://github.com/example/missing-repo';
+      const request: RunRequest = {
+        repoUrl,
+        ref: 'main',
+      };
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 128,
+        durationMs: 31,
+        output: '',
+        timedOut: false,
+      });
+
+      const response = await validator.validate(request);
+
+      const reachableCheck = response.checks.find((c) => c.name === 'repo-reachable');
+      expect(reachableCheck).toEqual({
+        name: 'repo-reachable',
+        status: 'fail',
+        message: 'Git repository is not reachable or invalid URL',
+        detail: repoUrl,
+      });
+      expect(response.isValid).toBe(false);
+      expect(response.errors).toContain('Git repository is not reachable or invalid URL');
+      expect(response.checks.find((c) => c.name === 'ref-exists')).toBeUndefined();
     });
 
     test('includes ref existence check if repo is reachable', async () => {
