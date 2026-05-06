@@ -355,16 +355,64 @@ describe('PreFlightValidator validation logic', () => {
       });
     });
 
-    test('includes repo size check', async () => {
+    test('passes repo-size check for acceptable repository size', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
         ref: 'main',
       };
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 17,
+        output: [
+          'abc123\trefs/heads/main',
+          'def456\trefs/heads/dev',
+          'fedcba\trefs/tags/v1.0.0',
+        ].join('\n'),
+        timedOut: false,
+      });
 
       const response = await validator.validate(request);
 
       const sizeCheck = response.checks.find((c) => c.name === 'repo-size');
-      expect(sizeCheck).toBeDefined();
+      expect(sizeCheck).toEqual({
+        name: 'repo-size',
+        status: 'pass',
+        message: 'Repository size is reasonable (3 refs)',
+      });
+      expect(sizeCheck?.detail).toBeUndefined();
+      expect(response.isValid).toBe(true);
+      expect(response.warnings).not.toContain(sizeCheck?.message);
+      expect(response.errors).not.toContain(sizeCheck?.message);
+    });
+
+    test('warns for oversized repository without invalidating response', async () => {
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/large-repo',
+        ref: 'main',
+      };
+      const oversizedRefs = [
+        'abc123\trefs/heads/main',
+        ...Array.from({ length: 1001 }, (_, index) => `def${index}\trefs/tags/v${index}`),
+      ].join('\n');
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue({
+        code: 0,
+        durationMs: 42,
+        output: oversizedRefs,
+        timedOut: false,
+      });
+
+      const response = await validator.validate(request);
+
+      const sizeCheck = response.checks.find((c) => c.name === 'repo-size');
+      expect(sizeCheck).toEqual({
+        name: 'repo-size',
+        status: 'warning',
+        message: 'Repository appears very large (1002+ refs detected); consider using shallow clone',
+      });
+      expect(sizeCheck?.detail).toBeUndefined();
+      expect(response.isValid).toBe(true);
+      expect(response.warnings).toContain(sizeCheck?.message);
+      expect(response.errors).not.toContain(sizeCheck?.message);
     });
   });
 });
