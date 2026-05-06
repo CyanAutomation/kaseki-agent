@@ -2,7 +2,13 @@ import { PreFlightValidator } from './pre-flight-validator';
 import type { RunRequest } from './kaseki-api-types';
 
 describe('PreFlightValidator validation logic', () => {
-  const validator = new PreFlightValidator();
+  let validator: PreFlightValidator;
+
+  beforeEach(() => {
+    delete process.env.KASEKI_PREFLIGHT_CACHE_TTL_SECONDS;
+    delete process.env.KASEKI_PREFLIGHT_CACHE_MAX_ENTRIES;
+    validator = new PreFlightValidator();
+  });
 
   describe('validateCommandsSyntax', () => {
     test('rejects empty validation commands', async () => {
@@ -174,6 +180,102 @@ describe('PreFlightValidator validation logic', () => {
       if (response.errors.length > 0) {
         expect(response.isValid).toBe(false);
       }
+    });
+  });
+
+  describe('preflight result cache', () => {
+    const baseTime = new Date('2026-05-06T00:00:00.000Z');
+    const successfulGitResult = {
+      code: 0,
+      durationMs: 12,
+      output: 'abc123\trefs/heads/main\ndef456\trefs/heads/dev\n',
+      timedOut: false,
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(baseTime);
+      process.env.KASEKI_PREFLIGHT_CACHE_TTL_SECONDS = '60';
+      process.env.KASEKI_PREFLIGHT_CACHE_MAX_ENTRIES = '10';
+      validator = new PreFlightValidator();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
+
+    test('returns a cached response for repeated repoUrl/ref validations', async () => {
+      const gitSpy = jest
+        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
+        .mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/cache-hit',
+        ref: 'main',
+        maxDiffBytes: 200000,
+      };
+
+      const first = await validator.validate(request);
+      const second = await validator.validate(request);
+
+      expect(gitSpy).toHaveBeenCalledTimes(1);
+      expect(second).toEqual(first);
+      expect(second.checks.find((c) => c.name === 'ref-exists')?.status).toBe('pass');
+    });
+
+    test('refreshes validation after cache expiry', async () => {
+      process.env.KASEKI_PREFLIGHT_CACHE_TTL_SECONDS = '1';
+      validator = new PreFlightValidator();
+      const gitSpy = jest
+        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
+        .mockResolvedValue(successfulGitResult);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/cache-expiry',
+        ref: 'main',
+      };
+
+      await validator.validate(request);
+      jest.setSystemTime(new Date(baseTime.getTime() + 1001));
+      await validator.validate(request);
+
+      expect(gitSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('coalesces concurrent validations for the same cache key', async () => {
+      let resolveGitResult: (result: typeof successfulGitResult) => void = () => undefined;
+      const gitResultPromise = new Promise<typeof successfulGitResult>((resolve) => {
+        resolveGitResult = resolve;
+      });
+      const gitSpy = jest
+        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
+        .mockReturnValue(gitResultPromise);
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/coalesce',
+        ref: 'main',
+      };
+
+      const firstPromise = validator.validate(request);
+      const secondPromise = validator.validate(request);
+
+      expect(gitSpy).toHaveBeenCalledTimes(1);
+      resolveGitResult(successfulGitResult);
+      const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+      expect(first).toEqual(second);
+      expect(gitSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('uses distinct cache keys for distinct refs', async () => {
+      const gitSpy = jest
+        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
+        .mockResolvedValue(successfulGitResult);
+      const repoUrl = 'https://github.com/example/distinct-refs';
+
+      await validator.validate({ repoUrl, ref: 'main' });
+      await validator.validate({ repoUrl, ref: 'dev' });
+      await validator.validate({ repoUrl, ref: 'main' });
+
+      expect(gitSpy).toHaveBeenCalledTimes(2);
     });
   });
 
