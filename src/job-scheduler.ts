@@ -24,11 +24,17 @@ type CleanupResult = {
   detail?: string;
 };
 
+type LiveProgressCacheEntry = {
+  events: Array<Record<string, unknown>>;
+  expiresAt: number;
+};
+
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
 export class JobScheduler {
   private static readonly STREAM_TAIL_LIMIT_BYTES = 64 * 1024;
+  private static readonly DEFAULT_LIVE_PROGRESS_CACHE_TTL_MS = 1500;
   private jobs = new Map<string, Job>();
   private queue: Job[] = [];
   private running = new Set<string>();
@@ -36,6 +42,7 @@ export class JobScheduler {
   private processExited = new Map<string, boolean>();
   private shutdownKillTimers = new Map<string, NodeJS.Timeout>();
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
+  private liveProgressCache = new Map<string, LiveProgressCacheEntry>();
   private config: KasekiApiConfig;
   private indexPath: string;
   private nextIdPath: string;
@@ -154,6 +161,7 @@ export class JobScheduler {
         detail: 'Job never started; no worker container was created.',
       });
       clearRunArtifactMetadataCache(job.id, job.resultDir);
+      this.clearLiveProgressCache(job.id);
       this.persistJobs();
 
       // Emit webhook event for cancellation
@@ -194,6 +202,7 @@ export class JobScheduler {
     this.finalizeJobIfNeeded(job, updates);
     this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
     clearRunArtifactMetadataCache(job.id, job.resultDir);
+    this.clearLiveProgressCache(job.id);
 
     this.logger.event('job_cancelled', {
       jobId: id,
@@ -628,6 +637,7 @@ export class JobScheduler {
     }
     this.processExited.delete(job.id);
     clearRunArtifactMetadataCache(job.id, job.resultDir);
+    this.clearLiveProgressCache(job.id);
     this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);
@@ -761,10 +771,26 @@ export class JobScheduler {
   }
 
   getLiveProgressEvents(id: string, tail = 25): Array<Record<string, unknown>> {
-    const output = this.getLiveDockerLogTail(id, Math.max(tail * 8, 80));
-    if (!output) {
+    if (!/^kaseki-\d+$/.test(id)) {
       return [];
     }
+
+    const cachedEvents = this.getCachedLiveProgressEvents(id);
+    if (cachedEvents) {
+      return tail > 0 ? cachedEvents.slice(-tail) : [];
+    }
+
+    const output = this.getLiveDockerLogTail(id, Math.max(tail * 8, 80));
+    if (!output) {
+      this.cacheLiveProgressEvents(id, []);
+      return [];
+    }
+    const events = this.parseLiveProgressEvents(output);
+    this.cacheLiveProgressEvents(id, events);
+    return tail > 0 ? events.slice(-tail) : [];
+  }
+
+  private parseLiveProgressEvents(output: string): Array<Record<string, unknown>> {
     const events: Array<Record<string, unknown>> = [];
     for (const line of output.split(/\r?\n/)) {
       const match = /^\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
@@ -777,7 +803,43 @@ export class JobScheduler {
         });
       }
     }
-    return tail > 0 ? events.slice(-tail) : [];
+    return events;
+  }
+
+  private getCachedLiveProgressEvents(id: string): Array<Record<string, unknown>> | undefined {
+    const cached = this.liveProgressCache.get(id);
+    if (!cached) {
+      return undefined;
+    }
+    if (Date.now() >= cached.expiresAt) {
+      this.liveProgressCache.delete(id);
+      return undefined;
+    }
+    return cached.events;
+  }
+
+  private cacheLiveProgressEvents(id: string, events: Array<Record<string, unknown>>): void {
+    this.liveProgressCache.set(id, {
+      events,
+      expiresAt: Date.now() + this.getLiveProgressCacheTtlMs(),
+    });
+  }
+
+  private clearLiveProgressCache(id: string): void {
+    this.liveProgressCache.delete(id);
+  }
+
+  private getLiveProgressCacheTtlMs(): number {
+    const rawTtl = process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    if (!rawTtl) {
+      return JobScheduler.DEFAULT_LIVE_PROGRESS_CACHE_TTL_MS;
+    }
+
+    const ttl = Number(rawTtl);
+    if (!Number.isFinite(ttl) || ttl < 0) {
+      return JobScheduler.DEFAULT_LIVE_PROGRESS_CACHE_TTL_MS;
+    }
+    return ttl;
   }
 
   private getResultDir(id: string): string {
@@ -996,9 +1058,11 @@ export class JobScheduler {
       queuedJob.completedAt = now;
       queuedJob.finalized = true;
       this.jobs.set(queuedJob.id, queuedJob);
+      this.clearLiveProgressCache(queuedJob.id);
     }
 
     this.queue = [];
+    this.liveProgressCache.clear();
     this.persistJobs();
   }
 }
