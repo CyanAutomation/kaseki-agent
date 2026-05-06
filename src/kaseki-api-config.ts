@@ -3,6 +3,8 @@ import * as fs from 'fs';
 /**
  * Configuration for the Kaseki API service.
  */
+export const DEFAULT_JOB_INDEX_MAX_ENTRIES = 1000;
+
 export interface KasekiApiConfig {
   port: number;
   apiKeys: string[];
@@ -12,6 +14,11 @@ export interface KasekiApiConfig {
   maxDiffBytes: number;
   agentTimeoutSeconds: number;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+  /**
+   * Maximum number of terminal jobs retained in the API jobs index.
+   * Active queued/running jobs are always retained in addition to this cap.
+   */
+  jobIndexMaxEntries?: number;
 }
 
 /**
@@ -48,6 +55,16 @@ export function loadConfig(): KasekiApiConfig {
     throw new Error(`KASEKI_MAX_DIFF_BYTES must be >= 1, got: ${process.env.KASEKI_MAX_DIFF_BYTES}`);
   }
 
+  const jobIndexMaxEntries = parseInt(
+    process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES || String(DEFAULT_JOB_INDEX_MAX_ENTRIES),
+    10
+  );
+  if (isNaN(jobIndexMaxEntries) || jobIndexMaxEntries < 0) {
+    throw new Error(
+      `KASEKI_API_JOB_INDEX_MAX_ENTRIES must be >= 0, got: ${process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES}`
+    );
+  }
+
   const taskMode = (process.env.KASEKI_TASK_MODE || 'patch') as 'patch' | 'inspect';
   if (!['patch', 'inspect'].includes(taskMode)) {
     throw new Error(`KASEKI_TASK_MODE must be 'patch' or 'inspect', got: ${taskMode}`);
@@ -72,6 +89,7 @@ export function loadConfig(): KasekiApiConfig {
     maxDiffBytes,
     agentTimeoutSeconds,
     logLevel,
+    jobIndexMaxEntries,
   };
 }
 

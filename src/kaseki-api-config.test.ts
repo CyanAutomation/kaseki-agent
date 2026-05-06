@@ -26,6 +26,7 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_TASK_MODE = 'inspect';
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_LOG_LEVEL = 'debug';
+    process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '250';
 
     const config = loadConfig();
 
@@ -37,6 +38,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.defaultTaskMode).toBe('inspect');
     expect(config.resultsDir).toBe(testDir);
     expect(config.logLevel).toBe('debug');
+    expect(config.jobIndexMaxEntries).toBe(250);
   });
 
   test('loadConfig uses default values when env vars are not set', () => {
@@ -48,6 +50,7 @@ describe('kaseki-api-config load configuration', () => {
     delete process.env.KASEKI_MAX_DIFF_BYTES;
     delete process.env.KASEKI_TASK_MODE;
     delete process.env.KASEKI_API_LOG_LEVEL;
+    delete process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES;
 
     const config = loadConfig();
 
@@ -57,6 +60,7 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.maxDiffBytes).toBe(200000); // default
     expect(config.defaultTaskMode).toBe('patch'); // default
     expect(config.logLevel).toBe('info'); // default
+    expect(config.jobIndexMaxEntries).toBe(1000); // default
   });
 
   test('loadConfig throws when KASEKI_API_KEYS is not set', () => {
@@ -105,6 +109,14 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_MAX_DIFF_BYTES = '0';
 
     expect(() => loadConfig()).toThrow('KASEKI_MAX_DIFF_BYTES must be >= 1');
+  });
+
+  test('loadConfig throws when KASEKI_API_JOB_INDEX_MAX_ENTRIES is invalid', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '-1';
+
+    expect(() => loadConfig()).toThrow('KASEKI_API_JOB_INDEX_MAX_ENTRIES must be >= 0');
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {
