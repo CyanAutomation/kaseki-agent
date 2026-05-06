@@ -15,7 +15,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import childProcess from 'child_process';
 import {
   readInstanceMetadata,
   Metadata,
@@ -147,7 +147,7 @@ function dockerNamesOutputHasInstance(dockerNamesOutput: string, instance: strin
  */
 function isInstanceRunning(instance: string): boolean {
   try {
-    const dockerNamesOutput = execSync('docker ps --format "{{.Names}}" 2>/dev/null || true', {
+    const dockerNamesOutput = childProcess.execSync('docker ps --format "{{.Names}}" 2>/dev/null || true', {
       encoding: 'utf8',
     });
     return dockerNamesOutputHasInstance(dockerNamesOutput, instance);
