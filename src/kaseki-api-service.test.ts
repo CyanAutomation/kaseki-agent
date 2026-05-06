@@ -126,6 +126,7 @@ describe('Kaseki API Configuration', () => {
     const keysFile = '/tmp/test-keys.txt';
     fs.writeFileSync(keysFile, 'key1\n# comment\nkey2\n');
 
+    delete process.env.KASEKI_API_KEYS;
     process.env.KASEKI_API_KEYS_FILE = keysFile;
     process.env.KASEKI_RESULTS_DIR = '/tmp';
 

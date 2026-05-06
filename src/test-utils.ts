@@ -74,5 +74,8 @@ export function createTestConfig(resultsDir: string): KasekiApiConfig {
     maxDiffBytes: 200000,
     agentTimeoutSeconds: 1200,
     logLevel: 'info' as const,
+    artifactCacheMaxEntries: 20,
+    artifactCacheTtlMs: 5 * 60 * 1000,
+    artifactCacheMaxFileBytes: 10 * 1024 * 1024,
   };
 }

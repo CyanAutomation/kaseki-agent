@@ -30,6 +30,9 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_LOG_LEVEL = 'debug';
     process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '250';
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '7';
+    process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '12345';
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '4096';
 
     const config = loadConfig();
 
@@ -42,6 +45,9 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.resultsDir).toBe(testDir);
     expect(config.logLevel).toBe('debug');
     expect(config.jobIndexMaxEntries).toBe(250);
+    expect(config.artifactCacheMaxEntries).toBe(7);
+    expect(config.artifactCacheTtlMs).toBe(12345);
+    expect(config.artifactCacheMaxFileBytes).toBe(4096);
   });
 
   test('loadConfig uses default values when env vars are not set', () => {
@@ -54,6 +60,9 @@ describe('kaseki-api-config load configuration', () => {
     delete process.env.KASEKI_TASK_MODE;
     delete process.env.KASEKI_API_LOG_LEVEL;
     delete process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES;
+    delete process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES;
+    delete process.env.KASEKI_ARTIFACT_CACHE_TTL_MS;
+    delete process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES;
 
     const config = loadConfig();
 
@@ -64,6 +73,9 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.defaultTaskMode).toBe('patch'); // default
     expect(config.logLevel).toBe('info'); // default
     expect(config.jobIndexMaxEntries).toBe(1000); // default
+    expect(config.artifactCacheMaxEntries).toBe(20); // default
+    expect(config.artifactCacheTtlMs).toBe(5 * 60 * 1000); // default
+    expect(config.artifactCacheMaxFileBytes).toBe(10 * 1024 * 1024); // default
   });
 
   test('loadConfig throws when KASEKI_API_KEYS is not set', () => {
@@ -120,6 +132,21 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '-1';
 
     expect(() => loadConfig()).toThrow('KASEKI_API_JOB_INDEX_MAX_ENTRIES must be >= 0');
+  });
+
+  test('loadConfig throws when artifact cache configuration is invalid', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '-1';
+    expect(() => loadConfig()).toThrow('KASEKI_ARTIFACT_CACHE_MAX_ENTRIES must be >= 0');
+
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '1';
+    process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '-1';
+    expect(() => loadConfig()).toThrow('KASEKI_ARTIFACT_CACHE_TTL_MS must be >= 0');
+
+    process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '1';
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '-1';
+    expect(() => loadConfig()).toThrow('KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES must be >= 0');
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {

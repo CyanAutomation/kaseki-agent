@@ -18,7 +18,7 @@ describe('ResultCache', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('API contract: cache miss returns null, does not affect stats, and does not crash', () => {
+  test('API contract: cache miss returns null, increments miss counter, and does not crash', () => {
     const statsBefore = cache.getStats();
 
     let content: string | null = null;
@@ -31,6 +31,7 @@ describe('ResultCache', () => {
     const statsAfter = cache.getStats();
     expect(statsAfter.entries).toBe(statsBefore.entries);
     expect(statsAfter.bytes).toBe(statsBefore.bytes);
+    expect(statsAfter.misses).toBe(statsBefore.misses + 1);
   });
 
   test('reloads content when file is updated within TTL', () => {
@@ -148,6 +149,32 @@ describe('ResultCache', () => {
     const stats = cache.getStats();
     expect(stats.entries).toBe(1);
     expect(stats.bytes).toBeGreaterThan(0);
+    expect(stats.hits).toBe(0);
+    expect(stats.misses).toBe(1);
+    expect(stats.maxEntries).toBe(3);
+    expect(stats.ttlMs).toBe(1000);
+    expect(stats.maxFileBytes).toBe(10 * 1024 * 1024);
+  });
+
+  test('tracks cache hits and misses', () => {
+    expect(cache.getOrLoad(testFile)).toBe('test content');
+    expect(cache.getOrLoad(testFile)).toBe('test content');
+
+    expect(cache.getStats()).toMatchObject({ hits: 1, misses: 1 });
+  });
+
+  test('honors configured max file bytes by not caching oversized files', () => {
+    const smallCache = new ResultCache({ maxEntries: 3, ttlMs: 1000, maxFileBytes: 4 });
+    const content = smallCache.getOrLoad(testFile);
+    expect(content).toBe('test content');
+    expect(smallCache.getStats()).toMatchObject({ entries: 0, bytes: 0, hits: 0, misses: 1 });
+  });
+
+  test('honors zero max entries by disabling caching', () => {
+    const disabledCache = new ResultCache({ maxEntries: 0, ttlMs: 1000, maxFileBytes: 100 });
+    expect(disabledCache.getOrLoad(testFile)).toBe('test content');
+    expect(disabledCache.getOrLoad(testFile)).toBe('test content');
+    expect(disabledCache.getStats()).toMatchObject({ entries: 0, hits: 0, misses: 2, maxEntries: 0 });
   });
 
   test('clears all cache', () => {

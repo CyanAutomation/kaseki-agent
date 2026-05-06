@@ -12,6 +12,7 @@ import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
 import { secretValueCache } from './secret-value-cache';
+import type { ResultCache } from './result-cache';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -52,9 +53,10 @@ export class JobScheduler {
   private logger: EventLogger;
   private webhookManager: WebhookManager;
   private failureArtifactWriter: FailureArtifactWriter;
+  private artifactCache?: Pick<ResultCache, 'clearForJob'>;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
-  constructor(config: KasekiApiConfig, webhookManager: WebhookManager) {
+  constructor(config: KasekiApiConfig, webhookManager: WebhookManager, artifactCache?: Pick<ResultCache, 'clearForJob'>) {
     this.config = config;
     this.indexPath = path.join(config.resultsDir, '.kaseki-api-jobs.json');
     this.nextIdPath = path.join(config.resultsDir, '.kaseki-api-next-id');
@@ -63,6 +65,7 @@ export class JobScheduler {
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.failureArtifactWriter = new FailureArtifactWriter(config.resultsDir);
+    this.artifactCache = artifactCache;
     this.loadPersistedJobs();
     this.persistJobs();
     this.processQueue();
@@ -164,6 +167,7 @@ export class JobScheduler {
         detail: 'Job never started; no worker container was created.',
       });
       clearRunArtifactMetadataCache(job.id, job.resultDir);
+      this.clearArtifactContentCache(job.id);
       this.clearLiveProgressCache(job.id);
       this.persistJobs();
 
@@ -205,6 +209,7 @@ export class JobScheduler {
     this.finalizeJobIfNeeded(job, updates);
     this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
     clearRunArtifactMetadataCache(job.id, job.resultDir);
+    this.clearArtifactContentCache(job.id);
     this.clearLiveProgressCache(job.id);
 
     this.logger.event('job_cancelled', {
@@ -596,6 +601,10 @@ export class JobScheduler {
     }
   }
 
+  private clearArtifactContentCache(jobId: string): void {
+    this.artifactCache?.clearForJob(jobId);
+  }
+
   /**
    * Clean up after job completion.
    */
@@ -630,6 +639,7 @@ export class JobScheduler {
     }
     this.processExited.delete(job.id);
     clearRunArtifactMetadataCache(job.id, job.resultDir);
+    this.clearArtifactContentCache(job.id);
     this.clearLiveProgressCache(job.id);
     this.persistJobs();
     this.processQueue();
