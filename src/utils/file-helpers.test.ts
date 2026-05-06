@@ -40,8 +40,12 @@ describe('file-helpers', () => {
       expect(isNonEmptyFile(filePath)).toBe(false);
     });
 
-    it('should return false for non-existent files', () => {
-      expect(isNonEmptyFile(path.join(tempDir, 'nonexistent.txt'))).toBe(false);
+    it('should return false for a missing file in the temporary test directory', () => {
+      const missingPath = path.join(tempDir, 'nonexistent.txt');
+
+      expect(fs.existsSync(tempDir)).toBe(true);
+      expect(fs.existsSync(missingPath)).toBe(false);
+      expect(isNonEmptyFile(missingPath)).toBe(false);
     });
   });
 
