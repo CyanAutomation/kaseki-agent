@@ -43,14 +43,46 @@ describe('http-client-factory', () => {
       }
     });
 
-    it('should initialize with custom retry config', () => {
+    it('should initialize with custom retry config', async () => {
+      jest.useFakeTimers();
+      const originalFetch = global.fetch;
+      const maxAttempts = 7;
+      const retryDelayMs = 25;
       const customConfig: Partial<RetryConfig> = {
-        maxAttempts: 5,
-        initialDelayMs: 500,
-        maxDelayMs: 5000,
+        maxAttempts,
+        initialDelayMs: retryDelayMs,
+        maxDelayMs: retryDelayMs,
       };
-      const factory = new HttpClientFactory(customConfig);
-      expect(factory).toBeDefined();
+      const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        fetchMock.mockRejectedValueOnce(new Error(`retryable outage ${attempt}`));
+      }
+      global.fetch = fetchMock;
+
+      try {
+        const requestPromise = new HttpClientFactory(customConfig).request(
+          'https://api.example.test/custom-retry',
+          { method: 'GET' },
+          (data) => data,
+          'Custom retry request'
+        );
+        const rejectionExpectation = expect(requestPromise).rejects.toThrow('retryable outage 7');
+
+        await Promise.resolve();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        for (let expectedCalls = 2; expectedCalls <= maxAttempts; expectedCalls++) {
+          await jest.advanceTimersByTimeAsync(retryDelayMs);
+          expect(fetchMock).toHaveBeenCalledTimes(expectedCalls);
+        }
+
+        await rejectionExpectation;
+        expect(fetchMock).toHaveBeenCalledTimes(maxAttempts);
+        expect(fetchMock).toHaveBeenLastCalledWith('https://api.example.test/custom-retry', { method: 'GET' });
+      } finally {
+        global.fetch = originalFetch;
+        jest.useRealTimers();
+      }
     });
 
     it('should have request method', () => {
