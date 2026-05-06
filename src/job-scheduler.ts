@@ -11,6 +11,7 @@ import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
+import { secretValueCache } from './secret-value-cache';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -431,12 +432,12 @@ export class JobScheduler {
   }
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
-    const githubAppId = this.readSecretValue(env.GITHUB_APP_ID, env.GITHUB_APP_ID_FILE);
+    const githubAppId = secretValueCache.readSecretValue(env.GITHUB_APP_ID, env.GITHUB_APP_ID_FILE);
     if (githubAppId) {
       env.GITHUB_APP_ID = githubAppId;
     }
 
-    const githubClientId = this.readSecretValue(env.GITHUB_APP_CLIENT_ID, env.GITHUB_APP_CLIENT_ID_FILE);
+    const githubClientId = secretValueCache.readSecretValue(env.GITHUB_APP_CLIENT_ID, env.GITHUB_APP_CLIENT_ID_FILE);
     if (githubClientId) {
       env.GITHUB_APP_CLIENT_ID = githubClientId;
     }
@@ -445,22 +446,6 @@ export class JobScheduler {
       this.logger.event('github_app_private_key_file_unreadable', {
         path: env.GITHUB_APP_PRIVATE_KEY_FILE,
       });
-    }
-  }
-
-  private readSecretValue(inlineValue?: string, filePath?: string): string | undefined {
-    const trimmedInline = inlineValue?.trim();
-    if (trimmedInline) {
-      return trimmedInline;
-    }
-    if (!filePath) {
-      return undefined;
-    }
-    try {
-      const value = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '').trim();
-      return value || undefined;
-    } catch {
-      return undefined;
     }
   }
 
