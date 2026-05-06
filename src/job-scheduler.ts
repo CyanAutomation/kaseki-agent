@@ -10,6 +10,7 @@ import { WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
+import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
   createdAt: string;
@@ -152,6 +153,7 @@ export class JobScheduler {
         attempted: false,
         detail: 'Job never started; no worker container was created.',
       });
+      clearRunArtifactMetadataCache(job.id, job.resultDir);
       this.persistJobs();
 
       // Emit webhook event for cancellation
@@ -191,6 +193,7 @@ export class JobScheduler {
     };
     this.finalizeJobIfNeeded(job, updates);
     this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
+    clearRunArtifactMetadataCache(job.id, job.resultDir);
 
     this.logger.event('job_cancelled', {
       jobId: id,
@@ -624,6 +627,7 @@ export class JobScheduler {
       this.timeoutKillTimers.delete(job.id);
     }
     this.processExited.delete(job.id);
+    clearRunArtifactMetadataCache(job.id, job.resultDir);
     this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);

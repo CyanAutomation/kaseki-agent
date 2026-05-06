@@ -7,6 +7,7 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 import { ArtifactResponse, RunArtifactsResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
+import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 
 const ALWAYS_SAFE_SUMMARY_ARTIFACTS = [
   'git.diff',
@@ -136,17 +137,16 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     const runDir = job.resultDir || path.join(config.resultsDir, job.id);
     const allowedFiles = [...ALWAYS_SAFE_SUMMARY_ARTIFACTS, ...FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS];
 
+    const metadata = getRunArtifactMetadata(job.id, runDir, allowedFiles, isTerminalJobStatus(job.status));
     const artifacts = allowedFiles.map((fileName) => {
-      const filePath = path.join(runDir, fileName);
-      const exists = fs.existsSync(filePath);
-      const stat = exists ? fs.statSync(filePath) : undefined;
+      const artifactMetadata = metadata[fileName] ?? { exists: false, size: 0 };
       const isFailureOnly = FAILURE_ONLY_DIAGNOSTICS_ARTIFACTS.some((artifact) => artifact === fileName);
-      const hasContent = exists && (stat?.size ?? 0) > 0;
+      const hasContent = artifactMetadata.exists && artifactMetadata.size > 0;
       const available = hasContent && (!isFailureOnly || job.status === 'failed');
 
       return {
         name: fileName,
-        size: stat?.size ?? 0,
+        size: artifactMetadata.size,
         contentType: artifactContentType(fileName),
         available,
       };
