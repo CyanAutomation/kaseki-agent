@@ -5,6 +5,9 @@ import { secretValueCache } from './secret-value-cache';
  * Configuration for the Kaseki API service.
  */
 export const DEFAULT_JOB_INDEX_MAX_ENTRIES = 1000;
+export const DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES = 20;
+export const DEFAULT_ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
+export const DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export interface KasekiApiConfig {
   port: number;
@@ -20,6 +23,12 @@ export interface KasekiApiConfig {
    * Active queued/running jobs are always retained in addition to this cap.
    */
   jobIndexMaxEntries?: number;
+  /** Maximum number of artifact content files cached in memory. Set to 0 to disable caching. */
+  artifactCacheMaxEntries?: number;
+  /** Artifact content cache time-to-live in milliseconds. */
+  artifactCacheTtlMs?: number;
+  /** Maximum artifact file size eligible for content caching, in bytes. */
+  artifactCacheMaxFileBytes?: number;
 }
 
 /**
@@ -66,6 +75,36 @@ export function loadConfig(): KasekiApiConfig {
     );
   }
 
+  const artifactCacheMaxEntries = parseInt(
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES || String(DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES),
+    10
+  );
+  if (isNaN(artifactCacheMaxEntries) || artifactCacheMaxEntries < 0) {
+    throw new Error(
+      `KASEKI_ARTIFACT_CACHE_MAX_ENTRIES must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES}`
+    );
+  }
+
+  const artifactCacheTtlMs = parseInt(
+    process.env.KASEKI_ARTIFACT_CACHE_TTL_MS || String(DEFAULT_ARTIFACT_CACHE_TTL_MS),
+    10
+  );
+  if (isNaN(artifactCacheTtlMs) || artifactCacheTtlMs < 0) {
+    throw new Error(
+      `KASEKI_ARTIFACT_CACHE_TTL_MS must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_TTL_MS}`
+    );
+  }
+
+  const artifactCacheMaxFileBytes = parseInt(
+    process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES || String(DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES),
+    10
+  );
+  if (isNaN(artifactCacheMaxFileBytes) || artifactCacheMaxFileBytes < 0) {
+    throw new Error(
+      `KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES}`
+    );
+  }
+
   const taskMode = (process.env.KASEKI_TASK_MODE || 'patch') as 'patch' | 'inspect';
   if (!['patch', 'inspect'].includes(taskMode)) {
     throw new Error(`KASEKI_TASK_MODE must be 'patch' or 'inspect', got: ${taskMode}`);
@@ -91,6 +130,9 @@ export function loadConfig(): KasekiApiConfig {
     agentTimeoutSeconds,
     logLevel,
     jobIndexMaxEntries,
+    artifactCacheMaxEntries,
+    artifactCacheTtlMs,
+    artifactCacheMaxFileBytes,
   };
 }
 
