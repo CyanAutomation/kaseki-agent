@@ -75,10 +75,14 @@ describe('instance-state-derivation', () => {
       expect(exitCode).toBeNull();
     });
 
-    it('should handle negative exit codes', () => {
-      const metadata = { exit_code: -1 };
+    it('should treat malformed metadata exit codes as pending', () => {
+      const metadata = { exit_code: 1.5 };
+
       const exitCode = resolveInstanceExitCode(tempDir, metadata);
-      expect(exitCode).toBe(-1);
+      const status = deriveInstanceLifecycleStatus(false, exitCode);
+
+      expect(exitCode).toBeNull();
+      expect(status).toBe('pending');
     });
   });
 
