@@ -17,14 +17,6 @@ describe('webhook-event-builder', () => {
       expect(event.data.status).toBe('queued');
       expect(event.timestamp).toBeTruthy();
     });
-
-    it('should have ISO timestamp', () => {
-      const event = createJobSubmittedEvent('job-123');
-      const timestamp = new Date(event.timestamp);
-
-      expect(timestamp).toBeInstanceOf(Date);
-      expect(timestamp.getTime()).toBeGreaterThan(0);
-    });
   });
 
   describe('createJobStartedEvent', () => {
@@ -120,7 +112,7 @@ describe('webhook-event-builder', () => {
   });
 
   describe('Event payload structure', () => {
-    it('should have consistent timestamp format', () => {
+    it('should have UTC ISO 8601 millisecond timestamps', () => {
       const events = [
         createJobSubmittedEvent('job-1'),
         createJobStartedEvent('job-2'),
@@ -130,8 +122,12 @@ describe('webhook-event-builder', () => {
       ];
 
       for (const event of events) {
-        // All events should have ISO 8601 format timestamp
-        expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        // Webhook timestamps are UTC ISO 8601 strings with millisecond precision.
+        expect(event.timestamp).toEqual(expect.any(String));
+        expect(event.timestamp).toMatch(
+          /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/
+        );
+        expect(new Date(event.timestamp).toISOString()).toBe(event.timestamp);
         expect(event.jobId).toBeTruthy();
         expect(event.eventType).toBeTruthy();
         expect(event.data).toBeTruthy();
