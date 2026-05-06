@@ -106,16 +106,6 @@ describe('progress-normalizer', () => {
       const result = normalizeProgressEvent(event);
       expect(result).toEqual({});
     });
-
-    it('should create shallow copy (not mutate original)', () => {
-      const event = {
-        stage: 'testing',
-        message: 'Running tests',
-      };
-      const originalEvent = { ...event };
-      normalizeProgressEvent(event);
-      expect(event).toEqual(originalEvent);
-    });
   });
 
   describe('toStructuredProgress', () => {
@@ -346,19 +336,37 @@ describe('progress-normalizer', () => {
   });
 
   describe('integration: normalizeProgressEvent → toStructuredProgress', () => {
-    it('should work together with field remapping', () => {
+    it('should work together with field remapping without mutating the source event', () => {
       const event = {
         stage: 'testing',
         detail: 'Running unit tests',
         percent: 75,
         timestamp: '2026-05-05T10:00:00Z',
+        runId: 'run-123',
       };
+
       const normalized = normalizeProgressEvent(event);
       const structured = toStructuredProgress(normalized);
-      expect(structured?.stage).toBe('testing');
-      expect(structured?.message).toBe('Running unit tests');
-      expect(structured?.percentComplete).toBe(75);
-      expect(structured?.updatedAt).toBe('2026-05-05T10:00:00Z');
+
+      expect(normalized).toEqual({
+        stage: 'testing',
+        detail: 'Running unit tests',
+        percent: 75,
+        timestamp: '2026-05-05T10:00:00Z',
+        runId: 'run-123',
+        message: 'Running unit tests',
+        updatedAt: '2026-05-05T10:00:00Z',
+      });
+      const originalEvent = { ...event };
+      expect(event).toEqual(originalEvent);
+      expect(event).not.toHaveProperty('message');
+      expect(event).not.toHaveProperty('updatedAt');
+      expect(structured).toEqual({
+        stage: 'testing',
+        message: 'Running unit tests',
+        percentComplete: 75,
+        updatedAt: '2026-05-05T10:00:00Z',
+      });
     });
 
     it('should preserve client-visible fields from a progress.jsonl event', () => {
