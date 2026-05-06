@@ -128,10 +128,39 @@ describe('http-client-factory', () => {
       }
     });
 
-    it('should have requestBlob method', () => {
-      const factory = new HttpClientFactory();
-      expect(factory.requestBlob).toBeDefined();
-      expect(typeof factory.requestBlob).toBe('function');
+    it('should return blob payloads from requestBlob', async () => {
+      const factory = new HttpClientFactory({ maxAttempts: 1 });
+      const originalFetch = global.fetch;
+      const blobText = 'known blob payload';
+      const blobPayload = new Blob([blobText], { type: 'text/plain' });
+      const blobResponse = jest.fn().mockResolvedValue(blobPayload);
+      const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        blob: blobResponse,
+      } as unknown as Response);
+      global.fetch = fetchMock;
+
+      try {
+        const result = await factory.requestBlob(
+          'https://api.example.test/blob',
+          { method: 'GET', headers: { Accept: 'text/plain' } },
+          'Blob request'
+        );
+
+        expect(result.type).toBe('text/plain');
+        expect(result.size).toBe(blobPayload.size);
+        await expect(result.text()).resolves.toBe(blobText);
+        expect(blobResponse).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/blob', {
+          method: 'GET',
+          headers: { Accept: 'text/plain' },
+        });
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
     it('should handle successful requests with proper parsing and JSON request error semantics', async () => {
