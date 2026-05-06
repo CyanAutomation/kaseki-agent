@@ -1120,3 +1120,43 @@ describe('JobScheduler persistence merge safety', () => {
   });
 
 });
+
+describe('JobScheduler artifact cache invalidation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    secretValueCache.clear();
+  });
+
+  afterEach(() => {
+    secretValueCache.clear();
+    cleanupResultsDirs();
+  });
+
+  test('clears artifact content cache when queued jobs are cancelled', async () => {
+    const resultsDir = createResultsDir();
+    const artifactCache = { clearForJob: jest.fn() };
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 0,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+      artifactCache
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    scheduler.cancelJob(job.id);
+
+    expect(artifactCache.clearForJob).toHaveBeenCalledWith(job.id);
+  });
+});

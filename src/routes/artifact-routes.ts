@@ -55,9 +55,8 @@ export function readArtifactContent(
 /**
  * Create artifact-related routes (list artifacts, download artifacts).
  */
-export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiConfig): Router {
+export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiConfig, cache: ResultCache): Router {
   const router = Router();
-  const cache = new ResultCache();
 
   /**
    * GET /api/results/:id/:file - Download artifact.

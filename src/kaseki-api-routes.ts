@@ -24,6 +24,7 @@ import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
 import { metricsRegistry } from './metrics';
+import { ResultCache } from './result-cache';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from './utils/utf8-helpers';
@@ -285,6 +286,11 @@ export function createApiRouter(
   config: KasekiApiConfig,
   idempotencyStore: IdempotencyStore,
   preFlightValidator: PreFlightValidator,
+  artifactCache = new ResultCache({
+    maxEntries: config.artifactCacheMaxEntries,
+    ttlMs: config.artifactCacheTtlMs,
+    maxFileBytes: config.artifactCacheMaxFileBytes,
+  }),
 ): Router {
   const router = Router();
   const logger = createEventLogger('api');
@@ -380,8 +386,30 @@ export function createApiRouter(
   });
 
   router.get('/metrics', (_req: Request, res: Response) => {
+    const cacheStats = artifactCache.getStats();
+    const artifactCacheMetrics = [
+      '# HELP kaseki_artifact_cache_entries Number of artifact content cache entries currently held in memory.',
+      '# TYPE kaseki_artifact_cache_entries gauge',
+      `kaseki_artifact_cache_entries ${cacheStats.entries}`,
+      '# HELP kaseki_artifact_cache_bytes Bytes of artifact content currently held in memory.',
+      '# TYPE kaseki_artifact_cache_bytes gauge',
+      `kaseki_artifact_cache_bytes ${cacheStats.bytes}`,
+      '# HELP kaseki_artifact_cache_hits_total Total artifact content cache hits.',
+      '# TYPE kaseki_artifact_cache_hits_total counter',
+      `kaseki_artifact_cache_hits_total ${cacheStats.hits}`,
+      '# HELP kaseki_artifact_cache_misses_total Total artifact content cache misses.',
+      '# TYPE kaseki_artifact_cache_misses_total counter',
+      `kaseki_artifact_cache_misses_total ${cacheStats.misses}`,
+      '# HELP kaseki_artifact_cache_max_entries Configured maximum artifact content cache entries.',
+      '# TYPE kaseki_artifact_cache_max_entries gauge',
+      `kaseki_artifact_cache_max_entries ${cacheStats.maxEntries}`,
+      '# HELP kaseki_artifact_cache_max_file_bytes Configured maximum file size eligible for artifact content caching.',
+      '# TYPE kaseki_artifact_cache_max_file_bytes gauge',
+      `kaseki_artifact_cache_max_file_bytes ${cacheStats.maxFileBytes}`,
+    ].join('\n');
+
     res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.status(200).send(metricsRegistry.renderPrometheus());
+    res.status(200).send(`${metricsRegistry.renderPrometheus()}${artifactCacheMetrics}\n`);
   });
 
   /**
@@ -591,7 +619,7 @@ export function createApiRouter(
   // Register domain-focused route modules
   router.use(createStatusRoutes(scheduler, config));
   router.use(createLogRoutes(scheduler, config));
-  router.use(createArtifactRoutes(scheduler, config));
+  router.use(createArtifactRoutes(scheduler, config, artifactCache));
   router.use(createWebhookRoutes());
 
   return router;

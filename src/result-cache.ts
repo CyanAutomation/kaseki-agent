@@ -4,6 +4,22 @@ import * as path from 'path';
 /**
  * Cached artifact entry.
  */
+export interface ResultCacheOptions {
+  maxEntries?: number;
+  ttlMs?: number;
+  maxFileBytes?: number;
+}
+
+export interface ResultCacheStats {
+  entries: number;
+  bytes: number;
+  hits: number;
+  misses: number;
+  maxEntries: number;
+  ttlMs: number;
+  maxFileBytes: number;
+}
+
 interface CacheEntry {
   content: string;
   timestamp: number;
@@ -20,10 +36,26 @@ export class ResultCache {
   private cache = new Map<string, CacheEntry>();
   private readonly maxEntries: number;
   private readonly ttlMs: number;
+  private readonly maxFileBytes: number;
+  private hits = 0;
+  private misses = 0;
 
-  constructor(maxEntries = 20, ttlMs = 5 * 60 * 1000) {
-    this.maxEntries = maxEntries;
-    this.ttlMs = ttlMs;
+  constructor(maxEntries?: number, ttlMs?: number, maxFileBytes?: number);
+  constructor(options?: ResultCacheOptions);
+  constructor(
+    maxEntriesOrOptions: number | ResultCacheOptions = 20,
+    ttlMs = 5 * 60 * 1000,
+    maxFileBytes = 10 * 1024 * 1024
+  ) {
+    if (typeof maxEntriesOrOptions === 'object') {
+      this.maxEntries = maxEntriesOrOptions.maxEntries ?? 20;
+      this.ttlMs = maxEntriesOrOptions.ttlMs ?? 5 * 60 * 1000;
+      this.maxFileBytes = maxEntriesOrOptions.maxFileBytes ?? 10 * 1024 * 1024;
+    } else {
+      this.maxEntries = maxEntriesOrOptions;
+      this.ttlMs = ttlMs;
+      this.maxFileBytes = maxFileBytes;
+    }
   }
 
   /**
@@ -46,6 +78,7 @@ export class ResultCache {
             (cached.inode === undefined || inode === cached.inode);
 
           if (unchanged) {
+            this.hits += 1;
             return cached.content;
           }
         } catch {
@@ -57,6 +90,8 @@ export class ResultCache {
       }
     }
 
+    this.misses += 1;
+
     // Load from disk
     if (!fs.existsSync(filePath)) {
       return null;
@@ -66,9 +101,7 @@ export class ResultCache {
       const stat = fileStat ?? fs.statSync(filePath);
       const content = fs.readFileSync(filePath, 'utf-8');
 
-      // Only cache reasonable-sized files to avoid memory bloat
-      if (stat.size < 10 * 1024 * 1024) {
-        // 10 MB limit per file
+      if (this.maxEntries > 0 && stat.size <= this.maxFileBytes) {
         this.set(filePath, content, stat.size, stat.mtimeMs, typeof stat.ino === 'number' ? stat.ino : undefined);
       }
 
@@ -82,6 +115,10 @@ export class ResultCache {
    * Set a cache entry.
    */
   private set(filePath: string, content: string, size: number, mtimeMs: number, inode?: number): void {
+    if (this.maxEntries <= 0) {
+      return;
+    }
+
     // Evict oldest entry if cache is full
     if (this.cache.size >= this.maxEntries) {
       const oldest = Array.from(this.cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
@@ -126,7 +163,7 @@ export class ResultCache {
   /**
    * Get cache statistics.
    */
-  getStats(): { entries: number; bytes: number } {
+  getStats(): ResultCacheStats {
     let bytes = 0;
     for (const entry of this.cache.values()) {
       bytes += entry.size;
@@ -134,6 +171,11 @@ export class ResultCache {
     return {
       entries: this.cache.size,
       bytes,
+      hits: this.hits,
+      misses: this.misses,
+      maxEntries: this.maxEntries,
+      ttlMs: this.ttlMs,
+      maxFileBytes: this.maxFileBytes,
     };
   }
 }
