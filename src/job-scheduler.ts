@@ -4,7 +4,7 @@ import * as path from 'path';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
-import { KasekiApiConfig } from './kaseki-api-config';
+import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
@@ -132,7 +132,9 @@ export class JobScheduler {
   }
 
   /**
-   * List all jobs.
+   * List jobs retained in the API index. Active jobs are always retained;
+   * terminal jobs may be compacted out of this API index after the newest
+   * `jobIndexMaxEntries` terminal records, while their artifacts remain on disk.
    */
   listJobs(): Job[] {
     return Array.from(this.jobs.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -932,7 +934,8 @@ export class JobScheduler {
           jobs: merged,
         };
         const tmpPath = `${this.indexPath}.tmp`;
-        fs.writeFileSync(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+        const json = this.shouldWriteCompactIndex(merged) ? JSON.stringify(payload) : JSON.stringify(payload, null, 2);
+        fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
         fs.renameSync(tmpPath, this.indexPath);
       });
     } catch {
@@ -964,9 +967,50 @@ export class JobScheduler {
       }
       byId.set(job.id, this.selectMostRecentPersistedJob(prev, job));
     }
-    return Array.from(byId.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+
+    const activeJobs: PersistedJob[] = [];
+    const terminalJobs: PersistedJob[] = [];
+    for (const job of byId.values()) {
+      if (this.isTerminalPersistedJob(job)) {
+        terminalJobs.push(job);
+      } else {
+        activeJobs.push(job);
+      }
+    }
+
+    const retainedTerminalJobs = terminalJobs
+      .sort((a, b) => this.comparePersistedJobsByTerminalRecency(a, b))
+      .slice(0, this.getJobIndexMaxEntries());
+
+    return [...activeJobs, ...retainedTerminalJobs].sort((a, b) => this.comparePersistedJobsByCreatedAt(a, b));
+  }
+
+  private shouldWriteCompactIndex(jobs: PersistedJob[]): boolean {
+    return jobs.length >= this.getJobIndexMaxEntries();
+  }
+
+  private getJobIndexMaxEntries(): number {
+    return this.config.jobIndexMaxEntries ?? DEFAULT_JOB_INDEX_MAX_ENTRIES;
+  }
+
+  private isTerminalPersistedJob(job: PersistedJob): boolean {
+    return job.status === 'completed' || job.status === 'failed';
+  }
+
+  private comparePersistedJobsByTerminalRecency(a: PersistedJob, b: PersistedJob): number {
+    const updatedDiff = this.persistedJobUpdatedAt(b) - this.persistedJobUpdatedAt(a);
+    if (updatedDiff !== 0) {
+      return updatedDiff;
+    }
+    return this.comparePersistedJobsByCreatedAt(a, b);
+  }
+
+  private comparePersistedJobsByCreatedAt(a: PersistedJob, b: PersistedJob): number {
+    const createdDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (createdDiff !== 0) {
+      return createdDiff;
+    }
+    return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
   }
 
   private selectMostRecentPersistedJob(a: PersistedJob, b: PersistedJob): PersistedJob {

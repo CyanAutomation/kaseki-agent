@@ -228,6 +228,10 @@ export interface RunsListResponse {
     resultDir?: string;
   }>;
   total: number;
+  retention?: {
+    terminalJobIndexMaxEntries: number;
+    note: string;
+  };
 }
 
 export interface PreflightCheck {
