@@ -343,19 +343,6 @@ describe('progress-normalizer', () => {
       expect(result).toBeNull();
     });
 
-    it('should return StructuredProgress with correct types', () => {
-      const event = {
-        stage: 'building',
-        message: 'Compiling TypeScript',
-        percentComplete: 45,
-        updatedAt: '2026-05-05T10:00:00Z',
-      };
-      const result = toStructuredProgress(event);
-      expect(typeof result?.stage).toBe('string');
-      expect(typeof result?.message).toBe('string');
-      expect(typeof result?.percentComplete).toBe('number');
-      expect(typeof result?.updatedAt).toBe('string');
-    });
   });
 
   describe('integration: normalizeProgressEvent → toStructuredProgress', () => {
@@ -372,6 +359,31 @@ describe('progress-normalizer', () => {
       expect(structured?.message).toBe('Running unit tests');
       expect(structured?.percentComplete).toBe(75);
       expect(structured?.updatedAt).toBe('2026-05-05T10:00:00Z');
+    });
+
+    it('should preserve client-visible fields from a progress.jsonl event', () => {
+      const line = JSON.stringify({
+        timestamp: '2026-05-05T10:00:00.000Z',
+        updatedAt: '2026-05-05T10:00:00.000Z',
+        stage: 'pi coding agent',
+        message: 'working; events=5, tool starts=2, tool ends=1',
+        percentComplete: 45,
+        counts: { assistant_message: 2, tool_start: 2, tool_end: 1 },
+        toolStartCount: 2,
+        toolEndCount: 1,
+        messageUpdateCount: 2,
+        reason: 'events',
+      });
+
+      const normalized = normalizeProgressEvent(JSON.parse(line));
+      const structured = toStructuredProgress(normalized);
+
+      expect(structured).toEqual({
+        stage: 'pi coding agent',
+        message: 'working; events=5, tool starts=2, tool ends=1',
+        percentComplete: 45,
+        updatedAt: '2026-05-05T10:00:00.000Z',
+      });
     });
 
     it('should handle missing fields gracefully in pipeline', () => {
