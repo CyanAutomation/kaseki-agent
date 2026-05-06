@@ -51,6 +51,7 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 /agents/kaseki-runs/kaseki-N/     # Per-run workspace (cloned repo, node_modules)
 /agents/kaseki-results/kaseki-N/  # Artifacts (logs, diff, metadata, summary)
 /agents/kaseki-cache/             # Optional host-level dependency cache (lockfile-first npm keys)
+/cache/git/                       # Optional host-mounted bare Git mirrors for target repos
 ```
 
 ---
@@ -777,6 +778,7 @@ When credentials are configured:
 | `KASEKI_ROOT` | `/agents` | Base directory for runs, results, cache |
 | `KASEKI_DEPENDENCY_CACHE_DIR` | `/workspace/.kaseki-cache` | Workspace dependency cache, keyed as `npm/<lock_hash>/node-<major>/flags-<flags_hash>` |
 | `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR` | `/opt/kaseki/workspace-cache` | Image-provided seed cache using the same lockfile-first key layout |
+| `KASEKI_GIT_CACHE_MODE` | `mirror` | Git object cache mode: `mirror` uses host-mounted bare mirrors under `/cache/git`; `off` keeps the direct shallow clone path |
 
 ### Docker and Images
 
@@ -887,6 +889,21 @@ View the full usage guide:
 ```
 
 Displays all invocation patterns, argument descriptions, environment variables, and examples.
+
+---
+
+## Git Object Cache Behavior
+
+`kaseki-agent.sh` can reuse host-mounted Git object caches before dependency installation:
+
+1. Build a safe cache key from `REPO_URL` and store the bare mirror at `/cache/git/<repo-key>.git`.
+2. Serialize mirror population and updates with `flock` on a per-repository lock file.
+3. On cache hit, refresh the mirror with `git -C <mirror> fetch --prune --tags origin` under a timeout.
+4. Clone `/workspace/repo` with `git clone --reference-if-able <mirror> --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo`.
+5. If the reference clone cannot be used, try cloning from the mirror and then reset the workspace origin back to `REPO_URL`.
+6. If the mirror is disabled, unavailable, corrupt, or cannot be refreshed/populated, fall back to the existing direct shallow clone.
+
+Set `KASEKI_GIT_CACHE_MODE=off` to disable Git mirror caching. Clone duration plus cache mode/status/hit/key/strategy data are emitted to `stage-timings.tsv`, `progress.jsonl`, and `metadata.json`.
 
 ---
 
