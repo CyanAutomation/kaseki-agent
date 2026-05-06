@@ -33,7 +33,7 @@ describe('file-helpers', () => {
       expect(isNonEmptyFile(filePath)).toBe(true);
     });
 
-    it('should return false for empty files', () => {
+    it('should keep empty-file coverage in the owning helper suite', () => {
       const filePath = path.join(tempDir, 'empty.txt');
       fs.writeFileSync(filePath, '');
 
