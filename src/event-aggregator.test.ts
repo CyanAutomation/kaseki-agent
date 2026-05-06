@@ -48,16 +48,32 @@ describe('EventCounterAggregator', () => {
     expect(summary.selected_api).toBe('openrouter');
   });
 
-  it('should ignore message objects that are not objects or are null', () => {
-    const aggregator = new EventCounterAggregator();
-    aggregator.recordModelAndApi(null);
-    aggregator.recordModelAndApi(undefined);
-    aggregator.recordModelAndApi('not an object');
+  it.each([
+    ['empty object', {}],
+    ['null', null],
+    ['undefined', undefined],
+    ['empty string', ''],
+    ['non-object string', 'not an object'],
+    ['number', 42],
+  ])(
+    'should ignore %s model/API observations',
+    (_description, invalidObservation) => {
+      const emptyAggregator = new EventCounterAggregator();
+      emptyAggregator.recordModelAndApi(invalidObservation);
 
-    const summary = aggregator.summary();
-    expect(summary.selected_model).toBe('');
-    expect(summary.selected_api).toBe('');
-  });
+      const emptySummary = emptyAggregator.summary();
+      expect(emptySummary.selected_model).toBe('');
+      expect(emptySummary.selected_api).toBe('');
+
+      const aggregator = new EventCounterAggregator();
+      aggregator.recordModelAndApi({ model: 'claude-3-opus', api: 'openrouter' });
+      aggregator.recordModelAndApi(invalidObservation);
+
+      const summary = aggregator.summary();
+      expect(summary.selected_model).toBe('claude-3-opus');
+      expect(summary.selected_api).toBe('openrouter');
+    }
+  );
 
   it('should track assistant event types separately', () => {
     const aggregator = new EventCounterAggregator();
@@ -98,10 +114,4 @@ describe('EventCounterAggregator', () => {
     expect(summary.selected_api).toBe('api-a');
   });
 
-  it('should return empty string for selected model/api if none recorded', () => {
-    const aggregator = new EventCounterAggregator();
-    const summary = aggregator.summary();
-    expect(summary.selected_model).toBe('');
-    expect(summary.selected_api).toBe('');
-  });
 });
