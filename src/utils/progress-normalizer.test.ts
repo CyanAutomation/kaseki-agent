@@ -357,6 +357,8 @@ describe('progress-normalizer', () => {
         message: 'Running unit tests',
         updatedAt: '2026-05-05T10:00:00Z',
       });
+      const originalEvent = { ...event };
+      expect(event).toEqual(originalEvent);
       expect(event).not.toHaveProperty('message');
       expect(event).not.toHaveProperty('updatedAt');
       expect(structured).toEqual({
