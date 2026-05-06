@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { secretValueCache } from './secret-value-cache';
 
 /**
  * Configuration for the Kaseki API service.
@@ -97,30 +98,27 @@ export function loadConfig(): KasekiApiConfig {
  * Load API keys from environment variable or file.
  */
 function loadApiKeys(): string[] {
-  // Try KASEKI_API_KEYS_FILE first
-  const keysFile = process.env.KASEKI_API_KEYS_FILE;
-  if (keysFile) {
-    try {
-      const content = fs.readFileSync(keysFile, 'utf-8').trim();
-      if (content) {
-        return content
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line && !line.startsWith('#'));
-      }
-      // If file exists but is empty, fall through to env var
-    } catch (err) {
-      throw new Error(`Failed to read KASEKI_API_KEYS_FILE: ${keysFile}: ${err}`);
-    }
-  }
-
-  // Fall back to KASEKI_API_KEYS
   const keysEnv = process.env.KASEKI_API_KEYS;
   if (keysEnv) {
     return keysEnv
       .split(',')
       .map((key) => key.trim())
       .filter((key) => key);
+  }
+
+  const keysFile = process.env.KASEKI_API_KEYS_FILE;
+  if (keysFile) {
+    try {
+      const content = secretValueCache.readFile(keysFile).trim();
+      if (content) {
+        return content
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith('#'));
+      }
+    } catch (err) {
+      throw new Error(`Failed to read KASEKI_API_KEYS_FILE: ${keysFile}: ${err}`);
+    }
   }
 
   return [];

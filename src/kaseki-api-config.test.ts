@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, validateApiKey } from './kaseki-api-config';
+import { secretValueCache } from './secret-value-cache';
 
 describe('kaseki-api-config load configuration', () => {
   const originalEnv = process.env;
@@ -8,11 +9,13 @@ describe('kaseki-api-config load configuration', () => {
 
   beforeEach(() => {
     jest.resetModules();
+    secretValueCache.clear();
     process.env = { ...originalEnv };
     testDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-config-test-'));
   });
 
   afterEach(() => {
+    secretValueCache.clear();
     process.env = originalEnv;
     fs.rmSync(testDir, { recursive: true, force: true });
   });
@@ -158,11 +161,13 @@ describe('kaseki-api-config load API keys from file', () => {
 
   beforeEach(() => {
     jest.resetModules();
+    secretValueCache.clear();
     process.env = { ...originalEnv };
     testDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-config-keys-test-'));
   });
 
   afterEach(() => {
+    secretValueCache.clear();
     process.env = originalEnv;
     fs.rmSync(testDir, { recursive: true, force: true });
   });
@@ -177,6 +182,36 @@ describe('kaseki-api-config load API keys from file', () => {
     const config = loadConfig();
 
     expect(config.apiKeys).toEqual(['file-key-1', 'file-key-2', 'file-key-3']);
+  });
+
+  test('loadConfig prefers KASEKI_API_KEYS over KASEKI_API_KEYS_FILE', () => {
+    const keysFile = path.join(testDir, 'api-keys.txt');
+    fs.writeFileSync(keysFile, 'file-key-1\nfile-key-2\n');
+
+    process.env.KASEKI_API_KEYS = 'env-key-1,env-key-2';
+    process.env.KASEKI_API_KEYS_FILE = keysFile;
+    process.env.KASEKI_RESULTS_DIR = testDir;
+
+    const config = loadConfig();
+
+    expect(config.apiKeys).toEqual(['env-key-1', 'env-key-2']);
+  });
+
+  test('loadConfig reuses cached API key file contents when metadata is unchanged', () => {
+    const keysFile = path.join(testDir, 'api-keys.txt');
+    const fixedTime = new Date('2020-01-01T00:00:00.000Z');
+    fs.writeFileSync(keysFile, 'file-key-1\nfile-key-2\n');
+    fs.utimesSync(keysFile, fixedTime, fixedTime);
+
+    process.env.KASEKI_API_KEYS_FILE = keysFile;
+    process.env.KASEKI_RESULTS_DIR = testDir;
+
+    expect(loadConfig().apiKeys).toEqual(['file-key-1', 'file-key-2']);
+
+    fs.writeFileSync(keysFile, 'file-key-3\nfile-key-4\n');
+    fs.utimesSync(keysFile, fixedTime, fixedTime);
+
+    expect(loadConfig().apiKeys).toEqual(['file-key-1', 'file-key-2']);
   });
 
   test('loadConfig skips comments and empty lines in API keys file', () => {
