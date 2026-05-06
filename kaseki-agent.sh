@@ -485,6 +485,34 @@ dependency_cache_flags_hash() {
   dependency_cache_flags_identity | sha256sum | awk '{print $1}'
 }
 
+append_npm_install_flags() {
+  local -n flags_ref="$1"
+  flags_ref=()
+  if [ "${KASEKI_NPM_OMIT_DEV:-0}" = "1" ]; then
+    flags_ref+=("--omit=dev")
+  fi
+  if [ "${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}" = "1" ]; then
+    flags_ref+=("--ignore-scripts")
+  fi
+}
+
+render_npm_install_flags() {
+  if [ "$#" -eq 0 ]; then
+    printf 'none'
+    return 0
+  fi
+
+  local rendered=""
+  local flag
+  for flag in "$@"; do
+    if [ -n "$rendered" ]; then
+      rendered+=" "
+    fi
+    rendered+="$(printf '%q' "$flag")"
+  done
+  printf '%s' "$rendered"
+}
+
 dependency_cache_key() {
   local lock_hash="$1"
   local node_major="$2"
@@ -733,17 +761,8 @@ prepare_dependencies() {
       return 1
       ;;
   esac
-  install_flags=()
-  install_flags_display="none"
-  if [ "$KASEKI_NPM_OMIT_DEV" = "1" ]; then
-    install_flags+=("--omit=dev")
-  fi
-  if [ "$KASEKI_INSTALL_IGNORE_SCRIPTS" = "1" ]; then
-    install_flags+=("--ignore-scripts")
-  fi
-  if [ "${#install_flags[@]}" -gt 0 ]; then
-    install_flags_display="${install_flags[*]}"
-  fi
+  append_npm_install_flags install_flags
+  install_flags_display="$(render_npm_install_flags "${install_flags[@]}")"
   cache_detail="lock_hash=$lock_hash cache_key=$cache_key repo_ref_key=$repo_ref_key repo_url=$REPO_URL git_ref=$GIT_REF lockfile=$lock_source node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display restore_mode=$restore_mode"
 
   if ! mkdir -p "$(dirname "$workspace_cache_root")"; then
@@ -767,8 +786,8 @@ prepare_dependencies() {
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s (repo_ref_key=%s).\n' "$lock_hash" "$repo_ref_key"
       set_dependency_cache_status "existing-node-modules" "$cache_detail restore_method=none"
       emit_event "dependency_cache_decision" "strategy=existing_node_modules" "restore_mode=$restore_mode" "restore_method=none" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-      emit_progress "dependency install" "cache hit source=repo restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      emit_progress "dependency install" "cache hit source=repo restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       exec {cache_lock_fd}>&-
       return 0
     fi
@@ -822,7 +841,7 @@ prepare_dependencies() {
     printf 'Dependency cache status: cache miss for lock hash %s (repo_ref_key=%s), running install.\n' "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "cache-miss" "$cache_detail"
     emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=no_cache_available" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
-    emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+    emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then
       exec {cache_lock_fd}>&-
@@ -837,8 +856,8 @@ prepare_dependencies() {
     set_dependency_cache_status "install-skipped" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=skip_install" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=cache_hit" "location=local" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     if [ "$cache_reused" = "true" ]; then
-      emit_progress "dependency install" "cache hit source=$cache_source restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
-      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash"
+      emit_progress "dependency install" "cache hit source=$cache_source restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
+      record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     fi
   fi
 
