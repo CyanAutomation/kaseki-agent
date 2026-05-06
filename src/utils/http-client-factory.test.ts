@@ -2,9 +2,45 @@ import { HttpClientFactory, RetryConfig } from './http-client-factory';
 
 describe('http-client-factory', () => {
   describe('HttpClientFactory', () => {
-    it('should initialize with default retry config', () => {
-      const factory = new HttpClientFactory();
-      expect(factory).toBeDefined();
+    it('should retry transient fetch failures with the default retry config', async () => {
+      jest.useFakeTimers();
+      const originalFetch = global.fetch;
+      const jsonPayload = { id: 'run-123', status: 'ok' };
+      const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+        .mockRejectedValueOnce(new Error('temporary network error'))
+        .mockRejectedValueOnce(new Error('upstream connection reset'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: jest.fn().mockResolvedValue(jsonPayload),
+        } as unknown as Response);
+      global.fetch = fetchMock;
+
+      try {
+        const requestPromise = new HttpClientFactory().request(
+          'https://api.example.test/json',
+          { method: 'GET' },
+          (data) => ({ runId: (data as typeof jsonPayload).id }),
+          'JSON request'
+        );
+
+        await Promise.resolve();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+
+        await jest.advanceTimersByTimeAsync(2000);
+        await expect(requestPromise).resolves.toEqual({ runId: 'run-123' });
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://api.example.test/json', { method: 'GET' });
+        expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.test/json', { method: 'GET' });
+        expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://api.example.test/json', { method: 'GET' });
+      } finally {
+        global.fetch = originalFetch;
+        jest.useRealTimers();
+      }
     });
 
     it('should initialize with custom retry config', () => {
