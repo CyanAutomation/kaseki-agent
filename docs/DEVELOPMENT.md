@@ -388,36 +388,32 @@ Version bumps are determined from commit messages using the [conventional commit
 
 ### Making a Release
 
-**1. Ensure main branch is clean and all CI passes:**
+**Via GitHub Actions (Recommended):**
+1. Go to [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) → **Release** workflow
+2. Click **Run workflow** (top right)
+3. Choose options:
+   - **Dry-run** (optional): Set to `true` to preview release without creating tags
+   - Leave blank to create actual release
+4. Click **Run workflow**
+5. The workflow will:
+   - Analyze commits since last release tag
+   - Automatically determine version (major/minor/patch)
+   - Update `package.json` with new version
+   - Update `CHANGELOG.md` with formatted release notes
+   - Create git tag (e.g., `v1.0.0`)
+   - Push tag and commits to GitHub
+   - Create GitHub Release with release notes
+   - Automatically trigger Docker build workflow for multi-arch image builds
+6. Monitor progress in Actions tab
+7. Verify in [Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
+
+**Via Local Command (Alternative):**
 ```bash
-git status
-# All checks in GitHub Actions must pass
+npm run release:dry    # Preview release locally
+npm run release        # Create release (requires GITHUB_TOKEN)
 ```
 
-**2. Preview the release (recommended):**
-```bash
-npm run release:dry
-```
-This shows which version will be released and previews the changelog without creating any tags or releases.
-
-**3. Create the release:**
-```bash
-npm run release
-```
-This will:
-- Analyze commits since the last release
-- Determine new version automatically
-- Update `package.json` version
-- Update `CHANGELOG.md` with formatted release notes
-- Create a git tag (e.g., `v1.2.3`)
-- Push tag and commits to GitHub
-- Create a GitHub Release with release notes
-- Trigger Docker multi-arch build and publish to registries
-
-**4. Verify:**
-- Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) on GitHub
-- Verify CHANGELOG.md was updated in the repository
-- Confirm Docker images were published (check [GitHub Packages](https://github.com/CyanAutomation/kaseki-agent/pkgs/container/kaseki-agent) or Docker Hub)
+**Note:** The workflow approach is recommended for team visibility and consistency. Local commands are useful for testing or emergency releases when GitHub Actions is unavailable.
 
 ### Changelog Format
 
