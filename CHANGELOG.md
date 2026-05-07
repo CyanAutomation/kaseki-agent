@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.0.0...v1.0.1) (2026-05-07)
+
+### Bug Fixes
+
+* disable PR comments in semantic-release to avoid permission errors ([0701e3e](https://github.com/CyanAutomation/kaseki-agent/commit/0701e3ebf6042a2999102c6cae19c1c7f33dee4c))
+
 ## 1.0.0 (2026-05-07)
 
 ### Features
