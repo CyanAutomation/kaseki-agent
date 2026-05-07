@@ -220,29 +220,14 @@ describe('file-helpers', () => {
   });
 
   describe('commandOutput', () => {
-    it('should execute a command and return its output', () => {
-      const output = commandOutput('echo', ['hello']);
-      expect(output).toBe('hello');
-    });
+    it('returns trimmed output, undefined for unavailable output, and respects cwd', () => {
+      const runNode = (script: string, cwd?: string) =>
+        commandOutput(process.execPath, ['-e', script], cwd);
 
-    it('should return undefined for failed commands', () => {
-      const output = commandOutput('false', []);
-      expect(output).toBeUndefined();
-    });
-
-    it('should trim whitespace from output', () => {
-      const output = commandOutput('echo', ['  padded  ']);
-      expect(output).toBe('padded');
-    });
-
-    it('should return undefined for commands that produce no output', () => {
-      const output = commandOutput('true', []);
-      expect(output).toBeUndefined();
-    });
-
-    it('should support working directory', () => {
-      const output = commandOutput('pwd', [], tempDir);
-      expect(output).toBe(fs.realpathSync(tempDir));
+      expect(runNode("console.log('  padded text  ')")).toBe('padded text');
+      expect(runNode('process.exit(1)')).toBeUndefined();
+      expect(runNode('process.exit(0)')).toBeUndefined();
+      expect(runNode('console.log(process.cwd())', tempDir)).toBe(fs.realpathSync(tempDir));
     });
   });
 });
