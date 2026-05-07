@@ -1,6 +1,9 @@
 # Bump the pinned Node base image monthly with a security review.
 # Node v24 base image: Updated May 2026 for improved performance and security.
-FROM node:24-bookworm-slim AS deps
+# Using ARG for DRY principle - base image used in both stages
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+FROM ${NODE_IMAGE} AS deps
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
@@ -26,7 +29,7 @@ RUN npm ci --ignore-scripts \
 RUN npm install -g @earendil-works/pi-coding-agent@0.74.0
 
 
-FROM node:24-bookworm-slim AS runtime
+FROM ${NODE_IMAGE} AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps \
@@ -98,15 +101,14 @@ RUN mkdir -p /app/lib \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
-    && chmod 0755 /usr/local/bin/kaseki-entrypoint \
-    && chmod 0755 /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
-    /usr/local/bin/kaseki-agent \
-    /usr/local/bin/kaseki-entrypoint \
-    /usr/local/bin/kaseki-pi-event-filter \
-    /usr/local/bin/kaseki-pi-progress-stream \
-    /usr/local/bin/kaseki-report \
-    /usr/local/bin/github-app-token \
-    /usr/local/bin/github-app-token.js
+    && chmod 0755 \
+      /usr/local/bin/kaseki-entrypoint \
+      /usr/local/bin/kaseki-pi-event-filter \
+      /usr/local/bin/kaseki-pi-progress-stream \
+      /usr/local/bin/kaseki-report \
+      /usr/local/bin/github-app-token \
+      /usr/local/bin/github-app-token.js \
+      /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js
 
 WORKDIR /workspace
 USER kaseki

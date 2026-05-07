@@ -208,6 +208,17 @@ When kaseki detects files outside the allowlist:
    - `kaseki-report` shows: "Allowlist coverage: X/Y files (Z%)"
    - Visual indicator of how restrictive the allowlist was
 
+### When Coverage is Low (0-50%)
+
+> ⚠️ **If your allowlist coverage is below 50%**, many files are being restored. This is **expected behavior** but suggests your allowlist may need adjustment.
+>
+> **Quick fixes:**
+> 1. **Widen the allowlist** — Add related file patterns (e.g., tests, types, related utilities)
+> 2. **Run the suggestion helper** — `./scripts/suggest-allowlist.sh /results/kaseki-N` generates improved patterns
+> 3. **Review the task prompt** — Is it clear enough? Consider adding "Do not modify X" constraints
+>
+> **See also:** [Troubleshooting section](#problem-too-many-files-restored) below
+
 ## Troubleshooting
 
 ### Problem: Too Many Files Restored
@@ -220,18 +231,35 @@ When kaseki detects files outside the allowlist:
 
 1. Widen the allowlist to include related files
 2. Use a broader template (e.g., `allowlist-utility` instead of single file)
-3. Run `./scripts/suggest-allowlist.sh` to auto-generate better patterns
-4. Review the TASK_PROMPT — is the agent task clear enough?
+3. Run `./scripts/suggest-allowlist.sh` to auto-generate better patterns from the results:
+   ```bash
+   ./scripts/suggest-allowlist.sh /agents/kaseki-results/kaseki-N
+   ```
+   This analyzes what files were actually changed and suggests improved glob patterns.
 
-**Example:**
+4. Review the TASK_PROMPT — is the agent task clear enough? Consider adding constraints like:
+   ```
+   Do not modify config files, documentation, or unrelated test files.
+   Focus only on src/lib/parser.ts and its direct test files.
+   ```
+
+**Example workflow:**
 
 ```bash
-# Too narrow:
-KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"
+# Run 1: Test with a broad allowlist to see what changes
+KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**" ./run-kaseki.sh
 
-# Better (parser + related types and tests):
-KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts src/types/** tests/parser**"
+# Run 2: Analyze what was kept vs. restored
+./scripts/suggest-allowlist.sh /agents/kaseki-results/kaseki-1
+
+# Run 3: Use the suggested allowlist for precision
+KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.validation.ts" ./run-kaseki.sh
 ```
+
+**More help:**
+- [Using Templates](#using-templates) — Pre-built patterns for common task types
+- [scripts/suggest-allowlist.sh](../scripts/suggest-allowlist.sh) — Auto-generate patterns from completed runs
+- [docs/TASK_PROMPT_TEMPLATES.md](./TASK_PROMPT_TEMPLATES.md) — Writing better prompts that minimize scope creep
 
 ### Problem: Allowlist Coverage is 0%
 
