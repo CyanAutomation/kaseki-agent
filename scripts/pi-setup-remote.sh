@@ -112,10 +112,11 @@ main() {
   
   # Step 2: Create secrets directory
   print_header "Creating Secrets Directory on Remote Host"
+  # shellcheck disable=SC2029
   if ssh "$REMOTE_HOST" "
-    mkdir -p "$REMOTE_SECRETS_DIR"
-    chmod 700 $REMOTE_SECRETS_DIR
-    [ -d $REMOTE_SECRETS_DIR ] && echo 'Secrets directory created'
+    mkdir -p '$REMOTE_SECRETS_DIR'
+    chmod 700 '$REMOTE_SECRETS_DIR'
+    [ -d '$REMOTE_SECRETS_DIR' ] && echo 'Secrets directory created'
   " >/dev/null 2>&1; then
     print_success "Secrets directory created/verified"
   else
@@ -132,10 +133,11 @@ main() {
   echo ""
   
   # Use stdin to pipe key to remote host (avoids exposing in process list)
+  # shellcheck disable=SC2029
   if echo "$API_KEY" | ssh "$REMOTE_HOST" "
-    cat > "$REMOTE_API_KEY_FILE"
-    chmod 600 $REMOTE_API_KEY_FILE
-    [ -f $REMOTE_API_KEY_FILE ] && echo 'API key transferred'
+    cat > '$REMOTE_API_KEY_FILE'
+    chmod 600 '$REMOTE_API_KEY_FILE'
+    [ -f '$REMOTE_API_KEY_FILE' ] && echo 'API key transferred'
   " >/dev/null 2>&1; then
     print_success "API key transferred securely"
   else
@@ -150,6 +152,7 @@ main() {
   echo ""
   
   # Bootstrap via remote kaseki-install.sh if it exists, else via curl
+  # shellcheck disable=SC2029
   BOOTSTRAP_CMD='
     if [ -f '"$REMOTE_KASEKI_INSTALL_SCRIPT"' ]; then
       KASEKI_CONTROLLER_MODE=1 KASEKI_REPLACE_STALE=1 '"$REMOTE_KASEKI_INSTALL_SCRIPT"'
@@ -160,6 +163,7 @@ main() {
     fi
   '
   
+  # shellcheck disable=SC2029
   if ssh "$REMOTE_HOST" "${BOOTSTRAP_CMD}" 2>&1 | tail -20; then
     print_success "Bootstrap completed"
   else
@@ -170,11 +174,13 @@ main() {
   
   # Step 5: Verify readiness with health check
   print_header "Verifying Readiness (Running --doctor)"
+  # shellcheck disable=SC2029
   HEALTH_CHECK_CMD="
     export OPENROUTER_API_KEY_FILE=$REMOTE_API_KEY_FILE
     $REMOTE_KASEKI_TEMPLATE/run-kaseki.sh --doctor
   "
   
+  # shellcheck disable=SC2029
   if ssh "$REMOTE_HOST" "${HEALTH_CHECK_CMD}" 2>&1 | tail -15; then
     print_success "Health check passed"
   else

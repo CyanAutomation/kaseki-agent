@@ -78,7 +78,7 @@ if [ ! -r "$ALLOWLIST_HELPER" ]; then
   exit 1
 fi
 
-# shellcheck source=./allowlist-helper.sh
+# shellcheck disable=SC1090
 source "$ALLOWLIST_HELPER"
 
 # Build regex from allowlist

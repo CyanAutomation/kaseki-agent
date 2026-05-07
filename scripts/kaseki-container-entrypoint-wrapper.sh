@@ -82,7 +82,8 @@ export_credential_env() {
     return 1
   fi
   
-  local credential=$(<"$credential_file")
+  local credential
+  credential=$(<"$credential_file")
   export "$env_var_name=$credential"
   
   return 0
