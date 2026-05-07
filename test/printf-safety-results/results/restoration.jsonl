@@ -1,0 +1,10 @@
+{"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}
+{"timestamp":"2026-05-07T10:00:01","event":"file_restored","file":"file1.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:02","event":"file_restored","file":"file2.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:03","event":"file_restored","file":"file3.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:04","event":"file_restored","file":"file4.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:05","event":"file_restored","file":"file5.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:06","event":"file_restored","file":"file6.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:07","event":"file_restored","file":"file7.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:08","event":"file_restored","file":"file8.txt","status":"restored","reason":"not_in_allowlist"}
+{"timestamp":"2026-05-07T10:00:09","event":"file_restored","file":"file9.txt","status":"restored","reason":"not_in_allowlist"}
