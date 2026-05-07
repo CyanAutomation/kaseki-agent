@@ -373,14 +373,53 @@ collect_git_artifacts() {
   fi
 }
 
-build_allowlist_regex() {
-  printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" \
-    | tr ' ' '\n' \
-    | sed '/^$/d' \
-    | sed "s/[.[\*^$()+?{}|\\\\]/\\\\&/g" \
-    | paste -sd '|' -
+allowlist_pattern_to_regex() {
+  awk -v pattern="$1" '
+    BEGIN {
+      regex = ""
+      i = 1
+      while (i <= length(pattern)) {
+        c = substr(pattern, i, 1)
+        next_c = substr(pattern, i + 1, 1)
+        next_next_c = substr(pattern, i + 2, 1)
+
+        if (c == "*" && next_c == "*") {
+          if (next_next_c == "/") {
+            regex = regex "([^/]+/)*"
+            i += 3
+          } else {
+            regex = regex ".*"
+            i += 2
+          }
+        } else if (c == "*") {
+          regex = regex "[^/]*"
+          i++
+        } else if (c == "?") {
+          regex = regex "[^/]"
+          i++
+        } else {
+          if (index(".\\^$()+{}|[]", c) > 0) {
+            regex = regex "\\" c
+          } else {
+            regex = regex c
+          }
+          i++
+        }
+      }
+      print regex
+    }
+  '
 }
 
+build_allowlist_regex() {
+  local pattern regexes=()
+  while IFS= read -r pattern || [ -n "$pattern" ]; do
+    [ -z "$pattern" ] && continue
+    regexes+=("$(allowlist_pattern_to_regex "$pattern")")
+  done < <(printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" | tr ' ' '\n')
+
+  (IFS='|'; printf '%s' "${regexes[*]}")
+}
 restore_disallowed_changes() {
   if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
     return 0
@@ -1495,8 +1534,7 @@ else
 fi
 emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
 
-# The sed expression is a literal regex character class used to escape allowlist entries.
-# shellcheck disable=SC2016
+# Build a safe regex from glob-style repo-relative allowlist patterns.
 allowlist_regex="$(build_allowlist_regex)"
 if [ -n "$allowlist_regex" ]; then
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
