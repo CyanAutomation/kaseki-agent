@@ -4,7 +4,8 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_TARGET_DIR="/agents/kaseki-template"
 TARGET_DIR="${KASEKI_TEMPLATE_DIR:-$DEFAULT_TARGET_DIR}"
-IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+REQUESTED_IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+IMAGE="$REQUESTED_IMAGE"
 LOCAL_BUILD_IMAGE="${KASEKI_LOCAL_BUILD_IMAGE:-kaseki-agent:local}"
 KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING="${KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING:-1}"
 KASEKI_IMAGE_PULL_POLICY="${KASEKI_IMAGE_PULL_POLICY:-always}"
@@ -98,7 +99,6 @@ Idempotent behavior:
 
 Image behavior:
 - Pulls KASEKI_IMAGE by default before using a local tag.
-- Prefer immutable refs for KASEKI_IMAGE (digest or commit-SHA tag) to avoid ':latest' drift.
 - Set KASEKI_IMAGE_PULL_POLICY=missing to pull only when absent.
 - Set KASEKI_IMAGE_PULL_POLICY=never to use only local Docker images.
 - If the image lacks a deployable /app template and
@@ -215,7 +215,6 @@ ensure_deployable_image() {
   resolved_digest="$(resolve_local_repo_digest "$IMAGE")"
   if [ -n "$resolved_digest" ] && ! is_probably_digest_ref "$IMAGE"; then
     emit_json_log "deploy" "started" "Resolved image tag to immutable digest: $resolved_digest"
-    IMAGE="$resolved_digest"
   elif [ -z "$resolved_digest" ] && ! is_probably_digest_ref "$IMAGE"; then
     emit_json_log "deploy" "warning" "No repo digest found for image reference; continuing with tag: $IMAGE"
   fi
@@ -255,11 +254,12 @@ verify_template() {
 
 write_image_metadata() {
   local target="$1"
-  local image="$2"
+  local configured_image="$2"
+  local deployed_image="$3"
   local repo_digest=""
 
-  printf '%s\n' "$image" > "$target/.kaseki-image"
-  repo_digest="$(docker image inspect "$image" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -n 1 || true)"
+  printf '%s\n' "$configured_image" > "$target/.kaseki-image"
+  repo_digest="$(docker image inspect "$deployed_image" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -n 1 || true)"
   if [ -n "$repo_digest" ]; then
     printf '%s\n' "$repo_digest" > "$target/.kaseki-image-digest"
   else
@@ -270,7 +270,7 @@ write_image_metadata() {
 printf 'Kaseki template deployment\n'
 printf 'Source: %s\n' "$SOURCE_DIR"
 printf 'Target: %s\n' "$TARGET_DIR"
-printf 'Image: %s\n' "$IMAGE"
+printf 'Image: %s\n' "$REQUESTED_IMAGE"
 
 prepare_target_dir "$TARGET_DIR"
 
@@ -286,7 +286,7 @@ emit_json_log "deploy" "started" "Cleaning up container"
 docker rm "$CONTAINER"
 CONTAINER=""
 
-write_image_metadata "$TARGET_DIR" "$IMAGE"
+write_image_metadata "$TARGET_DIR" "$REQUESTED_IMAGE" "$IMAGE"
 verify_template "$TARGET_DIR"
 
 emit_json_log "deploy" "finished" "Deployment completed successfully"

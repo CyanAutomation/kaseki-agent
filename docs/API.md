@@ -72,6 +72,8 @@ No authentication required. Check service health and queue status.
 }
 ```
 
+`image` and `templateImage` reflect the configured image reference that the runner looks up locally, such as `docker.io/cyanautomation/kaseki-agent:latest`. `imageDigest` and `templateImageDigest` report the resolved local digest when available.
+
 ### Controller Preflight
 
 **GET `/api/preflight`**
