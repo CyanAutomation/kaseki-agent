@@ -103,6 +103,9 @@ const RunsListResponseSchema = z.object({
     createdAt: z.string(),
     completedAt: z.string().optional(),
     resultDir: z.string().optional(),
+    exitCode: z.number().optional(),
+    failureClass: z.string().optional(),
+    error: z.string().optional(),
   })),
   total: z.number(),
   retention: z.object({

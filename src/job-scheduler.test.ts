@@ -374,6 +374,80 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('passes requested publish mode to controller runs', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      publishMode: 'draft_pr',
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_PUBLISH_MODE: 'draft_pr',
+        }),
+      }),
+    );
+  });
+
+  test('passes controller-style allowlist and validation aliases to worker env', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      allowlist: { include: ['src/lib/network-safety.ts', 'src/lib/network-safety.test.ts'] },
+      validation: { commands: ['npm test -- src/lib/network-safety.test.ts'] },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_CHANGED_FILES_ALLOWLIST: 'src/lib/network-safety.ts src/lib/network-safety.test.ts',
+          KASEKI_VALIDATION_COMMANDS: 'npm test -- src/lib/network-safety.test.ts',
+        }),
+      }),
+    );
+  });
+
   test('startup check requests run the worker in dry-run inspect mode', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
