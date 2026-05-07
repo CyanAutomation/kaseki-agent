@@ -13,7 +13,8 @@
   "overrides": [
     {
       "files": [
-        "src/**/*.ts"
+        "src/**/*.ts",
+        "perf/**/*.ts"
       ],
       "parser": "@typescript-eslint/parser",
       "parserOptions": {
