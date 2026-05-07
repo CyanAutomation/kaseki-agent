@@ -1,21 +1,20 @@
 name: Build Docker Image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-      - '[0-9]*'
   workflow_dispatch:
     inputs:
       tags:
-        description: "Comma-separated Docker tags to publish"
+        description: "Comma-separated Docker tags to publish (auto-detects from git ref if empty)"
         required: false
-        default: "latest"
+        default: ""
   schedule:
     # Weekly build every Sunday at 00:00 UTC, publishes 'latest' tag to both registries
     - cron: '0 0 * * 0'
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
 
 env:
   DOCKER_IMAGE: cyanautomation/kaseki-agent
@@ -151,21 +150,25 @@ jobs:
         id: meta
         shell: bash
         run: |
-          # Four trigger paths converge here with different tag logic:
-          # 1. workflow_dispatch: use custom tags from input (default 'latest')
-          # 2. push tags (v* or [0-9]*): extract version and add 'latest'
-          # 3. push main: publish latest and a main-<sha> tag
-          # 4. schedule (Sunday 00:00 UTC) or other: use 'latest'
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # Tag determination logic for different trigger types:
+          # 1. workflow_dispatch with custom tags input: use those tags
+          # 2. workflow_dispatch without input OR workflow_run: auto-detect from git ref
+          # 3. schedule (Sunday 00:00 UTC): use 'latest'
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tags }}" ]]; then
+            # Manual dispatch with explicit tags provided
             TAGS="${{ github.event.inputs.tags }}"
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # On a git tag (from release workflow via workflow_run, or manual push)
             VERSION="${GITHUB_REF#refs/tags/}"
             VERSION="${VERSION#v}"
             TAGS="$VERSION,latest"
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # On main branch (scheduled builds only now)
             SHORT_SHA="${GITHUB_SHA::12}"
             TAGS="latest,main-$SHORT_SHA"
           else
+            # Default to 'latest' for other triggers
             TAGS="latest"
           fi
 

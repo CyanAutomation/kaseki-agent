@@ -513,41 +513,32 @@ Both are equivalent and receive identical multi-architecture builds for `linux/a
 
 ### Releasing a New Version
 
-Releases are fully automated using **semantic-release** and **conventional commits**.
+Releases are fully automated using **semantic-release** and **conventional commits**. Versions are determined automatically based on commit messages.
 
 **Prerequisites:**
-- All commits on `main` follow [conventional commit](CONTRIBUTING.md#6-release-process-and-conventional-commits) format (`feat:`, `fix:`, `chore:`, etc.)
-- CI/CD (type-check, lint, test) is passing on `main`
-- You have permission to push tags and create GitHub Releases
+- All recent commits on `main` follow [conventional commit](CONTRIBUTING.md#6-release-process-and-conventional-commits) format (`feat:`, `fix:`, `chore:`, etc.)
+- CI/CD checks are passing on `main`
 
-**Process:**
+**Release via GitHub Actions (Recommended):**
+1. Go to the [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) tab → **Release** workflow
+2. Click **Run workflow**
+3. Optionally check "Dry-run" to preview without creating tags
+4. Click **Run workflow**
+5. The workflow automatically:
+   - Analyzes commits since last release
+   - Determines version bump (major/minor/patch)
+   - Updates `package.json` and `CHANGELOG.md`
+   - Creates GitHub Release with release notes
+   - Triggers Docker multi-arch builds and publishes to registries
+6. Monitor in Actions tab; verify in [Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
 
-1. **Test the release locally (recommended):**
-   ```bash
-   npm run release:dry
-   ```
-   This shows which version will be released and previews the changelog without creating tags or releases.
+**Release via Local Command (Alternative):**
+```bash
+npm run release:dry    # Preview (optional)
+npm run release        # Create release
+```
 
-2. **Create the release:**
-   ```bash
-   npm run release
-   ```
-   This will:
-   - Analyze commits since the last version tag
-   - Automatically determine version bump (major/minor/patch)
-   - Update `package.json` version
-   - Generate/update `CHANGELOG.md`
-   - Create a git tag (e.g., `v0.2.0`)
-   - Push tag to GitHub
-   - Create a GitHub Release with release notes
-   - Trigger Docker multi-arch builds (amd64 + arm64) and publish to both Docker Hub and GitHub Container Registry
-
-3. **Verify the release:**
-   - Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab for the new release
-   - Confirm `CHANGELOG.md` was updated in the repository
-   - Verify Docker images are published with the new tag (check status of the workflow run)
-
-See [CONTRIBUTING.md § Release Process](CONTRIBUTING.md#6-release-process-and-conventional-commits) for detailed commit format guidelines.
+See [CONTRIBUTING.md § Release Process](CONTRIBUTING.md#6-release-process-and-conventional-commits) for detailed commit format guidelines and options.
 
 ### Tag Publishing Schedule
 

@@ -212,36 +212,41 @@ chore(deps): upgrade semantic-release to v24
 
 ### Making a Release
 
-**Prerequisites:**
-- All commits on `main` should follow conventional commit format (or use squash-and-rebase to clean up history)
-- CI/CD must be passing on `main`
+**Workflow Options:**
 
-**Steps:**
+You can create a release in two ways:
 
-1. **Test the release locally (optional but recommended):**
+**Option A: Via GitHub Actions (Recommended)**
+1. Go to the repository's [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) tab
+2. Select the **Release** workflow from the left sidebar
+3. Click **Run workflow** and choose your options:
+   - **Dry-run (optional)**: Check to preview the release without creating tags/releases
+   - Click **Run workflow**
+4. The workflow will:
+   - Analyze commits since last release
+   - Automatically determine version (major/minor/patch)
+   - Update CHANGELOG.md, package.json, and create GitHub Release
+   - Automatically trigger Docker multi-arch build and publish images
+5. Monitor the workflow progress in the Actions tab
+6. Verify the release in the [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab
+
+**Option B: Via Local Command (Advanced)**
+1. Ensure your local git is clean: `git status`
+2. **Test locally (recommended):**
    ```bash
    npm run release:dry
    ```
-   This shows what version bump will occur and previews the changelog without creating tags or releases.
-
-2. **Create the release:**
+3. **Create release:**
    ```bash
    npm run release
    ```
-   This will:
-   - Analyze commits since the last version tag
-   - Determine the new version (major, minor, or patch)
-   - Update `package.json` with the new version
-   - Generate/update `CHANGELOG.md` with formatted release notes
-   - Create a git tag (e.g., `v0.2.0`)
-   - Push the tag and commit to `main`
-   - Create a GitHub Release with release notes
-   - Trigger the Docker build workflow to publish images
+4. This requires:
+   - Write access to the repository
+   - Valid `GITHUB_TOKEN` in environment (or git credentials)
+   - Ability to push tags to GitHub
+5. The command will automatically trigger the Docker build workflow on GitHub
 
-3. **Verify the release:**
-   - Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab for the new release
-   - Verify `CHANGELOG.md` was updated in the repository
-   - Confirm Docker images were published (check [packages](https://github.com/CyanAutomation/kaseki-agent/pkgs/container/kaseki-agent) or Docker Hub)
+Both options use **semantic-release** to automate all versioning and changelog tasks. The GitHub Actions workflow is recommended for team releases to ensure consistency and visibility.
 
 ### Commit Message Best Practices
 
