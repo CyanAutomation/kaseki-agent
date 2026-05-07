@@ -42,7 +42,7 @@ assert_not_missing_script() {
 }
 
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir" /tmp/kaseki-missing-script-test.out' EXIT
+trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/results"
 cd "$tmp_dir"
 cat > package.json <<'JSON'
