@@ -107,7 +107,7 @@ setup_api_key() {
   # Prompt for API key securely
   echo "You can obtain an API key from: https://openrouter.ai/keys"
   echo ""
-  read -sp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
+  read -rsp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
   echo
   
   # Validate key format
@@ -190,9 +190,11 @@ offer_shell_profile_update() {
   fi
   
   # Add to profile
-  echo "" >> "$PROFILE_FILE"
-  echo "# Kaseki Agent API key (added by kaseki-setup.sh)" >> "$PROFILE_FILE"
-  echo "$EXPORT_LINE" >> "$PROFILE_FILE"
+  {
+    echo ""
+    echo "# Kaseki Agent API key (added by kaseki-setup.sh)"
+    echo "$EXPORT_LINE"
+  } >> "$PROFILE_FILE"
   
   print_success "Added to $PROFILE_FILE"
   echo ""

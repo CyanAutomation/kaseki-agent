@@ -452,4 +452,101 @@ kaseki-10-suffix
     const analysis = kasekiCli.getAnalysis('kaseki-4');
     expect(analysis.failure_class).toBe('empty-diff');
   });
+
+  test('scanLogForErrors should extract errors from log files with pattern matching', () => {
+    createMockInstance('kaseki-test-1', {
+      hasErrors: true,
+    });
+
+    const errors = kasekiCli.scanLogForErrors(
+      'kaseki-test-1',
+      'stderr.log',
+      /error|wrong/i,
+      'test-source',
+      'error'
+    );
+
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].source).toBe('test-source');
+    expect(errors[0].severity).toBe('error');
+  });
+
+  test('scanLogForErrors should respect exclude patterns', () => {
+    createMockInstance('kaseki-test-2', {
+      hasErrors: true,
+    });
+
+    // With exclusion pattern that matches our test error
+    const errorsWithExclude = kasekiCli.scanLogForErrors(
+      'kaseki-test-2',
+      'stderr.log',
+      /error|wrong/i,
+      'test-source',
+      'error',
+      { excludePattern: /Error:/ }
+    );
+
+    // Should be empty because our test error "Error: something went wrong" matches the exclude pattern
+    expect(errorsWithExclude.length).toBe(0);
+  });
+
+  test('scanLogForErrors should handle allNonEmptyLines option', () => {
+    // Create instance with custom quality.log content using the mock helper
+    const testDir = path.join(MOCK_RESULTS_DIR, 'kaseki-test-3');
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(testDir, 'metadata.json'),
+      JSON.stringify({ exit_code: 1, quality_exit_code: 1 })
+    );
+    fs.writeFileSync(
+      path.join(testDir, 'quality.log'),
+      'quality gate 1 failed\nquality gate 2 failed\n\n'
+    );
+
+    const errors = kasekiCli.scanLogForErrors(
+      'kaseki-test-3',
+      'quality.log',
+      /.*/,
+      'quality',
+      'critical',
+      { allNonEmptyLines: true }
+    );
+
+    expect(errors.length).toBe(2); // Should only count non-empty lines
+    errors.forEach((e) => {
+      expect(e.severity).toBe('critical');
+      expect(e.source).toBe('quality');
+    });
+  });
+
+  test('scanLogForErrors should respect exitCodeCondition', () => {
+    createMockInstance('kaseki-test-4', {
+      metadata: {
+        exit_code: 0,
+      },
+    });
+
+    // Condition is false, so should return empty
+    const errors = kasekiCli.scanLogForErrors(
+      'kaseki-test-4',
+      'stderr.log',
+      /.*/,
+      'test',
+      'error',
+      { exitCodeCondition: false }
+    );
+
+    expect(errors.length).toBe(0); // Should not scan when condition is false
+  });
+
+  test('ERROR_PATTERNS should be centralized and accessible', () => {
+    expect(kasekiCli.ERROR_PATTERNS).toBeDefined();
+    expect(kasekiCli.ERROR_PATTERNS.stderr).toBeDefined();
+    expect(kasekiCli.ERROR_PATTERNS.validation).toBeDefined();
+    expect(kasekiCli.ERROR_PATTERNS.stderrExclude).toBeDefined();
+
+    // Test that patterns are RegExp objects
+    expect(kasekiCli.ERROR_PATTERNS.stderr instanceof RegExp).toBe(true);
+    expect(kasekiCli.ERROR_PATTERNS.validation instanceof RegExp).toBe(true);
+  });
 });

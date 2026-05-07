@@ -504,6 +504,86 @@ const ErrorSeverity = {
 };
 
 /**
+ * Centralized error pattern matchers.
+ * Used by detectErrors to identify error patterns in log files.
+ */
+const ERROR_PATTERNS = {
+  stderr: /error|failed|exception|panic|abort/i,
+  stderrExclude: /^#.*error/,
+  validation: /FAILED|error|failed/i,
+};
+
+/**
+ * Scan a log file for lines matching an error pattern.
+ * @param instance The kaseki instance name
+ * @param artifactName The artifact filename to scan (e.g., 'stderr.log')
+ * @param pattern The regex pattern to match against each line
+ * @param source The error source label
+ * @param severity The error severity level
+ * @param excludePattern Optional regex to exclude certain lines
+ * @param exitCodeCondition Optional condition to check before scanning (e.g., secret_scan_exit_code !== 0)
+ * @returns Array of detected errors
+ */
+function scanLogForErrors(
+  instance: string,
+  artifactName: string,
+  pattern: RegExp,
+  source: string,
+  severity: string,
+  options?: {
+    excludePattern?: RegExp;
+    exitCodeCondition?: boolean;
+    allNonEmptyLines?: boolean;
+  }
+): DetectedError[] {
+  const errors: DetectedError[] = [];
+
+  // Check optional exit code condition (e.g., for secret-scan.log)
+  if (options?.exitCodeCondition === false) {
+    return errors;
+  }
+
+  const log = readArtifact(instance, artifactName);
+  if (!log) {
+    return errors;
+  }
+
+  const lines = log.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNumber = i + 1;
+
+    // Option: treat all non-empty lines as errors (e.g., quality.log)
+    if (options?.allNonEmptyLines) {
+      if (line.trim().length > 0) {
+        errors.push({
+          severity,
+          source,
+          line: lineNumber,
+          message: line.substring(0, 150),
+        });
+      }
+      continue;
+    }
+
+    // Standard pattern matching with optional exclusion
+    if (line.match(pattern)) {
+      if (options?.excludePattern && line.match(options.excludePattern)) {
+        continue;
+      }
+      errors.push({
+        severity,
+        source,
+        line: lineNumber,
+        message: line.substring(0, 150),
+      });
+    }
+  }
+
+  return errors;
+}
+
+/**
  * Detect errors in a kaseki instance.
  * Scans stderr, quality gates, secret scans, and validation failures.
  */
@@ -516,6 +596,8 @@ function detectErrors(instance: string): DetectedError[] {
 
   const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
   const exitCode = importedResolveInstanceExitCode(resultDir, metadata);
+
+  // Check for empty diff
   if (importedClassifyFailure(metadata, exitCode) === 'empty-diff') {
     errors.push({
       severity: ErrorSeverity.WARNING,
@@ -526,61 +608,43 @@ function detectErrors(instance: string): DetectedError[] {
   }
 
   // Check stderr.log for error patterns
-  const stderr = readArtifact(instance, 'stderr.log');
-  if (stderr) {
-    const lines = stderr.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (
-        line.match(/error|failed|exception|panic|abort/i) &&
-        !line.match(/^#.*error/)
-      ) {
-        errors.push({
-          severity: ErrorSeverity.ERROR,
-          source: 'stderr',
-          line: i + 1,
-          message: line.substring(0, 150),
-        });
-      }
-    }
-  }
+  errors.push(
+    ...scanLogForErrors(
+      instance,
+      'stderr.log',
+      ERROR_PATTERNS.stderr,
+      'stderr',
+      ErrorSeverity.ERROR,
+      { excludePattern: ERROR_PATTERNS.stderrExclude }
+    )
+  );
 
-  // Check quality.log for quality gate failures
-  const qualityLog = readArtifact(instance, 'quality.log');
-  if (qualityLog) {
-    const lines = qualityLog.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.trim().length > 0) {
-        errors.push({
-          severity: ErrorSeverity.CRITICAL,
-          source: 'quality-gate',
-          line: i + 1,
-          message: line.substring(0, 150),
-        });
-      }
-    }
-  }
+  // Check quality.log (all non-empty lines are errors)
+  errors.push(
+    ...scanLogForErrors(
+      instance,
+      'quality.log',
+      /.*/,
+      'quality-gate',
+      ErrorSeverity.CRITICAL,
+      { allNonEmptyLines: true }
+    )
+  );
 
-  // Check secret-scan.log for secrets
-  const secretScan = readArtifact(instance, 'secret-scan.log');
+  // Check secret-scan.log (conditional on exit code)
   const secretScanExitCode = normalizeExitCodeCandidate(metadata.secret_scan_exit_code);
-  if (secretScan && secretScanExitCode !== 0) {
-    const lines = secretScan.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.trim().length > 0) {
-        errors.push({
-          severity: ErrorSeverity.CRITICAL,
-          source: 'secret-scan',
-          line: i + 1,
-          message: line.substring(0, 150),
-        });
-      }
-    }
-  }
+  errors.push(
+    ...scanLogForErrors(
+      instance,
+      'secret-scan.log',
+      /.*/,
+      'secret-scan',
+      ErrorSeverity.CRITICAL,
+      { allNonEmptyLines: true, exitCodeCondition: secretScanExitCode !== 0 }
+    )
+  );
 
-  // Check validation metadata/log for failed commands
+  // Check validation metadata for failed commands
   if (typeof metadata.validation_failed_command === 'string' && metadata.validation_failed_command.trim().length > 0) {
     errors.push({
       severity: ErrorSeverity.ERROR,
@@ -590,21 +654,16 @@ function detectErrors(instance: string): DetectedError[] {
     });
   }
 
-  const validationLog = readArtifact(instance, 'validation.log');
-  if (validationLog) {
-    const lines = validationLog.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.match(/FAILED|error|failed/i)) {
-        errors.push({
-          severity: ErrorSeverity.ERROR,
-          source: 'validation',
-          line: i + 1,
-          message: line.substring(0, 150),
-        });
-      }
-    }
-  }
+  // Check validation.log for error patterns
+  errors.push(
+    ...scanLogForErrors(
+      instance,
+      'validation.log',
+      ERROR_PATTERNS.validation,
+      'validation',
+      ErrorSeverity.ERROR
+    )
+  );
 
   return errors;
 }
@@ -676,6 +735,8 @@ export {
   calculateTimeoutRiskPercent,
   getInstanceStatus,
   detectErrors,
+  scanLogForErrors,
+  ERROR_PATTERNS,
   getAnalysis,
   ErrorSeverity,
   parseDockerContainerNames,

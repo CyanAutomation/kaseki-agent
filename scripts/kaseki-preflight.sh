@@ -89,7 +89,8 @@ detect_os() {
 # Get install command for detected OS
 get_install_command() {
   local bin="$1"
-  local detected_os="$(detect_os)"
+  local detected_os
+  detected_os="$(detect_os)"
   
   case "$detected_os" in
     debian)
@@ -187,7 +188,8 @@ output_guide_mode() {
   echo "╚════════════════════════════════════════════════════════════╝"
   echo ""
   
-  local detected_os="$(detect_os)"
+  local detected_os
+  detected_os="$(detect_os)"
   echo "System Information:"
   echo "  OS: $detected_os"
   echo "  Shell: $SHELL"
@@ -200,7 +202,8 @@ output_guide_mode() {
       echo "  ✓ $bin"
     else
       echo "  ✗ $bin (MISSING)"
-      local install_cmd=$(get_install_command "$bin")
+      local install_cmd
+      install_cmd=$(get_install_command "$bin")
       echo "    Install: $install_cmd"
     fi
   done
@@ -213,7 +216,8 @@ output_guide_mode() {
       echo "  ✓ $bin"
     else
       echo "  ○ $bin (optional, not found)"
-      local install_cmd=$(get_install_command "$bin")
+      local install_cmd
+      install_cmd=$(get_install_command "$bin")
       echo "    Install: $install_cmd"
     fi
   done
@@ -224,7 +228,8 @@ output_guide_mode() {
     echo "⚠ Action Required:"
     echo "  Install missing required dependencies:"
     for bin in "${missing_required[@]}"; do
-      local install_cmd=$(get_install_command "$bin")
+      local install_cmd
+      install_cmd=$(get_install_command "$bin")
       echo "    $install_cmd"
     done
     echo ""
