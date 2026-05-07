@@ -178,6 +178,13 @@ function checkGitHubAppCredentials(): PreflightCheck {
   };
 }
 
+function isGitHubAppReady(): boolean {
+  return checkGitHubAppCredentials().ok &&
+    (Boolean(process.env.GITHUB_APP_ID || process.env.GITHUB_APP_ID_FILE) ||
+      Boolean(process.env.GITHUB_APP_CLIENT_ID || process.env.GITHUB_APP_CLIENT_ID_FILE) ||
+      Boolean(process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_FILE));
+}
+
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
   const image = readKasekiImage(templateDir);
@@ -434,6 +441,15 @@ export function createApiRouter(
             : req.body?.startupCheck,
       });
 
+      if ((runRequest.publishMode === 'branch' || runRequest.publishMode === 'draft_pr') && !isGitHubAppReady()) {
+        return sendErrorResponse(
+          res,
+          400,
+          'Bad Request',
+          `publishMode=${runRequest.publishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
+        );
+      }
+
       // Auto-generate idempotency key if not provided
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
       const requestFingerprint = buildRequestFingerprint(runRequest as Record<string, unknown>);
@@ -463,6 +479,7 @@ export function createApiRouter(
         repoUrl: runRequest.repoUrl,
         ref: runRequest.ref,
         taskMode: runRequest.taskMode,
+        publishMode: runRequest.publishMode,
         startupCheck: runRequest.startupCheck,
         idempotencyKey,
       });

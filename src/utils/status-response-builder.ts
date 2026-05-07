@@ -1,9 +1,11 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
 import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
+import { resolveInstanceExitCode } from '../instance-state-derivation';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 
@@ -23,10 +25,12 @@ export class StatusResponseBuilder {
    * Build a complete StatusResponse for a job.
    */
   buildStatus(job: Job): StatusResponse {
+    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const exitCode = this.resolveExitCode(job, runDir);
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
-      exitCode: job.exitCode,
+      exitCode: exitCode ?? undefined,
       failureClass: job.failureClass,
       correlationId: job.correlationId,
       requestId: job.requestId,
@@ -115,6 +119,24 @@ export class StatusResponseBuilder {
       } else if (keyFileAvailability['result-summary.md']) {
         response.diagnosticEntryPoint = 'result-summary.md';
       }
+    }
+  }
+
+  private resolveExitCode(job: Job, runDir: string): number | null {
+    if (job.exitCode !== undefined && job.exitCode !== null) {
+      return job.exitCode;
+    }
+    if (!(job.status === 'completed' || job.status === 'failed')) {
+      return null;
+    }
+    try {
+      const metadataPath = path.join(runDir, 'metadata.json');
+      const metadata = fs.existsSync(metadataPath)
+        ? JSON.parse(fs.readFileSync(metadataPath, 'utf-8'))
+        : {};
+      return resolveInstanceExitCode(runDir, metadata);
+    } catch {
+      return null;
     }
   }
 }

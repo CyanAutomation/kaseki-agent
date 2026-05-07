@@ -32,6 +32,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 5700 | Timeout for agent (95 min) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
+| `KASEKI_PUBLISH_MODE` | auto | Publish behavior: auto, none, branch, or draft_pr |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
@@ -182,9 +183,12 @@ curl -X POST http://localhost:8080/api/runs \
     "ref": "main",
     "taskPrompt": "Fix the parser bug in src/lib/parser.ts",
     "changedFilesAllowlist": ["src/lib/parser.ts", "tests/parser.test.ts"],
+    "allowlist": { "include": ["src/lib/parser.ts", "tests/parser.test.ts"] },
     "maxDiffBytes": 150000,
     "validationCommands": ["npm run lint", "npm run test"],
-    "taskMode": "patch"
+    "validation": { "commands": ["npm run lint", "npm run test"] },
+    "taskMode": "patch",
+    "publishMode": "draft_pr"
   }'
 ```
 
@@ -195,13 +199,22 @@ curl -X POST http://localhost:8080/api/runs \
   ref?: string;              // Git branch/tag/commit (default: "main")
   taskPrompt?: string;       // Instructions for Pi agent
   changedFilesAllowlist?: string[];  // File patterns Pi must not modify outside
+  allowlist?: { include?: string[] }; // Alias accepted for controllers
   maxDiffBytes?: number;     // Max diff size in bytes
   validationCommands?: string[];     // Commands to run after agent completes
+  validation?: { commands?: string[] }; // Alias accepted for controllers
   taskMode?: "patch" | "inspect";    // "patch" (default) = require changes
+  publishMode?: "none" | "branch" | "draft_pr"; // Optional publish behavior
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
   timeoutSeconds?: number;    // Optional per-run timeout (60-10800 seconds)
 }
 ```
+
+Set `publishMode` when a controller needs deterministic publish behavior:
+`none` skips GitHub publishing, `branch` pushes a Kaseki branch after validation,
+and `draft_pr` pushes a branch and opens a draft pull request. Requests with
+`branch` or `draft_pr` fail before queueing unless GitHub App credentials are
+readable; call `GET /api/preflight` first to verify that readiness.
 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. This starts the same worker path as a normal run, verifies the cloned repo, OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI, then exits before spending a full agent run.
 
