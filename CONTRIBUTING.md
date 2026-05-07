@@ -143,7 +143,7 @@ Use either the published image or a local build, then run `./run-kaseki.sh` from
 ### Option A: pull published image
 
 ```bash
-docker pull docker.io/cyanautomation/kaseki-agent:0.1.0
+docker pull docker.io/cyanautomation/kaseki-agent:latest
 OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
 ```
 
