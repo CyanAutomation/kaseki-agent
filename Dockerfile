@@ -23,7 +23,7 @@ COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.jso
 RUN npm ci --ignore-scripts \
     && mkdir -p node_modules
 
-RUN npm install -g @mariozechner/pi-coding-agent@0.72.0
+RUN npm install -g @earendil-works/pi-coding-agent@0.74.0
 
 
 FROM node:24-bookworm-slim AS runtime
@@ -45,7 +45,7 @@ ENV HOME=/tmp/kaseki-home \
     CI=true
 
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -sf ../lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js /usr/local/bin/pi
+RUN ln -sf ../lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js /usr/local/bin/pi
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 WORKDIR /app
@@ -99,7 +99,7 @@ RUN mkdir -p /app/lib \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && chmod 0755 /usr/local/bin/kaseki-entrypoint \
-    && chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
+    && chmod 0755 /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \
     /usr/local/bin/kaseki-entrypoint \
     /usr/local/bin/kaseki-pi-event-filter \
