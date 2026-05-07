@@ -5,9 +5,10 @@ import { secretValueCache } from './secret-value-cache';
  * Configuration for the Kaseki API service.
  */
 export const DEFAULT_JOB_INDEX_MAX_ENTRIES = 1000;
-export const DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES = 20;
-export const DEFAULT_ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
-export const DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES = 10 * 1024 * 1024;
+// Artifact cache constants moved to private scope (no longer exported as they are only used internally)
+const DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES = 20;
+const DEFAULT_ARTIFACT_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export interface KasekiApiConfig {
   port: number;

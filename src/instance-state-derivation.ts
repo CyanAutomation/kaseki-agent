@@ -15,7 +15,7 @@ export type InstanceLifecycleStatus = 'running' | 'completed' | 'failed' | 'pend
 /**
  * Normalize an exit code candidate into an integer or null.
  */
-function normalizeExitCodeCandidate(value: any): number | null {
+export function normalizeExitCodeCandidate(value: any): number | null {
   if (typeof value === 'number' && Number.isInteger(value)) {
     return value;
   }
