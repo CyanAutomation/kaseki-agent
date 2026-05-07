@@ -100,6 +100,28 @@ export function resolveInstanceStage(
 }
 
 /**
+ * Extract validation failure reason from metadata.
+ * Returns the reason if validation failed, otherwise null.
+ */
+export function extractValidationFailureReason(metadata: Metadata = {}): string | null {
+  const reason = typeof metadata.validation_failure_reason === 'string' 
+    ? metadata.validation_failure_reason.trim() 
+    : '';
+  return reason.length > 0 ? reason : null;
+}
+
+/**
+ * Extract quality gate failure reason from metadata.
+ * Returns the reason if quality checks failed, otherwise null.
+ */
+export function extractQualityFailureReason(metadata: Metadata = {}): string | null {
+  const reason = typeof metadata.quality_failure_reason === 'string' 
+    ? metadata.quality_failure_reason.trim() 
+    : '';
+  return reason.length > 0 ? reason : null;
+}
+
+/**
  * Classify failure type from metadata and exit code.
  */
 export function classifyFailure(

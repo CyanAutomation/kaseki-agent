@@ -6,6 +6,8 @@ import {
   resolveInstanceExitCode,
   resolveInstanceStage,
   classifyFailure,
+  extractValidationFailureReason,
+  extractQualityFailureReason,
 } from './instance-state-derivation';
 
 describe('instance-state-derivation', () => {
@@ -191,6 +193,71 @@ describe('instance-state-derivation', () => {
     it('should handle string exit codes', () => {
       const classification = classifyFailure({}, '124');
       expect(classification).toBe('timeout');
+    });
+  });
+
+  describe('extractValidationFailureReason', () => {
+    it('should return null when validation_failure_reason is not set', () => {
+      const reason = extractValidationFailureReason({});
+      expect(reason).toBeNull();
+    });
+
+    it('should return the reason when validation_failure_reason is set', () => {
+      const reason = extractValidationFailureReason({
+        validation_failure_reason: 'validation_command_failed: npm run test (exit 1)',
+      });
+      expect(reason).toBe('validation_command_failed: npm run test (exit 1)');
+    });
+
+    it('should trim whitespace from reason', () => {
+      const reason = extractValidationFailureReason({
+        validation_failure_reason: '  missing_npm_script: check  ',
+      });
+      expect(reason).toBe('missing_npm_script: check');
+    });
+
+    it('should return null for empty reason string', () => {
+      const reason = extractValidationFailureReason({
+        validation_failure_reason: '   ',
+      });
+      expect(reason).toBeNull();
+    });
+  });
+
+  describe('extractQualityFailureReason', () => {
+    it('should return null when quality_failure_reason is not set', () => {
+      const reason = extractQualityFailureReason({});
+      expect(reason).toBeNull();
+    });
+
+    it('should return the reason when quality_failure_reason is set', () => {
+      const reason = extractQualityFailureReason({
+        quality_failure_reason: "allowlist_check: file 'src/forbidden.ts' not in allowlist",
+      });
+      expect(reason).toBe(
+        "allowlist_check: file 'src/forbidden.ts' not in allowlist"
+      );
+    });
+
+    it('should handle max_diff_bytes failure reason', () => {
+      const reason = extractQualityFailureReason({
+        quality_failure_reason: 'max_diff_bytes: 250000 bytes exceeds limit of 200000 bytes',
+      });
+      expect(reason).toBe('max_diff_bytes: 250000 bytes exceeds limit of 200000 bytes');
+    });
+
+    it('should trim whitespace from reason', () => {
+      const reason = extractQualityFailureReason({
+        quality_failure_reason: '  max_diff_bytes: overflow  ',
+      });
+      expect(reason).toBe('max_diff_bytes: overflow');
+    });
+
+    it('should return null for empty reason string', () => {
+      const reason = extractQualityFailureReason({
+        quality_failure_reason: '',
+      });
+      expect(reason).toBeNull();
     });
   });
 });
