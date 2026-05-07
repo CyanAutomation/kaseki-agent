@@ -81,6 +81,8 @@ RUN mkdir -p /app/lib \
     && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
     && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
+    && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
+    && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
@@ -91,6 +93,8 @@ RUN mkdir -p /app/lib \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
+    && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
+    && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
