@@ -64,6 +64,16 @@ COPY test ./test
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint
 
+# Mark container-specific scripts for internal use
+# These are bundled for use inside containers during setup/orchestration
+RUN chmod +x /app/scripts/kaseki-container-setup.sh \
+    /app/scripts/kaseki-container-setup-remote.sh \
+    /app/scripts/kaseki-container-entrypoint-wrapper.sh \
+    && mkdir -p /scripts \
+    && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
+    && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
+    && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh
+
 RUN mkdir -p /app/lib \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \

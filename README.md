@@ -16,9 +16,33 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 
 ## Getting Started
 
-👉 **New to Kaseki?** Start with the **[Setup Guide](docs/SETUP_GUIDE.md)** for a complete walkthrough.
+👉 **New to Kaseki?** Choose your setup path:
 
-For quick reference:
+### **Easiest: Container-Based Setup** ⭐ (Recommended for New Users)
+
+Minimal host complexity — just Docker needed:
+
+```bash
+# One-time setup (interactive, saves API key)
+docker run -it \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v ~/.kaseki/secrets:/secrets \
+  docker.io/cyanautomation/kaseki-agent:latest \
+  setup
+
+# Run your first task
+docker run -it \
+  -v ~/.kaseki/secrets:/secrets \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  docker.io/cyanautomation/kaseki-agent:latest \
+  agent https://github.com/your-org/your-repo main
+```
+
+**See [docs/DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** for all container-based workflows.
+
+### **Traditional: Host-Based Setup** (More Control)
+
+Full control with host scripts:
 
 ```bash
 # Clone the repo
@@ -35,7 +59,9 @@ cd /agents/kaseki-template
 cat /agents/kaseki-results/kaseki-1/result-summary.md
 ```
 
-Choose your deployment pattern:
+**See [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** for complete walkthrough.
+
+### **Choose Your Deployment Pattern**
 
 - **Single host?** → [scripts/templates/SINGLE_HOST_CLI.md](scripts/templates/SINGLE_HOST_CLI.md)
 - **Multiple hosts?** → [scripts/templates/MULTI_HOST_DISTRIBUTED.md](scripts/templates/MULTI_HOST_DISTRIBUTED.md)
