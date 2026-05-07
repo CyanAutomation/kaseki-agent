@@ -55,9 +55,9 @@ cat > package.json <<'JSON'
 JSON
 
 VALIDATION_TIMINGS_FILE="$tmp_dir/results/validation-timings.tsv"
-mkdir -p /results
-: > /results/validation.log
-: > "$VALIDATION_TIMINGS_FILE"
+mkdir -p /results || fail "Cannot create /results directory"
+: > /results/validation.log || fail "Cannot write to /results/validation.log"
+: > "$VALIDATION_TIMINGS_FILE" || fail "Cannot write to validation timings file"
 
 assert_equals "extracts npm run script names" "check" "$(npm_run_script_name 'npm run check')"
 assert_equals "extracts npm run script with trailing args" "test" "$(npm_run_script_name 'npm run test -- --runInBand')"
