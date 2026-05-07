@@ -16,6 +16,7 @@ This prevents **scope creep** — where an agent makes unintended changes to fil
 ### Problem It Solves
 
 When you ask an agent to "fix a parser bug in `src/lib/parser.ts`", it might:
+
 1. ✅ Fix the bug correctly
 2. ❌ Also modify `tests/other-module.ts` (test interference)
 3. ❌ Update `package.json` (version bump)
@@ -56,26 +57,31 @@ The allowlist supports **glob-style patterns**:
 ### Examples
 
 #### Single File
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"
 ```
 
 #### Multiple Files
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts tests/parser.validation.ts"
 ```
 
 #### Directory Pattern
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/**"  # All files under src/lib/
 ```
 
 #### Multiple Patterns
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/components/** tests/components/** src/hooks/**"
 ```
 
 #### Combination
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/** src/types/parser.ts"
 ```
@@ -85,6 +91,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/** src/types/parser.ts"
 We provide pre-built allowlist templates for common task types:
 
 ### Template: Parser Fix
+
 For fixing parsing logic in a specific module.
 
 ```bash
@@ -95,6 +102,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-parser-fix.txt | tr '\
 **Includes:** `src/lib/parser.ts tests/parser.validation.ts`
 
 ### Template: UI Component
+
 For modifying or creating React/Vue components.
 
 ```bash
@@ -105,6 +113,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-ui-component.txt | tr 
 **Includes:** `src/components/** src/lib/ui/** src/hooks/** tests/components/**`
 
 ### Template: API Route
+
 For implementing or fixing API endpoints.
 
 ```bash
@@ -115,6 +124,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-api-route.txt | tr '\n
 **Includes:** `src/app/api/** tests/api/**`
 
 ### Template: Utility
+
 For fixing utility functions and helper libraries.
 
 ```bash
@@ -125,6 +135,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-utility.txt | tr '\n' 
 **Includes:** `src/lib/** src/utils/** tests/** src/types/**`
 
 ### Template: Comprehensive
+
 For larger tasks that legitimately require changes across multiple areas.
 
 ```bash
@@ -160,6 +171,7 @@ Start: What are you asking the agent to do?
 ### If You're Unsure
 
 1. **Do a test run** with a broad allowlist:
+
    ```bash
    KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**" ./run-kaseki.sh
    ```
@@ -170,9 +182,11 @@ Start: What are you asking the agent to do?
    - Copy the "kept files" into a more specific allowlist
 
 3. **Or use the suggestion helper:**
+
    ```bash
    ./scripts/suggest-allowlist.sh /results/kaseki-N
    ```
+
    This generates `allowlist-suggestions.md` with patterns based on actual files changed.
 
 ## What Happens During Restoration
@@ -203,12 +217,14 @@ When kaseki detects files outside the allowlist:
 **Cause:** Allowlist is too narrow for the task.
 
 **Solutions:**
+
 1. Widen the allowlist to include related files
 2. Use a broader template (e.g., `allowlist-utility` instead of single file)
 3. Run `./scripts/suggest-allowlist.sh` to auto-generate better patterns
 4. Review the TASK_PROMPT — is the agent task clear enough?
 
 **Example:**
+
 ```bash
 # Too narrow:
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"
@@ -221,11 +237,13 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts src/types/** tests/parser**"
 
 **Symptom:** All files were restored; nothing was kept.
 
-**Cause:** 
+**Cause:**
+
 - Agent made no changes
 - OR agent changed files in completely different areas than allowlist specifies
 
 **Check:**
+
 1. Look at `changed-files.txt` to see what actually changed
 2. Look at `pi-stderr.log` to see if agent had errors
 3. Verify `TASK_PROMPT` was clear and specific
@@ -237,6 +255,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts src/types/** tests/parser**"
 **Cause:** Pattern syntax issue.
 
 **Common Mistakes:**
+
 - ❌ `src/lib/*` — matches only direct children, not `src/lib/utils/helper.ts`
 - ✅ `src/lib/**` — matches all files recursively
 
@@ -247,6 +266,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts src/types/** tests/parser**"
 - ✅ `src/lib/**` — no leading slash
 
 **Test your pattern:**
+
 ```bash
 ./scripts/allowlist-helper.sh  # (See implementation for pattern testing)
 ```
