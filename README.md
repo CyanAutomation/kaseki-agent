@@ -80,7 +80,7 @@ For SSH/controller-driven setup and execution. Used by OpenClaw and similar orch
 
 ```bash
 # Single SSH command to bootstrap a Pi (install, deploy, doctor)
-ssh pi@192.168.1.100 'curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | \
+ssh pi@192.168.1.100 'curl -fsSL https://raw.githubusercontent.com//main/scripts/kaseki-install.sh | \
   KASEKI_CONTROLLER_MODE=1 \
   sh'
 ```
@@ -164,7 +164,7 @@ docker run -d --name kaseki-api \
   -e KASEKI_API_KEYS=sk-your-secret-key \
   -v /agents:/agents:rw \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest api
+  docker.io/:latest api
 
 # Option D: systemd Service
 sudo cp scripts/kaseki-api.service /etc/systemd/system/
@@ -261,7 +261,7 @@ docker run --rm --entrypoint kaseki-report \
 cd /agents/kaseki-agent
 
 # Bootstrap remote host via SSH
-ssh pi@host 'curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh | KASEKI_CONTROLLER_MODE=1 sh'
+ssh pi@host 'curl -fsSL https://raw.githubusercontent.com//main/scripts/kaseki-install.sh | KASEKI_CONTROLLER_MODE=1 sh'
 
 # Or locally after cloning
 OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
@@ -501,12 +501,12 @@ sudo systemctl enable --now kaseki-healthcheck.timer
 
 **Docker Hub** (recommended):
 ```bash
-docker pull docker.io/cyanautomation/kaseki-agent:latest
+docker pull docker.io/:latest
 ```
 
 **GitHub Container Registry**:
 ```bash
-docker pull ghcr.io/cyanautomation/kaseki-agent:latest
+docker pull ghcr.io/:latest
 ```
 
 Both are equivalent and receive identical multi-architecture builds for `linux/amd64` and `linux/arm64`.
@@ -808,7 +808,7 @@ API controllers may send either the direct fields (`changedFilesAllowlist`, `val
 
 | Variable | Default | Notes |
 |---|---|---|
-| `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:0.1.0` | Docker image to use |
+| `KASEKI_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |
 | `KASEKI_CONTAINER_USER` | `$(id -u):$(id -g)` | UID:GID for container process |
 | `KASEKI_PROVIDER` | `openrouter` | LLM provider |
 
