@@ -14,6 +14,34 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 
 ---
 
+## Getting Started
+
+👉 **New to Kaseki?** Start with the **[Setup Guide](docs/SETUP_GUIDE.md)** for a complete walkthrough.
+
+For quick reference:
+
+```bash
+# Clone the repo
+git clone https://github.com/CyanAutomation/kaseki-agent.git /agents/kaseki-template
+cd /agents/kaseki-template
+
+# Interactive setup (validates dependencies, secures API key)
+./scripts/kaseki-setup.sh
+
+# Run your first task
+./run-kaseki.sh https://github.com/your-org/your-repo main
+
+# Check results
+cat /agents/kaseki-results/kaseki-1/result-summary.md
+```
+
+Choose your deployment pattern:
+- **Single host?** → [scripts/templates/SINGLE_HOST_CLI.md](scripts/templates/SINGLE_HOST_CLI.md)
+- **Multiple hosts?** → [scripts/templates/MULTI_HOST_DISTRIBUTED.md](scripts/templates/MULTI_HOST_DISTRIBUTED.md)
+- **HTTP REST API?** → [scripts/templates/REST_API_SERVICE.md](scripts/templates/REST_API_SERVICE.md)
+
+---
+
 ## Key Infrastructure (May 2026)
 
 - **Node.js**: v24 (bookworm-slim base image)
