@@ -1546,8 +1546,18 @@ elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; 
   printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
 else
-  set +e
-  IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
+  # Checkpoint: Verify working directory exists before validation
+  if ! [ -d /workspace/repo ]; then
+    printf 'ERROR: Working directory /workspace/repo does not exist before validation\n' | tee -a /results/validation.log
+    printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a /results/validation.log
+    printf 'Filesystem state:\n' | tee -a /results/validation.log
+    ls -laR /workspace 2>&1 | head -100 | tee -a /results/validation.log
+    VALIDATION_EXIT=1
+    VALIDATION_FAILED_COMMAND_DETAIL="Working directory /workspace/repo missing before validation"
+    record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
+  else
+    set +e
+    IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
   for command in "${VALIDATION_COMMANDS[@]}"; do
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
@@ -1563,7 +1573,10 @@ else
     {
       printf '\n==> %s\n' "$trimmed"
       unset OPENROUTER_API_KEY
-      bash -lc "$trimmed"
+      # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers
+      # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
+      # errors when running in constrained filesystem environments (read-only root, etc.)
+      bash -c "$trimmed"
       command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
@@ -1576,12 +1589,27 @@ else
     if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
       VALIDATION_EXIT="$command_exit"
       VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
+      # Enhanced diagnostics for getcwd-type errors
+      if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' /results/validation.log; then
+        {
+          printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
+          printf 'Working directory status:\n'
+          printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+          printf '  /workspace/repo exists: %s\n' "$([ -d /workspace/repo ] && echo 'yes' || echo 'no')"
+          if [ -L /workspace/repo/node_modules ]; then
+            printf '  node_modules is symlink → %s\n' "$(readlink /workspace/repo/node_modules 2>&1 || echo '<readlink failed>')"
+          fi
+          printf 'Last 20 lines of validation log:\n'
+          tail -20 /results/validation.log
+        } | tee -a /results/quality.log
+      fi
     fi
   done
-  if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
-    printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a /results/validation.log
+    if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
+      printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a /results/validation.log
+    fi
+    set -e
   fi
-  set -e
   record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
 emit_progress "validation" "finished with exit $VALIDATION_EXIT"
