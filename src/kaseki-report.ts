@@ -117,7 +117,7 @@ interface RestorationEvent {
 function parseRestorationMetrics(): { restored: number; kept: number } {
   const restorationJsonl = readText('restoration.jsonl');
   if (!restorationJsonl.trim()) return { restored: 0, kept: 0 };
-  
+
   let restored = 0, kept = 0;
   for (const line of restorationJsonl.split('\n')) {
     if (!line.trim()) continue;
