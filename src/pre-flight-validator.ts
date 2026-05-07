@@ -9,28 +9,28 @@ import { createEventLogger, EventLogger } from './logger';
 export function globToRegex(pattern: string): RegExp {
   // Use placeholders for all special sequences to avoid double-replacement
   let regex = pattern;
-  
+
   // First, escape all regex special chars
   regex = regex.replace(/[.+^${}()|[\]\\-]/g, '\\$&');
-  
+
   // Use placeholders for glob wildcards BEFORE replacing their components
   regex = regex.replace(/\*\*/g, '##DBL_STAR##');
   regex = regex.replace(/\*/g, '##STAR##');
   regex = regex.replace(/\?/g, '##QUEST##');
-  
+
   // Now convert placeholders to regex patterns
   // Handle ** in different contexts
-  regex = regex.replace(/\/##DBL_STAR##\//g, '/(?:.*\/)?');  // /../
-  regex = regex.replace(/##DBL_STAR##\//g, '(?:.*\/)?');     // **/ at start
-  regex = regex.replace(/\/##DBL_STAR##/g, '(?:\/.*)?');     // /** at end
+  regex = regex.replace(/\/##DBL_STAR##\//g, '/(?:.*)/?');  // /../
+  regex = regex.replace(/##DBL_STAR##\//g, '(?:.*)?');      // **/ at start
+  regex = regex.replace(/\/##DBL_STAR##/g, '(?:.*)?');      // /** at end
   regex = regex.replace(/##DBL_STAR##/g, '.*');             // ** alone
-  
+
   // Handle single *
   regex = regex.replace(/##STAR##/g, '[^/]*');
-  
+
   // Handle ?
   regex = regex.replace(/##QUEST##/g, '.');
-  
+
   return new RegExp(`^${regex}$`);
 }
 
@@ -72,14 +72,14 @@ export function validateAllowlistPatternMatching(
       warnings.push('Empty pattern detected');
       continue;
     }
-    
+
     // Warn about obviously broad patterns
     if (pattern === '*' || pattern === '**' || pattern === '/**') {
       warnings.push(`Pattern '${pattern}' is very broad and may allow too many files`);
       testResults.push({ pattern, matches: sampleFiles.length });
       continue;
     }
-    
+
     const matchCount = sampleFiles.filter((file) => testPathAgainstPatterns(file, [pattern])).length;
     testResults.push({ pattern, matches: matchCount });
     if (matchCount === sampleFiles.length) {
