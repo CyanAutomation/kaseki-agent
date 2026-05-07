@@ -158,7 +158,15 @@ docker-compose up -d
 npm install
 KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
 
-# Option C: systemd Service
+# Option C: Docker directly
+docker run -d --name kaseki-api \
+  -p 8080:8080 \
+  -e KASEKI_API_KEYS=sk-your-secret-key \
+  -v /agents:/agents:rw \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  docker.io/cyanautomation/kaseki-agent:latest api
+
+# Option D: systemd Service
 sudo cp scripts/kaseki-api.service /etc/systemd/system/
 sudo systemctl start kaseki-api
 ```
@@ -173,7 +181,10 @@ curl -X POST http://localhost:8080/api/runs \
     "repoUrl": "https://github.com/org/repo",
     "taskPrompt": "Fix the parser bug",
     "changedFilesAllowlist": ["src/lib/parser.ts"],
-    "validationCommands": ["npm run test", "npm run build"]
+    "allowlist": { "include": ["src/lib/parser.ts"] },
+    "validationCommands": ["npm run test", "npm run build"],
+    "validation": { "commands": ["npm run test", "npm run build"] },
+    "publishMode": "draft_pr"
   }'
 
 # Returns: {"id":"kaseki-42","status":"queued","createdAt":"2026-05-02T..."}
@@ -720,14 +731,19 @@ orchestration UIs.
 
 ### Behavior
 
-When credentials are configured:
+When credentials are configured and publishing is enabled:
 1. After validation passes and diff is non-empty, Kaseki generates a GitHub App installation token
 2. Creates a feature branch `kaseki/<instance-name>`
 3. Commits and pushes changes to remote
-4. Creates a draft PR against the target branch with:
+4. Creates a draft PR against the target branch when `KASEKI_PUBLISH_MODE=draft_pr` or API `publishMode` is `draft_pr`, with:
    - Title: `Kaseki: <instance-name>`
    - Body: Model, duration, validation result, quality checks
    - Draft: `true` for safety; review before merging
+
+Publishing modes are `none`, `branch`, and `draft_pr`. Controller requests that
+ask for `branch` or `draft_pr` fail before queueing unless GitHub App credentials
+are readable, so orchestrators can surface a clear setup error instead of waiting
+for a run that cannot publish.
 
 ### Result Artifacts
 
@@ -758,6 +774,7 @@ When credentials are configured:
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
+| `KASEKI_PUBLISH_MODE` | auto | `none`, `branch`, or `draft_pr`; API requests use `publishMode` |
 
 ### Validation and Quality Gates
 
@@ -772,6 +789,8 @@ When credentials are configured:
 | `KASEKI_NPM_OMIT_DEV` | 0 | Set to `1` to omit dev dependencies during `npm ci`; default keeps test/build tools available |
 
 `KASEKI_CHANGED_FILES_ALLOWLIST` patterns are repo-relative globs. Exact paths match only that path; `*` and `?` match within a single path segment; `**` can span directory separators. A `**/` segment may match zero or more directories, so `src/**/*.ts` matches both `src/index.ts` and nested files such as `src/lib/file-storage.ts`.
+
+API controllers may send either the direct fields (`changedFilesAllowlist`, `validationCommands`) or the structured aliases (`allowlist.include`, `validation.commands`). The scheduler normalizes both forms before launching the worker.
 
 ### Paths and Caching
 

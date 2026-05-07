@@ -967,6 +967,56 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('runs list includes terminal exit code from result metadata when scheduler job lacks it', async () => {
+    const jobId = 'kaseki-list-exit-code';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"exit_code":127}');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: jest.fn(),
+      submitJob: jest.fn(),
+      listJobs: () => [{ id: jobId, status: 'failed', createdAt: new Date('2026-05-07T12:00:00Z'), resultDir: jobDir }],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.runs[0]).toMatchObject({
+        id: jobId,
+        status: 'failed',
+        exitCode: 127,
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
   test('failed run falls back to result-summary.md diagnostic entrypoint when failure.json is missing', async () => {
     const jobId = 'kaseki-failed-status-2';
     const jobDir = path.join(resultsDir, jobId);
@@ -1392,6 +1442,64 @@ describe('kaseki-api-routes timeoutSeconds validation', () => {
       expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
+describe('kaseki-api-routes publish mode validation', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-publish-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
+    const previousEnv = {
+      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
+      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
+      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
+      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
+      GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
+      GITHUB_APP_PRIVATE_KEY_FILE: process.env.GITHUB_APP_PRIVATE_KEY_FILE,
+    };
+    for (const key of Object.keys(previousEnv)) {
+      delete process.env[key];
+    }
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          publishMode: 'draft_pr',
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('publishMode=draft_pr requires readable GitHub App credentials');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
     }
   });
 });

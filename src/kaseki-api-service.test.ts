@@ -154,6 +154,25 @@ describe('Kaseki API Request Validation', () => {
       request: { repoUrl: 'https://github.com/org/repo', startupCheck: true },
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', startupCheck: true },
     },
+    {
+      name: 'accepts explicit draft PR publishing mode',
+      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'draft_pr' },
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'draft_pr' },
+    },
+    {
+      name: 'accepts controller-style allowlist and validation aliases',
+      request: {
+        repoUrl: 'https://github.com/org/repo',
+        allowlist: { include: ['src/lib/parser.ts'] },
+        validation: { commands: ['npm test -- parser'] },
+      },
+      expected: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        allowlist: { include: ['src/lib/parser.ts'] },
+        validation: { commands: ['npm test -- parser'] },
+      },
+    },
   ])('RunRequestSchema success cases: $name', ({ request, expected }) => {
     const result = RunRequestSchema.parse(request);
     expect(result).toMatchObject(expected);
@@ -176,6 +195,15 @@ describe('Kaseki API Request Validation', () => {
         path: ['taskMode'],
         messagePattern: /invalid (option|enum)|expected/i,
         value: 'invalid',
+      },
+    },
+    {
+      name: 'rejects invalid publishMode enum',
+      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'pr' },
+      expectedIssue: {
+        path: ['publishMode'],
+        messagePattern: /invalid (option|enum)|expected/i,
+        value: 'pr',
       },
     },
   ])('RunRequestSchema rejects invalid payloads: $name', ({ request, expectedIssue }) => {

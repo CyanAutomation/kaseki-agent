@@ -273,6 +273,7 @@ export class JobScheduler {
       // directory so the API does not accidentally reserve the final result path.
       KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
+      ...(job.request.publishMode ? { KASEKI_PUBLISH_MODE: job.request.publishMode } : {}),
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
@@ -287,12 +288,14 @@ export class JobScheduler {
         'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.';
     }
 
-    if (job.request.changedFilesAllowlist) {
-      env.KASEKI_CHANGED_FILES_ALLOWLIST = job.request.changedFilesAllowlist.join(' ');
+    const changedFilesAllowlist = job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
+    if (changedFilesAllowlist) {
+      env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
     }
 
-    if (job.request.validationCommands) {
-      env.KASEKI_VALIDATION_COMMANDS = job.request.validationCommands.join(';');
+    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    if (validationCommands) {
+      env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     }
 
     if (job.request.taskPrompt) {

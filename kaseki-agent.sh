@@ -31,6 +31,7 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
+KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-auto}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STAGE="initializing"
@@ -232,6 +233,7 @@ write_metadata() {
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
+  "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
   "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
   "git_cache_mode": $(printf '%s' "$GIT_CACHE_MODE_USED" | json_encode),
   "git_cache_status": $(printf '%s' "$GIT_CACHE_STATUS" | json_encode),
@@ -374,8 +376,12 @@ collect_git_artifacts() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/allowlist-helper.sh"
+if [ ! -r "$ALLOWLIST_HELPER" ] && [ -r /app/scripts/allowlist-helper.sh ]; then
+  ALLOWLIST_HELPER="/app/scripts/allowlist-helper.sh"
+fi
 # shellcheck source=scripts/allowlist-helper.sh
-. "$SCRIPT_DIR/scripts/allowlist-helper.sh"
+. "$ALLOWLIST_HELPER"
 
 restore_disallowed_changes() {
   if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
@@ -1048,6 +1054,13 @@ EOF_ASKPASS
     return 8
   fi
   rm -f "$askpass_file"
+
+  if [ "$KASEKI_PUBLISH_MODE" = "branch" ]; then
+    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a /results/git-push.log
+    GITHUB_PR_EXIT=0
+    unset token
+    return 0
+  fi
   
   # Create pull request
   printf 'Creating pull request...\n' | tee -a /results/git-push.log

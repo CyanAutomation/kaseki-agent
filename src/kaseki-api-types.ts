@@ -64,9 +64,22 @@ export const RunRequestSchema = z.object({
   ref: z.string().min(1).default('main').describe('Git branch/tag/commit'),
   taskPrompt: z.string().min(10).optional().describe('Task prompt for Pi agent'),
   changedFilesAllowlist: z.array(z.string()).optional().describe('Space-separated file patterns'),
+  allowlist: z
+    .object({
+      include: z.array(z.string()).optional().describe('Alias for changedFilesAllowlist'),
+    })
+    .optional()
+    .describe('Controller-friendly allowlist alias'),
   maxDiffBytes: z.number().int().positive().optional().describe('Max diff size in bytes'),
   validationCommands: z.array(z.string()).optional().describe('Validation commands to run'),
+  validation: z
+    .object({
+      commands: z.array(z.string()).optional().describe('Alias for validationCommands'),
+    })
+    .optional()
+    .describe('Controller-friendly validation alias'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
+  publishMode: z.enum(['none', 'branch', 'draft_pr']).optional().describe('Publishing mode after validation'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
@@ -226,6 +239,9 @@ export interface RunsListResponse {
     createdAt: string;
     completedAt?: string;
     resultDir?: string;
+    exitCode?: number;
+    failureClass?: string;
+    error?: string;
   }>;
   total: number;
   retention?: {
