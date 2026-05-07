@@ -1,26 +1,183 @@
 #!/usr/bin/env bash
+# 
+# kaseki — Kaseki Agent convenience wrapper
+#
+# Supports two modes:
+#   1. CLI operations: ./kaseki list, ./kaseki watch, ./kaseki status (runs kaseki-cli.js)
+#   2. Container operations: ./kaseki setup, ./kaseki agent, ./kaseki run-mode, etc.
+
 set -euo pipefail
 
+# Configuration
 ROOT="${KASEKI_ROOT:-/agents}"
 TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-/agents/kaseki-template}"
 IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+SECRETS_DIR="${HOME}/.kaseki/secrets"
+RESULTS_DIR="${KASEKI_RESULTS_DIR:-.}/results"
 
+# Check Docker availability
 if ! command -v docker >/dev/null 2>&1; then
-  printf 'Docker is required to run the Kaseki CLI wrapper.\n' >&2
+  echo "Error: Docker is required but not installed" >&2
   exit 2
 fi
 
-if [ ! -d "$TEMPLATE_DIR" ]; then
-  printf 'Kaseki template directory not found: %s\n' "$TEMPLATE_DIR" >&2
-  exit 2
-fi
+# Help text
+show_help() {
+  cat <<EOF
+kaseki — Kaseki Agent Command-Line Interface
 
-exec docker run --rm \
-  --entrypoint node \
-  -e KASEKI_RESULTS_DIR="$ROOT/kaseki-results" \
-  -e KASEKI_RUNS_DIR="$ROOT/kaseki-runs" \
-  -v "$TEMPLATE_DIR:/tools:ro" \
-  -v "$ROOT:$ROOT:ro" \
-  -w /tools \
-  "$IMAGE" \
-  /tools/kaseki-cli.js "$@"
+CONTAINER OPERATIONS (new, easier interface):
+  ./kaseki setup [--help]                   Interactive setup wizard
+  ./kaseki doctor [--help]                  Health check
+  ./kaseki agent <repo> <ref> [--help]      Run agent task
+  ./kaseki run-mode <repo> <ref>            One-command run (needs OPENROUTER_API_KEY)
+  ./kaseki setup-remote <host> <key>        Remote host setup
+
+CLI OPERATIONS (instance monitoring, requires /agents directory):
+  ./kaseki list                             List all instances
+  ./kaseki status <instance>                Get instance status
+  ./kaseki errors <instance>                Show errors for instance
+  ./kaseki analysis <instance>              Get post-run analysis
+  ./kaseki watch <instance> [--interval=2] Live monitor with anomaly detection
+  ./kaseki follow <instance>                Stream logs in real-time
+  ./kaseki progress <instance> [--tail=25] Show progress events
+
+Environment Variables:
+  KASEKI_IMAGE                      Docker image (default: docker.io/cyanautomation/kaseki-agent:latest)
+  OPENROUTER_API_KEY                For run-mode: your OpenRouter API key
+  KASEKI_RESULTS_DIR                Results directory (default: ./results)
+
+Examples:
+  # Container: one-time setup
+  ./kaseki setup
+  
+  # Container: run a task
+  ./kaseki agent https://github.com/org/repo main
+  
+  # Container: one-command run (no setup needed)
+  OPENROUTER_API_KEY=sk-or-... ./kaseki run-mode https://github.com/org/repo main
+  
+  # CLI: monitor running instance
+  ./kaseki watch kaseki-1 --interval=2
+
+For detailed help:
+  https://github.com/CyanAutomation/kaseki-agent/docs/DOCKER_SETUP.md (container ops)
+  https://github.com/CyanAutomation/kaseki-agent/docs/CLI.md (CLI ops)
+
+EOF
+}
+
+# Detect if command is a container operation or CLI operation
+COMMAND="${1:-help}"
+
+case "$COMMAND" in
+  # Container operations
+  setup|doctor|agent|run-mode|setup-remote)
+    shift || true
+    
+    case "$COMMAND" in
+      setup)
+        mkdir -p "$SECRETS_DIR"
+        chmod 700 "$SECRETS_DIR"
+        
+        docker run -it \
+          --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$SECRETS_DIR:/secrets" \
+          "$IMAGE" \
+          setup "$@"
+        ;;
+      
+      doctor)
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$SECRETS_DIR:/secrets" \
+          "$IMAGE" \
+          doctor "$@"
+        ;;
+      
+      agent)
+        if [ ! -f "$SECRETS_DIR/openrouter_api_key" ]; then
+          echo "Error: API key not found at $SECRETS_DIR/openrouter_api_key" >&2
+          echo "Run setup first: ./kaseki setup"
+          exit 1
+        fi
+        
+        mkdir -p "$RESULTS_DIR"
+        
+        docker run -it \
+          --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$SECRETS_DIR:/secrets" \
+          -v "$RESULTS_DIR:/results" \
+          "$IMAGE" \
+          agent "$@"
+        ;;
+      
+      run-mode)
+        if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+          echo "Error: OPENROUTER_API_KEY environment variable is required" >&2
+          echo "Usage: OPENROUTER_API_KEY=sk-or-... ./kaseki run-mode <repo> <ref>"
+          exit 1
+        fi
+        
+        mkdir -p "$RESULTS_DIR"
+        
+        docker run -it \
+          --rm \
+          -e OPENROUTER_API_KEY \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$RESULTS_DIR:/results" \
+          "$IMAGE" \
+          run-mode "$@"
+        ;;
+      
+      setup-remote)
+        if [ $# -lt 2 ]; then
+          echo "Usage: ./kaseki setup-remote <host> <api-key-or-file>"
+          exit 1
+        fi
+        
+        docker run -it \
+          --rm \
+          "$IMAGE" \
+          setup-remote "$@"
+        ;;
+    esac
+    ;;
+  
+  # CLI operations (existing kaseki-cli.js wrapper)
+  list|status|errors|analysis|watch|follow|progress)
+    # Check if template directory exists (required for CLI)
+    if [ ! -d "$TEMPLATE_DIR" ]; then
+      echo "Error: Kaseki template directory not found: $TEMPLATE_DIR" >&2
+      echo ""
+      echo "CLI operations require /agents/kaseki-template to be set up."
+      echo "For container operations (setup, agent, run-mode), use those directly."
+      exit 2
+    fi
+    
+    docker run --rm \
+      --entrypoint node \
+      -e KASEKI_RESULTS_DIR="$ROOT/kaseki-results" \
+      -e KASEKI_RUNS_DIR="$ROOT/kaseki-runs" \
+      -v "$TEMPLATE_DIR:/tools:ro" \
+      -v "$ROOT:$ROOT:ro" \
+      -w /tools \
+      "$IMAGE" \
+      /tools/kaseki-cli.js "$@"
+    ;;
+  
+  --help|-h|help)
+    show_help
+    exit 0
+    ;;
+  
+  *)
+    echo "Error: Unknown command '$COMMAND'" >&2
+    echo ""
+    show_help
+    exit 1
+    ;;
+esac
+
