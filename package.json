@@ -24,7 +24,8 @@
     "lint:fix": "npm run lint:js:fix && npm run lint:sh",
     "kaseki-api": "tsx src/kaseki-api-service.ts",
     "type-check:full": "npm run type-check",
-    "type-check:changed": "tsc --noEmit -p tsconfig.changed.json"
+    "type-check:changed": "tsc --noEmit -p tsconfig.changed.json",
+    "benchmark:pi-event-filter": "npm run build && RUN_PI_EVENT_FILTER_PERF=1 jest --testMatch \"<rootDir>/perf/**/*.benchmark.test.ts\" --runInBand"
   },
   "dependencies": {
     "express": "^4.18.2",

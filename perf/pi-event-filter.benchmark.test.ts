@@ -9,8 +9,8 @@ const runPerf =
   process.env.PERF_TESTS === '1';
 const describePerf = runPerf ? describe : describe.skip;
 
-describePerf('pi-event-filter perf/stress suite', () => {
-  test('200k event run completes with environment-tuned memory threshold', async () => {
+describePerf('pi-event-filter nightly benchmark suite', () => {
+  test('200k event benchmark completes within worker memory profile', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-event-filter-perf-'));
     const inputPath = path.join(tmpDir, 'in.jsonl');
     const outputPath = path.join(tmpDir, 'out.jsonl');
@@ -87,6 +87,9 @@ describePerf('pi-event-filter perf/stress suite', () => {
       // - default (developer laptops/unknown CI): loose guardrail for regressions
       // - nightly perf workers: tighter budget to track drift
       const thresholdMb = process.env.CI_NIGHTLY === '1' ? 450 : 800;
+      // Expected profile: a streaming worker should remain well below 450 MiB
+      // on nightly hosts; the 800 MiB fallback only protects ad-hoc local runs
+      // from large regressions on unknown hardware.
       expect(memoryMb).toBeLessThan(thresholdMb);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
