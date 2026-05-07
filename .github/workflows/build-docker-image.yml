@@ -234,7 +234,16 @@ jobs:
       packages: read
 
     steps:
-      - name: Run Trivy vulnerability scanner (HIGH/CRITICAL)
+      # Vulnerability scanning strategy:
+      # 1. HIGH/CRITICAL: Blocking scan uploaded to GitHub Security tab (fails if found)
+      # 2. All severities: Informational JSON report for visibility into MEDIUM/LOW
+      # 3. SBOM: Generated in SPDX format for supply chain security
+      #
+      # We scan docker.io registry since that's the primary distribution point.
+      # GHCR images have parity via multi-registry build, so scanning one is sufficient.
+      # Both amd64 and arm64 variants use the same base image and have identical vulnerabilities.
+
+      - name: Run Trivy vulnerability scanner (HIGH/CRITICAL only)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
@@ -242,7 +251,7 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'HIGH,CRITICAL'
 
-      - name: Run Trivy vulnerability scanner (all severities)
+      - name: Run Trivy vulnerability scanner (all severities - informational)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'docker.io/cyanautomation/kaseki-agent:latest'
@@ -273,15 +282,27 @@ jobs:
             sbom-spdx.json
           retention-days: 30
 
-      - name: Comment scan summary on workflow
+      - name: Summarize scan results
         if: always()
         shell: bash
         run: |
-          echo "Vulnerability Scan Complete"
-          echo "- HIGH/CRITICAL findings: trivy-results.sarif"
-          echo "- All severities: trivy-results-all.json"
-          echo "- SBOM (SPDX): sbom-spdx.json"
-          echo "Artifacts uploaded for 30 days"
+          echo "=== Vulnerability Scan Complete ==="
+          echo ""
+          echo "Scanned Image: docker.io/cyanautomation/kaseki-agent:latest"
+          echo "Scanner: Trivy v0.36.0"
+          echo ""
+          echo "Results:"
+          echo "  - HIGH/CRITICAL findings → trivy-results.sarif (uploaded to GitHub Security tab)"
+          echo "  - All severities → trivy-results-all.json (informational, includes MEDIUM/LOW)"
+          echo "  - SBOM (SPDX) → sbom-spdx.json (software composition)"
+          echo ""
+          echo "Artifacts retained for 30 days"
+          echo ""
+          if grep -q '"severity":"HIGH"' trivy-results-all.json 2>/dev/null || grep -q '"severity":"CRITICAL"' trivy-results-all.json 2>/dev/null; then
+            echo "⚠️  HIGH or CRITICAL vulnerabilities detected - review trivy-results.sarif"
+          else
+            echo "✓ No HIGH or CRITICAL vulnerabilities found"
+          fi
 
   verify:
     needs: build

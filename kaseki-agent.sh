@@ -463,7 +463,7 @@ restore_disallowed_changes() {
     fi
     # File did not match allowlist - restore it
     restored_count=$((restored_count + 1))
-    printf 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a /results/quality.log
+    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a /results/quality.log
     emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
     {
       printf '{"timestamp":"%s","event":"file_restored","file":"%s","status":"restored","reason":"not_in_allowlist"}\n' \
@@ -474,12 +474,23 @@ restore_disallowed_changes() {
     restored_any=1
   done < /results/changed-files.txt
 
-  # Emit restoration summary to quality.log
+  # Emit restoration summary to quality.log with actionable guidance
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
     {
-      printf '\n[allowlist summary] Restored: %d files; Kept: %d files\n' "$restored_count" "$kept_count"
+      coverage=0
+      if [ $((restored_count + kept_count)) -gt 0 ]; then
+        coverage=$((kept_count * 100 / (restored_count + kept_count)))
+      fi
+      printf '\n[allowlist summary] Restored: %d files; Kept: %d files (coverage: %d%%)\n' "$restored_count" "$kept_count" "$coverage"
+      if [ "$restored_count" -gt 0 ] && [ "$coverage" -lt 50 ]; then
+        printf '[allowlist note] Low coverage detected. To improve:\n'
+        printf '  1. Run: ./scripts/suggest-allowlist.sh /results (or /agents/kaseki-results/<instance>)\n'
+        printf '  2. Review suggested patterns in allowlist-suggestions.md\n'
+        printf '  3. Update KASEKI_CHANGED_FILES_ALLOWLIST and re-run\n'
+        printf 'See docs/QUALITY_GATES.md for more guidance.\n'
+      fi
     } | tee -a /results/quality.log
-    emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count"
+    emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count" "coverage=$coverage"
   fi
 
   if [ "$restored_any" -eq 1 ]; then
@@ -1185,11 +1196,11 @@ run_github_operations() {
     owner="${BASH_REMATCH[1]}"
     repo="${BASH_REMATCH[2]}"
   else
-    printf 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a /results/git-push.log >&2
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a /results/git-push.log >&2
     return 7
   fi
   
-  printf 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /results/git-push.log
+  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /results/git-push.log
   
   # Set git user for commits
   git config user.name "GitHub App [$app_id]" || { printf 'Failed to set git user name\n' >&2; return 7; }
@@ -1205,7 +1216,7 @@ run_github_operations() {
   
   token="$(printf '%s' "$token_data" | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" 2>/dev/null)"
   if [ -z "$token" ]; then
-    printf 'Failed to extract token from response: %s\n' "$token_data" | tee -a /results/git-push.log >&2
+    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
@@ -1214,7 +1225,7 @@ run_github_operations() {
   
   # Create and push feature branch
   feature_branch="kaseki/$INSTANCE_NAME"
-  printf 'Creating feature branch: %s\n' "$feature_branch" | tee -a /results/git-push.log
+  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a /results/git-push.log
   git checkout -b "$feature_branch" || {
     printf 'Failed to create branch\n' | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=7
@@ -1231,7 +1242,7 @@ run_github_operations() {
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     git add -- "$changed_file" || {
-      printf 'Failed to stage changed file: %s\n' "$changed_file" | tee -a /results/git-push.log >&2
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a /results/git-push.log >&2
       GITHUB_PUSH_EXIT=7
       return 7
     }
@@ -1892,12 +1903,12 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
     run_github_operations
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
-    printf 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a /results/git-push.log >&2
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a /results/git-push.log >&2
     emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
   fi
 else
-  printf 'GitHub operations: skipped (reasons: %s; agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
+  printf -- 'GitHub operations: skipped (reasons: %s; agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
     "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" \
     "$([ "$PI_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
