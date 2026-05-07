@@ -558,6 +558,8 @@ sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./scripts/deploy-pi-template.sh
 2. Verifies image contains `/app` template
 3. Falls back to building from current checkout if registry image is stale or unavailable
 4. Records selected image and digest in `.kaseki-image` and `.kaseki-image-digest`
+   `.kaseki-image` preserves the configured ref such as `docker.io/cyanautomation/kaseki-agent:latest`,
+   while `.kaseki-image-digest` records the resolved local digest when Docker provides one.
 
 **Offline deployment:**
 ```bash
@@ -569,6 +571,10 @@ KASEKI_IMAGE_PULL_POLICY=missing sudo ./scripts/deploy-pi-template.sh
 
 # Offline only
 KASEKI_IMAGE_PULL_POLICY=never sudo ./scripts/deploy-pi-template.sh
+
+# Dockhand / Portainer style
+KASEKI_IMAGE=docker.io/cyanautomation/kaseki-agent:latest \
+KASEKI_IMAGE_PULL_POLICY=always sudo ./scripts/deploy-pi-template.sh
 ```
 
 ---
