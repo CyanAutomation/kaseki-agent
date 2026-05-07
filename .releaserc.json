@@ -126,7 +126,8 @@
     [
       "@semantic-release/github",
       {
-        "successComment": "🎉 This release is published.",
+        "successComment": false,
+        "failComment": false,
         "failTitle": "The automated release failed"
       }
     ]
