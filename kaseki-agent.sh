@@ -10,7 +10,13 @@ KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
+if [ "${KASEKI_VALIDATION_COMMANDS+x}" = "x" ]; then
+  KASEKI_VALIDATION_COMMANDS_WAS_DEFAULT=0
+else
+  KASEKI_VALIDATION_COMMANDS_WAS_DEFAULT=1
+fi
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
+KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-$KASEKI_VALIDATION_COMMANDS_WAS_DEFAULT}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
@@ -711,6 +717,52 @@ dependency_cache_key() {
   printf 'npm/%s/node-%s/flags-%s' "$lock_hash" "$node_major" "$flags_hash"
 }
 
+npm_run_script_name() {
+  local command="$1"
+  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
+  if [[ "$command" =~ $npm_run_regex ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+package_json_has_npm_script() {
+  local script_name="$1"
+  [ -f package.json ] || return 1
+  node - "$script_name" <<'NODE'
+const fs = require('fs');
+const scriptName = process.argv[2];
+try {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+  const scripts = pkg && typeof pkg.scripts === 'object' && pkg.scripts ? pkg.scripts : {};
+  process.exit(Object.prototype.hasOwnProperty.call(scripts, scriptName) ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+missing_npm_script_for_validation_command() {
+  local command="$1"
+  local script_name
+  [ "${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-0}" = "1" ] || return 1
+  script_name="$(npm_run_script_name "$command")" || return 1
+  package_json_has_npm_script "$script_name" && return 1
+  printf '%s' "$script_name"
+  return 0
+}
+
+record_skipped_validation_command() {
+  local command="$1"
+  local script_name="$2"
+  local duration_seconds="$3"
+  {
+    printf '\n==> %s\n' "$command"
+    printf 'skipped: package.json does not define npm script "%s"\n' "$script_name"
+  } 2>&1 | tee -a /results/validation.log
+  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$VALIDATION_TIMINGS_FILE"
+}
 compute_repo_memory_key() {
   printf '%s\n%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}'
 }
@@ -1473,6 +1525,13 @@ else
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
     validation_start="$(date +%s)"
+    if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
+      validation_end="$(date +%s)"
+      duration=$((validation_end - validation_start))
+      record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration"
+      emit_event "validation_command_skipped" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
+      continue
+    fi
     emit_event "validation_command_started" "command=$trimmed"
     {
       printf '\n==> %s\n' "$trimmed"
