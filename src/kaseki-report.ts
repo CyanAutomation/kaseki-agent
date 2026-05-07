@@ -11,6 +11,9 @@ interface Metadata {
   pi_exit_code?: number | string;
   validation_exit_code?: number | string;
   validation_failed_command?: string;
+  validation_fail_fast_mode?: boolean;
+  validation_stopped_early?: boolean;
+  validation_commands_attempted?: number;
   quality_exit_code?: number | string;
   secret_scan_exit_code?: number | string;
   model?: string;
@@ -130,6 +133,11 @@ console.log(
 console.log(
   `Validation failed command: ${metadata.validation_failed_command || 'none'}`
 );
+if (metadata.validation_stopped_early) {
+  console.log(
+    `⚠️  Validation stopped early (fail-fast mode): ${metadata.validation_commands_attempted ?? 'unknown'} command(s) attempted`
+  );
+}
 console.log(`Quality exit code: ${printableExitCode(metadata.quality_exit_code)}`);
 console.log(
   `Secret scan exit code: ${printableExitCode(metadata.secret_scan_exit_code)}`
