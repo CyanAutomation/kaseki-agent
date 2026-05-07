@@ -159,7 +159,105 @@ KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key>
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.
 
-## 6) Validating changed-file allowlist and max diff limits
+## 6) Release Process and Conventional Commits
+
+Kaseki Agent releases are **automated via semantic-release**. Version bumps, changelog updates, and GitHub Releases are generated automatically from commit messages using the **conventional commits** format.
+
+### Conventional Commit Format
+
+All commits should follow the format:
+
+```
+type(scope): description
+
+[optional body]
+
+[optional footer]
+```
+
+**Types that trigger version bumps:**
+
+- `feat:` — New feature (bumps **minor** version: 0.1.0 → 0.2.0)
+- `fix:` — Bug fix (bumps **patch** version: 0.1.0 → 0.1.1)
+- `perf:` — Performance improvement (bumps **patch** version)
+- `revert:` — Revert a previous commit (bumps **patch** version)
+
+**Types that do NOT trigger version bumps** (included in CHANGELOG as documentation only):
+
+- `docs:` — Documentation changes
+- `style:` — Code style/formatting (no logic changes)
+- `refactor:` — Code refactoring (no behavior changes)
+- `test:` — Test additions/updates
+- `chore:` — Dependency updates, build config, etc.
+
+**Examples:**
+
+```
+feat(api): add retry logic to GitHub App token exchange
+
+Implements exponential backoff for transient network failures.
+
+Fixes #123
+```
+
+```
+fix(docker): resolve cache miss in npm ci layer
+
+The workspace cache key was missing lock hash; rebuilt as sha256($lock).
+```
+
+```
+chore(deps): upgrade semantic-release to v24
+```
+
+### Making a Release
+
+**Prerequisites:**
+- All commits on `main` should follow conventional commit format (or use squash-and-rebase to clean up history)
+- CI/CD must be passing on `main`
+
+**Steps:**
+
+1. **Test the release locally (optional but recommended):**
+   ```bash
+   npm run release:dry
+   ```
+   This shows what version bump will occur and previews the changelog without creating tags or releases.
+
+2. **Create the release:**
+   ```bash
+   npm run release
+   ```
+   This will:
+   - Analyze commits since the last version tag
+   - Determine the new version (major, minor, or patch)
+   - Update `package.json` with the new version
+   - Generate/update `CHANGELOG.md` with formatted release notes
+   - Create a git tag (e.g., `v0.2.0`)
+   - Push the tag and commit to `main`
+   - Create a GitHub Release with release notes
+   - Trigger the Docker build workflow to publish images
+
+3. **Verify the release:**
+   - Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab for the new release
+   - Verify `CHANGELOG.md` was updated in the repository
+   - Confirm Docker images were published (check [packages](https://github.com/CyanAutomation/kaseki-agent/pkgs/container/kaseki-agent) or Docker Hub)
+
+### Commit Message Best Practices
+
+- **Be descriptive:** Include *why* the change was made, not just *what* changed
+- **Use body for details:** If the title is short, explain the impact in the commit body
+- **Reference issues:** Link to related issues with `Fixes #123` or `Relates to #456`
+- **One logical change per commit:** Avoid mixing features with refactoring in a single commit
+- **Squash before merge:** Use PR squash-and-rebase to clean up history if needed, then ensure the final squashed message follows conventional format
+
+### Non-Conventional Commits
+
+If a commit message doesn't follow the format, it will **not trigger a version bump** but will still be included in the CHANGELOG. This allows for organic adoption—your PR reviewers can suggest better commit messages without blocking merges.
+
+Once you're comfortable with the format, encourage your team to adopt it systematically (optional: use `commitlint` + `husky` hooks for enforcement in future phases).
+
+## 7) Validating changed-file allowlist and max diff limits
 
 The container runner enforces quality gates using:
 
@@ -174,7 +272,7 @@ Contributors must validate that any change to defaults or behavior preserves the
 
 A failed allowlist or diff-size check should be treated as a real regression unless intentionally changed and documented.
 
-## 7) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
+## 8) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
 
 When a run fails, inspect artifacts in this order:
 
