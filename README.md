@@ -771,6 +771,8 @@ When credentials are configured:
 | `KASEKI_RESTORE_DISALLOWED_CHANGES` | 1 | Restore changes outside `KASEKI_CHANGED_FILES_ALLOWLIST` before validation and GitHub publishing |
 | `KASEKI_NPM_OMIT_DEV` | 0 | Set to `1` to omit dev dependencies during `npm ci`; default keeps test/build tools available |
 
+`KASEKI_CHANGED_FILES_ALLOWLIST` patterns are repo-relative globs. Exact paths match only that path; `*` and `?` match within a single path segment; `**` can span directory separators. A `**/` segment may match zero or more directories, so `src/**/*.ts` matches both `src/index.ts` and nested files such as `src/lib/file-storage.ts`.
+
 ### Paths and Caching
 
 | Variable | Default | Notes |
