@@ -281,6 +281,33 @@ tests/parser.test.ts
     expect(errors[0].source).toBe('stderr');
   });
 
+  test('detectErrors should surface validation failed command metadata', () => {
+    createMockInstance('kaseki-1', {
+      metadata: {
+        exit_code: 1,
+        validation_exit_code: 1,
+        validation_failed_command: 'first failing command was "npm run check" with exit 1',
+      },
+    });
+
+    const errors = kasekiCli.detectErrors('kaseki-1');
+    const analysis = kasekiCli.getAnalysis('kaseki-1');
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          source: 'validation',
+          line: 0,
+          message: 'Validation failed: first failing command was "npm run check" with exit 1',
+        }),
+      ])
+    );
+    expect(analysis.validation_failed_command).toBe(
+      'first failing command was "npm run check" with exit 1'
+    );
+  });
+
   test('listInstances and getInstanceStatus should derive running state from representative docker output', () => {
     createMockInstance('kaseki-1', {
       metadata: { exit_code: null },

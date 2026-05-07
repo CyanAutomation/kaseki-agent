@@ -10,6 +10,7 @@ interface Metadata {
   failed_command?: string;
   pi_exit_code?: number | string;
   validation_exit_code?: number | string;
+  validation_failed_command?: string;
   quality_exit_code?: number | string;
   secret_scan_exit_code?: number | string;
   model?: string;
@@ -125,6 +126,9 @@ console.log(`Exit code: ${printableExitCode(metadata.exit_code)}`);
 console.log(`Pi exit code: ${printableExitCode(metadata.pi_exit_code)}`);
 console.log(
   `Validation exit code: ${printableExitCode(metadata.validation_exit_code)}`
+);
+console.log(
+  `Validation failed command: ${metadata.validation_failed_command || 'none'}`
 );
 console.log(`Quality exit code: ${printableExitCode(metadata.quality_exit_code)}`);
 console.log(
