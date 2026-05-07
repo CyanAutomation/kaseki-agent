@@ -49,6 +49,7 @@ GITHUB_PUSH_EXIT=0
 GITHUB_PR_EXIT=0
 ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
+GITHUB_SKIP_REASONS=()
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
 STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
@@ -141,6 +142,10 @@ json_encode() {
   node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
 }
 
+json_array() {
+  node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)));' -- "$@"
+}
+
 emit_progress() {
   local stage="$1"
   local detail="$2"
@@ -227,6 +232,7 @@ write_metadata() {
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
+  "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
   "git_cache_mode": $(printf '%s' "$GIT_CACHE_MODE_USED" | json_encode),
   "git_cache_status": $(printf '%s' "$GIT_CACHE_STATUS" | json_encode),
   "git_cache_hit": $GIT_CACHE_HIT,
@@ -253,7 +259,7 @@ set_current_stage() {
 }
 
 write_result_summary() {
-  local changed_files changed_files_markdown validation_status pr_status
+  local changed_files changed_files_markdown validation_status pr_status github_skip_reasons_summary
   changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
   if [ -n "$changed_files" ]; then
     changed_files_markdown="$(printf '%s\n' "$changed_files" | sed 's/^/  - /')"
@@ -265,8 +271,16 @@ write_result_summary() {
   if grep -q 'skipped_after_agent_failure' "$STAGE_TIMINGS_FILE" 2>/dev/null; then
     validation_status="skipped"
   fi
+  github_skip_reasons_summary="none"
+  if [ "${#GITHUB_SKIP_REASONS[@]}" -gt 0 ]; then
+    github_skip_reasons_summary="$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
+  fi
+
   pr_status="not attempted"
-  if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+  if [ "${#GITHUB_SKIP_REASONS[@]}" -gt 0 ]; then
+    pr_status="not attempted (reasons: $github_skip_reasons_summary)"
+  fi
+  if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
     if [ "$GITHUB_PUSH_EXIT" -ne 0 ]; then
       pr_status="push failed"
     elif [ "$GITHUB_PR_EXIT" -eq 0 ] && [ -n "$GITHUB_PR_URL" ]; then
@@ -291,6 +305,7 @@ write_result_summary() {
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
+- GitHub skip reasons: $github_skip_reasons_summary
 - Diff non-empty: $DIFF_NONEMPTY
 - Changed files:
 $changed_files_markdown
@@ -1580,32 +1595,41 @@ else
 fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
+build_github_skip_reasons() {
+  GITHUB_SKIP_REASONS=()
+  [ "$GITHUB_APP_ENABLED" != "1" ] && GITHUB_SKIP_REASONS+=("github_app_disabled")
+  [ "$PI_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("agent_failed")
+  [ "$VALIDATION_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("validation_failed")
+  [ "$QUALITY_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("quality_failed")
+  [ "$SECRET_SCAN_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("secret_scan_failed")
+  [ "$DIFF_NONEMPTY" != "true" ] && GITHUB_SKIP_REASONS+=("empty_diff")
+}
+
 printf '\n==> github operations\n'
 set_current_stage "github operations"
 emit_progress "github operations" "started"
 stage_start="$(date +%s)"
 : > /results/git-push.log
-if [ "$GITHUB_APP_ENABLED" = "1" ] &&
-  [ "$PI_EXIT" -eq 0 ] &&
-  [ "$VALIDATION_EXIT" -eq 0 ] &&
-  [ "$QUALITY_EXIT" -eq 0 ] &&
-  [ "$SECRET_SCAN_EXIT" -eq 0 ] &&
-  [ "$DIFF_NONEMPTY" = "true" ]; then
+build_github_skip_reasons
+if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   if [ -r /run/secrets/github_app_id ] && [ -r /run/secrets/github_app_client_id ] && [ -r /run/secrets/github_app_private_key ]; then
     run_github_operations
   else
-    printf 'GitHub App enabled but secrets not found\n' | tee -a /results/git-push.log >&2
+    GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
+    printf 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a /results/git-push.log >&2
+    emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
   fi
 else
-  printf 'GitHub operations: skipped (agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
+  printf 'GitHub operations: skipped (reasons: %s; agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
+    "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" \
     "$([ "$PI_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$DIFF_NONEMPTY" \
     "$GITHUB_APP_ENABLED" | tee -a /results/git-push.log
-  emit_progress "github operations" "skipped"
+  emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
 fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   emit_progress "github operations" "finished with push exit $GITHUB_PUSH_EXIT and pr exit $GITHUB_PR_EXIT"
