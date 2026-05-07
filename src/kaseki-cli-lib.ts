@@ -25,6 +25,7 @@ import {
   deriveInstanceLifecycleStatus,
   resolveInstanceExitCode as importedResolveInstanceExitCode,
   classifyFailure as importedClassifyFailure,
+  normalizeExitCodeCandidate as importedNormalizeExitCodeCandidate,
 } from './instance-state-derivation';
 
 // ============================================================================
@@ -164,30 +165,15 @@ function isSkippableInstanceIoError(error: any): boolean {
 
 /**
  * Normalize an exit code candidate into an integer or null.
- * (Used for local exit code parsing)
+ * (Re-exported from instance-state-derivation for backward compatibility)
  */
 function normalizeExitCodeCandidate(value: any): number | null {
-  if (typeof value === 'number' && Number.isInteger(value)) {
-    return value;
-  }
-  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) {
-    return parseInt(value.trim(), 10);
-  }
-  return null;
-}
-
-/**
- * Derive lifecycle status from running flag and exit code.
- */
-function deriveInstanceLifecycleStatusLocal(
-  isRunning: boolean,
-  exitCode: number | null
-): 'running' | 'completed' | 'failed' | 'pending' {
-  return deriveInstanceLifecycleStatus(isRunning, exitCode);
+  return importedNormalizeExitCodeCandidate(value);
 }
 
 /**
  * Wrapper around resolveInstanceExitCode from instance-state-derivation.
+ * @deprecated Use the imported resolveInstanceExitCode directly.
  * Kept for API compatibility; delegates to imported function.
  */
 function resolveInstanceExitCodeLocal(
@@ -216,6 +202,7 @@ function resolveInstanceStageLocal(
 
 /**
  * Wrapper around classifyFailure from instance-state-derivation.
+ * @deprecated Use the imported classifyFailure directly.
  * Kept for API compatibility; delegates to imported function.
  */
 function classifyFailureLocal(
@@ -255,11 +242,11 @@ function listInstances(): KasekiInstance[] {
       const isRunning = isInstanceRunning(instance);
 
       // Read exit code from metadata and optional /exit_code file
-      const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
+      const exitCode = importedResolveInstanceExitCode(resultDir, metadata);
 
       instances.push({
         name: instance,
-        status: deriveInstanceLifecycleStatusLocal(isRunning, exitCode),
+        status: deriveInstanceLifecycleStatus(isRunning, exitCode),
         running: isRunning,
         exitCode,
         elapsedSeconds,
@@ -461,7 +448,7 @@ function getInstanceStatus(instance: string): InstanceStatus {
   const stage = resolveInstanceStageLocal(instance, metadata, 'unknown');
 
   // Get exit code from metadata fallback and /exit_code when available
-  const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
+  const exitCode = importedResolveInstanceExitCode(resultDir, metadata);
 
   let agentElapsedSeconds: number | null = null;
   if (metadata.pi_duration_seconds !== undefined) {
@@ -496,7 +483,7 @@ function getInstanceStatus(instance: string): InstanceStatus {
     timeoutImminent: isRunning && stage === 'pi coding agent' && timeoutRiskPercent >= 85,
     timedOut,
     exitCode,
-    failureClass: classifyFailureLocal(metadata, exitCode),
+    failureClass: importedClassifyFailure(metadata, exitCode),
     repo: hostStart.repo_url || hostStart.repo || 'unknown',
     ref: hostStart.git_ref || hostStart.ref || 'unknown',
     model: hostStart.model || 'unknown',
@@ -528,8 +515,8 @@ function detectErrors(instance: string): DetectedError[] {
   }
 
   const metadata = readJsonArtifact(instance, 'metadata.json') as Metadata;
-  const exitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
-  if (classifyFailureLocal(metadata, exitCode) === 'empty-diff') {
+  const exitCode = importedResolveInstanceExitCode(resultDir, metadata);
+  if (importedClassifyFailure(metadata, exitCode) === 'empty-diff') {
     errors.push({
       severity: ErrorSeverity.WARNING,
       source: 'empty-diff',
@@ -649,7 +636,7 @@ function getAnalysis(instance: string): AnalysisResult {
   const changedFiles =
     changedFilesContent?.split('\n').filter(Boolean) || [];
   const errors = detectErrors(instance);
-  const resolvedExitCode = resolveInstanceExitCodeLocal(resultDir, metadata);
+  const resolvedExitCode = importedResolveInstanceExitCode(resultDir, metadata);
   const exitCode = resolvedExitCode !== null ? resolvedExitCode : 'unknown';
   const status = exitCode === 0 ? 'passed' : 'failed';
 
@@ -657,7 +644,7 @@ function getAnalysis(instance: string): AnalysisResult {
     instance,
     status,
     exit_code: exitCode,
-    failure_class: classifyFailureLocal(metadata, resolvedExitCode),
+    failure_class: importedClassifyFailure(metadata, resolvedExitCode),
     failed_command: metadata.failed_command || '',
     validation_failed_command: metadata.validation_failed_command || '',
     duration_seconds: metadata.duration_seconds || 0,

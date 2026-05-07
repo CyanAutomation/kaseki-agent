@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeExitCodeCandidate } from './instance-state-derivation';
 
 const resultDir = process.argv[2] ?? '/results';
 
@@ -66,10 +67,7 @@ function firstReadableNonEmpty(names: string[]): FileContent | null {
 }
 
 function normalizeExitCode(value: any): number | null {
-  if (typeof value === 'number' && Number.isInteger(value)) return value;
-  if (typeof value === 'string' && /^-?\d+$/.test(value.trim()))
-    return Number.parseInt(value, 10);
-  return null;
+  return normalizeExitCodeCandidate(value);
 }
 
 function printableExitCode(value: any): string {
