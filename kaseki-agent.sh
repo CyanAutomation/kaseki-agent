@@ -719,7 +719,7 @@ dependency_cache_key() {
 
 npm_run_script_name() {
   local command="$1"
-  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]]*)($|[[:space:]])'
+  local npm_run_regex='^npm[[:space:]]+run[[:space:]]+([^[:space:]-][^[:space:]-]*)($|[[:space:]])'
   if [[ "$command" =~ $npm_run_regex ]]; then
     printf '%s' "${BASH_REMATCH[1]}"
     return 0
