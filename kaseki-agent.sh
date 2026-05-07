@@ -146,12 +146,48 @@ case "$KASEKI_GIT_CACHE_MODE" in
     ;;
 esac
 
+# Safely encode value as JSON string; fallback to empty string if node unavailable
 json_encode() {
-  node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));'
+  if ! command -v node &>/dev/null; then
+    printf '""' # Return empty JSON string if node is unavailable
+    return 1
+  fi
+  local output
+  output=$(node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));' 2>&1)
+  local exit_code=$?
+  if [ $exit_code -eq 0 ] && [ -n "$output" ]; then
+    printf '%s' "$output"
+  else
+    # Log error and return empty JSON string as fallback
+    printf 'warning: json_encode failed (exit %d): %s\n' "$exit_code" "$output" >&2
+    printf '""'
+    return 1
+  fi
 }
 
 json_array() {
-  node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)));' -- "$@"
+  if ! command -v node &>/dev/null; then
+    printf '[]' # Return empty JSON array if node is unavailable
+    return 1
+  fi
+  node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)));' -- "$@" 2>&1 || printf '[]'
+}
+
+# Validate that a variable contains only numeric digits (for use before arithmetic)
+validate_numeric() {
+  local var_name="$1"
+  local var_value="$2"
+  # Empty or missing value is treated as invalid
+  if [ -z "$var_value" ] || [ "$var_value" = "-" ]; then
+    printf 'error: %s is not numeric (value="%s")\n' "$var_name" "$var_value" >&2
+    return 1
+  fi
+  # Check if value matches integer pattern
+  if ! printf '%s' "$var_value" | grep -Eq '^[0-9]+$'; then
+    printf 'error: %s is not a valid integer (value="%s")\n' "$var_name" "$var_value" >&2
+    return 1
+  fi
+  return 0
 }
 
 emit_progress() {
@@ -453,28 +489,53 @@ restore_disallowed_changes() {
 
 generate_restoration_report() {
   if [ ! -f /results/restoration.jsonl ]; then
+    printf '[debug] restoration report: skipping - restoration.jsonl not found\n' >&2
     return 0
   fi
 
-  local restored_count kept_count total_count
+  local restored_count kept_count total_count coverage_pct
+  
+  # Safely extract counts from restoration.jsonl with validation
+  printf '[debug] restoration report: extracting counts from restoration.jsonl\n' >&2
   restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  printf '[debug] restoration report: restored_count="%s"\n' "$restored_count" >&2
+  if ! validate_numeric "restored_count" "$restored_count"; then
+    printf 'warning: restoration report generation failed - restored_count validation failed\n' >&2
+    return 1
+  fi
+  
   kept_count=$(grep -c '"status":"kept"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  printf '[debug] restoration report: kept_count="%s"\n' "$kept_count" >&2
+  if ! validate_numeric "kept_count" "$kept_count"; then
+    printf 'warning: restoration report generation failed - kept_count validation failed\n' >&2
+    return 1
+  fi
+  
+  # Arithmetic operation - now guaranteed to have valid numeric values
+  printf '[debug] restoration report: computing total_count from restored=%s and kept=%s\n' "$restored_count" "$kept_count" >&2
   total_count=$((restored_count + kept_count))
+  printf '[debug] restoration report: total_count="%s"\n' "$total_count" >&2
 
   if [ "$total_count" -eq 0 ]; then
+    printf '[debug] restoration report: no changes recorded, skipping report\n' >&2
     return 0
   fi
 
+  printf '[debug] restoration report: generating report with %d total changes\n' "$total_count" >&2
+  
   {
     printf '# Allowlist Restoration Report\n\n'
     printf 'Generated: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '## Summary\n\n'
-    printf '- **Total Files Changed:** %d\n' "$total_count"
-    printf '- **Files Kept (in allowlist):** %d\n' "$kept_count"
-    printf '- **Files Restored (outside allowlist):** %d\n' "$restored_count"
+    # All variables are now validated as numeric by validate_numeric() above
+    printf -- '- **Total Files Changed:** %d\n' "$total_count" || { printf 'error: failed to write total count\n' >&2; return 1; }
+    printf -- '- **Files Kept (in allowlist):** %d\n' "$kept_count" || { printf 'error: failed to write kept count\n' >&2; return 1; }
+    printf -- '- **Files Restored (outside allowlist):** %d\n' "$restored_count" || { printf 'error: failed to write restored count\n' >&2; return 1; }
     if [ "$total_count" -gt 0 ]; then
-      local coverage_pct=$((kept_count * 100 / total_count))
-      printf '- **Allowlist Coverage:** %d%%\n\n' "$coverage_pct"
+      # Calculate coverage percentage - safe because total_count is validated as > 0
+      coverage_pct=$((kept_count * 100 / total_count))
+      printf '[debug] restoration report: coverage_pct=%d (kept=%s / total=%s)\n' "$coverage_pct" "$kept_count" "$total_count" >&2
+      printf -- '- **Allowlist Coverage:** %d%%\n\n' "$coverage_pct" || { printf 'error: failed to write coverage pct\n' >&2; return 1; }
     fi
 
     if [ "$restored_count" -gt 0 ]; then
@@ -504,7 +565,7 @@ generate_restoration_report() {
     fi
 
     printf '## Recommendations\n\n'
-    if [ "$restored_count" -gt 0 ] && [ "$coverage_pct" -lt 50 ]; then
+    if [ "$restored_count" -gt 0 ] && [ -n "$coverage_pct" ] && [ "$coverage_pct" -lt 50 ]; then
       printf '**⚠️ Low Allowlist Coverage** — Only %d%% of changes were kept.\n' "$coverage_pct"
       printf 'Consider:\n'
       printf '1. Reviewing the TASK_PROMPT to be more specific about scope\n'
@@ -561,7 +622,17 @@ finish() {
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   collect_git_artifacts
-  generate_restoration_report
+  
+  # Debug output for restoration report generation
+  if [ -f /results/restoration.jsonl ]; then
+    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < /results/restoration.jsonl)" >&2
+  else
+    printf '[debug] restoration.jsonl does not exist\n' >&2
+  fi
+  
+  if ! generate_restoration_report; then
+    printf 'warning: restoration report generation failed, but continuing with cleanup\n' >&2
+  fi
   
   # Calculate and record maturity score
   if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
