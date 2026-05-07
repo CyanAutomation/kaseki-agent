@@ -27,6 +27,7 @@ cd /agents/kaseki-template
 ```
 
 This script will:
+
 1. Validate Docker is installed (or guide you to install it)
 2. Prompt for your OpenRouter API key securely
 3. Create `~/.kaseki/secrets/openrouter_api_key` with proper permissions (600)
@@ -63,6 +64,7 @@ OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key \
 ```
 
 **When to use:**
+
 - Local development or testing
 - Single Pi/host deployments
 - One-off tasks without orchestration
@@ -87,6 +89,7 @@ See [scripts/templates/SINGLE_HOST_CLI.md](../scripts/templates/SINGLE_HOST_CLI.
 ```
 
 This will:
+
 1. SSH to the remote Pi
 2. Create secrets directory with proper permissions
 3. Securely transfer your API key
@@ -100,6 +103,7 @@ ssh pi@192.168.88.201 'OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_
 ```
 
 **When to use:**
+
 - Managing multiple Pi/host instances
 - Controller-driven orchestration
 - Integration with external orchestrators (e.g., OpenClaw)
@@ -142,6 +146,7 @@ curl -X POST http://localhost:8080/api/run \
 ```
 
 **When to use:**
+
 - Long-running service with async execution
 - Multiple concurrent runs
 - Integration with distributed orchestrators
@@ -302,6 +307,7 @@ Then you can simply run:
 ```
 
 Expected output:
+
 ```
 Preflight required dependencies: ok (docker)
 Preflight optional dependencies: ok (curl, wget, sshpass, git, node, npm)
@@ -319,6 +325,7 @@ Kaseki template image: available
 ```
 
 This will:
+
 1. Spin up a Docker container (kaseki-1)
 2. Clone the repository
 3. Run the default agent task

@@ -36,6 +36,7 @@ cat /agents/kaseki-results/kaseki-1/result-summary.md
 ```
 
 Choose your deployment pattern:
+
 - **Single host?** → [scripts/templates/SINGLE_HOST_CLI.md](scripts/templates/SINGLE_HOST_CLI.md)
 - **Multiple hosts?** → [scripts/templates/MULTI_HOST_DISTRIBUTED.md](scripts/templates/MULTI_HOST_DISTRIBUTED.md)
 - **HTTP REST API?** → [scripts/templates/REST_API_SERVICE.md](scripts/templates/REST_API_SERVICE.md)
@@ -102,6 +103,7 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 **When to use:** Local development, one-off tasks, testing on a Pi.
 
 **Host file requirements (Direct CLI):**
+
 - Required on host: `run-kaseki.sh`, `scripts/kaseki-preflight.sh`
 - Required in image/container: `kaseki-agent.sh` (invoked by container entrypoint as `/usr/local/bin/kaseki-agent`)
 - Runtime mounts are workspace/results/cache/secrets; host script files are not mounted into `/app` at run time
