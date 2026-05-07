@@ -78,6 +78,7 @@ if [ ! -r "$ALLOWLIST_HELPER" ]; then
   exit 1
 fi
 
+# shellcheck source=./allowlist-helper.sh
 source "$ALLOWLIST_HELPER"
 
 # Build regex from allowlist
@@ -107,9 +108,9 @@ done < "$CHANGED_FILES"
 
 # Print results
 {
-  printf '# Dry-Run Allowlist Preview\n\n'
-  printf 'Allowlist: `%s`\n' "$ALLOWLIST"
-  printf 'Changed files: %s\n\n' "$CHANGED_FILES"
+  printf "# Dry-Run Allowlist Preview\n\n"
+  printf "Allowlist: \`%s\`\n" "$ALLOWLIST"
+  printf "Changed files: %s\n\n" "$CHANGED_FILES"
   
   printf '## Summary\n\n'
   printf '- **Total Files:** %d\n' "$total"
@@ -127,7 +128,7 @@ done < "$CHANGED_FILES"
     printf '## Would Be Restored\n\n'
     printf 'These files would NOT pass through to validation:\n\n'
     for file in "${would_restore[@]}"; do
-      printf '- `%s`\n' "$file"
+      printf "- \`%s\`\n" "$file"
     done
     printf '\n'
   fi
@@ -136,7 +137,7 @@ done < "$CHANGED_FILES"
     printf '## Would Be Kept\n\n'
     printf 'These files would pass through to validation:\n\n'
     for file in "${would_keep[@]}"; do
-      printf '- `%s`\n' "$file"
+      printf "- \`%s\`\n" "$file"
     done
     printf '\n'
   fi
@@ -147,7 +148,7 @@ done < "$CHANGED_FILES"
   elif [ "${#would_restore[@]}" -gt 0 ] && [ "$coverage" -lt 30 ]; then
     printf '⚠️  **Low coverage (%d%%)** — consider:\n' "$coverage"
     printf '1. Expanding the allowlist patterns\n'
-    printf '2. Using a broader template (e.g., `allowlist-utility`)\n'
+    printf "2. Using a broader template (e.g., \`allowlist-utility\`)\n"
     printf '3. Reviewing the TASK_PROMPT for clarity\n'
   elif [ "${#would_restore[@]}" -eq 0 ]; then
     printf '✅ **Perfect coverage** — all files match the allowlist.\n'

@@ -14,7 +14,6 @@ fi
 
 # Count files by directory pattern
 declare -A dir_counts
-declare -a patterns
 
 while IFS= read -r file || [ -n "$file" ]; do
   [ -z "$file" ] && continue

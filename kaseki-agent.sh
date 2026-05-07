@@ -309,15 +309,15 @@ write_result_summary() {
   cat > /results/result-summary.md <<SUMMARY
 # Kaseki Result: $INSTANCE_NAME
 
-- Status: $([ "$STATUS" -eq 0 ] && printf 'passed' || printf 'failed')
+- Status: $(if [ "$STATUS" -eq 0 ]; then printf 'passed'; else printf 'failed'; fi)
 - Failed command: ${FAILED_COMMAND:-none}
 - Requested model: $KASEKI_MODEL
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
 - Validation: $validation_status ($VALIDATION_EXIT)
-$([ -n "$VALIDATION_FAILURE_REASON" ] && printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON" || true)
+$(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$([ "$VALIDATION_STOPPED_EARLY" = "true" ] && printf '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)" || true)
+$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -481,7 +481,7 @@ generate_restoration_report() {
       printf '## Restored Files\n\n'
       printf 'These files were modified by the agent but restored because they fall outside the allowlist:\n\n'
       grep '"status":"restored"' /results/restoration.jsonl | \
-        sed 's/.*"file":"\([^"]*\)".*/- `\1`/' | \
+        sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
         sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
       if [ -f /results/restoration-report.md.tmp ]; then
         cat /results/restoration-report.md.tmp
@@ -494,7 +494,7 @@ generate_restoration_report() {
       printf '## Kept Files (Allowlist Matches)\n\n'
       printf 'These files were in the allowlist and were kept:\n\n'
       grep '"status":"kept"' /results/restoration.jsonl | \
-        sed 's/.*"file":"\([^"]*\)".*/- `\1`/' | \
+        sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
         sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
       if [ -f /results/restoration-report.md.tmp ]; then
         cat /results/restoration-report.md.tmp
@@ -509,13 +509,13 @@ generate_restoration_report() {
       printf 'Consider:\n'
       printf '1. Reviewing the TASK_PROMPT to be more specific about scope\n'
       printf '2. Widening the allowlist to include related files\n'
-      printf '3. Running `scripts/suggest-allowlist.sh` to auto-generate a better allowlist\n\n'
+      printf "3. Running \`scripts/suggest-allowlist.sh\` to auto-generate a better allowlist\n\n"
     fi
     printf 'Run subsequent operations with an updated allowlist:\n'
     printf '```bash\n'
     printf 'KASEKI_CHANGED_FILES_ALLOWLIST="<your-pattern>" ./run-kaseki.sh\n'
     printf '```\n\n'
-    printf 'For help on allowlist patterns, see `docs/QUALITY_GATES.md`.\n'
+    printf "For help on allowlist patterns, see \`docs/QUALITY_GATES.md\`.\n"
   } > /results/restoration-report.md
 }
 
@@ -1704,7 +1704,7 @@ else
     printf 'ERROR: Working directory /workspace/repo does not exist before validation\n' | tee -a /results/validation.log
     printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a /results/validation.log
     printf 'Filesystem state:\n' | tee -a /results/validation.log
-    ls -laR /workspace 2>&1 | head -100 | tee -a /results/validation.log
+    find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a /results/validation.log
     VALIDATION_EXIT=1
     VALIDATION_FAILED_COMMAND_DETAIL="Working directory /workspace/repo missing before validation"
     record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
