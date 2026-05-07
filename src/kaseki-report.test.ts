@@ -18,7 +18,11 @@ describe('kaseki-report', () => {
     fs.rmSync(baseDir, { recursive: true, force: true });
   });
 
-  function createFixture(name: string, exitCodeValue: any): { fixtureDir: string; metadataPath: string } {
+  function createFixture(
+    name: string,
+    exitCodeValue: any,
+    validationFailedCommand = ''
+  ): { fixtureDir: string; metadataPath: string } {
     const dir = path.join(baseDir, name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
@@ -28,6 +32,7 @@ describe('kaseki-report', () => {
         exit_code: exitCodeValue,
         pi_exit_code: exitCodeValue,
         validation_exit_code: exitCodeValue,
+        validation_failed_command: validationFailedCommand,
         quality_exit_code: exitCodeValue,
         secret_scan_exit_code: exitCodeValue,
       })
@@ -95,4 +100,19 @@ describe('kaseki-report', () => {
       expectedLines.forEach((line) => expect(result.stdout).toContain(line));
     });
   });
+
+  test('prints validation failed command detail when metadata includes it', () => {
+    const { fixtureDir } = createFixture(
+      'validation-detail',
+      1,
+      'first failing command was "npm run check" with exit 1'
+    );
+    const result = runFixture(fixtureDir);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(
+      'Validation failed command: first failing command was "npm run check" with exit 1'
+    );
+  });
+
 });
