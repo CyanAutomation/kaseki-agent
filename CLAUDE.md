@@ -114,7 +114,8 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Pi invocation timeout |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |
-| `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns |
+| `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns (agent phase) |
+| `KASEKI_VALIDATION_ALLOWLIST` | — | Space-separated patterns (validation phase; optional) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |
 | `KASEKI_KEEP_WORKSPACE` | 0 | Remove per-run workspace after each run |
@@ -131,6 +132,7 @@ Quality gates run after the agent completes, before reporting success:
 | Empty git diff | 3 | — |
 | Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
 | Changed file outside allowlist | 5 | `KASEKI_CHANGED_FILES_ALLOWLIST` |
+| Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
 | Secret scan hit (sk-or-* leak) | 6 | — |
 | Pi agent timeout | 124 | `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | Validation command failure | propagated | `KASEKI_VALIDATION_COMMANDS` |
@@ -145,6 +147,8 @@ All written to `/agents/kaseki-results/kaseki-N/`:
 - `git.diff` / `git.status` / `changed-files.txt` — repo changes
 - `validation.log` / `validation-timings.tsv` — command output + timing
 - `quality.log` / `secret-scan.log` — gate failures
+- `restoration.jsonl` — structured allowlist restoration events (JSONL format)
+- `restoration-report.md` — human-readable allowlist restoration report
 - `progress.log` / `progress.jsonl` — sanitized stage and Pi event progress
 - `cleanup.log` — mandatory post-run cleanup summary
 - `stdout.log` / `stderr.log` / `exit_code` — raw execution output
@@ -234,14 +238,34 @@ See [SECURITY.md](SECURITY.md) for detailed vulnerability response procedures.
 
 Recommended inspection order:
 
-1. `kaseki-report /agents/kaseki-results/kaseki-N` (compact summary)
+1. `kaseki-report /agents/kaseki-results/kaseki-N` (compact summary, includes allowlist metrics)
 2. `result-summary.md` → status + failed command
-3. `metadata.json` → per-stage exit codes
-4. `stdout.log` / `stderr.log` → execution flow
-5. `pi-summary.json` / `pi-events.jsonl` → agent activity
-6. `validation.log` + `validation-timings.tsv` → command failures
-7. `quality.log` + `changed-files.txt` → allowlist/diff violations
-8. `secret-scan.log` → credential detection
+3. `restoration-report.md` → if many files were restored before validation
+4. `metadata.json` → per-stage exit codes
+5. `stdout.log` / `stderr.log` → execution flow
+6. `pi-summary.json` / `pi-events.jsonl` → agent activity
+7. `validation.log` + `validation-timings.tsv` → command failures
+8. `quality.log` + `changed-files.txt` → allowlist/diff violations
+9. `secret-scan.log` → credential detection
+
+## Allowlist Configuration & Troubleshooting
+
+**Problem: Too many files are restored before validation?**
+
+See [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md) for:
+- Allowlist pattern syntax and examples
+- Pre-built templates for common task types
+- How to use `scripts/suggest-allowlist.sh` to auto-generate patterns
+- How to use `scripts/dry-run-allowlist.sh` to preview restoration
+- Decision tree for choosing the right allowlist
+
+**Problem: Agent made too many unintended changes?**
+
+See [docs/TASK_PROMPT_TEMPLATES.md](docs/TASK_PROMPT_TEMPLATES.md) for:
+- How to write clear, scoped task prompts
+- Examples of good vs. bad prompts
+- Anti-patterns that lead to scope creep
+- How to combine prompts with allowlist for best results
 
 ## CI/CD
 

@@ -35,6 +35,7 @@ KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
 KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
+KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
@@ -192,7 +193,8 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_ALLOW_EMPTY_DIFF           Treat no-change runs as success when 1 (default: 0)
   KASEKI_VERIFY_OPENROUTER_AUTH     In --doctor, verify key with OpenRouter when 1
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
-  KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns
+  KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns (agent phase)
+  KASEKI_VALIDATION_ALLOWLIST       Space-separated file patterns (validation phase; optional)
   KASEKI_MAX_DIFF_BYTES             Max diff size in bytes (default: 200000)
   KASEKI_NPM_OMIT_DEV              Set to 1 to omit dev dependencies during npm ci (default: 0)
   GITHUB_APP_ID                     GitHub App ID (optional, for PR creation)
@@ -889,6 +891,7 @@ docker_args=(
   -e KASEKI_TASK_MODE="$KASEKI_TASK_MODE"
   -e KASEKI_ALLOW_EMPTY_DIFF="$KASEKI_ALLOW_EMPTY_DIFF"
   -e KASEKI_CHANGED_FILES_ALLOWLIST="$KASEKI_CHANGED_FILES_ALLOWLIST"
+  -e KASEKI_VALIDATION_ALLOWLIST="$KASEKI_VALIDATION_ALLOWLIST"
   -e KASEKI_MAX_DIFF_BYTES="$KASEKI_MAX_DIFF_BYTES"
   -e KASEKI_AGENT_GUARDRAILS="$KASEKI_AGENT_GUARDRAILS"
   -e KASEKI_RESTORE_DISALLOWED_CHANGES="$KASEKI_RESTORE_DISALLOWED_CHANGES"

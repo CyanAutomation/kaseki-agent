@@ -1,0 +1,8 @@
+# Allowlist template for comprehensive changes
+# Use when the task legitimately requires changes across multiple areas
+# Includes: source code, tests, types, configuration
+# Pattern: broad coverage across src/, tests/, and types/
+
+src/**
+tests/**
+test/**

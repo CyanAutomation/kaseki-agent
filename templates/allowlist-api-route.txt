@@ -1,0 +1,7 @@
+# Allowlist template for API route changes
+# Use when implementing or fixing API endpoints
+# Includes: route handlers, route tests, request/response types
+# Pattern: src/app/api/** tests/api/**
+
+src/app/api/**
+tests/api/**
