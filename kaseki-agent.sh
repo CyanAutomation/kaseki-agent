@@ -41,6 +41,7 @@ STATUS=0
 FAILED_COMMAND=""
 PI_EXIT=0
 VALIDATION_EXIT=0
+VALIDATION_FAILED_COMMAND_DETAIL=""
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
@@ -216,6 +217,7 @@ write_metadata() {
   "pi_duration_seconds": $PI_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "quality_exit_code": $QUALITY_EXIT,
@@ -285,6 +287,7 @@ write_result_summary() {
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
 - Validation: $validation_status ($VALIDATION_EXIT)
+- Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -322,6 +325,7 @@ write_failure_json() {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
   "artifacts_dir": "/results",
@@ -1548,8 +1552,12 @@ else
     emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "duration_seconds=$duration"
     if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
       VALIDATION_EXIT="$command_exit"
+      VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
     fi
   done
+  if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
+    printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a /results/validation.log
+  fi
   set -e
   record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
@@ -1607,7 +1615,11 @@ record_stage_timing "github operations" "$GITHUB_PUSH_EXIT" "$(($(date +%s) - st
 if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$VALIDATION_EXIT"
   FAILED_COMMAND="validation"
-  emit_error_event "validation_failed" "Validation command exited with code $VALIDATION_EXIT" "exit"
+  if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
+    emit_error_event "validation_failed" "Validation failed: $VALIDATION_FAILED_COMMAND_DETAIL" "exit"
+  else
+    emit_error_event "validation_failed" "Validation command exited with code $VALIDATION_EXIT" "exit"
+  fi
 fi
 
 if [ "$QUALITY_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then

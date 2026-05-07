@@ -90,6 +90,7 @@ interface AnalysisResult {
   exit_code?: number | string;
   failure_class?: string;
   failed_command?: string;
+  validation_failed_command?: string;
   duration_seconds?: number;
   pi_duration_seconds?: number;
   model?: string;
@@ -592,7 +593,16 @@ function detectErrors(instance: string): DetectedError[] {
     }
   }
 
-  // Check validation.log for failed commands
+  // Check validation metadata/log for failed commands
+  if (typeof metadata.validation_failed_command === 'string' && metadata.validation_failed_command.trim().length > 0) {
+    errors.push({
+      severity: ErrorSeverity.ERROR,
+      source: 'validation',
+      line: 0,
+      message: `Validation failed: ${metadata.validation_failed_command}`.substring(0, 150),
+    });
+  }
+
   const validationLog = readArtifact(instance, 'validation.log');
   if (validationLog) {
     const lines = validationLog.split('\n');
@@ -649,6 +659,7 @@ function getAnalysis(instance: string): AnalysisResult {
     exit_code: exitCode,
     failure_class: classifyFailureLocal(metadata, resolvedExitCode),
     failed_command: metadata.failed_command || '',
+    validation_failed_command: metadata.validation_failed_command || '',
     duration_seconds: metadata.duration_seconds || 0,
     pi_duration_seconds: metadata.pi_duration_seconds || 0,
     model: metadata.model || piSummary.selected_model || 'unknown',
