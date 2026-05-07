@@ -373,53 +373,10 @@ collect_git_artifacts() {
   fi
 }
 
-allowlist_pattern_to_regex() {
-  awk -v pattern="$1" '
-    BEGIN {
-      regex = ""
-      i = 1
-      while (i <= length(pattern)) {
-        c = substr(pattern, i, 1)
-        next_c = substr(pattern, i + 1, 1)
-        next_next_c = substr(pattern, i + 2, 1)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/allowlist-helper.sh
+. "$SCRIPT_DIR/scripts/allowlist-helper.sh"
 
-        if (c == "*" && next_c == "*") {
-          if (next_next_c == "/") {
-            regex = regex "([^/]+/)*"
-            i += 3
-          } else {
-            regex = regex ".*"
-            i += 2
-          }
-        } else if (c == "*") {
-          regex = regex "[^/]*"
-          i++
-        } else if (c == "?") {
-          regex = regex "[^/]"
-          i++
-        } else {
-          if (index(".\\^$()+{}|[]", c) > 0) {
-            regex = regex "\\" c
-          } else {
-            regex = regex c
-          }
-          i++
-        }
-      }
-      print regex
-    }
-  '
-}
-
-build_allowlist_regex() {
-  local pattern regexes=()
-  while IFS= read -r pattern || [ -n "$pattern" ]; do
-    [ -z "$pattern" ] && continue
-    regexes+=("$(allowlist_pattern_to_regex "$pattern")")
-  done < <(printf '%s\n' "$KASEKI_CHANGED_FILES_ALLOWLIST" | tr ' ' '\n')
-
-  (IFS='|'; printf '%s' "${regexes[*]}")
-}
 restore_disallowed_changes() {
   if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
     return 0
