@@ -129,6 +129,7 @@ Returns newline-delimited JSON for each major step.
 **When to use:** Controller-driven setup, multi-host management, integration with orchestrators.
 
 **Key Features:**
+
 - Idempotent installation and deployment
 - Machine-readable JSON output for parsing
 - Automatic image pull/build with caching
@@ -140,6 +141,7 @@ Returns newline-delimited JSON for each major step.
 ### 3. REST API Service (kaseki-api)
 
 Long-running async orchestration service. Ideal for:
+
 - **OpenClaw** and similar AI orchestrators
 - **Distributed agents** that need to queue and poll runs
 - **Multi-user environments** with authentication
@@ -324,6 +326,7 @@ docker-compose down
 ```
 
 **Features:**
+
 - Health checks included
 - Authenticated `/api/preflight` controller readiness diagnostics
 - Log aggregation
@@ -379,9 +382,11 @@ Track and prioritize debt items in [docs/BACKLOG.md](docs/BACKLOG.md).
 `run-kaseki.sh` and `kaseki-activate.sh` validate host binaries via preflight check.
 
 **Required:**
+
 - `docker`
 
 **Optional (validated and reported in `--doctor`):**
+
 - `wget`
 - `sshpass`
 - `git`
@@ -391,6 +396,7 @@ Track and prioritize debt items in [docs/BACKLOG.md](docs/BACKLOG.md).
 ### Installation
 
 **Debian/Ubuntu/Raspberry Pi OS:**
+
 ```bash
 sudo apt update
 sudo apt install -y wget sshpass docker.io git nodejs npm
@@ -398,12 +404,14 @@ sudo usermod -aG docker $USER && newgrp docker
 ```
 
 **Fedora/RHEL/CentOS Stream:**
+
 ```bash
 sudo dnf install -y wget sshpass docker git nodejs npm
 sudo usermod -aG docker $USER && newgrp docker
 ```
 
 **Arch Linux:**
+
 ```bash
 sudo pacman -S --needed wget sshpass docker git nodejs npm
 sudo usermod -aG docker $USER && newgrp docker
@@ -500,11 +508,13 @@ sudo systemctl enable --now kaseki-healthcheck.timer
 ## Image Registries
 
 **Docker Hub** (recommended):
+
 ```bash
 docker pull docker.io/:latest
 ```
 
 **GitHub Container Registry**:
+
 ```bash
 docker pull ghcr.io/:latest
 ```
@@ -516,10 +526,12 @@ Both are equivalent and receive identical multi-architecture builds for `linux/a
 Releases are fully automated using **semantic-release** and **conventional commits**. Versions are determined automatically based on commit messages.
 
 **Prerequisites:**
+
 - All recent commits on `main` follow [conventional commit](CONTRIBUTING.md#6-release-process-and-conventional-commits) format (`feat:`, `fix:`, `chore:`, etc.)
 - CI/CD checks are passing on `main`
 
 **Release via GitHub Actions (Recommended):**
+
 1. Go to the [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) tab → **Release** workflow
 2. Click **Run workflow**
 3. Optionally check "Dry-run" to preview without creating tags
@@ -533,6 +545,7 @@ Releases are fully automated using **semantic-release** and **conventional commi
 6. Monitor in Actions tab; verify in [Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
 
 **Release via Local Command (Alternative):**
+
 ```bash
 npm run release:dry    # Preview (optional)
 npm run release        # Create release
@@ -557,6 +570,7 @@ KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY_FILE=~/secrets/openrouter
 ```
 
 For readable logs over SSH on a Pi:
+
 ```bash
 docker build --progress=plain -t kaseki-template:latest .
 ```
@@ -578,11 +592,13 @@ sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./scripts/deploy-pi-template.sh
 ```
 
 **Guardrails:**
+
 - Destination must end with `kaseki-template` and be under `/agents/` or `$HOME/`
 - Existing `run`, `result`, `cache`, and `secrets` directories are preserved
 - Destination root is deleted and recreated before install
 
 **Workflow:**
+
 1. Pulls `KASEKI_IMAGE` by default
 2. Verifies image contains `/app` template
 3. Falls back to building from current checkout if registry image is stale or unavailable
@@ -591,6 +607,7 @@ sudo KASEKI_TEMPLATE_DIR=~/kaseki-template ./scripts/deploy-pi-template.sh
    while `.kaseki-image-digest` records the resolved local digest when Docker provides one.
 
 **Offline deployment:**
+
 ```bash
 # For Raspberry Pi (avoid builds)
 KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING=0 sudo ./scripts/deploy-pi-template.sh
@@ -641,6 +658,7 @@ docker run --rm --entrypoint kaseki-report \
 ```
 
 Includes:
+
 - Status and exit code
 - Failed command and detail
 - Model and duration
@@ -690,6 +708,7 @@ Run the doctor command before first use or after host changes:
 ```
 
 Checks:
+
 - Docker availability and daemon accessibility
 - Writable run/result directories
 - Image presence and readiness
@@ -767,6 +786,7 @@ orchestration UIs.
 ### Behavior
 
 When credentials are configured and publishing is enabled:
+
 1. After validation passes and diff is non-empty, Kaseki generates a GitHub App installation token
 2. Creates a feature branch `kaseki/<instance-name>`
 3. Commits and pushes changes to remote
@@ -1010,6 +1030,7 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 ```
 
 Arguments are parsed intelligently:
+
 - Strings with `/` or `.git` → repo URLs
 - Short strings (`main`, `v1.0.0`) → Git refs
 - Strings matching `kaseki-N` → explicit instance names
@@ -1090,6 +1111,7 @@ When you run kaseki with a targeted task, you might see many files being "restor
    - Fixing a utility function? Use `templates/allowlist-utility.txt`
 
 2. **Run with the template:**
+
    ```bash
    KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-ui-component.txt | tr '\n' ' ')" ./run-kaseki.sh
    ```
@@ -1097,35 +1119,44 @@ When you run kaseki with a targeted task, you might see many files being "restor
 ### Deep Dive: Understanding Restoration
 
 1. **Look at the restoration report:**
+
    ```bash
    cat /agents/kaseki-results/kaseki-N/restoration-report.md
    ```
+
    This shows exactly which files were kept vs. restored.
 
 2. **Auto-generate a better allowlist:**
+
    ```bash
    ./scripts/suggest-allowlist.sh /agents/kaseki-results/kaseki-N
    ```
+
    This analyzes what files were actually changed and suggests patterns.
 
 3. **Preview before running:**
+
    ```bash
    ./scripts/dry-run-allowlist.sh --changed-files /agents/kaseki-results/kaseki-N/changed-files.txt \
      --allowlist "src/lib/** tests/**"
    ```
+
    This shows what WOULD be restored with a given allowlist.
 
 ### Root Causes
 
 **Allowlist too narrow:**
+
 - ❌ `KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"` (single file only)
 - ✅ `KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/**"` (file + tests)
 
 **TASK_PROMPT too vague:**
+
 - ❌ "Fix the bug"
 - ✅ "Fix the null-reference bug in src/lib/parser.ts. Do not modify other files."
 
 **Task affects multiple files:**
+
 - Build a better allowlist by running suggest-allowlist.sh
 - Or use a broader template (allowlist-comprehensive.txt)
 
