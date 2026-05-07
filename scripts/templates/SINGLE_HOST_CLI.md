@@ -27,6 +27,7 @@ cd /agents/kaseki-template
 ```
 
 This will:
+
 - Validate Docker is installed
 - Prompt for your OpenRouter API key (securely, not in shell history)
 - Create `~/.kaseki/secrets/openrouter_api_key` with proper permissions
@@ -39,6 +40,7 @@ This will:
 ```
 
 Expected output:
+
 ```
 Preflight required dependencies: ok (docker)
 Preflight optional dependencies: ok (curl, wget, sshpass, git, node, npm)

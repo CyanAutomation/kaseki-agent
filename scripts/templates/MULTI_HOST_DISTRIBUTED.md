@@ -69,6 +69,7 @@ For each Pi host, run the remote setup script from your controller:
 ```
 
 Expected output:
+
 ```
 Setting up pi@192.168.88.201...
 SSH check: pi@192.168.88.201 ✓
@@ -107,6 +108,7 @@ ssh pi@192.168.88.203 '/agents/kaseki-template/run-kaseki.sh --doctor'
 ```
 
 All should output:
+
 ```
 ✓ Setup is ready!
 ```
