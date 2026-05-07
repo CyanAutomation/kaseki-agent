@@ -36,7 +36,7 @@ assert_not_missing_script() {
   local label="$1"
   local command="$2"
   if missing_npm_script_for_validation_command "$command" >/tmp/kaseki-missing-script-test.out 2>/dev/null; then
-    fail "$label: command should not be treated as a missing npm script ($(cat /tmp/kaseki-missing-script-test.out))"
+    fail "$label: command should not be treated as a missing npm script ($(cat "$tmp_dir/missing-script-test.out"))"
   fi
   pass "$label"
 }
