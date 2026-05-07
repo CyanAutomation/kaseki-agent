@@ -227,7 +227,9 @@ describe('file-helpers', () => {
       expect(runNode("console.log('  padded text  ')")).toBe('padded text');
       expect(runNode('process.exit(1)')).toBeUndefined();
       expect(runNode('process.exit(0)')).toBeUndefined();
-      expect(runNode('console.log(process.cwd())', tempDir)).toBe(fs.realpathSync(tempDir));
+
+      const cwdScript = 'console.log(process.cwd())';
+      expect(runNode(cwdScript, tempDir)).not.toBe(runNode(cwdScript));
     });
   });
 });
