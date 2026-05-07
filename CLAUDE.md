@@ -119,7 +119,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |
 | `KASEKI_KEEP_WORKSPACE` | 0 | Remove per-run workspace after each run |
 | `KASEKI_STREAM_PROGRESS` | 1 | Stream sanitized progress lines |
-| `KASEKI_IMAGE` | docker.io/cyanautomation/kaseki-agent:0.1.0 | Image to use |
+| `KASEKI_IMAGE` | docker.io/cyanautomation/kaseki-agent:latest | Image to use |
 
 ## Quality Gates and Exit Codes
 
