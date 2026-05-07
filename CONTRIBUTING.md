@@ -34,6 +34,35 @@ Behavior changes in target repos must include corresponding tests. In particular
 
 If a prompt requests behavior changes but no focused Vitest update is present, treat that as an incomplete contribution.
 
+### Validation fail-fast behavior
+
+Kaseki Agent validates changes using a **fail-fast pipeline** to minimize wasted CI time:
+
+- **Quality gates run first** — Diff size, allowlist, and secret scans run before validation commands. If any quality gate fails, validation is skipped entirely.
+- **Validation stops at first failure** — By default (`KASEKI_VALIDATION_FAIL_FAST=1`), validation stops at the first command failure instead of running all commands. This saves 10-60s per run when early commands fail.
+- **Missing npm scripts are skipped** — Validation commands like `npm run check` are skipped automatically if the script doesn't exist in `package.json`, with a warning logged.
+
+**Controlling fail-fast behavior:**
+
+| Variable | Default | Notes |
+|---|---|---|
+| `KASEKI_VALIDATION_FAIL_FAST` | 1 | Set to 0 to run all validation commands despite early failures (old behavior) |
+| `KASEKI_STRICT_SCRIPT_CHECK` | 0 | Set to 1 to fail validation if any npm script is missing (for strict repos) |
+
+**Example:** If `npm run check` (missing), `npm run test`, and `npm run build` are configured, with fail-fast enabled:
+
+1. `npm run check` is skipped (script missing) → warning logged
+2. `npm run test` runs and fails → validation stops
+3. `npm run build` is NOT run (fail-fast stopped the loop)
+
+**Metadata tracking:** Kaseki records fail-fast decisions in `metadata.json`:
+
+- `validation_fail_fast_mode`: whether fail-fast was enabled for this run
+- `validation_stopped_early`: whether validation stopped at first failure
+- `validation_commands_attempted`: how many validation commands actually ran
+
+Contributors should be aware of fail-fast behavior when designing validation commands; avoid side effects that depend on the full command sequence running.
+
 ## 3) TypeScript Development Setup
 
 This repo is written in **TypeScript 5.7** and compiles to CommonJS in the `dist/` directory. Source files are in `src/` and must be compiled before use.
@@ -102,6 +131,7 @@ npm run lint:fix               # Auto-fix formatting and common issues
 ```
 
 Specific linting commands:
+
 - `npm run lint:ts` — Check only TypeScript files
 - `npm run lint:ts:fix` — Auto-fix TypeScript issues
 - `npm run lint:sh` — Check only shell scripts
@@ -217,6 +247,7 @@ chore(deps): upgrade semantic-release to v24
 You can create a release in two ways:
 
 **Option A: Via GitHub Actions (Recommended)**
+
 1. Go to the repository's [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) tab
 2. Select the **Release** workflow from the left sidebar
 3. Click **Run workflow** and choose your options:
@@ -231,15 +262,20 @@ You can create a release in two ways:
 6. Verify the release in the [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab
 
 **Option B: Via Local Command (Advanced)**
+
 1. Ensure your local git is clean: `git status`
 2. **Test locally (recommended):**
+
    ```bash
    npm run release:dry
    ```
+
 3. **Create release:**
+
    ```bash
    npm run release
    ```
+
 4. This requires:
    - Write access to the repository
    - Valid `GITHUB_TOKEN` in environment (or git credentials)

@@ -30,6 +30,8 @@ KASEKI_REPO_MEMORY_MAX_BYTES="${KASEKI_REPO_MEMORY_MAX_BYTES:-8000}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
+KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
+KASEKI_STRICT_SCRIPT_CHECK="${KASEKI_STRICT_SCRIPT_CHECK:-0}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-0}"
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-auto}"
 START_EPOCH="$(date +%s)"
@@ -43,6 +45,8 @@ FAILED_COMMAND=""
 PI_EXIT=0
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
+VALIDATION_STOPPED_EARLY=false
+VALIDATION_COMMANDS_ATTEMPTED=0
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
@@ -226,6 +230,9 @@ write_metadata() {
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
+  "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
+  "validation_stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
+  "validation_commands_attempted": $VALIDATION_COMMANDS_ATTEMPTED,
   "quality_exit_code": $QUALITY_EXIT,
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
   "github_push_exit_code": $GITHUB_PUSH_EXIT,
@@ -304,6 +311,7 @@ write_result_summary() {
 - Pi exit code: $PI_EXIT
 - Validation: $validation_status ($VALIDATION_EXIT)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
+$([ "$VALIDATION_STOPPED_EARLY" = "true" ] && printf '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)" || true)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -1542,6 +1550,10 @@ if [ "$KASEKI_DRY_RUN" = "1" ]; then
 elif [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
   printf 'Validation skipped because KASEKI_VALIDATION_COMMANDS=%s.\n' "${KASEKI_VALIDATION_COMMANDS:-<empty>}" | tee -a /results/validation.log
   record_stage_timing "validation" 0 0 "skipped_by_config"
+elif [ "$QUALITY_EXIT" -ne 0 ]; then
+  printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a /results/validation.log
+  VALIDATION_EXIT="$QUALITY_EXIT"
+  record_stage_timing "validation" "$QUALITY_EXIT" 0 "skipped_after_quality_failure"
 elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
   printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
@@ -1569,6 +1581,7 @@ else
       emit_event "validation_command_skipped" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
       continue
     fi
+    ((VALIDATION_COMMANDS_ATTEMPTED++))
     emit_event "validation_command_started" "command=$trimmed"
     {
       printf '\n==> %s\n' "$trimmed"
@@ -1602,6 +1615,12 @@ else
           printf 'Last 20 lines of validation log:\n'
           tail -20 /results/validation.log
         } | tee -a /results/quality.log
+      fi
+      # Fail-fast: if enabled, stop validation loop at first failure
+      if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+        VALIDATION_STOPPED_EARLY=true
+        printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a /results/validation.log
+        break
       fi
     fi
   done
