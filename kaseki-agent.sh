@@ -45,10 +45,12 @@ FAILED_COMMAND=""
 PI_EXIT=0
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
+VALIDATION_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
+QUALITY_FAILURE_REASON=""
 SECRET_SCAN_EXIT=0
 GITHUB_PUSH_EXIT=0
 GITHUB_PR_EXIT=0
@@ -228,6 +230,8 @@ write_metadata() {
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
+  "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
@@ -310,6 +314,7 @@ write_result_summary() {
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
 - Validation: $validation_status ($VALIDATION_EXIT)
+$([ -n "$VALIDATION_FAILURE_REASON" ] && printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON" || true)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
 $([ "$VALIDATION_STOPPED_EARLY" = "true" ] && printf '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)" || true)
 - Quality checks: $QUALITY_EXIT
@@ -351,6 +356,8 @@ write_failure_json() {
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
+  "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
   "artifacts_dir": "/results",
@@ -1505,6 +1512,7 @@ stage_start="$(date +%s)"
 diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_EXIT=4
+  QUALITY_FAILURE_REASON="max_diff_bytes: $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes"
   printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a /results/quality.log
   emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
 else
@@ -1519,6 +1527,7 @@ if [ -n "$allowlist_regex" ]; then
     [ -z "$changed_file" ] && continue
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       QUALITY_EXIT=5
+      QUALITY_FAILURE_REASON="allowlist_check: file '$changed_file' not in allowlist"
       printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a /results/quality.log
       emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=false" "file=$changed_file"
     else
@@ -1553,6 +1562,9 @@ elif [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "
 elif [ "$QUALITY_EXIT" -ne 0 ]; then
   printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a /results/validation.log
   VALIDATION_EXIT="$QUALITY_EXIT"
+  if [ -z "$VALIDATION_FAILURE_REASON" ]; then
+    VALIDATION_FAILURE_REASON="quality_gate_failed: $QUALITY_FAILURE_REASON"
+  fi
   record_stage_timing "validation" "$QUALITY_EXIT" 0 "skipped_after_quality_failure"
 elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
   printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
@@ -1602,6 +1614,7 @@ else
     if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
       VALIDATION_EXIT="$command_exit"
       VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
+      VALIDATION_FAILURE_REASON="validation_command_failed: $trimmed (exit $command_exit)"
       # Enhanced diagnostics for getcwd-type errors
       if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' /results/validation.log; then
         {

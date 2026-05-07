@@ -126,6 +126,8 @@ export interface StatusResponse {
   timeoutRiskPercent?: number;
   exitCode?: number;
   failureClass?: string;
+  validationFailureReason?: string; // e.g., "validation_command_failed: npm run test (exit 1)"
+  qualityFailureReason?: string; // e.g., "max_diff_bytes: 250KB exceeds limit of 200KB"
   error?: string;
   resultDir?: string;
   correlationId?: string; // Request correlation ID

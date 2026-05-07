@@ -5,7 +5,7 @@ import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
-import { resolveInstanceExitCode } from '../instance-state-derivation';
+import { resolveInstanceExitCode, extractValidationFailureReason, extractQualityFailureReason } from '../instance-state-derivation';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 
@@ -27,11 +27,16 @@ export class StatusResponseBuilder {
   buildStatus(job: Job): StatusResponse {
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     const exitCode = this.resolveExitCode(job, runDir);
+    const metadata = this.readMetadata(runDir);
+    const validationReason = extractValidationFailureReason(metadata);
+    const qualityReason = extractQualityFailureReason(metadata);
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
       exitCode: exitCode ?? undefined,
       failureClass: job.failureClass,
+      validationFailureReason: validationReason ?? undefined,
+      qualityFailureReason: qualityReason ?? undefined,
       correlationId: job.correlationId,
       requestId: job.requestId,
       error: job.error,
@@ -120,6 +125,18 @@ export class StatusResponseBuilder {
         response.diagnosticEntryPoint = 'result-summary.md';
       }
     }
+  }
+
+  private readMetadata(runDir: string): any {
+    try {
+      const metadataPath = path.join(runDir, 'metadata.json');
+      if (fs.existsSync(metadataPath)) {
+        return JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+      }
+    } catch {
+      // Ignore metadata read errors
+    }
+    return {};
   }
 
   private resolveExitCode(job: Job, runDir: string): number | null {
