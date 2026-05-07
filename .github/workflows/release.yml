@@ -66,20 +66,3 @@ jobs:
           name: release-output
           path: release-output.log
           retention-days: 30
-
-  trigger-docker-build:
-    needs: release
-    if: ${{ needs.release.outputs.released == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Docker build workflow
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          VERSION: ${{ needs.release.outputs.version }}
-        run: |
-          # Trigger the build-docker-image workflow for the newly created tag
-          gh workflow run build-docker-image.yml \
-            --ref "v${VERSION}" \
-            --repo "${GITHUB_REPOSITORY}"
-          echo "Triggered Docker build for v${VERSION}"
