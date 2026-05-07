@@ -1,0 +1,9 @@
+# Allowlist template for utility/library changes
+# Use when fixing utility functions, helpers, or library code
+# Includes: lib files, utilities, tests, and types
+# Pattern: src/lib/** src/utils/** tests/** src/types/**
+
+src/lib/**
+src/utils/**
+tests/**
+src/types/**

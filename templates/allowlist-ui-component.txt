@@ -1,0 +1,9 @@
+# Allowlist template for UI component changes
+# Use when modifying or creating React/Vue components and their tests
+# Includes: component files, hooks, tests, styles
+# Pattern: src/components/** src/lib/ui/** src/hooks/** tests/components/**
+
+src/components/**
+src/lib/ui/**
+src/hooks/**
+tests/components/**

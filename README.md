@@ -1072,6 +1072,72 @@ docker run --rm --entrypoint pi ghcr.io/cyanautomation/kaseki-agent:latest --ver
 
 ---
 
+## Troubleshooting: Too Many Files Restored?
+
+When you run kaseki with a targeted task, you might see many files being "restored" (reverted) because they fall outside the allowlist. This is expected behavior—but here's how to fix it:
+
+### Symptoms
+
+- Run completes but `restoration-report.md` shows 20+ files were restored
+- Only a few files were kept in the allowlist
+- `kaseki-report` shows "Allowlist coverage: 5/25 files (20%)"
+
+### Quick Fix: Use a Better Template
+
+1. **Check what type of task you're running:**
+   - Fixing a UI component? Use `templates/allowlist-ui-component.txt`
+   - Fixing an API endpoint? Use `templates/allowlist-api-route.txt`
+   - Fixing a utility function? Use `templates/allowlist-utility.txt`
+
+2. **Run with the template:**
+   ```bash
+   KASEKI_CHANGED_FILES_ALLOWLIST="$(cat templates/allowlist-ui-component.txt | tr '\n' ' ')" ./run-kaseki.sh
+   ```
+
+### Deep Dive: Understanding Restoration
+
+1. **Look at the restoration report:**
+   ```bash
+   cat /agents/kaseki-results/kaseki-N/restoration-report.md
+   ```
+   This shows exactly which files were kept vs. restored.
+
+2. **Auto-generate a better allowlist:**
+   ```bash
+   ./scripts/suggest-allowlist.sh /agents/kaseki-results/kaseki-N
+   ```
+   This analyzes what files were actually changed and suggests patterns.
+
+3. **Preview before running:**
+   ```bash
+   ./scripts/dry-run-allowlist.sh --changed-files /agents/kaseki-results/kaseki-N/changed-files.txt \
+     --allowlist "src/lib/** tests/**"
+   ```
+   This shows what WOULD be restored with a given allowlist.
+
+### Root Causes
+
+**Allowlist too narrow:**
+- ❌ `KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts"` (single file only)
+- ✅ `KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/**"` (file + tests)
+
+**TASK_PROMPT too vague:**
+- ❌ "Fix the bug"
+- ✅ "Fix the null-reference bug in src/lib/parser.ts. Do not modify other files."
+
+**Task affects multiple files:**
+- Build a better allowlist by running suggest-allowlist.sh
+- Or use a broader template (allowlist-comprehensive.txt)
+
+### More Information
+
+- Full guide: [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md)
+- Prompt best practices: [docs/TASK_PROMPT_TEMPLATES.md](docs/TASK_PROMPT_TEMPLATES.md)
+- Auto-generate patterns: `./scripts/suggest-allowlist.sh <results-dir>`
+- Preview patterns: `./scripts/dry-run-allowlist.sh --help`
+
+---
+
 ## License and Contributing
 
 See the repository for contribution guidelines and license information.

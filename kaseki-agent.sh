@@ -23,6 +23,7 @@ KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
+KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 KASEKI_REPO_MEMORY_MODE="${KASEKI_REPO_MEMORY_MODE:-off}"
 KASEKI_REPO_MEMORY_TTL_DAYS="${KASEKI_REPO_MEMORY_TTL_DAYS:-30}"
@@ -403,27 +404,154 @@ restore_disallowed_changes() {
     return 0
   fi
 
-  local allowlist_regex restored_any
+  local allowlist_regex restored_any restored_count kept_count
   allowlist_regex="$(build_allowlist_regex)"
   [ -z "$allowlist_regex" ] && return 0
   restored_any=0
+  restored_count=0
+  kept_count=0
+
+  # Initialize restoration tracking file
+  : > /results/restoration.jsonl
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     if printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+      # File matched allowlist - keep it
+      kept_count=$((kept_count + 1))
+      {
+        printf '{"timestamp":"%s","event":"file_evaluated","file":"%s","status":"kept","reason":"matched_allowlist"}\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
+      } >> /results/restoration.jsonl
       continue
     fi
+    # File did not match allowlist - restore it
+    restored_count=$((restored_count + 1))
     printf 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a /results/quality.log
     emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
+    {
+      printf '{"timestamp":"%s","event":"file_restored","file":"%s","status":"restored","reason":"not_in_allowlist"}\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
+    } >> /results/restoration.jsonl
     git -C /workspace/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
     git -C /workspace/repo clean -f -- "$changed_file" 2>/dev/null || true
     restored_any=1
   done < /results/changed-files.txt
 
+  # Emit restoration summary to quality.log
+  if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
+    {
+      printf '\n[allowlist summary] Restored: %d files; Kept: %d files\n' "$restored_count" "$kept_count"
+    } | tee -a /results/quality.log
+    emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count"
+  fi
+
   if [ "$restored_any" -eq 1 ]; then
     collect_git_artifacts
   fi
 }
+
+generate_restoration_report() {
+  if [ ! -f /results/restoration.jsonl ]; then
+    return 0
+  fi
+
+  local restored_count kept_count total_count
+  restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  kept_count=$(grep -c '"status":"kept"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  total_count=$((restored_count + kept_count))
+
+  if [ "$total_count" -eq 0 ]; then
+    return 0
+  fi
+
+  {
+    printf '# Allowlist Restoration Report\n\n'
+    printf 'Generated: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '## Summary\n\n'
+    printf '- **Total Files Changed:** %d\n' "$total_count"
+    printf '- **Files Kept (in allowlist):** %d\n' "$kept_count"
+    printf '- **Files Restored (outside allowlist):** %d\n' "$restored_count"
+    if [ "$total_count" -gt 0 ]; then
+      local coverage_pct=$((kept_count * 100 / total_count))
+      printf '- **Allowlist Coverage:** %d%%\n\n' "$coverage_pct"
+    fi
+
+    if [ "$restored_count" -gt 0 ]; then
+      printf '## Restored Files\n\n'
+      printf 'These files were modified by the agent but restored because they fall outside the allowlist:\n\n'
+      grep '"status":"restored"' /results/restoration.jsonl | \
+        sed 's/.*"file":"\([^"]*\)".*/- `\1`/' | \
+        sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
+      if [ -f /results/restoration-report.md.tmp ]; then
+        cat /results/restoration-report.md.tmp
+        rm -f /results/restoration-report.md.tmp
+      fi
+      printf '\n'
+    fi
+
+    if [ "$kept_count" -gt 0 ]; then
+      printf '## Kept Files (Allowlist Matches)\n\n'
+      printf 'These files were in the allowlist and were kept:\n\n'
+      grep '"status":"kept"' /results/restoration.jsonl | \
+        sed 's/.*"file":"\([^"]*\)".*/- `\1`/' | \
+        sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
+      if [ -f /results/restoration-report.md.tmp ]; then
+        cat /results/restoration-report.md.tmp
+        rm -f /results/restoration-report.md.tmp
+      fi
+      printf '\n'
+    fi
+
+    printf '## Recommendations\n\n'
+    if [ "$restored_count" -gt 0 ] && [ "$coverage_pct" -lt 50 ]; then
+      printf '**⚠️ Low Allowlist Coverage** — Only %d%% of changes were kept.\n' "$coverage_pct"
+      printf 'Consider:\n'
+      printf '1. Reviewing the TASK_PROMPT to be more specific about scope\n'
+      printf '2. Widening the allowlist to include related files\n'
+      printf '3. Running `scripts/suggest-allowlist.sh` to auto-generate a better allowlist\n\n'
+    fi
+    printf 'Run subsequent operations with an updated allowlist:\n'
+    printf '```bash\n'
+    printf 'KASEKI_CHANGED_FILES_ALLOWLIST="<your-pattern>" ./run-kaseki.sh\n'
+    printf '```\n\n'
+    printf 'For help on allowlist patterns, see `docs/QUALITY_GATES.md`.\n'
+  } > /results/restoration-report.md
+}
+
+check_validation_allowlist() {
+  if [ -z "$KASEKI_VALIDATION_ALLOWLIST" ]; then
+    return 0
+  fi
+  if [ ! -d /workspace/repo/.git ]; then
+    return 0
+  fi
+
+  local allowlist_regex validation_violation_count
+  allowlist_regex="$(build_allowlist_regex "$KASEKI_VALIDATION_ALLOWLIST")"
+  [ -z "$allowlist_regex" ] && return 0
+  validation_violation_count=0
+
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a /results/quality.log
+      validation_violation_count=$((validation_violation_count + 1))
+      emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
+    else
+      emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=true" "file=$changed_file"
+    fi
+  done < /results/changed-files.txt
+
+  if [ "$validation_violation_count" -gt 0 ]; then
+    QUALITY_EXIT=7
+    QUALITY_FAILURE_REASON="validation_allowlist_check: $validation_violation_count file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
+    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a /results/quality.log
+    return 1
+  fi
+  return 0
+}
+
 
 finish() {
   local code=$?
@@ -433,6 +561,7 @@ finish() {
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   collect_git_artifacts
+  generate_restoration_report
   
   # Calculate and record maturity score
   if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
@@ -1645,6 +1774,14 @@ else
   record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
 emit_progress "validation" "finished with exit $VALIDATION_EXIT"
+
+# Check validation-phase allowlist (if configured)
+if [ "$VALIDATION_EXIT" -eq 0 ]; then
+  collect_git_artifacts
+  if ! check_validation_allowlist; then
+    : # Exit code already set in check_validation_allowlist
+  fi
+fi
 
 printf '\n==> secret scan\n'
 set_current_stage "secret scan"

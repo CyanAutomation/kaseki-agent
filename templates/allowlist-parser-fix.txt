@@ -1,0 +1,6 @@
+# Allowlist template for parser-related bug fixes
+# Use when fixing parsing logic in a specific parser module
+# Pattern: src/lib/parser.ts tests/parser.validation.ts
+
+src/lib/parser.ts
+tests/parser.validation.ts

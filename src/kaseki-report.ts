@@ -106,6 +106,33 @@ const dependencyCache = readText('dependency-cache.log')
   .split(/\r?\n/)
   .filter(Boolean);
 const secretScanBytes = Buffer.byteLength(readText('secret-scan.log'));
+
+// Parse restoration.jsonl for metrics
+interface RestorationEvent {
+  status: 'restored' | 'kept';
+  file: string;
+  [key: string]: any;
+}
+
+function parseRestorationMetrics(): { restored: number; kept: number } {
+  const restorationJsonl = readText('restoration.jsonl');
+  if (!restorationJsonl.trim()) return { restored: 0, kept: 0 };
+  
+  let restored = 0, kept = 0;
+  for (const line of restorationJsonl.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line) as RestorationEvent;
+      if (event.status === 'restored') restored++;
+      else if (event.status === 'kept') kept++;
+    } catch {
+      // ignore malformed lines
+    }
+  }
+  return { restored, kept };
+}
+
+const { restored: restoredCount, kept: keptCount } = parseRestorationMetrics();
 const normalizedExitCode = normalizeExitCode(metadata.exit_code);
 const status = normalizedExitCode === 0 ? 'passed' : 'failed';
 const resultName = metadata.instance || path.basename(resultDir);
@@ -153,6 +180,13 @@ console.log(
 );
 console.log(`Diff non-empty: ${metadata.diff_nonempty ?? 'unknown'}`);
 printList('Changed files', changedFiles);
+if (restoredCount > 0 || keptCount > 0) {
+  const totalFiles = restoredCount + keptCount;
+  const coverage = totalFiles > 0 ? Math.round((keptCount * 100) / totalFiles) : 0;
+  console.log(`Allowlist coverage: ${keptCount}/${totalFiles} files (${coverage}%)`);
+  console.log(`Files restored: ${restoredCount}`);
+  console.log(`Files kept (allowlist match): ${keptCount}`);
+}
 printList('Stage timings', stageTimings);
 printList('Validation timings', timings);
 printList('Dependency cache', dependencyCache);
