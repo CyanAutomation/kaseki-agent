@@ -29,7 +29,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 1800 | Timeout for agent (30 min) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 5700 | Timeout for agent (95 min) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
@@ -617,7 +617,7 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 ## Best Practices
 
-1. **Set appropriate timeouts** — Agent timeout defaults to 30 minutes. Adjust globally via `KASEKI_AGENT_TIMEOUT_SECONDS` or per-run via `timeoutSeconds`.
+1. **Set appropriate timeouts** — Agent timeout defaults to 95 minutes. Adjust globally via `KASEKI_AGENT_TIMEOUT_SECONDS` or per-run via `timeoutSeconds`.
 
 2. **Monitor timeout risk** — Check `timeoutRiskPercent` in status. If >85%, consider graceful shutdown.
 
