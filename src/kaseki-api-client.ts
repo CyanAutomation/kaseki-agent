@@ -443,7 +443,7 @@ export class KasekiApiClient {
       onProgress?: (status: StatusResponse) => void; // Progress callback
     }
   ): Promise<StatusResponse> {
-    const timeoutMs = options?.timeout || 30 * 60 * 1000; // 30 min default
+    const timeoutMs = options?.timeout || 95 * 60 * 1000; // 95 min default
     const intervalMs = options?.interval || 5000; // 5 sec default
     const startTime = Date.now();
 

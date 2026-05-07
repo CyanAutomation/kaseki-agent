@@ -38,7 +38,7 @@ export async function exampleBugFixWorkflow(): Promise<void> {
     // 3. Monitor progress
     console.log('\nMonitoring progress...');
     const result = await client.waitForCompletion(run.id, {
-      timeout: 30 * 60 * 1000, // 30 minutes
+      timeout: 95 * 60 * 1000, // 95 minutes
       interval: 5000, // Poll every 5 seconds
       onProgress: (status) => {
         const timeoutPercent = status.timeoutRiskPercent || 0;
