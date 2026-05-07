@@ -1,4 +1,4 @@
-import { PreFlightValidator } from './pre-flight-validator';
+import { PreFlightValidator, globToRegex, testPathAgainstPatterns, validateAllowlistPatternMatching } from './pre-flight-validator';
 import type { RunRequest } from './kaseki-api-types';
 
 describe('PreFlightValidator validation logic', () => {
@@ -413,6 +413,100 @@ describe('PreFlightValidator validation logic', () => {
       expect(response.isValid).toBe(true);
       expect(response.warnings).toContain(sizeCheck?.message);
       expect(response.errors).not.toContain(sizeCheck?.message);
+    });
+  });
+
+  describe('pattern matching functions', () => {
+    describe('globToRegex', () => {
+      test('converts simple glob patterns to regex', () => {
+        const regex = globToRegex('src/*.ts');
+        expect(regex.test('src/index.ts')).toBe(true);
+        expect(regex.test('src/foo.ts')).toBe(true);
+        expect(regex.test('src/subdir/index.ts')).toBe(false);
+        expect(regex.test('src/index.tsx')).toBe(false);
+      });
+
+      test('handles ** for multi-level matching', () => {
+        const regex = globToRegex('src/**/*.ts');
+        expect(regex.test('src/index.ts')).toBe(true);
+        expect(regex.test('src/lib/parser.ts')).toBe(true);
+        expect(regex.test('src/lib/sub/deep/file.ts')).toBe(true);
+        expect(regex.test('src/file.tsx')).toBe(false);
+      });
+
+      test('matches exact file paths', () => {
+        const regex = globToRegex('package.json');
+        expect(regex.test('package.json')).toBe(true);
+        expect(regex.test('src/package.json')).toBe(false);
+      });
+
+      test('handles ? single-character wildcard', () => {
+        const regex = globToRegex('src/index.t?s');
+        expect(regex.test('src/index.tas')).toBe(true);
+        expect(regex.test('src/index.tbs')).toBe(true);
+        expect(regex.test('src/index.tXs')).toBe(true);
+        expect(regex.test('src/index.ts')).toBe(false); // ? requires one character
+        expect(regex.test('src/index.tjss')).toBe(false);
+      });
+    });
+
+    describe('testPathAgainstPatterns', () => {
+      test('returns true if path matches any pattern', () => {
+        const patterns = ['src/**/*.ts', 'tests/**/*.ts'];
+        expect(testPathAgainstPatterns('src/index.ts', patterns)).toBe(true);
+        expect(testPathAgainstPatterns('tests/unit/foo.test.ts', patterns)).toBe(true);
+        expect(testPathAgainstPatterns('docs/README.md', patterns)).toBe(false);
+      });
+
+      test('returns true for empty pattern list', () => {
+        expect(testPathAgainstPatterns('any/file.ts', [])).toBe(true);
+      });
+
+      test('handles multiple patterns correctly', () => {
+        const patterns = ['src/lib/parser.ts', 'tests/parser.validation.ts'];
+        expect(testPathAgainstPatterns('src/lib/parser.ts', patterns)).toBe(true);
+        expect(testPathAgainstPatterns('tests/parser.validation.ts', patterns)).toBe(true);
+        expect(testPathAgainstPatterns('src/index.ts', patterns)).toBe(false);
+      });
+    });
+
+    describe('validateAllowlistPatternMatching', () => {
+      test('returns valid for reasonable patterns', () => {
+        const result = validateAllowlistPatternMatching(['src/lib/parser.ts', 'tests/parser.validation.ts']);
+        expect(result.isValid).toBe(true);
+        expect(result.warnings.length).toBe(0);
+      });
+
+      test('warns about empty patterns', () => {
+        const result = validateAllowlistPatternMatching(['', 'src/**/*.ts']);
+        expect(result.warnings).toContain('Empty pattern detected');
+      });
+
+      test('warns about overly broad patterns', () => {
+        const result = validateAllowlistPatternMatching(['*']);
+        expect(result.warnings.length).toBeGreaterThan(0);
+        expect(result.warnings.some((w) => w.includes('very broad'))).toBe(true);
+      });
+
+      test('warns about patterns matching no sample files', () => {
+        const result = validateAllowlistPatternMatching(['xyz/**/*.nonexistent']);
+        expect(result.warnings.length).toBeGreaterThan(0);
+        expect(result.warnings.some((w) => w.includes("doesn't match any sample files"))).toBe(true);
+      });
+
+      test('returns test results for each pattern', () => {
+        const result = validateAllowlistPatternMatching(['src/**/*.ts', 'tests/**/*.ts']);
+        expect(result.testResults.length).toBe(2);
+        expect(result.testResults[0].pattern).toBe('src/**/*.ts');
+        expect(result.testResults[0].matches).toBeGreaterThan(0);
+      });
+
+      test('returns empty result for empty pattern list', () => {
+        const result = validateAllowlistPatternMatching([]);
+        expect(result.isValid).toBe(true);
+        expect(result.warnings.length).toBe(0);
+        expect(result.testResults.length).toBe(0);
+      });
     });
   });
 });
