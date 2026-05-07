@@ -3,6 +3,97 @@ import { ValidationCheck, ValidationResponse, RunRequest } from './kaseki-api-ty
 import { createEventLogger, EventLogger } from './logger';
 
 /**
+ * Convert glob-style pattern to regex.
+ * Supports *, **, ?, and [abc] patterns.
+ */
+export function globToRegex(pattern: string): RegExp {
+  // Use placeholders for all special sequences to avoid double-replacement
+  let regex = pattern;
+  
+  // First, escape all regex special chars
+  regex = regex.replace(/[.+^${}()|[\]\\-]/g, '\\$&');
+  
+  // Use placeholders for glob wildcards BEFORE replacing their components
+  regex = regex.replace(/\*\*/g, '##DBL_STAR##');
+  regex = regex.replace(/\*/g, '##STAR##');
+  regex = regex.replace(/\?/g, '##QUEST##');
+  
+  // Now convert placeholders to regex patterns
+  // Handle ** in different contexts
+  regex = regex.replace(/\/##DBL_STAR##\//g, '/(?:.*\/)?');  // /../
+  regex = regex.replace(/##DBL_STAR##\//g, '(?:.*\/)?');     // **/ at start
+  regex = regex.replace(/\/##DBL_STAR##/g, '(?:\/.*)?');     // /** at end
+  regex = regex.replace(/##DBL_STAR##/g, '.*');             // ** alone
+  
+  // Handle single *
+  regex = regex.replace(/##STAR##/g, '[^/]*');
+  
+  // Handle ?
+  regex = regex.replace(/##QUEST##/g, '.');
+  
+  return new RegExp(`^${regex}$`);
+}
+
+/**
+ * Test if a file path matches any of the allowed patterns.
+ */
+export function testPathAgainstPatterns(filePath: string, patterns: string[]): boolean {
+  if (patterns.length === 0) return true;
+  for (const pattern of patterns) {
+    const regex = globToRegex(pattern);
+    if (regex.test(filePath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Validate allowlist patterns by testing against common file paths.
+ */
+export function validateAllowlistPatternMatching(
+  patterns: string[]
+): { isValid: boolean; warnings: string[]; testResults: { pattern: string; matches: number }[] } {
+  const warnings: string[] = [];
+  const testResults: { pattern: string; matches: number }[] = [];
+  const sampleFiles = [
+    'package.json', 'src/index.ts', 'src/lib/parser.ts', 'src/lib/parser.tsx',
+    'src/utils/helpers.ts', 'tests/parser.test.ts', 'tests/parser.validation.ts',
+    'tests/unit/foo.test.ts', 'docs/README.md', 'docs/API.md', '.github/workflows/ci.yml',
+    'dist/index.js', 'README.md', 'CHANGELOG.md', '.eslintrc.json', 'tsconfig.json',
+  ];
+
+  if (patterns.length === 0) {
+    return { isValid: true, warnings: [], testResults: [] };
+  }
+
+  for (const pattern of patterns) {
+    if (!pattern || !pattern.trim()) {
+      warnings.push('Empty pattern detected');
+      continue;
+    }
+    
+    // Warn about obviously broad patterns
+    if (pattern === '*' || pattern === '**' || pattern === '/**') {
+      warnings.push(`Pattern '${pattern}' is very broad and may allow too many files`);
+      testResults.push({ pattern, matches: sampleFiles.length });
+      continue;
+    }
+    
+    const matchCount = sampleFiles.filter((file) => testPathAgainstPatterns(file, [pattern])).length;
+    testResults.push({ pattern, matches: matchCount });
+    if (matchCount === sampleFiles.length) {
+      warnings.push(`Pattern '${pattern}' is too broad`);
+    }
+    if (matchCount === 0) {
+      warnings.push(`Pattern '${pattern}' doesn't match any sample files`);
+    }
+  }
+
+  return { isValid: warnings.length === 0, warnings, testResults };
+}
+
+/**
  * Pre-flight validator performs checks on job requests before submission.
  * Helps catch configuration errors early and provides better diagnostics.
  */
