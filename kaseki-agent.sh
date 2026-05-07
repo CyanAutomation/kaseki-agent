@@ -475,8 +475,8 @@ restore_disallowed_changes() {
   done < /results/changed-files.txt
 
   # Emit restoration summary to quality.log with actionable guidance
+  local coverage=0
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
-    local coverage=0
     if [ $((restored_count + kept_count)) -gt 0 ]; then
       coverage=$((kept_count * 100 / (restored_count + kept_count)))
     fi
