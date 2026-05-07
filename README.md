@@ -35,6 +35,9 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 - `kaseki-agent.sh` — Inside the container (clones repo, installs deps, invokes Pi, validates, stores results)
 - `entrypoint.sh` — Container startup orchestrator
 
+> **Important:** `kaseki-agent.sh` runs from the Docker image (`/usr/local/bin/kaseki-agent`) and is **not** host-mounted during runs.
+> For Direct CLI mode, the host needs `run-kaseki.sh` (plus `scripts/kaseki-preflight.sh`) and Docker access; the agent script itself stays inside the image.
+
 **Supporting utilities (Node.js):**
 
 - `pi-event-filter.js` — Filters raw Pi JSONL, strips thinking blocks, emits `pi-events.jsonl` + `pi-summary.json`
@@ -69,6 +72,11 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 ```
 
 **When to use:** Local development, one-off tasks, testing on a Pi.
+
+**Host file requirements (Direct CLI):**
+- Required on host: `run-kaseki.sh`, `scripts/kaseki-preflight.sh`
+- Required in image/container: `kaseki-agent.sh` (invoked by container entrypoint as `/usr/local/bin/kaseki-agent`)
+- Runtime mounts are workspace/results/cache/secrets; host script files are not mounted into `/app` at run time
 
 ---
 
