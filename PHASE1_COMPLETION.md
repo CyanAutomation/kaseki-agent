@@ -1,6 +1,7 @@
 # Phase 1: Error Reporting Enhancement - Completion Summary
 
 ## Overview
+
 Phase 1 successfully implements critical foundation for better error visibility in kaseki-agent. When validation or quality gate failures occur, users and external agents now receive clear, structured failure reasons.
 
 ## Changes Implemented
@@ -8,23 +9,27 @@ Phase 1 successfully implements critical foundation for better error visibility 
 ### 1. Core Failure Reason Tracking (kaseki-agent.sh)
 
 #### New Variables
+
 - `VALIDATION_FAILURE_REASON`: Captures why validation failed
 - `QUALITY_FAILURE_REASON`: Captures which quality gate failed and why
 
 #### Tracked Failure Scenarios
 
 **Validation Failures:**
+
 - `validation_command_failed: <command> (exit <code>)` - When a validation command exits non-zero
 - `missing_npm_script: <script>` - When a required npm script doesn't exist
 - `quality_gate_failed: <reason>` - When validation is skipped due to quality gate failure
 
 **Quality Gate Failures:**
+
 - `max_diff_bytes: <actual> bytes exceeds limit of <limit> bytes` - Diff size exceeded
 - `allowlist_check: file '<path>' not in allowlist` - File changed outside allowlist
 
 ### 2. Artifact Updates
 
 #### metadata.json
+
 ```json
 {
   "validation_failure_reason": "validation_command_failed: npm run test (exit 1)",
@@ -33,12 +38,14 @@ Phase 1 successfully implements critical foundation for better error visibility 
 ```
 
 #### result-summary.md
+
 ```markdown
 - Validation: failed (1)
   - Reason: validation_command_failed: npm run test (exit 1)
 ```
 
 #### failure.json
+
 ```json
 {
   "validation_failure_reason": "validation_command_failed: npm run test (exit 1)",
@@ -49,7 +56,9 @@ Phase 1 successfully implements critical foundation for better error visibility 
 ### 3. API Enhancements
 
 #### StatusResponse Type (kaseki-api-types.ts)
+
 Added two new optional fields:
+
 ```typescript
 interface StatusResponse {
   // ... existing fields ...
@@ -59,6 +68,7 @@ interface StatusResponse {
 ```
 
 #### StatusResponseBuilder
+
 - Imports `extractValidationFailureReason()` and `extractQualityFailureReason()`
 - Populates these fields from metadata.json
 - Gracefully handles missing metadata
@@ -66,6 +76,7 @@ interface StatusResponse {
 ### 4. State Derivation Functions (instance-state-derivation.ts)
 
 #### New Exported Functions
+
 ```typescript
 /**
  * Extract validation failure reason from metadata.
@@ -83,6 +94,7 @@ export function extractQualityFailureReason(metadata: Metadata = {}): string | n
 ### 5. Test Coverage
 
 Added 9 new unit tests in `instance-state-derivation.test.ts`:
+
 - ✅ Extraction when reason is set
 - ✅ Trimming of whitespace
 - ✅ Handling of empty strings
@@ -93,12 +105,14 @@ Added 9 new unit tests in `instance-state-derivation.test.ts`:
 ## User Benefits
 
 ### Before Phase 1
+
 ```
 Validation failed: first failing command was "npm run test" with exit 1
 Quality Checks: failed (exit 5)
 ```
 
 ### After Phase 1
+
 ```
 Validation: failed (1)
   - Reason: validation_command_failed: npm run test (exit 1)
@@ -106,12 +120,15 @@ Quality Checks: failed (5)  // Now includes reason in failure.json
 ```
 
 ### API Consumers
+
 External agents can now:
+
 1. Get structured failure reasons via `/api/runs/<id>` endpoint
 2. Distinguish between different failure types programmatically
 3. Provide better error messages to end users
 
 Example API response:
+
 ```json
 {
   "id": "kaseki-1",
@@ -136,6 +153,7 @@ Example API response:
 ## Backwards Compatibility
 
 ✅ All changes are backwards compatible:
+
 - New fields in metadata.json are optional
 - StatusResponse fields are optional (use `??` operator)
 - Existing test suite continues to pass
@@ -152,18 +170,21 @@ Example API response:
 ## Verification
 
 Run the full test suite:
+
 ```bash
 npm test
 # Result: 380 tests passing ✅
 ```
 
 Verify compilation:
+
 ```bash
 npm run build
 # Result: TypeScript compilation clean ✅
 ```
 
 Check result artifacts format:
+
 ```bash
 cat /results/metadata.json | jq .validation_failure_reason
 cat /results/failure.json | jq .validation_failure_reason
