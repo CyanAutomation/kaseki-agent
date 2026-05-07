@@ -476,11 +476,11 @@ restore_disallowed_changes() {
 
   # Emit restoration summary to quality.log with actionable guidance
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
+    local coverage=0
+    if [ $((restored_count + kept_count)) -gt 0 ]; then
+      coverage=$((kept_count * 100 / (restored_count + kept_count)))
+    fi
     {
-      coverage=0
-      if [ $((restored_count + kept_count)) -gt 0 ]; then
-        coverage=$((kept_count * 100 / (restored_count + kept_count)))
-      fi
       printf '\n[allowlist summary] Restored: %d files; Kept: %d files (coverage: %d%%)\n' "$restored_count" "$kept_count" "$coverage"
       if [ "$restored_count" -gt 0 ] && [ "$coverage" -lt 50 ]; then
         printf '[allowlist note] Low coverage detected. To improve:\n'
