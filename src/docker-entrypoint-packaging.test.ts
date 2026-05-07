@@ -21,4 +21,13 @@ describe('Docker runtime packaging', () => {
     expect(entrypoint).toContain('exec node /app/dist/kaseki-api-service.js');
     expect(entrypoint).toContain('exec "$@"');
   });
+
+  test('template deployment preserves the configured image ref and records digest separately', () => {
+    const deployScript = fs.readFileSync(path.join(repoRoot, 'scripts/deploy-pi-template.sh'), 'utf-8');
+
+    expect(deployScript).toContain('REQUESTED_IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"');
+    expect(deployScript).toContain('printf \'%s\\n\' "$configured_image" > "$target/.kaseki-image"');
+    expect(deployScript).toContain('docker image inspect "$deployed_image" --format');
+    expect(deployScript).not.toContain('IMAGE="$resolved_digest"');
+  });
 });
