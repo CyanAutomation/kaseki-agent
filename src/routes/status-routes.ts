@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { JobScheduler } from '../job-scheduler';
 import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from '../kaseki-api-config';
-import { RunsListResponse } from '../kaseki-api-types';
+import { Job, RunsListResponse } from '../kaseki-api-types';
+import { resolveInstanceExitCode } from '../instance-state-derivation';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { StatusResponseBuilder } from '../utils/status-response-builder';
@@ -26,6 +29,9 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
         createdAt: job.createdAt.toISOString(),
         completedAt: job.completedAt?.toISOString(),
         resultDir: job.resultDir,
+        exitCode: resolveJobExitCode(job, config),
+        failureClass: job.failureClass,
+        error: job.error,
       })),
       total: allJobs.length,
       retention: {
@@ -64,4 +70,23 @@ export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiCon
   });
 
   return router;
+}
+
+function resolveJobExitCode(job: Job, config: KasekiApiConfig): number | undefined {
+  if (job.exitCode !== undefined && job.exitCode !== null) {
+    return job.exitCode;
+  }
+  if (!(job.status === 'completed' || job.status === 'failed')) {
+    return undefined;
+  }
+  const runDir = job.resultDir || path.join(config.resultsDir, job.id);
+  try {
+    const metadataPath = path.join(runDir, 'metadata.json');
+    const metadata = fs.existsSync(metadataPath)
+      ? JSON.parse(fs.readFileSync(metadataPath, 'utf-8'))
+      : {};
+    return resolveInstanceExitCode(runDir, metadata) ?? undefined;
+  } catch {
+    return undefined;
+  }
 }

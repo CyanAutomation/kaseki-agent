@@ -1,5 +1,16 @@
 import { StructuredProgress } from '../kaseki-api-types';
 
+const SHELL_DIAGNOSTIC_PATTERN = /\/[^\s:]+(?:\/[^\s:]+)*:\s+line\s+\d+:\s+.*$/;
+const GIT_CLONE_STDERR_PATTERN = /Cloning into '[^']+'\.\.\.$/;
+
+export function sanitizeProgressMessage(message: string): string {
+  return message
+    .replace(SHELL_DIAGNOSTIC_PATTERN, '')
+    .replace(GIT_CLONE_STDERR_PATTERN, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Normalize a progress event by ensuring common fields are standardized.
  * Ensures message is populated from stage/detail, and timestamp is normalized to updatedAt.
@@ -8,10 +19,12 @@ export function normalizeProgressEvent(event: Record<string, unknown>): Record<s
   const normalized: Record<string, unknown> = { ...event };
   if (typeof normalized.stage === 'string') {
     if (typeof normalized.message !== 'string' && typeof normalized.detail === 'string') {
-      normalized.message = normalized.detail;
+      normalized.message = sanitizeProgressMessage(normalized.detail);
     }
     if (typeof normalized.message !== 'string') {
       normalized.message = normalized.stage;
+    } else {
+      normalized.message = sanitizeProgressMessage(normalized.message);
     }
   }
   if (typeof normalized.updatedAt !== 'string' && typeof normalized.timestamp === 'string') {
@@ -35,9 +48,9 @@ export function toStructuredProgress(
 
   const message =
     typeof event.message === 'string'
-      ? event.message
+      ? sanitizeProgressMessage(event.message)
       : typeof event.detail === 'string'
-        ? event.detail
+        ? sanitizeProgressMessage(event.detail)
         : undefined;
 
   const numericPercent = typeof event.percentComplete === 'number' ? event.percentComplete : undefined;

@@ -397,6 +397,36 @@ describe('progress-normalizer', () => {
       });
     });
 
+    it('should strip shell diagnostics accidentally interleaved into live progress messages', () => {
+      const structured = toStructuredProgress({
+        stage: 'dependency install info',
+        message: 'cache hit flags=--ignore-scripts/usr/local/bin/kaseki-agent: line 378: /usr/local/bin/scripts/allowlist-helper.sh: No such file or directory',
+        timestamp: '2026-05-07T12:24:48.758Z',
+      });
+
+      expect(structured).toEqual({
+        stage: 'dependency install info',
+        message: 'cache hit flags=--ignore-scripts',
+        percentComplete: undefined,
+        updatedAt: '2026-05-07T12:24:48.758Z',
+      });
+    });
+
+    it('should strip git clone stderr accidentally interleaved into live progress messages', () => {
+      const structured = toStructuredProgress({
+        stage: 'pi coding agent',
+        message: "working; events=1079, tool starts=8, tool ends=8Cloning into '/workspace/repo'...",
+        timestamp: '2026-05-07T12:56:25.853Z',
+      });
+
+      expect(structured).toEqual({
+        stage: 'pi coding agent',
+        message: 'working; events=1079, tool starts=8, tool ends=8',
+        percentComplete: undefined,
+        updatedAt: '2026-05-07T12:56:25.853Z',
+      });
+    });
+
     it('should handle missing fields gracefully in pipeline', () => {
       const event = {
         stage: 'running',

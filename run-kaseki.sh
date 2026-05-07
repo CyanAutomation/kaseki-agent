@@ -24,6 +24,7 @@ KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
+KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-auto}"
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
@@ -818,9 +819,15 @@ fi
 
 # Handle GitHub App credentials (optional)
 GITHUB_APP_ENABLED="0"
+case "$KASEKI_PUBLISH_MODE" in
+  auto|none|branch|draft_pr) ;;
+  *)
+    fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, or draft_pr)"
+    ;;
+esac
 github_app_id_value="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
 github_app_client_id_value="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
-if [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
+if [ "$KASEKI_PUBLISH_MODE" != "none" ] && [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
   github_private_key_value=""
   if [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] && [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
     github_private_key_value="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE")"
@@ -841,6 +848,10 @@ if [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
   fi
 fi
 unset GITHUB_APP_PRIVATE_KEY github_app_id_value github_app_client_id_value
+
+if { [ "$KASEKI_PUBLISH_MODE" = "branch" ] || [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; } && [ "$GITHUB_APP_ENABLED" != "1" ]; then
+  fail_host 7 "github app credentials" "KASEKI_PUBLISH_MODE=$KASEKI_PUBLISH_MODE requires readable GitHub App credentials."
+fi
 
 prepare_worker_paths() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -884,6 +895,7 @@ docker_args=(
   -e KASEKI_LOG_DIR="/results"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
+  -e KASEKI_PUBLISH_MODE="$KASEKI_PUBLISH_MODE"
   -e KASEKI_STREAM_PROGRESS="$KASEKI_STREAM_PROGRESS"
   -e KASEKI_VALIDATE_AFTER_AGENT_FAILURE="$KASEKI_VALIDATE_AFTER_AGENT_FAILURE"
   -e KASEKI_DEPENDENCY_CACHE_DIR="/cache/dependencies"

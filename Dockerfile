@@ -62,6 +62,7 @@ COPY scripts ./scripts
 COPY docker ./docker
 COPY test ./test
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
+COPY scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint
 
 RUN mkdir -p /app/lib \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
@@ -83,8 +84,10 @@ RUN mkdir -p /app/lib \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
+    && chmod 0755 /usr/local/bin/kaseki-entrypoint \
     && chmod 0755 /usr/local/lib/node_modules/@mariozechner/pi-coding-agent/dist/cli.js \
     /usr/local/bin/kaseki-agent \
+    /usr/local/bin/kaseki-entrypoint \
     /usr/local/bin/kaseki-pi-event-filter \
     /usr/local/bin/kaseki-pi-progress-stream \
     /usr/local/bin/kaseki-report \
@@ -93,7 +96,8 @@ RUN mkdir -p /app/lib \
 
 WORKDIR /workspace
 USER kaseki
-ENTRYPOINT ["/usr/local/bin/kaseki-agent"]
+ENTRYPOINT ["/usr/local/bin/kaseki-entrypoint"]
+CMD ["agent"]
 
 # The runner initializes these logs before long-running work starts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
