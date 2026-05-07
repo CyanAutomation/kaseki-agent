@@ -88,10 +88,10 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 {
   "status": "ok",
   "timestamp": "2026-05-03T21:30:00.000Z",
-  "image": "docker.io/cyanautomation/kaseki-agent:latest",
-  "imageDigest": "docker.io/cyanautomation/kaseki-agent@sha256:...",
+  "image": "docker.io/:latest",
+  "imageDigest": "docker.io/@sha256:...",
   "templateImage": "docker.io/cyanautomation/kaseki-agent:latest",
-  "templateImageDigest": "docker.io/cyanautomation/kaseki-agent@sha256:...",
+  "templateImageDigest": "docker.io/cyanautomation/kaseki-agent:latest",
   "templateDir": "/agents/kaseki-template",
   "templateRef": "abc1234",
   "resultsDir": "/agents/kaseki-results",
