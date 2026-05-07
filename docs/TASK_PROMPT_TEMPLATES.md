@@ -79,6 +79,7 @@ The fix must:
 ```
 
 **Example:**
+
 ```
 Fix the parser bug that fails on empty input in `src/lib/parser.ts`.
 
@@ -99,6 +100,7 @@ The fix must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.validation.ts"
 ```
@@ -127,6 +129,7 @@ The fix must:
 ```
 
 **Example:**
+
 ```
 Fix the `normalizeEmail()` function in `src/lib/email-utils.ts` to properly validate email format.
 
@@ -146,6 +149,7 @@ The fix must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/email-utils.ts tests/email-utils.test.ts"
 ```
@@ -179,6 +183,7 @@ The component must:
 ```
 
 **Example:**
+
 ```
 Implement the PricingCard component in `src/components/pricing-card`.
 
@@ -204,6 +209,7 @@ The component must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/components/pricing-card/** src/hooks/** tests/components/pricing-card/**"
 ```
@@ -238,6 +244,7 @@ The endpoint must:
 ```
 
 **Example:**
+
 ```
 Implement the POST /api/users endpoint.
 
@@ -266,6 +273,7 @@ The endpoint must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/app/api/users/** src/lib/user-service.ts src/types/api.ts tests/api/users.test.ts"
 ```
@@ -294,6 +302,7 @@ The fix must:
 ```
 
 **Example:**
+
 ```
 Fix TypeScript compilation error in tsconfig.json where async/await doesn't transpile for ES2020.
 
@@ -312,6 +321,7 @@ The fix must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="tsconfig.json src/lib/async-utils.ts"
 ```
@@ -341,6 +351,7 @@ The refactor must:
 ```
 
 **Example:**
+
 ```
 Refactor the auth module to extract session utils into a separate file.
 
@@ -362,6 +373,7 @@ The refactor must:
 ```
 
 **Recommended Allowlist:**
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/auth.ts src/lib/session-utils.ts tests/auth.test.ts tests/session-utils.test.ts"
 ```
@@ -462,6 +474,7 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/role-utils.ts tests/role-utils.te
 ```
 
 **Result:**
+
 - Agent stays focused on the task
 - Allowlist ensures no surprise changes
 - Easy to review what changed (small diff)
@@ -470,14 +483,16 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/role-utils.ts tests/role-utils.te
 
 ## Troubleshooting: Agent Changed Too Many Files
 
-### If Prompt is Clear + Allowlist is Set + Agent Still Over-Modifies:
+### If Prompt is Clear + Allowlist is Set + Agent Still Over-Modifies
 
 1. **Check restoration report** — which files were restored?
+
    ```bash
    cat /results/kaseki-N/restoration-report.md
    ```
 
 2. **Check agent reasoning** — look at pi-summary.json
+
    ```bash
    cat /results/kaseki-N/pi-summary.json | jq '.thinking' | head -100
    ```
@@ -501,6 +516,7 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/role-utils.ts tests/role-utils.te
 ## Summary
 
 **Good Task Prompts:**
+
 1. Have a **clear, specific goal** (not vague)
 2. Define **scope boundaries** (which files to touch)
 3. State **constraints** (what not to do)
@@ -508,6 +524,7 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/role-utils.ts tests/role-utils.te
 5. Are **focused** (one task, not multiple)
 
 **Good Allowlist:**
+
 1. **Matches the prompt scope** exactly
 2. Is **as narrow as reasonable** (prevent scope creep)
 3. Is **documented** (why these files?)

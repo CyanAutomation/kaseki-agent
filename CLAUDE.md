@@ -253,6 +253,7 @@ Recommended inspection order:
 **Problem: Too many files are restored before validation?**
 
 See [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md) for:
+
 - Allowlist pattern syntax and examples
 - Pre-built templates for common task types
 - How to use `scripts/suggest-allowlist.sh` to auto-generate patterns
@@ -262,6 +263,7 @@ See [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md) for:
 **Problem: Agent made too many unintended changes?**
 
 See [docs/TASK_PROMPT_TEMPLATES.md](docs/TASK_PROMPT_TEMPLATES.md) for:
+
 - How to write clear, scoped task prompts
 - Examples of good vs. bad prompts
 - Anti-patterns that lead to scope creep
