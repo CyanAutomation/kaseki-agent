@@ -57,7 +57,7 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
 }
 
 describe('pi-event-filter fast correctness tests', () => {
-  test('filters thinking events and removes thinking content', async () => {
+  test('filters a tiny JSONL fixture and writes representative summary', async () => {
     const fixture = [
       JSON.stringify({
         type: 'tool_execution_start',
@@ -100,6 +100,23 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(kept.assistantMessageEvent.partial.content).toEqual([
       { type: 'output_text', text: 'visible' },
     ]);
+    expect(result.summary).toMatchObject({
+      selected_model: 'small-model',
+      selected_api: 'small-api',
+      invalid_json_lines: 0,
+      tool_start_count: 1,
+      tool_end_count: 1,
+      first_event_at: '2026-01-01T00:00:00.000Z',
+      last_event_at: '2026-01-01T00:00:01.000Z',
+      event_counts: {
+        tool_execution_start: 1,
+        tool_execution_end: 1,
+      },
+      assistant_event_counts: {
+        thinking_delta: 1,
+        output_delta: 1,
+      },
+    });
   });
 
   test('computes summary counts and preferred model/api from medium fixture', async () => {
