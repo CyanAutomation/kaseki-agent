@@ -61,6 +61,7 @@ done
 detect_os() {
   if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     if [ -f /etc/os-release ]; then
+      # shellcheck disable=SC1091
       . /etc/os-release
       case "$ID" in
         debian|ubuntu|raspbian)

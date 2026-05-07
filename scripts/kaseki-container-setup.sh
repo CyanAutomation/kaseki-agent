@@ -71,7 +71,7 @@ get_api_key() {
   # Priority 3: Prompt interactively
   echo "You can obtain an API key from: https://openrouter.ai/keys"
   echo ""
-  read -sp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
+  read -rsp "Enter your OpenRouter API key (sk-or-v1-...): " API_KEY
   echo
   
   # Validate key format
