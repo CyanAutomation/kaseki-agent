@@ -511,6 +511,44 @@ docker pull ghcr.io/:latest
 
 Both are equivalent and receive identical multi-architecture builds for `linux/amd64` and `linux/arm64`.
 
+### Releasing a New Version
+
+Releases are fully automated using **semantic-release** and **conventional commits**.
+
+**Prerequisites:**
+- All commits on `main` follow [conventional commit](CONTRIBUTING.md#6-release-process-and-conventional-commits) format (`feat:`, `fix:`, `chore:`, etc.)
+- CI/CD (type-check, lint, test) is passing on `main`
+- You have permission to push tags and create GitHub Releases
+
+**Process:**
+
+1. **Test the release locally (recommended):**
+   ```bash
+   npm run release:dry
+   ```
+   This shows which version will be released and previews the changelog without creating tags or releases.
+
+2. **Create the release:**
+   ```bash
+   npm run release
+   ```
+   This will:
+   - Analyze commits since the last version tag
+   - Automatically determine version bump (major/minor/patch)
+   - Update `package.json` version
+   - Generate/update `CHANGELOG.md`
+   - Create a git tag (e.g., `v0.2.0`)
+   - Push tag to GitHub
+   - Create a GitHub Release with release notes
+   - Trigger Docker multi-arch builds (amd64 + arm64) and publish to both Docker Hub and GitHub Container Registry
+
+3. **Verify the release:**
+   - Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) tab for the new release
+   - Confirm `CHANGELOG.md` was updated in the repository
+   - Verify Docker images are published with the new tag (check status of the workflow run)
+
+See [CONTRIBUTING.md § Release Process](CONTRIBUTING.md#6-release-process-and-conventional-commits) for detailed commit format guidelines.
+
 ### Tag Publishing Schedule
 
 - **Stable version tags** (e.g., `0.1.0`): Published once via version tag push; never overwritten

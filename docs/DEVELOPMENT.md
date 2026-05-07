@@ -367,6 +367,70 @@ setInterval(() => {
 - [ ] Webhook callbacks on completion
 - [ ] OpenAPI 3.0 spec auto-generation
 
+## Releases and Versioning
+
+Kaseki Agent uses **semantic-release** to automate versioning, changelog generation, and GitHub Release creation. Releases are triggered manually by running `npm run release`.
+
+### Version Strategy
+
+This project follows [Semantic Versioning](https://semver.org/):
+- **Major** (X.0.0): Breaking API changes, incompatible behavior
+- **Minor** (0.Y.0): New features, backward compatible
+- **Patch** (0.0.Z): Bug fixes, backward compatible
+
+### Automated Version Bumping
+
+Version bumps are determined from commit messages using the [conventional commits](../CONTRIBUTING.md#6-release-process-and-conventional-commits) standard:
+
+- `feat:` → **Minor** version bump
+- `fix:`, `perf:`, `revert:` → **Patch** version bump
+- `chore:`, `docs:`, `style:`, `refactor:`, `test:` → **No version bump** (included in changelog only)
+
+### Making a Release
+
+**1. Ensure main branch is clean and all CI passes:**
+```bash
+git status
+# All checks in GitHub Actions must pass
+```
+
+**2. Preview the release (recommended):**
+```bash
+npm run release:dry
+```
+This shows which version will be released and previews the changelog without creating any tags or releases.
+
+**3. Create the release:**
+```bash
+npm run release
+```
+This will:
+- Analyze commits since the last release
+- Determine new version automatically
+- Update `package.json` version
+- Update `CHANGELOG.md` with formatted release notes
+- Create a git tag (e.g., `v1.2.3`)
+- Push tag and commits to GitHub
+- Create a GitHub Release with release notes
+- Trigger Docker multi-arch build and publish to registries
+
+**4. Verify:**
+- Check [Releases](https://github.com/CyanAutomation/kaseki-agent/releases) on GitHub
+- Verify CHANGELOG.md was updated in the repository
+- Confirm Docker images were published (check [GitHub Packages](https://github.com/CyanAutomation/kaseki-agent/pkgs/container/kaseki-agent) or Docker Hub)
+
+### Changelog Format
+
+The `CHANGELOG.md` is automatically updated with entries grouped by type:
+- **Features** — From `feat:` commits
+- **Bug Fixes** — From `fix:` commits
+- **Performance Improvements** — From `perf:` commits
+- **Documentation** — From `docs:` commits (hidden by default)
+
+Each entry includes the commit hash and links to the commit in GitHub.
+
+For manual additions or corrections, edit `CHANGELOG.md` directly before committing to main.
+
 ## Useful Resources
 
 - Express.js docs: https://expressjs.com/
