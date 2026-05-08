@@ -157,11 +157,30 @@ describe('kaseki-api-config load configuration', () => {
     expect(() => loadConfig()).toThrow("KASEKI_TASK_MODE must be 'patch' or 'inspect'");
   });
 
-  test('loadConfig throws when KASEKI_RESULTS_DIR does not exist', () => {
+  test('loadConfig auto-creates KASEKI_RESULTS_DIR if it does not exist', () => {
     process.env.KASEKI_API_KEYS = 'test-key';
-    process.env.KASEKI_RESULTS_DIR = '/nonexistent/path/to/dir';
+    const newDir = path.join(testDir, 'new', 'nested', 'dir');
+    process.env.KASEKI_RESULTS_DIR = newDir;
 
-    expect(() => loadConfig()).toThrow('KASEKI_RESULTS_DIR does not exist');
+    const config = loadConfig();
+
+    expect(config.resultsDir).toBe(newDir);
+    expect(fs.existsSync(newDir)).toBe(true);
+    expect(fs.statSync(newDir).isDirectory()).toBe(true);
+  });
+
+  test('loadConfig throws when KASEKI_RESULTS_DIR cannot be created due to permissions', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    // Use a path that typically can't be created (system root requires elevated privileges)
+    process.env.KASEKI_RESULTS_DIR = '/root/kaseki-test-no-perms';
+
+    // Skip this test on systems where /root is writable (e.g., running as root in container)
+    if (process.geteuid && process.geteuid() === 0) {
+      // Running as root, skip permission test
+      return;
+    }
+
+    expect(() => loadConfig()).toThrow(/Failed to create KASEKI_RESULTS_DIR/);
   });
 
   test('loadConfig throws when KASEKI_API_LOG_LEVEL is invalid', () => {
