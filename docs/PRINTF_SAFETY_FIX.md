@@ -8,6 +8,7 @@
 **Reproducibility:** 100% with specific inputs
 
 ### Original Error Log
+
 ```
 [progress] validation info: finished with exit 0
 
@@ -26,11 +27,13 @@ printf: usage: printf [-v var] format [arguments]
 The error `printf: - : invalid option` occurs when printf receives a format string that starts with `-` and is interpreted as a command-line option rather than a format string.
 
 This could occur in the restoration report generation if:
+
 1. A count variable (like `restored_count`, `kept_count`, `total_count`) contained the value `-` instead of a numeric value
 2. The printf call didn't use the `--` separator to prevent option interpretation
 3. A grep command or json_encode operation failed and returned `-` as output
 
 The vulnerability was in:
+
 - `generate_restoration_report()` function (lines 472-477) — printf calls with format strings starting with `-`
 - Lack of validation before arithmetic operations on count variables
 - Missing error handling for grep and json_encode commands
@@ -44,6 +47,7 @@ The vulnerability was in:
 **Purpose:** Validate that a variable contains only numeric digits before using it in arithmetic or printf format operations.
 
 **Code:**
+
 ```bash
 validate_numeric() {
   local var_name="$1"
@@ -69,6 +73,7 @@ validate_numeric() {
 **Location:** Lines 151-175 of kaseki-agent.sh
 
 **Changes:**
+
 - Added `command -v node` check to verify node availability
 - Wrap node execution with error handling
 - Return empty JSON string `""` as fallback instead of crashing
@@ -81,6 +86,7 @@ validate_numeric() {
 **Location:** Lines 177-183 of kaseki-agent.sh
 
 **Changes:**
+
 - Added node availability check
 - Return empty JSON array `[]` on failure
 - Maintains fallback behavior
@@ -92,7 +98,9 @@ validate_numeric() {
 **Location:** Lines 501-575 of kaseki-agent.sh
 
 **Key Changes:**
+
 1. **Validation Before Arithmetic (lines 510-521)**
+
    ```bash
    restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || echo 0)
    if ! validate_numeric "restored_count" "$restored_count"; then
@@ -109,6 +117,7 @@ validate_numeric() {
 3. **Printf Safety (lines 531-538)**
    - Added `--` separator to all printf calls
    - Added error handling with `|| { ... return 1; }`
+
    ```bash
    printf -- '- **Total Files Changed:** %d\n' "$total_count" || { printf 'error: failed to write total count\n' >&2; return 1; }
    ```
@@ -122,11 +131,13 @@ validate_numeric() {
 **Location:** Lines 614-627 of kaseki-agent.sh
 
 **Changes:**
+
 - Added debug output before restoration report generation
 - Added error handling to continue cleanup even if report generation fails
 - Logs file state information for diagnostics
 
 **Code:**
+
 ```bash
 # Debug output for restoration report generation
 if [ -f /results/restoration.jsonl ]; then
@@ -145,6 +156,7 @@ fi
 **Added `--` Separator to printf Calls (lines 531-538)**
 
 Format strings starting with `-` are now protected:
+
 ```bash
 # Before (vulnerable)
 printf '- **Total Files Changed:** %d\n' "$total_count"
@@ -195,11 +207,13 @@ Created comprehensive test suite: `/test/printf-safety-focused.test.sh`
 To verify the fix works:
 
 1. **Check syntax:**
+
    ```bash
    bash -n /workspaces/kaseki-agent/kaseki-agent.sh
    ```
 
 2. **Run test suite:**
+
    ```bash
    bash /workspaces/kaseki-agent/test/printf-safety-focused.test.sh
    ```
@@ -223,6 +237,7 @@ warning: restoration report generation failed - restored_count validation failed
 ```
 
 These messages clearly indicate:
+
 - What variable failed validation
 - Why it failed (the actual value)
 - What stage of processing we were in
@@ -237,6 +252,7 @@ These messages clearly indicate:
 ## Backward Compatibility
 
 All changes are backward compatible:
+
 - No changes to external interface or output format
 - No changes to exit codes or behavior in normal cases
 - Only affects error handling and logging in edge cases
@@ -245,6 +261,7 @@ All changes are backward compatible:
 ## Performance Impact
 
 Minimal:
+
 - Added `validate_numeric()` calls only in restoration report generation (runs once at end)
 - Added node availability check runs once per json_encode call
 - Additional logging is minimal (single digit extra system calls)

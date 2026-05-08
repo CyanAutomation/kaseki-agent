@@ -7,6 +7,7 @@ Kaseki Agent has been successfully converted from shell scripts to a public npm 
 ## What Changed
 
 ### Before (Shell-Based)
+
 ```bash
 # Setup
 ./scripts/kaseki-setup.sh
@@ -21,6 +22,7 @@ export KASEKI_TIMEOUT_SECONDS=1200
 ```
 
 ### After (NPM Package)
+
 ```bash
 # Setup
 npm install -g @cyanautomation/kaseki-agent
@@ -47,12 +49,14 @@ kaseki-agent run https://github.com/repo main
 ## Installation Options
 
 ### 1. Global NPM (Recommended)
+
 ```bash
 npm install -g @cyanautomation/kaseki-agent
 kaseki-agent setup
 ```
 
 ### 2. Local NPM
+
 ```bash
 npm install @cyanautomation/kaseki-agent
 npx kaseki-agent setup
@@ -60,6 +64,7 @@ npx kaseki-agent run <repo> <ref>
 ```
 
 ### 3. Docker Container
+
 ```bash
 docker run -it docker.io/cyanautomation/kaseki-agent:latest setup
 docker run -it docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
@@ -81,6 +86,7 @@ docker run -it docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 ## Configuration Migration
 
 ### From Environment Variables
+
 ```bash
 # Old way (shell scripts)
 export OPENROUTER_API_KEY=sk-or-...
@@ -91,6 +97,7 @@ export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test"
 ```
 
 ### To Configuration Files
+
 ```bash
 # New way (npm package)
 # ~/.kaseki/config.json (global)
@@ -109,7 +116,9 @@ kaseki-agent run https://github.com/repo main
 ```
 
 ### Environment Variables Still Supported
+
 All original environment variables still work for backward compatibility:
+
 - `OPENROUTER_API_KEY_FILE`
 - `KASEKI_MODEL`
 - `KASEKI_AGENT_TIMEOUT_SECONDS`
@@ -122,24 +131,28 @@ All original environment variables still work for backward compatibility:
 ### Implemented Components
 
 ✅ **CLI Foundation**
+
 - Entry point: `src/cli.ts`
 - Router: `src/cli/KasekiCLI.ts`
 - Base class: `src/cli/BaseCommand.ts`
 - Lazy-loading command dispatch
 
 ✅ **Configuration System**
+
 - 4-tier precedence (CLI → project → user → env → defaults)
 - Zod-based schema validation (60+ variables)
 - Dot-notation access
 - Deep merging of config sources
 
 ✅ **Secrets Management**
+
 - Primary backend: Linux `pass` (password-store)
 - Fallback backend: `~/.kaseki/secrets/` (0600 permissions)
 - Never exposes keys via environment to child processes
 - Integrated with ConfigManager
 
 ✅ **Docker Orchestration**
+
 - Docker availability checking
 - Image pulling with 3-attempt retry
 - Container spawning with security hardening
@@ -152,6 +165,7 @@ All original environment variables still work for backward compatibility:
 - Container lifecycle management (stop, remove, list, logs)
 
 ✅ **Instance Management**
+
 - Auto-generates instance IDs (kaseki-1, kaseki-2, etc.)
 - Directory creation (workspace + results)
 - Metadata persistence (JSON)
@@ -159,6 +173,7 @@ All original environment variables still work for backward compatibility:
 - Cleanup with optional workspace retention
 
 ✅ **All 8 Commands**
+
 1. `setup` — Interactive first-time configuration
 2. `run` — Execute agent on repository (6-step flow)
 3. `doctor` — Health checks with auto-fix
@@ -171,12 +186,14 @@ All original environment variables still work for backward compatibility:
 ### Build & Deployment
 
 ✅ **TypeScript Compilation**
+
 - TypeScript 5.7.3 in strict mode
 - ES2024 target
 - ESNext modules with `.js` import extensions
 - Zero compilation errors
 
 ✅ **Package Configuration**
+
 - Scoped package: `@cyanautomation/kaseki-agent`
 - Public registry (npmjs.com)
 - Proper `bin` entry point
@@ -184,6 +201,7 @@ All original environment variables still work for backward compatibility:
 - Node.js 24+ requirement
 
 ✅ **CI/CD Integration**
+
 - .github/workflows/release.yml (semantic-release)
 - Build verification after each phase
 - Automated npm publishing
@@ -191,11 +209,13 @@ All original environment variables still work for backward compatibility:
 ## Documentation
 
 ### New Documentation
+
 - **[docs/NPM_SETUP.md](docs/NPM_SETUP.md)** — Comprehensive npm package setup guide
 - **[README.md](README.md)** — Updated with npm-first approach
 - **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — Points to npm setup, preserves shell script reference
 
 ### Preserved Documentation
+
 - **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** — Development guide
 - **[docs/CLI.md](docs/CLI.md)** — CLI monitoring
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — Production deployment
@@ -205,6 +225,7 @@ All original environment variables still work for backward compatibility:
 ## Testing
 
 ### What's Been Verified
+
 ✅ Build succeeds with zero errors
 ✅ All 8 commands are registered
 ✅ CLI routing works correctly
@@ -212,6 +233,7 @@ All original environment variables still work for backward compatibility:
 ✅ Package.json properly configured for npm
 
 ### What Needs Testing
+
 - [ ] Interactive setup wizard (integration test)
 - [ ] Doctor command health checks (manual test)
 - [ ] End-to-end run command (Docker required)
@@ -235,12 +257,14 @@ All original environment variables still work for backward compatibility:
 The following shell scripts can now be archived (kept in git history):
 
 **Can be archived:**
+
 - `run-kaseki.sh` → `kaseki-agent run`
 - `scripts/kaseki-setup.sh` → `kaseki-agent setup`
 - `scripts/kaseki-healthcheck.sh` → `kaseki-agent doctor`
 - Various other helper scripts → equivalent npm commands
 
 **Should be kept (Docker image needs them):**
+
 - `kaseki-agent.sh` — Docker entrypoint
 - `scripts/docker-entrypoint.sh` — Docker setup
 - `Dockerfile` — Container image definition
@@ -248,6 +272,7 @@ The following shell scripts can now be archived (kept in git history):
 ## Files Created/Modified
 
 ### New Files
+
 - `src/cli.ts` (94 lines) — Entry point
 - `src/cli/KasekiCLI.ts` (113 lines) — Command router
 - `src/cli/BaseCommand.ts` (45 lines) — Base class
@@ -267,11 +292,13 @@ The following shell scripts can now be archived (kept in git history):
 - `docs/NPM_SETUP.md` (500+ lines) — NPM setup guide
 
 ### Modified Files
+
 - `package.json` — Scoped package, bin entry, os constraint
 - `README.md` — NPM-first documentation
 - `docs/SETUP_GUIDE.md` — Points to NPM_SETUP.md
 
 ### Files to Archive (Optional)
+
 ```bash
 # Create archived/ directory and move these:
 archived/run-kaseki.sh
@@ -295,17 +322,20 @@ archived/scripts/dry-run-allowlist.sh
 ## Security Notes
 
 ✅ **API Key Protection**
+
 - Never exposed via environment to child processes
 - Mounted as read-only file in container
 - Stored in secure keyring (`pass`) or file with 0600 permissions
 
 ✅ **Docker Security**
+
 - Read-only root filesystem
 - Minimal capabilities (--cap-drop=ALL)
 - Non-root user execution
 - tmpfs for /tmp, /var/tmp, /run with nosuid/nodev/noexec
 
 ✅ **Secret Management**
+
 - Primary: Linux `pass` keyring (true credential storage)
 - Fallback: File-based with strict permissions
 - Secrets never logged or exposed in output
@@ -313,11 +343,13 @@ archived/scripts/dry-run-allowlist.sh
 ## Next Steps
 
 ### For Users
+
 1. Install npm package: `npm install -g @cyanautomation/kaseki-agent`
 2. Run setup: `kaseki-agent setup`
 3. Start using: `kaseki-agent run <repo> <ref>`
 
 ### For Maintainers
+
 1. ✅ Complete (all phases implemented)
 2. Test thoroughly (manual and integration tests)
 3. Update CI/CD for npm publishing (semantic-release ready)
@@ -326,6 +358,7 @@ archived/scripts/dry-run-allowlist.sh
 6. Update deployment documentation
 
 ### For Contributors
+
 - TypeScript sources in `src/`
 - Compile with `npm run build`
 - Tests with `npm test`

@@ -1,7 +1,9 @@
 # Validation Fix Implementation Summary
 
 ## Issue
+
 Kaseki-agent validation commands failed with getcwd() error on matmetrics repo:
+
 ```
 shell-init: error retrieving current directory: getcwd: cannot access parent directories: No such file or directory
 Error: ENOENT: process.cwd failed
@@ -10,22 +12,28 @@ Error: ENOENT: process.cwd failed
 All three validation commands (npm run check, test, build) failed with exit code 7.
 
 ## Root Cause
+
 The validation phase executed npm commands using `bash -lc` (login shell), which:
+
 1. Sources `/etc/profile` and `~/.bashrc` during startup
 2. Attempts to retrieve current working directory via `getcwd()` syscall
 3. In `--read-only` containers with restricted filesystem access, this fails
 4. Results in ENOENT error before any user command runs
 
 ## Solution
+
 Three complementary fixes applied to [kaseki-agent.sh](kaseki-agent.sh):
 
 ### Fix 1: Use Non-Login Shell (Line 1579)
+
 **Before:**
+
 ```bash
 bash -lc "$trimmed"
 ```
 
 **After:**
+
 ```bash
 # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers
 # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
@@ -36,7 +44,9 @@ bash -c "$trimmed"
 **Impact**: Skips shell initialization entirely; npm commands still work normally
 
 ### Fix 2: Pre-Validation Directory Checkpoint (Lines 1549-1561)
+
 **Added:**
+
 ```bash
 # Checkpoint: Verify working directory exists before validation
 if ! [ -d /workspace/repo ]; then
@@ -53,7 +63,9 @@ fi
 **Impact**: Catches directory issues early; provides diagnostic info for troubleshooting
 
 ### Fix 3: Enhanced Error Diagnostics (Lines 1591-1604)
+
 **Added:**
+
 ```bash
 # Enhanced diagnostics for getcwd-type errors
 if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' /results/validation.log; then
@@ -76,17 +88,20 @@ fi
 ## Testing
 
 ### Unit Tests ✅
+
 - Non-login shell syntax verified in code
 - Directory checkpoint logic confirmed
 - Enhanced diagnostics patterns found
 - Script syntax validation passed
 
 ### Integration Tests ✅
+
 - Non-login npm validation commands execute successfully
 - Directory checkpoint detects missing directories
 - Enhanced diagnostics captured correctly
 
 ### Docker Build ✅
+
 - Image built: `kaseki-agent:fix-validation`
 - Script syntax valid in container
 - Non-login shell fix present in deployed image
@@ -94,11 +109,13 @@ fi
 ## Expected Outcome
 
 **Before Fix:**
+
 - matmetrics validation fails immediately
 - Exit: 7 (from npm getcwd error)
 - No diagnostic info about filesystem state
 
 **After Fix:**
+
 - matmetrics validation commands execute normally
 - npm properly runs `npm run check`, `npm run test`, `npm run build`
 - If directory issues occur, checkpoint catches them with full diagnostics
@@ -107,6 +124,7 @@ fi
 ## Backwards Compatibility
 
 ✅ No breaking changes:
+
 - Non-login shell is transparent to npm commands
 - Directory checkpoint is defensive; only triggers if /workspace/repo missing
 - Enhanced diagnostics are read-only; don't modify execution flow
