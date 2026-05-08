@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.4.1...v1.5.0) (2026-05-08)
+
+### Features
+
+* add GitHub Actions workflow for publishing to NPM ([e0a7e3c](https://github.com/CyanAutomation/kaseki-agent/commit/e0a7e3c6af932536c90a4ae798f0e7d5a6f3f172))
+* enhance KASEKI_RESULTS_DIR handling by auto-creating directory and improving error messages ([818b208](https://github.com/CyanAutomation/kaseki-agent/commit/818b208680d7753319bda2d33339740e107562c5))
+
+### Bug Fixes
+
+* correct error message formatting in loadConfig function ([bba3909](https://github.com/CyanAutomation/kaseki-agent/commit/bba3909dc5934f7eb46490af51d0467e668cfe04))
+* explicitly include undici in global pi-coding-agent installation to resolve module dependencies ([7137030](https://github.com/CyanAutomation/kaseki-agent/commit/7137030bacb766344f8ddd7f680c114787241600))
+* update Docker GitHub Actions to Node.js 24 compatible versions ([0d56415](https://github.com/CyanAutomation/kaseki-agent/commit/0d56415cf72632bd07c9f44c2ad1bb5993c51b7f))
+* update package.json to include missing files and add prepublish script ([e01cfdb](https://github.com/CyanAutomation/kaseki-agent/commit/e01cfdb041fbecb4e763a28bf113c5cfa8fd8087))
+* update Pi CLI installation to create a wrapper script for proper module resolution ([1cbf744](https://github.com/CyanAutomation/kaseki-agent/commit/1cbf744ff440a9755dbfe4e05ae74b3d45273f66))
+* update publish workflow to enhance OIDC trusted publishing and streamline npm authentication ([fa6c729](https://github.com/CyanAutomation/kaseki-agent/commit/fa6c729d1af51a0aaa3367270f2c45b2aadd296d))
+
 ## [1.4.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.3.0...v1.4.0) (2026-05-08)
 
 ### Features
