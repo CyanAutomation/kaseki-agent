@@ -13,6 +13,14 @@
   "bin": {
     "kaseki-agent": "dist/cli.js"
   },
+  "files": [
+    "dist/",
+    "kaseki-agent.sh",
+    "scripts/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/CyanAutomation/kaseki-agent.git"
@@ -31,6 +39,7 @@
   "homepage": "https://github.com/CyanAutomation/kaseki-agent#readme",
   "scripts": {
     "build": "tsc && node dist/add-js-extensions.js && chmod 0755 dist/*.js",
+    "prepublishOnly": "npm run build",
     "type-check": "tsc --noEmit",
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",
