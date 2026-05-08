@@ -549,6 +549,55 @@ sudo systemctl daemon-reload
 
 ---
 
+## Publishing & Release Workflows
+
+### npm Package Publishing
+
+The package is published to npm registry via GitHub Actions:
+
+**Automated Flow (Recommended)**
+1. Run the **Release** workflow (`.github/workflows/release.yml`) manually or via push
+   - Creates semantic version tags via `semantic-release`
+   - Generates GitHub release notes
+2. **Publish NPM** workflow (`.github/workflows/publish-npm.yml`) runs automatically
+   - Triggered when Release completes successfully
+   - Builds package, publishes to npm, verifies on registry
+
+**Manual Publishing (Recovery Scenario)**
+
+If the automatic publish fails (e.g., transient network issue) but Release succeeded:
+
+1. Open GitHub Actions → "Publish NPM" workflow
+2. Click "Run workflow" button
+3. **Tags input** (optional):
+   - Leave empty to auto-detect from latest git tag (default)
+   - Provide comma-separated tags to override (e.g., `1.2.3,latest`)
+4. Click "Run workflow"
+5. Monitor the run in the Actions tab
+6. Verify on npm registry: `npm view @cyanautomation/kaseki-agent@<version>`
+
+**Manual Publishing with Custom Version**
+
+For testing-only publishes (alpha/beta/rc tags):
+1. Create a git tag: `git tag v1.2.3-alpha.1 && git push origin v1.2.3-alpha.1`
+2. Run Publish NPM workflow manually
+3. Provide custom tags: `1.2.3-alpha.1`
+
+**Checking Published Versions**
+
+```bash
+# View current npm package info
+npm view @cyanautomation/kaseki-agent
+
+# Check specific version
+npm view @cyanautomation/kaseki-agent@1.2.3
+
+# View publication history
+npm view @cyanautomation/kaseki-agent versions | tail -20
+```
+
+---
+
 ## Next Steps
 
 1. **Choose your deployment path** — Docker Compose (recommended) or Node.js
