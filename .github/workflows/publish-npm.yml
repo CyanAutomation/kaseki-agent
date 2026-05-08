@@ -1,0 +1,74 @@
+name: Publish NPM
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Get all tags
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Detect version
+        id: version
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Detected version: ${VERSION}"
+
+      - name: Build
+        run: npm run build
+
+      - name: Authenticate npm
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          chmod 0600 ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm registry
+        run: npm publish --access public
+        env:
+          # npm reads auth from ~/.npmrc, but we keep token in secret
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify on npm registry
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          echo "Waiting for npm registry to index package..."
+          sleep 5
+          npm view @cyanautomation/kaseki-agent@${VERSION} > /tmp/npm-view.json
+          if grep -q "\"version\": \"${VERSION}\"" /tmp/npm-view.json; then
+            echo "✅ Package successfully published: @cyanautomation/kaseki-agent@${VERSION}"
+            cat /tmp/npm-view.json | jq '.version, .dist.tarball'
+          else
+            echo "❌ Failed to verify package on npm registry"
+            exit 1
+          fi
+
+      - name: Upload publish metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-publish-metadata
+          path: /tmp/npm-view.json
+          retention-days: 30
