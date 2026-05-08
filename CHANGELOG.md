@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.3.0...v1.4.0) (2026-05-08)
+
+### Features
+
+* add CLI commands for configuration, health checks, instance listing, reporting, execution, secrets management, API service, and setup wizard ([a6ddde6](https://github.com/CyanAutomation/kaseki-agent/commit/a6ddde6371a50352b2f2fdd9e6d89aa13c956286))
+* Add Pi Progress Summarizer with enhanced event handling and logging ([7aa8bb9](https://github.com/CyanAutomation/kaseki-agent/commit/7aa8bb974b645cc75c497f3acd0f8e12f1f8a9be))
+* Enhance documentation and implement new features for kaseki-agent ([4df2c4b](https://github.com/CyanAutomation/kaseki-agent/commit/4df2c4b8b30a1e05e4eb07785c75ecc44f87f53f))
+* Implement list command to display Kaseki instances with filtering and sorting ([9bd47e8](https://github.com/CyanAutomation/kaseki-agent/commit/9bd47e896f56432f5060a59d27c21ad24026e05f))
+* Migrate Kaseki Agent to NPM package and enhance documentation ([7e825f4](https://github.com/CyanAutomation/kaseki-agent/commit/7e825f46bf05176ea4eeebce12256166623155ed))
+* **validation:** enhance handling of missing npm scripts in validation commands ([1bfe5f8](https://github.com/CyanAutomation/kaseki-agent/commit/1bfe5f8d65aeb7597c88c3faaddad96157463350))
+
 ## [1.3.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.2.0...v1.3.0) (2026-05-08)
 
 ### Features
