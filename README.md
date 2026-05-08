@@ -1,14 +1,60 @@
 # Kaseki Agent
 
-Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run is a numbered, disposable container instance such as `kaseki-1` or `kaseki-2`. This template uses the Pi coding-agent CLI with OpenRouter.
+Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run is a numbered, disposable container instance such as `kaseki-1` or `kaseki-2`. This package provides a complete CLI and REST API for orchestrating the Pi coding-agent with OpenRouter.
 
-## Quick Summary
+## Quick Start
+
+### **Installation (Recommended)**
+
+```bash
+# Global install (recommended)
+npm install -g @cyanautomation/kaseki-agent
+
+# First-time setup
+kaseki-agent setup
+
+# Run agent on a repository
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+
+# View results
+kaseki-agent list
+kaseki-agent report kaseki-1
+```
+
+### **Without Global Install**
+
+```bash
+npm install @cyanautomation/kaseki-agent
+npx kaseki-agent setup
+npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+```
+
+### **Using Docker** ⭐ (Alternative)
+
+If you prefer to avoid installing Node.js globally:
+
+```bash
+# Setup API key
+docker run -it \
+  -v ~/.kaseki/secrets:/secrets \
+  docker.io/cyanautomation/kaseki-agent:latest \
+  setup
+
+# Run agent
+docker run -it \
+  -v ~/.kaseki/secrets:/secrets \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  docker.io/cyanautomation/kaseki-agent:latest \
+  run https://github.com/CyanAutomation/crudmapper main
+```
+
+## Overview
 
 **Kaseki** orchestrates three deployment patterns:
 
-1. **Direct CLI** — `run-kaseki.sh` on a local/remote host (traditional)
-2. **Remote Activation** — `kaseki-activate.sh` for SSH/controller-driven setup and execution
-3. **REST API Service** — Long-running `kaseki-api` service for distributed orchestration (ideal for OpenClaw and similar controllers)
+1. **CLI** — `kaseki-agent` command for direct execution (this package)
+2. **Docker** — Containerized execution without host dependencies  
+3. **REST API** — `kaseki-agent serve` for distributed orchestration
 
 Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated workspace and results.
 
@@ -16,68 +62,307 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 
 ## Getting Started
 
-👉 **New to Kaseki?** Choose your setup path:
+### **1. Installation & Setup**
 
-### **Easiest: Container-Based Setup** ⭐ (Recommended for New Users)
-
-Minimal host complexity — just Docker needed:
+**Option A: Global NPM**
 
 ```bash
-# One-time setup (interactive, saves API key)
+npm install -g @cyanautomation/kaseki-agent
+kaseki-agent setup
+```
+
+**Option B: Local NPM**
+
+```bash
+npm install @cyanautomation/kaseki-agent
+npx kaseki-agent setup
+```
+
+**Option C: Docker**
+
+```bash
 docker run -it \
-  -v /var/run/docker.sock:/var/run/docker.sock \
   -v ~/.kaseki/secrets:/secrets \
   docker.io/cyanautomation/kaseki-agent:latest \
   setup
-
-# Run your first task
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/your-org/your-repo main
 ```
 
-**See [docs/DOCKER_SETUP.md](docs/DOCKER_SETUP.md)** for all container-based workflows.
-
-### **Traditional: Host-Based Setup** (More Control)
-
-Full control with host scripts:
+### **2. Verify Installation**
 
 ```bash
-# Clone the repo
-git clone https://github.com/CyanAutomation/kaseki-agent.git /agents/kaseki-template
-cd /agents/kaseki-template
-
-# Interactive setup (validates dependencies, secures API key)
-./scripts/kaseki-setup.sh
-
-# Run your first task
-./run-kaseki.sh https://github.com/your-org/your-repo main
-
-# Check results
-cat /agents/kaseki-results/kaseki-1/result-summary.md
+kaseki-agent doctor
 ```
 
-**See [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** for complete walkthrough.
+### **3. Run Your First Task**
 
-### **Choose Your Deployment Pattern**
+```bash
+# Simple example
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 
-- **Single host?** → [scripts/templates/SINGLE_HOST_CLI.md](scripts/templates/SINGLE_HOST_CLI.md)
-- **Multiple hosts?** → [scripts/templates/MULTI_HOST_DISTRIBUTED.md](scripts/templates/MULTI_HOST_DISTRIBUTED.md)
-- **HTTP REST API?** → [scripts/templates/REST_API_SERVICE.md](scripts/templates/REST_API_SERVICE.md)
+# With custom task prompt
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
+  "Fix the TypeScript errors in src/"
+```
+
+### **4. View Results**
+
+```bash
+# List all instances
+kaseki-agent list
+
+# View specific instance
+kaseki-agent report kaseki-1
+```
 
 ---
 
-## Key Infrastructure (May 2026)
+## CLI Commands
 
-- **Node.js**: v24 (bookworm-slim base image)
-- **Docker Build**: Optimized multi-stage with consolidated RUN layers  
-- **CI/CD**: Parallelized pipeline with GHA caching (80-90% hit rate)
-- **Security**: Trivy scanning with SBOM generation
-- **Deployment**: Docker Compose (preferred) with systemd and Node.js fallbacks
+### `setup` — Interactive Configuration Wizard
 
-## Architecture: Host-Container Separation
+First-time setup to validate environment and store API credentials securely.
+
+```bash
+kaseki-agent setup
+```
+
+**What it does:**
+- Validates Docker installation and daemon
+- Checks Node.js v24+ availability
+- Validates git installation
+- Prompts for OpenRouter API key (securely stored in keyring)
+- Saves configuration (project-local or user-global)
+- Runs doctor checks to verify everything works
+
+### `run` — Execute Agent on Repository
+
+```bash
+kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
+```
+
+**Examples:**
+```bash
+# Simple execution (uses main branch)
+kaseki-agent run https://github.com/CyanAutomation/crudmapper
+
+# Specify branch
+kaseki-agent run https://github.com/CyanAutomation/crudmapper develop
+
+# With custom task prompt
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
+  "Fix all TypeScript errors in src/"
+```
+
+**Execution Flow:**
+1. Pre-flight checks (docker, node, npm, git, API key)
+2. Auto-pull Docker image (if needed)
+3. Create instance directories (workspace + results)
+4. Spawn container with security hardening
+5. Stream agent output in real-time
+6. Collect results and generate report
+
+### `doctor` — Health Check & Validation
+
+```bash
+kaseki-agent doctor [--json] [--fix]
+```
+
+**Checks:**
+- Docker daemon availability
+- Node.js v24+ validation
+- npm availability
+- git installation
+- OpenRouter API key configuration
+- Docker image status
+- Disk space availability
+
+**Options:**
+- `--json` — JSON output (useful for scripts)
+- `--fix` — Attempt auto-remediation (pull image, show install hints)
+
+### `list` — Show All Instances
+
+```bash
+kaseki-agent list [--status STATE]
+```
+
+**Filter by status:**
+```bash
+kaseki-agent list --status completed
+kaseki-agent list --status failed
+kaseki-agent list --status running
+```
+
+**Output:**
+- Instance ID
+- Status (running/completed/failed)
+- Creation date
+- Execution duration
+
+### `report` — View Instance Results
+
+```bash
+kaseki-agent report <INSTANCE_ID>
+```
+
+**Shows:**
+- Instance metadata (repo, branch, model, status)
+- Execution stages with timing
+- Final status and exit code
+- Detailed summary (if available)
+
+### `config` — Manage Configuration
+
+```bash
+kaseki-agent config <SUBCOMMAND> [OPTIONS]
+```
+
+**Subcommands:**
+```bash
+# Get a value
+kaseki-agent config get agent.timeout_seconds
+
+# Set a value (project-local)
+kaseki-agent config set agent.timeout_seconds 1800
+
+# Set globally
+kaseki-agent config set agent.timeout_seconds 1800 --global
+
+# Show active configuration
+kaseki-agent config show
+
+# Show available locations
+kaseki-agent config locations
+```
+
+### `secrets` — Manage Credentials
+
+```bash
+kaseki-agent secrets <SUBCOMMAND>
+```
+
+**Subcommands:**
+```bash
+# Initialize keyring
+kaseki-agent secrets init
+
+# Store a secret
+kaseki-agent secrets set openrouter-api-key sk-or-...
+
+# Retrieve (hidden by default)
+kaseki-agent secrets get openrouter-api-key
+
+# Show secret value
+kaseki-agent secrets get openrouter-api-key --show
+
+# Delete
+kaseki-agent secrets delete openrouter-api-key
+
+# List all keys
+kaseki-agent secrets list
+```
+
+**Storage:**
+- Linux: Uses `pass` (password-store) keyring
+- Headless: Falls back to `~/.kaseki/secrets/` (0600 permissions)
+
+### `serve` — Start REST API Service
+
+```bash
+kaseki-agent serve [--port PORT]
+```
+
+**Default port:** 8080
+
+```bash
+# Start on default port
+kaseki-agent serve
+
+# Custom port
+kaseki-agent serve --port 9000
+```
+
+**API Endpoints:**
+- `GET /health` — Service health check
+- `GET /api/runs` — List instances
+- `POST /api/runs` — Start new run
+- `GET /api/runs/:id` — Get instance status
+- `GET /api/runs/:id/logs` — Stream logs
+- `GET /api/runs/:id/results` — Get results
+
+---
+
+## Configuration
+
+Configuration is loaded from (in order of precedence):
+
+1. **CLI flags** (highest precedence)
+2. **`kaseki-agent.json`** (project-local)
+3. **`~/.kaseki/config.json`** (user-global)
+4. **Environment variables** (`KASEKI_*`, `OPENROUTER_*`, `GITHUB_*`)
+5. **Built-in defaults**
+
+**Example `kaseki-agent.json`:**
+
+```json
+{
+  "agent": {
+    "model": "openrouter/free",
+    "timeout_seconds": 1200
+  },
+  "validation": {
+    "allowlist": ["src/lib/", "tests/"],
+    "max_diff_bytes": 200000
+  },
+  "docker": {
+    "auto_pull": true
+  }
+}
+```
+
+**Common Environment Variables:**
+
+```bash
+# Required
+OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
+
+# Optional
+KASEKI_ROOT=/agents                    # Base directory
+KASEKI_MODEL=openrouter/free           # AI model
+KASEKI_AGENT_TIMEOUT_SECONDS=1200      # Timeout
+KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
+```
+
+---
+
+## Architecture
+
+### Deployment Patterns
+
+**1. CLI (Direct Execution)**
+```bash
+kaseki-agent run <repo> <ref>
+```
+- Single-step orchestration
+- Immediate results
+- Best for: CI/CD, direct usage
+
+**2. REST API (Distributed)**
+```bash
+kaseki-agent serve --port 8080
+# Then: POST /api/runs with repo/ref
+```
+- Long-running service
+- Async execution
+- Best for: Controllers, distributed systems
+
+**3. Docker (Self-Contained)**
+```bash
+docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
+```
+- No host dependencies
+- Full isolation
+- Best for: Clean environments, CI/CD containers
 
 **Host layer** — Management and orchestration:
 
