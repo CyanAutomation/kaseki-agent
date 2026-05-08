@@ -1,10 +1,42 @@
 # Kaseki Agent Setup Guide
 
-Welcome! This guide walks you through setting up kaseki-agent on your host. Choose your path based on your deployment scenario.
+**👉 NEW: Using npm package?** See [NPM_SETUP.md](NPM_SETUP.md) for the recommended approach.
 
 ---
 
-## Quick Start (< 5 minutes)
+## Quick Start (< 5 minutes) - NPM Method
+
+### Prerequisites
+
+- **Node.js v24+** — JavaScript runtime
+- **Docker** (required) — handles containerized agent runs  
+- **Git** (required) — for cloning target repositories
+- **OpenRouter API Key** (required) — authenticates Pi agent calls
+- **Linux or macOS**
+
+### Installation
+
+```bash
+# Global install (recommended)
+npm install -g @cyanautomation/kaseki-agent
+
+# Run setup wizard
+kaseki-agent setup
+
+# Verify
+kaseki-agent doctor
+
+# Run your first task
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+```
+
+That's it! For detailed documentation, see [NPM_SETUP.md](NPM_SETUP.md).
+
+---
+
+## Alternative: Traditional Setup (Shell Scripts)
+
+For users preferring shell-based setup:
 
 ### Prerequisites
 
