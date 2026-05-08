@@ -33,29 +33,15 @@ jobs:
         with:
           node-version: '22.22.2'
           cache: npm
-          always-auth: false
-
-      - name: Configure npm for OIDC publishing
-        run: |
-          echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" >> ~/.npmrc
-          echo "registry=https://registry.npmjs.org" >> ~/.npmrc
-        env:
-          NPM_TOKEN: ""  # Placeholder; actual auth is via OIDC below
+          # Note: registry-url is intentionally omitted — setting it causes setup-node@v6
+          # to inject the GitHub OIDC JWT as NODE_AUTH_TOKEN, which breaks npm trusted
+          # publishing (npm CLI must perform the OIDC exchange itself)
 
       - name: Verify npm authentication setup
         run: |
           echo "Node version: $(node --version)"
           echo "npm version: $(npm --version)"
           echo "npm config registry: $(npm config get registry)"
-          echo ".npmrc location: $(npm config get userconfig)"
-          echo "Checking for authentication configuration..."
-          # Check if OIDC token is available
-          if [[ -n "$NODE_AUTH_TOKEN" ]]; then
-            echo "✅ NODE_AUTH_TOKEN is set (OIDC token available)"
-          else
-            echo "⚠️  NODE_AUTH_TOKEN not set - checking for token in .npmrc"
-            grep -q "^//" "$HOME/.npmrc" 2>/dev/null && echo "✅ .npmrc has authentication" || echo "❌ No authentication found in .npmrc"
-          fi
 
       - name: Install dependencies
         run: npm ci
@@ -82,35 +68,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm registry (OIDC trusted publisher)
-        run: |
-          set +e  # Don't exit on error, we want to provide diagnostics
-          npm publish --access public
-          PUBLISH_EXIT_CODE=$?
-          
-          if [[ $PUBLISH_EXIT_CODE -eq 0 ]]; then
-            echo "✅ npm publish succeeded"
-            exit 0
-          else
-            echo "❌ npm publish failed with exit code: $PUBLISH_EXIT_CODE"
-            echo ""
-            echo "📋 OIDC Trusted Publishing Setup Required"
-            echo "=========================================="
-            echo ""
-            echo "If you see '404 Not Found', your npm account needs OIDC configuration:"
-            echo ""
-            echo "1. Go to https://npmjs.com/settings/YOUR_ORG_OR_USERNAME/access"
-            echo "2. Enable 'GitHub Actions' OIDC integration"
-            echo "3. Configure your organization/package permissions"
-            echo ""
-            echo "For @cyanautomation/kaseki-agent, ensure:"
-            echo "  - org: cyanautomation has OIDC enabled"
-            echo "  - GitHub repository has 'id-token: write' permission (✅ already configured)"
-            echo ""
-            echo "See: https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions"
-            echo ""
-            exit $PUBLISH_EXIT_CODE
-          fi
+      - name: Publish to npm registry
+        run: npm publish --access public
+        # No NODE_AUTH_TOKEN — npm CLI exchanges the GitHub OIDC token with the registry
+        # using ACTIONS_ID_TOKEN_REQUEST_URL, which is provided automatically by GHA
 
       - name: Verify on npm registry
         run: |
