@@ -5,6 +5,7 @@
 Kaseki-agent is an **ephemeral container orchestration tool** that teams trust in their CI/CD pipelines. This guide measures whether it's truly production-ready.
 
 Critical concerns for teams using kaseki-agent:
+
 - 🔒 **Security** — Are API keys safe? Does Docker hardening work?
 - 🏃 **Reliability** — Will it handle production workloads without surprises?
 - 🔍 **Observability** — Can operators debug failures in real-time?
@@ -19,23 +20,28 @@ Critical concerns for teams using kaseki-agent:
 ## 📑 Quick Navigation
 
 **Part 1: Understanding the Score**
+
 - [📊 Scoring System](#-scoring-system) — Formula, weights, thresholds
 - [🎯 9 Signal Categories](#-kaseki-agent-signal-categories) — What we measure
 
 **Part 2: Self-Assessment**
+
 - [🚀 How to Self-Assess](#-how-to-self-assess) — 6-step workflow with concrete examples
 - [📋 Current State Assessment](#-current-state-kaseki-agent-today) — Today's score: 96/100
 
 **Part 3: Specialized Signals (Phases 2–3)**
+
 - [⚙️ DevOps/Container Tool Weights](#️-phase-2-devopscontainer-tool-weights) — Custom weights for this project type
 - [🔒 Container Security Signals](#-phase-3-container-security-signals) — Docker hardening, image scanning, secrets
 - [⚡ Performance & Efficiency Signals](#-phase-3-performance--efficiency-signals) — Cache stats, artifact validation
 - [📡 Observability & Debugging](#-phase-3-observability--debugging-signals) — Health checks, logs, event streams
 
 **Part 4: Automation & Operations (Phase 4)**
+
 - [🤖 CI/CD Integration](#-phase-4-cicd-automation--integration) — GitHub Actions, image publishing, automated scoring
 
 **Part 5: Future-Focused (Phase 5)**
+
 - [🗺️ Production Readiness Roadmap](#️-phase-5-production-readiness-roadmap) — Path to 95+, industry best practices
 - [💡 Maintenance & Governance](#-phase-5-maintenance--governance) — Keeping maturity high over time
 
@@ -44,6 +50,7 @@ Critical concerns for teams using kaseki-agent:
 ## 📊 Scoring System
 
 **Formula:**
+
 ```
 Final Score = Base Score (0–100) + Modifiers (up to +10) − Penalties (up to −20)
 ```
@@ -121,7 +128,7 @@ Quality gates must be rigorous. Changes to kaseki-agent affect CI/CD reliability
 
 | Signal | Detection | Evidence for Kaseki |
 |--------|-----------|-------------------|
-| Tests exist & discoverable | /test, __tests__, *.test.ts, *.spec.js, test_*.py | ✅ test/ directory; kaseki-report.test.ts, pi-event-filter.test.ts, etc. |
+| Tests exist & discoverable | /test, **tests**, *.test.ts, *.spec.js, test_*.py | ✅ test/ directory; kaseki-report.test.ts, pi-event-filter.test.ts, etc. |
 | Tests runnable locally | `npm test` or `pytest` or `go test` | ✅ `npm test` (Jest) runs locally |
 | Tests executed in CI | .github/workflows includes test step | ✅ GitHub Actions runs tests on push; tests in workflow file |
 | Multiple test types present | Unit + integration OR unit + e2e OR unit + smoke | ✅ Unit tests (Jest); shell integration tests (run-kaseki-json.test.sh); manual smoke tests |
@@ -192,6 +199,7 @@ Is there clear ownership and responsive maintenance?
 ## 🚀 How to Self-Assess
 
 ### Step 1: Gather Context
+
 ```bash
 # List root files and understand structure
 ls -la
@@ -205,12 +213,15 @@ cat kaseki-agent.sh | head -20
 ```
 
 ### Step 2: Evaluate Each Signal
+
 For each of the 9 categories above:
+
 - Go through all 5 signals
 - Mark as **Yes (1 point)** if clearly present and verifiable
 - Mark as **No (0 points)** if absent or unverifiable
 
 **Helpful commands:**
+
 ```bash
 # Check for test files
 find . -name "*.test.ts" -o -name "*.spec.js"
@@ -237,11 +248,13 @@ git log --oneline -20
 ### Step 3: Calculate Base Score
 
 For each category:
+
 1. Count signals met (0–5)
 2. Calculate: `category_score = signals_met / 5`
 3. Multiply by weight: `contribution = category_score × weight`
 
 Example for Kaseki:
+
 - Testing & Verification: 5/5 signals × weight 16 = **16 points**
 - Security & Hygiene: 4/5 signals × weight 16 = **12.8 points**
 
@@ -250,6 +263,7 @@ Sum all contributions to get **Base Score** (0–117 max with current weights).
 ### Step 4: Apply Modifiers (Phase 2–3)
 
 DevOps/Container Tool Modifiers (max +10):
+
 - Published Docker image? **+1**
 - Multi-arch builds (amd64, arm64)? **+1**
 - Container security hardening (--read-only, cap-drop)? **+2**
@@ -278,6 +292,7 @@ For kaseki-agent: All of these apply → **+10**
 For kaseki-agent: None apply → **0 penalties**
 
 ### Step 6: Final Calculation
+
 ```
 Final Score = Base Score + Modifiers − Penalties
 ```
@@ -582,6 +597,7 @@ Kaseki-agent is at **96/100** (Exemplary). To push toward **98+** and sustain it
 | | | **26** | **+28** | **But capped at +10 max per profile** |
 
 **Final Calculation:**
+
 ```
 92 (base) + 10 (modifiers capped) − 6 (governance gaps) = 96
 ```
@@ -619,17 +635,20 @@ Kaseki-agent is at **96/100** (Exemplary). To push toward **98+** and sustain it
 ### Actionable Next Steps
 
 **Priority 1 (Do This Week):**
+
 - [ ] Add GitHub issue & PR templates
 - [ ] Configure GitHub labels (bug, feature, security, docs, infrastructure)
 - [ ] Enable Dependabot
 - [ ] Document image scanning approach (or integrate Trivy into CI)
 
 **Priority 2 (Do This Sprint):**
+
 - [ ] Add `--dry-run` flag to kaseki-agent.sh
 - [ ] Track maturity score in GitHub Actions artifacts
 - [ ] Add performance metrics to progress.json
 
 **Priority 3 (Longer-term):**
+
 - [ ] Implement image signing (cosign)
 - [ ] Add e2e test scenario (full kaseki run on test repo)
 - [ ] Create repo-type profile decision tree (for reusing rubric on other projects)
@@ -728,6 +747,7 @@ Kaseki-agent is at **96/100** (Exemplary). To push toward **98+** and sustain it
 ### Q: Should we publish our maturity score?
 
 **A:** Yes. It signals confidence and accountability. Add to README:
+
 ```
 🧭 **Maturity Score:** 96/100 (Exemplary)  
 📊 [See Detailed Assessment](docs/repo-maturity.md)

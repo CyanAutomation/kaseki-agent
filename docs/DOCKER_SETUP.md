@@ -99,6 +99,7 @@ docker run -it \
 ```
 
 **What it does:**
+
 1. Prompts: "Enter your OpenRouter API key (sk-or-v1-...): "
 2. Creates `~/.kaseki/secrets/openrouter_api_key` with mode 600
 3. Validates Docker daemon accessibility
@@ -106,6 +107,7 @@ docker run -it \
 5. Reports readiness status
 
 **Credential sources (in priority order):**
+
 1. Existing `/secrets/openrouter_api_key` file (asks to reuse)
 2. `OPENROUTER_API_KEY` environment variable (if set)
 3. Interactive prompt (if neither above)
@@ -126,6 +128,7 @@ docker run \
 ```
 
 **Validates:**
+
 - Docker daemon accessibility
 - Pi CLI availability
 - API key file readability
@@ -148,6 +151,7 @@ docker run -it \
 ```
 
 **Arguments:**
+
 - `<repo-url>` — Git repository URL (e.g., `https://github.com/org/repo`)
 - `<git-ref>` — Branch, tag, or commit (e.g., `main`, `v1.0.0`, `abc1234`)
 - `[task-prompt]` — Optional: Custom task description (overrides default)
@@ -164,6 +168,7 @@ docker run -it \
 ```
 
 **Environment variables (optional):**
+
 - `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout in seconds (default: 1200 / 20 min)
 - `KASEKI_MODEL` — Pi model to use (default: openrouter/free)
 - `KASEKI_VALIDATION_COMMANDS` — Validation steps (default: npm run check; npm run test; npm run build)
@@ -171,6 +176,7 @@ docker run -it \
 - `KASEKI_MAX_DIFF_BYTES` — Maximum diff size (default: 200000 bytes)
 
 **Result location:**
+
 - Output: Streamed to stdout in real-time
 - Artifacts: Saved to `/results` (mounted volume)
 
@@ -191,6 +197,7 @@ OPENROUTER_API_KEY=sk-or-v1-your-key docker run -it \
 ```
 
 **Key differences from `agent` mode:**
+
 - API key comes from `OPENROUTER_API_KEY` env var (not file)
 - No pre-setup required
 - One-shot execution (no need for `./kaseki setup` first)
@@ -223,6 +230,7 @@ docker run \
 ```
 
 **Arguments:**
+
 - `<remote-host>` — SSH destination (e.g., `pi@192.168.88.201`)
 - `<api-key-or-file>` — API key directly (sk-or-...) OR path to file
 
@@ -241,6 +249,7 @@ docker run \
 ```
 
 **What it does:**
+
 1. Validates SSH connectivity
 2. Creates `~/.kaseki/secrets/` on remote with proper permissions
 3. Securely transfers API key via stdin (avoids shell history exposure)
@@ -248,6 +257,7 @@ docker run \
 5. Reports readiness
 
 **Assumptions:**
+
 - SSH keys are already configured (run `ssh-copy-id` first if needed)
 - Remote host has Docker installed (or manually runs kaseki-install.sh)
 

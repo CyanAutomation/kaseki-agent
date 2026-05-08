@@ -14,7 +14,7 @@ import { KasekiApiClient } from './kaseki-api-client';
  */
 export async function exampleBugFixWorkflow(): Promise<void> {
   // Initialize client
-  const client = new KasekiApiClient('http://kaseki-host:8080', 'sk-your-api-key');
+  const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
 
   try {
     // 1. Verify API is healthy
@@ -103,7 +103,7 @@ export async function exampleBugFixWorkflow(): Promise<void> {
  * Example: Batch submit multiple tasks and wait for all to complete
  */
 export async function exampleBatchWorkflow(): Promise<void> {
-  const client = new KasekiApiClient('http://kaseki-host:8080', 'sk-your-api-key');
+  const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
 
   const tasks = [
     {
@@ -156,7 +156,7 @@ export async function exampleBatchWorkflow(): Promise<void> {
  * Example: Stream logs in real-time (polling)
  */
 export async function exampleStreamLogs(runId: string): Promise<void> {
-  const client = new KasekiApiClient('http://kaseki-host:8080', 'sk-your-api-key');
+  const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
 
   let lastLineCount = 0;
 
@@ -189,7 +189,7 @@ export async function exampleStreamLogs(runId: string): Promise<void> {
  * Example: Check queue status
  */
 export async function exampleCheckQueue(): Promise<void> {
-  const client = new KasekiApiClient('http://kaseki-host:8080', 'sk-your-api-key');
+  const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
 
   const health = await client.getHealth();
   console.log('API Health:', health.status);

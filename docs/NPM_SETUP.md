@@ -43,6 +43,7 @@ kaseki-agent doctor
 ```
 
 Should output:
+
 ```
 ✓ Docker daemon running
 ✓ Node.js v24.x available
@@ -67,6 +68,7 @@ kaseki-agent setup
 ```
 
 This interactive wizard will:
+
 - Validate your environment
 - Prompt for OpenRouter API key
 - Save configuration (locally or globally)
@@ -91,6 +93,7 @@ kaseki-agent run https://github.com/your-org/your-repo main
 ```
 
 This will:
+
 1. Create instance `kaseki-1` (or next available number)
 2. Clone repository at specified branch
 3. Run Pi agent in Docker container
@@ -206,6 +209,7 @@ kaseki-agent report kaseki-1
 ```
 
 Shows:
+
 - Instance metadata
 - Execution stages and timing
 - Exit code and status
@@ -233,6 +237,7 @@ kaseki-agent secrets delete openrouter-api-key
 ```
 
 **Storage:**
+
 - Linux: `pass` (password-store) keyring
 - Headless: `~/.kaseki/secrets/` (0600 permissions)
 
@@ -293,16 +298,19 @@ kaseki-agent serve --port 9000
 ### API Endpoints
 
 **Health Check**
+
 ```bash
 curl http://localhost:8080/health
 ```
 
 **List Instances**
+
 ```bash
 curl http://localhost:8080/api/runs
 ```
 
 **Start Run**
+
 ```bash
 curl -X POST http://localhost:8080/api/runs \
   -H "Content-Type: application/json" \
@@ -314,11 +322,13 @@ curl -X POST http://localhost:8080/api/runs \
 ```
 
 **Get Instance Status**
+
 ```bash
 curl http://localhost:8080/api/runs/kaseki-1
 ```
 
 **Stream Logs**
+
 ```bash
 curl http://localhost:8080/api/runs/kaseki-1/logs
 ```
@@ -334,6 +344,7 @@ kaseki-agent doctor --fix
 ```
 
 This attempts auto-remediation:
+
 - Pulls Docker image
 - Provides install instructions
 
@@ -395,6 +406,7 @@ Settings are loaded in this order (first wins):
 5. **Built-in defaults**
 
 Example:
+
 ```bash
 # Uses CLI flag (highest precedence)
 KASEKI_AGENT_TIMEOUT_SECONDS=900 kaseki-agent run <repo> <ref> --model=custom-model

@@ -116,6 +116,7 @@ KASEKI_MAX_DIFF_BYTES=200000               # Default: 200000
 ```
 
 **Production considerations:**
+
 - Use a process manager (systemd, supervisor, PM2) for restart/recovery
 - Run with `NODE_ENV=production` for optimal performance
 - Monitor logs and uptime independently
@@ -164,6 +165,7 @@ sudo journalctl -u kaseki-api -f
 ```
 
 **Important behavior in Docker mode:**
+
 - The unit executes `node /app/dist/kaseki-api-service.js` inside the container image.
 - `/etc/kaseki-api/kaseki-api.env` only supplies environment variables; it does not mount over `/app/dist`.
 - Mounted host volumes are `/agents`, `/agents/kaseki-results`, `/var/log/kaseki-api`, and `/var/run/docker.sock`; none are mounted at `/app`, so `/app/dist` always comes from the image artifact.
@@ -212,9 +214,11 @@ docker run --rm \
 2. **Network Security**
    - Expose API only on trusted networks (localhost or VPN)
    - Use firewall rules to restrict access:
+
      ```bash
      sudo ufw allow from 10.0.0.0/8 to any port 8080  # Example: allow from private network
      ```
+
    - Consider putting API behind a reverse proxy (nginx) with authentication
 
 3. **Container Hardening**
@@ -228,6 +232,7 @@ docker run --rm \
 
 4. **TLS/HTTPS**
    - Forward HTTPS traffic via reverse proxy (e.g., nginx):
+
      ```nginx
      upstream kaseki_api {
        server localhost:8080;
@@ -259,6 +264,7 @@ curl http://localhost:8080/api/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
@@ -330,6 +336,7 @@ curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/metri
 ```
 
 Example Prometheus scrape config:
+
 ```yaml
 scrape_configs:
   - job_name: kaseki_api
@@ -342,11 +349,13 @@ scrape_configs:
 ```
 
 Readiness probe (no auth required):
+
 ```bash
 curl -f http://localhost:8080/ready
 # or
 curl -f http://localhost:8080/api/ready
 ```
+
 `/ready` returns `503` with machine-readable `reasons` when dependencies like results-dir writability,
 scheduler queue introspection, or webhook processing health are unavailable.
 
@@ -364,6 +373,7 @@ sudo nano /etc/docker/daemon.json
 ```
 
 Add:
+
 ```json
 {
   "log-driver": "json-file",
@@ -375,6 +385,7 @@ Add:
 ```
 
 Then restart Docker:
+
 ```bash
 sudo systemctl restart docker
 ```
@@ -431,6 +442,7 @@ journalctl -u kaseki-api -n 50
 ```
 
 Common issues:
+
 - Missing `/agents/kaseki-results` directory
 - Invalid port (not between 1-65535)
 - API key environment variable not set
@@ -490,7 +502,6 @@ sudo systemctl daemon-reload
 3. **Set up monitoring** — Add health checks, alerts
 4. **Test integration** — Use TypeScript client library to submit test runs
 5. **Deploy kaseki-agent** — Ensure Docker base image and OpenRouter credentials are configured
-
 
 ## Runtime Verification
 

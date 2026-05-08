@@ -59,6 +59,7 @@ const analysis = kasekiCli.getAnalysis('kaseki-1');
 ## CLI Commands
 
 ### `list`
+
 List all kaseki instances (running and completed).
 
 ```bash
@@ -66,6 +67,7 @@ List all kaseki instances (running and completed).
 ```
 
 **Output**:
+
 ```
 Instance  Status      Stage                  Elapsed (s)  Exit Code  Model
 kaseki-2  running     Running Pi agent       1050         —          openrouter/claude-...
@@ -73,6 +75,7 @@ kaseki-1  completed   Collecting artifacts   300          0          openrouter/
 ```
 
 ### `status <instance>`
+
 Get detailed status of a specific instance (JSON format).
 
 ```bash
@@ -80,6 +83,7 @@ Get detailed status of a specific instance (JSON format).
 ```
 
 **Output**:
+
 ```json
 {
   "instance": "kaseki-1",
@@ -99,6 +103,7 @@ Get detailed status of a specific instance (JSON format).
   "model": "openrouter/claude-3.5-sonnet"
 }
 ```
+
 `repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
 `failureClass` is `none` for successful runs and a stable controller-facing
 category such as `validation`, `timeout`, `empty-diff`, `quality`,
@@ -109,6 +114,7 @@ For read-only controller tasks, launch with `KASEKI_TASK_MODE=inspect` or
 Set `KASEKI_VALIDATION_COMMANDS=none` when validation should be skipped.
 
 ### `logs <instance> [options]`
+
 Display recent log lines (tail).
 
 ```bash
@@ -123,6 +129,7 @@ Display recent log lines (tail).
 ```
 
 ### `progress <instance> [options]`
+
 Display sanitized progress events from `progress.jsonl`.
 
 ```bash
@@ -135,6 +142,7 @@ start/end counts. They intentionally do not include assistant text, thinking
 content, environment values, or secrets.
 
 ### `errors <instance>`
+
 Detect and list errors (JSON format).
 
 ```bash
@@ -142,6 +150,7 @@ Detect and list errors (JSON format).
 ```
 
 **Output**:
+
 ```json
 {
   "instance": "kaseki-1",
@@ -163,6 +172,7 @@ Detect and list errors (JSON format).
 ```
 
 **Error sources**:
+
 - `stderr` — errors from stderr.log
 - `validation` — validation command failures
 - `quality-gate` — quality gate violations (diff size, allowlist, format)
@@ -170,6 +180,7 @@ Detect and list errors (JSON format).
 - `timeout` — agent timeout (exit code 124)
 
 ### `analysis <instance>`
+
 Get comprehensive post-run analysis (JSON format).
 
 ```bash
@@ -177,6 +188,7 @@ Get comprehensive post-run analysis (JSON format).
 ```
 
 **Output**:
+
 ```json
 {
   "instance": "kaseki-1",
@@ -218,9 +230,11 @@ Get comprehensive post-run analysis (JSON format).
   "criticalErrors": 0
 }
 ```
+
 `repo` prefers `host-start.json.repo_url` (fallback: `repo`), and `ref` prefers `host-start.json.git_ref` (fallback: `ref`).
 
 ### `watch <instance> [options]`
+
 Live monitor an instance with periodic status updates and anomaly alerts.
 
 ```bash
@@ -232,6 +246,7 @@ Live monitor an instance with periodic status updates and anomaly alerts.
 ```
 
 **Output** (updates every interval):
+
 ```
 Watching kaseki-1 (updating every 5s, Ctrl+C to stop)...
 
@@ -247,6 +262,7 @@ Watching kaseki-1 (updating every 5s, Ctrl+C to stop)...
 ```
 
 ### `follow <instance> [options]`
+
 Stream logs in real-time as they're written.
 
 ```bash
@@ -404,6 +420,7 @@ monitorKaseki('kaseki-1');
   "model": "string"
 }
 ```
+
 Field source note: `repo` is read from `host-start.json.repo_url` with fallback to `host-start.json.repo`; `ref` is read from `host-start.json.git_ref` with fallback to `host-start.json.ref`.
 
 ### Error Object
@@ -438,6 +455,7 @@ includes total run duration separately.
 ### Directory Structure
 
 The CLI looks for instances in:
+
 - Results: `/agents/kaseki-results/kaseki-N/`
 - Workspace: `/agents/kaseki-runs/kaseki-N/` (optional, for running instances)
 
@@ -495,14 +513,17 @@ jq -s '. as $data | {status: $data[0], errors: $data[1], analysis: $data[2]}' \
 ## Troubleshooting
 
 ### "Instance not found"
+
 - Verify instance name matches format `kaseki-N` where N is digits
 - Check that `/agents/kaseki-results/kaseki-N/` directory exists
 
 ### Empty results for running instances
+
 - Stage extraction requires `==>` markers in stdout.log
 - Elapsed time estimation requires `metadata.json` with `start_time`
 
 ### Docker ps errors
+
 - Docker may not be available (safe to ignore in test environments)
 - Running check falls back to checking workspace directory existence
 
@@ -533,6 +554,7 @@ The CLI is split into two parts:
 - **getAnalysis()**: Collects data from multiple artifacts; good for post-run analysis
 
 Suitable for:
+
 - Polling every 5-10 seconds during runs
 - Real-time log streaming
 - Post-run batch analysis

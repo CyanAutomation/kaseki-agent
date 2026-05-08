@@ -39,6 +39,7 @@ The Kaseki API Service provides HTTP REST endpoints for remote control of kaseki
 ### 1. Types & Validation (`src/kaseki-api-types.ts`, ~150 lines)
 
 Defines TypeScript interfaces and Zod validation schemas:
+
 - `RunRequest` — Request to trigger a job
 - `StatusResponse` — Job status with progress
 - `AnalysisResponse` — Comprehensive result summary
@@ -49,6 +50,7 @@ Uses Zod for runtime validation of incoming requests.
 ### 2. Configuration (`src/kaseki-api-config.ts`, ~128 lines)
 
 Loads and validates environment variables:
+
 - API keys (from env or file)
 - Port, concurrency limits, timeouts
 - Directory paths
@@ -59,6 +61,7 @@ Provides `loadConfig()` and `validateApiKey()` functions.
 ### 3. Job Scheduler (`src/job-scheduler.ts`, ~195 lines)
 
 Manages in-memory FIFO queue with concurrency control:
+
 - `submitJob()` — Add to queue
 - `getJob()` / `listJobs()` — Query state
 - Spawns `kaseki-activate.sh` when job runs
@@ -66,6 +69,7 @@ Manages in-memory FIFO queue with concurrency control:
 - Graceful shutdown via `shutdown()`
 
 Key features:
+
 - Auto-generates unique instance IDs (kaseki-1, kaseki-2, ...)
 - Respects max concurrent limit
 - Traps exit codes and categorizes failures
@@ -73,6 +77,7 @@ Key features:
 ### 4. Result Cache (`src/result-cache.ts`, ~65 lines)
 
 Lazy-loads and caches artifacts to reduce filesystem reads:
+
 - `getOrLoad(filePath)` — Load file or return cached
 - TTL-based expiration (default: 5 min)
 - Memory limit and LRU eviction
@@ -85,19 +90,23 @@ Configured: max 20 entries, 10 MB per file.
 Express route handlers grouped by feature:
 
 **Core Endpoints:**
+
 - `POST /api/runs` — Submit job (202 Accepted)
 - `GET /api/runs` — List all recent runs
 - `GET /api/runs/:id/status` — Poll status + progress
 - `GET /api/runs/:id/analysis` — Comprehensive summary
 
 **Artifact Access:**
+
 - `GET /api/results/:id/:file` — Download diffs, metadata
 - `GET /api/runs/:id/logs/:logtype` — Access logs
 
 **Health:**
+
 - `GET /health` — No-auth health check
 
 **Middleware:**
+
 - Bearer token validation (skip for `/health`)
 - RFC 7807 error responses
 - Request validation via Zod
@@ -105,6 +114,7 @@ Express route handlers grouped by feature:
 ### 6. Express Service (`src/kaseki-api-service.ts`, ~67 lines)
 
 Main entry point:
+
 - Loads config and validates
 - Creates Express app with JSON middleware
 - Initializes job scheduler and routes
@@ -114,6 +124,7 @@ Main entry point:
 ### 7. TypeScript Client (`src/kaseki-api-client.ts`, ~200 lines)
 
 High-level client library for integration:
+
 - `submit(request)` — Trigger job
 - `getStatus(runId)` — Poll status
 - `getAnalysis(runId)` — Full summary
@@ -180,6 +191,7 @@ curl -X POST http://localhost:8080/api/runs \
 Currently placeholder (requires Docker + kaseki-agent setup).
 
 Example test flow:
+
 1. Start API service
 2. Verify health check
 3. Submit a real run
@@ -231,6 +243,7 @@ KASEKI_API_MAX_CONCURRENT_RUNS = 3;  // Increase for more parallelism
 ```
 
 Monitor via:
+
 ```bash
 curl -H "Authorization: Bearer ..." http://localhost:8080/api/runs
 ```
@@ -243,6 +256,7 @@ const cache = new ResultCache(20, 5 * 60 * 1000);  // 20 entries, 5 min TTL
 ```
 
 Check stats:
+
 ```typescript
 const stats = cache.getStats();
 console.log(`${stats.entries} cached, ${stats.bytes} bytes`);
@@ -251,6 +265,7 @@ console.log(`${stats.entries} cached, ${stats.bytes} bytes`);
 ### Database (Future)
 
 Current in-memory design sufficient for <100 recent runs. For persistence across restarts, add:
+
 - SQLite or JSON file-based run log
 - Cleanup job for old artifacts
 - Run history API endpoint
@@ -298,6 +313,7 @@ test('my-endpoint returns data', () => {
 Current pattern using `sendErrorResponse(res, status, title, detail)` follows RFC 7807.
 
 To add new error type:
+
 ```typescript
 // In route handler
 if (someCondition) {
@@ -317,6 +333,7 @@ KASEKI_API_LOG_LEVEL=debug npm run kaseki-api
 ### Inspect Job State
 
 Connect to running service and query:
+
 ```bash
 curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs | jq .
 ```
@@ -324,6 +341,7 @@ curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs | jq .
 ### Test Job Spawning
 
 Add test repo and try to trigger a run:
+
 ```bash
 # (Requires actual kaseki-agent, docker, OpenRouter API key setup)
 ```
@@ -331,12 +349,14 @@ Add test repo and try to trigger a run:
 ### Memory Leaks
 
 Monitor long-running service:
+
 ```bash
 # In another terminal
 watch -n1 'ps aux | grep node'
 ```
 
 Check cache stats periodically:
+
 ```typescript
 // In application
 setInterval(() => {
@@ -374,6 +394,7 @@ Kaseki Agent uses **semantic-release** to automate versioning, changelog generat
 ### Version Strategy
 
 This project follows [Semantic Versioning](https://semver.org/):
+
 - **Major** (X.0.0): Breaking API changes, incompatible behavior
 - **Minor** (0.Y.0): New features, backward compatible
 - **Patch** (0.0.Z): Bug fixes, backward compatible
@@ -389,6 +410,7 @@ Version bumps are determined from commit messages using the [conventional commit
 ### Making a Release
 
 **Via GitHub Actions (Recommended):**
+
 1. Go to [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) → **Release** workflow
 2. Click **Run workflow** (top right)
 3. Choose options:
@@ -408,6 +430,7 @@ Version bumps are determined from commit messages using the [conventional commit
 7. Verify in [Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
 
 **Via Local Command (Alternative):**
+
 ```bash
 npm run release:dry    # Preview release locally
 npm run release        # Create release (requires GITHUB_TOKEN)
@@ -418,6 +441,7 @@ npm run release        # Create release (requires GITHUB_TOKEN)
 ### Changelog Format
 
 The `CHANGELOG.md` is automatically updated with entries grouped by type:
+
 - **Features** — From `feat:` commits
 - **Bug Fixes** — From `fix:` commits
 - **Performance Improvements** — From `perf:` commits
@@ -429,7 +453,7 @@ For manual additions or corrections, edit `CHANGELOG.md` directly before committ
 
 ## Useful Resources
 
-- Express.js docs: https://expressjs.com/
-- Zod validation: https://zod.dev/
-- TypeScript handbook: https://www.typescriptlang.org/docs/
-- RFC 7807 (Problem Details): https://tools.ietf.org/html/rfc7807
+- Express.js docs: <https://expressjs.com/>
+- Zod validation: <https://zod.dev/>
+- TypeScript handbook: <https://www.typescriptlang.org/docs/>
+- RFC 7807 (Problem Details): <https://tools.ietf.org/html/rfc7807>

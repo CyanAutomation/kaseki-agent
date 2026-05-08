@@ -60,6 +60,7 @@ If the token is missing or invalid, the API returns `401 Unauthorized`.
 No authentication required. Check service health and queue status.
 
 **Response (200 OK):**
+
 ```json
 {
   "status": "healthy",
@@ -86,6 +87,7 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 **Response (200 OK or 503 Service Unavailable):**
+
 ```json
 {
   "status": "ok",
@@ -138,6 +140,7 @@ No authentication required. Returns readiness for queue/scheduler dependencies u
 - `503` when one or more dependencies are not ready.
 
 **Response (200 OK):**
+
 ```json
 {
   "status": "ready",
@@ -146,6 +149,7 @@ No authentication required. Returns readiness for queue/scheduler dependencies u
 ```
 
 **Response (503 Service Unavailable):**
+
 ```json
 {
   "status": "not_ready",
@@ -176,6 +180,7 @@ Requires authentication. Returns Prometheus text exposition (`text/plain; versio
 Submit a new kaseki job to the queue. Returns immediately (async).
 
 **Request:**
+
 ```bash
 curl -X POST http://localhost:8080/api/runs \
   -H "Authorization: Bearer sk-your-api-key" \
@@ -195,6 +200,7 @@ curl -X POST http://localhost:8080/api/runs \
 ```
 
 **Request Schema:**
+
 ```typescript
 {
   repoUrl: string;           // ✓ Required, must be valid URL
@@ -223,6 +229,7 @@ For controller activation checks, submit `startupCheck: true` or call `POST /api
 Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.
 
 **Response (202 Accepted):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -240,6 +247,7 @@ Idempotency replays return `200 OK` with `cached: true` and the current job stat
 List recent kaseki runs, newest first.
 
 **Response (200 OK):**
+
 ```json
 {
   "runs": [
@@ -267,6 +275,7 @@ Poll the status of a specific run. Returns progress and timeout risk.
 
 **Progress Object** (only present for running jobs):
 The `progress` field contains a structured object describing the current execution stage with the following fields:
+
 - `stage` (string, required) — Current execution stage name (e.g., "pi coding agent", "validation")
 - `percentComplete` (number, optional) — Progress percentage (0-100)
 - `message` (string, optional) — Detailed status message or stage name fallback
@@ -275,6 +284,7 @@ The `progress` field contains a structured object describing the current executi
 For non-running jobs, `progress` is omitted.
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -292,6 +302,7 @@ For non-running jobs, `progress` is omitted.
 ```
 
 **Response (Terminal Status - 200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -320,12 +331,14 @@ For non-running jobs, `progress` is omitted.
 ```
 
 **Status Values:**
+
 - `queued` — Waiting in queue
 - `running` — Currently executing
 - `completed` — Finished successfully (check exitCode)
 - `failed` — Failed validation, timeout, or quality gate
 
 For terminal states (`completed` and `failed`), the response includes an `artifacts` object so clients can branch without probing `/api/results/:id/:file` and handling avoidable `404` responses. `availableFiles` is deterministic and ordered as:
+
 1) `metadata.json`
 2) `analysis.md`
 3) `result-summary.md`
@@ -333,6 +346,7 @@ For terminal states (`completed` and `failed`), the response includes an `artifa
 5) `stderr.log`
 
 For failed runs, `diagnosticEntryPoint` is included:
+
 - `failure.json` when present and non-empty
 - otherwise `analysis.md` when present and non-empty
 - otherwise `result-summary.md` when present and non-empty
@@ -354,6 +368,7 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -381,6 +396,7 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -410,6 +426,7 @@ curl -X POST -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -427,6 +444,7 @@ curl -X POST -H "Authorization: Bearer sk-your-api-key" \
 Retrieve specific log files from a run.
 
 **Log Types:**
+
 - `stdout` — Standard output
 - `stderr` — Standard error
 - `validation` — Validation command output
@@ -435,12 +453,14 @@ Retrieve specific log files from a run.
 - `secret-scan` — Secret detection results
 
 **Example:**
+
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
   http://localhost:8080/api/runs/kaseki-42/logs/stdout
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "logType": "stdout",
@@ -458,6 +478,7 @@ Note: Large logs (>100 KB) are truncated with a marker showing how much is hidde
 Comprehensive post-run analysis including metadata, changes, and validation results.
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -502,16 +523,19 @@ List only allowlisted artifact files, whether they currently exist, and whether 
 This endpoint is designed to remove guesswork before calling `GET /api/results/:id/:file`.
 
 Resolution logic:
+
 - Uses `job.resultDir` when present.
 - Falls back to `${KASEKI_RESULTS_DIR}/${runId}` when `job.resultDir` is not set.
 
 **Example (failed run):**
+
 ```bash
 curl -s -H "Authorization: Bearer sk-your-api-key" \
   http://localhost:8080/api/runs/kaseki-42/artifacts | jq '.'
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "id": "kaseki-42",
@@ -528,6 +552,7 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
 ```
 
 `recommended` is status-aware:
+
 - `failed`: triage artifacts (`failure.json`, logs, quality/validation output)
 - non-failed (`queued`, `running`, `completed`): summary artifacts (`result-summary.md`, `metadata.json`, `pi-summary.json`, `git.diff`)
 
@@ -538,6 +563,7 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
 Download specific result artifacts.
 
 **Allowed Files (always-safe summary artifacts):**
+
 - `git.diff` — Unified diff of changes
 - `metadata.json` — Full run metadata
 - `analysis.md` — Canonical failure-minimum analysis summary (when run fails)
@@ -547,6 +573,7 @@ Download specific result artifacts.
 - `progress.log` — Execution progress log
 
 **Allowed Files (failure-only diagnostics):**
+
 - `failure.json` — Failure classification and details
 - `stderr.log` — Captured standard error output
 - `stdout.log` — Captured standard output
@@ -556,6 +583,7 @@ Download specific result artifacts.
 Failure-only diagnostics are returned only when the run status is `failed`.
 
 **Example:**
+
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
   http://localhost:8080/api/results/kaseki-42/git.diff -o patch.diff
