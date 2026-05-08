@@ -113,7 +113,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `KASEKI_MODEL` | openrouter/free | Pi model string |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Pi invocation timeout |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction |
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated |
+| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; missing npm scripts are skipped (non-fatal) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns (agent phase) |
 | `KASEKI_VALIDATION_ALLOWLIST` | — | Space-separated patterns (validation phase; optional) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |

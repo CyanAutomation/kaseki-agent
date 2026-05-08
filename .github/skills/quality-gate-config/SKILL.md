@@ -195,6 +195,15 @@ KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
 
 **Format**: Semicolon-separated commands
 
+#### Missing Scripts Behavior
+
+If a validation command refers to an npm script that doesn't exist in `package.json`:
+- Kaseki **warns** and **skips** that command (non-fatal)
+- Execution continues to the next command
+- The skipped command is recorded in `validation-timings.tsv` as `skipped`
+
+This allows the same default validation sequence to work across repos with varying script definitions.
+
 #### Command Chaining
 
 Commands run in sequence. If one fails, the pipeline stops.
