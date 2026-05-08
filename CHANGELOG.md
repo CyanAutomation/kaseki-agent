@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.2.0...v1.3.0) (2026-05-08)
+
+### Features
+
+* add instance state derivation and metadata reader scripts to the Dockerfile ([b554b33](https://github.com/CyanAutomation/kaseki-agent/commit/b554b33bf28dba4bf49acfb7402a9f718df96374))
+* enhance printf safety in github operations; add validation and logging improvements; introduce comprehensive test suite ([fd8457e](https://github.com/CyanAutomation/kaseki-agent/commit/fd8457e897fc0b82fc1ff2afc0e5b4cdf05751d1))
+* enhance validation and error handling in json_encode and validate_numeric functions; add comprehensive test suite for printf safety ([7b5c828](https://github.com/CyanAutomation/kaseki-agent/commit/7b5c828c3fa01c4d802220e4f1d26b09ff8c2c3c))
+
+### Bug Fixes
+
+* move coverage variable declaration to the correct scope in restoration summary ([04f5c38](https://github.com/CyanAutomation/kaseki-agent/commit/04f5c384342c7fcd3c5491d8dcaf5a60f31c3763))
+* optimize coverage calculation in restoration summary logging ([259d5fa](https://github.com/CyanAutomation/kaseki-agent/commit/259d5fa6673bb8b990b33a4ac20a6ed4e0f41c9e))
+* update shellcheck directives for improved script linting ([602d994](https://github.com/CyanAutomation/kaseki-agent/commit/602d9949f5cc6e268984eea05c073b6db0039de8))
+
 ## [1.2.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.1.0...v1.2.0) (2026-05-07)
 
 ### Features
