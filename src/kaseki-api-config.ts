@@ -117,7 +117,7 @@ export function loadConfig(): KasekiApiConfig {
   } catch (err) {
     throw new Error(
       `Failed to create KASEKI_RESULTS_DIR at ${resultsDir}: ${err instanceof Error ? err.message : String(err)}. ` +
-      `Check host volume mount (-v /agents:/agents:rw) and Docker user permissions (should be 755 or 775).`
+      'Check host volume mount (-v /agents:/agents:rw) and Docker user permissions (should be 755 or 775).'
     );
   }
 
