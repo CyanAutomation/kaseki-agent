@@ -178,15 +178,17 @@ validate_numeric() {
   local var_name="$1"
   local var_value="$2"
   # Empty or missing value is treated as invalid
-  if [ -z "$var_value" ] || [ "$var_value" = "-" ]; then
+  if [ -z "$var_value" ]; then
     printf 'error: %s is not numeric (value="%s")\n' "$var_name" "$var_value" >&2
     return 1
   fi
-  # Check if value matches integer pattern
-  if ! printf '%s' "$var_value" | grep -Eq '^[0-9]+$'; then
-    printf 'error: %s is not a valid integer (value="%s")\n' "$var_name" "$var_value" >&2
-    return 1
-  fi
+  # Reject any non-digit character, including embedded newlines.
+  case "$var_value" in
+    *[!0-9]*)
+      printf 'error: %s is not a valid integer (value="%s")\n' "$var_name" "$var_value" >&2
+      return 1
+      ;;
+  esac
   return 0
 }
 
@@ -508,14 +510,16 @@ generate_restoration_report() {
   
   # Safely extract counts from restoration.jsonl with validation
   printf '[debug] restoration report: extracting counts from restoration.jsonl\n' >&2
-  restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || true)
+  restored_count=${restored_count:-0}
   printf '[debug] restoration report: restored_count="%s"\n' "$restored_count" >&2
   if ! validate_numeric "restored_count" "$restored_count"; then
     printf 'warning: restoration report generation failed - restored_count validation failed\n' >&2
     return 1
   fi
   
-  kept_count=$(grep -c '"status":"kept"' /results/restoration.jsonl 2>/dev/null || echo 0)
+  kept_count=$(grep -c '"status":"kept"' /results/restoration.jsonl 2>/dev/null || true)
+  kept_count=${kept_count:-0}
   printf '[debug] restoration report: kept_count="%s"\n' "$kept_count" >&2
   if ! validate_numeric "kept_count" "$kept_count"; then
     printf 'warning: restoration report generation failed - kept_count validation failed\n' >&2
