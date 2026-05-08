@@ -5,7 +5,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEST_RESULTS_DIR="${SCRIPT_DIR}/test/printf-safety-results"
+TEST_RESULTS_DIR="${TMPDIR:-/tmp}/kaseki-agent-printf-safety-results.$$"
 KASEKI_SCRIPT="${SCRIPT_DIR}/kaseki-agent.sh"
 
 # Colors for output
@@ -49,34 +49,48 @@ run_test() {
   fi
 }
 
+source_validate_numeric() {
+  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+}
+
+source_generate_restoration_report() {
+  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT" | sed "s#/results#${PWD}/results#g")
+}
+
 # Test: validate_numeric with valid input
 test_validate_numeric_valid() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
   validate_numeric "test_var" "42"
 }
 
 # Test: validate_numeric with dash (the bug trigger)
 test_validate_numeric_dash() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
   ! validate_numeric "test_var" "-"
 }
 
 # Test: validate_numeric with non-numeric input
 test_validate_numeric_non_numeric() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
   ! validate_numeric "test_var" "not-a-number"
 }
 
 # Test: validate_numeric with empty input
 test_validate_numeric_empty() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
   ! validate_numeric "test_var" ""
+}
+
+# Test: validate_numeric rejects values containing multiple lines
+test_validate_numeric_multiline() {
+  source_validate_numeric
+  ! validate_numeric "restored_count" $'0\n0'
 }
 
 # Test: restoration report with missing file
 test_restoration_report_missing_file() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   rm -f results/restoration.jsonl
   generate_restoration_report  # Should return 0 (skip silently)
@@ -85,8 +99,8 @@ test_restoration_report_missing_file() {
 
 # Test: restoration report with empty file
 test_restoration_report_empty_file() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   : > results/restoration.jsonl
   generate_restoration_report  # Should return 0 (no changes to report)
@@ -95,8 +109,8 @@ test_restoration_report_empty_file() {
 
 # Test: restoration report with valid entries
 test_restoration_report_valid_entries() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   cat > results/restoration.jsonl <<'EOF'
 {"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}
@@ -104,30 +118,34 @@ test_restoration_report_valid_entries() {
 EOF
   
   generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -q 'Total Files Changed: 2' results/restoration-report.md && \
-    grep -q 'Files Kept: 1' results/restoration-report.md && \
-    grep -q 'Files Restored: 1' results/restoration-report.md
+    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
+    grep -Fq 'Files Kept (in allowlist):** 1' results/restoration-report.md && \
+    grep -Fq 'Files Restored (outside allowlist):** 1' results/restoration-report.md
 }
 
 # Test: restoration report with only kept files
 test_restoration_report_only_kept() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   cat > results/restoration.jsonl <<'EOF'
 {"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}
 {"timestamp":"2026-05-07T10:00:01Z","event":"file_evaluated","file":"src/lib.ts","status":"kept","reason":"matched_allowlist"}
 EOF
   
-  generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -q 'Total Files Changed: 2' results/restoration-report.md && \
-    grep -q 'Allowlist Coverage: 100' results/restoration-report.md
+  local stderr_file=results/restoration-report.stderr
+  generate_restoration_report 2>"$stderr_file" && [ -f results/restoration-report.md ] && \
+    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
+    grep -Fq 'Files Restored (outside allowlist):** 0' results/restoration-report.md && \
+    grep -Fq 'Allowlist Coverage:** 100' results/restoration-report.md && \
+    grep -Fq 'restored_count="0"' "$stderr_file" && \
+    ! grep -qx '0"' "$stderr_file"
 }
 
 # Test: restoration report with only restored files
 test_restoration_report_only_restored() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   cat > results/restoration.jsonl <<'EOF'
 {"timestamp":"2026-05-07T10:00:00Z","event":"file_restored","file":"docs/readme.md","status":"restored","reason":"not_in_allowlist"}
@@ -135,15 +153,15 @@ test_restoration_report_only_restored() {
 EOF
   
   generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -q 'Total Files Changed: 2' results/restoration-report.md && \
-    grep -q 'Allowlist Coverage: 0' results/restoration-report.md && \
-    grep -q 'Low Allowlist Coverage' results/restoration-report.md
+    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
+    grep -Fq 'Allowlist Coverage:** 0' results/restoration-report.md && \
+    grep -Fq 'Low Allowlist Coverage' results/restoration-report.md
 }
 
 # Test: restoration report with low coverage warning
 test_restoration_report_low_coverage_warning() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
+  source_generate_restoration_report
   
   # Create scenario: 1 kept, 9 restored = 10% coverage (< 50%)
   printf '{"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}\n' > results/restoration.jsonl
@@ -152,8 +170,8 @@ test_restoration_report_low_coverage_warning() {
   done
   
   generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -q 'Low Allowlist Coverage' results/restoration-report.md && \
-    grep -q 'Allowlist Coverage: 10' results/restoration-report.md
+    grep -Fq 'Low Allowlist Coverage' results/restoration-report.md && \
+    grep -Fq 'Allowlist Coverage:** 10' results/restoration-report.md
 }
 
 # Test: printf with valid numeric argument (should not fail)
@@ -172,24 +190,28 @@ test_printf_dash_unquoted_fails() {
 
 # Test: printf with dash argument quoted (should fail with validation)
 test_printf_dash_quoted_validation() {
-  source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
+  source_validate_numeric
   local test_var="-"
   ! validate_numeric "test_var" "$test_var"
 }
 
 # Test: grep count fallback works
 test_grep_count_fallback() {
-  # Empty file, grep should return 0
+  # Empty file, grep should print one 0 and the fallback should not append another 0.
   : > results/test.jsonl
-  local count=$(grep -c 'pattern' results/test.jsonl 2>/dev/null || echo 0)
-  [ "$count" -eq 0 ]
+  local count
+  count=$(grep -c 'pattern' results/test.jsonl 2>/dev/null || true)
+  count=${count:-0}
+  [ "$count" = "0" ]
 }
 
 # Test: grep count fallback on missing file
 test_grep_count_fallback_missing() {
-  # Missing file, fallback should trigger
-  local count=$(grep -c 'pattern' results/nonexistent.jsonl 2>/dev/null || echo 0)
-  [ "$count" -eq 0 ]
+  # Missing file, fallback should normalize empty output to one 0.
+  local count
+  count=$(grep -c 'pattern' results/nonexistent.jsonl 2>/dev/null || true)
+  count=${count:-0}
+  [ "$count" = "0" ]
 }
 
 # Test: json_encode function availability
@@ -230,6 +252,7 @@ main() {
   run_test "validate_numeric rejects dash (-)" test_validate_numeric_dash
   run_test "validate_numeric rejects non-numeric" test_validate_numeric_non_numeric
   run_test "validate_numeric rejects empty" test_validate_numeric_empty
+  run_test "validate_numeric rejects multi-line value" test_validate_numeric_multiline
   
   # restoration report tests
   printf '\n%s\n' '### generate_restoration_report() tests'
