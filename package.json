@@ -14,7 +14,7 @@
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",
     "test:unit": "jest --passWithNoTests",
-    "test:ci": "npm run build && npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash tests/allowlist-glob.test.sh && bash tests/restore-disallowed-changes.test.sh && bash tests/dependency-cache-key.test.sh && bash tests/dependency-restore-mode.test.sh && bash tests/npm-install-flags.test.sh && bash tests/repo-memory.test.sh && bash scripts/test-github-app.sh",
+    "test:ci": "npm run build && npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash tests/allowlist-glob.test.sh && bash tests/restore-disallowed-changes.test.sh && bash tests/dependency-cache-key.test.sh && bash tests/dependency-restore-mode.test.sh && bash tests/doctor-template-parity.test.sh && bash tests/npm-install-flags.test.sh && bash tests/repo-memory.test.sh && bash scripts/test-github-app.sh",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "npm run lint:js && npm run lint:sh || true",

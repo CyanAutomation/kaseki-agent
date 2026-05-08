@@ -36,7 +36,7 @@ This will:
 ## Step 3: Verify Setup
 
 ```bash
-./run-kaseki.sh --doctor
+/agents/kaseki-template/run-kaseki.sh --doctor
 ```
 
 Expected output:

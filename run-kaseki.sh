@@ -450,6 +450,7 @@ doctor() {
 
   if [ "$image_present" -eq 1 ]; then
     local mismatch=0
+    local missing_host_template=0
     local pairs
     if docker run --rm --entrypoint test "$IMAGE" -f /app/run-kaseki.sh >/dev/null 2>&1; then
       printf 'Docker image template payload: ok\n'
@@ -466,6 +467,7 @@ doctor() {
       if [ ! -f "$host_path" ]; then
         printf 'Image/template parity: missing host file %s\n' "$host_file" >&2
         mismatch=1
+        missing_host_template=1
         continue
       fi
       host_sum="$(file_sha256 "$host_path" || true)"
@@ -477,7 +479,13 @@ doctor() {
     done
     if [ "$mismatch" -eq 0 ]; then
       printf 'Image/template parity: ok\n'
+    elif [ "$missing_host_template" -eq 1 ]; then
+      status=1
+      printf 'Image/template parity: missing deployed template files; this looks like a source checkout or incomplete template.\n' >&2
+      printf 'Image/template parity: deploy from the source checkout with: sudo KASEKI_IMAGE_PULL_POLICY=missing ./scripts/deploy-pi-template.sh\n' >&2
+      printf 'Image/template parity: then run: /agents/kaseki-template/run-kaseki.sh --doctor\n' >&2
     else
+      status=1
       printf 'Image/template parity: mismatch; rebuild/pull the image or set KASEKI_IMAGE to the matching local image.\n' >&2
     fi
   fi
