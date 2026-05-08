@@ -34,33 +34,34 @@ function shouldUseColor(): boolean {
  */
 export const ANSI_COLORS: AnsiColorSet = shouldUseColor()
   ? {
-      RED: '\x1b[31m',
-      YELLOW: '\x1b[33m',
-      GREEN: '\x1b[32m',
-      BLUE: '\x1b[34m',
-      CYAN: '\x1b[36m',
-      MAGENTA: '\x1b[35m',
-      WHITE: '\x1b[37m',
-      RESET: '\x1b[0m',
-      BOLD: '\x1b[1m',
-      DIM: '\x1b[2m',
-    }
+    RED: '\x1b[31m',
+    YELLOW: '\x1b[33m',
+    GREEN: '\x1b[32m',
+    BLUE: '\x1b[34m',
+    CYAN: '\x1b[36m',
+    MAGENTA: '\x1b[35m',
+    WHITE: '\x1b[37m',
+    RESET: '\x1b[0m',
+    BOLD: '\x1b[1m',
+    DIM: '\x1b[2m',
+  }
   : {
-      RED: '',
-      YELLOW: '',
-      GREEN: '',
-      BLUE: '',
-      CYAN: '',
-      MAGENTA: '',
-      WHITE: '',
-      RESET: '',
-      BOLD: '',
-      DIM: '',
-    };
+    RED: '',
+    YELLOW: '',
+    GREEN: '',
+    BLUE: '',
+    CYAN: '',
+    MAGENTA: '',
+    WHITE: '',
+    RESET: '',
+    BOLD: '',
+    DIM: '',
+  };
 
 /**
  * Strip ANSI codes from a string
  */
 export function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*m/g, '');
 }
