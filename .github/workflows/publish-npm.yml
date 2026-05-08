@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tags:
-        description: "Comma-separated tags to publish (auto-detects from git ref if empty)"
+        description: "Comma-separated tags to publish. Leave empty to auto-detect from latest git tag. Use this to retry publishing if Release succeeded but npm publish failed, or to test-publish a specific version."
         required: false
         default: ""
   workflow_run:
@@ -18,7 +18,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     
     steps:
       - name: Checkout
