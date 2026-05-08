@@ -440,12 +440,13 @@ restore_disallowed_changes() {
     return 0
   fi
 
-  local allowlist_regex restored_any restored_count kept_count
+  local allowlist_regex restored_any restored_count kept_count coverage
   allowlist_regex="$(build_allowlist_regex)"
   [ -z "$allowlist_regex" ] && return 0
   restored_any=0
   restored_count=0
   kept_count=0
+  coverage=0
 
   # Initialize restoration tracking file
   : > /results/restoration.jsonl
@@ -475,11 +476,10 @@ restore_disallowed_changes() {
   done < /results/changed-files.txt
 
   # Emit restoration summary to quality.log with actionable guidance
-  local coverage=0
+  if [ $((restored_count + kept_count)) -gt 0 ]; then
+    coverage=$((kept_count * 100 / (restored_count + kept_count)))
+  fi
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
-    if [ $((restored_count + kept_count)) -gt 0 ]; then
-      coverage=$((kept_count * 100 / (restored_count + kept_count)))
-    fi
     {
       printf '\n[allowlist summary] Restored: %d files; Kept: %d files (coverage: %d%%)\n' "$restored_count" "$kept_count" "$coverage"
       if [ "$restored_count" -gt 0 ] && [ "$coverage" -lt 50 ]; then
