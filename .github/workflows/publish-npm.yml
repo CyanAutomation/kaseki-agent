@@ -37,6 +37,9 @@ jobs:
           # to inject the GitHub OIDC JWT as NODE_AUTH_TOKEN, which breaks npm trusted
           # publishing (npm CLI must perform the OIDC exchange itself)
 
+      - name: Configure npm registry (without token injection)
+        run: echo "registry=https://registry.npmjs.org" >> "$HOME/.npmrc"
+
       - name: Verify npm authentication setup
         run: |
           echo "Node version: $(node --version)"
