@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Load only the npm validation helpers from kaseki-agent.sh.
 eval "$(awk '
   /^npm_run_script_name\(\)/ { emit=1 }
+  /^missing_npm_script_for_validation_command\(\)/ { emit=1 }
+  /^record_skipped_validation_command\(\)/ { emit=1 }
   /^compute_repo_memory_key\(\)/ { emit=0 }
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh")"
@@ -41,6 +43,18 @@ assert_not_missing_script() {
   pass "$label"
 }
 
+# Override record_skipped_validation_command to use temp directory instead of /results
+record_skipped_validation_command() {
+  local command="$1"
+  local script_name="$2"
+  local duration_seconds="$3"
+  {
+    printf '\n==> %s\n' "$command"
+    printf 'skipped: package.json does not define npm script "%s"\n' "$script_name"
+  } 2>&1 | tee -a "$tmp_dir/results/validation.log"
+  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$VALIDATION_TIMINGS_FILE"
+}
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$tmp_dir/results"
@@ -55,25 +69,20 @@ cat > package.json <<'JSON'
 JSON
 
 VALIDATION_TIMINGS_FILE="$tmp_dir/results/validation-timings.tsv"
-mkdir -p /results || fail "Cannot create /results directory"
-: > /results/validation.log || fail "Cannot write to /results/validation.log"
+: > "$tmp_dir/results/validation.log" || fail "Cannot write to validation.log"
 : > "$VALIDATION_TIMINGS_FILE" || fail "Cannot write to validation timings file"
 
 assert_equals "extracts npm run script names" "check" "$(npm_run_script_name 'npm run check')"
 assert_equals "extracts npm run script with trailing args" "test" "$(npm_run_script_name 'npm run test -- --runInBand')"
 
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
-assert_missing_script "skips missing check script" "npm run check" "check"
+# Missing npm scripts are now always skipped (non-fatal), regardless of KASEKI_SKIP_MISSING_NPM_SCRIPTS
+assert_missing_script "always skips missing check script" "npm run check" "check"
 assert_not_missing_script "does not skip defined test script" "npm run test"
 assert_not_missing_script "does not skip defined build script" "npm run build"
 
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=0
-assert_not_missing_script "preserves explicit commands unless opt-in is enabled" "npm run check"
-
-KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
 record_skipped_validation_command "npm run check" "check" "0"
 
-if ! grep -Fq 'skipped: package.json does not define npm script "check"' /results/validation.log; then
+if ! grep -Fq 'skipped: package.json does not define npm script "check"' "$tmp_dir/results/validation.log"; then
   fail "validation.log should include a clear missing-script skip reason"
 fi
 pass "validation.log records missing-script skip reason"

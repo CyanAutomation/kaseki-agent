@@ -16,7 +16,7 @@ else
   KASEKI_VALIDATION_COMMANDS_WAS_DEFAULT=1
 fi
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
-KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-$KASEKI_VALIDATION_COMMANDS_WAS_DEFAULT}"
+KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
@@ -997,7 +997,6 @@ NODE
 missing_npm_script_for_validation_command() {
   local command="$1"
   local script_name
-  [ "${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-0}" = "1" ] || return 1
   script_name="$(npm_run_script_name "$command")" || return 1
   package_json_has_npm_script "$script_name" && return 1
   printf '%s' "$script_name"
