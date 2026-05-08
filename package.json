@@ -44,7 +44,7 @@
     "lint": "npm run lint:js && npm run lint:sh || true",
     "lint:js": "eslint . src/ --ignore-pattern dist/",
     "lint:js:fix": "eslint . src/ --fix --ignore-pattern dist/",
-    "lint:sh": "shellcheck kaseki-agent.sh scripts/docker-entrypoint.sh run-kaseki-json.test.sh",
+    "lint:sh": "shellcheck -x kaseki-agent.sh scripts/docker-entrypoint.sh run-kaseki-json.test.sh",
     "lint:fix": "npm run lint:js:fix && npm run lint:sh",
     "kaseki-api": "tsx src/kaseki-api-service.ts",
     "type-check:full": "npm run type-check",
