@@ -1,6 +1,12 @@
 name: Publish NPM
 
 on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Comma-separated tags to publish (auto-detects from git ref if empty)"
+        required: false
+        default: ""
   workflow_run:
     workflows: ["Release"]
     types: [completed]
