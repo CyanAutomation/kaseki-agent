@@ -36,7 +36,7 @@ export class ServeCommand extends BaseCommand {
 
       await apiService.start();
 
-      console.log(`Press Ctrl+C to stop the service\n`);
+      console.log('Press Ctrl+C to stop the service\n');
 
       // Keep the process alive
       return new Promise((resolve) => {

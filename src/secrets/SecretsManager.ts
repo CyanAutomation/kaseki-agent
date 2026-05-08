@@ -1,10 +1,10 @@
 /**
  * Secrets Manager
- * 
+ *
  * Secure credential storage with keyring integration
  * - Primary: Linux keyring (pass)
  * - Fallback: File-based storage (~/.kaseki/secrets/) with 0600 permissions
- * 
+ *
  * Note: macOS Keychain and Windows Credential Manager support can be added
  */
 

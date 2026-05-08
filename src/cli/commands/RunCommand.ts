@@ -56,7 +56,7 @@ export class RunCommand extends BaseCommand {
           return 1;
         }
 
-        console.log(`Image not found locally, pulling from registry...`);
+        console.log('Image not found locally, pulling from registry...');
         if (!DockerManager.pullImage(image)) {
           console.error(`❌ Failed to pull Docker image: ${image}`);
           return 1;

@@ -2,7 +2,7 @@
 
 /**
  * Kaseki Agent CLI
- * 
+ *
  * Main entry point for @cyanautomation/kaseki-agent npm package
  * Provides subcommands for setup, running agents, health checks, configuration, and reporting
  */
@@ -25,27 +25,27 @@ async function main() {
   try {
     // Parse CLI arguments and dispatch to appropriate subcommand
     const args = process.argv.slice(2);
-    
+
     // Handle --version first (quick check)
     if (args.includes('--version') || args.includes('-v')) {
       const version = await getVersion();
       console.log(version);
       process.exit(0);
     }
-    
+
     // Handle --help first (quick check)
     if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
       printHelp();
       process.exit(0);
     }
-    
+
     // Initialize CLI
     const configManager = new ConfigManager();
     const cli = new KasekiCLI(configManager);
-    
+
     // Get subcommand (first non-flag argument)
     const subcommand = args[0];
-    
+
     // Dispatch to appropriate command handler
     const exitCode = await cli.dispatch(subcommand, args.slice(1));
     process.exit(exitCode);

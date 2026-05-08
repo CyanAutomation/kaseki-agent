@@ -1,6 +1,6 @@
 /**
  * Configuration Manager
- * 
+ *
  * Handles 4-tier precedence:
  * 1. CLI flags/arguments (highest)
  * 2. Config file: ./kaseki-agent.json (project-local)

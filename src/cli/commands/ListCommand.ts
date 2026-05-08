@@ -71,7 +71,7 @@ export class ListCommand extends BaseCommand {
       }
 
       // Sort by creation date (newest first)
-      instances.sort((a, b) => 
+      instances.sort((a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
 

@@ -173,7 +173,7 @@ export class DoctorCommand extends BaseCommand {
     try {
       const secretsManager = new SecretsManager();
       const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file', '');
-      
+
       if (!apiKeyFile) {
         return {
           name: 'OpenRouter API Key',
@@ -211,7 +211,7 @@ export class DoctorCommand extends BaseCommand {
   private async checkDockkerImage(): Promise<Check> {
     try {
       const image = this.configManager.get('docker.image', '');
-      
+
       if (!image) {
         return {
           name: 'Docker Image',
@@ -254,7 +254,7 @@ export class DoctorCommand extends BaseCommand {
       const result = execSync(`df -B1 ${kasekiRoot} | awk 'NR==2 {print $4}'`, {
         encoding: 'utf-8',
       }).trim();
-      
+
       const availableBytes = parseInt(result, 10);
       const availableGB = availableBytes / (1024 ** 3);
 
