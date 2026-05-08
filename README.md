@@ -309,8 +309,8 @@ OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh https://github.com/org/repo feature
 # API key via secret file
 OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key ./run-kaseki.sh
 
-# Health/sanity check
-./run-kaseki.sh --doctor
+# Health/sanity check after deploying the host template
+/agents/kaseki-template/run-kaseki.sh --doctor
 
 # Build image locally
 docker build -t kaseki-template:latest .
@@ -645,7 +645,7 @@ docker build --progress=plain -t kaseki-template:latest .
 
 ### Deploy to Host Template Directory
 
-Use `scripts/deploy-pi-template.sh` to idempotently install Kaseki on a host:
+Use `scripts/deploy-pi-template.sh` to idempotently install the runnable Kaseki template on a host:
 
 ```bash
 cd /path/to/kaseki-agent
@@ -770,6 +770,10 @@ Run the doctor command before first use or after host changes:
 ```bash
 /agents/kaseki-template/run-kaseki.sh --doctor
 ```
+
+Run doctor from the deployed template directory, not directly from a source-only
+checkout. The deployed template includes generated `lib/*.js` helper payloads
+extracted from the Docker image.
 
 Checks:
 
