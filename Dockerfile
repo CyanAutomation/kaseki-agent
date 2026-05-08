@@ -29,7 +29,8 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
     && mkdir -p node_modules
 
 # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
-RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.74.0
+# Install pi-coding-agent globally with undici explicitly to resolve module dependencies
+RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.74.0 undici
 
 
 FROM ${NODE_IMAGE} AS runtime
