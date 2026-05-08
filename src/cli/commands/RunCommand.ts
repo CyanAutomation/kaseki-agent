@@ -4,6 +4,9 @@
  */
 
 import { BaseCommand } from '../BaseCommand';
+import { DockerManager } from '../../docker/DockerManager';
+import { InstanceManager } from '../../instance/InstanceManager';
+import { DoctorCommand } from './DoctorCommand';
 import { createLogger } from '../../logger';
 
 const logger = createLogger('run-cmd');
@@ -11,29 +14,205 @@ const logger = createLogger('run-cmd');
 export class RunCommand extends BaseCommand {
   async execute(args: string[]): Promise<number> {
     try {
-      // TODO: Parse repo/ref/task-prompt from positional and flags
-      void args; // TODO: use args when implemented
+      const { positional } = this.parseArgs(args);
+
+      // Parse arguments
+      const repoUrl = positional[0] || this.configManager.get('repo.url');
+      const gitRef = positional[1] || this.configManager.get('repo.ref');
+      const taskPrompt = positional[2] || this.configManager.get('repo.task_prompt', '');
+
+      if (!repoUrl || !gitRef) {
+        console.error('Usage: kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]');
+        console.error('Example: kaseki-agent run https://github.com/org/repo main');
+        return 1;
+      }
 
       console.log('🚀 Kaseki Agent Runner\n');
+      console.log(`Repository: ${repoUrl}`);
+      console.log(`Branch: ${gitRef}\n`);
 
-      // TODO: Implement run command
-      // Steps:
-      // 1. Parse repo/ref arguments
-      // 2. Load and validate configuration
-      // 3. Run doctor checks
-      // 4. Auto-pull Docker image
-      // 5. Create instance directories
-      // 6. Spawn Docker container
-      // 7. Stream output and collect results
-      // 8. Report final status
+      // Load configuration
+      await this.configManager.load();
 
-      console.log('Run command not yet implemented.');
-      console.log('TODO: Implement agent orchestration');
+      // Step 1: Pre-flight checks
+      console.log('Step 1/6: Running pre-flight checks...');
+      const doctorCmd = new DoctorCommand(this.configManager);
+      const doctorResult = await doctorCmd.execute(['--json']);
+      if (doctorResult !== 0) {
+        console.error('❌ Pre-flight checks failed');
+        return 1;
+      }
+      console.log('✓ Pre-flight checks passed\n');
 
-      return 0;
+      // Step 2: Pull Docker image
+      console.log('Step 2/6: Preparing Docker image...');
+      const image = this.configManager.get('docker.image');
+      const autoPull = this.configManager.get('docker.auto_pull', true);
+
+      if (!DockerManager.imageExists(image)) {
+        if (!autoPull) {
+          console.error(`❌ Docker image not found: ${image}`);
+          console.error('Enable auto-pull or pull manually: docker pull ' + image);
+          return 1;
+        }
+
+        console.log(`Image not found locally, pulling from registry...`);
+        if (!DockerManager.pullImage(image)) {
+          console.error(`❌ Failed to pull Docker image: ${image}`);
+          return 1;
+        }
+      }
+      console.log(`✓ Docker image ready: ${image}\n`);
+
+      // Step 3: Create instance
+      console.log('Step 3/6: Creating instance...');
+      const kasekiRoot = this.configManager.get('directories.root');
+      const instanceManager = new InstanceManager(kasekiRoot);
+      const instanceId = await instanceManager.getOrCreateInstanceId();
+
+      const { workspace, results } = await instanceManager.createDirectories();
+      console.log(`✓ Instance created: ${instanceId}`);
+      console.log(`  Workspace: ${workspace}`);
+      console.log(`  Results: ${results}\n`);
+
+      // Initialize metadata
+      await instanceManager.initializeMetadata({
+        repoUrl,
+        gitRef,
+        model: this.configManager.get('agent.model'),
+        provider: this.configManager.get('agent.provider'),
+      });
+
+      // Step 4: Prepare environment
+      console.log('Step 4/6: Preparing environment...');
+      const environment = this.buildEnvironment(repoUrl, gitRef, taskPrompt);
+      const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file');
+      console.log('✓ Environment prepared\n');
+
+      // Step 5: Run agent in Docker
+      console.log('Step 5/6: Running kaseki agent in Docker...\n');
+      const timeout = this.configManager.get('agent.timeout_seconds', 1200);
+
+      const stageStart = new Date();
+      const containerResult = await DockerManager.runContainer({
+        image,
+        name: instanceId,
+        workspaceDir: workspace,
+        resultsDir: results,
+        cacheDir: this.configManager.get('directories.cache_dir'),
+        apiKeyFile,
+        environment,
+        timeout,
+        entrypoint: '/agents/kaseki-agent.sh',
+        command: [],
+      });
+
+      const stageEnd = new Date();
+      await instanceManager.recordStage('agent-run', containerResult.exitCode, stageStart, stageEnd);
+
+      console.log('\n✓ Agent execution completed\n');
+
+      // Step 6: Finalize
+      console.log('Step 6/6: Finalizing...');
+      await instanceManager.finalize(containerResult.exitCode);
+
+      // Report summary
+      const metadata = await instanceManager.getMetadata();
+      if (metadata) {
+        console.log('\n📊 Run Summary');
+        console.log(`Instance: ${instanceId}`);
+        console.log(`Status: ${metadata.status}`);
+        console.log(`Duration: ${metadata.stages?.['agent-run']?.duration?.toFixed(1)}s`);
+
+        if (containerResult.exitCode === 0) {
+          console.log('\n✅ Run completed successfully');
+          console.log(`View results: kaseki-agent report ${instanceId}`);
+        } else {
+          console.log(`\n❌ Run failed with exit code ${containerResult.exitCode}`);
+          console.log(`View logs: kaseki-agent report ${instanceId}`);
+        }
+      }
+
+      return containerResult.exitCode;
     } catch (error) {
       logger.error(`Run failed: ${error}`);
       return 1;
     }
+  }
+
+  /**
+   * Build environment variables for container
+   */
+  private buildEnvironment(repoUrl: string, gitRef: string, taskPrompt: string): Record<string, string> {
+    const env: Record<string, string> = {};
+
+    // Repo configuration
+    env.REPO_URL = repoUrl;
+    env.GIT_REF = gitRef;
+
+    // Agent configuration
+    const model = this.configManager.get('agent.model');
+    if (model) env.KASEKI_MODEL = model;
+
+    const provider = this.configManager.get('agent.provider');
+    if (provider) env.KASEKI_PROVIDER = provider;
+
+    const timeout = this.configManager.get('agent.timeout_seconds');
+    if (timeout) env.KASEKI_AGENT_TIMEOUT_SECONDS = String(timeout);
+
+    // Task prompt
+    if (taskPrompt) {
+      env.TASK_PROMPT = taskPrompt;
+    }
+
+    // Validation
+    const validationCommands = this.configManager.get('validation.commands', []);
+    if (validationCommands.length > 0) {
+      env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
+    }
+
+    const skipMissingScripts = this.configManager.get('validation.skip_missing_npm_scripts');
+    if (skipMissingScripts) env.KASEKI_SKIP_MISSING_NPM_SCRIPTS = '1';
+
+    const failFast = this.configManager.get('validation.fail_fast');
+    if (failFast !== undefined) env.KASEKI_VALIDATION_FAIL_FAST = failFast ? '1' : '0';
+
+    // Allowlist
+    const allowlist = this.configManager.get('validation.allowlist', []);
+    if (allowlist.length > 0) {
+      env.KASEKI_CHANGED_FILES_ALLOWLIST = allowlist.join(' ');
+    }
+
+    const maxDiffBytes = this.configManager.get('validation.max_diff_bytes');
+    if (maxDiffBytes) env.KASEKI_MAX_DIFF_BYTES = String(maxDiffBytes);
+
+    // Caching
+    const cacheMode = this.configManager.get('caching.dependency_restore_mode');
+    if (cacheMode) env.KASEKI_DEPENDENCY_RESTORE_MODE = cacheMode;
+
+    // GitHub integration
+    const ghAppId = this.configManager.get('auth.github_app_id_file');
+    if (ghAppId) env.GITHUB_APP_ID_FILE = ghAppId;
+
+    const ghClientId = this.configManager.get('auth.github_app_client_id_file');
+    if (ghClientId) env.GITHUB_APP_CLIENT_ID_FILE = ghClientId;
+
+    const ghPrivateKey = this.configManager.get('auth.github_app_private_key_file');
+    if (ghPrivateKey) env.GITHUB_APP_PRIVATE_KEY_FILE = ghPrivateKey;
+
+    // API key file (never inline)
+    const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file');
+    if (apiKeyFile) {
+      env.OPENROUTER_API_KEY_FILE = '/run/secrets/openrouter_api_key';
+    }
+
+    // Debug flags
+    const streamProgress = this.configManager.get('debug.stream_progress');
+    if (streamProgress !== undefined) env.KASEKI_STREAM_PROGRESS = streamProgress ? '1' : '0';
+
+    const keepWorkspace = this.configManager.get('debug.keep_workspace');
+    if (keepWorkspace !== undefined) env.KASEKI_KEEP_WORKSPACE = keepWorkspace ? '1' : '0';
+
+    return env;
   }
 }
