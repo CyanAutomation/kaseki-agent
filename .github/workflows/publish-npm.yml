@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0  # Get all tags
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '22.22.2'
           registry-url: 'https://registry.npmjs.org'
@@ -67,12 +67,7 @@ jobs:
         run: npm run build
 
       - name: Publish to npm registry
-        # Unset NODE_AUTH_TOKEN so npm performs its own OIDC exchange via
-        # ACTIONS_ID_TOKEN_REQUEST_URL (setup-node@v6 injects the raw GitHub OIDC JWT
-        # as NODE_AUTH_TOKEN, which the registry rejects; npm must exchange it itself)
-        run: |
-          unset NODE_AUTH_TOKEN
-          npm publish --access public
+        run: npm publish --access public
 
       - name: Verify on npm registry
         run: |
