@@ -54,8 +54,10 @@ ENV HOME=/tmp/kaseki-home \
 
 # Copy Pi CLI and workspace cache seed from deps stage
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -sf ../lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js /usr/local/bin/pi
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
+
+# Create a wrapper script for the Pi CLI that properly resolves node modules
+RUN mkdir -p /usr/local/bin && printf '#!/bin/sh\nexec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js "$@"\n' > /usr/local/bin/pi && chmod +x /usr/local/bin/pi
 
 # Build kaseki application (cache-optimal: dependencies first, then source code)
 WORKDIR /app
