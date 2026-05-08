@@ -32,13 +32,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22.22.2'
+          registry-url: 'https://registry.npmjs.org'
           cache: npm
-          # Note: registry-url is intentionally omitted — setting it causes setup-node@v6
-          # to inject the GitHub OIDC JWT as NODE_AUTH_TOKEN, which breaks npm trusted
-          # publishing (npm CLI must perform the OIDC exchange itself)
-
-      - name: Configure npm registry (without token injection)
-        run: echo "registry=https://registry.npmjs.org" >> "$HOME/.npmrc"
 
       - name: Verify npm authentication setup
         run: |
@@ -72,9 +67,12 @@ jobs:
         run: npm run build
 
       - name: Publish to npm registry
-        run: npm publish --access public
-        # No NODE_AUTH_TOKEN — npm CLI exchanges the GitHub OIDC token with the registry
-        # using ACTIONS_ID_TOKEN_REQUEST_URL, which is provided automatically by GHA
+        # Unset NODE_AUTH_TOKEN so npm performs its own OIDC exchange via
+        # ACTIONS_ID_TOKEN_REQUEST_URL (setup-node@v6 injects the raw GitHub OIDC JWT
+        # as NODE_AUTH_TOKEN, which the registry rejects; npm must exchange it itself)
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm publish --access public
 
       - name: Verify on npm registry
         run: |
