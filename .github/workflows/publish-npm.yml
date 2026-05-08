@@ -60,12 +60,15 @@ jobs:
             # Manual trigger with explicit tags input
             VERSION=$(echo "${{ github.event.inputs.tags }}" | cut -d',' -f1)
             echo "ℹ️  Using provided version: ${VERSION}"
-            npm version ${VERSION} --no-git-tag-version || true
           else
             # Automatic trigger from Release workflow or manual trigger without tags
             VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
             echo "ℹ️  Auto-detected version from git tags: ${VERSION}"
           fi
+          
+          # Update package.json to match the version being published
+          npm version ${VERSION} --no-git-tag-version || true
+          
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publishing version: ${VERSION}"
 
