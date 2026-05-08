@@ -576,12 +576,32 @@ If the automatic publish fails (e.g., transient network issue) but Release succe
 5. Monitor the run in the Actions tab
 6. Verify on npm registry: `npm view @cyanautomation/kaseki-agent@<version>`
 
-**Manual Publishing with Custom Version**
+⚠️ **Important: npm versioning constraint**
 
-For testing-only publishes (alpha/beta/rc tags):
+Each version can only be published once to npm. If you get an error like:
+```
+npm error You cannot publish over the previously published versions: 1.4.1.
+```
+
+This means version 1.4.1 is already on npm. To proceed, you have two options:
+
+**Option A: Retry with new prerelease version** (recommended for testing)
+1. Create a new git tag: `git tag v1.4.2-retry.1 && git push origin v1.4.2-retry.1`
+2. Run Publish NPM workflow
+3. Leave tags input empty (will auto-detect new version)
+4. Or explicitly provide: `1.4.2-retry.1`
+
+**Option B: Manual version override** (for recovery with explicit version)
+1. Run Publish NPM workflow manually
+2. In the tags input, provide the **exact new version**: `1.4.2`
+3. Workflow will update package.json and publish the new version
+
+**Manual Publishing with Custom Version (Testing)**
+
+For one-off test publishes (alpha/beta/rc tags):
 1. Create a git tag: `git tag v1.2.3-alpha.1 && git push origin v1.2.3-alpha.1`
 2. Run Publish NPM workflow manually
-3. Provide custom tags: `1.2.3-alpha.1`
+3. Provide custom tags: `1.2.3-alpha.1` (or leave empty to auto-detect)
 
 **Checking Published Versions**
 
@@ -594,6 +614,9 @@ npm view @cyanautomation/kaseki-agent@1.2.3
 
 # View publication history
 npm view @cyanautomation/kaseki-agent versions | tail -20
+
+# Check if a version already exists before trying to publish
+npm view @cyanautomation/kaseki-agent@1.4.1 && echo "Version already published" || echo "Version not found"
 ```
 
 ---
