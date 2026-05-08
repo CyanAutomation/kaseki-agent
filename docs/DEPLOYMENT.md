@@ -10,8 +10,62 @@ The Kaseki API Service allows remote execution and monitoring of kaseki-agent ru
 
 - Docker + Docker Compose (for docker-compose deployment)
 - Node.js ≥ 24.x (for Node.js fallback deployment)
-- `/agents/kaseki-results` directory must exist or be creatable
 - OpenRouter API key for Pi agent invocation (inherited from kaseki-agent)
+
+## Volume Mounts & Directory Structure
+
+The kaseki-api service uses a persistent host volume to store run artifacts and spawn ephemeral worker containers.
+
+### Volume Mount Requirement
+
+When deploying the API container, mount the host's `/agents` directory as read-write:
+
+```yaml
+volumes:
+  - /agents:/agents:rw                    # Host → Container bridge
+  - /var/run/docker.sock:/var/run/docker.sock
+```
+
+The container will **automatically create** the required subdirectories:
+
+- `/agents/kaseki-results/` — Persistent run artifacts (metadata, diffs, logs)
+  - **Auto-created** on API startup (no pre-setup needed)
+  - Contains per-run subdirectories: `kaseki-1/`, `kaseki-2/`, …
+  - Written to by the API service and spawned worker containers
+
+- `/agents/kaseki-runs/` — Per-run workspace directories (cloned repos, node_modules)
+  - Created by ephemeral worker containers (not used by API service itself)
+  - Cleaned up after each run (if `KASEKI_KEEP_WORKSPACE=0`, the default)
+
+- `/agents/kaseki-cache/` — Optional dependency cache (npm packages)
+  - Created by worker containers if `KASEKI_CACHE_ENABLED=1`
+  - Speeds up repeated runs by sharing npm dependencies across instances
+
+### Docker User & Permissions
+
+The API container runs as **UID 1000** (non-root) by default:
+
+```yaml
+user: "1000:1000"
+```
+
+Ensure the host `/agents` directory has appropriate permissions for UID 1000 to write:
+
+```bash
+# Typical setup (UID 1000 is the owner)
+mkdir -p /agents
+chown 1000:1000 /agents
+chmod 755 /agents
+```
+
+### Dockhand/Portainer Deployment
+
+When deploying via a container UI (Dockhand, Portainer):
+
+1. Configure the volume mount in the service definition: `-v /agents:/agents:rw`
+2. The container will auto-create required subdirectories on startup — **no pre-deployment setup needed**
+3. Check logs for: `KASEKI_RESULTS_DIR: /agents/kaseki-results` (confirms successful mount and auto-creation)
+4. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/preflight`
 
 ## Quick Start
 

@@ -106,6 +106,7 @@ async function main(): Promise<void> {
   }
 
   // Log detailed startup information
+  logger.info(`KASEKI_RESULTS_DIR: ${config.resultsDir}`);
   logger.event('service_startup_config', {
     port: config.port,
     logLevel: config.logLevel,

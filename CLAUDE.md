@@ -22,7 +22,7 @@ Two layers, each with its own script:
 
 **Host (`run-kaseki.sh`)** — runs on the bare host:
 
-- Auto-generates instance names, creates per-run workspace and results directories
+- Auto-generates instance names, creates per-run workspace and results directories (ephemeral, cleaned up after run)
 - Resolves the OpenRouter API key (env var or secret file), mounts it read-only
 - Launches Docker with hardened runtime flags (`--read-only`, `--cap-drop ALL`, tmpfs, non-root user)
 - Cleans up on exit
@@ -100,7 +100,12 @@ npm install
 KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
 ```
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidance.
+**Note on directory structure:**
+- `run-kaseki.sh` and ephemeral worker containers create their own per-run `/agents/kaseki-runs/` workspaces (cleaned up after each run)
+- The kaseki-api service **automatically creates** `/agents/kaseki-results/` on startup (no pre-setup needed) — this persists run artifacts for monitoring and analysis
+- Both approaches share the same `/agents/kaseki-cache/` for optional dependency caching
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidance, including volume mount requirements for Dockhand/Portainer deployments.
 
 ## Key Environment Variables
 

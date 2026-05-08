@@ -112,8 +112,13 @@ export function loadConfig(): KasekiApiConfig {
   }
 
   const resultsDir = process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
-  if (!fs.existsSync(resultsDir)) {
-    throw new Error(`KASEKI_RESULTS_DIR does not exist: ${resultsDir}`);
+  try {
+    fs.mkdirSync(resultsDir, { recursive: true });
+  } catch (err) {
+    throw new Error(
+      `Failed to create KASEKI_RESULTS_DIR at ${resultsDir}: ${err instanceof Error ? err.message : String(err)}. ` +
+      `Check host volume mount (-v /agents:/agents:rw) and Docker user permissions (should be 755 or 775).`
+    );
   }
 
   const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
