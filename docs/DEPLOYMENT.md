@@ -576,14 +576,29 @@ If the automatic publish fails (e.g., transient network issue) but Release succe
 5. Monitor the run in the Actions tab
 6. Verify on npm registry: `npm view @cyanautomation/kaseki-agent@<version>`
 
-⚠️ **Important: npm versioning constraint**
+**Troubleshooting: 404 Not Found on npm publish**
 
-Each version can only be published once to npm. If you get an error like:
-```
-npm error You cannot publish over the previously published versions: 1.4.1.
+If you get `404 Not Found - PUT https://registry.npmjs.org/@cyanautomation%2fkaseki-agent`:
+
+This means your npm account/organization **isn't configured for OIDC trusted publishing**. The workflow uses GitHub Actions OIDC tokens (no hardcoded secrets), but npm needs to be configured to accept them.
+
+**Setup OIDC on npm (one-time):**
+
+1. Go to [npm settings → Access](https://npmjs.com/settings/cyanautomation/access)
+2. Scroll to "GitHub Actions" section
+3. Click "Authorize GitHub Actions" or "Configure"
+4. Select your repository (CyanAutomation/kaseki-agent)
+5. Grant npm publish permissions
+6. Confirm authorization
+
+**After setup, retry:**
+```bash
+# GitHub Actions → Publish NPM → Run workflow (leave tags empty or provide explicit version)
 ```
 
-This means version 1.4.1 is already on npm. To proceed, you have two options:
+If OIDC still doesn't work, see [npm OIDC docs](https://docs.npmjs.com/cli/using-npm/configure-npm/configuring-your-npm-client-with-github-actions) or contact npm support.
+
+**Note:** You only need to set this up once. After OIDC is enabled, all future publishes (automatic via Release workflow or manual) will work without additional configuration.
 
 **Option A: Retry with new prerelease version** (recommended for testing)
 1. Create a new git tag: `git tag v1.4.2-retry.1 && git push origin v1.4.2-retry.1`
