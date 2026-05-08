@@ -243,7 +243,7 @@ export class SetupCommand extends BaseCommand {
 
     // Update configuration
     this.configManager.set('agent.model', answers.modelName);
-    this.configManager.set('auth.openrouter_api_key_file', 
+    this.configManager.set('auth.openrouter_api_key_file',
       path.join(os.homedir(), '.kaseki', 'secrets', 'openrouter_api_key')
     );
     this.configManager.set('validation.commands', answers.validationCommands);

@@ -22,96 +22,96 @@ export class ConfigCommand extends BaseCommand {
       await this.configManager.load();
 
       switch (subcommand) {
-        case 'get': {
-          if (!key) {
-            console.error('Usage: kaseki-agent config get <KEY>');
-            return 1;
-          }
-          const result = this.configManager.get(key);
-          if (result === undefined) {
-            console.log('(not set)');
-          } else {
-            console.log(result);
-          }
-          return 0;
-        }
-
-        case 'set': {
-          if (!key || !value) {
-            console.error('Usage: kaseki-agent config set <KEY> <VALUE>');
-            return 1;
-          }
-
-          const useGlobal = flags.has('global');
-          const configPath = useGlobal
-            ? path.join(os.homedir(), '.kaseki', 'config.json')
-            : 'kaseki-agent.json';
-
-          // Ensure directory exists
-          const configDir = path.dirname(configPath);
-          await fs.mkdir(configDir, { recursive: true });
-
-          // Read existing config
-          let config = {};
-          try {
-            const content = await fs.readFile(configPath, 'utf-8');
-            config = JSON.parse(content);
-          } catch {
-            // File doesn't exist, that's fine
-          }
-
-          // Set value using dot notation
-          this.setNestedValue(config, key, value);
-
-          // Write back
-          await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
-
-          console.log(`✓ Set ${key} = ${value}`);
-          console.log(`  Config file: ${configPath}`);
-          return 0;
-        }
-
-        case 'show': {
-          const useGlobal = flags.has('global');
-          const configPath = useGlobal
-            ? path.join(os.homedir(), '.kaseki', 'config.json')
-            : 'kaseki-agent.json';
-
-          try {
-            const content = await fs.readFile(configPath, 'utf-8');
-            const config = JSON.parse(content);
-            console.log(`Configuration from: ${configPath}\n`);
-            console.log(JSON.stringify(config, null, 2));
-          } catch (error) {
-            console.log(`No configuration found at ${configPath}`);
-            logger.debug(`Failed to read config: ${error}`);
-          }
-          return 0;
-        }
-
-        case 'locations': {
-          console.log('Configuration locations (in precedence order):\n');
-          console.log('1. CLI flags (--key=value)');
-          console.log('2. kaseki-agent.json (project-local)');
-          console.log('3. ~/.kaseki/config.json (user-global)');
-          console.log('4. Environment variables (KASEKI_*, OPENROUTER_*)');
-          console.log('5. Built-in defaults\n');
-
-          console.log('Examples:');
-          console.log('  kaseki-agent config set agent.timeout_seconds 1800 --global');
-          console.log('  kaseki-agent config get agent.model');
-          console.log('  kaseki-agent config show --global');
-          return 0;
-        }
-
-        default:
-          console.error('Unknown subcommand: ' + subcommand);
-          console.error('\nUsage:');
-          console.error('  kaseki-agent config get <KEY>');
-          console.error('  kaseki-agent config set <KEY> <VALUE> [--global]');
-          console.error('  kaseki-agent config show [--global]');
-          console.error('  kaseki-agent config locations');
+      case 'get': {
+        if (!key) {
+          console.error('Usage: kaseki-agent config get <KEY>');
           return 1;
+        }
+        const result = this.configManager.get(key);
+        if (result === undefined) {
+          console.log('(not set)');
+        } else {
+          console.log(result);
+        }
+        return 0;
+      }
+
+      case 'set': {
+        if (!key || !value) {
+          console.error('Usage: kaseki-agent config set <KEY> <VALUE>');
+          return 1;
+        }
+
+        const useGlobal = flags.has('global');
+        const configPath = useGlobal
+          ? path.join(os.homedir(), '.kaseki', 'config.json')
+          : 'kaseki-agent.json';
+
+        // Ensure directory exists
+        const configDir = path.dirname(configPath);
+        await fs.mkdir(configDir, { recursive: true });
+
+        // Read existing config
+        let config = {};
+        try {
+          const content = await fs.readFile(configPath, 'utf-8');
+          config = JSON.parse(content);
+        } catch {
+          // File doesn't exist, that's fine
+        }
+
+        // Set value using dot notation
+        this.setNestedValue(config, key, value);
+
+        // Write back
+        await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+
+        console.log(`✓ Set ${key} = ${value}`);
+        console.log(`  Config file: ${configPath}`);
+        return 0;
+      }
+
+      case 'show': {
+        const useGlobal = flags.has('global');
+        const configPath = useGlobal
+          ? path.join(os.homedir(), '.kaseki', 'config.json')
+          : 'kaseki-agent.json';
+
+        try {
+          const content = await fs.readFile(configPath, 'utf-8');
+          const config = JSON.parse(content);
+          console.log(`Configuration from: ${configPath}\n`);
+          console.log(JSON.stringify(config, null, 2));
+        } catch (error) {
+          console.log(`No configuration found at ${configPath}`);
+          logger.debug(`Failed to read config: ${error}`);
+        }
+        return 0;
+      }
+
+      case 'locations': {
+        console.log('Configuration locations (in precedence order):\n');
+        console.log('1. CLI flags (--key=value)');
+        console.log('2. kaseki-agent.json (project-local)');
+        console.log('3. ~/.kaseki/config.json (user-global)');
+        console.log('4. Environment variables (KASEKI_*, OPENROUTER_*)');
+        console.log('5. Built-in defaults\n');
+
+        console.log('Examples:');
+        console.log('  kaseki-agent config set agent.timeout_seconds 1800 --global');
+        console.log('  kaseki-agent config get agent.model');
+        console.log('  kaseki-agent config show --global');
+        return 0;
+      }
+
+      default:
+        console.error('Unknown subcommand: ' + subcommand);
+        console.error('\nUsage:');
+        console.error('  kaseki-agent config get <KEY>');
+        console.error('  kaseki-agent config set <KEY> <VALUE> [--global]');
+        console.error('  kaseki-agent config show [--global]');
+        console.error('  kaseki-agent config locations');
+        return 1;
       }
     } catch (error) {
       logger.error(`Config command failed: ${error}`);

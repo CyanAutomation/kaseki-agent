@@ -1,6 +1,6 @@
 /**
  * Instance Manager
- * 
+ *
  * Handles kaseki instance lifecycle: naming, directories, metadata
  */
 
@@ -215,7 +215,7 @@ export class InstanceManager {
         startTime: startTime?.toISOString(),
         endTime: endTime?.toISOString(),
         exitCode,
-        duration: startTime && endTime ? 
+        duration: startTime && endTime ?
           (endTime.getTime() - startTime.getTime()) / 1000 : undefined,
       };
 

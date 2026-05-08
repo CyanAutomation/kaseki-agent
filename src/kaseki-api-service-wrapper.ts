@@ -1,6 +1,6 @@
 /**
  * Kaseki API Service - Express server wrapper
- * 
+ *
  * Encapsulates the complete REST API service for async execution
  */
 
@@ -174,7 +174,7 @@ export class KasekiAPIServiceImpl {
     running: boolean;
     port: number;
     uptime: number;
-  } {
+    } {
     return {
       running: this.server?.listening ?? false,
       port: this.config.port,

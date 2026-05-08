@@ -1,6 +1,6 @@
 /**
  * KasekiCLI - Main command router
- * 
+ *
  * Dispatches CLI subcommands to their respective handlers
  */
 
@@ -125,7 +125,7 @@ export class KasekiCLI {
     const command = this.commands.get(subcommand);
     if (!command) {
       console.error(`Unknown command: ${subcommand}`);
-      console.error(`\nRun 'kaseki-agent --help' for available commands`);
+      console.error('\nRun \'kaseki-agent --help\' for available commands');
       return 1;
     }
 
