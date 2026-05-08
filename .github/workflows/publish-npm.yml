@@ -31,7 +31,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22.22.2'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: npm
 
@@ -67,7 +67,12 @@ jobs:
         run: npm run build
 
       - name: Publish to npm registry
+        # NODE_AUTH_TOKEN is explicitly cleared so npm performs its own OIDC token
+        # exchange (setup-node@v6 injects the raw GitHub JWT which the registry rejects;
+        # npm 11.5.1+ exchanges it itself when NODE_AUTH_TOKEN is absent)
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ""
 
       - name: Verify on npm registry
         run: |
