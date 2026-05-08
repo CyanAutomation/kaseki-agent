@@ -32,8 +32,15 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22.22.2'
-          registry-url: 'https://registry.npmjs.org'
           cache: npm
+          always-auth: false
+
+      - name: Configure npm for OIDC publishing
+        run: |
+          echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" >> ~/.npmrc
+          echo "registry=https://registry.npmjs.org" >> ~/.npmrc
+        env:
+          NPM_TOKEN: ""  # Placeholder; actual auth is via OIDC below
 
       - name: Verify npm authentication setup
         run: |
