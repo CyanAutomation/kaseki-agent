@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.4...v1.5.5) (2026-05-09)
+
+### Bug Fixes
+
+* add npm build step to publish-npm workflow to ensure dist/ is included in package ([aa47866](https://github.com/CyanAutomation/kaseki-agent/commit/aa4786690ca8a037c359681fd6eb487032643b4f))
+
 ## [1.5.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.3...v1.5.4) (2026-05-09)
 
 ### Bug Fixes
