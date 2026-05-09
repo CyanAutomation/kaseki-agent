@@ -42,7 +42,7 @@
   },
   "homepage": "https://github.com/CyanAutomation/kaseki-agent#readme",
   "scripts": {
-    "build": "tsc && node dist/add-js-extensions.js && chmod 0755 dist/*.js",
+    "build": "tsc && node dist/add-js-extensions.js && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
     "prepublishOnly": "npm run build",
     "type-check": "tsc --noEmit",
     "check": "npm run type-check && npm run lint",
@@ -66,7 +66,8 @@
     "type-check:changed": "tsc --noEmit -p tsconfig.changed.json",
     "benchmark:pi-event-filter": "npm run build && RUN_PI_EVENT_FILTER_PERF=1 jest --testMatch \"<rootDir>/perf/**/*.benchmark.test.ts\" --runInBand",
     "release": "semantic-release",
-    "release:dry": "semantic-release --dry-run"
+    "release:dry": "semantic-release --dry-run",
+    "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js"
   },
   "dependencies": {
     "express": "^4.18.2",
