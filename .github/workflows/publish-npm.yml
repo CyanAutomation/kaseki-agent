@@ -103,11 +103,8 @@ jobs:
             echo "✅ ${PACKAGE_NAME}@${VERSION} does not exist yet; safe to publish."
           fi
 
-      - name: Build
-        run: npm run build
-
-      - name: Pack dry run
-        run: npm pack --dry-run
+      - name: Publish smoke test
+        run: npm run test:publish-smoke
 
       - name: Publish to npm registry
         run: npm publish --access public --provenance --loglevel verbose
