@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Bug Fixes
 
+* ensure dist/ rebuild with correct dynamic import .js extensions ([1092d1a](https://github.com/CyanAutomation/kaseki-agent/commit/1092d1ab8df48b8cb128771131aadb1a48afecf2))
+
+## [1.5.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.2...v1.5.3) (2026-05-09)
+
+### Bug Fixes
+
 * synchronize the release version across package metadata, lockfile, and changelog
 * configure semantic-release to update npm package metadata without publishing
 * document npm publish version ownership and log the exact packed version
