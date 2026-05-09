@@ -36,7 +36,7 @@ export class KasekiCLI {
       name: 'setup',
       description: 'Interactive setup wizard (first-time configuration)',
       execute: async (args) => {
-        const { SetupCommand } = await import('./commands/SetupCommand');
+        const { SetupCommand } = await import('./commands/SetupCommand.js');
         const cmd = new SetupCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -46,7 +46,7 @@ export class KasekiCLI {
       name: 'run',
       description: 'Run kaseki agent on target repository',
       execute: async (args) => {
-        const { RunCommand } = await import('./commands/RunCommand');
+        const { RunCommand } = await import('./commands/RunCommand.js');
         const cmd = new RunCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -56,7 +56,7 @@ export class KasekiCLI {
       name: 'doctor',
       description: 'Health checks and dependency validation',
       execute: async (args) => {
-        const { DoctorCommand } = await import('./commands/DoctorCommand');
+        const { DoctorCommand } = await import('./commands/DoctorCommand.js');
         const cmd = new DoctorCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -66,7 +66,7 @@ export class KasekiCLI {
       name: 'serve',
       description: 'Start REST API service for async execution',
       execute: async (args) => {
-        const { ServeCommand } = await import('./commands/ServeCommand');
+        const { ServeCommand } = await import('./commands/ServeCommand.js');
         const cmd = new ServeCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -76,7 +76,7 @@ export class KasekiCLI {
       name: 'config',
       description: 'Manage configuration',
       execute: async (args) => {
-        const { ConfigCommand } = await import('./commands/ConfigCommand');
+        const { ConfigCommand } = await import('./commands/ConfigCommand.js');
         const cmd = new ConfigCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -86,7 +86,7 @@ export class KasekiCLI {
       name: 'list',
       description: 'List all kaseki instances',
       execute: async (args) => {
-        const { ListCommand } = await import('./commands/ListCommand');
+        const { ListCommand } = await import('./commands/ListCommand.js');
         const cmd = new ListCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -96,7 +96,7 @@ export class KasekiCLI {
       name: 'report',
       description: 'Generate report for completed instance',
       execute: async (args) => {
-        const { ReportCommand } = await import('./commands/ReportCommand');
+        const { ReportCommand } = await import('./commands/ReportCommand.js');
         const cmd = new ReportCommand(this.configManager);
         return cmd.execute(args);
       },
@@ -106,7 +106,7 @@ export class KasekiCLI {
       name: 'secrets',
       description: 'Manage stored secrets (keyring/file)',
       execute: async (args) => {
-        const { SecretsCommand } = await import('./commands/SecretsCommand');
+        const { SecretsCommand } = await import('./commands/SecretsCommand.js');
         const cmd = new SecretsCommand(this.configManager);
         return cmd.execute(args);
       },
