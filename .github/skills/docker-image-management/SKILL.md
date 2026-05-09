@@ -264,8 +264,8 @@ RUN npm install -g @anthropic-ai/cli@0.70.2
 # Stage 2: Runtime (minimal, copies Pi CLI from builder)
 FROM node:22.22.2-alpine
 
-RUN addgroup -g 10001 kaseki && \
-    adduser -D -u 10001 -G kaseki kaseki
+RUN addgroup -g 1000 kaseki && \
+    adduser -D -u 1000 -G kaseki kaseki
 
 WORKDIR /app
 
@@ -320,7 +320,7 @@ RUN pi --version || exit 1
 RUN npm --version || exit 1
 
 # Verify non-root user
-RUN test "$(id -u)" = "10001" || exit 1
+RUN test "$(id -u)" = "1000" || exit 1
 ```
 
 ---
@@ -405,7 +405,7 @@ docker run --rm kaseki-template:latest bash -c '
 
 **Test: Non-root user**
 ```bash
-docker run --rm kaseki-template:latest id -u | grep -q 10001
+docker run --rm kaseki-template:latest id -u | grep -q 1000
 ```
 
 **Test: Read-only root filesystem**
@@ -431,8 +431,8 @@ echo "Running smoke tests..."
 echo "✓ Pi CLI available"
 docker run --rm $IMAGE pi --version
 
-echo "✓ Non-root user (UID 10001)"
-docker run --rm $IMAGE id -u | grep -q 10001
+echo "✓ Non-root user (UID 1000)"
+docker run --rm $IMAGE id -u | grep -q 1000
 
 echo "✓ npm available"
 docker run --rm $IMAGE npm --version

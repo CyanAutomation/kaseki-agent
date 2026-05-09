@@ -9,8 +9,8 @@ FROM ${NODE_IMAGE} AS deps
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates git procps \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 kaseki \
-    && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
+    && groupadd --system --gid 1000 kaseki \
+    && useradd --system --uid 1000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
     && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent
 
@@ -39,8 +39,8 @@ FROM ${NODE_IMAGE} AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 kaseki \
-    && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
+    && groupadd --system --gid 1000 kaseki \
+    && useradd --system --uid 1000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
     && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 
@@ -148,8 +148,8 @@ FROM ${NODE_IMAGE} AS final
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 10001 kaseki \
-    && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
+    && groupadd --system --gid 1000 kaseki \
+    && useradd --system --uid 1000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
     && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \
     && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki
 

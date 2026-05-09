@@ -159,7 +159,7 @@ All original environment variables still work for backward compatibility:
   - `--read-only` root filesystem
   - `--cap-drop=ALL` (minimal capabilities)
   - `--security-opt no-new-privileges:true`
-  - Non-root user (UID 10001)
+  - Non-root user (UID 1000)
   - tmpfs for /tmp, /var/tmp, /run
 - Volume mounting (workspace, results, cache, secrets)
 - Container lifecycle management (stop, remove, list, logs)

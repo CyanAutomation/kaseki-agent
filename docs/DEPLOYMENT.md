@@ -43,11 +43,13 @@ The container will **automatically create** the required subdirectories:
 
 ### Docker User & Permissions
 
-The API container runs as **UID 1000** (non-root) by default:
+The container runs as **UID 1000** (kaseki user, non-root):
 
 ```yaml
-user: "1000:1000"
+user: "1000:1000"  # Consistent across API service, kaseki-agent, and docker-compose
 ```
+
+**Important:** This UID must match the container image build (Dockerfile line 11 and 38) and docker-compose configuration (line 4). Mismatches cause permission denied errors when writing to `/agents/kaseki-results/`.
 
 **Critical:** Ensure the host `/agents` directory has write permissions for UID 1000:
 
@@ -667,7 +669,62 @@ npm view @cyanautomation/kaseki-agent@1.4.1 && echo "Version already published" 
 
 ## Troubleshooting
 
-### Permission Denied Errors Writing to `/results/`
+### UID Mismatch: "Permission denied" on `/results/` (Critical Fix)
+
+**Symptom:**
+
+Multiple permission denied errors when running kaseki-agent:
+
+```
+/usr/local/bin/kaseki-agent: line 132: /results/stdout.log: Permission denied
+/usr/local/bin/kaseki-agent: line 136: /results/validation.log: Permission denied
+tee: /results/pi-stderr.log: Permission denied
+/usr/local/bin/kaseki-agent: line 436: /results/git.status: Permission denied
+```
+
+**Root Cause:**
+The Dockerfile creates the kaseki user with UID 1000, and docker-compose.yml runs the container as UID 1000. However, if the host `/agents` directory is owned by root (or another UID) with restrictive permissions (e.g., `755`), the container cannot write to it.
+
+**One-Line Fix:**
+
+```bash
+sudo mkdir -p /agents && sudo chmod 777 /agents
+```
+
+**Explanation:**
+- Makes `/agents` world-writable so UID 1000 (and any user) can write
+- Subdirectories created by the container inherit restrictive permissions (`700`) automatically
+- Safe for production because worker containers cannot read/write outside their instance directories
+
+**Better Fix (if you own the host user):**
+
+```bash
+sudo mkdir -p /agents
+sudo chown 1000:1000 /agents  # Make /agents owned by the container user
+sudo chmod 755 /agents         # Restrictive but sufficient
+```
+
+**Verify the fix:**
+
+```bash
+ls -ld /agents  # Should show kaseki user as owner and world-writable OR
+                # drwxrwxrwx (world-writable) if using one-line fix
+touch /agents/test-write && rm /agents/test-write  # Should succeed
+```
+
+**After Fixing:**
+
+1. **For Docker Compose API service:** Restart the service
+   ```bash
+   docker-compose down && docker-compose up -d
+   ```
+
+2. **For kaseki-agent CLI:** Re-run your command
+   ```bash
+   sudo -E kaseki-agent run <repo> <ref> "<task>"
+   ```
+
+### Permission Denied Errors Writing to `/results/` (API Service)
 
 **Symptom:**
 
@@ -693,7 +750,7 @@ ls -ld /agents  # Should show: drwxrwxrwx ... /agents
 **Better Fix (if you control the host user):**
 
 ```bash
-# Create /agents owned by the container user
+# Create /agents owned by the container user (UID 1000)
 sudo mkdir -p /agents
 sudo chown 1000:1000 /agents
 sudo chmod 755 /agents
@@ -703,7 +760,7 @@ sudo chmod 755 /agents
 
 1. Restart docker-compose: `docker-compose down && docker-compose up -d`
 2. Verify container can write: `docker-compose logs kaseki-api | grep KASEKI_RESULTS_DIR`
-3. Retry your kaseki-agent run
+3. Retry your kaseki-agent run or API request
 
 ### Startup Logs Show "Failed to create KASEKI_RESULTS_DIR"
 
