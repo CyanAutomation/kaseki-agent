@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = __dirname;
-const extensionlessRelativeDynamicImportPattern = /import\(\s*(['"])(\.{1,2}\/[^'"]*?)(?<!\.js)\1\s*\)/g;
+const extensionlessRelativeDynamicImportPattern = /import\(\s*(['"])(\.\{1,2\}\/(?:[^'"]*?(?:\/|^))?[^'"./]+)\1\s*\)/g;
 
 interface MatchResult {
   filePath: string;
