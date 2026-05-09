@@ -91,11 +91,18 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
 
           echo "Checking npm package: ${PACKAGE_NAME}"
-          npm view "${PACKAGE_NAME}" name version versions --json || true
+          npm view "${PACKAGE_NAME}" name version versions --json
 
-          echo "Checking target version: ${PACKAGE_NAME}@${VERSION}"
-          npm view "${PACKAGE_NAME}@${VERSION}" version --json || true
+          echo "Checking whether target version already exists: ${PACKAGE_NAME}@${VERSION}"
 
+          if npm view "${PACKAGE_NAME}@${VERSION}" version --json >/tmp/existing-version.json 2>/dev/null; then
+            echo "⚠️ ${PACKAGE_NAME}@${VERSION} already exists on npm."
+            cat /tmp/existing-version.json
+            exit 1
+          else
+            echo "✅ ${PACKAGE_NAME}@${VERSION} does not exist yet; safe to publish."
+          fi
+  
       - name: Build
         run: npm run build
 
