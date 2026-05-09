@@ -52,6 +52,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Version ownership: semantic-release updates package.json,
+          # package-lock.json, and CHANGELOG.md in the release commit.
+          # This publish workflow only verifies and publishes that exact version.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tags }}" ]]; then
             VERSION=$(echo "${{ github.event.inputs.tags }}" | cut -d',' -f1 | sed 's/^v//')
             echo "ℹ️ Using provided version: ${VERSION}"
@@ -60,13 +63,24 @@ jobs:
             echo "ℹ️ Auto-detected version from latest git tag: ${VERSION}"
           fi
 
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          LOCKFILE_VERSION=$(node -p "require('./package-lock.json').version")
+          LOCKFILE_ROOT_VERSION=$(node -p "require('./package-lock.json').packages[''].version")
 
-          if [[ "${CURRENT_VERSION}" == "${VERSION}" ]]; then
-            echo "ℹ️ package.json already at ${VERSION}; continuing."
-          else
-            echo "ℹ️ Updating package.json version from ${CURRENT_VERSION} to ${VERSION}"
-            npm version "${VERSION}" --no-git-tag-version
+          echo "ℹ️ Resolved release version: ${VERSION}"
+          echo "ℹ️ package.json version: ${PACKAGE_VERSION}"
+          echo "ℹ️ package-lock.json version: ${LOCKFILE_VERSION}"
+          echo "ℹ️ package-lock.json root package version: ${LOCKFILE_ROOT_VERSION}"
+
+          if [[ "${PACKAGE_VERSION}" != "${VERSION}" || "${LOCKFILE_VERSION}" != "${VERSION}" || "${LOCKFILE_ROOT_VERSION}" != "${VERSION}" ]]; then
+            echo "❌ Release artifacts are not synchronized with ${VERSION}."
+            echo "❌ semantic-release must update package.json, package-lock.json, and CHANGELOG.md before publishing."
+            exit 1
+          fi
+
+          if ! grep -q "## \[${VERSION}\]" CHANGELOG.md; then
+            echo "❌ CHANGELOG.md is missing a release entry for ${VERSION}."
+            exit 1
           fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -106,8 +120,28 @@ jobs:
       - name: Publish smoke test
         run: npm run test:publish-smoke
 
+      - name: Log package contents and exact publish version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "📦 Packing ${PACKAGE_NAME}@${VERSION}"
+          npm pack --dry-run --json > /tmp/npm-pack-dry-run.json
+          jq '.[0] | {name, version, filename, files: (.files | length), unpackedSize}' /tmp/npm-pack-dry-run.json
+
       - name: Publish to npm registry
-        run: npm publish --access public --provenance --loglevel verbose
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+
+          echo "🚀 Publishing ${PACKAGE_NAME}@${VERSION}"
+          npm publish --access public --provenance --loglevel verbose
 
       - name: Verify on npm registry
         shell: bash
