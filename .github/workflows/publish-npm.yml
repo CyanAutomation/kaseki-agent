@@ -59,8 +59,21 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Diagnostics
+        run: |
+          echo "Checking for NODE_AUTH_TOKEN (masked):"
+          echo "${NODE_AUTH_TOKEN:0:1}***"
+          echo "Checking npm config:"
+          npm config list
+          echo "Checking .npmrc if it exists:"
+          [ -f ~/.npmrc ] && cat ~/.npmrc | sed 's/:_authToken=.*/:_authToken=*** /'
+          [ -f .npmrc ] && cat .npmrc | sed 's/:_authToken=.*/:_authToken=*** /'
+
       - name: Publish to npm registry
-        run: npm publish --access public
+        run: |
+          # Explicitly unset NODE_AUTH_TOKEN to ensure npm uses OIDC exchange
+          unset NODE_AUTH_TOKEN
+          npm publish --access public --verbose
 
       - name: Verify on npm registry
         run: |
