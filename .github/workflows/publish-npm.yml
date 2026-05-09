@@ -15,6 +15,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -35,6 +39,9 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
+
+      - name: Remove deprecated npm auth config
+        run: npm config delete always-auth || true
 
       - name: Install dependencies
         run: npm ci
@@ -72,28 +79,49 @@ jobs:
           echo "Package version:"
           node -p "require('./package.json').version"
 
+          echo "Repository:"
+          node -p "require('./package.json').repository.url"
+
+      - name: Check current npm package state
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "Checking npm package: ${PACKAGE_NAME}"
+          npm view "${PACKAGE_NAME}" name version versions --json || true
+
+          echo "Checking target version: ${PACKAGE_NAME}@${VERSION}"
+          npm view "${PACKAGE_NAME}@${VERSION}" version --json || true
+
       - name: Build
         run: npm run build
 
+      - name: Pack dry run
+        run: npm pack --dry-run
+
       - name: Publish to npm registry
-        run: npm publish --access public --provenance
+        run: npm publish --access public --provenance --loglevel verbose
 
       - name: Verify on npm registry
         shell: bash
         run: |
           set -euo pipefail
 
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
           VERSION="${{ steps.version.outputs.version }}"
 
           echo "Waiting for npm registry to index package..."
           sleep 10
 
-          npm view "@cyanautomation/kaseki-agent@${VERSION}" --json > /tmp/npm-view.json
+          npm view "${PACKAGE_NAME}@${VERSION}" --json > /tmp/npm-view.json
 
           PUBLISHED_VERSION=$(jq -r '.version' /tmp/npm-view.json)
 
           if [[ "${PUBLISHED_VERSION}" == "${VERSION}" ]]; then
-            echo "✅ Package successfully published: @cyanautomation/kaseki-agent@${VERSION}"
+            echo "✅ Package successfully published: ${PACKAGE_NAME}@${VERSION}"
             jq '.version, .dist.tarball' /tmp/npm-view.json
           else
             echo "❌ Failed to verify package on npm registry"
