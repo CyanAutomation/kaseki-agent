@@ -1,6 +1,6 @@
 {
   "name": "@cyanautomation/kaseki-agent",
-  "version": "1.5.5",
+  "version": "1.6.0",
   "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation",
   "type": "module",
   "license": "MIT",

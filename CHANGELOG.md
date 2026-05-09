@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.5...v1.6.0) (2026-05-09)
+
+### Features
+
+* integrate enquirer for interactive setup prompts ([e52baf9](https://github.com/CyanAutomation/kaseki-agent/commit/e52baf907207d6d519fdada19eb2282c5c0993fb))
+
 ## [1.5.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.4...v1.5.5) (2026-05-09)
 
 ### Bug Fixes
