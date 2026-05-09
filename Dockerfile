@@ -37,7 +37,7 @@ FROM ${NODE_IMAGE} AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 kaseki \
     && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
@@ -124,7 +124,7 @@ RUN chmod +x \
 
 WORKDIR /workspace
 USER kaseki
-ENTRYPOINT ["/usr/local/bin/kaseki-entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]
 CMD ["agent"]
 
 # The runner initializes these logs before long-running work starts.
@@ -146,7 +146,7 @@ FROM ${NODE_IMAGE} AS final
 
 # Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 kaseki \
     && useradd --system --uid 10001 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
@@ -212,7 +212,7 @@ RUN mkdir -p /scripts \
 
 WORKDIR /workspace
 USER kaseki
-ENTRYPOINT ["/usr/local/bin/kaseki-entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]
 CMD ["agent"]
 
 # The runner initializes these logs before long-running work starts.
