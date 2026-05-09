@@ -3,10 +3,10 @@
  * Interactive setup wizard for first-time configuration
  */
 
-import readline from 'readline';
 import { execSync } from 'child_process';
 import path from 'path';
 import os from 'os';
+import Enquirer from 'enquirer';
 import { SecretsManager } from '../../secrets/SecretsManager';
 import { DoctorCommand } from './DoctorCommand';
 import { BaseCommand } from '../BaseCommand';
@@ -22,8 +22,6 @@ interface SetupAnswers {
 }
 
 export class SetupCommand extends BaseCommand {
-  private rl: readline.Interface | null = null;
-
   async execute(_args: string[]): Promise<number> {
     try {
       console.log('\n🔧 Kaseki Agent Setup Wizard\n');
@@ -89,140 +87,66 @@ export class SetupCommand extends BaseCommand {
     } catch (error) {
       logger.error(`Setup failed: ${error}`);
       return 1;
-    } finally {
-      this.closeReadline();
     }
   }
 
   /**
-   * Prompt user for configuration answers
+   * Prompt user for configuration answers using enquirer
    */
   private async promptForAnswers(): Promise<SetupAnswers | null> {
     try {
-      this.rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+      const enquirer = new Enquirer();
 
-      // Prompt for API key
-      const apiKey = await this.prompt(
-        '📌 Enter your OpenRouter API key (sk-or-...): ',
-        true
-      );
+      const answers = await enquirer.prompt([
+        {
+          type: 'password',
+          name: 'apiKey',
+          message: '📌 Enter your OpenRouter API key (sk-or-...)',
+          validate: (value: string) => {
+            if (!value) {
+              return 'API key is required.';
+            }
+            if (!value.startsWith('sk-or-')) {
+              return 'API key should start with "sk-or-"';
+            }
+            return true;
+          },
+        },
+        {
+          type: 'select',
+          name: 'configLocation',
+          message: 'Where should config be stored?',
+          choices: [
+            { name: 'project', message: 'Project-local (./kaseki-agent.json)' },
+            { name: 'global', message: 'User home (~/.kaseki/config.json)' },
+          ],
+        },
+        {
+          type: 'input',
+          name: 'modelName',
+          message: 'Model identifier (default: openrouter/free): ',
+          initial: 'openrouter/free',
+        },
+      ]) as any;
 
-      if (!apiKey) {
-        console.error('API key is required.');
+      if (!answers) {
         return null;
       }
-
-      // Verify API key format
-      if (!apiKey.startsWith('sk-or-')) {
-        console.warn('⚠️  API key should start with "sk-or-". Continuing anyway...');
-      }
-
-      // Prompt for config location
-      const configLocation = await this.promptChoice(
-        'Where should config be stored?',
-        [
-          { label: 'Project-local (./kaseki-agent.json)', value: 'project' },
-          { label: 'User home (~/.kaseki/config.json)', value: 'global' },
-        ]
-      );
-
-      if (!configLocation) {
-        return null;
-      }
-
-      // Prompt for model
-      const modelName = await this.prompt(
-        'Model identifier (default: openrouter/free): ',
-        false
-      );
 
       return {
-        apiKey,
-        configLocation: configLocation as 'project' | 'global',
+        apiKey: answers.apiKey,
+        configLocation: answers.configLocation as 'project' | 'global',
         validationCommands: [
           'npm run check',
           'npm run test',
           'npm run build',
         ],
-        modelName: modelName || 'openrouter/free',
+        modelName: answers.modelName || 'openrouter/free',
       };
-    } finally {
-      this.closeReadline();
+    } catch (error) {
+      logger.error(`Failed to prompt for answers: ${error}`);
+      return null;
     }
-  }
-
-  /**
-   * Prompt for single answer with optional masking
-   */
-  private prompt(question: string, mask: boolean = false): Promise<string | null> {
-    return new Promise((resolve) => {
-      if (!this.rl) {
-        resolve(null);
-        return;
-      }
-
-      if (mask) {
-        // Mask password input
-        process.stdout.write(question);
-        const stdin = process.stdin;
-        stdin.resume();
-        stdin.setRawMode(true);
-
-        let password = '';
-        stdin.on('data', (char: Buffer) => {
-          const charStr = char.toString('utf-8');
-          if (charStr === '\n' || charStr === '\r' || charStr === '\u0004') {
-            // Enter key or Ctrl-D
-            stdin.setRawMode(false);
-            stdin.pause();
-            console.log(); // Newline for cleanliness
-            resolve(password);
-          } else if (charStr === '\u0003') {
-            // Ctrl-C
-            process.exit();
-          } else {
-            password += charStr;
-            process.stdout.write('*');
-          }
-        });
-      } else {
-        this.rl!.question(question, (answer) => {
-          resolve(answer || null);
-        });
-      }
-    });
-  }
-
-  /**
-   * Prompt for choice from list
-   */
-  private async promptChoice(
-    question: string,
-    choices: Array<{ label: string; value: string }>
-  ): Promise<string | null> {
-    return new Promise((resolve) => {
-      if (!this.rl) {
-        resolve(null);
-        return;
-      }
-
-      console.log(`\n${question}`);
-      choices.forEach((choice, index) => {
-        console.log(`  ${index + 1}) ${choice.label}`);
-      });
-
-      this.rl!.question('Enter number (1-' + choices.length + '): ', (answer) => {
-        const index = parseInt(answer, 10) - 1;
-        if (index >= 0 && index < choices.length) {
-          resolve(choices[index].value);
-        } else {
-          resolve(null);
-        }
-      });
-    });
   }
 
   /**
@@ -287,15 +211,5 @@ export class SetupCommand extends BaseCommand {
   private isNodeVersionValid(version: string): boolean {
     const major = parseInt(version.split('.')[0], 10);
     return major >= 24;
-  }
-
-  /**
-   * Close readline interface
-   */
-  private closeReadline(): void {
-    if (this.rl) {
-      this.rl.close();
-      this.rl = null;
-    }
   }
 }
