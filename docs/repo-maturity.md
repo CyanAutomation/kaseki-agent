@@ -373,7 +373,7 @@ For DevOps tools, security is non-negotiable. Add these 10 signals as a separate
 
 | Signal | Detection | Kaseki Status |
 |--------|-----------|---------------|
-| Container runs as non-root | USER UID:GID in Dockerfile (not UID 0) | ✅ YES: USER 10001:10001 |
+| Container runs as non-root | USER UID:GID in Dockerfile (not UID 0) | ✅ YES: USER 1000:1000 |
 | File permissions restrictive | Explicit permission bits; no world-writable dirs | ✅ YES: workspace and results directories scoped |
 
 **Kaseki Score: +2**
