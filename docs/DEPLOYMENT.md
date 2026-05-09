@@ -52,6 +52,7 @@ user: "1000:1000"
 **Critical:** Ensure the host `/agents` directory has write permissions for UID 1000:
 
 #### Option A: Preferred (if you own /agents on host)
+
 ```bash
 mkdir -p /agents
 chown 1000:1000 /agents
@@ -59,6 +60,7 @@ chmod 755 /agents
 ```
 
 #### Option B: Required if /agents is owned by root
+
 ```bash
 # Make /agents world-writable to allow container user (1000) to write
 mkdir -p /agents
@@ -66,12 +68,14 @@ sudo chmod 777 /agents
 ```
 
 #### Option C: WSL or rootless Docker (if sudo isn't available)
+
 ```bash
 mkdir -p /agents
 chmod 777 /agents
 ```
 
 **Troubleshooting permission errors:**
+
 - If you see `Permission denied` errors when writing to `/results/`:
   - Verify the host `/agents` directory exists and is writable: `ls -ld /agents`
   - If owned by root with 755: run `sudo chmod 777 /agents`
@@ -576,6 +580,7 @@ sudo systemctl daemon-reload
 The package is published to npm registry via GitHub Actions:
 
 **Automated Flow (Recommended)**
+
 1. Run the **Release** workflow (`.github/workflows/release.yml`) manually or via push
    - Creates semantic version tags via `semantic-release`
    - Generates GitHub release notes
@@ -612,6 +617,7 @@ This means your npm account/organization **isn't configured for OIDC trusted pub
 6. Confirm authorization
 
 **After setup, retry:**
+
 ```bash
 # GitHub Actions → Publish NPM → Run workflow (leave tags empty or provide explicit version)
 ```
@@ -621,12 +627,14 @@ If OIDC still doesn't work, see [npm OIDC docs](https://docs.npmjs.com/cli/using
 **Note:** You only need to set this up once. After OIDC is enabled, all future publishes (automatic via Release workflow or manual) will work without additional configuration.
 
 **Option A: Retry with new prerelease version** (recommended for testing)
+
 1. Create a new git tag: `git tag v1.4.2-retry.1 && git push origin v1.4.2-retry.1`
 2. Run Publish NPM workflow
 3. Leave tags input empty (will auto-detect new version)
 4. Or explicitly provide: `1.4.2-retry.1`
 
 **Option B: Manual version override** (for recovery with explicit version)
+
 1. Run Publish NPM workflow manually
 2. In the tags input, provide the **exact new version**: `1.4.2`
 3. Workflow will update package.json and publish the new version
@@ -634,6 +642,7 @@ If OIDC still doesn't work, see [npm OIDC docs](https://docs.npmjs.com/cli/using
 **Manual Publishing with Custom Version (Testing)**
 
 For one-off test publishes (alpha/beta/rc tags):
+
 1. Create a git tag: `git tag v1.2.3-alpha.1 && git push origin v1.2.3-alpha.1`
 2. Run Publish NPM workflow manually
 3. Provide custom tags: `1.2.3-alpha.1` (or leave empty to auto-detect)
@@ -661,6 +670,7 @@ npm view @cyanautomation/kaseki-agent@1.4.1 && echo "Version already published" 
 ### Permission Denied Errors Writing to `/results/`
 
 **Symptom:**
+
 ```
 tee: /results/pi-stderr.log: Permission denied
 /usr/local/bin/kaseki-agent: line 436: /results/git.status: Permission denied
@@ -670,6 +680,7 @@ tee: /results/pi-stderr.log: Permission denied
 The container runs as UID 1000, but the host `/agents` directory is owned by root (or another user) with permissions that don't allow UID 1000 to write.
 
 **Quick Fix:**
+
 ```bash
 # On the host, make /agents writable for all users (including container UID 1000)
 sudo mkdir -p /agents
@@ -680,6 +691,7 @@ ls -ld /agents  # Should show: drwxrwxrwx ... /agents
 ```
 
 **Better Fix (if you control the host user):**
+
 ```bash
 # Create /agents owned by the container user
 sudo mkdir -p /agents
@@ -688,6 +700,7 @@ sudo chmod 755 /agents
 ```
 
 **After Fixing:**
+
 1. Restart docker-compose: `docker-compose down && docker-compose up -d`
 2. Verify container can write: `docker-compose logs kaseki-api | grep KASEKI_RESULTS_DIR`
 3. Retry your kaseki-agent run
@@ -695,11 +708,13 @@ sudo chmod 755 /agents
 ### Startup Logs Show "Failed to create KASEKI_RESULTS_DIR"
 
 **Check:**
+
 ```bash
 docker-compose logs kaseki-api | grep "Failed to create"
 ```
 
 **Verify host directory:**
+
 ```bash
 # Ensure /agents exists and is writable by UID 1000
 ls -ld /agents
@@ -708,22 +723,26 @@ rm /agents/test-write
 ```
 
 **If touch fails:**
+
 - Run: `sudo chmod 777 /agents`
 - Or: `sudo chown 1000:1000 /agents && sudo chmod 755 /agents`
 
 ### Container Exits with Code 1
 
 **Check logs:**
+
 ```bash
 docker-compose logs kaseki-api --tail 50
 ```
 
 **Common causes:**
+
 1. `/agents` directory doesn't exist or isn't writable (see "Permission Denied" section above)
 2. `KASEKI_RESULTS_DIR` points to invalid path
 3. Docker socket mount not available: verify `-v /var/run/docker.sock:/var/run/docker.sock`
 
 **Fix:**
+
 ```bash
 # Ensure /agents exists and is writable
 sudo mkdir -p /agents && sudo chmod 777 /agents
@@ -749,6 +768,7 @@ See "Permission Denied Errors" section above.
 ### Docker Socket Permission Denied
 
 **Symptom:**
+
 ```
 permission denied while trying to connect to Docker daemon
 Error response from daemon: user does not have permissions to use Docker
@@ -758,6 +778,7 @@ Error response from daemon: user does not have permissions to use Docker
 Container UID 1000 doesn't have access to `/var/run/docker.sock`
 
 **Fix:**
+
 ```bash
 # Get the gid of the docker group on the host
 stat -c '%g' /var/run/docker.sock  # Returns e.g., 985
@@ -770,6 +791,7 @@ docker-compose down && docker-compose up -d
 ```
 
 The docker-compose.yml should have:
+
 ```yaml
 group_add:
   - "${DOCKER_GID:-999}"
@@ -778,11 +800,13 @@ group_add:
 ### Volume Mount Not Available in Container
 
 **Symptom:**
+
 ```
 Error: ENOENT: no such file or directory, mkdir '/agents/kaseki-results'
 ```
 
 **Verify volume mount:**
+
 ```bash
 docker-compose ps  # Check if kaseki-api is running
 
@@ -791,6 +815,7 @@ docker inspect kaseki-api | grep -A 5 Mounts
 ```
 
 **Fix:**
+
 1. Ensure `/agents` exists on host: `mkdir -p /agents && chmod 777 /agents`
 2. Check docker-compose.yml has: `- /agents:/agents:rw`
 3. Restart: `docker-compose down && docker-compose up -d`

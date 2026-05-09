@@ -7,11 +7,13 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
 ### Option 1: Config File (Recommended - Persistent)
 
 1. Create config directory:
+
    ```bash
    mkdir -p ~/.kaseki
    ```
 
 2. Create `~/.kaseki/config.json`:
+
    ```json
    {
      "auth": {
@@ -24,6 +26,7 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    ```
 
 3. Update paths to your actual secret file locations:
+
    ```bash
    # Example: if your secrets are in ~/secrets/
    cat > ~/.kaseki/config.json << 'EOF'
@@ -39,11 +42,13 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
    ```
 
 4. Run kaseki (no env vars needed):
+
    ```bash
    kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task here"
    ```
 
 **Advantages:**
+
 - Persistent across multiple runs
 - No need to set env vars each time
 - Works with `sudo` (no `sudo -E` needed)
@@ -51,7 +56,8 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
 
 ### Option 2: Environment Variables (CLI with or without sudo)
 
-#### Without sudo:
+#### Without sudo
+
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
 export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
@@ -61,7 +67,8 @@ export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
 kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task here"
 ```
 
-#### With sudo (preserve env vars using `-E`):
+#### With sudo (preserve env vars using `-E`)
+
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
 export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
@@ -75,11 +82,13 @@ sudo -E kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Yo
 **Important:** Without the `-E` flag, `sudo` strips the environment variables. Always use `sudo -E` when relying on env vars.
 
 **Advantages:**
+
 - Works immediately for one-off runs
 - Useful for CI/CD pipelines
 - Can be scripted easily
 
 **Disadvantages:**
+
 - Must set env vars for each shell session
 - Requires `sudo -E` when running with sudo
 - Harder to manage in production
@@ -89,6 +98,7 @@ sudo -E kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Yo
 Use Docker Compose for persistent, managed deployments. The service automatically mounts secrets and handles environment variable injection.
 
 See [docs/DEPLOYMENT.md](DEPLOYMENT.md) for full Docker Compose setup with:
+
 - Secret file mounting
 - Environment variable configuration
 - Health checks and logging
@@ -157,6 +167,7 @@ chmod 600 ~/secrets/github_app_private_key
 ### "Auth validation failed: Missing..."
 
 Run the health check to get detailed guidance:
+
 ```bash
 kaseki-agent doctor
 ```
@@ -224,6 +235,7 @@ This takes precedence over `~/.kaseki/config.json`.
 ## Security Best Practices
 
 1. **Restrict file permissions:**
+
    ```bash
    chmod 600 ~/secrets/*
    ```
@@ -231,6 +243,7 @@ This takes precedence over `~/.kaseki/config.json`.
 2. **Use separate credential files** — don't mix secrets in one file
 
 3. **Don't commit secrets** to version control:
+
    ```bash
    echo "~/secrets/*" >> ~/.gitignore
    echo "./kaseki-agent.json" >> .gitignore  # if it contains real paths
@@ -244,7 +257,8 @@ This takes precedence over `~/.kaseki/config.json`.
 
 ## Integration Examples
 
-### Local development (config file):
+### Local development (config file)
+
 ```bash
 mkdir -p ~/.kaseki
 cat > ~/.kaseki/config.json << 'EOF'
@@ -254,7 +268,8 @@ EOF
 kaseki-agent run <repo> <branch> <task>
 ```
 
-### CI/CD pipeline (environment variables):
+### CI/CD pipeline (environment variables)
+
 ```bash
 # In GitHub Actions, GitLab CI, or similar
 export OPENROUTER_API_KEY_FILE=/tmp/openrouter_key
@@ -264,7 +279,8 @@ export GITHUB_APP_ID_FILE=/tmp/github_app_id
 kaseki-agent run <repo> <branch> <task>
 ```
 
-### Docker Compose service:
+### Docker Compose service
+
 ```yaml
 services:
   kaseki-api:
