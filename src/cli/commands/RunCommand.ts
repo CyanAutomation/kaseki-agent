@@ -110,8 +110,8 @@ export class RunCommand extends BaseCommand {
         apiKeyFile,
         environment,
         timeout,
-        entrypoint: '/agents/kaseki-agent.sh',
-        command: [],
+        entrypoint: '/usr/local/bin/kaseki-entrypoint',
+        command: ['agent'],
       });
 
       const stageEnd = new Date();
@@ -136,6 +136,13 @@ export class RunCommand extends BaseCommand {
           console.log(`View results: kaseki-agent report ${instanceId}`);
         } else {
           console.log(`\n❌ Run failed with exit code ${containerResult.exitCode}`);
+          
+          // Provide contextual error messaging for common exit codes
+          const errorContext = this.getExitCodeContext(containerResult.exitCode);
+          if (errorContext) {
+            console.log(`\nℹ️  ${errorContext}`);
+          }
+          
           console.log(`View logs: kaseki-agent report ${instanceId}`);
         }
       }
@@ -221,5 +228,24 @@ export class RunCommand extends BaseCommand {
     if (keepWorkspace !== undefined) env.KASEKI_KEEP_WORKSPACE = keepWorkspace ? '1' : '0';
 
     return env;
+  }
+
+  /**
+   * Get contextual error message for common exit codes
+   */
+  private getExitCodeContext(exitCode: number): string | null {
+    const contexts: Record<number, string> = {
+      1: 'General error. Check the logs for details.',
+      2: 'Configuration error. Ensure all required settings are configured.',
+      3: 'Empty git diff. No changes were made.',
+      4: 'Diff size exceeded maximum allowed bytes. Consider adjusting max_diff_bytes.',
+      5: 'Changed files are outside the allowlist. Check the changed files against allowed patterns.',
+      6: 'Secret scan detected potential credentials. Ensure no secrets are included.',
+      7: 'Validation phase files outside allowlist. Adjust validation allowlist patterns.',
+      124: 'Agent timeout. The task took longer than the configured timeout. Increase agent.timeout_seconds.',
+      127: 'Docker initialization failed. The kaseki-entrypoint script is missing from the image. Run: kaseki-agent doctor',
+    };
+
+    return contexts[exitCode] || null;
   }
 }

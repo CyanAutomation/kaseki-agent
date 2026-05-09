@@ -241,7 +241,7 @@ export class DoctorCommand extends BaseCommand {
   }
 
   /**
-   * Check Docker image availability
+   * Check Docker image availability and integrity
    */
   private async checkDockkerImage(): Promise<Check> {
     try {
@@ -256,13 +256,10 @@ export class DoctorCommand extends BaseCommand {
       }
 
       // Check if image exists locally
+      let imageExists = false;
       try {
         execSync(`docker inspect ${image} > /dev/null 2>&1`, { stdio: 'ignore' });
-        return {
-          name: 'Docker Image',
-          status: 'pass',
-          message: `✓ Docker image available: ${image}`,
-        };
+        imageExists = true;
       } catch {
         return {
           name: 'Docker Image',
@@ -271,6 +268,34 @@ export class DoctorCommand extends BaseCommand {
           fixable: true,
         };
       }
+
+      // If image exists, verify entrypoint script is accessible
+      if (imageExists) {
+        try {
+          execSync(`docker run --rm --entrypoint /bin/test ${image} -x /usr/local/bin/kaseki-entrypoint`, {
+            stdio: 'ignore',
+            timeout: 5000,
+          });
+          return {
+            name: 'Docker Image',
+            status: 'pass',
+            message: `✓ Docker image available: ${image}`,
+          };
+        } catch {
+          return {
+            name: 'Docker Image',
+            status: 'fail',
+            message: `❌ Docker image is missing critical scripts (kaseki-entrypoint not found). The image may be corrupted. Try rebuilding or pulling a fresh copy: docker pull ${image}`,
+            fixable: true,
+          };
+        }
+      }
+
+      return {
+        name: 'Docker Image',
+        status: 'pass',
+        message: `✓ Docker image available: ${image}`,
+      };
     } catch (error) {
       return {
         name: 'Docker Image',

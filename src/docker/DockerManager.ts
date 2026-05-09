@@ -136,13 +136,36 @@ export class DockerManager {
         });
       }
 
-      // Handle completion
+      // Handle completion with enhanced error context
       child.on('exit', (code: number | null) => {
-        resolve({
-          exitCode: code ?? 1,
-          stdout,
-          stderr,
-        });
+        // Check for Docker init errors in stderr
+        if (code === 127 && stderr.includes('no such file or directory')) {
+          const enhancedStderr = 
+            stderr +
+            '\n\n❌ DOCKER INITIALIZATION FAILED\n' +
+            'This usually means the Docker image is missing critical scripts or is corrupted.\n\n' +
+            'Troubleshooting steps:\n' +
+            '1. Pull the latest image:\n' +
+            '   docker pull docker.io/cyanautomation/kaseki-agent:latest\n' +
+            '2. Verify the image is healthy:\n' +
+            '   kaseki-agent doctor\n' +
+            '3. Try running again:\n' +
+            '   kaseki-agent run <repo> <ref> <task>\n\n' +
+            'If the problem persists, the image may need to be rebuilt locally:\n' +
+            '   docker build -t kaseki-template:latest .';
+          
+          resolve({
+            exitCode: code ?? 1,
+            stdout,
+            stderr: enhancedStderr,
+          });
+        } else {
+          resolve({
+            exitCode: code ?? 1,
+            stdout,
+            stderr,
+          });
+        }
       });
 
       // Handle errors
