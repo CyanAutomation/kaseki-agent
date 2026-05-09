@@ -18,6 +18,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
@@ -52,10 +53,24 @@ jobs:
             echo "ℹ️ Auto-detected version from latest git tag: ${VERSION}"
           fi
 
-          npm version "${VERSION}" --no-git-tag-version
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+
+          if [[ "${CURRENT_VERSION}" == "${VERSION}" ]]; then
+            echo "ℹ️ package.json already at ${VERSION}; continuing."
+          else
+            echo "ℹ️ Updating package.json version from ${CURRENT_VERSION} to ${VERSION}"
+            npm version "${VERSION}" --no-git-tag-version
+          fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Publishing version: ${VERSION}"
+
+      - name: Show resolved package info
+        run: |
+          echo "Package name:"
+          node -p "require('./package.json').name"
+
+          echo "Package version:"
+          node -p "require('./package.json').version"
 
       - name: Build
         run: npm run build
@@ -64,6 +79,7 @@ jobs:
         run: npm publish --access public --provenance
 
       - name: Verify on npm registry
+        shell: bash
         run: |
           set -euo pipefail
 
