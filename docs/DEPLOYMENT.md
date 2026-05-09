@@ -49,23 +49,43 @@ The API container runs as **UID 1000** (non-root) by default:
 user: "1000:1000"
 ```
 
-Ensure the host `/agents` directory has appropriate permissions for UID 1000 to write:
+**Critical:** Ensure the host `/agents` directory has write permissions for UID 1000:
 
+#### Option A: Preferred (if you own /agents on host)
 ```bash
-# Typical setup (UID 1000 is the owner)
 mkdir -p /agents
 chown 1000:1000 /agents
 chmod 755 /agents
 ```
+
+#### Option B: Required if /agents is owned by root
+```bash
+# Make /agents world-writable to allow container user (1000) to write
+mkdir -p /agents
+sudo chmod 777 /agents
+```
+
+#### Option C: WSL or rootless Docker (if sudo isn't available)
+```bash
+mkdir -p /agents
+chmod 777 /agents
+```
+
+**Troubleshooting permission errors:**
+- If you see `Permission denied` errors when writing to `/results/`:
+  - Verify the host `/agents` directory exists and is writable: `ls -ld /agents`
+  - If owned by root with 755: run `sudo chmod 777 /agents`
+  - If the issue persists, restart docker-compose: `docker-compose down && docker-compose up -d`
 
 ### Dockhand/Portainer Deployment
 
 When deploying via a container UI (Dockhand, Portainer):
 
 1. Configure the volume mount in the service definition: `-v /agents:/agents:rw`
-2. The container will auto-create required subdirectories on startup — **no pre-deployment setup needed**
-3. Check logs for: `KASEKI_RESULTS_DIR: /agents/kaseki-results` (confirms successful mount and auto-creation)
-4. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/preflight`
+2. On the host, pre-create `/agents` with write permissions: `mkdir -p /agents && chmod 777 /agents`
+3. The container will auto-create required subdirectories on startup with proper permissions
+4. Check logs for: `KASEKI_RESULTS_DIR: /agents/kaseki-results` (confirms successful mount and auto-creation)
+5. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/preflight`
 
 ## Quick Start
 
@@ -633,6 +653,147 @@ npm view @cyanautomation/kaseki-agent versions | tail -20
 # Check if a version already exists before trying to publish
 npm view @cyanautomation/kaseki-agent@1.4.1 && echo "Version already published" || echo "Version not found"
 ```
+
+---
+
+## Troubleshooting
+
+### Permission Denied Errors Writing to `/results/`
+
+**Symptom:**
+```
+tee: /results/pi-stderr.log: Permission denied
+/usr/local/bin/kaseki-agent: line 436: /results/git.status: Permission denied
+```
+
+**Root Cause:**
+The container runs as UID 1000, but the host `/agents` directory is owned by root (or another user) with permissions that don't allow UID 1000 to write.
+
+**Quick Fix:**
+```bash
+# On the host, make /agents writable for all users (including container UID 1000)
+sudo mkdir -p /agents
+sudo chmod 777 /agents
+
+# Verify
+ls -ld /agents  # Should show: drwxrwxrwx ... /agents
+```
+
+**Better Fix (if you control the host user):**
+```bash
+# Create /agents owned by the container user
+sudo mkdir -p /agents
+sudo chown 1000:1000 /agents
+sudo chmod 755 /agents
+```
+
+**After Fixing:**
+1. Restart docker-compose: `docker-compose down && docker-compose up -d`
+2. Verify container can write: `docker-compose logs kaseki-api | grep KASEKI_RESULTS_DIR`
+3. Retry your kaseki-agent run
+
+### Startup Logs Show "Failed to create KASEKI_RESULTS_DIR"
+
+**Check:**
+```bash
+docker-compose logs kaseki-api | grep "Failed to create"
+```
+
+**Verify host directory:**
+```bash
+# Ensure /agents exists and is writable by UID 1000
+ls -ld /agents
+touch /agents/test-write  # Should succeed
+rm /agents/test-write
+```
+
+**If touch fails:**
+- Run: `sudo chmod 777 /agents`
+- Or: `sudo chown 1000:1000 /agents && sudo chmod 755 /agents`
+
+### Container Exits with Code 1
+
+**Check logs:**
+```bash
+docker-compose logs kaseki-api --tail 50
+```
+
+**Common causes:**
+1. `/agents` directory doesn't exist or isn't writable (see "Permission Denied" section above)
+2. `KASEKI_RESULTS_DIR` points to invalid path
+3. Docker socket mount not available: verify `-v /var/run/docker.sock:/var/run/docker.sock`
+
+**Fix:**
+```bash
+# Ensure /agents exists and is writable
+sudo mkdir -p /agents && sudo chmod 777 /agents
+
+# Restart service
+docker-compose restart kaseki-api
+
+# View logs
+docker-compose logs -f kaseki-api
+```
+
+### Runs Fail with "Cannot write to workspace"
+
+**Symptom:**
+Worker containers fail to write to `/agents/kaseki-runs/` or `/agents/kaseki-results/`
+
+**Cause:**
+Same as above — `/agents` directory permissions
+
+**Fix:**
+See "Permission Denied Errors" section above.
+
+### Docker Socket Permission Denied
+
+**Symptom:**
+```
+permission denied while trying to connect to Docker daemon
+Error response from daemon: user does not have permissions to use Docker
+```
+
+**Cause:**
+Container UID 1000 doesn't have access to `/var/run/docker.sock`
+
+**Fix:**
+```bash
+# Get the gid of the docker group on the host
+stat -c '%g' /var/run/docker.sock  # Returns e.g., 985
+
+# Set DOCKER_GID environment variable
+export DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
+
+# Restart docker-compose with the GID
+docker-compose down && docker-compose up -d
+```
+
+The docker-compose.yml should have:
+```yaml
+group_add:
+  - "${DOCKER_GID:-999}"
+```
+
+### Volume Mount Not Available in Container
+
+**Symptom:**
+```
+Error: ENOENT: no such file or directory, mkdir '/agents/kaseki-results'
+```
+
+**Verify volume mount:**
+```bash
+docker-compose ps  # Check if kaseki-api is running
+
+docker inspect kaseki-api | grep -A 5 Mounts
+# Should show: /agents -> /agents
+```
+
+**Fix:**
+1. Ensure `/agents` exists on host: `mkdir -p /agents && chmod 777 /agents`
+2. Check docker-compose.yml has: `- /agents:/agents:rw`
+3. Restart: `docker-compose down && docker-compose up -d`
 
 ---
 

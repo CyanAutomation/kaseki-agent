@@ -114,10 +114,15 @@ export function loadConfig(): KasekiApiConfig {
   const resultsDir = process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
   try {
     fs.mkdirSync(resultsDir, { recursive: true });
+    // Ensure directory is writable by container user (uid 1000)
+    // Mode 777 allows the container (uid 1000) to write to results even if owned by root
+    fs.chmodSync(resultsDir, 0o777);
   } catch (err) {
     throw new Error(
-      `Failed to create KASEKI_RESULTS_DIR at ${resultsDir}: ${err instanceof Error ? err.message : String(err)}. ` +
-      'Check host volume mount (-v /agents:/agents:rw) and Docker user permissions (should be 755 or 775).'
+      `Failed to create or configure KASEKI_RESULTS_DIR at ${resultsDir}: ${err instanceof Error ? err.message : String(err)}. ` +
+      'Solutions: (1) On host, ensure /agents is writable: mkdir -p /agents && chmod 777 /agents, ' +
+      '(2) Or map host user: docker-compose with user: "1000:1000" and -v /agents:/agents:rw, ' +
+      '(3) See docs/DEPLOYMENT.md "Docker User & Permissions" section.'
     );
   }
 
