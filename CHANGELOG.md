@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.6.0...v1.7.0) (2026-05-09)
+
+### Features
+
+* add authentication files validation to DoctorCommand and update RunCommand to check for required files ([266df6d](https://github.com/CyanAutomation/kaseki-agent/commit/266df6d282c666e47c45f8287857511a3359c2b9))
+
 ## [1.6.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.5...v1.6.0) (2026-05-09)
 
 ### Features
