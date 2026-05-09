@@ -196,7 +196,7 @@ docker run --rm kaseki-test:latest which pi
 docker run --rm kaseki-test:latest pi --version | grep -q "0.70.2"
 
 echo "Testing non-root user..."
-docker run --rm kaseki-test:latest id -u | grep -q "1000"
+docker run --rm kaseki-test:latest id -u | grep -q "10000"
 
 echo "✓ All image tests passed"
 ```

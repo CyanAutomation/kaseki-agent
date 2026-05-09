@@ -118,7 +118,7 @@ docker run --read-only --tmpfs /tmp:rw,nosuid,nodev,size=256m ...
 **Non-root user**:
 
 ```dockerfile
-USER kaseki  # UID 1000
+USER kaseki  # UID 10000
 ```
 
 - Application runs as unprivileged user (not root)

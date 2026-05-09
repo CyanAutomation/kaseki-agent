@@ -172,7 +172,7 @@ The stamp file lives outside the repo directory to keep `git.status` clean.
 ## Security Hardening
 
 - API key is **never passed as an env var to child processes** — resolved from file at runtime
-- Docker runtime: `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, non-root user (UID 1000)
+- Docker runtime: `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, non-root user (UID 10000)
 - Secret scan checks the results, workspace git metadata, and source dirs for `sk-or-*` patterns
 
 ## Container Image Scanning
