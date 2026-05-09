@@ -6,7 +6,6 @@
 import { execSync } from 'child_process';
 import { existsSync, accessSync, readFileSync, constants as fsConstants } from 'fs';
 import { BaseCommand } from '../BaseCommand';
-import { SecretsManager } from '../../secrets/SecretsManager';
 import { createLogger } from '../../logger';
 
 const logger = createLogger('doctor-cmd');
@@ -239,45 +238,6 @@ export class DoctorCommand extends BaseCommand {
       status: 'pass',
       message: '✓ All required auth files present and readable',
     };
-  }
-
-  /**
-   * Check API key accessibility (deprecated - use checkAuthFiles instead)
-   */
-  private async checkAPIKey(): Promise<Check> {
-    try {
-      const secretsManager = new SecretsManager();
-      const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file', '');
-
-      if (!apiKeyFile) {
-        return {
-          name: 'OpenRouter API Key',
-          status: 'warn',
-          message: '⚠️  API key file path not configured',
-        };
-      }
-
-      const key = await secretsManager.retrieve('openrouter_api_key');
-      if (key) {
-        return {
-          name: 'OpenRouter API Key',
-          status: 'pass',
-          message: '✓ API key found and readable',
-        };
-      } else {
-        return {
-          name: 'OpenRouter API Key',
-          status: 'fail',
-          message: '❌ API key not found. Run: kaseki-agent setup',
-        };
-      }
-    } catch (error) {
-      return {
-        name: 'OpenRouter API Key',
-        status: 'fail',
-        message: `❌ API key check failed: ${error}`,
-      };
-    }
   }
 
   /**
