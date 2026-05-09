@@ -93,6 +93,47 @@ docker run -it \
 kaseki-agent doctor
 ```
 
+### **2.5. Configure Authentication** 
+
+Kaseki needs three sets of credentials. Choose your preferred setup method:
+
+#### Option A: Config File (Recommended)
+
+Create `~/.kaseki/config.json`:
+
+```json
+{
+  "auth": {
+    "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
+    "github_app_id_file": "/home/pi/secrets/github_app_id",
+    "github_app_client_id_file": "/home/pi/secrets/github_client_id",
+    "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
+  }
+}
+```
+
+**Advantages:** Persistent, no `sudo -E` needed, works across runs.
+
+#### Option B: Environment Variables
+
+```bash
+export OPENROUTER_API_KEY_FILE=/path/to/openrouter_key
+export GITHUB_APP_ID_FILE=/path/to/github_app_id
+export GITHUB_APP_CLIENT_ID_FILE=/path/to/github_client_id
+export GITHUB_APP_PRIVATE_KEY_FILE=/path/to/github_app_private_key
+
+# If using sudo, preserve env vars with -E flag
+sudo -E kaseki-agent run ...
+```
+
+**Advantages:** Works for one-off runs, CI/CD pipelines.
+
+#### Option C: Docker Compose
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setting up the kaseki-api service with Docker Compose (recommended for production).
+
+**👉 Full guide:** [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md)
+
 ### **3. Run Your First Task**
 
 ```bash

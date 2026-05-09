@@ -171,28 +171,27 @@ export class DoctorCommand extends BaseCommand {
    */
   private async checkAuthFiles(): Promise<Check> {
     const requiredAuthFiles = [
-      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File' },
-      { key: 'auth.github_app_id_file', name: 'GitHub App ID File' },
-      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File' },
-      { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File' },
+      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File', envVar: 'OPENROUTER_API_KEY_FILE' },
+      { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE' },
+      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE' },
+      { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE' },
     ];
 
-    const missingFiles: string[] = [];
-    const unreadableFiles: Array<{ path: string; reason: string }> = [];
+    const missingFiles: Array<{ name: string; envVar: string; path: string | null }> = [];
+    const unreadableFiles: Array<{ name: string; path: string; reason: string }> = [];
 
     for (const authFile of requiredAuthFiles) {
       try {
         const filePath = this.configManager.get(authFile.key, '');
 
         if (!filePath) {
-          const envVarName = authFile.key.replace('auth.', '').toUpperCase();
-          missingFiles.push(`${authFile.name} (set ${envVarName} env var)`);
+          missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null });
           continue;
         }
 
         // Check if file exists
         if (!existsSync(filePath)) {
-          missingFiles.push(`${authFile.name} (file not found: ${filePath})`);
+          missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: filePath });
           continue;
         }
 
@@ -200,7 +199,7 @@ export class DoctorCommand extends BaseCommand {
         try {
           accessSync(filePath, fsConstants.R_OK);
         } catch {
-          unreadableFiles.push({ path: filePath, reason: 'not readable (permission denied)' });
+          unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'permission denied' });
           continue;
         }
 
@@ -208,28 +207,22 @@ export class DoctorCommand extends BaseCommand {
         try {
           const content = readFileSync(filePath, 'utf-8').trim();
           if (!content) {
-            unreadableFiles.push({ path: filePath, reason: 'file is empty' });
+            unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'file is empty' });
           }
         } catch {
-          unreadableFiles.push({ path: filePath, reason: 'could not read file content' });
+          unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'could not read content' });
         }
       } catch (error) {
-        missingFiles.push(`${authFile.name} (error: ${error})`);
+        missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null });
       }
     }
 
     if (missingFiles.length > 0 || unreadableFiles.length > 0) {
-      const errorDetails: string[] = [];
-      if (missingFiles.length > 0) {
-        errorDetails.push(`Missing: ${missingFiles.join(', ')}`);
-      }
-      if (unreadableFiles.length > 0) {
-        errorDetails.push(`Unreadable: ${unreadableFiles.map((f) => `${f.path} (${f.reason})`).join(', ')}`);
-      }
+      const errorMessage = this.buildAuthErrorMessage(missingFiles, unreadableFiles);
       return {
         name: 'Authentication Files',
         status: 'fail',
-        message: `❌ Auth validation failed: ${errorDetails.join('; ')}`,
+        message: errorMessage,
       };
     }
 
@@ -238,6 +231,90 @@ export class DoctorCommand extends BaseCommand {
       status: 'pass',
       message: '✓ All required auth files present and readable',
     };
+  }
+
+  /**
+   * Detect if running under sudo
+   */
+  private isSudo(): boolean {
+    return process.getuid?.() === 0 || !!process.env.SUDO_USER;
+  }
+
+  /**
+   * Build comprehensive auth error message with guidance
+   */
+  private buildAuthErrorMessage(
+    missingFiles: Array<{ name: string; envVar: string; path: string | null }>,
+    unreadableFiles: Array<{ name: string; path: string; reason: string }>
+  ): string {
+    const lines: string[] = ['❌ Authentication validation failed:'];
+    lines.push('');
+
+    // List missing/unreadable files
+    if (missingFiles.length > 0) {
+      lines.push('Missing or unconfigured:');
+      for (const file of missingFiles) {
+        if (file.path) {
+          lines.push(`  • ${file.name}: not found at ${file.path}`);
+        } else {
+          lines.push(`  • ${file.name} (set ${file.envVar})`);
+        }
+      }
+      lines.push('');
+    }
+
+    if (unreadableFiles.length > 0) {
+      lines.push('Unreadable files:');
+      for (const file of unreadableFiles) {
+        lines.push(`  • ${file.name}: ${file.path} (${file.reason})`);
+      }
+      lines.push('');
+    }
+
+    // Add guidance
+    lines.push('💡 To fix, choose one of these approaches:');
+    lines.push('');
+
+    lines.push('1️⃣  Environment variables (CLI usage):');
+    if (this.isSudo()) {
+      lines.push('   Since you\'re running with sudo, preserve environment:');
+      lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
+      lines.push('');
+      lines.push('   Or set env vars before sudo:');
+      lines.push('   $ export GITHUB_APP_ID_FILE=~/.../id');
+      lines.push('   $ sudo -E kaseki-agent run ...');
+    } else {
+      lines.push('   $ export GITHUB_APP_ID_FILE=~/.../id');
+      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/.../client_id');
+      lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/.../private_key');
+      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/.../openrouter_key');
+      lines.push('   $ kaseki-agent run <repo> <branch> <task>');
+    }
+    lines.push('');
+
+    lines.push('2️⃣  Config file (persistent, recommended):');
+    lines.push('   $ mkdir -p ~/.kaseki');
+    lines.push('   $ cat > ~/.kaseki/config.json << EOF');
+    lines.push('   {');
+    lines.push('     "auth": {');
+    lines.push('       "openrouter_api_key_file": "/path/to/openrouter_key",');
+    lines.push('       "github_app_id_file": "/path/to/github_app_id",');
+    lines.push('       "github_app_client_id_file": "/path/to/github_client_id",');
+    lines.push('       "github_app_private_key_file": "/path/to/github_private_key"');
+    lines.push('     }');
+    lines.push('   }');
+    lines.push('   EOF');
+    lines.push('   $ kaseki-agent run <repo> <branch> <task>');
+    lines.push('');
+
+    lines.push('3️⃣  Docker Compose (recommended for services):');
+    lines.push('   Set env vars in .env or docker-compose.yml secrets');
+    lines.push('   See docs/DEPLOYMENT.md for setup instructions');
+    lines.push('');
+
+    lines.push('📖 Learn more: kaseki-agent setup');
+
+    return lines.join('\n');
   }
 
   /**
