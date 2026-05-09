@@ -49,7 +49,7 @@
     "test": "npm run test:unit",
     "test:unit": "jest --passWithNoTests",
     "test:cli": "npm run build && npm run test:cli:install && npm run test:cli:verify",
-    "test:publish-smoke": "npm run build && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js list && npm run check:dist-dynamic-imports",
+    "test:publish-smoke": "npm run build && npm run test:pack-artifact && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js list && npm run check:dist-dynamic-imports",
     "test:cli:install": "npm run test:cli:install-local && npm run test:cli:install-npx",
     "test:cli:install-local": "npm link && kaseki-agent --version && npm unlink -g @cyanautomation/kaseki-agent",
     "test:cli:install-npx": "npx . --version 2>&1 | grep -q 'version' && echo 'npx test passed'",
@@ -68,7 +68,8 @@
     "benchmark:pi-event-filter": "npm run build && RUN_PI_EVENT_FILTER_PERF=1 jest --testMatch \"<rootDir>/perf/**/*.benchmark.test.ts\" --runInBand",
     "release": "semantic-release",
     "release:dry": "semantic-release --dry-run",
-    "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js"
+    "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js",
+    "test:pack-artifact": "bash scripts/check-packed-artifact.sh"
   },
   "dependencies": {
     "express": "^4.18.2",
