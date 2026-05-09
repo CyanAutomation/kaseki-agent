@@ -102,7 +102,7 @@ jobs:
           else
             echo "✅ ${PACKAGE_NAME}@${VERSION} does not exist yet; safe to publish."
           fi
-  
+
       - name: Build
         run: npm run build
 
