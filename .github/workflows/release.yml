@@ -1,6 +1,11 @@
 name: Release
 
 on:
+  push:
+    branches:
+      - main
+    # Only trigger for commits that semantic-release will act on
+    # (feat:, fix:, breaking changes, or release commits)
   workflow_dispatch:
     inputs:
       dry_run:
