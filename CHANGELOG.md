@@ -4,6 +4,25 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.1...v1.5.2) (2026-05-09)
+
+### Bug Fixes
+
+* add always-auth option to npm setup in publish workflow ([c902a52](https://github.com/CyanAutomation/kaseki-agent/commit/c902a52464ea57e77cf3b9f80fdc7d73d39ef80b))
+* add diagnostics to publish workflow and ensure NODE_AUTH_TOKEN is unset ([c08e02b](https://github.com/CyanAutomation/kaseki-agent/commit/c08e02b11ebb48e68091de684610f57908b0b242))
+* add npm registry configuration step to workflow ([097a7a3](https://github.com/CyanAutomation/kaseki-agent/commit/097a7a339fd484221724ac608b722d216d9a9945))
+* configure npm registry URL in setup-node action ([f473468](https://github.com/CyanAutomation/kaseki-agent/commit/f473468d8c5d57f717f6708cf9731f45d3f1ef45))
+* downgrade setup-node action to v4 for compatibility ([5f7dce6](https://github.com/CyanAutomation/kaseki-agent/commit/5f7dce6d60ddd6030f6b8a0dfbeeace3871615db))
+* revert Node.js engine version requirement to >=22 in package.json ([22dda4e](https://github.com/CyanAutomation/kaseki-agent/commit/22dda4e4a02b3272e4e35ffb8aaf1ce01667863d))
+* revert Node.js version to 22.22.2 in npm publish workflow ([e093e83](https://github.com/CyanAutomation/kaseki-agent/commit/e093e83dff3da8e4fcdea461e9d99c5db179c43f))
+* robust diagnostics and clean publish environment ([9882cab](https://github.com/CyanAutomation/kaseki-agent/commit/9882cab41244f6462d15ef3014beb916113430ee))
+* simplify npm publishing setup by removing unnecessary authentication steps ([b1eef30](https://github.com/CyanAutomation/kaseki-agent/commit/b1eef304556c0731ed5ccaba8875fe05c53ab044))
+* simplify repository URL and add publishConfig for OIDC ([fe87444](https://github.com/CyanAutomation/kaseki-agent/commit/fe874447697d688c6ef7a87d4875439305552ab2))
+* update Node.js version to 24 in publish workflow ([0424037](https://github.com/CyanAutomation/kaseki-agent/commit/042403788a92182f349f79dc0e3aca5fdd8c30ad))
+* update package.json version to match the published version during npm publish ([4ed8055](https://github.com/CyanAutomation/kaseki-agent/commit/4ed805590bd7af5b4ac5b6510460070fdcde4c07))
+* update publish workflow for OIDC and bump version to 1.5.1 ([5311458](https://github.com/CyanAutomation/kaseki-agent/commit/531145818c8eb77533ac43478175c237f3a18820))
+* update repository URL format in package.json ([3eb54bc](https://github.com/CyanAutomation/kaseki-agent/commit/3eb54bc9a28e054c4aef57299ce73c06d0577247))
+
 ## [1.5.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.0...v1.5.1) (2026-05-08)
 
 ### Bug Fixes
