@@ -17,8 +17,8 @@ export class RunCommand extends BaseCommand {
       const { positional } = this.parseArgs(args);
 
       // Parse arguments
-      const repoUrl = positional[0] || this.configManager.get('repo.url');
-      const gitRef = positional[1] || this.configManager.get('repo.ref');
+      const repoUrl = positional[0] || this.configManager.get('repo.url', '');
+      const gitRef = positional[1] || this.configManager.get('repo.ref', '');
       const taskPrompt = positional[2] || this.configManager.get('repo.task_prompt', '');
 
       if (!repoUrl || !gitRef) {
@@ -46,7 +46,7 @@ export class RunCommand extends BaseCommand {
 
       // Step 2: Pull Docker image
       console.log('Step 2/6: Preparing Docker image...');
-      const image = this.configManager.get('docker.image');
+      const image = this.configManager.get('docker.image', 'docker.io/cyanautomation/kaseki-agent:latest');
       const autoPull = this.configManager.get('docker.auto_pull', true);
 
       if (!DockerManager.imageExists(image)) {
@@ -66,7 +66,7 @@ export class RunCommand extends BaseCommand {
 
       // Step 3: Create instance
       console.log('Step 3/6: Creating instance...');
-      const kasekiRoot = this.configManager.get('directories.root');
+      const kasekiRoot = this.configManager.get('directories.root', '/agents');
       const instanceManager = new InstanceManager(kasekiRoot);
       const instanceId = await instanceManager.getOrCreateInstanceId();
 
@@ -79,8 +79,8 @@ export class RunCommand extends BaseCommand {
       await instanceManager.initializeMetadata({
         repoUrl,
         gitRef,
-        model: this.configManager.get('agent.model'),
-        provider: this.configManager.get('agent.provider'),
+        model: this.configManager.get('agent.model', 'openrouter/free'),
+        provider: this.configManager.get('agent.provider', 'openrouter'),
       });
 
       // Step 4: Prepare environment
@@ -106,7 +106,7 @@ export class RunCommand extends BaseCommand {
         name: instanceId,
         workspaceDir: workspace,
         resultsDir: results,
-        cacheDir: this.configManager.get('directories.cache_dir'),
+        cacheDir: this.configManager.get('directories.cache_dir', '/agents/kaseki-cache'),
         apiKeyFile,
         environment,
         timeout,
