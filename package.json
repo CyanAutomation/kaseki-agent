@@ -23,7 +23,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CyanAutomation/kaseki-agent.git"
+    "url": "https://github.com/CyanAutomation/kaseki-agent"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "keywords": [
     "pi-cli",
