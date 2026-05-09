@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.1...v1.10.2) (2026-05-09)
+
+### Bug Fixes
+
+* improve KASEKI_RESULTS_DIR creation error handling and ensure writable permissions ([d655e44](https://github.com/CyanAutomation/kaseki-agent/commit/d655e449acfbddf835e835e3c1b4624e71c18990))
+
 ## [1.10.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.0...v1.10.1) (2026-05-09)
 
 ### Bug Fixes
