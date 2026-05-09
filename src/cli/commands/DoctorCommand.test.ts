@@ -12,7 +12,7 @@ describe('DoctorCommand', () => {
   beforeEach(async () => {
     // Create temporary directory for test auth files
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-doctor-test-'));
-    
+
     configManager = new ConfigManager();
     command = new DoctorCommand(configManager);
 
@@ -77,12 +77,12 @@ describe('DoctorCommand', () => {
     test('should fail with helpful guidance when files do not exist', async () => {
       // Create config that points to non-existent files
       const nonExistentPath = path.join(tempDir, 'non-existent-file');
-      
+
       // Mock sudo to test for sudo-specific guidance
       const mockGetUid = jest.spyOn(process, 'getuid').mockReturnValue(0);
-      
+
       await configManager.load();
-      
+
       jest.spyOn(configManager, 'get').mockImplementation((key: string) => {
         if (key.includes('auth.')) {
           return nonExistentPath;
@@ -97,7 +97,7 @@ describe('DoctorCommand', () => {
       expect(result.message).toContain('💡');
       expect(result.message).toContain('sudo -E');
       expect(result.message).toContain('config.json');
-      
+
       mockGetUid.mockRestore();
     });
 
@@ -135,7 +135,7 @@ describe('DoctorCommand', () => {
 
       const result = await (command as any).checkAuthFiles();
 
-      expect(result.message).toContain("sudo -E kaseki-agent");
+      expect(result.message).toContain('sudo -E kaseki-agent');
       expect(result.message).toContain('preserve environment');
 
       mockGetUid.mockRestore();
@@ -159,9 +159,9 @@ describe('DoctorCommand', () => {
   describe('isSudo', () => {
     test('should detect sudo when getuid returns 0', () => {
       const mockGetUid = jest.spyOn(process, 'getuid').mockReturnValue(0);
-      
+
       const isSudo = (command as any).isSudo();
-      
+
       expect(isSudo).toBe(true);
       mockGetUid.mockRestore();
     });
@@ -169,11 +169,11 @@ describe('DoctorCommand', () => {
     test('should detect sudo when SUDO_USER env var is set', () => {
       const originalSudoUser = process.env.SUDO_USER;
       process.env.SUDO_USER = 'pi';
-      
+
       const isSudo = (command as any).isSudo();
-      
+
       expect(isSudo).toBe(true);
-      
+
       if (originalSudoUser === undefined) {
         delete process.env.SUDO_USER;
       } else {
@@ -184,13 +184,13 @@ describe('DoctorCommand', () => {
     test('should not detect sudo when uid is not 0 and SUDO_USER is not set', () => {
       const originalSudoUser = process.env.SUDO_USER;
       delete process.env.SUDO_USER;
-      
+
       const mockGetUid = jest.spyOn(process, 'getuid').mockReturnValue(1000);
-      
+
       const isSudo = (command as any).isSudo();
-      
+
       expect(isSudo).toBe(false);
-      
+
       mockGetUid.mockRestore();
       if (originalSudoUser !== undefined) {
         process.env.SUDO_USER = originalSudoUser;
@@ -286,12 +286,9 @@ describe('DoctorCommand', () => {
         return fallback || '';
       });
 
-      // Mock docker checks to pass
-      jest.spyOn(require('child_process'), 'execSync').mockImplementation(() => 'v24.0.0');
-
       // Only check auth files for exit code (skipping docker/disk/etc for simplicity)
       const result = await (command as any).checkAuthFiles();
-      
+
       expect(result.status).toBe('pass');
     });
   });
