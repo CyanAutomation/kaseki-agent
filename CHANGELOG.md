@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.3...v1.10.4) (2026-05-09)
+
+### Bug Fixes
+
+* update user ID from 1000 to 10000 across Docker configurations and documentation for consistency ([4f40e21](https://github.com/CyanAutomation/kaseki-agent/commit/4f40e21278ebd0c082817c6e4653feee2e091e50))
+
 ## [1.10.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.2...v1.10.3) (2026-05-09)
 
 ### Bug Fixes
