@@ -186,7 +186,7 @@ export class DoctorCommand extends BaseCommand {
 
         if (!filePath) {
           const envVarName = authFile.key.replace('auth.', '').toUpperCase();
-          missingFiles.push(`${authFile.name} (set ${envVarName} env var)`)
+          missingFiles.push(`${authFile.name} (set ${envVarName} env var)`);
           continue;
         }
 
