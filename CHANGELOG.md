@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.8.1...v1.9.0) (2026-05-09)
+
+### Features
+
+* enhance Docker image checks and error handling in DoctorCommand and DockerManager ([31aa039](https://github.com/CyanAutomation/kaseki-agent/commit/31aa0391cf11bbdb4ddf5b3e5d0062981253f3da))
+
+### Bug Fixes
+
+* improve formatting and add troubleshooting steps in EXIT_CODES documentation ([7a9dce5](https://github.com/CyanAutomation/kaseki-agent/commit/7a9dce563aa22774e0433df50ec67c9de0ab250b))
+
 ## [1.8.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.8.0...v1.8.1) (2026-05-09)
 
 ### Bug Fixes
