@@ -101,6 +101,7 @@ KASEKI_API_KEYS=sk-your-secret-key npm run kaseki-api
 ```
 
 **Note on directory structure:**
+
 - `run-kaseki.sh` and ephemeral worker containers create their own per-run `/agents/kaseki-runs/` workspaces (cleaned up after each run)
 - The kaseki-api service **automatically creates** `/agents/kaseki-results/` on startup (no pre-setup needed) — this persists run artifacts for monitoring and analysis
 - Both approaches share the same `/agents/kaseki-cache/` for optional dependency caching
