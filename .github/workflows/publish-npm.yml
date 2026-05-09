@@ -61,19 +61,20 @@ jobs:
 
       - name: Diagnostics
         run: |
-          echo "Checking for NODE_AUTH_TOKEN (masked):"
-          echo "${NODE_AUTH_TOKEN:0:1}***"
+          echo "Checking for NODE_AUTH_TOKEN presence..."
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "NODE_AUTH_TOKEN is empty/unset"; else echo "NODE_AUTH_TOKEN is set"; fi
           echo "Checking npm config:"
           npm config list
-          echo "Checking .npmrc if it exists:"
-          [ -f ~/.npmrc ] && cat ~/.npmrc | sed 's/:_authToken=.*/:_authToken=*** /'
-          [ -f .npmrc ] && cat .npmrc | sed 's/:_authToken=.*/:_authToken=*** /'
+          echo "Checking .npmrc locations:"
+          [ -f ~/.npmrc ] && echo "Found ~/.npmrc" || echo "~/.npmrc not found"
+          [ -f .npmrc ] && echo "Found local .npmrc" || echo "local .npmrc not found"
+          echo "Checking npm identity (may fail if not authenticated):"
+          npm whoami || echo "Not logged in"
 
       - name: Publish to npm registry
-        run: |
-          # Explicitly unset NODE_AUTH_TOKEN to ensure npm uses OIDC exchange
-          unset NODE_AUTH_TOKEN
-          npm publish --access public --verbose
+        run: npm publish --access public --verbose
+        env:
+          NODE_AUTH_TOKEN: ""
 
       - name: Verify on npm registry
         run: |
