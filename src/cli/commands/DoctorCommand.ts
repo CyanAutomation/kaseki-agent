@@ -4,6 +4,7 @@
  */
 
 import { execSync } from 'child_process';
+import { existsSync, accessSync, readFileSync, constants as fsConstants } from 'fs';
 import { BaseCommand } from '../BaseCommand';
 import { SecretsManager } from '../../secrets/SecretsManager';
 import { createLogger } from '../../logger';
@@ -36,7 +37,7 @@ export class DoctorCommand extends BaseCommand {
         await this.checkNodejs(),
         await this.checkNpm(),
         await this.checkGit(),
-        await this.checkAPIKey(),
+        await this.checkAuthFiles(),
         await this.checkDockkerImage(),
         await this.checkDiskSpace(),
       ];
@@ -167,7 +168,81 @@ export class DoctorCommand extends BaseCommand {
   }
 
   /**
-   * Check API key accessibility
+   * Check all required authentication files
+   */
+  private async checkAuthFiles(): Promise<Check> {
+    const requiredAuthFiles = [
+      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File' },
+      { key: 'auth.github_app_id_file', name: 'GitHub App ID File' },
+      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File' },
+      { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File' },
+    ];
+
+    const missingFiles: string[] = [];
+    const unreadableFiles: Array<{ path: string; reason: string }> = [];
+
+    for (const authFile of requiredAuthFiles) {
+      try {
+        const filePath = this.configManager.get(authFile.key, '');
+
+        if (!filePath) {
+          const envVarName = authFile.key.replace('auth.', '').toUpperCase();
+          missingFiles.push(`${authFile.name} (set ${envVarName} env var)`)
+          continue;
+        }
+
+        // Check if file exists
+        if (!existsSync(filePath)) {
+          missingFiles.push(`${authFile.name} (file not found: ${filePath})`);
+          continue;
+        }
+
+        // Check if file is readable
+        try {
+          accessSync(filePath, fsConstants.R_OK);
+        } catch {
+          unreadableFiles.push({ path: filePath, reason: 'not readable (permission denied)' });
+          continue;
+        }
+
+        // Check if file is not empty
+        try {
+          const content = readFileSync(filePath, 'utf-8').trim();
+          if (!content) {
+            unreadableFiles.push({ path: filePath, reason: 'file is empty' });
+          }
+        } catch {
+          unreadableFiles.push({ path: filePath, reason: 'could not read file content' });
+        }
+      } catch (error) {
+        missingFiles.push(`${authFile.name} (error: ${error})`);
+      }
+    }
+
+    if (missingFiles.length > 0 || unreadableFiles.length > 0) {
+      const errorDetails: string[] = [];
+      if (missingFiles.length > 0) {
+        errorDetails.push(`Missing: ${missingFiles.join(', ')}`);
+      }
+      if (unreadableFiles.length > 0) {
+        errorDetails.push(`Unreadable: ${unreadableFiles.map((f) => `${f.path} (${f.reason})`).join(', ')}`);
+      }
+      return {
+        name: 'Authentication Files',
+        status: 'fail',
+        message: `❌ Auth validation failed: ${errorDetails.join('; ')}`,
+      };
+    }
+
+    return {
+      name: 'Authentication Files',
+      status: 'pass',
+      message: '✓ All required auth files present and readable',
+    };
+  }
+
+  /**
+   * Check API key accessibility (deprecated - use checkAuthFiles instead)
    */
   private async checkAPIKey(): Promise<Check> {
     try {

@@ -86,7 +86,14 @@ export class RunCommand extends BaseCommand {
       // Step 4: Prepare environment
       console.log('Step 4/6: Preparing environment...');
       const environment = this.buildEnvironment(repoUrl, gitRef, taskPrompt);
-      const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file');
+      
+      // Validate that required auth files are available (should have been validated by doctor)
+      const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file', '');
+      if (!apiKeyFile) {
+        console.error('❌ OpenRouter API Key File not configured. Run: kaseki-agent doctor');
+        return 1;
+      }
+      
       console.log('✓ Environment prepared\n');
 
       // Step 5: Run agent in Docker
@@ -151,13 +158,13 @@ export class RunCommand extends BaseCommand {
     env.GIT_REF = gitRef;
 
     // Agent configuration
-    const model = this.configManager.get('agent.model');
+    const model = this.configManager.get('agent.model', '');
     if (model) env.KASEKI_MODEL = model;
 
-    const provider = this.configManager.get('agent.provider');
+    const provider = this.configManager.get('agent.provider', '');
     if (provider) env.KASEKI_PROVIDER = provider;
 
-    const timeout = this.configManager.get('agent.timeout_seconds');
+    const timeout = this.configManager.get('agent.timeout_seconds', 0);
     if (timeout) env.KASEKI_AGENT_TIMEOUT_SECONDS = String(timeout);
 
     // Task prompt
@@ -171,10 +178,10 @@ export class RunCommand extends BaseCommand {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     }
 
-    const skipMissingScripts = this.configManager.get('validation.skip_missing_npm_scripts');
+    const skipMissingScripts = this.configManager.get('validation.skip_missing_npm_scripts', false);
     if (skipMissingScripts) env.KASEKI_SKIP_MISSING_NPM_SCRIPTS = '1';
 
-    const failFast = this.configManager.get('validation.fail_fast');
+    const failFast = this.configManager.get('validation.fail_fast', false);
     if (failFast !== undefined) env.KASEKI_VALIDATION_FAIL_FAST = failFast ? '1' : '0';
 
     // Allowlist
@@ -183,34 +190,34 @@ export class RunCommand extends BaseCommand {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = allowlist.join(' ');
     }
 
-    const maxDiffBytes = this.configManager.get('validation.max_diff_bytes');
+    const maxDiffBytes = this.configManager.get('validation.max_diff_bytes', 0);
     if (maxDiffBytes) env.KASEKI_MAX_DIFF_BYTES = String(maxDiffBytes);
 
     // Caching
-    const cacheMode = this.configManager.get('caching.dependency_restore_mode');
+    const cacheMode = this.configManager.get('caching.dependency_restore_mode', '');
     if (cacheMode) env.KASEKI_DEPENDENCY_RESTORE_MODE = cacheMode;
 
-    // GitHub integration
-    const ghAppId = this.configManager.get('auth.github_app_id_file');
+    // GitHub integration (validated by doctor command)
+    const ghAppId = this.configManager.get('auth.github_app_id_file', '');
     if (ghAppId) env.GITHUB_APP_ID_FILE = ghAppId;
 
-    const ghClientId = this.configManager.get('auth.github_app_client_id_file');
+    const ghClientId = this.configManager.get('auth.github_app_client_id_file', '');
     if (ghClientId) env.GITHUB_APP_CLIENT_ID_FILE = ghClientId;
 
-    const ghPrivateKey = this.configManager.get('auth.github_app_private_key_file');
+    const ghPrivateKey = this.configManager.get('auth.github_app_private_key_file', '');
     if (ghPrivateKey) env.GITHUB_APP_PRIVATE_KEY_FILE = ghPrivateKey;
 
-    // API key file (never inline)
-    const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file');
+    // API key file (never inline, validated by doctor command)
+    const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file', '');
     if (apiKeyFile) {
       env.OPENROUTER_API_KEY_FILE = '/run/secrets/openrouter_api_key';
     }
 
     // Debug flags
-    const streamProgress = this.configManager.get('debug.stream_progress');
+    const streamProgress = this.configManager.get('debug.stream_progress', true);
     if (streamProgress !== undefined) env.KASEKI_STREAM_PROGRESS = streamProgress ? '1' : '0';
 
-    const keepWorkspace = this.configManager.get('debug.keep_workspace');
+    const keepWorkspace = this.configManager.get('debug.keep_workspace', false);
     if (keepWorkspace !== undefined) env.KASEKI_KEEP_WORKSPACE = keepWorkspace ? '1' : '0';
 
     return env;
