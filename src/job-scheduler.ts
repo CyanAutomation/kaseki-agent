@@ -1085,6 +1085,9 @@ export class JobScheduler {
         this.shutdownKillTimers.set(jobId, shutdownKillTimer);
       }
 
+      // Proactively clean up the Docker container
+      this.cleanupContainer(jobId);
+
       if (j && !j.finalized) {
         j.status = 'failed';
         j.failureClass = 'shutdown_aborted';

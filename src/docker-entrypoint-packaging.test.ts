@@ -15,7 +15,7 @@ describe('Docker runtime packaging', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
     const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
 
-    expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/kaseki-entrypoint"]');
+    expect(dockerfile).toContain('ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]');
     expect(dockerfile).toContain('CMD ["agent"]');
     expect(entrypoint).toContain('api|kaseki-api)');
     expect(entrypoint).toContain('exec node /app/dist/kaseki-api-service.js');

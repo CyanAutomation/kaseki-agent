@@ -80,6 +80,21 @@ REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
 REPO_MEMORY_COMMIT_SHA="unknown"
 
+# Signal handler for graceful termination
+handle_termination() {
+  local signal="$1"
+  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a /results/progress.log
+  # Exit with standard code for signal (128 + signal_number)
+  # SIGINT = 130, SIGTERM = 143
+  if [ "$signal" = "SIGINT" ]; then
+    exit 130
+  else
+    exit 143
+  fi
+}
+trap 'handle_termination SIGTERM' SIGTERM
+trap 'handle_termination SIGINT' SIGINT
+
 setup_host_logging_mirror() {
   local base_name="$1"
   local stamp host_log_file
