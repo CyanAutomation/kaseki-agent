@@ -93,7 +93,7 @@ docker run -it \
 kaseki-agent doctor
 ```
 
-### **2.5. Configure Authentication** 
+### **2.5. Configure Authentication**
 
 Kaseki needs three sets of credentials. Choose your preferred setup method:
 
@@ -168,6 +168,7 @@ kaseki-agent setup
 ```
 
 **What it does:**
+
 - Validates Docker installation and daemon
 - Checks Node.js v24+ availability
 - Validates git installation
@@ -182,6 +183,7 @@ kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
 ```
 
 **Examples:**
+
 ```bash
 # Simple execution (uses main branch)
 kaseki-agent run https://github.com/CyanAutomation/crudmapper
@@ -195,6 +197,7 @@ kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
 ```
 
 **Execution Flow:**
+
 1. Pre-flight checks (docker, node, npm, git, API key)
 2. Auto-pull Docker image (if needed)
 3. Create instance directories (workspace + results)
@@ -209,6 +212,7 @@ kaseki-agent doctor [--json] [--fix]
 ```
 
 **Checks:**
+
 - Docker daemon availability
 - Node.js v24+ validation
 - npm availability
@@ -218,6 +222,7 @@ kaseki-agent doctor [--json] [--fix]
 - Disk space availability
 
 **Options:**
+
 - `--json` — JSON output (useful for scripts)
 - `--fix` — Attempt auto-remediation (pull image, show install hints)
 
@@ -228,6 +233,7 @@ kaseki-agent list [--status STATE]
 ```
 
 **Filter by status:**
+
 ```bash
 kaseki-agent list --status completed
 kaseki-agent list --status failed
@@ -235,6 +241,7 @@ kaseki-agent list --status running
 ```
 
 **Output:**
+
 - Instance ID
 - Status (running/completed/failed)
 - Creation date
@@ -247,6 +254,7 @@ kaseki-agent report <INSTANCE_ID>
 ```
 
 **Shows:**
+
 - Instance metadata (repo, branch, model, status)
 - Execution stages with timing
 - Final status and exit code
@@ -259,6 +267,7 @@ kaseki-agent config <SUBCOMMAND> [OPTIONS]
 ```
 
 **Subcommands:**
+
 ```bash
 # Get a value
 kaseki-agent config get agent.timeout_seconds
@@ -283,6 +292,7 @@ kaseki-agent secrets <SUBCOMMAND>
 ```
 
 **Subcommands:**
+
 ```bash
 # Initialize keyring
 kaseki-agent secrets init
@@ -304,6 +314,7 @@ kaseki-agent secrets list
 ```
 
 **Storage:**
+
 - Linux: Uses `pass` (password-store) keyring
 - Headless: Falls back to `~/.kaseki/secrets/` (0600 permissions)
 
@@ -324,6 +335,7 @@ kaseki-agent serve --port 9000
 ```
 
 **API Endpoints:**
+
 - `GET /health` — Service health check
 - `GET /api/runs` — List instances
 - `POST /api/runs` — Start new run
@@ -381,26 +393,32 @@ KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
 ### Deployment Patterns
 
 **1. CLI (Direct Execution)**
+
 ```bash
 kaseki-agent run <repo> <ref>
 ```
+
 - Single-step orchestration
 - Immediate results
 - Best for: CI/CD, direct usage
 
 **2. REST API (Distributed)**
+
 ```bash
 kaseki-agent serve --port 8080
 # Then: POST /api/runs with repo/ref
 ```
+
 - Long-running service
 - Async execution
 - Best for: Controllers, distributed systems
 
 **3. Docker (Self-Contained)**
+
 ```bash
 docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 ```
+
 - No host dependencies
 - Full isolation
 - Best for: Clean environments, CI/CD containers
