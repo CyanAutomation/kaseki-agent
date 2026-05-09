@@ -136,13 +136,13 @@ export class RunCommand extends BaseCommand {
           console.log(`View results: kaseki-agent report ${instanceId}`);
         } else {
           console.log(`\n❌ Run failed with exit code ${containerResult.exitCode}`);
-          
+
           // Provide contextual error messaging for common exit codes
           const errorContext = this.getExitCodeContext(containerResult.exitCode);
           if (errorContext) {
             console.log(`\nℹ️  ${errorContext}`);
           }
-          
+
           console.log(`View logs: kaseki-agent report ${instanceId}`);
         }
       }
