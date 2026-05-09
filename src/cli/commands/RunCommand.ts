@@ -86,14 +86,14 @@ export class RunCommand extends BaseCommand {
       // Step 4: Prepare environment
       console.log('Step 4/6: Preparing environment...');
       const environment = this.buildEnvironment(repoUrl, gitRef, taskPrompt);
-      
+
       // Validate that required auth files are available (should have been validated by doctor)
       const apiKeyFile = this.configManager.get('auth.openrouter_api_key_file', '');
       if (!apiKeyFile) {
         console.error('❌ OpenRouter API Key File not configured. Run: kaseki-agent doctor');
         return 1;
       }
-      
+
       console.log('✓ Environment prepared\n');
 
       // Step 5: Run agent in Docker
