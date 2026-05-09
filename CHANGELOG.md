@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.7.0...v1.8.0) (2026-05-09)
+
+### Features
+
+* add default values for repo URL, git ref, Docker image, and directories in RunCommand ([9e6c24c](https://github.com/CyanAutomation/kaseki-agent/commit/9e6c24c02d01ed1b436f3b750cacff0d747112fd))
+
 ## [1.7.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.6.0...v1.7.0) (2026-05-09)
 
 ### Features
