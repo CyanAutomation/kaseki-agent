@@ -204,7 +204,7 @@ export class DockerManager {
     args.push('--read-only');
     args.push('--cap-drop=ALL');
     args.push('--security-opt', 'no-new-privileges:true');
-    args.push('-u', '1000:1000');
+    args.push('-u', '10000:10000');
 
     // Temporary filesystems for writable areas
     args.push('--tmpfs', '/tmp:rw,nosuid,nodev,noexec');

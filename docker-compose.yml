@@ -2,7 +2,7 @@ services:
   kaseki-api:
     image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
     container_name: kaseki-api
-    user: "${KASEKI_API_USER:-1000:1000}"
+    user: "${KASEKI_API_USER:-10000:10000}"
     group_add:
       - "${DOCKER_GID:-985}"
     command: ["api"]
@@ -14,9 +14,9 @@ services:
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
-      KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-1000:1000}"
-      KASEKI_CONTAINER_UID: "1000"
-      KASEKI_CONTAINER_GID: "1000"
+      KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-10000:10000}"
+      KASEKI_CONTAINER_UID: "10000"
+      KASEKI_CONTAINER_GID: "10000"
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"

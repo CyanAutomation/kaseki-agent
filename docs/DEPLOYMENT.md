@@ -43,13 +43,13 @@ The container will **automatically create** the required subdirectories:
 
 ### Docker User & Permissions
 
-The container runs as **UID 1000** (kaseki user, non-root):
+The container runs as **UID 10000** (kaseki user, non-root):
 
 ```yaml
-user: "1000:1000"  # Consistent across API service, kaseki-agent, and docker-compose
+user: "10000:10000"  # Consistent across API service, kaseki-agent, and docker-compose
 ```
 
-**Important:** This UID must match the container image build (Dockerfile line 11 and 38) and docker-compose configuration (line 4). Mismatches cause permission denied errors when writing to `/agents/kaseki-results/`.
+**Important:** This UID (10000) is chosen to avoid conflicts with reserved system UIDs in the base image (GID 1000 is already taken). The UID must match the container image build (Dockerfile lines 12, 43, 152) and docker-compose configuration (line 4). Mismatches cause permission denied errors when writing to `/agents/kaseki-results/`.
 
 **Critical:** Ensure the host `/agents` directory has write permissions for UID 1000:
 
@@ -57,7 +57,7 @@ user: "1000:1000"  # Consistent across API service, kaseki-agent, and docker-com
 
 ```bash
 mkdir -p /agents
-chown 1000:1000 /agents
+chown 10000:10000 /agents
 chmod 755 /agents
 ```
 
@@ -117,7 +117,7 @@ docker-compose logs -f kaseki-api
 docker-compose down
 ```
 
-The API container runs as the `/agents` owner by default (`1000:1000`) and must also be able to use the host Docker socket so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID` to the group owner of `/var/run/docker.sock`:
+The API container runs as the `/agents` owner by default (`10000:10000`) and must also be able to use the host Docker socket so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID` to the group owner of `/var/run/docker.sock`:
 
 ```bash
 export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
@@ -129,7 +129,7 @@ In Dockhand, Portainer, or another compose manager, keep the same shape:
 ```yaml
 services:
   kaseki-api:
-    user: "1000:1000"
+    user: "10000:10000"
     group_add:
       - "${DOCKER_GID:-985}"
     volumes:
@@ -264,9 +264,9 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -e KASEKI_API_KEYS=sk-your-key \
   -e KASEKI_API_PORT=8080 \
-  -e KASEKI_CONTAINER_USER=1000:1000 \
+  -e KASEKI_CONTAINER_USER=10000:10000 \
   -e KASEKI_AGENT_TIMEOUT_SECONDS=1200 \
-  --user 1000:1000 \
+  --user 10000:10000 \
   --group-add "$(stat -c '%g' /var/run/docker.sock)" \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
@@ -683,7 +683,7 @@ tee: /results/pi-stderr.log: Permission denied
 ```
 
 **Root Cause:**
-The Dockerfile creates the kaseki user with UID 1000, and docker-compose.yml runs the container as UID 1000. However, if the host `/agents` directory is owned by root (or another UID) with restrictive permissions (e.g., `755`), the container cannot write to it.
+The Dockerfile creates the kaseki user with UID 10000, and docker-compose.yml runs the container as UID 10000. However, if the host `/agents` directory is owned by root (or another UID) with restrictive permissions (e.g., `755`), the container cannot write to it.
 
 **One-Line Fix:**
 
@@ -700,14 +700,14 @@ sudo mkdir -p /agents && sudo chmod 777 /agents
 
 ```bash
 sudo mkdir -p /agents
-sudo chown 1000:1000 /agents  # Make /agents owned by the container user
-sudo chmod 755 /agents         # Restrictive but sufficient
+sudo chown 10000:10000 /agents  # Make /agents owned by the container user (UID 10000)
+sudo chmod 755 /agents           # Restrictive but sufficient
 ```
 
 **Verify the fix:**
 
 ```bash
-ls -ld /agents  # Should show kaseki user as owner and world-writable OR
+ls -ld /agents  # Should show 10000:10000 ownership (preferred) or
                 # drwxrwxrwx (world-writable) if using one-line fix
 touch /agents/test-write && rm /agents/test-write  # Should succeed
 ```
@@ -734,7 +734,7 @@ tee: /results/pi-stderr.log: Permission denied
 ```
 
 **Root Cause:**
-The container runs as UID 1000, but the host `/agents` directory is owned by root (or another user) with permissions that don't allow UID 1000 to write.
+The container runs as UID 10000, but the host `/agents` directory is owned by root (or another user) with permissions that don't allow UID 10000 to write.
 
 **Quick Fix:**
 
@@ -750,9 +750,9 @@ ls -ld /agents  # Should show: drwxrwxrwx ... /agents
 **Better Fix (if you control the host user):**
 
 ```bash
-# Create /agents owned by the container user (UID 1000)
+# Create /agents owned by the container user (UID 10000)
 sudo mkdir -p /agents
-sudo chown 1000:1000 /agents
+sudo chown 10000:10000 /agents
 sudo chmod 755 /agents
 ```
 
@@ -782,7 +782,7 @@ rm /agents/test-write
 **If touch fails:**
 
 - Run: `sudo chmod 777 /agents`
-- Or: `sudo chown 1000:1000 /agents && sudo chmod 755 /agents`
+- Or: `sudo chown 10000:10000 /agents && sudo chmod 755 /agents`
 
 ### Container Exits with Code 1
 
@@ -832,7 +832,7 @@ Error response from daemon: user does not have permissions to use Docker
 ```
 
 **Cause:**
-Container UID 1000 doesn't have access to `/var/run/docker.sock`
+Container UID 10000 doesn't have access to `/var/run/docker.sock`
 
 **Fix:**
 

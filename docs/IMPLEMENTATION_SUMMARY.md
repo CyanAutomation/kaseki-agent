@@ -207,7 +207,7 @@ KASEKI_API_KEYS=sk-dev npm run kaseki-api
 - `--cap-drop ALL` — No Linux capabilities
 - `--read-only` root filesystem
 - `--security-opt no-new-privileges:true`
-- Non-root user (UID 1000)
+- Non-root user (UID 10000)
 - tmpfs for temporary files
 
 ---

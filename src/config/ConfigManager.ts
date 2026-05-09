@@ -163,7 +163,7 @@ const DEFAULT_CONFIG: Config = {
   docker: {
     image: 'docker.io/cyanautomation/kaseki-agent:latest',
     auto_pull: true,
-    container_user: '1000:1000',
+    container_user: '10000:10000',
   },
   api: {
     port: 8080,
