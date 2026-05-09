@@ -13,21 +13,36 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = __dirname;
 
+function hasExtension(importPath: string): boolean {
+  return path.extname(importPath) !== '';
+}
+
 function addJsExtensions(filePath: string): void {
   let content = fs.readFileSync(filePath, 'utf8');
 
-  // Match imports/exports from relative paths without extensions
-  // Pattern: from './path', from '../path', from '../../path', etc.
-  // But not: from './path.js' or from 'npm-package' or from 'npm-package/subpath'
+  // Match static imports/exports from relative paths without extensions.
+  // Pattern: from './path', from "../path", from '../../path', etc.
   content = content.replace(
-    /from\s+['"](\.[.]*[/\\][^'"]*?)['"](?!\.js\b)/g,
-    (match: string, importPath: string) => {
-      // Skip if already has .js extension
-      if (importPath.endsWith('.js')) {
+    /(from\s+)(['"])(\.{1,2}[/\\][^'"]*?)(\2)/g,
+    (match: string, prefix: string, quote: string, importPath: string) => {
+      if (hasExtension(importPath)) {
         return match;
       }
-      // Add .js extension to relative imports
-      return `from '${importPath}.js'`;
+
+      return `${prefix}${quote}${importPath}.js${quote}`;
+    },
+  );
+
+  // Match dynamic imports from relative paths without extensions.
+  // Pattern: import('./path'), import("../path"), import('../../path'), etc.
+  content = content.replace(
+    /(import\(\s*)(['"])(\.{1,2}[/\\][^'"]*?)(\2\s*\))/g,
+    (match: string, prefix: string, quote: string, importPath: string, suffix: string) => {
+      if (hasExtension(importPath)) {
+        return match;
+      }
+
+      return `${prefix}${quote}${importPath}.js${suffix}`;
     },
   );
 
