@@ -191,6 +191,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
+    && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
