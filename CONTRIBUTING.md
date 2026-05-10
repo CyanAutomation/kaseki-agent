@@ -179,12 +179,14 @@ If your test requires a fake credential (for example, testing API error handling
    - ❌ Bad: a real OpenRouter key, or a pattern that looks real
 
 2. **Document the pattern in code** — Add a comment explaining why it's there
+
    ```bash
    # Test fixture: intentional fake API key for integration testing (allowlisted)
    API_KEY="sk-test-integration-key"
    ```
 
 3. **Add the pattern to `.kaseki-secret-allowlist`** — So the secret scan knows it's safe
+
    ```
    test/kaseki-api.integration.test.sh:sk-test-integration-key
    ```
@@ -192,6 +194,7 @@ If your test requires a fake credential (for example, testing API error handling
 ### Secret Scan Allowlist Format
 
 The allowlist file is located at `.kaseki-secret-allowlist` (repository root). Each entry is one line:
+
 ```
 <file-path>:<credential-pattern>
 ```
@@ -230,6 +233,7 @@ Before opening a pull request that adds a test credential:
 - [ ] Local secret scan passes (no exit code 6).
 
 **References:**
+
 - [docs/SECRET_SCAN_ALLOWLIST.md](docs/SECRET_SCAN_ALLOWLIST.md) — Detailed allowlist documentation
 - [CLAUDE.md](CLAUDE.md#Quality-Gates-and-Exit-Codes) — Quality gates and exit codes
 
