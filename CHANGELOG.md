@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.16.0...v1.17.0) (2026-05-10)
+
+### Features
+
+* add validation output filter and integrate with Docker logs ([fce28b7](https://github.com/CyanAutomation/kaseki-agent/commit/fce28b7066e158bbe7217daf797341ef460de936))
+
+### Bug Fixes
+
+* remove unnecessary blank line in processLine function ([1e8d906](https://github.com/CyanAutomation/kaseki-agent/commit/1e8d906faf28696d60804f80846c3419fa99cfb9))
+
 ## [1.16.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.15.1...v1.16.0) (2026-05-10)
 
 ### Features
