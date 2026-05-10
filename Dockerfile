@@ -94,6 +94,7 @@ RUN chmod +x \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
     && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \
     && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
+    && cp dist/pi-progress-summarizer.js /app/lib/pi-progress-summarizer.js \
     && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \

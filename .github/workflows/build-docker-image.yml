@@ -111,6 +111,9 @@ jobs:
       - name: Build TypeScript
         run: npm run build
 
+      - name: Validate module imports (docker bin dependencies)
+        run: npm run validate-module-imports
+
       - name: Verify API service build artifact
         shell: bash
         run: |
