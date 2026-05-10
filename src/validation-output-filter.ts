@@ -16,6 +16,7 @@
  */
 
 import { createInterface } from 'readline';
+import { basename } from 'path';
 
 interface FilterState {
   inCommand: boolean;
@@ -24,12 +25,14 @@ interface FilterState {
   linesSinceCommandStart: number;
 }
 
-const state: FilterState = {
-  inCommand: false,
-  commandNumber: 0,
-  firstLineOfCommand: null,
-  linesSinceCommandStart: 0,
-};
+function createInitialState(): FilterState {
+  return {
+    inCommand: false,
+    commandNumber: 0,
+    firstLineOfCommand: null,
+    linesSinceCommandStart: 0,
+  };
+}
 
 /**
  * Patterns that always pass through (never filtered)
@@ -152,30 +155,27 @@ function shouldShow(line: string): boolean {
 /**
  * Process a line of input
  */
-function processLine(line: string): void {
+function processLine(line: string, state: FilterState): string | null {
   // Detect command start
   if (line.match(/^==> /)) {
     state.inCommand = true;
     state.commandNumber++;
     state.firstLineOfCommand = line;
     state.linesSinceCommandStart = 0;
-    output(line); // Always show command start
-    return;
+    return line; // Always show command start
   }
 
   // Detect command end
   if (line.match(/^exit_code=/)) {
-    output(line); // Always show exit code
     state.inCommand = false;
     state.firstLineOfCommand = null;
     state.linesSinceCommandStart = 0;
-    return;
+    return line; // Always show exit code
   }
 
   // If not in a command, show the line anyway (e.g., preamble, separators)
   if (!state.inCommand) {
-    output(line);
-    return;
+    return line;
   }
 
   // In a command: decide whether to show this line based on filter criteria
@@ -183,36 +183,67 @@ function processLine(line: string): void {
 
   // Show only lines that match filter criteria (errors, milestones, boundaries)
   if (shouldShow(line)) {
-    output(line);
+    return line;
   }
+
+  return null;
 }
 
 /**
- * Output a line to stdout
+ * Filter validation output and return the visible lines.
  */
-function output(line: string): void {
-  console.log(line);
+export function filterValidationOutput(input: string): string {
+  const state = createInitialState();
+  const outputLines: string[] = [];
+  const inputLines = input.split(/\r?\n/);
+
+  if (inputLines[inputLines.length - 1] === '') {
+    inputLines.pop();
+  }
+
+  for (const line of inputLines) {
+    const outputLine = processLine(line, state);
+
+    if (outputLine !== null) {
+      outputLines.push(outputLine);
+    }
+  }
+
+  return outputLines.length > 0 ? `${outputLines.join('\n')}\n` : '';
 }
 
 /**
  * Main: read from stdin and process
  */
-const rl = createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: false,
-});
+function main(): void {
+  const state = createInitialState();
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false,
+  });
 
-rl.on('line', (line: string) => {
-  processLine(line);
-});
+  rl.on('line', (line: string) => {
+    const outputLine = processLine(line, state);
 
-rl.on('close', () => {
-  process.exit(0);
-});
+    if (outputLine !== null) {
+      console.log(outputLine);
+    }
+  });
+
+  rl.on('close', () => {
+    process.exitCode = 0;
+  });
+}
 
 // Handle errors gracefully
 process.on('error', (err) => {
   console.error(`[validation-output-filter] Error: ${err.message}`);
   process.exit(1);
 });
+
+const entrypoint = process.argv[1] ? basename(process.argv[1]) : '';
+
+if (entrypoint === 'validation-output-filter.js' || entrypoint === 'validation-output-filter.ts') {
+  main();
+}
