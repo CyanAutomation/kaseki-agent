@@ -5,6 +5,7 @@ const config: Config = {
   testEnvironment: 'node',
   rootDir: './',
   testMatch: ['<rootDir>/src/**/*.test.ts'],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.test.ts',
