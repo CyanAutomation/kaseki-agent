@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.13.1...v1.14.0) (2026-05-10)
+
+### Features
+
+* add OpenAPI 3.1 specification generation for Kaseki Agent API ([ab11ecc](https://github.com/CyanAutomation/kaseki-agent/commit/ab11ecca0d2f88e7f671e39687c95eec3b004fc0))
+
+### Bug Fixes
+
+* correct logging message format in OpenAPI spec generation script ([daf1a6c](https://github.com/CyanAutomation/kaseki-agent/commit/daf1a6c24f89def51d80cdabd4c9896f781f1f36))
+
 ## [1.13.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.13.0...v1.13.1) (2026-05-10)
 
 ### Bug Fixes
