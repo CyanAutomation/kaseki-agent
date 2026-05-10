@@ -1,6 +1,41 @@
 import { z } from 'zod';
 
 /**
+ * Artifact availability classification.
+ */
+export enum ArtifactAvailability {
+  ALWAYS = 'always',
+  ON_FAILURE = 'on-failure',
+  ON_SUCCESS = 'on-success',
+  CONDITIONAL = 'conditional', // Depends on job state (e.g., changes exist)
+}
+
+/**
+ * Comprehensive artifact metadata with discovery hints.
+ */
+export interface ArtifactMetadataDefinition {
+  name: string;
+  contentType: string;
+  description: string;
+  availability: ArtifactAvailability;
+  triageOrder?: number; // Lower = higher priority for triage
+  sizeHint?: 'small' | 'medium' | 'large'; // Help clients decide whether to inline
+}
+
+/**
+ * Runtime artifact file information.
+ */
+export interface ArtifactFileInfo {
+  name: string;
+  size: number;
+  contentType: string;
+  available: boolean;
+  description: string;
+  availability: ArtifactAvailability;
+  triageOrder?: number;
+}
+
+/**
  * Webhook event types.
  */
 export enum WebhookEventType {
@@ -132,6 +167,9 @@ export interface StatusResponse {
   resultDir?: string;
   correlationId?: string; // Request correlation ID
   requestId?: string; // Unique request ID
+  // Inline diagnostic content (always available for terminal jobs)
+  resultSummaryContent?: string; // Human-readable markdown summary
+  failureJsonContent?: Record<string, any>; // Structured failure info (only if failed)
   artifacts?: {
     metadataJson: boolean;
     analysisMd: boolean;
@@ -189,6 +227,9 @@ export interface RunArtifactFileMetadata {
   size: number;
   contentType: string;
   available: boolean;
+  description?: string;
+  availability?: ArtifactAvailability;
+  triageOrder?: number;
 }
 
 export interface RunArtifactsResponse {
@@ -197,6 +238,8 @@ export interface RunArtifactsResponse {
   exitCode?: number;
   artifacts: RunArtifactFileMetadata[];
   recommended: string[];
+  artifactCount: number; // Total number of available artifacts
+  downloadBaseUrl?: string; // Base URL for artifact downloads
 }
 
 /**
