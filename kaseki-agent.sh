@@ -14,6 +14,7 @@ KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run t
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
+KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
@@ -23,6 +24,7 @@ KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 KASEKI_REPO_MEMORY_MODE="${KASEKI_REPO_MEMORY_MODE:-off}"
 KASEKI_REPO_MEMORY_TTL_DAYS="${KASEKI_REPO_MEMORY_TTL_DAYS:-30}"
 KASEKI_REPO_MEMORY_MAX_BYTES="${KASEKI_REPO_MEMORY_MAX_BYTES:-8000}"
+KASEKI_REPO_MEMORY_ROOT="${KASEKI_REPO_MEMORY_ROOT:-/cache/repo-memory}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
@@ -1171,7 +1173,7 @@ init_repo_memory_paths() {
     return 0
   fi
   REPO_MEMORY_KEY="$(compute_repo_memory_key)"
-  REPO_MEMORY_DIR="/cache/repo-memory/$REPO_MEMORY_KEY"
+  REPO_MEMORY_DIR="$KASEKI_REPO_MEMORY_ROOT/$REPO_MEMORY_KEY"
   REPO_MEMORY_FILE="$REPO_MEMORY_DIR/summary.md"
   REPO_MEMORY_STATUS="enabled"
 }
@@ -1222,10 +1224,10 @@ write_repo_memory_summary() {
   local updated_at
   REPO_MEMORY_COMMIT_SHA="$(git -C /workspace/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
   updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  node - "$KASEKI_REPO_MEMORY_MAX_BYTES" "$REPO_MEMORY_FILE" "$REPO_URL" "$GIT_REF" "$REPO_MEMORY_COMMIT_SHA" "$updated_at" "$KASEKI_TASK_MODE" "$STATUS" "$PI_EXIT" "$VALIDATION_EXIT" "$QUALITY_EXIT" "$SECRET_SCAN_EXIT" <<'NODE' || {
+  node - "$KASEKI_REPO_MEMORY_MAX_BYTES" "$REPO_MEMORY_FILE" "$KASEKI_RESULTS_DIR" "$REPO_URL" "$GIT_REF" "$REPO_MEMORY_COMMIT_SHA" "$updated_at" "$KASEKI_TASK_MODE" "$STATUS" "$PI_EXIT" "$VALIDATION_EXIT" "$QUALITY_EXIT" "$SECRET_SCAN_EXIT" <<'NODE' || {
 const fs = require('fs');
 const path = require('path');
-const [maxBytesArg, outputFile, repoUrl, gitRef, commitSha, timestamp, taskMode, status, piExit, validationExit, qualityExit, secretScanExit] = process.argv.slice(2);
+const [maxBytesArg, outputFile, resultsDir, repoUrl, gitRef, commitSha, timestamp, taskMode, status, piExit, validationExit, qualityExit, secretScanExit] = process.argv.slice(2);
 const maxBytes = Math.max(1024, Number(maxBytesArg) || 8000);
 
 function readFile(file, maxChars = 12000) {
@@ -1255,7 +1257,7 @@ function compactLines(text, limit = 16) {
 }
 
 function changedFiles() {
-  return sanitize(readFile('/results/changed-files.txt', 4000))
+  return sanitize(readFile(path.join(resultsDir, 'changed-files.txt'), 4000))
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -1263,7 +1265,7 @@ function changedFiles() {
 }
 
 function validationOutcomes() {
-  const rows = sanitize(readFile('/results/validation-timings.tsv', 8000))
+  const rows = sanitize(readFile(path.join(resultsDir, 'validation-timings.tsv'), 8000))
     .split(/\r?\n/)
     .map((line) => line.split('\t'))
     .filter((parts) => parts.length >= 2 && parts[0]);
@@ -1271,8 +1273,8 @@ function validationOutcomes() {
   return rows.slice(0, 20).map(([command, exitCode, duration]) => `${command}: exit ${exitCode}${duration ? `, ${duration}s` : ''}`);
 }
 
-const resultLines = compactLines(readFile('/results/result-summary.md'));
-const analysisLines = compactLines(readFile('/results/analysis.md'), 10);
+const resultLines = compactLines(readFile(path.join(resultsDir, 'result-summary.md')));
+const analysisLines = compactLines(readFile(path.join(resultsDir, 'analysis.md')), 10);
 const files = changedFiles();
 const validations = validationOutcomes();
 

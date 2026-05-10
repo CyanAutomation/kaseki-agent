@@ -36,6 +36,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
+| `KASEKI_REPO_MEMORY_ROOT` | /cache/repo-memory | Directory root for repository memory summaries |
 | `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error |
 | `GITHUB_APP_ID_FILE` | — | Path to file containing GitHub App ID for PR creation |
 | `GITHUB_APP_CLIENT_ID_FILE` | — | Path to file containing GitHub App Client ID |

@@ -1287,6 +1287,7 @@ API controllers may send either the direct fields (`changedFilesAllowlist`, `val
 | `KASEKI_REPO_MEMORY_MODE` | `off` | Opt-in repository prompt memory: `off` disables it; `summary` appends a compact prior-context summary when fresh |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | `30` | Maximum age for a repository memory summary before it is ignored |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | `8000` | Maximum bytes to read/write for the repository memory prompt section |
+| `KASEKI_REPO_MEMORY_ROOT` | `/cache/repo-memory` | Directory root for repository memory summaries |
 
 ### Docker and Images
 
@@ -1415,7 +1416,7 @@ Set `KASEKI_GIT_CACHE_MODE=off` to disable Git mirror caching. Clone duration pl
 
 ### Repository Memory Cache
 
-Repository memory is disabled by default. Set `KASEKI_REPO_MEMORY_MODE=summary` to opt in to a compact prompt-context cache for the target repository and ref. Kaseki stores this summary at `/cache/repo-memory/<repo-key>/summary.md`, where `<repo-key>` is derived from the repository URL and default ref. Before invoking the agent, Kaseki appends a clearly labeled “Prior repository context” section only when the summary exists, is within `KASEKI_REPO_MEMORY_TTL_DAYS`, and is no larger than `KASEKI_REPO_MEMORY_MAX_BYTES`.
+Repository memory is disabled by default. Set `KASEKI_REPO_MEMORY_MODE=summary` to opt in to a compact prompt-context cache for the target repository and ref. Kaseki stores this summary at `${KASEKI_REPO_MEMORY_ROOT}/<repo-key>/summary.md`, where `KASEKI_REPO_MEMORY_ROOT` defaults to `/cache/repo-memory` and `<repo-key>` is derived from the repository URL and default ref. Before invoking the agent, Kaseki appends a clearly labeled “Prior repository context” section only when the summary exists, is within `KASEKI_REPO_MEMORY_TTL_DAYS`, and is no larger than `KASEKI_REPO_MEMORY_MAX_BYTES`.
 
 After a successful run, or an inspect-mode run where the agent completed and the secret scan passed, Kaseki rewrites the summary from bounded, sanitized artifacts: `result-summary.md`, `analysis.md`, `changed-files.txt`, and validation timing/status outcomes. The summary records the repo URL, default ref, commit SHA, and timestamp so stale context is visible to the next agent. Kaseki does not blindly persist raw logs or user prompts, and lines resembling secrets, credentials, API keys, tokens, or prompt text are filtered out before writing memory.
 
