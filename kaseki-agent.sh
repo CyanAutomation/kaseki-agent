@@ -2042,7 +2042,7 @@ else
   PI_EXTRACTION_DEPS_OK=1
   missing_executables=()
   missing_helpers=()
-  for required_exec in kaseki-pi-event-filter kaseki-pi-progress-stream; do
+  for required_exec in kaseki-pi-event-filter kaseki-pi-progress-stream validation-output-filter; do
     if ! command -v "$required_exec" >/dev/null 2>&1; then
       missing_executables+=("$required_exec")
     fi
@@ -2263,7 +2263,7 @@ else
       command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
-    } 2>&1 | tee -a /results/validation.log
+    } 2>&1 | tee -a /results/validation.log | validation-output-filter
     command_exit="${PIPESTATUS[0]}"
     validation_end="$(date +%s)"
     duration=$((validation_end - validation_start))
