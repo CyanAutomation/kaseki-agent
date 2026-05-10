@@ -1,0 +1,1135 @@
+/**
+ * OpenAPI Spec Generator for Kaseki Agent API
+ *
+ * This module constructs an OpenAPI 3.1 specification for the Kaseki Agent API.
+ * The spec is generated at build time and served dynamically at runtime.
+ */
+
+/**
+ * Generate a complete OpenAPI 3.1 specification for the Kaseki Agent API.
+ * This spec is generated from route definitions and request/response types.
+ */
+export function generateOpenAPISpec(): Record<string, unknown> {
+
+  // Response schemas
+  const runRequestSchema = {
+    type: 'object',
+    required: ['repoUrl'],
+    properties: {
+      repoUrl: {
+        type: 'string',
+        format: 'uri',
+        description: 'Git repository URL',
+      },
+      ref: {
+        type: 'string',
+        default: 'main',
+        description: 'Git branch/tag/commit',
+      },
+      taskPrompt: {
+        type: 'string',
+        description: 'Task prompt for Pi agent',
+      },
+      changedFilesAllowlist: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'File patterns to allow changes in',
+      },
+      maxDiffBytes: {
+        type: 'integer',
+        description: 'Max diff size in bytes',
+      },
+      validationCommands: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Validation commands to run',
+      },
+      taskMode: {
+        type: 'string',
+        enum: ['patch', 'inspect'],
+        description: 'Task mode',
+      },
+      publishMode: {
+        type: 'string',
+        enum: ['none', 'branch', 'draft_pr'],
+        description: 'Publishing mode after validation',
+      },
+      startupCheck: {
+        type: 'boolean',
+        description: 'Start a worker container and exit after boot checks',
+      },
+      webhookConfig: {
+        type: 'object',
+        description: 'Webhook configuration for job events',
+      },
+      tracing: {
+        type: 'object',
+        description: 'Request tracing identifiers',
+      },
+      idempotencyKey: {
+        type: 'string',
+        format: 'uuid',
+        description: 'Idempotency key for safe retries',
+      },
+      timeoutSeconds: {
+        type: 'integer',
+        minimum: 60,
+        maximum: 10800,
+        description: 'Per-run timeout in seconds',
+      },
+    },
+  };
+
+  const webhookConfigSchema = {
+    type: 'object',
+    properties: {
+      url: {
+        type: 'string',
+        format: 'uri',
+        description: 'Webhook URL',
+      },
+      secret: {
+        type: 'string',
+        description: 'HMAC secret for signature verification',
+      },
+      events: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Event types to deliver',
+      },
+      retryPolicy: {
+        type: 'object',
+        description: 'Retry configuration',
+      },
+    },
+  };
+
+  const requestTracingSchema = {
+    type: 'object',
+    properties: {
+      correlationId: {
+        type: 'string',
+        format: 'uuid',
+        description: 'Correlation ID for tracking',
+      },
+      requestId: {
+        type: 'string',
+        format: 'uuid',
+        description: 'Unique request ID',
+      },
+    },
+  };
+
+  const runResponseSchema = {
+    type: 'object',
+    required: ['id', 'status', 'createdAt'],
+    properties: {
+      id: {
+        type: 'string',
+        description: 'Unique kaseki instance ID (kaseki-N)',
+        example: 'kaseki-42',
+      },
+      status: {
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
+        description: 'Current job status',
+      },
+      createdAt: {
+        type: 'string',
+        format: 'date-time',
+        description: 'ISO 8601 timestamp when the job was created',
+      },
+      correlationId: {
+        type: 'string',
+        description: 'Request correlation ID for tracing',
+      },
+      requestId: {
+        type: 'string',
+        description: 'Unique request ID',
+      },
+      cached: {
+        type: 'boolean',
+        description: 'True when returned from idempotency replay',
+      },
+      completedAt: {
+        type: 'string',
+        format: 'date-time',
+        description: 'ISO 8601 timestamp when the job completed',
+      },
+      exitCode: {
+        type: 'integer',
+        description: 'Exit code from kaseki execution',
+      },
+      failureClass: {
+        type: 'string',
+        description: 'Classification of failure (e.g., validation_failed, timeout)',
+      },
+      error: {
+        type: 'string',
+        description: 'Error message if the job failed',
+      },
+    },
+  };
+
+  const statusResponseSchema = {
+    type: 'object',
+    required: ['id', 'status', 'elapsedSeconds', 'timeoutRiskPercent'],
+    properties: {
+      id: {
+        type: 'string',
+        description: 'Kaseki instance ID',
+      },
+      status: {
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
+      },
+      progress: {
+        type: 'object',
+        properties: {
+          stage: { type: 'string', description: 'Current stage name' },
+          percentComplete: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 100,
+            description: 'Progress percentage (0-100)',
+          },
+          message: { type: 'string', description: 'Detailed progress message' },
+          updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'ISO 8601 timestamp of last update',
+          },
+        },
+      },
+      elapsedSeconds: {
+        type: 'number',
+        description: 'Elapsed time since job start in seconds',
+      },
+      timeoutRiskPercent: {
+        type: 'number',
+        description: 'Percentage of timeout used (0-100+); values >85 indicate imminent timeout',
+      },
+      exitCode: {
+        type: 'integer',
+        description: 'Exit code (only if completed)',
+      },
+      failureClass: {
+        type: 'string',
+        description: 'Failure classification (only if failed)',
+      },
+      error: {
+        type: 'string',
+        description: 'Error message (only if failed)',
+      },
+      resultDir: {
+        type: 'string',
+        description: 'Path to results directory on server',
+      },
+      resultSummaryContent: {
+        type: 'string',
+        description: 'Human-readable markdown summary (truncated to 64KB)',
+      },
+      failureJsonContent: {
+        type: 'object',
+        description: 'Structured failure information (only if failed)',
+      },
+      artifacts: {
+        type: 'object',
+        properties: {
+          metadataJson: { type: 'boolean' },
+          analysisMd: { type: 'boolean' },
+          resultSummaryMd: { type: 'boolean' },
+          failureJson: { type: 'boolean' },
+          stderrLog: { type: 'boolean' },
+          availableFiles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'List of available artifact files',
+          },
+        },
+      },
+    },
+  };
+
+  const errorResponseSchema = {
+    type: 'object',
+    required: ['error'],
+    properties: {
+      error: {
+        type: 'string',
+        description: 'Error message',
+      },
+      requestId: {
+        type: 'string',
+        description: 'Request ID for debugging',
+      },
+    },
+  };
+
+  // Define paths (endpoints)
+  const paths: Record<string, unknown> = {
+    '/health': {
+      get: {
+        operationId: 'getHealth',
+        summary: 'Health check endpoint',
+        description: 'Returns 200 OK if the service is running. No authentication required.',
+        tags: ['Health & Status'],
+        responses: {
+          '200': {
+            description: 'Service is healthy',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string', enum: ['ok'] },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/ready': {
+      get: {
+        operationId: 'getReady',
+        summary: 'Readiness probe',
+        description:
+          'Returns 200 OK when the service is ready to accept requests. Checks queue and scheduler dependencies. No authentication required.',
+        tags: ['Health & Status'],
+        responses: {
+          '200': {
+            description: 'Service is ready',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ready: { type: 'boolean' },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          '503': {
+            description: 'Service is not ready',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/metrics': {
+      get: {
+        operationId: 'getMetrics',
+        summary: 'Prometheus metrics',
+        description: 'Returns Prometheus-formatted metrics (artifact cache + queue stats)',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Metrics in Prometheus text format',
+            content: {
+              'text/plain': {
+                schema: {
+                  type: 'string',
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/preflight': {
+      get: {
+        operationId: 'getPreFlight',
+        summary: 'Pre-flight validation',
+        description:
+          'Validates that the controller (Docker, image, GitHub App) is configured correctly. Returns checks for all dependencies.',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Pre-flight checks complete',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['isValid', 'checks'],
+                  properties: {
+                    isValid: { type: 'boolean' },
+                    checks: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          ok: { type: 'boolean' },
+                          detail: { type: 'string' },
+                          remediation: { type: 'string' },
+                        },
+                      },
+                    },
+                    warnings: { type: 'array', items: { type: 'string' } },
+                    errors: { type: 'array', items: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/validate': {
+      post: {
+        operationId: 'validateTask',
+        summary: 'Validate task configuration',
+        description:
+          'Validates the task configuration before submitting a run. Performs pre-flight checks on the task prompt and constraints.',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: runRequestSchema,
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Validation result',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    isValid: { type: 'boolean' },
+                    checks: { type: 'array', items: { type: 'object' } },
+                    warnings: { type: 'array', items: { type: 'string' } },
+                    errors: { type: 'array', items: { type: 'string' } },
+                    estimatedDurationSeconds: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Invalid request',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs': {
+      post: {
+        operationId: 'triggerRun',
+        summary: 'Trigger a new kaseki run',
+        description:
+          'Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.',
+        tags: ['Run Management'],
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: runRequestSchema,
+            },
+          },
+        },
+        responses: {
+          '202': {
+            description: 'Job accepted and queued',
+            content: {
+              'application/json': {
+                schema: runResponseSchema,
+              },
+            },
+          },
+          '200': {
+            description: 'Idempotency replay: job already exists with same configuration',
+            content: {
+              'application/json': {
+                schema: runResponseSchema,
+              },
+            },
+          },
+          '400': {
+            description: 'Invalid request',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+
+      get: {
+        operationId: 'listRuns',
+        summary: 'List all runs',
+        description:
+          'Returns paginated list of all kaseki runs, newest first. Includes basic metadata for each run.',
+        tags: ['Run Management'],
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', default: 50, minimum: 1, maximum: 500 },
+            description: 'Maximum number of runs to return',
+          },
+          {
+            name: 'offset',
+            in: 'query',
+            schema: { type: 'integer', default: 0, minimum: 0 },
+            description: 'Offset for pagination',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'List of runs',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['runs', 'total'],
+                  properties: {
+                    runs: {
+                      type: 'array',
+                      items: runResponseSchema,
+                    },
+                    total: {
+                      type: 'integer',
+                      description: 'Total number of runs available',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/status': {
+      get: {
+        operationId: 'getRunStatus',
+        summary: 'Poll run status',
+        description:
+          'Returns current status of a kaseki run, including progress, elapsed time, and timeout risk percentage.',
+        tags: ['Run Management'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID (e.g., kaseki-42)',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Current run status',
+            content: {
+              'application/json': {
+                schema: statusResponseSchema,
+              },
+            },
+          },
+          '404': {
+            description: 'Run not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/cancel': {
+      post: {
+        operationId: 'cancelRun',
+        summary: 'Cancel a run',
+        description:
+          'Cancels a queued or running kaseki job. Returns 200 if cancellation was accepted; operation may complete asynchronously.',
+        tags: ['Run Management'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Cancellation accepted',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Run not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/progress': {
+      get: {
+        operationId: 'getRunProgress',
+        summary: 'Get progress events',
+        description:
+          'Returns progress events for a run. Supports Server-Sent Events (SSE) streaming via `?stream=sse` query parameter.',
+        tags: ['Run Logs & Progress'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+          {
+            name: 'stream',
+            in: 'query',
+            schema: { type: 'string', enum: ['sse'] },
+            description: 'Set to "sse" to enable Server-Sent Events streaming',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Progress events (JSONL or SSE format)',
+            content: {
+              'application/x-ndjson': {
+                schema: {
+                  type: 'object',
+                  description: 'Each line is a JSON progress event',
+                },
+              },
+              'text/event-stream': {
+                schema: {
+                  type: 'object',
+                  description: 'Server-Sent Events format (when stream=sse)',
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Run not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/logs/{logtype}': {
+      get: {
+        operationId: 'getRunLog',
+        summary: 'Get specific log file',
+        description:
+          'Returns a specific log file (stdout, stderr, validation, progress, quality, or secret-scan). Large logs are truncated.',
+        tags: ['Run Logs & Progress'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+          {
+            name: 'logtype',
+            in: 'path',
+            required: true,
+            schema: {
+              type: 'string',
+              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'],
+            },
+            description: 'Log type to retrieve',
+          },
+          {
+            name: 'tail',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, default: 100 },
+            description: 'Number of lines to tail (default: 100)',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Log content',
+            content: {
+              'text/plain': {
+                schema: { type: 'string' },
+              },
+            },
+          },
+          '404': {
+            description: 'Run or log not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/artifacts': {
+      get: {
+        operationId: 'getRunArtifacts',
+        summary: 'List artifacts',
+        description:
+          'Returns metadata for all available artifacts from a run (metadata.json, git.diff, validation.log, etc.)',
+        tags: ['Artifacts'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Artifacts list',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['id', 'artifacts', 'artifactCount'],
+                  properties: {
+                    id: { type: 'string' },
+                    runStatus: {
+                      type: 'string',
+                      enum: ['queued', 'running', 'completed', 'failed'],
+                    },
+                    exitCode: { type: 'integer' },
+                    artifacts: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          size: { type: 'integer' },
+                          contentType: { type: 'string' },
+                          available: { type: 'boolean' },
+                          description: { type: 'string' },
+                        },
+                      },
+                    },
+                    recommended: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Recommended artifacts to review first',
+                    },
+                    artifactCount: { type: 'integer' },
+                  },
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Run not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/results/{id}/{file}': {
+      get: {
+        operationId: 'downloadArtifact',
+        summary: 'Download artifact file',
+        description:
+          'Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use `/api/runs/{id}/artifacts` to list available files.',
+        tags: ['Artifacts'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+          {
+            name: 'file',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Artifact filename (e.g., git.diff, metadata.json)',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Artifact file content',
+            content: {
+              '*/*': {
+                schema: { type: 'string', format: 'binary' },
+              },
+            },
+          },
+          '404': {
+            description: 'Artifact not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/runs/{id}/analysis': {
+      get: {
+        operationId: 'getRunAnalysis',
+        summary: 'Get comprehensive run analysis',
+        description:
+          'Returns a comprehensive post-run analysis including metadata, changes, validation results, and failure details.',
+        tags: ['Run Details'],
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+            description: 'Kaseki instance ID',
+          },
+        ],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Run analysis',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['id', 'status'],
+                  properties: {
+                    id: { type: 'string' },
+                    status: {
+                      type: 'string',
+                      enum: ['queued', 'running', 'completed', 'failed'],
+                    },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    completedAt: { type: 'string', format: 'date-time' },
+                    elapsedSeconds: { type: 'number' },
+                    exitCode: { type: 'integer' },
+                    failureClass: { type: 'string' },
+                    metadata: { type: 'object' },
+                    changes: {
+                      type: 'object',
+                      properties: {
+                        changedFiles: { type: 'array', items: { type: 'string' } },
+                        diffSize: { type: 'integer' },
+                      },
+                    },
+                    validation: {
+                      type: 'object',
+                      properties: {
+                        passed: { type: 'boolean' },
+                        commandResults: { type: 'array', items: { type: 'object' } },
+                      },
+                    },
+                    errors: { type: 'array', items: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Run not found',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+
+    '/api/webhooks/test': {
+      post: {
+        operationId: 'testWebhook',
+        summary: 'Test webhook configuration',
+        description: 'Tests a webhook configuration by sending a test event to the specified URL.',
+        tags: ['Webhooks'],
+        security: [{ BearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['url'],
+                properties: {
+                  url: { type: 'string', format: 'uri' },
+                  secret: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Webhook test successful',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    statusCode: { type: 'integer' },
+                    message: { type: 'string' },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Invalid webhook configuration',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  return {
+    openapi: '3.1.0',
+    info: {
+      title: 'Kaseki Agent API',
+      version: '1.13.0',
+      description:
+        'Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment',
+      contact: {
+        name: 'CyanAutomation',
+        url: 'https://github.com/CyanAutomation/kaseki-agent',
+      },
+      license: {
+        name: 'MIT',
+        url: 'https://github.com/CyanAutomation/kaseki-agent/blob/main/LICENSE',
+      },
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+        description: 'Local development server',
+      },
+      {
+        url: 'https://kaseki.example.com',
+        description: 'Production server (configure as needed)',
+      },
+    ],
+    paths,
+    components: {
+      schemas: {
+        RunRequest: runRequestSchema,
+        RunResponse: runResponseSchema,
+        StatusResponse: statusResponseSchema,
+        ErrorResponse: errorResponseSchema,
+        WebhookConfig: webhookConfigSchema,
+        RequestTracing: requestTracingSchema,
+      },
+      securitySchemes: {
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'token',
+          description:
+            'Bearer token authentication. Provide your API key (from KASEKI_API_KEYS environment variable) as the bearer token.',
+        },
+      },
+    },
+    tags: [
+      {
+        name: 'Health & Status',
+        description: 'Unauthenticated health and readiness checks',
+      },
+      {
+        name: 'Service Info',
+        description: 'Service metadata, metrics, and pre-flight validation',
+      },
+      {
+        name: 'Run Management',
+        description: 'Create, list, and manage kaseki runs',
+      },
+      {
+        name: 'Run Logs & Progress',
+        description: 'Retrieve progress events and logs for runs',
+      },
+      {
+        name: 'Artifacts',
+        description: 'List and download run artifacts',
+      },
+      {
+        name: 'Run Details',
+        description: 'Comprehensive run analysis and diagnostics',
+      },
+      {
+        name: 'Webhooks',
+        description: 'Webhook configuration and testing',
+      },
+    ],
+  };
+}
+
+export default generateOpenAPISpec;

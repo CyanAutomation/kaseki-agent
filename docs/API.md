@@ -51,6 +51,37 @@ curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
 
 If the token is missing or invalid, the API returns `401 Unauthorized`.
 
+## Interactive Swagger Documentation
+
+The Kaseki API includes an interactive **Swagger UI** for exploring and testing endpoints:
+
+### Access Swagger UI
+
+When the API service is running, open your browser to:
+
+```
+http://localhost:8080/docs
+```
+
+**Note:** Replace `8080` with the port specified by `KASEKI_API_PORT`.
+
+### Features
+
+- **Browse all endpoints** organized by category (Run Management, Logs & Progress, Artifacts, etc.)
+- **View request/response schemas** with type information and examples
+- **Try it out:** Send test requests directly from the UI with automatic code samples
+- **Authentication:** Authorize with your Bearer token in the top-right corner
+- **OpenAPI specification:** Access the raw spec at `http://localhost:8080/api/openapi.json`
+
+### Example: Testing `/api/runs` Endpoint
+
+1. Open http://localhost:8080/docs
+2. Click **"Run Management"** → **"Trigger a new kaseki run"**
+3. Click **"Authorize"** in the top-right; enter your API key
+4. Click **"Try it out"**
+5. Fill in the request body with a repository URL
+6. Click **"Execute"** to submit and see the response
+
 ## API Endpoints
 
 ### Health Check
