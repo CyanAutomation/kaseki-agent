@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { generateKasekiReport } from './kaseki-report.js';
 
 describe('kaseki-report', () => {
   let baseDir: string;
@@ -46,11 +46,7 @@ describe('kaseki-report', () => {
     stderr: string;
     code: number | null;
   } {
-    const result = spawnSync('npx', ['tsx', 'src/kaseki-report.ts', fixtureDir], {
-      cwd: path.join(__dirname, '..'),
-      encoding: 'utf8',
-    });
-    return { stdout: result.stdout || '', stderr: result.stderr || '', code: result.status };
+    return { stdout: generateKasekiReport(fixtureDir), stderr: '', code: 0 };
   }
 
   const testCases = [

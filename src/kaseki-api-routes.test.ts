@@ -51,8 +51,7 @@ async function createTestApp(
   app.use(express.json());
   app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
 
-  const server = app.listen(0);
-  const port = (server.address() as AddressInfo).port;
+  const { server, port } = await listenTestApp(app);
 
   return {
     app,
@@ -61,6 +60,15 @@ async function createTestApp(
     idempotencyStore,
     preFlightValidator,
   };
+}
+
+async function listenTestApp(app: Express): Promise<{ server: Server; port: number }> {
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve, reject) => {
+    server.once('listening', () => resolve());
+    server.once('error', reject);
+  });
+  return { server, port: (server.address() as AddressInfo).port };
 }
 
 /**
@@ -481,8 +489,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
@@ -536,8 +543,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
@@ -606,8 +612,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
@@ -681,8 +686,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/missing-run/artifacts`, {
         headers: { Authorization: 'Bearer test-key' },
@@ -746,8 +750,7 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/stderr`, {
@@ -805,8 +808,7 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/stderr`, {
@@ -867,8 +869,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
     const body = JSON.stringify({
       repoUrl: 'https://github.com/org/repo',
@@ -929,8 +930,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/events`, {
@@ -977,8 +977,7 @@ describe('kaseki-api-routes controller replay and events', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
@@ -1044,8 +1043,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1099,8 +1097,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
@@ -1150,8 +1147,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1193,8 +1189,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, { headers: { Authorization: 'Bearer test-key' } });
       expect(response.status).toBe(200);
@@ -1241,8 +1236,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1295,8 +1289,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1342,8 +1335,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1395,8 +1387,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1445,8 +1436,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1494,8 +1484,7 @@ describe('kaseki-api-routes status artifact hints', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
@@ -1563,8 +1552,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
 
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     const headers = { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' };
     const body = {
       repoUrl: 'https://github.com/example/repo',
@@ -1625,8 +1613,7 @@ describe('kaseki-api-routes idempotency concurrency', () => {
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
 
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
 
     try {
       const runPromise = fetch(`http://127.0.0.1:${port}/api/runs`, {
@@ -1802,8 +1789,7 @@ describe('artifact content cache configuration in routes', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, artifactCache));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
@@ -1856,8 +1842,7 @@ describe('artifact content cache configuration in routes', () => {
     const app = express();
     app.use(express.json());
     app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator, artifactCache));
-    const server = app.listen(0);
-    const port = (server.address() as AddressInfo).port;
+    const { server, port } = await listenTestApp(app);
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
