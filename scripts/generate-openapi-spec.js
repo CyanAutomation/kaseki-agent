@@ -44,7 +44,7 @@ try {
   const jsonContent = JSON.stringify(spec, null, 2);
   fs.writeFileSync(outputFile, jsonContent, 'utf-8');
 
-  console.log(`✓ OpenAPI spec generated successfully`);
+  console.log('✓ OpenAPI spec generated successfully');
   console.log(`  Output: ${outputFile}`);
   console.log(`  Size: ${(jsonContent.length / 1024).toFixed(2)} KB`);
   console.log(`  Endpoints: ${Object.keys(spec.paths || {}).length}`);
