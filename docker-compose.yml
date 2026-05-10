@@ -10,7 +10,7 @@ services:
       - "${KASEKI_API_PORT:-8080}:8080"
     environment:
       KASEKI_API_PORT: "8080"
-      KASEKI_API_KEYS: "${KASEKI_API_KEYS:-sk-dev-key}"
+      KASEKI_API_KEYS_FILE: "${KASEKI_API_KEYS_FILE:-/agents/secrets/kaseki_api_keys}"
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
@@ -19,9 +19,9 @@ services:
       KASEKI_CONTAINER_GID: "10000"
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
-      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
       GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_client_id}"
+      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
     volumes:
       - /agents:/agents:rw

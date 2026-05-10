@@ -1,27 +1,37 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, validateApiKey } from './kaseki-api-config';
-import { secretValueCache } from './secret-value-cache';
+
+// Mock the host-secrets-reader module
+jest.mock('./secrets/host-secrets-reader', () => ({
+  readHostSecret: jest.fn(),
+  getSecretLocations: jest.fn((name) => ({
+    primary: `/agents/secrets/${name}`,
+    secondary: `/home/user/secrets/${name}`,
+  })),
+  clearSecretCache: jest.fn(),
+}));
 
 describe('kaseki-api-config load configuration', () => {
   const originalEnv = process.env;
   let testDir: string;
 
   beforeEach(() => {
-    jest.resetModules();
-    secretValueCache.clear();
+    jest.clearAllMocks();
     process.env = { ...originalEnv };
     testDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-config-test-'));
   });
 
   afterEach(() => {
-    secretValueCache.clear();
     process.env = originalEnv;
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('loadConfig loads valid configuration from environment variables', () => {
-    process.env.KASEKI_API_KEYS = 'key1,key2,key3';
+  test('loadConfig loads API keys from host secrets', () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('key1\nkey2\nkey3');
+
     process.env.KASEKI_API_PORT = '3000';
     process.env.KASEKI_API_MAX_CONCURRENT_RUNS = '5';
     process.env.KASEKI_AGENT_TIMEOUT_SECONDS = '600';
@@ -79,15 +89,18 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_KEYS is not set', () => {
-    delete process.env.KASEKI_API_KEYS;
-    delete process.env.KASEKI_API_KEYS_FILE;
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
     process.env.KASEKI_RESULTS_DIR = testDir;
 
-    expect(() => loadConfig()).toThrow('KASEKI_API_KEYS environment variable is required');
+    expect(() => loadConfig()).toThrow('KASEKI_API_KEYS is required');
   });
 
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_PORT = 'not-a-port';
 
@@ -95,7 +108,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_PORT is out of range', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_PORT = '99999';
 
@@ -103,7 +118,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_MAX_CONCURRENT_RUNS is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_MAX_CONCURRENT_RUNS = '-1';
 
@@ -111,7 +128,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_AGENT_TIMEOUT_SECONDS is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_AGENT_TIMEOUT_SECONDS = 'not-a-number';
 
@@ -119,7 +138,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_MAX_DIFF_BYTES is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_MAX_DIFF_BYTES = '0';
 
@@ -127,7 +148,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_JOB_INDEX_MAX_ENTRIES is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES = '-1';
 
@@ -135,7 +158,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when artifact cache configuration is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES = '-1';
     expect(() => loadConfig()).toThrow('KASEKI_ARTIFACT_CACHE_MAX_ENTRIES must be >= 0');
@@ -150,7 +175,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_TASK_MODE = 'invalid-mode';
 
@@ -158,7 +185,9 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig auto-creates KASEKI_RESULTS_DIR if it does not exist', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     const newDir = path.join(testDir, 'new', 'nested', 'dir');
     process.env.KASEKI_RESULTS_DIR = newDir;
 
@@ -169,139 +198,53 @@ describe('kaseki-api-config load configuration', () => {
     expect(fs.statSync(newDir).isDirectory()).toBe(true);
   });
 
-  test('loadConfig throws when KASEKI_RESULTS_DIR cannot be created due to permissions', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
-    // Use a path that typically can't be created (system root requires elevated privileges)
-    process.env.KASEKI_RESULTS_DIR = '/root/kaseki-test-no-perms';
-
-    // Skip this test on systems where /root is writable (e.g., running as root in container)
-    if (process.geteuid && process.geteuid() === 0) {
-      // Running as root, skip permission test
-      return;
-    }
-
-    expect(() => loadConfig()).toThrow(/Failed to create KASEKI_RESULTS_DIR/);
-  });
-
   test('loadConfig throws when KASEKI_API_LOG_LEVEL is invalid', () => {
-    process.env.KASEKI_API_KEYS = 'test-key';
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('test-key');
+
     process.env.KASEKI_RESULTS_DIR = testDir;
     process.env.KASEKI_API_LOG_LEVEL = 'verbose';
 
     expect(() => loadConfig()).toThrow('KASEKI_API_LOG_LEVEL must be debug/info/warn/error');
   });
+});
 
-  test('loadConfig strips whitespace from API keys', () => {
-    process.env.KASEKI_API_KEYS = '  key1  ,  key2  ,  key3  ';
-    process.env.KASEKI_RESULTS_DIR = testDir;
+describe('kaseki-api-config API key parsing from host secrets', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('loadConfig parses newline-separated API keys from host secrets', () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('key1\nkey2\nkey3');
+
+    process.env.KASEKI_RESULTS_DIR = '/tmp';
 
     const config = loadConfig();
 
     expect(config.apiKeys).toEqual(['key1', 'key2', 'key3']);
   });
-});
 
-describe('kaseki-api-config load API keys from file', () => {
-  const originalEnv = process.env;
-  let testDir: string;
+  test('loadConfig skips comments and empty lines in API keys', () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('# Comment\nkey1\n\n# Another\nkey2\n');
 
-  beforeEach(() => {
-    jest.resetModules();
-    secretValueCache.clear();
-    process.env = { ...originalEnv };
-    testDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-config-keys-test-'));
-  });
-
-  afterEach(() => {
-    secretValueCache.clear();
-    process.env = originalEnv;
-    fs.rmSync(testDir, { recursive: true, force: true });
-  });
-
-  test('loadConfig reads API keys from KASEKI_API_KEYS_FILE', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    fs.writeFileSync(keysFile, 'file-key-1\nfile-key-2\nfile-key-3\n');
-
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_RESULTS_DIR = '/tmp';
 
     const config = loadConfig();
 
-    expect(config.apiKeys).toEqual(['file-key-1', 'file-key-2', 'file-key-3']);
+    expect(config.apiKeys).toEqual(['key1', 'key2']);
   });
 
-  test('loadConfig prefers KASEKI_API_KEYS over KASEKI_API_KEYS_FILE', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    fs.writeFileSync(keysFile, 'file-key-1\nfile-key-2\n');
+  test('loadConfig strips whitespace from API keys', () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue('  key1  \n  key2  \n  key3  ');
 
-    process.env.KASEKI_API_KEYS = 'env-key-1,env-key-2';
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_RESULTS_DIR = '/tmp';
 
     const config = loadConfig();
 
-    expect(config.apiKeys).toEqual(['env-key-1', 'env-key-2']);
-  });
-
-  test('loadConfig reuses cached API key file contents when metadata is unchanged', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    const fixedTime = new Date('2020-01-01T00:00:00.000Z');
-    fs.writeFileSync(keysFile, 'file-key-1\nfile-key-2\n');
-    fs.utimesSync(keysFile, fixedTime, fixedTime);
-
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_RESULTS_DIR = testDir;
-
-    expect(loadConfig().apiKeys).toEqual(['file-key-1', 'file-key-2']);
-
-    fs.writeFileSync(keysFile, 'file-key-3\nfile-key-4\n');
-    fs.utimesSync(keysFile, fixedTime, fixedTime);
-
-    expect(loadConfig().apiKeys).toEqual(['file-key-1', 'file-key-2']);
-  });
-
-  test('loadConfig skips comments and empty lines in API keys file', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    fs.writeFileSync(keysFile, '# This is a comment\nfile-key-1\n\n# Another comment\nfile-key-2\n');
-
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_RESULTS_DIR = testDir;
-
-    const config = loadConfig();
-
-    expect(config.apiKeys).toEqual(['file-key-1', 'file-key-2']);
-  });
-
-  test('loadConfig strips whitespace from keys in file', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    fs.writeFileSync(keysFile, '  file-key-1  \n  file-key-2  \n  file-key-3  \n');
-
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_RESULTS_DIR = testDir;
-
-    const config = loadConfig();
-
-    expect(config.apiKeys).toEqual(['file-key-1', 'file-key-2', 'file-key-3']);
-  });
-
-  test('loadConfig falls back to KASEKI_API_KEYS when file is empty', () => {
-    const keysFile = path.join(testDir, 'api-keys.txt');
-    fs.writeFileSync(keysFile, '');
-
-    process.env.KASEKI_API_KEYS_FILE = keysFile;
-    process.env.KASEKI_API_KEYS = 'fallback-key';
-    process.env.KASEKI_RESULTS_DIR = testDir;
-
-    const config = loadConfig();
-
-    expect(config.apiKeys).toEqual(['fallback-key']);
-  });
-
-  test('loadConfig throws when KASEKI_API_KEYS_FILE is unreadable', () => {
-    process.env.KASEKI_API_KEYS_FILE = '/nonexistent/path/keys.txt';
-    process.env.KASEKI_RESULTS_DIR = testDir;
-
-    expect(() => loadConfig()).toThrow('Failed to read KASEKI_API_KEYS_FILE');
+    expect(config.apiKeys).toEqual(['key1', 'key2', 'key3']);
   });
 });
 

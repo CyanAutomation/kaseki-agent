@@ -1,9 +1,20 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
 import { secretValueCache } from './secret-value-cache';
+
+// Mock the host-secrets-reader module
+jest.mock('./secrets/host-secrets-reader', () => ({
+  readHostSecret: jest.fn(),
+  getSecretLocations: jest.fn((name) => ({
+    primary: `/agents/secrets/${name}`,
+    secondary: `/home/user/secrets/${name}`,
+  })),
+  clearSecretCache: jest.fn(),
+}));
 
 const mockSpawn = jest.fn();
 const mockSpawnSync = jest.fn();
@@ -174,25 +185,17 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 
   test('hydrates GitHub App ID values from configured secret files for controller runs', async () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      return null;
+    });
+
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
-    const secretsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-github-secrets-'));
-    const appIdFile = path.join(secretsDir, 'github_app_id');
-    const clientIdFile = path.join(secretsDir, 'github_client_id');
-    const previousEnv = {
-      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
-      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
-      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
-      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
-    };
-    fs.writeFileSync(appIdFile, '12345\n');
-    fs.writeFileSync(clientIdFile, 'Iv123client\n');
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_CLIENT_ID;
-    process.env.GITHUB_APP_ID_FILE = appIdFile;
-    process.env.GITHUB_APP_CLIENT_ID_FILE = clientIdFile;
 
     try {
       const scheduler = new JobScheduler(
@@ -221,43 +224,26 @@ describe('JobScheduler timeout lifecycle', () => {
           env: expect.objectContaining({
             GITHUB_APP_ID: '12345',
             GITHUB_APP_CLIENT_ID: 'Iv123client',
-            GITHUB_APP_ID_FILE: appIdFile,
-            GITHUB_APP_CLIENT_ID_FILE: clientIdFile,
           }),
         }),
       );
     } finally {
-      for (const [key, value] of Object.entries(previousEnv)) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-      fs.rmSync(secretsDir, { recursive: true, force: true });
+      // Cleanup handled by afterEach
     }
   });
 
-  test('prefers inline GitHub App ID values over configured secret files for controller runs', async () => {
+  test('reads GitHub App ID values from host secrets for controller runs', async () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '67890';
+      if (name === 'github_app_client_id') return 'IvInlineClient';
+      return null;
+    });
+
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
-    const secretsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-github-secrets-'));
-    const appIdFile = path.join(secretsDir, 'github_app_id');
-    const clientIdFile = path.join(secretsDir, 'github_client_id');
-    const previousEnv = {
-      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
-      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
-      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
-      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
-    };
-    fs.writeFileSync(appIdFile, '12345\n');
-    fs.writeFileSync(clientIdFile, 'Iv123client\n');
-    process.env.GITHUB_APP_ID = '67890';
-    process.env.GITHUB_APP_CLIENT_ID = 'IvInlineClient';
-    process.env.GITHUB_APP_ID_FILE = appIdFile;
-    process.env.GITHUB_APP_CLIENT_ID_FILE = clientIdFile;
 
     try {
       const scheduler = new JobScheduler(
@@ -290,14 +276,7 @@ describe('JobScheduler timeout lifecycle', () => {
         }),
       );
     } finally {
-      for (const [key, value] of Object.entries(previousEnv)) {
-        if (value === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = value;
-        }
-      }
-      fs.rmSync(secretsDir, { recursive: true, force: true });
+      // Cleanup handled by afterEach
     }
   });
 
