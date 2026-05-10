@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.11.0...v1.12.0) (2026-05-10)
+
+### Features
+
+* add module import validation script and update build process ([f1613a0](https://github.com/CyanAutomation/kaseki-agent/commit/f1613a0ff5c68bd1a9f5d7b1b3bcb4a843cd4a20))
+* implement host-based secrets management ([b118f57](https://github.com/CyanAutomation/kaseki-agent/commit/b118f57dc819a0a6592d294df8d66104f4a83185))
+
 ## [1.11.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.4...v1.11.0) (2026-05-09)
 
 ### Features
