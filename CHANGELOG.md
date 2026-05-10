@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.15.0...v1.15.1) (2026-05-10)
+
+### Bug Fixes
+
+* correct script copy location in Dockerfile for proper build context ([b573517](https://github.com/CyanAutomation/kaseki-agent/commit/b57351713d7f39aeaeda3b976eec6baf10df827e))
+
 ## [1.15.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.14.0...v1.15.0) (2026-05-10)
 
 ### Features
