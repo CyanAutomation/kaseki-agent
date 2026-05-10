@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.15.1...v1.16.0) (2026-05-10)
+
+### Features
+
+* add diagnostic script and monitoring module for GitHub operations failures ([90c0ab2](https://github.com/CyanAutomation/kaseki-agent/commit/90c0ab2c6f1429823b30d242dcb68b722a924c32))
+* enable GitHub App operations by default and add credential auto-detection ([3e21a40](https://github.com/CyanAutomation/kaseki-agent/commit/3e21a40c8e7c63530f6cde844105abc94b1a9642))
+
 ## [Unreleased]
 
 ### Features
