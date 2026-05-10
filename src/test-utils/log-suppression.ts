@@ -1,12 +1,12 @@
 /**
  * Test Utilities: Log Suppression Helpers
- * 
+ *
  * Provides per-test control over log suppression when you need to debug
  * specific tests or capture logs for assertions.
- * 
+ *
  * Example usage:
  *   import { suppressLogs, restoreLogs, getCapturedLogs } from '@src/test-utils/log-suppression';
- *   
+ *
  *   it('should test something with logging', () => {
  *     suppressLogs();
  *     // ... test code that would normally print logs
@@ -16,6 +16,7 @@
  *   });
  */
 
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace NodeJS {
     interface Global {
@@ -25,6 +26,7 @@ declare global {
     }
   }
 }
+/* eslint-enable @typescript-eslint/no-namespace */
 
 /**
  * Suppress JSON event logs for the current test.

@@ -1,6 +1,6 @@
 /**
  * Example: Using per-test log suppression utilities
- * 
+ *
  * This example demonstrates how to use the log suppression utilities
  * when you need to capture or debug logs in specific tests.
  */
