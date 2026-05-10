@@ -1,5 +1,6 @@
 import express from 'express';
 import type { Server } from 'http';
+import swaggerUi from 'swagger-ui-express';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -8,6 +9,7 @@ import { PreFlightValidator } from './pre-flight-validator';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
 import { ResultCache } from './result-cache';
+import { generateOpenAPISpec } from './openapi-spec-generator';
 
 type ShutdownDeps = {
   server: Server;
@@ -135,6 +137,19 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // Generate OpenAPI specification
+  const openApiSpec = generateOpenAPISpec();
+
+  // Mount Swagger UI documentation
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    customCss: '.topbar { display: none }',
+  }));
+
+  // Mount OpenAPI spec endpoint
+  app.get('/api/openapi.json', (_req, res) => {
+    res.json(openApiSpec);
+  });
+
   // Create shared artifact content cache
   const artifactCache = new ResultCache({
     maxEntries: config.artifactCacheMaxEntries,
@@ -161,12 +176,15 @@ async function main(): Promise<void> {
 
   // Start server
   const server = app.listen(config.port, () => {
+    const baseUrl = `http://localhost:${config.port}`;
     logger.event('service_started', {
       port: config.port,
       logLevel: config.logLevel,
       maxConcurrentRuns: config.maxConcurrentRuns,
       resultsDir: config.resultsDir,
       nodeVersion: process.versions.node,
+      swaggerDocumentationUrl: `${baseUrl}/docs`,
+      openApiSpecUrl: `${baseUrl}/api/openapi.json`,
     });
   });
 
