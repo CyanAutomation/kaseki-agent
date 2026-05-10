@@ -17,7 +17,7 @@ services:
       KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-10000:10000}"
       KASEKI_CONTAINER_UID: "10000"
       KASEKI_CONTAINER_GID: "10000"
-      KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
+      KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-3600}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-200000}"
       OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
       GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
@@ -25,6 +25,7 @@ services:
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
     volumes:
       - /agents:/agents:rw
+      - /home/pi/secrets:/agents/secrets:ro
       - kaseki-logs:/var/log/kaseki-api
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
@@ -45,6 +46,11 @@ services:
       start_period: 40s
     networks:
       - kaseki-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   kaseki-logs:
