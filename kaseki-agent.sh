@@ -84,6 +84,10 @@ REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
 REPO_MEMORY_COMMIT_SHA="unknown"
 
+# Track last executed command for better error reporting
+LAST_COMMAND=""
+LAST_COMMAND_LOG="/results/last-command.log"
+
 # Signal handler for graceful termination
 handle_termination() {
   local signal="$1"
@@ -98,6 +102,9 @@ handle_termination() {
 }
 trap 'handle_termination SIGTERM' SIGTERM
 trap 'handle_termination SIGINT' SIGINT
+
+# DEBUG trap: capture last command before execution for better error diagnostics
+trap 'LAST_COMMAND="$BASH_COMMAND"' DEBUG
 
 setup_host_logging_mirror() {
   local base_name="$1"
@@ -159,6 +166,55 @@ case "$KASEKI_GIT_CACHE_MODE" in
     GIT_CACHE_MODE_USED="off"
     ;;
 esac
+
+# Helper function to run Node.js subprocesses with comprehensive error logging
+# Usage: run_node_subprocess <output_var_name> "<node_code>" [<input_data>] [<error_log_file>]
+# Captures stderr, logs errors, and returns exit code for caller to check
+run_node_subprocess() {
+  local output_var_name="$1"
+  local node_code="$2"
+  local input_data="${3:-}"
+  local error_log_file="${4:-/tmp/node-error.log}"
+  local node_stderr_tmp node_exit_code output_value
+  
+  node_stderr_tmp="$(mktemp /tmp/node-stderr.XXXXXX)" || {
+    printf 'ERROR: Failed to create temp file for Node.js stderr\n' >&2
+    eval "$output_var_name=''"
+    return 1
+  }
+  
+  # Run Node.js and capture both stdout and stderr
+  if [ -n "$input_data" ]; then
+    output_value=$(printf '%s' "$input_data" | node -e "$node_code" 2>"$node_stderr_tmp")
+  else
+    output_value=$(node -e "$node_code" 2>"$node_stderr_tmp")
+  fi
+  node_exit_code=$?
+  
+  # Handle errors
+  if [ $node_exit_code -ne 0 ]; then
+    local stderr_content
+    stderr_content="$(cat "$node_stderr_tmp" 2>/dev/null || echo '<unable to read stderr>')"
+    {
+      printf '[node-subprocess-error] Command failed with exit code %d\n' "$node_exit_code"
+      if [ -n "$stderr_content" ]; then
+        printf '[node-subprocess-error] stderr: %s\n' "$stderr_content"
+      fi
+      printf '[node-subprocess-error] code: %.200s\n' "$node_code"
+      if [ -n "$input_data" ]; then
+        printf '[node-subprocess-error] input (first 150 chars): %.150s\n' "$input_data"
+      fi
+    } | tee -a "$error_log_file" >&2
+    rm -f "$node_stderr_tmp"
+    eval "$output_var_name=''"
+    return "$node_exit_code"
+  fi
+  
+  # Success: store output in variable and return 0
+  eval "$output_var_name='$output_value'"
+  rm -f "$node_stderr_tmp"
+  return 0
+}
 
 # Safely encode value as JSON string; fallback to empty string if node unavailable
 json_encode() {
@@ -712,8 +768,20 @@ check_secret_scan_allowlist() {
 finish() {
   local code=$?
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+    # Capture diagnostic context for the catch-all error
     STATUS="$code"
     FAILED_COMMAND="unexpected shell failure"
+    # Log the last command that was executed
+    {
+      printf '[unexpected-failure] Exit code: %d\n' "$code"
+      printf '[unexpected-failure] Last command: %s\n' "$LAST_COMMAND"
+      printf '[unexpected-failure] Current stage: %s\n' "$CURRENT_STAGE"
+      if [ -f /results/progress.log ]; then
+        printf '[unexpected-failure] Last 5 progress entries:\n'
+        tail -5 /results/progress.log | sed 's/^/  /'
+      fi
+    } | tee -a "$LAST_COMMAND_LOG" >&2
+    emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   collect_git_artifacts
@@ -1266,6 +1334,73 @@ $memory_section
 EOF
 }
 
+check_github_operations_health() {
+  # Preflight health check for github operations before pi agent runs
+  # Tests: GitHub App secrets, git config, Node.js token generation capability
+  local health_log="/results/github-health-check.log"
+  : > "$health_log"
+  
+  printf '[preflight] github operations health check started\n' | tee -a "$health_log"
+  
+  # Check 1: GitHub App secrets are readable
+  if ! [ -r /run/secrets/github_app_id ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App ID from /run/secrets/github_app_id\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  if ! [ -r /run/secrets/github_app_client_id ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App client ID from /run/secrets/github_app_client_id\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  if ! [ -r /run/secrets/github_app_private_key ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App private key from /run/secrets/github_app_private_key\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ GitHub App secrets are readable\n' | tee -a "$health_log"
+  
+  # Check 2: Verify git is available
+  if ! git --version >/dev/null 2>&1; then
+    printf '[health-check] ERROR: git command is not available\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
+  
+  # Check 3: Test Node.js github-app-token helper script exists
+  if ! [ -x /usr/local/bin/github-app-token ]; then
+    printf '[health-check] ERROR: github-app-token helper not found at /usr/local/bin/github-app-token\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ github-app-token helper is available\n' | tee -a "$health_log"
+  
+  # Check 4: Test Node.js is available
+  if ! command -v node >/dev/null 2>&1; then
+    printf '[health-check] ERROR: Node.js is not available\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ Node.js is available\n' | tee -a "$health_log"
+  
+  # Check 5: Test Node.js JSON parsing
+  local test_output
+  test_output=$(printf '{"test":"value"}' | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.test);" 2>&1) || {
+    printf '[health-check] ERROR: Node.js JSON parsing failed: %s\n' "$test_output" | tee -a "$health_log" >&2
+    return 1
+  }
+  if [ "$test_output" != "value" ]; then
+    printf '[health-check] ERROR: Node.js JSON parsing returned unexpected output: %s\n' "$test_output" | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ Node.js JSON parsing works\n' | tee -a "$health_log"
+  
+  # Check 6: Test curl is available
+  if ! command -v curl >/dev/null 2>&1; then
+    printf '[health-check] ERROR: curl is not available\n' | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
+  
+  printf '[preflight] github operations health check PASSED\n' | tee -a "$health_log"
+  return 0
+}
+
 validate_github_api_response() {
   local http_status response log_file error_type error_message
   http_status="$1"
@@ -1393,9 +1528,15 @@ run_github_operations() {
     return 7
   }
   
-  token="$(printf '%s' "$token_data" | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" 2>/dev/null)"
-  if [ -z "$token" ]; then
+  # Use helper to extract token from JSON response
+  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /results/git-push.log; then
     printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT=7
+    return 7
+  fi
+  
+  if [ -z "$token" ]; then
+    printf -- 'Failed to extract token from response (empty result)\n' | tee -a /results/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
@@ -1510,6 +1651,19 @@ EOF
       printf 'Debug: Creating PR with head=%s, base=%s, draft=true\n' "$feature_branch" "$GIT_REF" | tee -a /results/git-push.log
     fi
     
+    # Encode PR title and body as JSON strings
+    local pr_title_json pr_body_json
+    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" /results/git-push.log; then
+      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a /results/git-push.log >&2
+      GITHUB_PR_EXIT=8
+      return 8
+    fi
+    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" /results/git-push.log; then
+      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a /results/git-push.log >&2
+      GITHUB_PR_EXIT=8
+      return 8
+    fi
+    
     # Use curl with -w to capture HTTP status separately
     # curl exit code: 0=success, non-0=failure
     local curl_exit
@@ -1517,7 +1671,7 @@ EOF
       -H "Authorization: token $token" \
       -H "Accept: application/vnd.github.v3+json" \
       "https://api.github.com/repos/$owner/$repo/pulls" \
-      -d "{\"title\": $(printf '%s' "$pr_title" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))"), \"body\": $(printf '%s' "$pr_body" | node -e "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))"), \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": true}" > "$temp_status_file" 2>&1
+      -d "{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": true}" > "$temp_status_file" 2>&1
     curl_exit=$?
     
     # Split response and status code
@@ -1552,8 +1706,13 @@ EOF
     
     # Validate the API response
     if validate_github_api_response "$pr_http_status" "$pr_response" /results/git-push.log; then
-      # API returned success (201); now extract the URL
-      pr_url="$(printf '%s' "$pr_response" | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" 2>/dev/null || true)"
+      # API returned success (201); now extract the URL using helper
+      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" /results/git-push.log; then
+        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a /results/git-push.log >&2
+        emit_error_event "github_pr_response_malformed" "Failed to parse PR API response to extract html_url" "exit"
+        GITHUB_PR_EXIT=9
+        pr_url=""
+      fi
       
       if [ -n "$pr_url" ]; then
         GITHUB_PR_URL="$pr_url"
@@ -1611,6 +1770,17 @@ printf 'Git ref: %s\n' "$GIT_REF"
 printf 'Provider: %s\n' "$KASEKI_PROVIDER"
 printf 'Model: %s\n' "$KASEKI_MODEL"
 printf 'Pi version: %s\n' "$PI_VERSION"
+
+# Run preflight health check for GitHub operations if enabled
+if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+  printf '\n==> github operations preflight health check\n'
+  if ! check_github_operations_health; then
+    printf 'ERROR: GitHub operations preflight health check failed\n' >&2
+    printf 'GitHub App is enabled but configuration or dependencies are missing.\n' >&2
+    printf 'Proceeding with kaseki run, but GitHub operations will be skipped or fail.\n' >&2
+    emit_error_event "github_preflight_failed" "GitHub operations health check failed; check /results/github-health-check.log for details" "continue"
+  fi
+fi
 
 openrouter_api_key=""
 openrouter_api_key_source=""
