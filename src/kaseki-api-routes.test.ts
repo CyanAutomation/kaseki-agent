@@ -615,12 +615,12 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
-      
+
       // Verify comprehensive enumeration
       expect(body.artifacts.length).toBeGreaterThan(15); // Should have many artifacts
       expect(body.artifactCount).toBeGreaterThan(10); // At least 10 available
       expect(body.downloadBaseUrl).toBe(`/api/results/${jobId}/`);
-      
+
       // Verify metadata inclusion
       const resultSummary = body.artifacts.find((a: any) => a.name === 'result-summary.md');
       expect(resultSummary).toMatchObject({
@@ -630,7 +630,7 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
         description: expect.stringContaining('summary'),
         availability: 'always',
       });
-      
+
       // Verify conditional artifacts
       const changedFiles = body.artifacts.find((a: any) => a.name === 'changed-files.txt');
       expect(changedFiles).toMatchObject({
@@ -639,14 +639,14 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
         description: expect.stringContaining('filename'),
         availability: 'conditional',
       });
-      
+
       // Verify failure-only artifacts
       const failureJson = body.artifacts.find((a: any) => a.name === 'failure.json');
       expect(failureJson).toMatchObject({
         available: true,
         availability: 'on-failure',
       });
-      
+
       // Verify triage order hint
       expect(body.recommended[0]).toBe('failure.json'); // Should be first for failed run
     } finally {

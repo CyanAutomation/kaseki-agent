@@ -46,17 +46,17 @@ function isArtifactAvailable(
 
   // Check availability rules
   switch (metadata.availability) {
-    case ArtifactAvailability.ALWAYS:
-      return true;
-    case ArtifactAvailability.ON_FAILURE:
-      return jobStatus === 'failed';
-    case ArtifactAvailability.ON_SUCCESS:
-      return jobStatus === 'completed';
-    case ArtifactAvailability.CONDITIONAL:
-      // For conditional artifacts, availability depends on file existence
-      return true;
-    default:
-      return false;
+  case ArtifactAvailability.ALWAYS:
+    return true;
+  case ArtifactAvailability.ON_FAILURE:
+    return jobStatus === 'failed';
+  case ArtifactAvailability.ON_SUCCESS:
+    return jobStatus === 'completed';
+  case ArtifactAvailability.CONDITIONAL:
+    // For conditional artifacts, availability depends on file existence
+    return true;
+  default:
+    return false;
   }
 }
 

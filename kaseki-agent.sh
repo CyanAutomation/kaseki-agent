@@ -650,6 +650,10 @@ check_secret_scan_allowlist() {
   local secret_matches=() unallowlisted_count=0 allowlisted_count=0
   local match_line
   
+  # Read the log into a temp variable to avoid SC2094 (read-write in same pipeline)
+  local temp_log
+  temp_log=$(cat /results/secret-scan.log)
+  
   while IFS= read -r match_line || [ -n "$match_line" ]; do
     [ -z "$match_line" ] && continue
     
@@ -669,7 +673,7 @@ check_secret_scan_allowlist() {
     
     # Check if this file:pattern combination is in the allowlist
     if grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
-      printf '[secret-scan] ALLOWLISTED: %s\n' "$match_line" | tee -a /results/secret-scan.log
+      printf '[secret-scan] ALLOWLISTED: %s\n' "$match_line"
       allowlisted_count=$((allowlisted_count + 1))
       emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
     else
@@ -677,17 +681,18 @@ check_secret_scan_allowlist() {
       unallowlisted_count=$((unallowlisted_count + 1))
       emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
     fi
-  done < /results/secret-scan.log
+  done <<< "$temp_log"
   
   # Clear the log and rewrite with only real leaks
-  : > /results/secret-scan.log
-  if [ "$allowlisted_count" -gt 0 ]; then
-    printf '[secret-scan] Found %d allowlisted pattern(s) and %d real leak(s)\n' "$allowlisted_count" "$unallowlisted_count" | tee -a /results/secret-scan.log
-  fi
-  
-  for match in "${secret_matches[@]}"; do
-    printf '%s\n' "$match" | tee -a /results/secret-scan.log
-  done
+  {
+    if [ "$allowlisted_count" -gt 0 ]; then
+      printf '[secret-scan] Found %d allowlisted pattern(s) and %d real leak(s)\n' "$allowlisted_count" "$unallowlisted_count"
+    fi
+    
+    for match in "${secret_matches[@]}"; do
+      printf '%s\n' "$match"
+    done
+  } > /results/secret-scan.log
   
   # Exit code 6 only if there are unallowlisted matches
   if [ "$unallowlisted_count" -gt 0 ]; then
