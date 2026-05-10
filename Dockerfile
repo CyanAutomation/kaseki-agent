@@ -91,6 +91,7 @@ RUN chmod +x \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && mkdir -p /app/lib \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
+    && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
     && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \
     && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
@@ -104,6 +105,7 @@ RUN chmod +x \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
     && chmod 0755 /app/dist/*.js \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
+    && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
@@ -190,6 +192,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
+    && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
