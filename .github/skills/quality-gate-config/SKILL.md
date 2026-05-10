@@ -2,7 +2,7 @@
 name: quality-gate-configuration
 description: Defining and validating quality gates for kaseki runs
 tags: [kaseki, quality-gates, validation, constraints, security]
-relatedSkills: [prompt-engineering, workflow-diagnosis]
+relatedSkills: [prompt-engineering, workflow-diagnosis, cost-optimization, environment-configuration, performance-tuning]
 ---
 
 # Quality Gate Configuration for Kaseki Agent
@@ -278,6 +278,75 @@ KASEKI_VALIDATION_COMMANDS="npm run test -- --changed"
 # Or increase timeout
 KASEKI_AGENT_TIMEOUT_SECONDS=1800  # 30 minutes
 ```
+
+---
+
+### 3.5 **Performance & Cost Impact of Allowlists**
+
+Tight allowlists improve **execution speed** and **reduce costs** by limiting the scope of code the agent explores.
+
+#### Performance Impact
+
+| Allowlist Scope | Agent Tokens | Timeout | Execution Time | Estimated Cost |
+|---|---|---|---|---|
+| **Very Tight** (1-2 files) | 600–900 | 10 min | 6–8 min | $0.03–0.05 |
+| **Tight** (3–5 files) | 1,000–1,500 | 15 min | 8–12 min | $0.05–0.08 |
+| **Moderate** (6–10 files) | 1,500–2,500 | 20 min | 12–15 min | $0.08–0.12 |
+| **Loose** (entire src/) | 5,000–20,000 | 30 min | 20–30 min | $0.25–0.50 |
+
+**Key Insight**: Tight allowlist = 30–50% cost reduction + 5–10 minute faster execution
+
+#### Example: Cost Savings with Tight Allowlist
+
+**Scenario**: Fix a single bug in `src/lib/parser.ts`
+
+**Loose Allowlist**:
+```bash
+KASEKI_CHANGED_FILES_ALLOWLIST="src/**/*.ts tests/**/*.ts"  # Entire codebase
+# Result: Agent explores 50+ files, takes 25 min, costs $0.30
+```
+
+**Tight Allowlist**:
+```bash
+KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"  # Just 2 files
+# Result: Agent focuses on target, takes 8 min, costs $0.05 (83% savings!)
+```
+
+#### Designing Allowlists for Cost Control
+
+**Step 1**: Identify the minimal set of files that **must** change
+```bash
+# Manually make the change, then check:
+git diff --name-only
+# Output: src/lib/parser.ts tests/parser.test.ts
+```
+
+**Step 2**: Add 1–2 related files (if agent might need them)
+```bash
+# Parser might need to reference types
+git diff --name-only | xargs -I {} dirname {} | sort -u
+# Output: src/lib tests
+# Keep allowlist tight: parser.ts, parser.test.ts
+# Exclude: types.ts (unless parser.ts imports it)
+```
+
+**Step 3**: Set allowlist and monitor first run
+```bash
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.test.ts"
+
+# If agent violates allowlist on first run:
+# - Review the extra files → were they necessary?
+# - If no, refine the prompt to be more specific
+# - If yes, add to allowlist for next run
+```
+
+#### For Detailed Cost Analysis
+
+See [COST_ESTIMATION.md](../../docs/COST_ESTIMATION.md) for:
+- Cost per run calculation
+- Budget planning and monitoring
+- Cost optimization strategies beyond allowlists
+- ROI comparisons of different tuning approaches
 
 ---
 

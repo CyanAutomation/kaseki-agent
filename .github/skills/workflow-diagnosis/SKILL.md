@@ -2,12 +2,14 @@
 name: workflow-diagnosis
 description: Diagnosing kaseki run failures and interpreting artifacts
 tags: [kaseki, troubleshooting, diagnostics, debugging]
-relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis]
+relatedSkills: [prompt-engineering, quality-gate-config, test-automation, docker-image-management, dependency-cache-optimization, result-report-analysis, ci-cd-integration, distributed-deployment, disaster-recovery]
 ---
 
 # Workflow Diagnosis for Kaseki Agent
 
 This skill guides you through diagnosing failures in kaseki runs, interpreting artifacts, and identifying root causes.
+
+**📖 Key Reference**: For comprehensive troubleshooting decision trees, see [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md) — the authoritative guide for all kaseki failure patterns.
 
 ## Overview
 

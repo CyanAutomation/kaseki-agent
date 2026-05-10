@@ -2,7 +2,7 @@
 name: dependency-cache-optimization
 description: Understanding and optimizing the 4-layer npm dependency caching strategy
 tags: [kaseki, caching, performance, npm, optimization]
-relatedSkills: [docker-image-management, workflow-diagnosis]
+relatedSkills: [docker-image-management, workflow-diagnosis, performance-tuning]
 ---
 
 # Dependency Cache Optimization for Kaseki Agent
@@ -518,9 +518,34 @@ done | awk '{sum+=$1; count++} END {print "Average: " sum/count "s"}'
 
 ---
 
+## Monitoring Cache Performance
+
+For **operational tuning** of cache effectiveness and run-time optimization, see [PERFORMANCE_TUNING.md](../../docs/PERFORMANCE_TUNING.md). This guide covers:
+
+- **Cache hit rate analysis** — tracking effectiveness over time
+- **Cost impact** — how caching affects token usage and API costs
+- **Multi-run tuning** — strategies for batch operations
+- **Performance benchmarks** — baseline metrics for your deployment
+
+**Quick Monitoring Commands**:
+
+```bash
+# View cache hit ratio (last 10 runs)
+kaseki-cli list | tail -10 | awk '{print $1}' | while read run; do
+  duration=$(grep npm "/agents/kaseki-results/$run/validation-timings.tsv" 2>/dev/null | awk '{print $2}')
+  [[ -n "$duration" ]] && echo "$run: npm ci ${duration}s"
+done
+
+# Profile cache layers
+./kaseki-cli.js status kaseki-5 | jq '.cache_metrics'
+```
+
+---
+
 ## Related Skills & Docs
 
 - [Docker Image Management](docker-image-management.md) — Image seed cache updates
 - [Workflow Diagnosis](workflow-diagnosis.md) — Analyzing timings and performance
+- [Performance Tuning](performance-tuning.md) — Operational optimization and cost impact
 - [kaseki-agent.sh](../../kaseki-agent.sh) — Cache implementation details
 - [CLAUDE.md](../../CLAUDE.md) — Architecture and environment variables
