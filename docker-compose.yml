@@ -1,3 +1,6 @@
+---
+# Kaseki Agent Docker Compose Configuration
+
 services:
   kaseki-api:
     image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
