@@ -22,6 +22,8 @@ KASEKI_AGENT_GUARDRAILS=1
 KASEKI_REPO_MEMORY_MODE=summary
 KASEKI_REPO_MEMORY_TTL_DAYS=30
 KASEKI_REPO_MEMORY_MAX_BYTES=4096
+KASEKI_REPO_MEMORY_ROOT="$TMP_DIR/repo-memory"
+KASEKI_RESULTS_DIR="$TMP_DIR/results"
 KASEKI_DRY_RUN=0
 REPO_MEMORY_KEY=""
 REPO_MEMORY_DIR=""
@@ -61,22 +63,22 @@ if grep -q 'Commit SHA: abc123' <<< "$expired_prompt"; then
   exit 1
 fi
 
-mkdir -p /results
-cat > /results/result-summary.md <<'SUMMARY'
+mkdir -p "$KASEKI_RESULTS_DIR"
+cat > "$KASEKI_RESULTS_DIR/result-summary.md" <<'SUMMARY'
 # Kaseki Result: test
 - Status: passed
 - Secret scan: 0
 - Task Prompt: do not persist this
 SUMMARY
-cat > /results/analysis.md <<'ANALYSIS'
+cat > "$KASEKI_RESULTS_DIR/analysis.md" <<'ANALYSIS'
 Useful architecture note.
 OPENROUTER_API_KEY=sk-or-should-not-persist
 ANALYSIS
-cat > /results/changed-files.txt <<'FILES'
+cat > "$KASEKI_RESULTS_DIR/changed-files.txt" <<'FILES'
 src/widget.ts
 tests/widget.test.ts
 FILES
-cat > /results/validation-timings.tsv <<'TIMINGS'
+cat > "$KASEKI_RESULTS_DIR/validation-timings.tsv" <<'TIMINGS'
 npm test	0	3
 TIMINGS
 
