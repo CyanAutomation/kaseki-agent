@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.14.0...v1.15.0) (2026-05-10)
+
+### Features
+
+* add log suppression utilities for improved test output management ([f7830f1](https://github.com/CyanAutomation/kaseki-agent/commit/f7830f152ebb7f985435f8145524a9d2015bf31d))
+* enhance GitHub API error handling with retry logic and validation tests ([ecce266](https://github.com/CyanAutomation/kaseki-agent/commit/ecce266cdf1a286227b5395c17af19dcdb663cce))
+
+### Bug Fixes
+
+* remove unnecessary whitespace in log suppression utility documentation ([4ffe0ea](https://github.com/CyanAutomation/kaseki-agent/commit/4ffe0ea666cc0090c619fddae65afa0e2a53f6e0))
+
 ## [1.14.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.13.1...v1.14.0) (2026-05-10)
 
 ### Features
