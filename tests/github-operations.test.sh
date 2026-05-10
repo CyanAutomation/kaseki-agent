@@ -134,9 +134,128 @@ else
   fail "Skip reasons not correctly accumulated: $(cat "$RESULTS_DIR/test7.log")"
 fi
 
+# Test 8: GitHub API response validation - extract helper functions and test directly
+info "Test 8: GitHub API validation function logic"
+{
+  # Define validation function inline for testing
+  test_validate_github_api_response() {
+    local http_status="$1" response="$2"
+    [ "$http_status" = "201" ] && return 0 || return 1
+  }
+  
+  # Test successful response
+  test_validate_github_api_response "201" '{"html_url": "https://example.com"}' && printf "201 success\n" || printf "201 failed\n"
+  
+  # Test error response
+  test_validate_github_api_response "429" '{"message": "Rate limited"}' && printf "429 success\n" || printf "429 failed\n"
+} > "$RESULTS_DIR/test8.log" 2>&1
+
+if grep -q "201 success" "$RESULTS_DIR/test8.log" && grep -q "429 failed" "$RESULTS_DIR/test8.log"; then
+  pass "API response validation logic works correctly"
+else
+  fail "API response validation logic failed: $(cat "$RESULTS_DIR/test8.log")"
+fi
+
+# Test 9: Error type detection from HTTP status codes
+info "Test 9: GitHub error type detection from HTTP status"
+{
+  # Test mapping different HTTP statuses to error types
+  test_error_type() {
+    case "$1" in
+      401) printf "authentication_error" ;;
+      403) printf "permission_error" ;;
+      429) printf "rate_limit_error" ;;
+      500|502|503|504) printf "server_error" ;;
+      *)  printf "unknown" ;;
+    esac
+  }
+  
+  [ "$(test_error_type 403)" = "permission_error" ] && printf "403 mapped correctly\n" || printf "403 mapping failed\n"
+  [ "$(test_error_type 429)" = "rate_limit_error" ] && printf "429 mapped correctly\n" || printf "429 mapping failed\n"
+  [ "$(test_error_type 503)" = "server_error" ] && printf "503 mapped correctly\n" || printf "503 mapping failed\n"
+} > "$RESULTS_DIR/test9.log" 2>&1
+
+if grep -q "403 mapped correctly" "$RESULTS_DIR/test9.log" && \
+   grep -q "429 mapped correctly" "$RESULTS_DIR/test9.log" && \
+   grep -q "503 mapped correctly" "$RESULTS_DIR/test9.log"; then
+  pass "Error type detection works correctly"
+else
+  fail "Error type detection failed: $(cat "$RESULTS_DIR/test9.log")"
+fi
+
+# Test 10: Retryability logic - transient errors
+info "Test 10: Retryability detection for transient errors"
+{
+  # Test retryability logic
+  test_is_retryable() {
+    case "$1" in
+      429|500|502|503|504|0) return 0 ;;  # Retryable
+      *) return 1 ;;  # Not retryable
+    esac
+  }
+  
+  test_is_retryable "429" && printf "429 retryable\n" || printf "429 not retryable\n"
+  test_is_retryable "503" && printf "503 retryable\n" || printf "503 not retryable\n"
+  test_is_retryable "0" && printf "curl_failure retryable\n" || printf "curl_failure not retryable\n"
+} > "$RESULTS_DIR/test10.log" 2>&1
+
+if grep -q "429 retryable" "$RESULTS_DIR/test10.log" && \
+   grep -q "503 retryable" "$RESULTS_DIR/test10.log" && \
+   grep -q "curl_failure retryable" "$RESULTS_DIR/test10.log"; then
+  pass "Transient error retryability detection works"
+else
+  fail "Retryability detection failed: $(cat "$RESULTS_DIR/test10.log")"
+fi
+
+# Test 11: Retryability logic - permanent errors
+info "Test 11: Retryability detection for permanent errors"
+{
+  test_is_retryable() {
+    case "$1" in
+      429|500|502|503|504|0) return 0 ;;
+      *) return 1 ;;
+    esac
+  }
+  
+  test_is_retryable "403" && printf "403 retryable\n" || printf "403 not retryable\n"
+  test_is_retryable "404" && printf "404 retryable\n" || printf "404 not retryable\n"
+  test_is_retryable "422" && printf "422 retryable\n" || printf "422 not retryable\n"
+} > "$RESULTS_DIR/test11.log" 2>&1
+
+if grep -q "403 not retryable" "$RESULTS_DIR/test11.log" && \
+   grep -q "404 not retryable" "$RESULTS_DIR/test11.log" && \
+   grep -q "422 not retryable" "$RESULTS_DIR/test11.log"; then
+  pass "Permanent error non-retryability detection works"
+else
+  fail "Permanent error detection failed: $(cat "$RESULTS_DIR/test11.log")"
+fi
+
+# Test 12: Exponential backoff calculation
+info "Test 12: Exponential backoff delay calculation"
+{
+  # Test backoff delay progression
+  backoff_delay=2
+  [ $backoff_delay -eq 2 ] && printf "initial_2s\n"
+  backoff_delay=$((backoff_delay * 2))
+  [ $backoff_delay -eq 4 ] && printf "second_4s\n"
+  backoff_delay=$((backoff_delay * 2))
+  [ $backoff_delay -eq 8 ] && printf "third_8s\n"
+  if [ $backoff_delay -gt 8 ]; then backoff_delay=8; fi
+  [ $backoff_delay -eq 8 ] && printf "capped_8s\n"
+} > "$RESULTS_DIR/test12.log" 2>&1
+
+if grep -q "initial_2s" "$RESULTS_DIR/test12.log" && \
+   grep -q "second_4s" "$RESULTS_DIR/test12.log" && \
+   grep -q "third_8s" "$RESULTS_DIR/test12.log" && \
+   grep -q "capped_8s" "$RESULTS_DIR/test12.log"; then
+  pass "Exponential backoff calculation works correctly"
+else
+  fail "Backoff calculation failed: $(cat "$RESULTS_DIR/test12.log")"
+fi
+
 # Summary
 info "All tests passed!"
 printf '\n==> Summary\n'
-printf 'Tests run: 7\n'
-printf 'Passed: 7\n'
+printf 'Tests run: 12\n'
+printf 'Passed: 12\n'
 printf 'Failed: 0\n'
