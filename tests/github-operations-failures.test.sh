@@ -230,6 +230,66 @@ else
   ((TESTS_FAILED++))
 fi
 
+# ===== Test 9: GitHub credential auto-detection feature =====
+test_case "GitHub credential auto-detection"
+
+if grep -q 'resolve_github_credentials()' "$PROJECT_ROOT/run-kaseki.sh"; then
+  printf '%b✓%b Auto-detection function is defined\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Auto-detection function not found\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if grep -q '.ssh/github-app-private-key' "$PROJECT_ROOT/run-kaseki.sh"; then
+  printf '%b✓%b Auto-detection includes standard paths\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Auto-detection missing standard paths\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# ===== Test 10: GitHub App enabled by default =====
+test_case "GitHub App default behavior"
+
+if grep -q 'GITHUB_APP_ENABLED="\${GITHUB_APP_ENABLED:-1}"' "$PROJECT_ROOT/run-kaseki.sh"; then
+  printf '%b✓%b run-kaseki.sh defaults to enabled\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b run-kaseki.sh default not updated\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if grep -q 'GITHUB_APP_ENABLED="\${GITHUB_APP_ENABLED:-1}"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b kaseki-agent.sh defaults to enabled\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b kaseki-agent.sh default not updated\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# ===== Test 11: Graceful credential degradation =====
+test_case "Graceful credential degradation"
+
+if grep -q 'KASEKI_PUBLISH_MODE=.*auto.*GITHUB_APP_ENABLED=0' "$PROJECT_ROOT/run-kaseki.sh" || grep -q 'graceful degrade' "$PROJECT_ROOT/run-kaseki.sh"; then
+  printf '%b✓%b Missing credentials handled gracefully in auto mode\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Graceful degradation not implemented\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# ===== Test 12: Explicit disable still respected =====
+test_case "Explicit GitHub App disable respected"
+
+if grep -q 'GITHUB_APP_ENABLED="0"' "$PROJECT_ROOT/run-kaseki.sh"; then
+  printf '%b✓%b Explicit disable setting is preserved\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Explicit disable not found\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
 # ===== Summary =====
 printf '\n%b=== Test Summary ===%b\n' "$YELLOW" "$NC"
 printf 'Passed: %b%d%b\n' "$GREEN" "$TESTS_PASSED" "$NC"

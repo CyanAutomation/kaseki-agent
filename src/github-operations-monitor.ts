@@ -1,6 +1,6 @@
 /**
  * github-operations-monitor.ts
- * 
+ *
  * Monitoring module for analyzing kaseki github operations failures.
  * Provides functions to detect, classify, and analyze github operations stage failures.
  */
@@ -16,13 +16,6 @@ interface Metadata {
   github_api_error_message?: string;
   github_api_http_status?: string;
   exit_code?: number;
-}
-
-interface FailureJson {
-  stage?: string;
-  exit_code?: number;
-  failed_command?: string;
-  stderr_tail?: string;
 }
 
 interface DiagnosticResult {
@@ -86,11 +79,10 @@ export function analyzeGithubOperations(resultsDir: string): DiagnosticResult {
   }
 
   // Read failure.json for additional context
-  let failure: FailureJson = {};
   try {
     if (fs.existsSync(failurePath)) {
       const content = fs.readFileSync(failurePath, 'utf8');
-      failure = JSON.parse(content);
+      JSON.parse(content); // Validate JSON format
     }
   } catch (e) {
     // Failure.json might not exist if success
@@ -166,7 +158,7 @@ export function analyzeGithubOperations(resultsDir: string): DiagnosticResult {
  * Format diagnostic result as human-readable markdown
  */
 export function formatDiagnosticResult(result: DiagnosticResult): string {
-  let output = `# GitHub Operations Diagnostic\n\n`;
+  let output = '# GitHub Operations Diagnostic\n\n';
 
   output += `**Stage:** ${result.stage}\n`;
   output += `**Exit code:** ${result.exitCode}\n`;
@@ -176,28 +168,28 @@ export function formatDiagnosticResult(result: DiagnosticResult): string {
   output += `## Summary\n\n${result.description}\n\n`;
 
   if (result.apiError) {
-    output += `## API Error Details\n\n`;
+    output += '## API Error Details\n\n';
     output += `- **Type:** ${result.apiError.type}\n`;
     output += `- **Message:** ${result.apiError.message}\n`;
     output += `- **HTTP Status:** ${result.apiError.httpStatus}\n\n`;
   }
 
   if (result.logs.gitPushLogTail && result.logs.gitPushLogTail.length > 0) {
-    output += `## Git Push Log (last 30 lines)\n\n\`\`\`\n`;
+    output += '## Git Push Log (last 30 lines)\n\n```\n';
     output += result.logs.gitPushLogTail.join('\n');
-    output += `\n\`\`\`\n\n`;
+    output += '\n```\n\n';
   }
 
   if (result.logs.lastCommandLog && result.logs.lastCommandLog.length > 0) {
-    output += `## Last Command Log\n\n\`\`\`\n`;
+    output += '## Last Command Log\n\n```\n';
     output += result.logs.lastCommandLog.join('\n');
-    output += `\n\`\`\`\n\n`;
+    output += '\n```\n\n';
   }
 
   if (result.logs.healthCheckLog && result.logs.healthCheckLog.length > 0) {
-    output += `## Health Check Log\n\n\`\`\`\n`;
+    output += '## Health Check Log\n\n```\n';
     output += result.logs.healthCheckLog.join('\n');
-    output += `\n\`\`\`\n\n`;
+    output += '\n```\n\n';
   }
 
   return output;

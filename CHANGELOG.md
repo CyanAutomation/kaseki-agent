@@ -4,6 +4,27 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Features
+
+* **GitHub App Operations Now Enabled by Default**: `GITHUB_APP_ENABLED` defaults to `1` (enabled) instead of `0` when credentials are available. GitHub operations (PR creation, branch push) are now attempted by default, improving user experience.
+* **GitHub App Credential Auto-Detection**: Credentials are automatically discovered from multiple locations in priority order:
+  - Environment variables (`GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`)
+  - Standard secret paths (`/agents/secrets/github_app_*`, `~/.secrets/github_app_*`)
+  - Convenience auto-detect paths (`~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key`)
+* **Graceful Credential Degradation**: When `KASEKI_PUBLISH_MODE=auto` (default), missing credentials no longer fail the run—GitHub operations are simply skipped. Strict modes (`branch`, `draft_pr`) still require credentials and fail with exit code 7.
+
+### Documentation
+
+* Added comprehensive GitHub App configuration guide to [docs/ENV_VARS.md](docs/ENV_VARS.md) with default behavior and auto-detection paths
+* Updated [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) with credential setup examples and auto-detection priority order
+
+### Backward Compatibility
+
+* **No Breaking Changes**: Existing deployments continue to work. Explicit `GITHUB_APP_ENABLED=0` is always respected.
+* **Automatic Enablement**: If GitHub App credentials are present and `KASEKI_PUBLISH_MODE ≠ "none"`, GitHub operations are now enabled automatically (previously required explicit configuration).
+
 ## [1.15.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.15.0...v1.15.1) (2026-05-10)
 
 ### Bug Fixes

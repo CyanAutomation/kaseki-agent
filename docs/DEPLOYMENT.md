@@ -224,6 +224,56 @@ cat your-private-key.pem > /agents/secrets/github_app_private_key
 chmod 600 /agents/secrets/github_app_private_key
 ```
 
+### GitHub App Credential Auto-Detection
+
+GitHub App credentials are now **enabled by default** if available. Kaseki Agent automatically searches for credentials in multiple locations, reducing setup friction:
+
+**Search Order (by priority):**
+
+1. **Environment variables** (highest priority)
+   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`
+
+2. **Standard secret paths**
+   - `/agents/secrets/github_app_*`
+   - `~/.secrets/github_app_*`
+
+3. **Convenience auto-detect locations** (private key only)
+   - `~/.ssh/github-app-private-key` — SSH directory for easy key management
+   - `$PWD/.github-app-secrets/private-key` — Workspace-local secrets
+   - `/etc/kaseki-secrets/github_app_private_key` — System-wide secrets
+
+**Examples:**
+
+Option 1 — Use standard paths (recommended):
+```bash
+mkdir -p /agents/secrets
+echo "123456" > /agents/secrets/github_app_id
+echo "Iv1.abc..." > /agents/secrets/github_app_client_id
+cat your-key.pem > /agents/secrets/github_app_private_key
+chmod 600 /agents/secrets/github_app_*
+```
+
+Option 2 — Use SSH directory (convenient for development):
+```bash
+mkdir -p ~/.ssh
+cat your-key.pem > ~/.ssh/github-app-private-key
+chmod 600 ~/.ssh/github-app-private-key
+# Still need ID and Client ID in env vars or standard paths
+export GITHUB_APP_ID="123456"
+export GITHUB_APP_CLIENT_ID="Iv1.abc..."
+```
+
+Option 3 — Disable auto-detection (explicit control):
+```bash
+export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
+```
+
+**Behavior by Mode:**
+
+- `KASEKI_PUBLISH_MODE=auto` (default) — Enables GitHub ops if all 3 credentials found; gracefully skips if missing
+- `KASEKI_PUBLISH_MODE=branch` or `draft_pr` — Requires all 3 credentials; fails with exit code 7 if missing
+- `KASEKI_PUBLISH_MODE=none` — Always skips GitHub operations (ignores credentials)
+
 ### Verification
 
 Check that the secrets are readable:
