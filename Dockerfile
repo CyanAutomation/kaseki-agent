@@ -63,6 +63,7 @@ RUN mkdir -p /usr/local/bin && printf '#!/bin/sh\nexec node --preserve-symlinks 
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
+COPY scripts ./scripts
 RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
 RUN test -f /app/dist/kaseki-api-service.js
 
@@ -71,7 +72,6 @@ COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./
 COPY docs ./docs
 COPY ops ./ops
-COPY scripts ./scripts
 COPY docker ./docker
 COPY test ./test
 
