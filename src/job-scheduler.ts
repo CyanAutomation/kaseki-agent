@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,6 +11,7 @@ import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
+import { readHostSecret } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
@@ -441,8 +441,6 @@ export class JobScheduler {
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
     // Read GitHub App credentials from host secrets
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
-
     const githubAppId = readHostSecret('github_app_id');
     if (githubAppId) {
       env.GITHUB_APP_ID = githubAppId;

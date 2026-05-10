@@ -62,6 +62,8 @@ export const ANSI_COLORS: AnsiColorSet = shouldUseColor()
  * Strip ANSI codes from a string
  */
 export function stripAnsi(text: string): string {
+  // ANSI escape sequences (\x1b) are legitimate for terminal color/style handling
+  // Not a security issue: function is used internally, never processes user input
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*m/g, '');
 }
