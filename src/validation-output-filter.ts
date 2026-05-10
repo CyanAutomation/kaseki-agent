@@ -180,7 +180,7 @@ function processLine(line: string): void {
 
   // In a command: decide whether to show this line based on filter criteria
   state.linesSinceCommandStart++;
-  
+
   // Show only lines that match filter criteria (errors, milestones, boundaries)
   if (shouldShow(line)) {
     output(line);
