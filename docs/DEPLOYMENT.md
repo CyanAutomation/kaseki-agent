@@ -818,6 +818,7 @@ sudo mkdir -p /agents && sudo chmod 777 /agents
 ```
 
 **Explanation:**
+
 - Makes `/agents` world-writable so UID 1000 (and any user) can write
 - Subdirectories created by the container inherit restrictive permissions (`700`) automatically
 - Safe for production because worker containers cannot read/write outside their instance directories
@@ -841,11 +842,13 @@ touch /agents/test-write && rm /agents/test-write  # Should succeed
 **After Fixing:**
 
 1. **For Docker Compose API service:** Restart the service
+
    ```bash
    docker-compose down && docker-compose up -d
    ```
 
 2. **For kaseki-agent CLI:** Re-run your command
+
    ```bash
    sudo -E kaseki-agent run <repo> <ref> "<task>"
    ```
