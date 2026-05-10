@@ -115,6 +115,8 @@ cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.validation_failure_reas
 
 Validation commands are executed sequentially (default: `npm run check;npm run test;npm run build`). If any exits non-zero, validation fails.
 
+**Note on Log Output:** Validation command output is automatically filtered in real-time Docker logs to show only key milestones (test results, errors, warnings) and command boundaries, while preserving full unfiltered output in `/agents/kaseki-results/kaseki-N/validation.log`. This keeps `docker logs kaseki-N` clean while enabling full debugging via the stored log file.
+
 ### Diagnosis
 
 ```bash
@@ -485,6 +487,79 @@ zip -r kaseki-debug-kaseki-N.zip .
 4. `quality.log` — Quality gate violations
 5. `pi-summary.json` — Agent activity, elapsed time
 6. `stdout.log` / `stderr.log` — Raw execution output
+
+---
+
+## Understanding Output Filtering
+
+### Real-Time Logs vs Stored Files
+
+Kaseki-agent applies intelligent filtering to real-time Docker logs while preserving full output in stored result files. This reduces noise during execution while maintaining complete debugging information.
+
+#### What's Filtered in Docker Logs
+
+Real-time `docker logs kaseki-N` output filters OUT verbose lines including:
+
+- Verbose progress indicators (e.g., build initialization, package resolution)
+- Npm notice messages and warnings
+- Non-critical debug output
+- Progress bars and spinners
+
+#### What's Always Shown
+
+The following are always displayed in real-time Docker logs:
+
+- ❌ **Error and warning lines** — ERROR, WARN, FATAL, CRITICAL, Exception
+- ✅ **Test result indicators** — PASS, FAIL, passed, failed, ✓, ✗
+- ℹ️ **Command boundaries** — Command start (`==> npm run X`) and exit codes
+- 📊 **Summaries** — Test counts, build status, completion messages
+- 🔍 **Stack traces** — Full exception stack traces
+
+#### Finding Full Output
+
+If you need to see the complete unfiltered output:
+
+```bash
+# Full validation output (including all verbose lines)
+cat /agents/kaseki-results/kaseki-N/validation.log
+
+# Separate by command
+grep -A 500 "^==> npm run test" /agents/kaseki-results/kaseki-N/validation.log | head -100
+```
+
+#### Example: Test Run
+
+**Docker logs** (filtered — only key milestones):
+
+```
+==> npm run test
+PASS: Suite 1 - basic operations
+PASS: Suite 2 - edge cases
+15 tests passed, 0 failed
+exit_code=0
+```
+
+**validation.log** (full — includes all output):
+
+```
+==> npm run test
+npm WARN notice This is npm version 8.5.0
+npm WARN notice Welcome to npm!
+npm WARN notice See more at https://docs.npmjs.com/...
+Loading test fixtures...
+Compiling test files...
+Running test suite 'basic operations'...
+  Test 1: should handle empty input ... PASS
+  Test 2: should handle null values ... PASS
+  ...
+PASS: Suite 1 - basic operations
+Running test suite 'edge cases'...
+  Test 3: should reject invalid types ... PASS
+  ...
+PASS: Suite 2 - edge cases
+Test Results: 15 tests passed, 0 failed, 100% coverage
+exit_code=0
+```
 
 ---
 

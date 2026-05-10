@@ -100,6 +100,7 @@ RUN chmod +x \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
     && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \
+    && cp dist/validation-output-filter.js /app/lib/validation-output-filter.js \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
@@ -108,6 +109,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
+    && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
