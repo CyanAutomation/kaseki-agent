@@ -2,6 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="kaseki-api.integration.test"
+# Test fixture: intentional fake API key for integration testing (allowlisted in .kaseki-secret-allowlist)
 API_KEY="sk-test-integration-key"
 PORT="${KASEKI_TEST_API_PORT:-18080}"
 BASE_URL="http://127.0.0.1:${PORT}/api"

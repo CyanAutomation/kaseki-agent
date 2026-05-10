@@ -139,7 +139,7 @@ Quality gates run after the agent completes, before reporting success:
 | Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
 | Changed file outside allowlist | 5 | `KASEKI_CHANGED_FILES_ALLOWLIST` |
 | Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
-| Secret scan hit (sk-or-* leak) | 6 | — |
+| Secret scan hit (sk-or-* leak NOT in allowlist) | 6 | `.kaseki-secret-allowlist` |
 | Pi agent timeout | 124 | `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | Validation command failure | propagated | `KASEKI_VALIDATION_COMMANDS` |
 
@@ -175,6 +175,8 @@ The stamp file lives outside the repo directory to keep `git.status` clean.
 - API key is **never passed as an env var to child processes** — resolved from file at runtime
 - Docker runtime: `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, non-root user (UID 10000)
 - Secret scan checks the results, workspace git metadata, and source dirs for `sk-or-*` patterns
+- Detected patterns are allowlisted via `.kaseki-secret-allowlist` file (one entry per line: `<file>:<pattern>`)
+- Only real leaks (unallowlisted patterns) trigger exit code 6; test fixtures are permitted
 
 ## Container Image Scanning
 
