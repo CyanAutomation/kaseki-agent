@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.17.0...v1.18.0) (2026-05-10)
+
+### Features
+
+* add KASEKI_REPO_MEMORY_ROOT and KASEKI_RESULTS_DIR variables for improved memory management ([3064dbe](https://github.com/CyanAutomation/kaseki-agent/commit/3064dbe22513de081b94073c01f76dd83ae182d6))
+
+### Bug Fixes
+
+* adjust errexit behavior in build_github_skip_reasons and related tests ([94e48aa](https://github.com/CyanAutomation/kaseki-agent/commit/94e48aa1807c3015b9ce43c83b5db30de2b9d1a7))
+
 ## [1.17.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.16.0...v1.17.0) (2026-05-10)
 
 ### Features
