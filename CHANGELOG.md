@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.12.0...v1.12.1) (2026-05-10)
+
+### Bug Fixes
+
+* increase KASEKI_AGENT_TIMEOUT_SECONDS to 3600 and update logging options in docker-compose.yml ([0ae9b1f](https://github.com/CyanAutomation/kaseki-agent/commit/0ae9b1fd43aea9b8bdf3592d87b64dd954cc1c61))
+* update default values for KASEKI_API_MAX_CONCURRENT_RUNS, KASEKI_AGENT_TIMEOUT_SECONDS, and KASEKI_MAX_DIFF_BYTES in configuration files ([3419ec5](https://github.com/CyanAutomation/kaseki-agent/commit/3419ec590c3878e1795177b82937b3ea2779e222))
+
 ## [1.12.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.11.0...v1.12.0) (2026-05-10)
 
 ### Features
