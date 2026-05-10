@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.12.3...v1.12.4) (2026-05-10)
+
+### Bug Fixes
+
+* add ansi-colors.js to installation in Dockerfile ([54b3a06](https://github.com/CyanAutomation/kaseki-agent/commit/54b3a06532c9fce5a023e9e95caa54c579830a6d))
+
 ## [1.12.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.12.2...v1.12.3) (2026-05-10)
 
 ### Bug Fixes
