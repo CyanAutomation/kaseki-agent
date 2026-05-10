@@ -112,26 +112,33 @@ else
   fail "Multi-argument github operations printf missing -- separator"
 fi
 
-# Test 7: Integration test - simulate actual function behavior
-info "Test 7: Simulate actual build_github_skip_reasons behavior"
-{
-  # Simulate the skip reasons array logic
+# Test 7: Integration test - actual function behavior under errexit
+info "Test 7: Actual build_github_skip_reasons behavior under errexit"
+(
+  set -e
+  eval "$(awk '/^build_github_skip_reasons\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$ROOT_DIR/kaseki-agent.sh")"
   GITHUB_SKIP_REASONS=()
+  GITHUB_APP_ENABLED=1
   PI_EXIT=1
-  [ "$PI_EXIT" -eq 0 ] || GITHUB_SKIP_REASONS+=("agent_failed")
-  
   VALIDATION_EXIT=5
-  [ "$VALIDATION_EXIT" -eq 0 ] || GITHUB_SKIP_REASONS+=("validation_failed")
-  
-  # Log the skip reasons safely
+  QUALITY_EXIT=0
+  SECRET_SCAN_EXIT=0
+  DIFF_NONEMPTY=true
+  build_github_skip_reasons
   printf -- 'GitHub operations: skipped (reasons: %s)\n' \
     "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" > "$RESULTS_DIR/test7.log"
-} && pass "Simulated skip reasons logic succeeded" || fail "Simulated skip reasons logic failed"
+) && pass "Actual skip reasons logic survived errexit" || fail "Actual skip reasons logic failed under errexit"
 
 if grep -q "agent_failed,validation_failed" "$RESULTS_DIR/test7.log"; then
   pass "Skip reasons correctly accumulated and logged"
 else
   fail "Skip reasons not correctly accumulated: $(cat "$RESULTS_DIR/test7.log")"
+fi
+
+if grep -Eq '\[[^]]+\][[:space:]]*&&[[:space:]]*GITHUB_SKIP_REASONS\+=' "$ROOT_DIR/kaseki-agent.sh"; then
+  fail "Skip reason builder still uses errexit-sensitive test-and-append"
+else
+  pass "Skip reason builder avoids errexit-sensitive test-and-append"
 fi
 
 # Test 8: GitHub API response validation - extract helper functions and test directly

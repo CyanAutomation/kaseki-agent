@@ -2032,7 +2032,7 @@ else
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
   unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
-  set -e
+  set +e
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
   if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
@@ -2074,7 +2074,7 @@ else
     set +e
     kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json
     FILTER_EXIT=$?
-    set -e
+    set +e
   fi
   if [ "$FILTER_EXIT" -ne 0 ]; then
     printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a /results/quality.log
@@ -2298,7 +2298,7 @@ else
     if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
       printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a /results/validation.log
     fi
-    set -e
+    set +e
   fi
   record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
@@ -2342,12 +2342,25 @@ emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()
-  [ "$GITHUB_APP_ENABLED" != "1" ] && GITHUB_SKIP_REASONS+=("github_app_disabled")
-  [ "$PI_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("agent_failed")
-  [ "$VALIDATION_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("validation_failed")
-  [ "$QUALITY_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("quality_failed")
-  [ "$SECRET_SCAN_EXIT" -ne 0 ] && GITHUB_SKIP_REASONS+=("secret_scan_failed")
-  [ "$DIFF_NONEMPTY" != "true" ] && GITHUB_SKIP_REASONS+=("empty_diff")
+  if [ "$GITHUB_APP_ENABLED" != "1" ]; then
+    GITHUB_SKIP_REASONS+=("github_app_disabled")
+  fi
+  if [ "$PI_EXIT" -ne 0 ]; then
+    GITHUB_SKIP_REASONS+=("agent_failed")
+  fi
+  if [ "$VALIDATION_EXIT" -ne 0 ]; then
+    GITHUB_SKIP_REASONS+=("validation_failed")
+  fi
+  if [ "$QUALITY_EXIT" -ne 0 ]; then
+    GITHUB_SKIP_REASONS+=("quality_failed")
+  fi
+  if [ "$SECRET_SCAN_EXIT" -ne 0 ]; then
+    GITHUB_SKIP_REASONS+=("secret_scan_failed")
+  fi
+  if [ "$DIFF_NONEMPTY" != "true" ]; then
+    GITHUB_SKIP_REASONS+=("empty_diff")
+  fi
+  return 0
 }
 
 printf '\n==> github operations\n'
