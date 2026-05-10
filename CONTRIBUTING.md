@@ -166,7 +166,74 @@ Before opening a pull request:
 - [ ] Run `npm run build` to verify compilation succeeds.
 - [ ] If you disagree with a lint rule, discuss in the PR description.
 
-## 5) Running the local containerized flow
+## 5) Handling Test Credentials and Secret Scan
+
+Kaseki Agent includes a **secret scan** quality gate that detects OpenRouter API key patterns (`sk-or-*` and similar) in the codebase. This gate protects against accidental credential leaks while permitting known test fixtures via an **allowlist** mechanism.
+
+### When you need a test credential pattern
+
+If your test requires a fake credential (for example, testing API error handling, mock authentication, or secret scan validation):
+
+1. **Use a fake, intentional pattern** — DO NOT use a real API key
+   - ✅ Good: `sk-test-integration-key`, `sk-or-aBcDeFgHiJkLmNoPqRsT` (obvious fake)
+   - ❌ Bad: a real OpenRouter key, or a pattern that looks real
+
+2. **Document the pattern in code** — Add a comment explaining why it's there
+   ```bash
+   # Test fixture: intentional fake API key for integration testing (allowlisted)
+   API_KEY="sk-test-integration-key"
+   ```
+
+3. **Add the pattern to `.kaseki-secret-allowlist`** — So the secret scan knows it's safe
+   ```
+   test/kaseki-api.integration.test.sh:sk-test-integration-key
+   ```
+
+### Secret Scan Allowlist Format
+
+The allowlist file is located at `.kaseki-secret-allowlist` (repository root). Each entry is one line:
+```
+<file-path>:<credential-pattern>
+```
+
+- **File path:** Relative to repository root (e.g., `test/mock-api.sh`)
+- **Credential pattern:** The exact pattern detected by secret scan (e.g., `sk-test-mock-key`)
+
+### Testing the allowlist locally
+
+After adding a test credential, verify the secret scan passes:
+
+```bash
+# Run secret scan on the repo (normally run as part of full kaseki)
+# The following simulates the secret scan logic:
+grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-' . --include='*.sh' --include='*.ts' | head -5
+# Should show your test pattern; it should NOT cause test failures once allowlisted
+```
+
+### Security Requirements
+
+⚠️ **Important:** The allowlist permits ONLY test fixtures in test directories:
+
+- ❌ **Never** allowlist a real API key (rotate immediately instead)
+- ❌ **Never** allowlist credentials in production code (`src/`, `lib/`, etc.)
+- ❌ **Never** allowlist patterns without clear documentation
+- ✅ **Only** allowlist intentional fake patterns in test files (`tests/`, `test/`, `*test*`)
+
+### PR checklist for credentials
+
+Before opening a pull request that adds a test credential:
+
+- [ ] The credential is **fake and intentional** (not a real API key).
+- [ ] The file is in a **test directory** (`tests/`, `test/`, or `*test.ts`).
+- [ ] The pattern is **documented with a comment** explaining why it's there.
+- [ ] An entry exists in `.kaseki-secret-allowlist` matching the pattern.
+- [ ] Local secret scan passes (no exit code 6).
+
+**References:**
+- [docs/SECRET_SCAN_ALLOWLIST.md](docs/SECRET_SCAN_ALLOWLIST.md) — Detailed allowlist documentation
+- [CLAUDE.md](CLAUDE.md#Quality-Gates-and-Exit-Codes) — Quality gates and exit codes
+
+## 6) Running the local containerized flow
 
 Use either the published image or a local build, then run `./run-kaseki.sh` from this repo root.
 
@@ -189,7 +256,7 @@ KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key>
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.
 
-## 6) Release Process and Conventional Commits
+## 7) Release Process and Conventional Commits
 
 Kaseki Agent releases are **automated via semantic-release**. Version bumps, changelog updates, and GitHub Releases are generated automatically from commit messages using the **conventional commits** format.
 
@@ -298,7 +365,7 @@ If a commit message doesn't follow the format, it will **not trigger a version b
 
 Once you're comfortable with the format, encourage your team to adopt it systematically (optional: use `commitlint` + `husky` hooks for enforcement in future phases).
 
-## 7) Validating changed-file allowlist and max diff limits
+## 8) Validating changed-file allowlist and max diff limits
 
 The container runner enforces quality gates using:
 
@@ -313,7 +380,7 @@ Contributors must validate that any change to defaults or behavior preserves the
 
 A failed allowlist or diff-size check should be treated as a real regression unless intentionally changed and documented.
 
-## 8) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
+## 9) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
 
 When a run fails, inspect artifacts in this order:
 

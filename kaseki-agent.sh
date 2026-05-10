@@ -638,6 +638,64 @@ check_validation_allowlist() {
   return 0
 }
 
+check_secret_scan_allowlist() {
+  local allowlist_file="/workspace/repo/.kaseki-secret-allowlist"
+  
+  # If no allowlist file exists, all matches are failures (real leaks)
+  if [ ! -f "$allowlist_file" ]; then
+    return 0  # Proceed with normal failure handling
+  fi
+  
+  # Read the secret-scan.log and check each match against the allowlist
+  local secret_matches=() unallowlisted_count=0 allowlisted_count=0
+  local match_line
+  
+  while IFS= read -r match_line || [ -n "$match_line" ]; do
+    [ -z "$match_line" ] && continue
+    
+    # Extract file path and the actual matched pattern from grep output
+    # Format: /path/to/file:line_num:match_text
+    local file_path pattern
+    file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
+    # Extract any credential-like pattern (sk-or-* or sk-test-*)
+    pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
+    
+    [ -z "$pattern" ] && continue
+    
+    # Normalize file path: remove leading /workspace/repo/, repo/, and ./ if present
+    file_path="${file_path#/workspace/repo/}"
+    file_path="${file_path#repo/}"
+    file_path="${file_path#./}"
+    
+    # Check if this file:pattern combination is in the allowlist
+    if grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
+      printf '[secret-scan] ALLOWLISTED: %s\n' "$match_line" | tee -a /results/secret-scan.log
+      allowlisted_count=$((allowlisted_count + 1))
+      emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
+    else
+      secret_matches+=("$match_line")
+      unallowlisted_count=$((unallowlisted_count + 1))
+      emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
+    fi
+  done < /results/secret-scan.log
+  
+  # Clear the log and rewrite with only real leaks
+  : > /results/secret-scan.log
+  if [ "$allowlisted_count" -gt 0 ]; then
+    printf '[secret-scan] Found %d allowlisted pattern(s) and %d real leak(s)\n' "$allowlisted_count" "$unallowlisted_count" | tee -a /results/secret-scan.log
+  fi
+  
+  for match in "${secret_matches[@]}"; do
+    printf '%s\n' "$match" | tee -a /results/secret-scan.log
+  done
+  
+  # Exit code 6 only if there are unallowlisted matches
+  if [ "$unallowlisted_count" -gt 0 ]; then
+    return 1
+  fi
+  return 0
+}
+
 
 finish() {
   local code=$?
@@ -1888,8 +1946,19 @@ if [ "$KASEKI_DRY_RUN" = "1" ]; then
   SECRET_SCAN_EXIT=0
   record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
 else
+  # Run the initial scan
   if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
-    SECRET_SCAN_EXIT=6
+    # Matches found - check against allowlist
+    if check_secret_scan_allowlist; then
+      # All matches are allowlisted
+      SECRET_SCAN_EXIT=0
+    else
+      # Real leaks detected
+      SECRET_SCAN_EXIT=6
+    fi
+  else
+    # No matches found
+    SECRET_SCAN_EXIT=0
   fi
   record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
