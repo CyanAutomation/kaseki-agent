@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'node:crypto';
+import { readHostSecret, getSecretLocations } from './secrets/host-secrets-reader';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
@@ -72,85 +73,64 @@ function inspectImageDigest(image: string): string | undefined {
 export { classifyDockerFailure } from './lib/subprocess-helpers';
 
 function checkOpenRouterKey(): PreflightCheck {
-  if (process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.length > 0) {
-    return { name: 'openrouter-key', ok: true, detail: 'OPENROUTER_API_KEY is present in the API environment.' };
+  const keyValue = readHostSecret('openrouter_api_key');
+  if (keyValue) {
+    return { name: 'openrouter-key', ok: true, detail: 'OpenRouter API key is available from host secrets.' };
   }
 
-  const keyFile = process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/openrouter_api_key';
-  try {
-    const stat = fs.statSync(keyFile);
-    if (stat.isFile() && stat.size > 0) {
-      return { name: 'openrouter-key', ok: true, detail: `Readable key file: ${keyFile}` };
-    }
-  } catch {
-    // Handled below.
-  }
-
+  const locations = getSecretLocations('openrouter_api_key');
   return {
     name: 'openrouter-key',
     ok: false,
-    detail: 'No OpenRouter API key was found in env or the configured key file.',
-    remediation: 'Set OPENROUTER_API_KEY for API-triggered runs or mount OPENROUTER_API_KEY_FILE.',
+    detail: 'No OpenRouter API key was found in host secrets.',
+    remediation: `Create a secret file with your OpenRouter API key (one key per file):\n  Primary: ${locations.primary}\n  Fallback: ${locations.secondary}`,
   };
 }
 
-function readSecretValue(inlineValue?: string, filePath?: string): string | undefined {
-  const trimmedInline = inlineValue?.trim();
-  if (trimmedInline) {
-    return trimmedInline;
-  }
-  if (!filePath) {
-    return undefined;
-  }
-  try {
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile() || stat.size === 0) {
-      return undefined;
-    }
-    const value = fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '').trim();
-    return value || undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * Read a secret from host secrets (no inline env var fallback).
+ * Returns undefined if the secret is not found.
+ */
+function readHostSecretValue(secretName: string): string | undefined {
+  const value = readHostSecret(secretName);
+  return value || undefined;
 }
 
 function checkGitHubAppCredentials(): PreflightCheck {
-  const configured =
-    Boolean(process.env.GITHUB_APP_ID || process.env.GITHUB_APP_ID_FILE) ||
-    Boolean(process.env.GITHUB_APP_CLIENT_ID || process.env.GITHUB_APP_CLIENT_ID_FILE) ||
-    Boolean(process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_FILE);
+  // Check if any GitHub App credentials are present in host secrets
+  const appId = readHostSecretValue('github_app_id');
+  const clientId = readHostSecretValue('github_app_client_id');
+  const privateKey = readHostSecretValue('github_app_private_key');
 
-  if (!configured) {
+  if (!appId && !clientId && !privateKey) {
     return {
       name: 'github-app',
-      ok: true,
+      ok: false,
       detail: 'GitHub App credentials are not configured; PR creation will be disabled.',
     };
   }
 
-  const appId = readSecretValue(process.env.GITHUB_APP_ID, process.env.GITHUB_APP_ID_FILE);
-  const clientId = readSecretValue(process.env.GITHUB_APP_CLIENT_ID, process.env.GITHUB_APP_CLIENT_ID_FILE);
-  const privateKey =
-    process.env.GITHUB_APP_PRIVATE_KEY?.trim() ||
-    readSecretValue(undefined, process.env.GITHUB_APP_PRIVATE_KEY_FILE);
-
   const missing: string[] = [];
   if (!appId) {
-    missing.push('GITHUB_APP_ID or GITHUB_APP_ID_FILE');
+    missing.push('github_app_id');
   }
   if (!clientId) {
-    missing.push('GITHUB_APP_CLIENT_ID or GITHUB_APP_CLIENT_ID_FILE');
+    missing.push('github_app_client_id');
   }
   if (!privateKey) {
-    missing.push('GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE');
+    missing.push('github_app_private_key');
   }
 
   if (missing.length > 0) {
+    const secretLocations = missing.map((name) => {
+      const locations = getSecretLocations(name);
+      return `${name}: ${locations.primary} or ${locations.secondary}`;
+    }).join('; ');
     return {
       name: 'github-app',
       ok: false,
       detail: `GitHub App credentials are incomplete: missing ${missing.join(', ')}.`,
-      remediation: 'Mount readable GitHub App secret files or set the corresponding environment variables.',
+      remediation: `Create the missing secret files:\\n${secretLocations}`,
     };
   }
   const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey as string);
@@ -159,7 +139,7 @@ function checkGitHubAppCredentials(): PreflightCheck {
       name: 'github-app',
       ok: false,
       detail: 'GitHub App ID is present but is not numeric.',
-      remediation: 'Set GITHUB_APP_ID or GITHUB_APP_ID_FILE to the numeric GitHub App ID.',
+      remediation: 'The github_app_id secret file must contain only the numeric GitHub App ID.',
     };
   }
   if (!keyLooksLikePem) {
@@ -167,7 +147,7 @@ function checkGitHubAppCredentials(): PreflightCheck {
       name: 'github-app',
       ok: false,
       detail: 'GitHub App private key is present but does not look like a PEM private key.',
-      remediation: 'Mount the GitHub App private key PEM file and point GITHUB_APP_PRIVATE_KEY_FILE at it.',
+      remediation: 'The github_app_private_key secret file must contain a valid PEM-format private key.',
     };
   }
 
@@ -179,10 +159,8 @@ function checkGitHubAppCredentials(): PreflightCheck {
 }
 
 function isGitHubAppReady(): boolean {
-  return checkGitHubAppCredentials().ok &&
-    (Boolean(process.env.GITHUB_APP_ID || process.env.GITHUB_APP_ID_FILE) ||
-      Boolean(process.env.GITHUB_APP_CLIENT_ID || process.env.GITHUB_APP_CLIENT_ID_FILE) ||
-      Boolean(process.env.GITHUB_APP_PRIVATE_KEY || process.env.GITHUB_APP_PRIVATE_KEY_FILE));
+  const check = checkGitHubAppCredentials();
+  return check.ok && check.name === 'github-app';
 }
 
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {

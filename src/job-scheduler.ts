@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,7 +12,6 @@ import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
-import { secretValueCache } from './secret-value-cache';
 import type { ResultCache } from './result-cache';
 
 type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
@@ -440,20 +440,22 @@ export class JobScheduler {
   }
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
-    const githubAppId = secretValueCache.readSecretValue(env.GITHUB_APP_ID, env.GITHUB_APP_ID_FILE);
+    // Read GitHub App credentials from host secrets
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+
+    const githubAppId = readHostSecret('github_app_id');
     if (githubAppId) {
       env.GITHUB_APP_ID = githubAppId;
     }
 
-    const githubClientId = secretValueCache.readSecretValue(env.GITHUB_APP_CLIENT_ID, env.GITHUB_APP_CLIENT_ID_FILE);
+    const githubClientId = readHostSecret('github_app_client_id');
     if (githubClientId) {
       env.GITHUB_APP_CLIENT_ID = githubClientId;
     }
 
-    if (!env.GITHUB_APP_PRIVATE_KEY && env.GITHUB_APP_PRIVATE_KEY_FILE && !fs.existsSync(env.GITHUB_APP_PRIVATE_KEY_FILE)) {
-      this.logger.event('github_app_private_key_file_unreadable', {
-        path: env.GITHUB_APP_PRIVATE_KEY_FILE,
-      });
+    const githubPrivateKey = readHostSecret('github_app_private_key');
+    if (githubPrivateKey) {
+      env.GITHUB_APP_PRIVATE_KEY = githubPrivateKey;
     }
   }
 

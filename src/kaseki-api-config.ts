@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { secretValueCache } from './secret-value-cache';
+import { readHostSecret, getSecretLocations } from './secrets/host-secrets-reader';
 
 /**
  * Configuration for the Kaseki API service.
@@ -159,33 +159,25 @@ export function loadConfig(): KasekiApiConfig {
 }
 
 /**
- * Load API keys from environment variable or file.
+ * Load API keys from host-based secret files (required, no env var fallback).
+ * Reads from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys.
  */
 function loadApiKeys(): string[] {
-  const keysEnv = process.env.KASEKI_API_KEYS;
-  if (keysEnv) {
-    return keysEnv
-      .split(',')
-      .map((key) => key.trim())
-      .filter((key) => key);
+  const keysValue = readHostSecret('kaseki_api_keys');
+  if (!keysValue) {
+    const locations = getSecretLocations('kaseki_api_keys');
+    throw new Error(
+      'KASEKI_API_KEYS is required. Create a secret file with your API keys (one per line):\n' +
+      `  Primary: ${locations.primary}\n` +
+      `  Fallback: ${locations.secondary}\n` +
+      'File format: one API key per line (newline-separated, skip blank lines and comments starting with #)'
+    );
   }
 
-  const keysFile = process.env.KASEKI_API_KEYS_FILE;
-  if (keysFile) {
-    try {
-      const content = secretValueCache.readFile(keysFile).trim();
-      if (content) {
-        return content
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line && !line.startsWith('#'));
-      }
-    } catch (err) {
-      throw new Error(`Failed to read KASEKI_API_KEYS_FILE: ${keysFile}: ${err}`);
-    }
-  }
-
-  return [];
+  return keysValue
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
 }
 
 /**

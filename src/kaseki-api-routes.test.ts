@@ -1,3 +1,14 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+// Mock the host-secrets-reader module
+jest.mock('./secrets/host-secrets-reader', () => ({
+  readHostSecret: jest.fn(),
+  getSecretLocations: jest.fn((name) => ({
+    primary: `/agents/secrets/${name}`,
+    secondary: `/home/user/secrets/${name}`,
+  })),
+  clearSecretCache: jest.fn(),
+}));
+
 import * as fs from 'fs';
 import * as path from 'path';
 import express, { Express } from 'express';
@@ -235,6 +246,10 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   }
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   test('classifies Docker socket permission failures with actionable remediation', () => {
     const result = classifyDockerFailure(
       'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock'
@@ -252,22 +267,16 @@ describe('kaseki-api-routes preflight diagnostics', () => {
   });
 
   test('GET /api/preflight reports readable GitHub App file credentials', async () => {
-    const snapshot = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      if (name === 'github_app_private_key') return '-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----';
+      return null;
+    });
+
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-'));
-    const secretsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-secrets-'));
-    const appIdFile = path.join(secretsDir, 'github_app_id');
-    const clientIdFile = path.join(secretsDir, 'github_client_id');
-    const keyFile = path.join(secretsDir, 'github_app_private_key');
-    fs.writeFileSync(appIdFile, '12345\n');
-    fs.writeFileSync(clientIdFile, 'Iv123client\n');
-    fs.writeFileSync(keyFile, '-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n');
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_CLIENT_ID;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    process.env.GITHUB_APP_ID_FILE = appIdFile;
-    process.env.GITHUB_APP_CLIENT_ID_FILE = clientIdFile;
-    process.env.GITHUB_APP_PRIVATE_KEY_FILE = keyFile;
 
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
@@ -287,21 +296,16 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      fs.rmSync(secretsDir, { recursive: true, force: true });
-      restoreEnv(snapshot);
+      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
     }
   });
 
   test('GET /api/preflight flags incomplete GitHub App configuration', async () => {
-    const snapshot = Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]]));
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    (readHostSecret as jest.Mock).mockReturnValue(null); // No GitHub App credentials
+
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-missing-'));
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
-    process.env.GITHUB_APP_ID = '12345';
-    delete process.env.GITHUB_APP_ID_FILE;
-    delete process.env.GITHUB_APP_CLIENT_ID;
-    delete process.env.GITHUB_APP_CLIENT_ID_FILE;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
-    delete process.env.GITHUB_APP_PRIVATE_KEY_FILE;
 
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
@@ -316,12 +320,12 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       const githubCheck = body.checks.find((check: any) => check.name === 'github-app');
       expect(githubCheck).toEqual(expect.objectContaining({
         ok: false,
-        detail: expect.stringContaining('GitHub App credentials are incomplete'),
+        detail: expect.stringContaining('GitHub App credentials are not configured'),
       }));
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });
-      restoreEnv(snapshot);
+      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
     }
   });
 });
@@ -1450,6 +1454,7 @@ describe('kaseki-api-routes publish mode validation', () => {
   let resultsDir: string;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-publish-test-'));
   });
 
@@ -1458,6 +1463,11 @@ describe('kaseki-api-routes publish mode validation', () => {
   });
 
   test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
+    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    // Ensure mock returns null for all GitHub App secrets
+    (readHostSecret as jest.Mock).mockReset();
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
     const previousEnv = {
       GITHUB_APP_ID: process.env.GITHUB_APP_ID,
       GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,

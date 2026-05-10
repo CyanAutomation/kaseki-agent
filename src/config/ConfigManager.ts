@@ -272,11 +272,29 @@ export class ConfigManager {
 
   /**
    * Apply environment variables to config (lowest priority after files)
-   * Maps KASEKI_* and OPENROUTER_* env vars to config keys
+   * Only accepts *_FILE variables, rejects inline secrets (hard requirement)
    */
   private applyEnvironmentVariables(): void {
+    // Check for inline secret variables and reject them
+    const inlineSecrets = [
+      'OPENROUTER_API_KEY',
+      'KASEKI_API_KEYS',
+      'GITHUB_APP_ID',
+      'GITHUB_APP_CLIENT_ID',
+      'GITHUB_APP_PRIVATE_KEY',
+    ];
+    for (const secretVar of inlineSecrets) {
+      if (process.env[secretVar]) {
+        throw new Error(
+          `Inline secret variable ${secretVar} is not allowed. ` +
+          'Secrets must be stored in host files (/agents/secrets/ or ~/secrets/). ' +
+          'Use the corresponding *_FILE environment variable instead.'
+        );
+      }
+    }
+
     const envMap: Record<string, (value: string) => any> = {
-      // Auth
+      // Auth - only *_FILE variables allowed
       OPENROUTER_API_KEY_FILE: (v) => {
         if (!this.config.auth) this.config.auth = {};
         this.config.auth.openrouter_api_key_file = v;

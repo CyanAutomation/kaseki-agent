@@ -144,11 +144,128 @@ curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
   http://localhost:8080/api/preflight
 ```
 
+## Secret File Setup
+
+Kaseki Agent reads all secrets from host-based files instead of environment variables. This improves security by separating secrets from configuration.
+
+### Dual-Path Secret Resolution
+
+Secrets are resolved from the host filesystem in this order:
+
+1. **Primary path**: `/agents/secrets/{secret-name}`
+2. **Fallback path**: `~/.secrets/{secret-name}` (user home directory)
+
+The system will check the primary location first and fall back to the user directory if not found. Use whichever path is convenient for your deployment.
+
+### Required Secret Files
+
+Create these files on your host machine:
+
+#### 1. OpenRouter API Key (Required)
+
+File: `/agents/secrets/openrouter_api_key` or `~/.secrets/openrouter_api_key`
+
+```bash
+# Get your API key from: https://openrouter.ai/keys
+
+mkdir -p /agents/secrets
+echo "sk-or-your-actual-key" > /agents/secrets/openrouter_api_key
+chmod 600 /agents/secrets/openrouter_api_key
+
+# Verify
+cat /agents/secrets/openrouter_api_key
+```
+
+#### 2. Kaseki API Keys (Required)
+
+File: `/agents/secrets/kaseki_api_keys` or `~/.secrets/kaseki_api_keys`
+
+Format: One API key per line (newline-separated). Comment lines starting with `#` are ignored.
+
+```bash
+mkdir -p /agents/secrets
+cat > /agents/secrets/kaseki_api_keys << 'EOF'
+# Kaseki API Keys
+sk-api-key-1
+sk-api-key-2
+sk-api-key-3
+EOF
+chmod 600 /agents/secrets/kaseki_api_keys
+
+# Verify
+cat /agents/secrets/kaseki_api_keys
+```
+
+#### 3. GitHub App Credentials (Optional, for PR creation)
+
+If you want to enable GitHub App authentication for PR creation, create these files:
+
+File: `/agents/secrets/github_app_id` or `~/.secrets/github_app_id`
+Content: Numeric GitHub App ID
+
+```bash
+echo "123456" > /agents/secrets/github_app_id
+chmod 600 /agents/secrets/github_app_id
+```
+
+File: `/agents/secrets/github_app_client_id` or `~/.secrets/github_app_client_id`
+Content: OAuth Client ID (Iv1.abc...)
+
+```bash
+echo "Iv1.abcdef..." > /agents/secrets/github_app_client_id
+chmod 600 /agents/secrets/github_app_client_id
+```
+
+File: `/agents/secrets/github_app_private_key` or `~/.secrets/github_app_private_key`
+Content: PEM-format private key
+
+```bash
+cat your-private-key.pem > /agents/secrets/github_app_private_key
+chmod 600 /agents/secrets/github_app_private_key
+```
+
+### Verification
+
+Check that the secrets are readable:
+
+```bash
+# Test reading secrets (all should return non-empty values)
+test -s /agents/secrets/openrouter_api_key && echo "✓ OpenRouter key found" || echo "✗ OpenRouter key missing"
+test -s /agents/secrets/kaseki_api_keys && echo "✓ API keys found" || echo "✗ API keys missing"
+```
+
+After starting the API container, verify with the preflight endpoint:
+
+```bash
+curl -H "Authorization: Bearer sk-api-key-1" \
+  http://localhost:8080/api/preflight | jq '.checks[] | select(.name == "openrouter-key")'
+```
+
+Should return:
+
+```json
+{
+  "name": "openrouter-key",
+  "ok": true,
+  "detail": "OpenRouter API key is available from host secrets."
+}
+```
+
+---
+
+## Configuration
+
 **Configuration** (via environment variables):
 
 ```bash
+# Secrets (read from files, see "Secret File Setup" section)
+KASEKI_API_KEYS_FILE=/agents/secrets/kaseki_api_keys       # Path to API keys file
+OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
+GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional: Path to GitHub App ID
+GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id   # Optional
+GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
+
 # Core settings
-KASEKI_API_KEYS=sk-key1,sk-key2            # Required: comma-separated API keys
 KASEKI_API_PORT=8080                        # API listen port (default: 8080)
 KASEKI_API_LOG_LEVEL=info                  # Log level: debug/info/warn/error
 KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from this repo's Dockerfile
@@ -162,6 +279,8 @@ KASEKI_MAX_DIFF_BYTES=200000               # Max diff size (default: 200 KB)
 KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
+
+**Note on secrets:** All secret file variables are optional if your files are in the default locations (`/agents/secrets/` or `~/.secrets/`). Only set them if your files are in non-standard locations.
 
 ---
 
@@ -187,7 +306,14 @@ KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
 **Environment variables:**
 
 ```bash
-KASEKI_API_KEYS=sk-key1,sk-key2            # Required
+# Secrets (must be set up in host files first, see "Secret File Setup" section)
+KASEKI_API_KEYS_FILE=/agents/secrets/kaseki_api_keys       # Path to API keys file
+OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
+GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional
+GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id    # Optional
+GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
+
+# Core settings
 KASEKI_API_PORT=8080                        # Default: 8080
 KASEKI_API_LOG_LEVEL=info                  # Default: info
 KASEKI_API_MAX_CONCURRENT_RUNS=3           # Default: 3
