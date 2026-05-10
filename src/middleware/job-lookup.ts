@@ -7,6 +7,7 @@ import { sendErrorResponse } from '../utils/response-helpers';
  * Extend Express Request to include the job from middleware.
  */
 declare global {
+  // Express type augmentation requires namespace syntax (standard pattern for req/res extensions)
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
