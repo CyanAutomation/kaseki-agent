@@ -2,49 +2,13 @@
  * Unit tests for validation-output-filter.ts
  */
 
-import { spawn } from 'child_process';
-import { join } from 'path';
-import * as fs from 'fs';
+import { filterValidationOutput } from './validation-output-filter.js';
 
 /**
  * Helper to run the filter with input and capture output
  */
 function runFilter(input: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const filterPath = join(__dirname, '../dist/validation-output-filter.js');
-
-    // Build the TypeScript first if needed
-    if (!fs.existsSync(filterPath)) {
-      reject(new Error(`Filter not found at ${filterPath}. Run 'npm run build' first.`));
-      return;
-    }
-
-    const proc = spawn('node', [filterPath], {
-      stdio: ['pipe', 'pipe', 'pipe'] as const,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    proc.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on('close', (code: number | null) => {
-      if (code !== 0) {
-        reject(new Error(`Filter exited with code ${code}: ${stderr}`));
-      } else {
-        resolve(stdout);
-      }
-    });
-
-    proc.stdin.write(input);
-    proc.stdin.end();
-  });
+  return Promise.resolve(filterValidationOutput(input));
 }
 
 describe('validation-output-filter', () => {
