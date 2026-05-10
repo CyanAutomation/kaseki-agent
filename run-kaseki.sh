@@ -139,6 +139,54 @@ const lines = body.match(/.{1,64}/g) || [];
 process.stdout.write(`-----BEGIN ${match[1]}-----\n${lines.join('"'"'\n'"'"')}\n-----END ${match[1]}-----\n`);'
 }
 
+resolve_github_credentials() {
+  # Attempt to resolve GitHub App credentials from multiple sources
+  # Priority: env vars → secret files → auto-detect locations
+  # Returns: 0 if all 3 found, 1 if partial, 2 if none
+  local app_id_val app_client_val app_key_val
+  local auto_detect_paths=(
+    "$HOME/.ssh/github-app-private-key"
+    "$PWD/.github-app-secrets/private-key"
+    "/etc/kaseki-secrets/github_app_private_key"
+  )
+  
+  # Try environment variables first (highest priority)
+  app_id_val="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
+  app_client_val="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
+  
+  # For private key, check env var first, then auto-detect paths
+  app_key_val=""
+  if [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
+    app_key_val="$GITHUB_APP_PRIVATE_KEY"
+  elif [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] && [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
+    app_key_val="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE" 2>/dev/null || true)"
+  else
+    # Auto-detect from standard locations
+    for path in "${auto_detect_paths[@]}"; do
+      if [ -r "$path" ]; then
+        app_key_val="$(cat "$path" 2>/dev/null || true)"
+        [ -n "$app_key_val" ] && printf 'GitHub App: detected private key at %s\n' "$path" >&2 && break
+      fi
+    done
+  fi
+  
+  # Count how many credentials we found
+  local count=0
+  [ -n "$app_id_val" ] && ((count++))
+  [ -n "$app_client_val" ] && ((count++))
+  [ -n "$app_key_val" ] && ((count++))
+  
+  # Log warnings for missing credentials (non-fatal)
+  [ -z "$app_id_val" ] && printf 'GitHub App: missing GITHUB_APP_ID\n' >&2
+  [ -z "$app_client_val" ] && printf 'GitHub App: missing GITHUB_APP_CLIENT_ID\n' >&2
+  [ -z "$app_key_val" ] && printf 'GitHub App: missing or unreadable private key\n' >&2
+  
+  # Return status based on how many credentials found
+  [ "$count" -eq 3 ] && return 0
+  [ "$count" -gt 0 ] && return 1
+  return 2
+}
+
 # GitHub App credentials (optional, for auto PR creation)
 GITHUB_APP_ID="${GITHUB_APP_ID:-}"
 GITHUB_APP_ID_FILE="${GITHUB_APP_ID_FILE:-}"
@@ -829,26 +877,37 @@ else
   printf 'Git: missing on host; skipping git ref preflight.\n' >> "$RESULT_DIR/progress.log"
 fi
 
-# Handle GitHub App credentials (optional)
-GITHUB_APP_ENABLED="0"
+# Handle GitHub App credentials (optional) - enabled by default if available
+GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 case "$KASEKI_PUBLISH_MODE" in
   auto|none|branch|draft_pr) ;;
   *)
     fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, or draft_pr)"
     ;;
 esac
-github_app_id_value="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
-github_app_client_id_value="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
-if [ "$KASEKI_PUBLISH_MODE" != "none" ] && [ -n "$github_app_id_value" ] && [ -n "$github_app_client_id_value" ]; then
+
+# Attempt to resolve credentials (will auto-detect if not provided)
+if resolve_github_credentials; then
+  # All 3 credentials found
+  github_app_id_value="$(read_secret_value "$GITHUB_APP_ID" "$GITHUB_APP_ID_INPUT_FILE" 2>/dev/null || true)"
+  github_app_client_id_value="$(read_secret_value "$GITHUB_APP_CLIENT_ID" "$GITHUB_APP_CLIENT_ID_INPUT_FILE" 2>/dev/null || true)"
   github_private_key_value=""
   if [ -n "$GITHUB_APP_PRIVATE_KEY_FILE" ] && [ -r "$GITHUB_APP_PRIVATE_KEY_FILE" ]; then
-    github_private_key_value="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE")"
+    github_private_key_value="$(cat "$GITHUB_APP_PRIVATE_KEY_FILE" 2>/dev/null || true)"
   elif [ -n "$GITHUB_APP_PRIVATE_KEY" ]; then
     github_private_key_value="$GITHUB_APP_PRIVATE_KEY"
+  else
+    # Auto-detect from standard locations
+    for path in "$HOME/.ssh/github-app-private-key" "$PWD/.github-app-secrets/private-key" "/etc/kaseki-secrets/github_app_private_key"; do
+      if [ -r "$path" ]; then
+        github_private_key_value="$(cat "$path" 2>/dev/null || true)"
+        [ -n "$github_private_key_value" ] && break
+      fi
+    done
   fi
-
-  if [ -n "$github_private_key_value" ]; then
-    printf 'GitHub App credentials: configured\n'
+  
+  if [ -n "$github_private_key_value" ] && [ "$KASEKI_PUBLISH_MODE" != "none" ]; then
+    printf 'GitHub App credentials: configured (auto-detected or provided)\n'
     GITHUB_APP_ENABLED="1"
     printf '%s\n' "$github_app_id_value" > "$GITHUB_APP_ID_FILE"
     chmod 0600 "$GITHUB_APP_ID_FILE"
@@ -857,6 +916,18 @@ if [ "$KASEKI_PUBLISH_MODE" != "none" ] && [ -n "$github_app_id_value" ] && [ -n
     printf '%s' "$github_private_key_value" | normalize_private_key_pem > "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     chmod 0600 "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     unset github_private_key_value
+  else
+    # Credentials not complete or publish mode is none
+    if [ "$KASEKI_PUBLISH_MODE" = "auto" ] || [ "$KASEKI_PUBLISH_MODE" = "none" ]; then
+      printf 'GitHub App credentials: not available, disabling GitHub operations (graceful degrade)\n'
+      GITHUB_APP_ENABLED="0"
+    fi
+  fi
+else
+  # No credentials found or only partial
+  if [ "$KASEKI_PUBLISH_MODE" = "auto" ] || [ "$KASEKI_PUBLISH_MODE" = "none" ]; then
+    printf 'GitHub App credentials: not found, disabling GitHub operations (graceful degrade)\n'
+    GITHUB_APP_ENABLED="0"
   fi
 fi
 unset GITHUB_APP_PRIVATE_KEY github_app_id_value github_app_client_id_value

@@ -32,6 +32,39 @@ Complete reference for all environment variables used by kaseki-agent.
 1. `/agents/secrets/{name}` (preferred)
 2. `~/.secrets/{name}` (fallback)
 
+### GitHub App Configuration
+
+| Variable | Default | Type | Purpose |
+|----------|---------|------|---------|
+| `GITHUB_APP_ENABLED` | `1` (if credentials available) | boolean | Enable/disable GitHub operations (PR creation, branch push) |
+| `KASEKI_PUBLISH_MODE` | `auto` | string | GitHub operations mode: `auto` (enabled if credentials found), `none` (always skip), `branch` (require credentials), `draft_pr` (require credentials) |
+| `KASEKI_GITHUB_PR_RETRIES` | `3` | integer | Retry attempts for GitHub PR creation (exponential backoff: 2s, 4s, 8s) |
+
+**GitHub App Credential Auto-Detection:**
+
+When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-agent automatically searches for credentials in:
+
+1. **Environment variables** (highest priority):
+   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`
+   
+2. **Secret files** (standard locations):
+   - `/agents/secrets/github_app_*`
+   - `~/.secrets/github_app_*`
+   
+3. **Auto-detected paths** (convenience locations):
+   - `~/.ssh/github-app-private-key` (private key only)
+   - `$PWD/.github-app-secrets/private-key` (private key only)
+   - `/etc/kaseki-secrets/github_app_private_key` (private key only)
+
+**Behavior by `KASEKI_PUBLISH_MODE`:**
+
+- `auto` (default) — Attempt GitHub ops if credentials found; gracefully skip if missing
+- `none` — Always skip GitHub operations (ignore credentials)
+- `branch` — Require GitHub credentials; fail with exit code 7 if missing
+- `draft_pr` — Require GitHub credentials; fail with exit code 7 if missing
+
+To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
+
 ### Quality Gates
 
 | Variable | Default | Type | Purpose |
