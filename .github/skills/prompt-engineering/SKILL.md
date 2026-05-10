@@ -2,7 +2,7 @@
 name: prompt-engineering
 description: Composing, testing, and validating TASK_PROMPT for kaseki agent runs
 tags: [kaseki, prompts, task-design, security]
-relatedSkills: [quality-gate-config, workflow-diagnosis]
+relatedSkills: [quality-gate-config, workflow-diagnosis, cost-optimization, environment-configuration]
 ---
 
 # Prompt Engineering for Kaseki Agent
@@ -155,7 +155,34 @@ and performance. Update all 50+ test files."
 
 ---
 
-## Example Prompts
+## Real-World Prompt Examples
+
+For **10+ executable examples** covering bug fixes, feature additions, refactors, and integration patterns, see [EXAMPLES.md](../../docs/EXAMPLES.md).
+
+**Quick Reference**:
+
+| Use Case | Example | File | Prompt Type |
+|---|---|---|---|
+| Bug fix (1 file) | Example 1 | src/parser.ts | Problem + Scope + Validation |
+| Add tests | Example 2 | src/lib function | Feature + Constraints |
+| Multi-file feature | Example 3 | Component + types + tests | Scope-bounded feature |
+| Refactor to async | Example 4 | src/handlers.ts | Behavior-preserving change |
+| Dependency upgrade | Example 5 | package.json | Constrained integration |
+| Error handling | Example 6 | src/retry.ts | Defensive programming |
+| Batch automation | Example 7 | Shell script | External coordination |
+| Conditional logic | Example 8 | CI/CD script | Error recovery |
+| Integration code | Example 9 | TypeScript SDK | API integration pattern |
+| Webhook handler | Example 10 | GitHub Actions | Production pattern |
+
+Each example includes:
+- Exact task prompt (copy-paste ready)
+- Expected changes and diff size
+- Validation commands
+- Common pitfalls and fixes
+
+---
+
+
 
 ### Example 1: Bug Fix (Small Scope)
 
