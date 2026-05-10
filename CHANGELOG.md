@@ -15,215 +15,215 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Features
 
-* add example environment configuration for Kaseki Agent API service ([ce35063](https://github.com/CyanAutomation/kaseki-agent/commit/ce3506323083015cb48a1f02f8189faefe947c79))
+- add example environment configuration for Kaseki Agent API service ([ce35063](https://github.com/CyanAutomation/kaseki-agent/commit/ce3506323083015cb48a1f02f8189faefe947c79))
 
 ## [1.10.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.3...v1.10.4) (2026-05-09)
 
 ### Bug Fixes
 
-* update user ID from 1000 to 10000 across Docker configurations and documentation for consistency ([4f40e21](https://github.com/CyanAutomation/kaseki-agent/commit/4f40e21278ebd0c082817c6e4653feee2e091e50))
+- update user ID from 1000 to 10000 across Docker configurations and documentation for consistency ([4f40e21](https://github.com/CyanAutomation/kaseki-agent/commit/4f40e21278ebd0c082817c6e4653feee2e091e50))
 
 ## [1.10.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.2...v1.10.3) (2026-05-09)
 
 ### Bug Fixes
 
-* update user ID from 10001 to 1000 across Docker configurations and documentation for consistency ([afae0c4](https://github.com/CyanAutomation/kaseki-agent/commit/afae0c476820a06523d9e196bbbabcf5a79503e0))
+- update user ID from 10001 to 1000 across Docker configurations and documentation for consistency ([afae0c4](https://github.com/CyanAutomation/kaseki-agent/commit/afae0c476820a06523d9e196bbbabcf5a79503e0))
 
 ## [1.10.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.1...v1.10.2) (2026-05-09)
 
 ### Bug Fixes
 
-* improve KASEKI_RESULTS_DIR creation error handling and ensure writable permissions ([d655e44](https://github.com/CyanAutomation/kaseki-agent/commit/d655e449acfbddf835e835e3c1b4624e71c18990))
+- improve KASEKI_RESULTS_DIR creation error handling and ensure writable permissions ([d655e44](https://github.com/CyanAutomation/kaseki-agent/commit/d655e449acfbddf835e835e3c1b4624e71c18990))
 
 ## [1.10.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.10.0...v1.10.1) (2026-05-09)
 
 ### Bug Fixes
 
-* enhance KASEKI_RESULTS_DIR creation with writable permissions and improved error messaging ([fa8f08d](https://github.com/CyanAutomation/kaseki-agent/commit/fa8f08defa177145eb4ffac8dd823df42b1be601))
+- enhance KASEKI_RESULTS_DIR creation with writable permissions and improved error messaging ([fa8f08d](https://github.com/CyanAutomation/kaseki-agent/commit/fa8f08defa177145eb4ffac8dd823df42b1be601))
 
 ## [1.10.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.9.0...v1.10.0) (2026-05-09)
 
 ### Features
 
-* add comprehensive authentication setup guide and enhance DoctorCommand error handling ([085fd0e](https://github.com/CyanAutomation/kaseki-agent/commit/085fd0e46e26929c09142cf21ad788f8b4a40953))
+- add comprehensive authentication setup guide and enhance DoctorCommand error handling ([085fd0e](https://github.com/CyanAutomation/kaseki-agent/commit/085fd0e46e26929c09142cf21ad788f8b4a40953))
 
 ## [1.9.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.8.1...v1.9.0) (2026-05-09)
 
 ### Features
 
-* enhance Docker image checks and error handling in DoctorCommand and DockerManager ([31aa039](https://github.com/CyanAutomation/kaseki-agent/commit/31aa0391cf11bbdb4ddf5b3e5d0062981253f3da))
+- enhance Docker image checks and error handling in DoctorCommand and DockerManager ([31aa039](https://github.com/CyanAutomation/kaseki-agent/commit/31aa0391cf11bbdb4ddf5b3e5d0062981253f3da))
 
 ### Bug Fixes
 
-* improve formatting and add troubleshooting steps in EXIT_CODES documentation ([7a9dce5](https://github.com/CyanAutomation/kaseki-agent/commit/7a9dce563aa22774e0433df50ec67c9de0ab250b))
+- improve formatting and add troubleshooting steps in EXIT_CODES documentation ([7a9dce5](https://github.com/CyanAutomation/kaseki-agent/commit/7a9dce563aa22774e0433df50ec67c9de0ab250b))
 
 ## [1.8.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.8.0...v1.8.1) (2026-05-09)
 
 ### Bug Fixes
 
-* correct formatting in DoctorCommand and RunCommand for better readability ([0bc498c](https://github.com/CyanAutomation/kaseki-agent/commit/0bc498cdef0f7b40dd6ee11b53af303c3108d2c5))
+- correct formatting in DoctorCommand and RunCommand for better readability ([0bc498c](https://github.com/CyanAutomation/kaseki-agent/commit/0bc498cdef0f7b40dd6ee11b53af303c3108d2c5))
 
 ## [1.8.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.7.0...v1.8.0) (2026-05-09)
 
 ### Features
 
-* add default values for repo URL, git ref, Docker image, and directories in RunCommand ([9e6c24c](https://github.com/CyanAutomation/kaseki-agent/commit/9e6c24c02d01ed1b436f3b750cacff0d747112fd))
+- add default values for repo URL, git ref, Docker image, and directories in RunCommand ([9e6c24c](https://github.com/CyanAutomation/kaseki-agent/commit/9e6c24c02d01ed1b436f3b750cacff0d747112fd))
 
 ## [1.7.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.6.0...v1.7.0) (2026-05-09)
 
 ### Features
 
-* add authentication files validation to DoctorCommand and update RunCommand to check for required files ([266df6d](https://github.com/CyanAutomation/kaseki-agent/commit/266df6d282c666e47c45f8287857511a3359c2b9))
+- add authentication files validation to DoctorCommand and update RunCommand to check for required files ([266df6d](https://github.com/CyanAutomation/kaseki-agent/commit/266df6d282c666e47c45f8287857511a3359c2b9))
 
 ## [1.6.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.5...v1.6.0) (2026-05-09)
 
 ### Features
 
-* integrate enquirer for interactive setup prompts ([e52baf9](https://github.com/CyanAutomation/kaseki-agent/commit/e52baf907207d6d519fdada19eb2282c5c0993fb))
+- integrate enquirer for interactive setup prompts ([e52baf9](https://github.com/CyanAutomation/kaseki-agent/commit/e52baf907207d6d519fdada19eb2282c5c0993fb))
 
 ## [1.5.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.4...v1.5.5) (2026-05-09)
 
 ### Bug Fixes
 
-* add npm build step to publish-npm workflow to ensure dist/ is included in package ([aa47866](https://github.com/CyanAutomation/kaseki-agent/commit/aa4786690ca8a037c359681fd6eb487032643b4f))
+- add npm build step to publish-npm workflow to ensure dist/ is included in package ([aa47866](https://github.com/CyanAutomation/kaseki-agent/commit/aa4786690ca8a037c359681fd6eb487032643b4f))
 
 ## [1.5.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.3...v1.5.4) (2026-05-09)
 
 ### Bug Fixes
 
-* add npm build step to release workflow to ensure dist/ is included in published package ([272b852](https://github.com/CyanAutomation/kaseki-agent/commit/272b852dcdd070ac0996df066aac393478a6ab49))
+- add npm build step to release workflow to ensure dist/ is included in published package ([272b852](https://github.com/CyanAutomation/kaseki-agent/commit/272b852dcdd070ac0996df066aac393478a6ab49))
 
 ## [1.5.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.2...v1.5.3) (2026-05-09)
 
 ### Bug Fixes
 
-* ensure dist/ rebuild with correct dynamic import .js extensions ([1092d1a](https://github.com/CyanAutomation/kaseki-agent/commit/1092d1ab8df48b8cb128771131aadb1a48afecf2))
+- ensure dist/ rebuild with correct dynamic import .js extensions ([1092d1a](https://github.com/CyanAutomation/kaseki-agent/commit/1092d1ab8df48b8cb128771131aadb1a48afecf2))
 
 ## [1.5.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.2...v1.5.3) (2026-05-09)
 
 ### Bug Fixes
 
-* synchronize the release version across package metadata, lockfile, and changelog
-* configure semantic-release to update npm package metadata without publishing
-* document npm publish version ownership and log the exact packed version
+- synchronize the release version across package metadata, lockfile, and changelog
+- configure semantic-release to update npm package metadata without publishing
+- document npm publish version ownership and log the exact packed version
 
 ## [1.5.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.1...v1.5.2) (2026-05-09)
 
 ### Bug Fixes
 
-* add always-auth option to npm setup in publish workflow ([c902a52](https://github.com/CyanAutomation/kaseki-agent/commit/c902a52464ea57e77cf3b9f80fdc7d73d39ef80b))
-* add diagnostics to publish workflow and ensure NODE_AUTH_TOKEN is unset ([c08e02b](https://github.com/CyanAutomation/kaseki-agent/commit/c08e02b11ebb48e68091de684610f57908b0b242))
-* add npm registry configuration step to workflow ([097a7a3](https://github.com/CyanAutomation/kaseki-agent/commit/097a7a339fd484221724ac608b722d216d9a9945))
-* configure npm registry URL in setup-node action ([f473468](https://github.com/CyanAutomation/kaseki-agent/commit/f473468d8c5d57f717f6708cf9731f45d3f1ef45))
-* downgrade setup-node action to v4 for compatibility ([5f7dce6](https://github.com/CyanAutomation/kaseki-agent/commit/5f7dce6d60ddd6030f6b8a0dfbeeace3871615db))
-* revert Node.js engine version requirement to >=22 in package.json ([22dda4e](https://github.com/CyanAutomation/kaseki-agent/commit/22dda4e4a02b3272e4e35ffb8aaf1ce01667863d))
-* revert Node.js version to 22.22.2 in npm publish workflow ([e093e83](https://github.com/CyanAutomation/kaseki-agent/commit/e093e83dff3da8e4fcdea461e9d99c5db179c43f))
-* robust diagnostics and clean publish environment ([9882cab](https://github.com/CyanAutomation/kaseki-agent/commit/9882cab41244f6462d15ef3014beb916113430ee))
-* simplify npm publishing setup by removing unnecessary authentication steps ([b1eef30](https://github.com/CyanAutomation/kaseki-agent/commit/b1eef304556c0731ed5ccaba8875fe05c53ab044))
-* simplify repository URL and add publishConfig for OIDC ([fe87444](https://github.com/CyanAutomation/kaseki-agent/commit/fe874447697d688c6ef7a87d4875439305552ab2))
-* update Node.js version to 24 in publish workflow ([0424037](https://github.com/CyanAutomation/kaseki-agent/commit/042403788a92182f349f79dc0e3aca5fdd8c30ad))
-* update package.json version to match the published version during npm publish ([4ed8055](https://github.com/CyanAutomation/kaseki-agent/commit/4ed805590bd7af5b4ac5b6510460070fdcde4c07))
-* update publish workflow for OIDC and bump version to 1.5.1 ([5311458](https://github.com/CyanAutomation/kaseki-agent/commit/531145818c8eb77533ac43478175c237f3a18820))
-* update repository URL format in package.json ([3eb54bc](https://github.com/CyanAutomation/kaseki-agent/commit/3eb54bc9a28e054c4aef57299ce73c06d0577247))
+- add always-auth option to npm setup in publish workflow ([c902a52](https://github.com/CyanAutomation/kaseki-agent/commit/c902a52464ea57e77cf3b9f80fdc7d73d39ef80b))
+- add diagnostics to publish workflow and ensure NODE_AUTH_TOKEN is unset ([c08e02b](https://github.com/CyanAutomation/kaseki-agent/commit/c08e02b11ebb48e68091de684610f57908b0b242))
+- add npm registry configuration step to workflow ([097a7a3](https://github.com/CyanAutomation/kaseki-agent/commit/097a7a339fd484221724ac608b722d216d9a9945))
+- configure npm registry URL in setup-node action ([f473468](https://github.com/CyanAutomation/kaseki-agent/commit/f473468d8c5d57f717f6708cf9731f45d3f1ef45))
+- downgrade setup-node action to v4 for compatibility ([5f7dce6](https://github.com/CyanAutomation/kaseki-agent/commit/5f7dce6d60ddd6030f6b8a0dfbeeace3871615db))
+- revert Node.js engine version requirement to >=22 in package.json ([22dda4e](https://github.com/CyanAutomation/kaseki-agent/commit/22dda4e4a02b3272e4e35ffb8aaf1ce01667863d))
+- revert Node.js version to 22.22.2 in npm publish workflow ([e093e83](https://github.com/CyanAutomation/kaseki-agent/commit/e093e83dff3da8e4fcdea461e9d99c5db179c43f))
+- robust diagnostics and clean publish environment ([9882cab](https://github.com/CyanAutomation/kaseki-agent/commit/9882cab41244f6462d15ef3014beb916113430ee))
+- simplify npm publishing setup by removing unnecessary authentication steps ([b1eef30](https://github.com/CyanAutomation/kaseki-agent/commit/b1eef304556c0731ed5ccaba8875fe05c53ab044))
+- simplify repository URL and add publishConfig for OIDC ([fe87444](https://github.com/CyanAutomation/kaseki-agent/commit/fe874447697d688c6ef7a87d4875439305552ab2))
+- update Node.js version to 24 in publish workflow ([0424037](https://github.com/CyanAutomation/kaseki-agent/commit/042403788a92182f349f79dc0e3aca5fdd8c30ad))
+- update package.json version to match the published version during npm publish ([4ed8055](https://github.com/CyanAutomation/kaseki-agent/commit/4ed805590bd7af5b4ac5b6510460070fdcde4c07))
+- update publish workflow for OIDC and bump version to 1.5.1 ([5311458](https://github.com/CyanAutomation/kaseki-agent/commit/531145818c8eb77533ac43478175c237f3a18820))
+- update repository URL format in package.json ([3eb54bc](https://github.com/CyanAutomation/kaseki-agent/commit/3eb54bc9a28e054c4aef57299ce73c06d0577247))
 
 ## [1.5.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.5.0...v1.5.1) (2026-05-08)
 
 ### Bug Fixes
 
-* enhance npm publish diagnostics and OIDC setup instructions in workflow ([0d78376](https://github.com/CyanAutomation/kaseki-agent/commit/0d78376ff354f3e22a268204c36d657dd122e37b))
-* enhance version resolution logic for manual NPM publishing ([6104351](https://github.com/CyanAutomation/kaseki-agent/commit/6104351680d5401543acab206c43c25f54e26fdd))
+- enhance npm publish diagnostics and OIDC setup instructions in workflow ([0d78376](https://github.com/CyanAutomation/kaseki-agent/commit/0d78376ff354f3e22a268204c36d657dd122e37b))
+- enhance version resolution logic for manual NPM publishing ([6104351](https://github.com/CyanAutomation/kaseki-agent/commit/6104351680d5401543acab206c43c25f54e26fdd))
 
 ## [1.5.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.4.1...v1.5.0) (2026-05-08)
 
 ### Features
 
-* add GitHub Actions workflow for publishing to NPM ([e0a7e3c](https://github.com/CyanAutomation/kaseki-agent/commit/e0a7e3c6af932536c90a4ae798f0e7d5a6f3f172))
-* enhance KASEKI_RESULTS_DIR handling by auto-creating directory and improving error messages ([818b208](https://github.com/CyanAutomation/kaseki-agent/commit/818b208680d7753319bda2d33339740e107562c5))
+- add GitHub Actions workflow for publishing to NPM ([e0a7e3c](https://github.com/CyanAutomation/kaseki-agent/commit/e0a7e3c6af932536c90a4ae798f0e7d5a6f3f172))
+- enhance KASEKI_RESULTS_DIR handling by auto-creating directory and improving error messages ([818b208](https://github.com/CyanAutomation/kaseki-agent/commit/818b208680d7753319bda2d33339740e107562c5))
 
 ### Bug Fixes
 
-* correct error message formatting in loadConfig function ([bba3909](https://github.com/CyanAutomation/kaseki-agent/commit/bba3909dc5934f7eb46490af51d0467e668cfe04))
-* explicitly include undici in global pi-coding-agent installation to resolve module dependencies ([7137030](https://github.com/CyanAutomation/kaseki-agent/commit/7137030bacb766344f8ddd7f680c114787241600))
-* update Docker GitHub Actions to Node.js 24 compatible versions ([0d56415](https://github.com/CyanAutomation/kaseki-agent/commit/0d56415cf72632bd07c9f44c2ad1bb5993c51b7f))
-* update package.json to include missing files and add prepublish script ([e01cfdb](https://github.com/CyanAutomation/kaseki-agent/commit/e01cfdb041fbecb4e763a28bf113c5cfa8fd8087))
-* update Pi CLI installation to create a wrapper script for proper module resolution ([1cbf744](https://github.com/CyanAutomation/kaseki-agent/commit/1cbf744ff440a9755dbfe4e05ae74b3d45273f66))
-* update publish workflow to enhance OIDC trusted publishing and streamline npm authentication ([fa6c729](https://github.com/CyanAutomation/kaseki-agent/commit/fa6c729d1af51a0aaa3367270f2c45b2aadd296d))
+- correct error message formatting in loadConfig function ([bba3909](https://github.com/CyanAutomation/kaseki-agent/commit/bba3909dc5934f7eb46490af51d0467e668cfe04))
+- explicitly include undici in global pi-coding-agent installation to resolve module dependencies ([7137030](https://github.com/CyanAutomation/kaseki-agent/commit/7137030bacb766344f8ddd7f680c114787241600))
+- update Docker GitHub Actions to Node.js 24 compatible versions ([0d56415](https://github.com/CyanAutomation/kaseki-agent/commit/0d56415cf72632bd07c9f44c2ad1bb5993c51b7f))
+- update package.json to include missing files and add prepublish script ([e01cfdb](https://github.com/CyanAutomation/kaseki-agent/commit/e01cfdb041fbecb4e763a28bf113c5cfa8fd8087))
+- update Pi CLI installation to create a wrapper script for proper module resolution ([1cbf744](https://github.com/CyanAutomation/kaseki-agent/commit/1cbf744ff440a9755dbfe4e05ae74b3d45273f66))
+- update publish workflow to enhance OIDC trusted publishing and streamline npm authentication ([fa6c729](https://github.com/CyanAutomation/kaseki-agent/commit/fa6c729d1af51a0aaa3367270f2c45b2aadd296d))
 
 ## [1.4.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.3.0...v1.4.0) (2026-05-08)
 
 ### Features
 
-* add CLI commands for configuration, health checks, instance listing, reporting, execution, secrets management, API service, and setup wizard ([a6ddde6](https://github.com/CyanAutomation/kaseki-agent/commit/a6ddde6371a50352b2f2fdd9e6d89aa13c956286))
-* Add Pi Progress Summarizer with enhanced event handling and logging ([7aa8bb9](https://github.com/CyanAutomation/kaseki-agent/commit/7aa8bb974b645cc75c497f3acd0f8e12f1f8a9be))
-* Enhance documentation and implement new features for kaseki-agent ([4df2c4b](https://github.com/CyanAutomation/kaseki-agent/commit/4df2c4b8b30a1e05e4eb07785c75ecc44f87f53f))
-* Implement list command to display Kaseki instances with filtering and sorting ([9bd47e8](https://github.com/CyanAutomation/kaseki-agent/commit/9bd47e896f56432f5060a59d27c21ad24026e05f))
-* Migrate Kaseki Agent to NPM package and enhance documentation ([7e825f4](https://github.com/CyanAutomation/kaseki-agent/commit/7e825f46bf05176ea4eeebce12256166623155ed))
-* **validation:** enhance handling of missing npm scripts in validation commands ([1bfe5f8](https://github.com/CyanAutomation/kaseki-agent/commit/1bfe5f8d65aeb7597c88c3faaddad96157463350))
+- add CLI commands for configuration, health checks, instance listing, reporting, execution, secrets management, API service, and setup wizard ([a6ddde6](https://github.com/CyanAutomation/kaseki-agent/commit/a6ddde6371a50352b2f2fdd9e6d89aa13c956286))
+- Add Pi Progress Summarizer with enhanced event handling and logging ([7aa8bb9](https://github.com/CyanAutomation/kaseki-agent/commit/7aa8bb974b645cc75c497f3acd0f8e12f1f8a9be))
+- Enhance documentation and implement new features for kaseki-agent ([4df2c4b](https://github.com/CyanAutomation/kaseki-agent/commit/4df2c4b8b30a1e05e4eb07785c75ecc44f87f53f))
+- Implement list command to display Kaseki instances with filtering and sorting ([9bd47e8](https://github.com/CyanAutomation/kaseki-agent/commit/9bd47e896f56432f5060a59d27c21ad24026e05f))
+- Migrate Kaseki Agent to NPM package and enhance documentation ([7e825f4](https://github.com/CyanAutomation/kaseki-agent/commit/7e825f46bf05176ea4eeebce12256166623155ed))
+- **validation:** enhance handling of missing npm scripts in validation commands ([1bfe5f8](https://github.com/CyanAutomation/kaseki-agent/commit/1bfe5f8d65aeb7597c88c3faaddad96157463350))
 
 ## [1.3.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.2.0...v1.3.0) (2026-05-08)
 
 ### Features
 
-* add instance state derivation and metadata reader scripts to the Dockerfile ([b554b33](https://github.com/CyanAutomation/kaseki-agent/commit/b554b33bf28dba4bf49acfb7402a9f718df96374))
-* enhance printf safety in github operations; add validation and logging improvements; introduce comprehensive test suite ([fd8457e](https://github.com/CyanAutomation/kaseki-agent/commit/fd8457e897fc0b82fc1ff2afc0e5b4cdf05751d1))
-* enhance validation and error handling in json_encode and validate_numeric functions; add comprehensive test suite for printf safety ([7b5c828](https://github.com/CyanAutomation/kaseki-agent/commit/7b5c828c3fa01c4d802220e4f1d26b09ff8c2c3c))
+- add instance state derivation and metadata reader scripts to the Dockerfile ([b554b33](https://github.com/CyanAutomation/kaseki-agent/commit/b554b33bf28dba4bf49acfb7402a9f718df96374))
+- enhance printf safety in github operations; add validation and logging improvements; introduce comprehensive test suite ([fd8457e](https://github.com/CyanAutomation/kaseki-agent/commit/fd8457e897fc0b82fc1ff2afc0e5b4cdf05751d1))
+- enhance validation and error handling in json_encode and validate_numeric functions; add comprehensive test suite for printf safety ([7b5c828](https://github.com/CyanAutomation/kaseki-agent/commit/7b5c828c3fa01c4d802220e4f1d26b09ff8c2c3c))
 
 ### Bug Fixes
 
-* move coverage variable declaration to the correct scope in restoration summary ([04f5c38](https://github.com/CyanAutomation/kaseki-agent/commit/04f5c384342c7fcd3c5491d8dcaf5a60f31c3763))
-* optimize coverage calculation in restoration summary logging ([259d5fa](https://github.com/CyanAutomation/kaseki-agent/commit/259d5fa6673bb8b990b33a4ac20a6ed4e0f41c9e))
-* update shellcheck directives for improved script linting ([602d994](https://github.com/CyanAutomation/kaseki-agent/commit/602d9949f5cc6e268984eea05c073b6db0039de8))
+- move coverage variable declaration to the correct scope in restoration summary ([04f5c38](https://github.com/CyanAutomation/kaseki-agent/commit/04f5c384342c7fcd3c5491d8dcaf5a60f31c3763))
+- optimize coverage calculation in restoration summary logging ([259d5fa](https://github.com/CyanAutomation/kaseki-agent/commit/259d5fa6673bb8b990b33a4ac20a6ed4e0f41c9e))
+- update shellcheck directives for improved script linting ([602d994](https://github.com/CyanAutomation/kaseki-agent/commit/602d9949f5cc6e268984eea05c073b6db0039de8))
 
 ## [1.2.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.1.0...v1.2.0) (2026-05-07)
 
 ### Features
 
-* enhance error handling in log scanning and centralize error patterns ([c485b40](https://github.com/CyanAutomation/kaseki-agent/commit/c485b405bf8b5f12dd2b26ade127a4494c65ed78))
+- enhance error handling in log scanning and centralize error patterns ([c485b40](https://github.com/CyanAutomation/kaseki-agent/commit/c485b405bf8b5f12dd2b26ade127a4494c65ed78))
 
 ## [1.1.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.0.1...v1.1.0) (2026-05-07)
 
 ### Features
 
-* add extraction functions for validation and quality failure reasons ([f8f8ef3](https://github.com/CyanAutomation/kaseki-agent/commit/f8f8ef3327d90e396cdb3df00bf4b5ed5ab9a834))
-* enhance documentation with additional guidance on allowlist patterns and task prompts ([17451da](https://github.com/CyanAutomation/kaseki-agent/commit/17451da713cc4755f450d88fe13e360a7d5721a0))
-* enhance error reporting with structured failure reasons and API updates ([8846e9d](https://github.com/CyanAutomation/kaseki-agent/commit/8846e9d2bb1c903793269723de887ee27d3189c7))
-* enhance pre-flight validation with comprehensive pattern matching functions and integration tests ([0480bc5](https://github.com/CyanAutomation/kaseki-agent/commit/0480bc5066aa67e3582936d6a4188bd8acb62280))
-* Implement comprehensive allowlist restoration system in kaseki-agent ([9367503](https://github.com/CyanAutomation/kaseki-agent/commit/9367503ac3ad1d3dd53afd63bbc8b981665e843e))
-* implement fail-fast validation behavior in Kaseki Agent ([d07b28c](https://github.com/CyanAutomation/kaseki-agent/commit/d07b28ccae7215064b43d4ec610b2e4df60abb9c))
-* Implement Phase 1 Error Reporting Enhancements ([421390b](https://github.com/CyanAutomation/kaseki-agent/commit/421390b7ab063cc8839116c4b9de37c2d0806d04))
-* remove trigger for Docker build workflow after release ([99ed6c5](https://github.com/CyanAutomation/kaseki-agent/commit/99ed6c5d03a161ba0eda5a6c792e27bb10849b3b))
+- add extraction functions for validation and quality failure reasons ([f8f8ef3](https://github.com/CyanAutomation/kaseki-agent/commit/f8f8ef3327d90e396cdb3df00bf4b5ed5ab9a834))
+- enhance documentation with additional guidance on allowlist patterns and task prompts ([17451da](https://github.com/CyanAutomation/kaseki-agent/commit/17451da713cc4755f450d88fe13e360a7d5721a0))
+- enhance error reporting with structured failure reasons and API updates ([8846e9d](https://github.com/CyanAutomation/kaseki-agent/commit/8846e9d2bb1c903793269723de887ee27d3189c7))
+- enhance pre-flight validation with comprehensive pattern matching functions and integration tests ([0480bc5](https://github.com/CyanAutomation/kaseki-agent/commit/0480bc5066aa67e3582936d6a4188bd8acb62280))
+- Implement comprehensive allowlist restoration system in kaseki-agent ([9367503](https://github.com/CyanAutomation/kaseki-agent/commit/9367503ac3ad1d3dd53afd63bbc8b981665e843e))
+- implement fail-fast validation behavior in Kaseki Agent ([d07b28c](https://github.com/CyanAutomation/kaseki-agent/commit/d07b28ccae7215064b43d4ec610b2e4df60abb9c))
+- Implement Phase 1 Error Reporting Enhancements ([421390b](https://github.com/CyanAutomation/kaseki-agent/commit/421390b7ab063cc8839116c4b9de37c2d0806d04))
+- remove trigger for Docker build workflow after release ([99ed6c5](https://github.com/CyanAutomation/kaseki-agent/commit/99ed6c5d03a161ba0eda5a6c792e27bb10849b3b))
 
 ## [1.0.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.0.0...v1.0.1) (2026-05-07)
 
 ### Bug Fixes
 
-* disable PR comments in semantic-release to avoid permission errors ([0701e3e](https://github.com/CyanAutomation/kaseki-agent/commit/0701e3ebf6042a2999102c6cae19c1c7f33dee4c))
+- disable PR comments in semantic-release to avoid permission errors ([0701e3e](https://github.com/CyanAutomation/kaseki-agent/commit/0701e3ebf6042a2999102c6cae19c1c7f33dee4c))
 
 ## 1.0.0 (2026-05-07)
 
 ### Features
 
-* add artifact, log, status, and webhook routes ([d592e12](https://github.com/CyanAutomation/kaseki-agent/commit/d592e129038fac33cb7541e77e1776baf30edfa9))
-* Add comprehensive implementation summary for Kaseki Agent API service ([bad4d94](https://github.com/CyanAutomation/kaseki-agent/commit/bad4d94fccc0bc5feab07c64def7a41a897ca7f8))
-* add kaseki-cli command-line interface and demo ([0d2a566](https://github.com/CyanAutomation/kaseki-agent/commit/0d2a566156b15fae950c8115d4591236eb3763bf))
-* Add post-implementation verification checklist for Kaseki Agent ([bb5e8ad](https://github.com/CyanAutomation/kaseki-agent/commit/bb5e8ad8d441e81781e421d248cbc0e4ff040b54))
-* add semantic release configuration and changelog ([d77a35a](https://github.com/CyanAutomation/kaseki-agent/commit/d77a35ab7eb6f2ccbe9676b227223764a55bef74))
-* add test utilities and validation tests for PreFlightValidator and configuration loading ([47bbed6](https://github.com/CyanAutomation/kaseki-agent/commit/47bbed69ad13351b804dc417fe7f3e6c831acc0f))
-* Implement EventCounterAggregator for event stream processing ([be990ac](https://github.com/CyanAutomation/kaseki-agent/commit/be990ace9b16924c706b09070f0a986883d46686))
-* Implement idempotency support and pre-flight validation for job submissions ([d5e0592](https://github.com/CyanAutomation/kaseki-agent/commit/d5e05923ddd3596c471ac86ff867f25cefa92e39))
-* Implement Kaseki API client and service ([c779c9e](https://github.com/CyanAutomation/kaseki-agent/commit/c779c9e27ff09c2bc621019f883e026ced45732a))
-* migrate project to TypeScript and update testing framework ([9309bdc](https://github.com/CyanAutomation/kaseki-agent/commit/9309bdc551c76841c61f60dcf481b6bcbceb2a7b))
-* Refactor and expand public API exports, add job lookup middleware, and implement utility functions ([74dfd62](https://github.com/CyanAutomation/kaseki-agent/commit/74dfd62f442dfa58b97fd201994f4fb9f539d4ce))
+- add artifact, log, status, and webhook routes ([d592e12](https://github.com/CyanAutomation/kaseki-agent/commit/d592e129038fac33cb7541e77e1776baf30edfa9))
+- Add comprehensive implementation summary for Kaseki Agent API service ([bad4d94](https://github.com/CyanAutomation/kaseki-agent/commit/bad4d94fccc0bc5feab07c64def7a41a897ca7f8))
+- add kaseki-cli command-line interface and demo ([0d2a566](https://github.com/CyanAutomation/kaseki-agent/commit/0d2a566156b15fae950c8115d4591236eb3763bf))
+- Add post-implementation verification checklist for Kaseki Agent ([bb5e8ad](https://github.com/CyanAutomation/kaseki-agent/commit/bb5e8ad8d441e81781e421d248cbc0e4ff040b54))
+- add semantic release configuration and changelog ([d77a35a](https://github.com/CyanAutomation/kaseki-agent/commit/d77a35ab7eb6f2ccbe9676b227223764a55bef74))
+- add test utilities and validation tests for PreFlightValidator and configuration loading ([47bbed6](https://github.com/CyanAutomation/kaseki-agent/commit/47bbed69ad13351b804dc417fe7f3e6c831acc0f))
+- Implement EventCounterAggregator for event stream processing ([be990ac](https://github.com/CyanAutomation/kaseki-agent/commit/be990ace9b16924c706b09070f0a986883d46686))
+- Implement idempotency support and pre-flight validation for job submissions ([d5e0592](https://github.com/CyanAutomation/kaseki-agent/commit/d5e05923ddd3596c471ac86ff867f25cefa92e39))
+- Implement Kaseki API client and service ([c779c9e](https://github.com/CyanAutomation/kaseki-agent/commit/c779c9e27ff09c2bc621019f883e026ced45732a))
+- migrate project to TypeScript and update testing framework ([9309bdc](https://github.com/CyanAutomation/kaseki-agent/commit/9309bdc551c76841c61f60dcf481b6bcbceb2a7b))
+- Refactor and expand public API exports, add job lookup middleware, and implement utility functions ([74dfd62](https://github.com/CyanAutomation/kaseki-agent/commit/74dfd62f442dfa58b97fd201994f4fb9f539d4ce))
 
 ### Bug Fixes
 
-* Adjust formatting in verification checklist for clarity ([e028619](https://github.com/CyanAutomation/kaseki-agent/commit/e0286191e1d9056264d10339c7f619658d16fa64))
-* correct regex pattern for matching imports in add-js-extensions script ([4cbe203](https://github.com/CyanAutomation/kaseki-agent/commit/4cbe2031a7364022463ac10bf2f030e1ca140b12))
-* Correct regex pattern for matching imports in add-js-extensions.ts ([38fb48a](https://github.com/CyanAutomation/kaseki-agent/commit/38fb48a16c5ad869dc5efe36b1f906d7910a70d9))
-* correct regex pattern for matching imports without extensions ([79bdabe](https://github.com/CyanAutomation/kaseki-agent/commit/79bdabe0a744bf7568c1af68f2dc91af76e532f1))
-* correct regex pattern for matching relative imports in add-js-extensions script ([fb8f509](https://github.com/CyanAutomation/kaseki-agent/commit/fb8f509ea05a1bc460f4caa29e1113069bf00c81))
-* disable no-explicit-any rule in TypeScript ESLint configuration ([ed905cb](https://github.com/CyanAutomation/kaseki-agent/commit/ed905cb7e8ef937989bc0ccfa5f56c6ce4d3a58c))
-* Update readFileSync mock handling and improve instance stage resolution logic ([7e5afb8](https://github.com/CyanAutomation/kaseki-agent/commit/7e5afb87b2ab9fa808b3af9daad7c563dc48800d))
+- Adjust formatting in verification checklist for clarity ([e028619](https://github.com/CyanAutomation/kaseki-agent/commit/e0286191e1d9056264d10339c7f619658d16fa64))
+- correct regex pattern for matching imports in add-js-extensions script ([4cbe203](https://github.com/CyanAutomation/kaseki-agent/commit/4cbe2031a7364022463ac10bf2f030e1ca140b12))
+- Correct regex pattern for matching imports in add-js-extensions.ts ([38fb48a](https://github.com/CyanAutomation/kaseki-agent/commit/38fb48a16c5ad869dc5efe36b1f906d7910a70d9))
+- correct regex pattern for matching imports without extensions ([79bdabe](https://github.com/CyanAutomation/kaseki-agent/commit/79bdabe0a744bf7568c1af68f2dc91af76e532f1))
+- correct regex pattern for matching relative imports in add-js-extensions script ([fb8f509](https://github.com/CyanAutomation/kaseki-agent/commit/fb8f509ea05a1bc460f4caa29e1113069bf00c81))
+- disable no-explicit-any rule in TypeScript ESLint configuration ([ed905cb](https://github.com/CyanAutomation/kaseki-agent/commit/ed905cb7e8ef937989bc0ccfa5f56c6ce4d3a58c))
+- Update readFileSync mock handling and improve instance stage resolution logic ([7e5afb8](https://github.com/CyanAutomation/kaseki-agent/commit/7e5afb87b2ab9fa808b3af9daad7c563dc48800d))
 
 ## [Unreleased]
 
@@ -240,6 +240,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [0.1.0] - 2026-05-07
 
 ### Features
+
 - Initial release of Kaseki Agent ephemeral coding-agent runner
 - Multi-stage Docker build with dependency caching
 - OpenRouter API integration for Pi CLI coding agents
@@ -252,6 +253,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Bug Fixes
 
 ### Documentation
+
 - Complete README with usage examples
 - Contributing guidelines for prompt changes and test expectations
 - Deployment documentation for Docker Compose and Node.js
