@@ -139,9 +139,25 @@ High-level client library for integration:
 
 ```bash
 npm install
-npm run build      # TypeScript → dist/
-npm run type-check  # TypeScript validation
+npm run build                    # TypeScript → dist/
+npm run type-check              # TypeScript validation
+npm run validate-module-imports # Verify Docker binary dependencies
 ```
+
+**About Module Validation:**
+
+The `validate-module-imports` script ensures that all binaries compiled for Docker (e.g., `kaseki-pi-progress-stream`, `kaseki-pi-event-filter`, `kaseki-report`) have all their import dependencies available. Before adding a new utility module to the codebase that other binaries depend on:
+
+1. Add the utility TypeScript file to `src/` (e.g., `src/new-util.ts`)
+2. Build the project: `npm run build`
+3. Run validation: `npm run validate-module-imports`
+4. If validation fails, add a copy command to [Dockerfile](../Dockerfile) in the build stage:
+   ```dockerfile
+   && cp dist/new-util.js /app/lib/new-util.js \
+   ```
+5. Re-run validation to confirm
+
+This prevents runtime `ERR_MODULE_NOT_FOUND` errors when the Docker image runs.
 
 ### Test
 

@@ -69,6 +69,7 @@
     "release": "semantic-release",
     "release:dry": "semantic-release --dry-run",
     "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js",
+    "validate-module-imports": "node scripts/validate-module-imports.js",
     "test:pack-artifact": "bash scripts/check-packed-artifact.sh"
   },
   "dependencies": {
