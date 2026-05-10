@@ -312,6 +312,18 @@ For non-running jobs, `progress` is omitted.
   "exitCode": 1,
   "failureClass": "validation",
   "resultDir": "/agents/kaseki-results/kaseki-42",
+  "resultSummaryContent": "# Kaseki Result: kaseki-42\n\n- Status: failed\n- Failed command: npm run test\n- Requested model: openrouter/free\n- Validation: failed (1)\n- Quality checks: passed\n",
+  "failureJsonContent": {
+    "instance": "kaseki-42",
+    "exit_code": 1,
+    "failed_command": "npm run test",
+    "validation_failure_reason": "Test timeout",
+    "stage": "validation",
+    "stderr_tail": "...",
+    "artifacts_dir": "/agents/kaseki-results/kaseki-42",
+    "metadata": "metadata.json",
+    "summary": "result-summary.md"
+  },
   "artifacts": {
     "metadataJson": true,
     "analysisMd": true,
@@ -330,28 +342,27 @@ For non-running jobs, `progress` is omitted.
 }
 ```
 
+**New Response Fields (Inline Diagnostic Content):**
+
+- `resultSummaryContent` — Inline markdown summary (always for terminal jobs, ≤64 KB)
+- `failureJsonContent` — Inline structured failure details (only for failed runs, ≤64 KB)
+
+These optional fields eliminate the need for separate API calls to fetch critical diagnostic content. Controllers can immediately access failure reasons without calling `/api/results/:id/result-summary.md` and `/api/results/:id/failure.json`.
+
+**Legacy Response Fields:**
+
+For backward compatibility, the response still includes:
+
+- `artifacts` — Hint object showing which artifacts are available
+- `diagnosticEntryPoint` — Recommended artifact to examine first
+- `availableFiles` — Array of file names available for download
+
 **Status Values:**
 
 - `queued` — Waiting in queue
 - `running` — Currently executing
 - `completed` — Finished successfully (check exitCode)
 - `failed` — Failed validation, timeout, or quality gate
-
-For terminal states (`completed` and `failed`), the response includes an `artifacts` object so clients can branch without probing `/api/results/:id/:file` and handling avoidable `404` responses. `availableFiles` is deterministic and ordered as:
-
-1) `metadata.json`
-2) `analysis.md`
-3) `result-summary.md`
-4) `failure.json`
-5) `stderr.log`
-
-For failed runs, `diagnosticEntryPoint` is included:
-
-- `failure.json` when present and non-empty
-- otherwise `analysis.md` when present and non-empty
-- otherwise `result-summary.md` when present and non-empty
-
-Zero-byte key artifacts are reported as unavailable, so controller clients can trust artifact hints instead of downloading empty placeholders.
 
 **Timeout Risk:** Percentage of agent timeout elapsed. Monitor for >85% and consider canceling if needed.
 
@@ -519,15 +530,15 @@ Comprehensive post-run analysis including metadata, changes, and validation resu
 
 **GET `/api/runs/:id/artifacts`**
 
-List only allowlisted artifact files, whether they currently exist, and whether each file is currently available to download.
-This endpoint is designed to remove guesswork before calling `GET /api/results/:id/:file`.
+Comprehensively enumerate all available artifacts with metadata, descriptions, and availability status.
+This endpoint exposes 25+ artifact types with detailed metadata to guide clients on triage priority and content selection.
 
 Resolution logic:
 
 - Uses `job.resultDir` when present.
 - Falls back to `${KASEKI_RESULTS_DIR}/${runId}` when `job.resultDir` is not set.
 
-**Example (failed run):**
+**Example (failed run with comprehensive artifacts):**
 
 ```bash
 curl -s -H "Authorization: Bearer sk-your-api-key" \
@@ -541,53 +552,118 @@ curl -s -H "Authorization: Bearer sk-your-api-key" \
   "id": "kaseki-42",
   "runStatus": "failed",
   "exitCode": 1,
+  "artifactCount": 18,
+  "downloadBaseUrl": "/api/results/kaseki-42/",
   "artifacts": [
-    { "name": "result-summary.md", "size": 1382, "contentType": "text/markdown", "available": true },
-    { "name": "failure.json", "size": 224, "contentType": "application/json", "available": true },
-    { "name": "stderr.log", "size": 9821, "contentType": "text/plain", "available": true },
-    { "name": "validation.log", "size": 0, "contentType": "text/plain", "available": false }
+    {
+      "name": "failure.json",
+      "size": 224,
+      "contentType": "application/json",
+      "available": true,
+      "description": "Structured failure classification: exit code, stage, reason, stderr tail",
+      "availability": "on-failure",
+      "triageOrder": 1
+    },
+    {
+      "name": "result-summary.md",
+      "size": 1382,
+      "contentType": "text/markdown",
+      "available": true,
+      "description": "Human-readable status summary with context and recommendations",
+      "availability": "always",
+      "triageOrder": 2
+    },
+    {
+      "name": "analysis.md",
+      "size": 2048,
+      "contentType": "text/markdown",
+      "available": true,
+      "description": "Comprehensive failure analysis with recommendations",
+      "availability": "always",
+      "triageOrder": 3
+    },
+    {
+      "name": "pi-events.jsonl",
+      "size": 51024,
+      "contentType": "application/x-jsonl",
+      "available": true,
+      "description": "Pi CLI structured events (sanitized, no thinking blocks)",
+      "availability": "always",
+      "triageOrder": 4
+    },
+    {
+      "name": "changed-files.txt",
+      "size": 142,
+      "contentType": "text/plain",
+      "available": true,
+      "description": "One filename per line: files modified by the agent",
+      "availability": "conditional",
+      "triageOrder": 14
+    }
   ],
-  "recommended": ["failure.json", "stderr.log", "stdout.log", "validation.log", "quality.log"]
+  "recommended": ["failure.json", "result-summary.md", "analysis.md", "stderr.log", "stdout.log"]
 }
 ```
 
-`recommended` is status-aware:
+**Response Fields:**
 
-- `failed`: triage artifacts (`failure.json`, logs, quality/validation output)
-- non-failed (`queued`, `running`, `completed`): summary artifacts (`result-summary.md`, `metadata.json`, `pi-summary.json`, `git.diff`)
+- `artifactCount` — Number of available artifacts
+- `downloadBaseUrl` — Base URL for artifact downloads
+- `artifacts` — Array of all artifacts with metadata
+  - `availability` — `always`, `on-failure`, `on-success`, or `conditional`
+  - `triageOrder` — Sort priority for diagnostic triage (lower = higher priority)
+  - `description` — Human-readable artifact purpose
+- `recommended` — Top 5 artifacts to examine first (status-aware triage order)
+
+**All Available Artifact Types (25+):**
+
+| Name | Availability | Type | Purpose |
+|------|--------------|------|---------|
+| `failure.json` | on-failure | JSON | Structured failure details |
+| `result-summary.md` | always | Markdown | Human-readable status |
+| `analysis.md` | always | Markdown | Comprehensive analysis |
+| `pi-events.jsonl` | always | JSONL | Agent events |
+| `pi-summary.json` | always | JSON | Agent statistics |
+| `stderr.log` | on-failure | Text | Container errors |
+| `stdout.log` | on-failure | Text | Container output |
+| `validation.log` | on-failure | Text | Validation results |
+| `validation-timings.tsv` | conditional | TSV | Per-command timing |
+| `quality.log` | on-failure | Text | Quality gate results |
+| `stage-timings.tsv` | conditional | TSV | Per-stage timing |
+| `git.diff` | conditional | Diff | Repository changes |
+| `git.status` | conditional | Text | Git status output |
+| `changed-files.txt` | conditional | Text | Modified files list |
+| `progress.log` | always | Text | Progress log |
+| `progress.jsonl` | always | JSONL | Structured progress |
+| `metadata.json` | always | JSON | Run metadata |
+| `restoration-report.md` | conditional | Markdown | Allowlist restoration |
+| `secret-scan.log` | always | Text | Credential scan |
+| `git-push.log` | conditional | Text | GitHub push results |
+| `dependency-cache.log` | conditional | Text | Dependency cache info |
+| `exit_code` | always | Text | Exit code |
+| ...and more | — | — | — |
 
 ### Download Artifact
 
 **GET `/api/results/:id/:file`**
 
-Download specific result artifacts.
-
-**Allowed Files (always-safe summary artifacts):**
-
-- `git.diff` — Unified diff of changes
-- `metadata.json` — Full run metadata
-- `analysis.md` — Canonical failure-minimum analysis summary (when run fails)
-- `result-summary.md` — Human-readable summary
-- `pi-events.jsonl` — Pi agent events (newline-delimited JSON)
-- `pi-summary.json` — Pi agent statistics
-- `progress.log` — Execution progress log
-
-**Allowed Files (failure-only diagnostics):**
-
-- `failure.json` — Failure classification and details
-- `stderr.log` — Captured standard error output
-- `stdout.log` — Captured standard output
-- `validation.log` — Validation command output (if validation configured)
-- `quality.log` — Quality-gate output (if quality checks configured)
-
-Failure-only diagnostics are returned only when the run status is `failed`.
+Download a specific artifact file. Now supports all 25+ artifact types enumerated by `/api/runs/:id/artifacts`.
 
 **Example:**
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \
-  http://localhost:8080/api/results/kaseki-42/git.diff -o patch.diff
+  http://localhost:8080/api/results/kaseki-42/failure.json
 ```
+
+**Availability Filtering:**
+
+- `on-failure` artifacts are only available when `runStatus === 'failed'`
+- `on-success` artifacts are only available when `runStatus === 'completed'`
+- `always` artifacts available for terminal states
+- `conditional` artifacts require file existence on disk
+
+Attempting to download an unavailable artifact returns `400 Bad Request`.
 
 ## Error Handling
 

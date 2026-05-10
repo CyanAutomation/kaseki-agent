@@ -116,6 +116,35 @@ export class StatusResponseBuilder {
       availableFiles: STATUS_KEY_FILES.filter((fileName) => keyFileAvailability[fileName]),
     };
 
+    // Inline diagnostic content for immediate access
+    try {
+      // Always try to load result-summary.md for terminal jobs
+      const summaryPath = path.join(runDir, 'result-summary.md');
+      if (fs.existsSync(summaryPath)) {
+        const content = fs.readFileSync(summaryPath, 'utf-8');
+        if (content.length > 0 && content.length <= 65536) { // Max 64 KB inline
+          response.resultSummaryContent = content;
+        }
+      }
+
+      // Load failure.json for failed jobs
+      if (job.status === 'failed') {
+        const failurePath = path.join(runDir, 'failure.json');
+        if (fs.existsSync(failurePath)) {
+          const content = fs.readFileSync(failurePath, 'utf-8');
+          if (content.length > 0 && content.length <= 65536) { // Max 64 KB inline
+            try {
+              response.failureJsonContent = JSON.parse(content);
+            } catch {
+              // If JSON parse fails, skip inlining
+            }
+          }
+        }
+      }
+    } catch {
+      // Silently skip inlining if any error occurs
+    }
+
     if (job.status === 'failed') {
       if (keyFileAvailability['failure.json']) {
         response.diagnosticEntryPoint = 'failure.json';

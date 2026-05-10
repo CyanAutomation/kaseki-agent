@@ -546,11 +546,109 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as any;
       expect(body.runStatus).toBe('running');
-      expect(body.recommended).toContain('result-summary.md');
+      // Running jobs have no recommended artifacts (non-terminal)
+      expect(body.recommended.length).toBe(0);
       const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
       const summaryFile = body.artifacts.find((artifact: any) => artifact.name === 'result-summary.md');
       expect(stderrFile.available).toBe(false);
-      expect(summaryFile.available).toBe(true);
+      expect(summaryFile.available).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('artifact enumeration includes all artifacts with metadata and descriptions', async () => {
+    const jobId = 'kaseki-comprehensive-artifacts';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    // Create a mix of artifacts to test availability filtering
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# Summary');
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"exit_code": 1}');
+    fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'errors');
+    fs.writeFileSync(path.join(jobDir, 'pi-events.jsonl'), '');
+    fs.writeFileSync(path.join(jobDir, 'pi-summary.json'), '{}');
+    fs.writeFileSync(path.join(jobDir, 'changed-files.txt'), 'src/file.ts');
+    fs.writeFileSync(path.join(jobDir, 'git.diff'), 'diff content');
+    fs.writeFileSync(path.join(jobDir, 'validation.log'), 'validation results');
+    fs.writeFileSync(path.join(jobDir, 'quality.log'), 'quality results');
+    fs.writeFileSync(path.join(jobDir, 'progress.log'), 'progress');
+    fs.writeFileSync(path.join(jobDir, 'progress.jsonl'), '{"stage":"done"}');
+    fs.writeFileSync(path.join(jobDir, 'exit_code'), '1');
+    fs.writeFileSync(path.join(jobDir, 'restoration-report.md'), '# Restoration');
+    fs.writeFileSync(path.join(jobDir, 'validation-timings.tsv'), 'command\tstart\tend');
+    fs.writeFileSync(path.join(jobDir, 'stage-timings.tsv'), 'stage\tstart\tend');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      
+      // Verify comprehensive enumeration
+      expect(body.artifacts.length).toBeGreaterThan(15); // Should have many artifacts
+      expect(body.artifactCount).toBeGreaterThan(10); // At least 10 available
+      expect(body.downloadBaseUrl).toBe(`/api/results/${jobId}/`);
+      
+      // Verify metadata inclusion
+      const resultSummary = body.artifacts.find((a: any) => a.name === 'result-summary.md');
+      expect(resultSummary).toMatchObject({
+        name: 'result-summary.md',
+        available: true,
+        contentType: 'text/markdown',
+        description: expect.stringContaining('summary'),
+        availability: 'always',
+      });
+      
+      // Verify conditional artifacts
+      const changedFiles = body.artifacts.find((a: any) => a.name === 'changed-files.txt');
+      expect(changedFiles).toMatchObject({
+        available: true,
+        contentType: 'text/plain',
+        description: expect.stringContaining('filename'),
+        availability: 'conditional',
+      });
+      
+      // Verify failure-only artifacts
+      const failureJson = body.artifacts.find((a: any) => a.name === 'failure.json');
+      expect(failureJson).toMatchObject({
+        available: true,
+        availability: 'on-failure',
+      });
+      
+      // Verify triage order hint
+      expect(body.recommended[0]).toBe('failure.json'); // Should be first for failed run
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
@@ -1258,6 +1356,155 @@ describe('kaseki-api-routes status artifact hints', () => {
         message: 'container booted',
         updatedAt: '2026-05-05T00:00:02.000Z',
       });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('failed run inlines result-summary.md content in status response', async () => {
+    const jobId = 'kaseki-failed-inline-summary';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    const summaryContent = '# Kaseki Result\n\n- Status: failed\n- Exit code: 1\n';
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), summaryContent);
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.resultSummaryContent).toBe(summaryContent);
+      expect(body.resultSummaryContent).toContain('# Kaseki Result');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('failed run inlines failure.json content in status response', async () => {
+    const jobId = 'kaseki-failed-inline-failure';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    const failureData = { instance: jobId, exit_code: 1, failed_command: 'npm run test', failureClass: 'validation' };
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify(failureData));
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# Summary');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 1 } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.failureJsonContent).toEqual(failureData);
+      expect(body.failureJsonContent.exit_code).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('completed run does not inline failure.json (not applicable)', async () => {
+    const jobId = 'kaseki-completed-no-failure';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# Success');
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'completed', createdAt: new Date(), resultDir: jobDir, exitCode: 0 } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.resultSummaryContent).toBeDefined();
+      expect(body.failureJsonContent).toBeUndefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
