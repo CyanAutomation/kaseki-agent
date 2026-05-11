@@ -343,6 +343,7 @@ http://localhost:8080/docs
 ```
 
 This provides an interactive interface to:
+
 - Browse all endpoints organized by category
 - View request/response schemas
 - Test endpoints with "Try it out" feature

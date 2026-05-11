@@ -284,7 +284,7 @@ rl.on('line', (line: string) => {
 rl.on('close', () => {
   streamOpen = false;
   clearInterval(heartbeatTimer);
-  
+
   // Flush any pending tool batches
   toolBatchAggregator.flush();
   maybeHeartbeat(true, 'close');
