@@ -47,6 +47,8 @@ VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
+FILTER_STDERR_TAIL=""
+FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
@@ -373,6 +375,8 @@ write_metadata() {
   "github_api_error_type": $(printf '%s' "$GITHUB_API_ERROR_TYPE" | json_encode),
   "github_api_error_message": $(printf '%s' "$GITHUB_API_ERROR_MESSAGE" | json_encode),
   "github_api_http_status": $(printf '%s' "$GITHUB_API_HTTP_STATUS" | json_encode),
+  "validation_filter_stderr_tail": $(printf '%s' "$FILTER_STDERR_TAIL" | json_encode),
+  "validation_filter_exit_code": 0,
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
@@ -2267,7 +2271,7 @@ else
       command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
-    } 2>&1 | tee -a /results/validation.log | validation-output-filter
+    } 2>&1 | tee -a /results/validation.log | validation-output-filter 2>>"$FILTER_STDERR_FILE"
     pipe_statuses=("${PIPESTATUS[@]}")
     set +o pipefail
     # pipe_statuses[0] = bash command exit code
@@ -2280,6 +2284,16 @@ else
     printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$VALIDATION_TIMINGS_FILE"
     emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
     
+    # Capture and process filter stderr for diagnostics
+    if [ -f "$FILTER_STDERR_FILE" ] && [ -s "$FILTER_STDERR_FILE" ]; then
+      FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter stderr>')"
+      {
+        printf '\n[DIAGNOSTICS] Validation output filter stderr (last 50 lines):\n'
+        printf '%s\n' "$FILTER_STDERR_TAIL"
+      } | tee -a /results/validation.log /results/quality.log
+      rm -f "$FILTER_STDERR_FILE"
+    fi
+    
     # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13)
     if [ "$command_exit" -eq 141 ] && [ "$filter_exit" -ne 0 ]; then
       {
@@ -2287,7 +2301,11 @@ else
         printf '  Command exit code: 141 (SIGPIPE)\n'
         printf '  Filter exit code: %s\n' "$filter_exit"
         printf '  This typically indicates the validation-output-filter process encountered an error.\n'
-        printf '  Check stderr of validation-output-filter for details.\n'
+        if [ -n "$FILTER_STDERR_TAIL" ]; then
+          printf '  Filter stderr was captured above.\n'
+        else
+          printf '  (No stderr captured from filter)\n'
+        fi
       } | tee -a /results/quality.log
     fi
     
