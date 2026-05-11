@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -166,7 +165,7 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 
   test('hydrates GitHub App ID values from configured secret files for controller runs', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '12345';
       if (name === 'github_app_client_id') return 'Iv123client';
@@ -214,7 +213,7 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 
   test('reads GitHub App ID values from host secrets for controller runs', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '67890';
       if (name === 'github_app_client_id') return 'IvInlineClient';

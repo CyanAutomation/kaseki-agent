@@ -247,7 +247,7 @@ function main(): void {
         // Catch any write errors to stdout (e.g., broken pipe from downstream process)
         try {
           console.log(outputLine);
-        } catch (writeErr) {
+        } catch {
           // If console.log fails, mark error but don't crash
           hasErrors = true;
           // Note: In pipe context, EPIPE errors might not throw; just mark for exit code

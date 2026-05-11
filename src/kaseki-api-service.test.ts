@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import * as fs from 'fs';
 import type { Server } from 'http';
 import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
@@ -30,7 +29,7 @@ describe('Kaseki API Configuration', () => {
   });
 
   test('loadConfig requires KASEKI_API_KEYS or KASEKI_API_KEYS_FILE', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockReturnValue(null);
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
@@ -70,7 +69,7 @@ describe('Kaseki API Configuration', () => {
       expectedPort: 65535,
     },
   ])('loadConfig port boundaries: $name', ({ port, expectedError, expectedPort }) => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_API_PORT = port;
@@ -117,7 +116,7 @@ describe('Kaseki API Configuration', () => {
       },
     },
   ])('loadConfig normalization: $name', ({ apiKeysValue, port, maxConcurrentRuns, expectedConfig }) => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockReturnValue(apiKeysValue);
 
     if (port) process.env.KASEKI_API_PORT = port;
@@ -138,7 +137,7 @@ describe('Kaseki API Configuration', () => {
   });
 
   test('loadConfig parses API keys from file', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     const fileContents = 'key1\n# comment\nkey2\n';
     (readHostSecret as jest.Mock).mockReturnValue(fileContents);
 
