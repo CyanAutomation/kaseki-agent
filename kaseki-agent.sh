@@ -49,6 +49,9 @@ VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
+VALIDATION_RAW_LOG="/results/validation-raw.log"
+FILTER_DIAGNOSTICS_LOG="/results/filter-diagnostics.log"
+VALIDATION_ENV_LOG="/results/validation-env.log"
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
@@ -2206,6 +2209,24 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
+printf '\n==> validation environment\n'
+log_validation_environment() {
+  {
+    printf '[validation environment] timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '[validation environment] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+    printf '[validation environment] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
+    printf '[validation environment] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
+    printf '[validation environment] npm_config_registry=%s\n' "$(npm config get registry 2>/dev/null || echo '<not set>')"
+    printf '[validation environment] npm_config_cache=%s\n' "$(npm config get cache 2>/dev/null || echo '<not set>')"
+    printf '[validation environment] PATH=%s\n' "$PATH"
+    printf '[validation environment] NODE_OPTIONS=%s\n' "${NODE_OPTIONS:-<not set>}"
+    printf '[validation environment] NODE_PATH=%s\n' "${NODE_PATH:-<not set>}"
+    printf '[validation environment] disk_space_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+    printf '[validation environment] disk_space_used=%s\n' "$(du -sh /results 2>/dev/null | cut -f1 || echo '<du failed>')"
+  } | tee -a /results/validation.log /results/validation-env.log
+}
+log_validation_environment
+
 printf '\n==> validation\n'
 set_current_stage "validation"
 emit_progress "validation" "started"
@@ -2259,6 +2280,14 @@ else
     fi
     ((VALIDATION_COMMANDS_ATTEMPTED++))
     emit_event "validation_command_started" "command=$trimmed"
+    # Log command environment state before execution
+    {
+      printf '[validation command] command=%s\n' "$trimmed"
+      printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+      printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
+      printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
+      printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+    } | tee -a /results/validation-env.log
     # Use pipefail to catch errors in any stage of the pipe
     set -o pipefail
     {
@@ -2271,7 +2300,7 @@ else
       command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
-    } 2>&1 | tee -a /results/validation.log | validation-output-filter 2>>"$FILTER_STDERR_FILE"
+    } 2>&1 | tee -a /results/validation.log /results/validation-raw.log | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
     pipe_statuses=("${PIPESTATUS[@]}")
     set +o pipefail
     # pipe_statuses[0] = bash command exit code
