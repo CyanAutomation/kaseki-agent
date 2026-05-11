@@ -218,7 +218,6 @@ export function filterValidationOutput(input: string): string {
  */
 function main(): void {
   const state = createInitialState();
-  let hasErrors = false;
 
   const rl = createInterface({
     input: process.stdin,
@@ -228,15 +227,15 @@ function main(): void {
 
   // Handle readline errors (e.g., stdin closed prematurely, encoding issues)
   rl.on('error', (err) => {
-    hasErrors = true;
     // Log to stderr but don't crash - allow graceful shutdown
     console.error(`[validation-output-filter] readline error: ${err.message}`);
   });
 
   // Handle stdin close event
   rl.on('close', () => {
-    // Exit with 0 if no errors (filter success), 1 if errors occurred
-    process.exitCode = hasErrors ? 1 : 0;
+    // Always exit with 0 (filter is diagnostic tool, not part of command logic).
+    // Internal errors are logged to stderr but don't block the pipeline.
+    process.exitCode = 0;
   });
 
   rl.on('line', (line: string) => {
@@ -248,13 +247,11 @@ function main(): void {
         try {
           console.log(outputLine);
         } catch {
-          // If console.log fails, mark error but don't crash
-          hasErrors = true;
-          // Note: In pipe context, EPIPE errors might not throw; just mark for exit code
+          // If console.log fails, continue gracefully (stream may have closed downstream)
+          // Note: In pipe context, EPIPE errors might not throw
         }
       }
     } catch (lineErr) {
-      hasErrors = true;
       console.error(
         `[validation-output-filter] Error processing line: ${lineErr instanceof Error ? lineErr.message : String(lineErr)}`
       );
@@ -269,8 +266,8 @@ function main(): void {
     stdout.on('error', (err) => {
       // EPIPE is expected when downstream closes; don't treat as error
       if (err.code !== 'EPIPE') {
-        hasErrors = true;
-        // Silently handle; closing stdin will trigger graceful exit
+        // Log error but continue; we always exit 0 anyway
+        console.error(`[validation-output-filter] stdout error: ${err.message}`);
       }
     });
   }
@@ -286,13 +283,11 @@ function main(): void {
 
   // Handle process-level errors (uncaught exceptions, unhandled rejections)
   process.on('error', (err) => {
-    hasErrors = true;
     console.error(`[validation-output-filter] process error: ${err.message}`);
     // Don't call process.exit() - let graceful shutdown via stdin close
   });
 
   process.on('uncaughtException', (err) => {
-    hasErrors = true;
     console.error(
       `[validation-output-filter] uncaught exception: ${err instanceof Error ? err.message : String(err)}`
     );
@@ -301,7 +296,6 @@ function main(): void {
 
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason) => {
-    hasErrors = true;
     console.error(
       `[validation-output-filter] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`
     );
