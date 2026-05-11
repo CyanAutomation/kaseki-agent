@@ -16,6 +16,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 | **7** | Quality Gate | Validation Allowlist Violation | Files changed during validation are outside allowlist |
 | **124** | Timeout | Agent Timeout | Agent invocation exceeded `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | **127** | Docker | Docker Init Failed | Docker container initialization failed (missing entrypoint script) |
+| **141** | Validation | SIGPIPE | Validation output filter crashed or exited unexpectedly (broken pipe) |
 
 ## Detailed Descriptions
 
@@ -221,6 +222,66 @@ If the problem persists, check Docker logs:
 ```bash
 docker run --rm docker.io/cyanautomation/kaseki-agent:latest ls -la /usr/local/bin/kaseki-*
 ```
+
+---
+
+### 141 — SIGPIPE (Broken Pipe) in Validation Pipeline
+
+The validation command encountered SIGPIPE (signal 13), which indicates the output filter process (`validation-output-filter`) crashed or exited unexpectedly while processing command output.
+
+**Root cause:** When a process in a pipe chain exits abruptly without properly closing its input/output, the upstream process receives SIGPIPE (signal 13 = exit code 128 + 13 = 141).
+
+**Common causes:**
+
+- `validation-output-filter` encountered an error while processing output (e.g., readline error, encoding issue)
+- Underlying npm/test/build command produced output that triggered an unhandled exception in the filter
+- System resource constraint (memory, file descriptors) caused filter process to abort
+- Filter received a signal that caused abnormal termination
+
+**Diagnosis:**
+
+1. Check the validation log for error messages from the filter:
+
+   ```bash
+   grep -i "validation-output-filter" /agents/kaseki-results/<instance-id>/validation.log
+   cat /agents/kaseki-results/<instance-id>/validation.log
+   ```
+
+2. Check stderr for detailed error information:
+
+   ```bash
+   tail -50 /agents/kaseki-results/<instance-id>/stderr.log
+   ```
+
+3. Look for filter-specific errors in quality diagnostics:
+
+   ```bash
+   grep "DIAGNOSTICS" -A 10 /agents/kaseki-results/<instance-id>/quality.log
+   ```
+
+**Action:**
+
+1. **First attempt:** Re-run the same command to see if it was a transient error:
+
+   ```bash
+   kaseki-agent run --retry
+   ```
+
+2. **If persists:** Disable the validation output filter temporarily:
+
+   ```bash
+   KASEKI_VALIDATION_NO_FILTER=1 kaseki-agent run <repo> <ref> <task>
+   ```
+
+3. **Investigate:** If disabling the filter helps, report the issue with:
+   - Full validation.log output
+   - Details about what validation command was running
+   - Output size (check `wc -l /agents/kaseki-results/<instance-id>/validation.log`)
+
+4. **Review the task:** Large or unusual validation output may trigger edge cases:
+   - Simplify validation commands if possible
+   - Consider splitting large test suites
+   - Check if validation commands are producing unusually large output
 
 ---
 

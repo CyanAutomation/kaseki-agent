@@ -401,4 +401,74 @@ exit_code=0`;
       expect(output).toContain('Bundle complete');
     });
   });
+
+  describe('Error handling (process-level)', () => {
+    it('should not crash on empty input to readline', async () => {
+      // This tests the filterValidationOutput function which is used in non-streaming context
+      // The streaming error handling is tested through integration tests
+      const input = '';
+      const output = await runFilter(input);
+      // Should not throw, should return empty string
+      expect(output).toBe('');
+    });
+
+    it('should handle input with only command boundaries and no content', async () => {
+      const input = `==> npm run test
+exit_code=0`;
+      const output = await runFilter(input);
+      expect(output).toContain('==> npm run test');
+      expect(output).toContain('exit_code=0');
+    });
+
+    it('should preserve output even with mixed verbose and error content', async () => {
+      const input = `==> npm run check
+verbose line 1
+ERROR: TypeScript compilation failed
+verbose line 2
+ERROR: Type mismatch in file.ts
+verbose line 3
+exit_code=1`;
+      const output = await runFilter(input);
+      expect(output).toContain('ERROR: TypeScript compilation failed');
+      expect(output).toContain('ERROR: Type mismatch in file.ts');
+      expect(output).not.toContain('verbose line 1');
+      expect(output).not.toContain('verbose line 2');
+      expect(output).not.toContain('verbose line 3');
+    });
+
+    it('should handle commands with no meaningful output (only verbose lines)', async () => {
+      const input = `==> npm run silent-task
+Running background task...
+Processing items...
+Finalizing...
+exit_code=0`;
+      const output = await runFilter(input);
+      // Should include command boundaries but filter out verbose lines
+      expect(output).toContain('==> npm run silent-task');
+      expect(output).toContain('exit_code=0');
+      expect(output).not.toContain('Running background task');
+    });
+
+    it('should handle rapid fire error lines without losing data', async () => {
+      const input = `==> npm run test
+ERROR: error 1
+ERROR: error 2
+ERROR: error 3
+ERROR: error 4
+ERROR: error 5
+exit_code=1`;
+      const output = await runFilter(input);
+      const errorLines = output.split('\n').filter((l) => l.includes('ERROR'));
+      expect(errorLines.length).toBe(5);
+    });
+
+    it('should handle malformed exit_code line gracefully', async () => {
+      const input = `==> npm run test
+Some output
+exit_code=abc
+exit_code=0`;
+      const output = await runFilter(input);
+      expect(output).toContain('exit_code');
+    });
+  });
 });

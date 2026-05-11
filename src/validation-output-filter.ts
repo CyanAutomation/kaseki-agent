@@ -218,30 +218,96 @@ export function filterValidationOutput(input: string): string {
  */
 function main(): void {
   const state = createInitialState();
+  let hasErrors = false;
+
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: false,
   });
 
-  rl.on('line', (line: string) => {
-    const outputLine = processLine(line, state);
+  // Handle readline errors (e.g., stdin closed prematurely, encoding issues)
+  rl.on('error', (err) => {
+    hasErrors = true;
+    // Log to stderr but don't crash - allow graceful shutdown
+    console.error(`[validation-output-filter] readline error: ${err.message}`);
+  });
 
-    if (outputLine !== null) {
-      console.log(outputLine);
+  // Handle stdin close event
+  rl.on('close', () => {
+    // Exit with 0 if no errors (filter success), 1 if errors occurred
+    process.exitCode = hasErrors ? 1 : 0;
+  });
+
+  rl.on('line', (line: string) => {
+    try {
+      const outputLine = processLine(line, state);
+
+      if (outputLine !== null) {
+        // Catch any write errors to stdout (e.g., broken pipe from downstream process)
+        try {
+          console.log(outputLine);
+        } catch (writeErr) {
+          // If console.log fails, mark error but don't crash
+          hasErrors = true;
+          // Note: In pipe context, EPIPE errors might not throw; just mark for exit code
+        }
+      }
+    } catch (lineErr) {
+      hasErrors = true;
+      console.error(
+        `[validation-output-filter] Error processing line: ${lineErr instanceof Error ? lineErr.message : String(lineErr)}`
+      );
     }
   });
 
-  rl.on('close', () => {
-    process.exitCode = 0;
+  // Handle stdout/stderr errors (e.g., broken pipe from downstream process)
+  const stdout = process.stdout;
+  const stderr = process.stderr;
+
+  if (stdout && typeof stdout.on === 'function') {
+    stdout.on('error', (err) => {
+      // EPIPE is expected when downstream closes; don't treat as error
+      if (err.code !== 'EPIPE') {
+        hasErrors = true;
+        // Silently handle; closing stdin will trigger graceful exit
+      }
+    });
+  }
+
+  if (stderr && typeof stderr.on === 'function') {
+    stderr.on('error', (err) => {
+      // Ignore stderr errors; we're already reporting issues
+      if (err.code !== 'EPIPE') {
+        // Silent handling
+      }
+    });
+  }
+
+  // Handle process-level errors (uncaught exceptions, unhandled rejections)
+  process.on('error', (err) => {
+    hasErrors = true;
+    console.error(`[validation-output-filter] process error: ${err.message}`);
+    // Don't call process.exit() - let graceful shutdown via stdin close
+  });
+
+  process.on('uncaughtException', (err) => {
+    hasErrors = true;
+    console.error(
+      `[validation-output-filter] uncaught exception: ${err instanceof Error ? err.message : String(err)}`
+    );
+    // Don't call process.exit() - let graceful shutdown via stdin close
+  });
+
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason) => {
+    hasErrors = true;
+    console.error(
+      `[validation-output-filter] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`
+    );
+    // Don't call process.exit() - let graceful shutdown via stdin close
   });
 }
-
-// Handle errors gracefully
-process.on('error', (err) => {
-  console.error(`[validation-output-filter] Error: ${err.message}`);
-  process.exit(1);
-});
 
 const entrypoint = process.argv[1] ? basename(process.argv[1]) : '';
 
