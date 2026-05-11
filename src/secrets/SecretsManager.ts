@@ -16,7 +16,7 @@ import { createLogger } from '../logger';
 
 const logger = createLogger('secrets');
 
-export interface SecretsStore {
+interface SecretsStore {
   store(key: string, value: string): Promise<void>;
   retrieve(key: string): Promise<string | null>;
   delete(key: string): Promise<void>;
@@ -26,7 +26,7 @@ export interface SecretsStore {
 /**
  * File-based secrets store (fallback, headless systems)
  */
-export class FileSecretsStore implements SecretsStore {
+class FileSecretsStore implements SecretsStore {
   private baseDir: string;
 
   constructor(baseDir?: string) {
@@ -99,7 +99,7 @@ export class FileSecretsStore implements SecretsStore {
  * Linux pass (password-store) backed secrets
  * Requires: pass package installed and initialized
  */
-export class PassSecretsStore implements SecretsStore {
+class PassSecretsStore implements SecretsStore {
   private prefix: string;
 
   constructor(prefix: string = 'kaseki-agent') {

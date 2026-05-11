@@ -183,6 +183,4 @@ export class KasekiAPIServiceImpl {
   }
 }
 
-// Export both class name styles for compatibility
-export const KasekiAPIService = KasekiAPIServiceImpl;
 export default KasekiAPIServiceImpl;

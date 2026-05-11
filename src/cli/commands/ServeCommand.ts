@@ -4,7 +4,7 @@
  */
 
 import { BaseCommand } from '../BaseCommand';
-import { KasekiAPIService } from '../../kaseki-api-service-wrapper';
+import KasekiAPIServiceImpl from '../../kaseki-api-service-wrapper';
 import { createLogger } from '../../logger';
 
 const logger = createLogger('serve-cmd');
@@ -28,7 +28,7 @@ export class ServeCommand extends BaseCommand {
       const apiKeys = apiKeysEnv ? apiKeysEnv.split(',') : [];
 
       // Create and start service
-      const apiService = new KasekiAPIService({
+      const apiService = new KasekiAPIServiceImpl({
         port,
         apiKeys,
         logLevel: this.configManager.get('debug.log_level', 'info'),
