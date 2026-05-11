@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
+import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { classifyDockerFailure, decodeUtf8TailSafely, tailLogByLines } from './kaseki-api-routes';
 import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
@@ -274,7 +275,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
   });
 
   test('GET /api/preflight reports readable GitHub App file credentials', async () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '12345';
       if (name === 'github_app_client_id') return 'Iv123client';
@@ -308,7 +309,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
   });
 
   test('GET /api/preflight flags incomplete GitHub App configuration', async () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null); // No GitHub App credentials
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-missing-'));
@@ -1695,7 +1696,7 @@ describe('kaseki-api-routes publish mode validation', () => {
   });
 
   test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     // Ensure mock returns null for all GitHub App secrets
     (readHostSecret as jest.Mock).mockReset();
     (readHostSecret as jest.Mock).mockReturnValue(null);

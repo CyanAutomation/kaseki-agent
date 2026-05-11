@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig, validateApiKey } from './kaseki-api-config';
+import * as hostSecretsReader from './secrets/host-secrets-reader';
 
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
@@ -28,7 +29,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig loads API keys from host secrets', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('key1\nkey2\nkey3');
 
     process.env.KASEKI_API_PORT = '3000';
@@ -88,7 +89,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_KEYS is not set', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null);
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -97,7 +98,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -107,7 +108,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_PORT is out of range', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -117,7 +118,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_MAX_CONCURRENT_RUNS is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -127,7 +128,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_AGENT_TIMEOUT_SECONDS is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -137,7 +138,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_MAX_DIFF_BYTES is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -147,7 +148,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_JOB_INDEX_MAX_ENTRIES is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -157,7 +158,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when artifact cache configuration is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -174,7 +175,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -184,7 +185,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig auto-creates KASEKI_RESULTS_DIR if it does not exist', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     const newDir = path.join(testDir, 'new', 'nested', 'dir');
@@ -198,7 +199,7 @@ describe('kaseki-api-config load configuration', () => {
   });
 
   test('loadConfig throws when KASEKI_API_LOG_LEVEL is invalid', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_RESULTS_DIR = testDir;
@@ -214,7 +215,7 @@ describe('kaseki-api-config API key parsing from host secrets', () => {
   });
 
   test('loadConfig parses newline-separated API keys from host secrets', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('key1\nkey2\nkey3');
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
@@ -225,7 +226,7 @@ describe('kaseki-api-config API key parsing from host secrets', () => {
   });
 
   test('loadConfig skips comments and empty lines in API keys', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('# Comment\nkey1\n\n# Another\nkey2\n');
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
@@ -236,7 +237,7 @@ describe('kaseki-api-config API key parsing from host secrets', () => {
   });
 
   test('loadConfig strips whitespace from API keys', () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('  key1  \n  key2  \n  key3  ');
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
