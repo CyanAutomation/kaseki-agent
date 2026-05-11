@@ -240,28 +240,3 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 };
-
-/**
- * Get artifact metadata by name.
- */
-export function getArtifactMetadata(name: string): ArtifactMetadataDefinition | undefined {
-  return ARTIFACT_METADATA_REGISTRY[name];
-}
-
-/**
- * Get all artifact names in triage order (lowest triageOrder first).
- */
-export function getArtifactsByTriageOrder(): string[] {
-  return Object.values(ARTIFACT_METADATA_REGISTRY)
-    .sort((a, b) => (a.triageOrder ?? 999) - (b.triageOrder ?? 999))
-    .map((m) => m.name);
-}
-
-/**
- * Filter artifacts by availability.
- */
-export function getArtifactsByAvailability(
-  availability: ArtifactAvailability
-): ArtifactMetadataDefinition[] {
-  return Object.values(ARTIFACT_METADATA_REGISTRY).filter((m) => m.availability === availability);
-}
