@@ -169,7 +169,7 @@ function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void
   }
 
   const elapsed = formatElapsed(startTime);
-  const message = `${ANSI_COLORS.DIM}⏱ ${elapsed} elapsed${ANSI_COLORS.RESET}`;
+  const message = `${ANSI_COLORS.DIM}Time Check: ${elapsed} elapsed${ANSI_COLORS.RESET}`;
 
   emit('pi coding agent', message, {
     reason,
@@ -206,7 +206,7 @@ function emitMessageSummary(event: PiEvent): void {
   }
 
   if (detail) {
-    const message = `pi coding agent: ${detail} (${elapsed})`;
+    const message = `${detail} (${elapsed})`;
     emit('pi coding agent', stripAnsi(message), { type: 'message_update' });
   }
 }
