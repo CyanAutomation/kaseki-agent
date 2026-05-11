@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Validation Output Filter
  *
@@ -10,7 +11,7 @@
  * - Command boundaries (first and last lines)
  *
  * Usage:
- *   some_command 2>&1 | node validation-output-filter.js | tee -a logfile.log
+ *   some_command 2>&1 | validation-output-filter | tee -a logfile.log
  *
  * Exit code: Always 0 (this filter does not affect command success/failure)
  */
