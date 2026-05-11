@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.24.0...v1.24.1) (2026-05-11)
+
+### Bug Fixes
+
+* streamline build process by moving TypeScript build step before tests ([6d1922e](https://github.com/CyanAutomation/kaseki-agent/commit/6d1922e7079ab62b862a1cd20ea5035f491a534f))
+
 ## [1.24.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.23.0...v1.24.0) (2026-05-11)
 
 ### Features
