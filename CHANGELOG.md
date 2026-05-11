@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.21.0...v1.22.0) (2026-05-11)
+
+### Features
+
+* integrate unused-imports ESLint plugin and enhance linting rules for better code quality ([023512b](https://github.com/CyanAutomation/kaseki-agent/commit/023512bd72246e7a15a16a0ce9b6f0380bb4ebe5))
+
+### Bug Fixes
+
+* update time check message format for clarity ([4ee5e81](https://github.com/CyanAutomation/kaseki-agent/commit/4ee5e818989ad1cde3364f4b4daca33e2b15188b))
+
 ## [1.21.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.20.0...v1.21.0) (2026-05-11)
 
 ### Features
