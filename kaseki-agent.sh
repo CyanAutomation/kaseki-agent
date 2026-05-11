@@ -2255,6 +2255,8 @@ else
     fi
     ((VALIDATION_COMMANDS_ATTEMPTED++))
     emit_event "validation_command_started" "command=$trimmed"
+    # Use pipefail to catch errors in any stage of the pipe
+    set -o pipefail
     {
       printf '\n==> %s\n' "$trimmed"
       unset OPENROUTER_API_KEY
@@ -2266,11 +2268,29 @@ else
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
     } 2>&1 | tee -a /results/validation.log | validation-output-filter
-    command_exit="${PIPESTATUS[0]}"
+    pipe_statuses=("${PIPESTATUS[@]}")
+    set +o pipefail
+    # pipe_statuses[0] = bash command exit code
+    # pipe_statuses[1] = tee exit code
+    # pipe_statuses[2] = validation-output-filter exit code
+    command_exit="${pipe_statuses[0]}"
+    filter_exit="${pipe_statuses[2]}"
     validation_end="$(date +%s)"
     duration=$((validation_end - validation_start))
     printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$VALIDATION_TIMINGS_FILE"
-    emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "duration_seconds=$duration"
+    emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+    
+    # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13)
+    if [ "$command_exit" -eq 141 ] && [ "$filter_exit" -ne 0 ]; then
+      {
+        printf '\n[DIAGNOSTICS] Validation command encountered SIGPIPE (signal 13) from output filter:\n'
+        printf '  Command exit code: 141 (SIGPIPE)\n'
+        printf '  Filter exit code: %s\n' "$filter_exit"
+        printf '  This typically indicates the validation-output-filter process encountered an error.\n'
+        printf '  Check stderr of validation-output-filter for details.\n'
+      } | tee -a /results/quality.log
+    fi
+    
     if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
       VALIDATION_EXIT="$command_exit"
       VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
