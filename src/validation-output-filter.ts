@@ -266,7 +266,7 @@ function main(): void {
 
   // Handle stdin close event
   rl.on('close', () => {
-    logDiagnostic(`filter-close: stdin_closed`);
+    logDiagnostic('filter-close: stdin_closed');
     logDiagnostic(`filter-close: lines_processed=${linesProcessed}`);
     logDiagnostic(`filter-close: lines_output=${linesOutput}`);
     logDiagnostic(`filter-close: errors_encountered=${errorsEncountered.length}`);
@@ -316,7 +316,7 @@ function main(): void {
         logDiagnostic(`filter-error: ${errMsg}`);
         errorsEncountered.push(errMsg);
       } else {
-        logDiagnostic(`filter-event: stdout_epipe`);
+        logDiagnostic('filter-event: stdout_epipe');
       }
     });
   }
@@ -376,7 +376,7 @@ function main(): void {
   // Clear fallback timeout once readline closes (normal path)
   const originalClose = rl.close.bind(rl);
   rl.close = function() {
-    logDiagnostic(`filter-event: closing_readline`);
+    logDiagnostic('filter-event: closing_readline');
     clearTimeout(fallbackTimeout);
     return originalClose();
   };
