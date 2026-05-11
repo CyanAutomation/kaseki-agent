@@ -33,84 +33,63 @@ export interface KasekiApiConfig {
 }
 
 /**
- * Load and validate configuration from environment variables.
+ * Validate and parse port number from environment variable.
+ * @throws Error if port is invalid (not 1-65535)
  */
-export function loadConfig(): KasekiApiConfig {
-  const apiKeys = loadApiKeys();
-  if (!apiKeys || apiKeys.length === 0) {
-    throw new Error(
-      'KASEKI_API_KEYS environment variable is required. ' +
-        'Set it to a comma-separated list of API keys, or KASEKI_API_KEYS_FILE pointing to a file.'
-    );
-  }
-
-  const port = parseInt(process.env.KASEKI_API_PORT || '8080', 10);
+function validatePort(envVar: string = 'KASEKI_API_PORT', defaultPort: number = 8080): number {
+  const port = parseInt(process.env[envVar] || String(defaultPort), 10);
   if (isNaN(port) || port < 1 || port > 65535) {
-    throw new Error(`KASEKI_API_PORT must be a valid port number, got: ${process.env.KASEKI_API_PORT}`);
+    throw new Error(`${envVar} must be a valid port number, got: ${process.env[envVar]}`);
   }
+  return port;
+}
 
-  const maxConcurrentRuns = parseInt(process.env.KASEKI_API_MAX_CONCURRENT_RUNS || '3', 10);
-  if (isNaN(maxConcurrentRuns) || maxConcurrentRuns < 1) {
-    throw new Error(`KASEKI_API_MAX_CONCURRENT_RUNS must be >= 1, got: ${process.env.KASEKI_API_MAX_CONCURRENT_RUNS}`);
+/**
+ * Validate and parse positive integer (>= min) from environment variable.
+ * @throws Error if value is invalid
+ */
+function validatePositiveInt(
+  envVar: string,
+  defaultValue: number,
+  minValue: number = 1,
+  description: string = envVar
+): number {
+  const value = parseInt(process.env[envVar] || String(defaultValue), 10);
+  if (isNaN(value) || value < minValue) {
+    throw new Error(`${description} must be >= ${minValue}, got: ${process.env[envVar]}`);
   }
+  return value;
+}
 
-  const agentTimeoutSeconds = parseInt(process.env.KASEKI_AGENT_TIMEOUT_SECONDS || '5700', 10);
-  if (isNaN(agentTimeoutSeconds) || agentTimeoutSeconds < 1) {
-    throw new Error(
-      `KASEKI_AGENT_TIMEOUT_SECONDS must be >= 1, got: ${process.env.KASEKI_AGENT_TIMEOUT_SECONDS}`
-    );
-  }
-
-  const maxDiffBytes = parseInt(process.env.KASEKI_MAX_DIFF_BYTES || '200000', 10);
-  if (isNaN(maxDiffBytes) || maxDiffBytes < 1) {
-    throw new Error(`KASEKI_MAX_DIFF_BYTES must be >= 1, got: ${process.env.KASEKI_MAX_DIFF_BYTES}`);
-  }
-
-  const jobIndexMaxEntries = parseInt(
-    process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES || String(DEFAULT_JOB_INDEX_MAX_ENTRIES),
-    10
-  );
-  if (isNaN(jobIndexMaxEntries) || jobIndexMaxEntries < 0) {
-    throw new Error(
-      `KASEKI_API_JOB_INDEX_MAX_ENTRIES must be >= 0, got: ${process.env.KASEKI_API_JOB_INDEX_MAX_ENTRIES}`
-    );
-  }
-
-  const artifactCacheMaxEntries = parseInt(
-    process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES || String(DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES),
-    10
-  );
-  if (isNaN(artifactCacheMaxEntries) || artifactCacheMaxEntries < 0) {
-    throw new Error(
-      `KASEKI_ARTIFACT_CACHE_MAX_ENTRIES must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_MAX_ENTRIES}`
-    );
-  }
-
-  const artifactCacheTtlMs = parseInt(
-    process.env.KASEKI_ARTIFACT_CACHE_TTL_MS || String(DEFAULT_ARTIFACT_CACHE_TTL_MS),
-    10
-  );
-  if (isNaN(artifactCacheTtlMs) || artifactCacheTtlMs < 0) {
-    throw new Error(
-      `KASEKI_ARTIFACT_CACHE_TTL_MS must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_TTL_MS}`
-    );
-  }
-
-  const artifactCacheMaxFileBytes = parseInt(
-    process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES || String(DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES),
-    10
-  );
-  if (isNaN(artifactCacheMaxFileBytes) || artifactCacheMaxFileBytes < 0) {
-    throw new Error(
-      `KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES must be >= 0, got: ${process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES}`
-    );
-  }
-
+/**
+ * Validate and parse task mode enum.
+ * @throws Error if mode is not 'patch' or 'inspect'
+ */
+function validateTaskMode(): 'patch' | 'inspect' {
   const taskMode = (process.env.KASEKI_TASK_MODE || 'patch') as 'patch' | 'inspect';
   if (!['patch', 'inspect'].includes(taskMode)) {
     throw new Error(`KASEKI_TASK_MODE must be 'patch' or 'inspect', got: ${taskMode}`);
   }
+  return taskMode;
+}
 
+/**
+ * Validate and parse log level enum.
+ * @throws Error if level is not debug/info/warn/error
+ */
+function validateLogLevel(): 'debug' | 'info' | 'warn' | 'error' {
+  const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
+  if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
+    throw new Error(`KASEKI_API_LOG_LEVEL must be debug/info/warn/error, got: ${logLevel}`);
+  }
+  return logLevel;
+}
+
+/**
+ * Ensure results directory exists and is writable.
+ * @throws Error if directory cannot be created
+ */
+function ensureResultsDir(): string {
   const resultsDir = process.env.KASEKI_RESULTS_DIR || '/agents/kaseki-results';
   try {
     fs.mkdirSync(resultsDir, { recursive: true });
@@ -137,10 +116,70 @@ export function loadConfig(): KasekiApiConfig {
     }
   }
 
-  const logLevel = (process.env.KASEKI_API_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error';
-  if (!['debug', 'info', 'warn', 'error'].includes(logLevel)) {
-    throw new Error(`KASEKI_API_LOG_LEVEL must be debug/info/warn/error, got: ${logLevel}`);
+  return resultsDir;
+}
+
+/**
+ * Load and validate artifact cache configuration.
+ */
+function loadArtifactCacheConfig(): {
+  maxEntries: number;
+  ttlMs: number;
+  maxFileBytes: number;
+  } {
+  const maxEntries = validatePositiveInt(
+    'KASEKI_ARTIFACT_CACHE_MAX_ENTRIES',
+    DEFAULT_ARTIFACT_CACHE_MAX_ENTRIES,
+    0,
+    'KASEKI_ARTIFACT_CACHE_MAX_ENTRIES'
+  );
+
+  const ttlMs = validatePositiveInt(
+    'KASEKI_ARTIFACT_CACHE_TTL_MS',
+    DEFAULT_ARTIFACT_CACHE_TTL_MS,
+    0,
+    'KASEKI_ARTIFACT_CACHE_TTL_MS'
+  );
+
+  const maxFileBytes = validatePositiveInt(
+    'KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES',
+    DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES,
+    0,
+    'KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES'
+  );
+
+  return { maxEntries, ttlMs, maxFileBytes };
+}
+
+/**
+ * Load and validate configuration from environment variables.
+ */
+export function loadConfig(): KasekiApiConfig {
+  const apiKeys = loadApiKeys();
+  if (!apiKeys || apiKeys.length === 0) {
+    throw new Error(
+      'KASEKI_API_KEYS environment variable is required. ' +
+        'Set it to a comma-separated list of API keys, or KASEKI_API_KEYS_FILE pointing to a file.'
+    );
   }
+
+  const port = validatePort('KASEKI_API_PORT', 8080);
+  const maxConcurrentRuns = validatePositiveInt('KASEKI_API_MAX_CONCURRENT_RUNS', 3, 1, 'KASEKI_API_MAX_CONCURRENT_RUNS');
+  const agentTimeoutSeconds = validatePositiveInt('KASEKI_AGENT_TIMEOUT_SECONDS', 5700, 1, 'KASEKI_AGENT_TIMEOUT_SECONDS');
+  const maxDiffBytes = validatePositiveInt('KASEKI_MAX_DIFF_BYTES', 200000, 1, 'KASEKI_MAX_DIFF_BYTES');
+  const jobIndexMaxEntries = validatePositiveInt(
+    'KASEKI_API_JOB_INDEX_MAX_ENTRIES',
+    DEFAULT_JOB_INDEX_MAX_ENTRIES,
+    0,
+    'KASEKI_API_JOB_INDEX_MAX_ENTRIES'
+  );
+
+  const { maxEntries: artifactCacheMaxEntries, ttlMs: artifactCacheTtlMs, maxFileBytes: artifactCacheMaxFileBytes } =
+    loadArtifactCacheConfig();
+
+  const taskMode = validateTaskMode();
+  const resultsDir = ensureResultsDir();
+  const logLevel = validateLogLevel();
 
   return {
     port,
