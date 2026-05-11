@@ -22,7 +22,7 @@ fi
 json_value() {
   local file="$1"
   local key="$2"
-  grep "\"$key\"" "$file" | head -1 | sed 's/.*"'$key'":\s*"\?//; s/".*$//'
+  grep "\"$key\"" "$file" | head -1 | sed 's/.*"'"$key"'":\s*"\?//; s/".*$//'
 }
 
 # Read key fields from metadata

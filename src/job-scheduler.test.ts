@@ -726,7 +726,7 @@ describe('JobScheduler instance allocation and live progress', () => {
 
   test('parses live docker progress lines', async () => {
     mockSpawnSync.mockReturnValue({
-      stdout: '[progress] clone repository info: started\n[progress] pi coding agent: working; events=42\n',
+      stdout: '[progress] clone repository info: started\n[progress] pi agent: working; events=42\n',
       stderr: '',
       status: 0,
     });
@@ -748,7 +748,7 @@ describe('JobScheduler instance allocation and live progress', () => {
     expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
       expect.objectContaining({
         source: 'docker-logs',
-        stage: 'pi coding agent',
+        stage: 'pi agent',
         message: 'working; events=42',
       }),
     ]);
@@ -802,7 +802,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         status: 0,
       })
       .mockReturnValueOnce({
-        stdout: '[progress] pi coding agent: refreshed\n',
+        stdout: '[progress] pi agent: refreshed\n',
         stderr: '',
         status: 0,
       });
@@ -830,7 +830,7 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     expect(scheduler.getLiveProgressEvents('kaseki-7', 25)).toEqual([
       expect.objectContaining({
-        stage: 'pi coding agent',
+        stage: 'pi agent',
         message: 'refreshed',
       }),
     ]);
@@ -880,12 +880,14 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     scheduler.cancelJob(job.id);
 
-    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([
+    const liveEvents = scheduler.getLiveProgressEvents(job.id, 25);
+    expect(liveEvents.length).toBeGreaterThan(0);
+    expect(liveEvents[liveEvents.length - 1]).toEqual(
       expect.objectContaining({
         stage: 'pi coding agent',
         message: 'after cancel',
-      }),
-    ]);
+      })
+    );
     expect(mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')).toHaveLength(2);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
   });

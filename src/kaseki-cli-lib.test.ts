@@ -111,7 +111,7 @@ Done.
       },
       {
         timestamp: '2026-04-27T00:00:02Z',
-        stage: 'pi coding agent',
+        stage: 'pi agent',
         message: 'working; events=10, tool starts=1, tool ends=1',
       },
     ];

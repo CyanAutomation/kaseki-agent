@@ -171,7 +171,7 @@ function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void
   const elapsed = formatElapsed(startTime);
   const message = `${ANSI_COLORS.DIM}Time Check: ${elapsed} elapsed${ANSI_COLORS.RESET}`;
 
-  emit('pi coding agent', message, {
+  emit('pi agent', message, {
     reason,
   });
 }
@@ -207,11 +207,11 @@ function emitMessageSummary(event: PiEvent): void {
 
   if (detail) {
     const message = `${detail} (${elapsed})`;
-    emit('pi coding agent', stripAnsi(message), { type: 'message_update' });
+    emit('pi agent', stripAnsi(message), { type: 'message_update' });
   }
 }
 
-emit('pi coding agent', 'started');
+emit('pi agent', 'started');
 const heartbeatTimer = setInterval(() => {
   if (streamOpen) {
     maybeHeartbeat(true, 'timer');
@@ -261,21 +261,21 @@ rl.on('line', (line: string) => {
   } else if (type === 'agent_start') {
     messageSampler.reset();
     toolBatchAggregator.clear();
-    emit('pi coding agent', 'agent started', { type });
+    emit('pi agent', 'agent started', { type });
   } else if (type === 'agent_end') {
     // Flush any pending tool batches before agent ends
     toolBatchAggregator.flush();
-    emit('pi coding agent', 'agent finished', { type });
+    emit('pi agent', 'agent finished', { type });
   } else if (type === 'auto_retry_start') {
     // Flush pending batches before retry
     toolBatchAggregator.flush();
     emit(
-      'pi coding agent',
+      'pi agent',
       `${ANSI_COLORS.YELLOW}auto retry started${ANSI_COLORS.RESET}`,
       { type }
     );
   } else if (type === 'auto_retry_end') {
-    emit('pi coding agent', 'auto retry finished', { type });
+    emit('pi agent', 'auto retry finished', { type });
   }
 
   maybeHeartbeat();
@@ -290,7 +290,7 @@ rl.on('close', () => {
   maybeHeartbeat(true, 'close');
 
   const finalElapsed = formatElapsed(startTime);
-  emit('pi coding agent', `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`, {
+  emit('pi agent', `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`, {
     counts,
     toolStartCount,
     toolEndCount,
