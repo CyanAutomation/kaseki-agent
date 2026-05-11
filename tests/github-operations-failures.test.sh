@@ -18,6 +18,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Helper functions
+# shellcheck disable=SC2317
 test_case() {
   local test_name="$1"
   printf '\n%b[TEST]%b %s\n' "$YELLOW" "$NC" "$test_name"

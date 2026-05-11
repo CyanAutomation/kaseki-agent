@@ -18,11 +18,13 @@ LOCK
 
 lock_hash="$(sha256sum "$TMP_DIR/package-lock.json" | awk '{print $1}')"
 node_major="24"
+# shellcheck disable=SC2034
 KASEKI_NPM_OMIT_DEV=0
 KASEKI_INSTALL_IGNORE_SCRIPTS=1
 flags_hash="$(dependency_cache_flags_hash)"
 cache_root="$TMP_DIR/cache"
 
+# shellcheck disable=SC2034
 REPO_URL="https://example.com/project.git" GIT_REF="feature-a"
 path_a="$cache_root/$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash")/node_modules"
 REPO_URL="https://example.com/project.git" GIT_REF="feature-b"

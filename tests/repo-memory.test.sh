@@ -15,6 +15,7 @@ eval "$(awk '
 emit_event() { :; }
 emit_error_event() { :; }
 
+# shellcheck disable=SC2034
 REPO_URL="https://example.com/acme/widgets.git"
 GIT_REF="main"
 TASK_PROMPT="Fix the widget parser."
@@ -82,6 +83,7 @@ cat > "$KASEKI_RESULTS_DIR/validation-timings.tsv" <<'TIMINGS'
 npm test	0	3
 TIMINGS
 
+# shellcheck disable=SC2034
 STATUS=0
 PI_EXIT=0
 SECRET_SCAN_EXIT=0
