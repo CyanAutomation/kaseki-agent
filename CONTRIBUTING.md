@@ -400,7 +400,131 @@ When a run fails, inspect artifacts in this order:
 
 Tip: If quality or validation failures are ambiguous, compare `git.status` + `git.diff` with `TASK_PROMPT` constraints first.
 
-## PR checklist
+## 10) Refactoring, Deprecation, and Code Health
+
+This codebase actively manages **technical debt** through refactoring, code duplication elimination, and churn reduction. Contributors should follow these patterns to keep the codebase maintainable as it grows.
+
+### Deprecation Lifecycle
+
+When retiring or significantly refactoring a function, module, or pattern:
+
+1. **Mark as deprecated** — Add `@deprecated` JSDoc with a replacement strategy:
+
+   ```typescript
+   /**
+    * @deprecated Use `newTimestampExtractor()` instead. Will be removed in v2.0.
+    * @see docs/DUPLICATION_AUDIT.md for migration examples.
+    */
+   export function legacyExtractTimestamp(event: unknown): string { ... }
+   ```
+
+2. **Link documentation** — Reference the duplication/refactoring doc:
+   - [docs/DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md) — Active refactoring targets and consolidation strategies
+   - [docs/PHASE2_COMPLETION.md](docs/PHASE2_COMPLETION.md) — Historical record of major refactors
+
+3. **Define removal deadline** — Specify which minor version will remove the deprecated function (e.g., v2.0).
+
+4. **Group removals** — Don't remove deprecated functions piecemeal; batch removal in a single "cleanup" PR after a grace period (typically 1–2 minor releases).
+
+### Identifying Refactoring Opportunities
+
+The codebase tracks health metrics using **Fallow** (code health analyzer). Run locally to identify hotspots:
+
+```bash
+npx fallow
+```
+
+Key metrics to monitor:
+
+- **Hotspots** (52.5+ score) — Files with high churn + complexity (job-scheduler, api-routes, cli)
+- **Accelerating files** (▲ trend) — Files getting worse, signal to intervene early
+- **Clone groups** (80+ identified) — Duplication candidates for consolidation
+- **Maintainability** (currently 84.3, target 87+) — Overall health score
+
+**Action triggers:**
+- File churn >30 commits in 6 months → Candidate for modularization
+- Clone group >50 LOC × 3 files → Create shared utility (see [DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md))
+- Accelerating trend (▲) for 2+ consecutive runs → Design intervention before it compounds
+
+### When to Refactor
+
+**Good candidates for refactoring PRs:**
+
+- Consolidating duplication identified in `fallow` report
+- Extracting concerns from "god objects" (e.g., splitting api-routes into sub-routers)
+- Extracting test utilities and mock factories into test-utils
+- Creating shared library utilities for common patterns
+
+**Bad candidates (defer to feature PRs):**
+
+- Renaming variables / "make my code cleaner"
+- Reformatting without behavioral change (use `npm run lint:fix` instead)
+- Reorganizing imports / file structure without clear motivation
+- Extracting utilities that are used in only one place
+
+**PR expectations for refactoring:**
+
+- Explain the refactoring goal (e.g., "Reduce api-routes from 350 → 200 LOC"; "Consolidate 3-file duplication")
+- Include before/after LOC counts or metrics (use `fallow` output)
+- Confirm all tests pass; no regression in coverage
+- No functional changes (refactors are behavior-preserving)
+- Use conventional commit: `refactor(scope): description` (does NOT trigger version bump)
+
+### Dead Code & Unused Exports
+
+The linter includes `unused-imports` detection. Before submitting:
+
+```bash
+npm run lint:unused  # Check for unused imports and exports
+npm run lint:fix     # Auto-fix most issues
+```
+
+**High-confidence removals** (safe to delete without much context):
+
+- ✅ Unused imports (linter flags these)
+- ✅ Functions with 0 references (use IDE "find all references" or grep)
+- ✅ Test fixtures in `test-utils` that are no longer used (ensure tests still pass)
+
+**Risky deletions** (discuss in PR before removing):
+
+- ❌ Exported functions (may be used externally by CLI consumers)
+- ❌ Interfaces in public API boundaries (breaking change if semver <1.0)
+- ❌ Conditional code paths (hard to verify 0 usage without branch coverage)
+
+When in doubt, mark as deprecated first and remove in a later cleanup PR.
+
+### Plugin/Registry Patterns (Prevent Future Churn)
+
+When a module is expanding rapidly (e.g., `preflight-validator` grew from 5 → 15 checks, or `pi-event-filter` handles 3+ event types), convert to a **plugin registry** pattern:
+
+**Before (grows with each new check/type):**
+
+```typescript
+// pre-flight-validator.ts — 300+ LOC, tight coupling
+function validateGithubApp() { ... }
+function validateOpenRouter() { ... }
+function validateDocker() { ... }
+// → Adding new check requires modifying this file
+```
+
+**After (plugin-based, extensible):**
+
+```typescript
+// pre-flight-validator.ts — 100 LOC, just registry
+export class PreflightCheckRegistry {
+  register(check: PreflightCheck): void { ... }
+  runAll(): Promise<CheckResult[]> { ... }
+}
+
+// Each check is separate: src/preflight/github-app-check.ts
+export class GithubAppCheck implements PreflightCheck { ... }
+
+// → Adding new check: create new file, register in test setup
+```
+
+**See [docs/DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md)** for specific plugin targets (e.g., `pre-flight-validator`, `pi-event-filter`).
+
+## 11) PR checklist
 
 Before opening/merging, include:
 
@@ -408,3 +532,6 @@ Before opening/merging, include:
 - [ ] Test evidence (commands + output summary), including focused Vitest updates when behavior changed.
 - [ ] Confirmation that changed-file allowlist and max diff checks still pass (or documented rationale for updates).
 - [ ] Any operator-impacting env var, default, or runbook/documentation updates.
+- [ ] For refactoring: explain the goal (LOC reduction, duplication elimination, churn prevention), confirm fallow metrics improve or stay flat.
+- [ ] For deprecation: `@deprecated` JSDoc + link to migration docs + removal version specified.
+- [ ] Linting passes: `npm run lint:unused` is clean (0 unused imports/exports).
