@@ -18,6 +18,7 @@
 
 import { createInterface } from 'readline';
 import { basename } from 'path';
+import { appendFileSync } from 'fs';
 
 interface FilterState {
   inCommand: boolean;
@@ -217,6 +218,28 @@ export function filterValidationOutput(input: string): string {
  * Main: read from stdin and process
  */
 function main(): void {
+  // Get diagnostics log file from environment
+  const diagnosticsLogFile = process.env.FILTER_DIAGNOSTICS_LOG || '/dev/null';
+  let linesProcessed = 0;
+  let linesOutput = 0;
+  let errorsEncountered: string[] = [];
+
+  function logDiagnostic(message: string): void {
+    try {
+      appendFileSync(diagnosticsLogFile, `[${new Date().toISOString()}] ${message}\n`);
+    } catch {
+      // Silent fail if diagnostics log is unavailable
+    }
+  }
+
+  // Log startup
+  logDiagnostic('filter-startup: process started');
+  logDiagnostic(`filter-startup: pid=${process.pid}`);
+  logDiagnostic(`filter-startup: node_version=${process.version}`);
+  logDiagnostic(`filter-startup: argv=${process.argv.join(' ')}`);
+  logDiagnostic(`filter-startup: diagnostics_log_file=${diagnosticsLogFile}`);
+  logDiagnostic(`filter-startup: stdin_is_tty=${process.stdin.isTTY || false}`);
+
   // Set exit code to 0 IMMEDIATELY as default.
   // This ensures we always exit with 0, even if something crashes before 'close' fires.
   // This is critical for avoiding SIGPIPE failures in pipelines.
@@ -232,24 +255,37 @@ function main(): void {
 
   // Handle readline errors (e.g., stdin closed prematurely, encoding issues)
   rl.on('error', (err) => {
+    const msg = `readline_error: ${err.message}`;
     // Log to stderr but don't crash - allow graceful shutdown
-    console.error(`[validation-output-filter] readline error: ${err.message}`);
+    console.error(`[validation-output-filter] ${msg}`);
+    logDiagnostic(`filter-error: ${msg}`);
+    errorsEncountered.push(msg);
     // Ensure exit code stays at 0
     process.exitCode = 0;
   });
 
   // Handle stdin close event
   rl.on('close', () => {
+    logDiagnostic(`filter-close: stdin_closed`);
+    logDiagnostic(`filter-close: lines_processed=${linesProcessed}`);
+    logDiagnostic(`filter-close: lines_output=${linesOutput}`);
+    logDiagnostic(`filter-close: errors_encountered=${errorsEncountered.length}`);
+    if (errorsEncountered.length > 0) {
+      logDiagnostic(`filter-close: errors=${errorsEncountered.join('; ')}`);
+    }
+    logDiagnostic(`filter-close: exit_code=${process.exitCode}`);
     // Confirm exit with 0 (filter is diagnostic tool, not part of command logic).
     // Internal errors are logged to stderr but don't block the pipeline.
     process.exitCode = 0;
   });
 
   rl.on('line', (line: string) => {
+    linesProcessed++;
     try {
       const outputLine = processLine(line, state);
 
       if (outputLine !== null) {
+        linesOutput++;
         // Catch any write errors to stdout (e.g., broken pipe from downstream process)
         try {
           console.log(outputLine);
@@ -259,9 +295,10 @@ function main(): void {
         }
       }
     } catch (lineErr) {
-      console.error(
-        `[validation-output-filter] Error processing line: ${lineErr instanceof Error ? lineErr.message : String(lineErr)}`
-      );
+      const errMsg = lineErr instanceof Error ? lineErr.message : String(lineErr);
+      console.error(`[validation-output-filter] Error processing line: ${errMsg}`);
+      logDiagnostic(`filter-error: line_processing_error: ${errMsg}`);
+      errorsEncountered.push(`line_processing_error: ${errMsg}`);
     }
   });
 
@@ -273,8 +310,13 @@ function main(): void {
     stdout.on('error', (err) => {
       // EPIPE is expected when downstream closes; don't treat as error
       if (err.code !== 'EPIPE') {
+        const errMsg = `stdout_error: ${err.message}`;
         // Log error but continue; we always exit 0 anyway
-        console.error(`[validation-output-filter] stdout error: ${err.message}`);
+        console.error(`[validation-output-filter] ${errMsg}`);
+        logDiagnostic(`filter-error: ${errMsg}`);
+        errorsEncountered.push(errMsg);
+      } else {
+        logDiagnostic(`filter-event: stdout_epipe`);
       }
     });
   }
@@ -283,31 +325,38 @@ function main(): void {
     stderr.on('error', (err) => {
       // Ignore stderr errors; we're already reporting issues
       if (err.code !== 'EPIPE') {
-        // Silent handling
+        const errMsg = `stderr_error: ${err.message}`;
+        logDiagnostic(`filter-error: ${errMsg}`);
+        errorsEncountered.push(errMsg);
       }
     });
   }
 
   // Handle process-level errors (uncaught exceptions, unhandled rejections)
   process.on('error', (err) => {
-    console.error(`[validation-output-filter] process error: ${err.message}`);
+    const errMsg = `process_error: ${err.message}`;
+    console.error(`[validation-output-filter] ${errMsg}`);
+    logDiagnostic(`filter-error: ${errMsg}`);
+    errorsEncountered.push(errMsg);
     // Ensure we exit with 0 (filter is diagnostic, errors don't block pipeline)
     process.exitCode = 0;
   });
 
   process.on('uncaughtException', (err) => {
-    console.error(
-      `[validation-output-filter] uncaught exception: ${err instanceof Error ? err.message : String(err)}`
-    );
+    const errMsg = `uncaught_exception: ${err instanceof Error ? err.message : String(err)}`;
+    console.error(`[validation-output-filter] ${errMsg}`);
+    logDiagnostic(`filter-error: ${errMsg}`);
+    errorsEncountered.push(errMsg);
     // Ensure we exit with 0
     process.exitCode = 0;
   });
 
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason) => {
-    console.error(
-      `[validation-output-filter] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`
-    );
+    const errMsg = `unhandled_rejection: ${reason instanceof Error ? reason.message : String(reason)}`;
+    console.error(`[validation-output-filter] ${errMsg}`);
+    logDiagnostic(`filter-error: ${errMsg}`);
+    errorsEncountered.push(errMsg);
     // Ensure we exit with 0
     process.exitCode = 0;
   });
@@ -315,7 +364,11 @@ function main(): void {
   // Fallback timeout: ensure we exit with 0 after 30 seconds even if something hangs
   // This prevents the filter from hanging indefinitely in edge cases
   const fallbackTimeout = setTimeout(() => {
-    console.error('[validation-output-filter] WARNING: Fallback timeout triggered (30s), forcing exit with code 0');
+    const msg = 'fallback_timeout_triggered (30s), forcing exit with code 0';
+    console.error(`[validation-output-filter] WARNING: ${msg}`);
+    logDiagnostic(`filter-warning: ${msg}`);
+    logDiagnostic(`filter-warning: lines_processed_at_timeout=${linesProcessed}`);
+    logDiagnostic(`filter-warning: lines_output_at_timeout=${linesOutput}`);
     process.exitCode = 0;
     process.exit(0);
   }, 30000);
@@ -323,6 +376,7 @@ function main(): void {
   // Clear fallback timeout once readline closes (normal path)
   const originalClose = rl.close.bind(rl);
   rl.close = function() {
+    logDiagnostic(`filter-event: closing_readline`);
     clearTimeout(fallbackTimeout);
     return originalClose();
   };
