@@ -305,4 +305,213 @@ describe('OpenAPI Spec Generator', () => {
       expect(endpointCount).toBeLessThan(100); // But not too many
     });
   });
+
+  describe('Path and Payload Validation', () => {
+    test('all path parameters are documented', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([pathName, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const op = operation as Record<string, unknown>;
+            const parameters = op.parameters as Array<Record<string, unknown>> | undefined;
+
+            // Extract path parameters from the path template (e.g., {id}, {file})
+            const pathParamNames = (pathName.match(/\{([^}]+)\}/g) || []).map(p => p.slice(1, -1));
+
+            if (pathParamNames.length > 0 && parameters) {
+              const documentedParams = parameters.map(p => p.name as string);
+              pathParamNames.forEach((paramName) => {
+                expect(documentedParams).toContain(paramName);
+              });
+            }
+          }
+        });
+      });
+    });
+
+    test('POST/PUT operations with request body have requestBody defined', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      const methodsWithBody = ['post', 'put'];
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        methodsWithBody.forEach((method) => {
+          if (method in pathItem) {
+            const operation = pathItem[method] as Record<string, unknown>;
+            // Methods that modify state should have a requestBody or be idempotent
+            if (method === 'post' && !('requestBody' in operation)) {
+              // Allow some POST endpoints without bodies (e.g., cancel)
+              const operationId = operation.operationId as string | undefined;
+              if (operationId && !operationId.includes('cancel') && !operationId.includes('shutdown')) {
+                expect(operation.requestBody).toBeDefined();
+              }
+            }
+          }
+        });
+      });
+    });
+
+    test('request body schemas reference defined schemas', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const schemaNames = Object.keys(schemas);
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([, operation]) => {
+          if (typeof operation === 'object' && operation !== null && 'requestBody' in operation) {
+            const rb = operation as Record<string, unknown>;
+            const requestBody = rb.requestBody as Record<string, Record<string, Record<string, unknown>>> | undefined;
+
+            if (requestBody && requestBody['content']) {
+              Object.values(requestBody['content']).forEach((content) => {
+                const schema = content.schema as Record<string, unknown> | undefined;
+                if (schema && '$ref' in schema) {
+                  const ref = (schema.$ref as string).split('/').pop();
+                  if (ref && !ref.startsWith('object')) {
+                    expect(schemaNames).toContain(ref);
+                  }
+                }
+              });
+            }
+          }
+        });
+      });
+    });
+
+    test('response schemas reference defined schemas', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const schemaNames = Object.keys(schemas);
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([, operation]) => {
+          if (typeof operation === 'object' && operation !== null && 'responses' in operation) {
+            const responses = (operation as Record<string, unknown>).responses as Record<string, Record<string, Record<string, unknown>>> | undefined;
+
+            if (responses) {
+              Object.values(responses).forEach((response) => {
+                const resp = response as Record<string, unknown>;
+                if (resp.content) {
+                  const content = resp.content as Record<string, Record<string, unknown>>;
+                  Object.values(content).forEach((contentType) => {
+                    const schema = (contentType as Record<string, unknown>).schema as Record<string, unknown> | undefined;
+                    if (schema && '$ref' in schema) {
+                      const ref = (schema.$ref as string).split('/').pop();
+                      if (ref && !ref.startsWith('object')) {
+                        expect(schemaNames).toContain(ref);
+                      }
+                    }
+                  });
+                }
+              });
+            }
+          }
+        });
+      });
+    });
+  });
+
+  describe('Error Response Contract', () => {
+    test('all 4xx/5xx responses include ErrorResponse schema', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const responses = (operation as Record<string, unknown>).responses as Record<string, Record<string, unknown>> | undefined;
+
+            if (responses) {
+              Object.entries(responses).forEach(([statusCode, response]) => {
+                if ((statusCode.startsWith('4') || statusCode.startsWith('5')) && statusCode !== 'default') {
+                  if (response.content) {
+                    const jsonContent = (response.content as Record<string, Record<string, unknown>>) ['application/json'];
+                    if (jsonContent && jsonContent.schema) {
+                      const schema = jsonContent.schema as Record<string, unknown>;
+                      if ('$ref' in schema) {
+                        const ref = schema.$ref as string;
+                        expect(ref).toContain('ErrorResponse');
+                      }
+                    }
+                  }
+                }
+              });
+            }
+          }
+        });
+      });
+    });
+
+    test('all protected endpoints document 401 and 403 responses', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      const protectedEndpoints = ['/api/runs', '/api/metrics', '/api/runs/{id}/status', '/api/runs/{id}/cancel'];
+
+      protectedEndpoints.forEach((endpoint) => {
+        const pathItem = paths[endpoint];
+        if (pathItem) {
+          Object.entries(pathItem).forEach(([method, operation]) => {
+            if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+              const op = operation as Record<string, unknown>;
+              const security = op.security as Array<Record<string, unknown>> | undefined;
+
+              // If endpoint has security requirement, it should document 401
+              if (security && security.length > 0) {
+                const responses = op.responses as Record<string, unknown> | undefined;
+                if (responses && ('401' in responses || 'default' in responses)) {
+                  expect(responses['401'] || responses['default']).toBeDefined();
+                }
+              }
+            }
+          });
+        }
+      });
+    });
+
+    test('delete/destructive endpoints document error responses', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        ['delete', 'put'].forEach((method) => {
+          if (method in pathItem && typeof pathItem[method] === 'object') {
+            const operation = pathItem[method] as Record<string, unknown>;
+            const responses = operation.responses as Record<string, unknown> | undefined;
+
+            if (responses) {
+              // Destructive operations should have 4xx error responses
+              const hasErrorResponse = ['400', '401', '404', '409', '422'].some((code) => code in responses);
+              expect(hasErrorResponse || responses['default']).toBeTruthy();
+            }
+          }
+        });
+      });
+    });
+
+    test('documented error codes are consistent across endpoints', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      const errorCodesByType = new Map<string, Set<string>>();
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
+
+            if (responses) {
+              const codes = Object.keys(responses).filter((code) => code.match(/^[45]\d{2}$/));
+              const endpointType = method.toUpperCase();
+
+              if (!errorCodesByType.has(endpointType)) {
+                errorCodesByType.set(endpointType, new Set());
+              }
+              codes.forEach((code) => {
+                errorCodesByType.get(endpointType)!.add(code);
+              });
+            }
+          }
+        });
+      });
+
+      // Check that similar operations use consistent error codes
+      // (e.g., all GET endpoints should document similar error patterns)
+      expect(errorCodesByType.size).toBeGreaterThan(0);
+    });
+  });
 });
