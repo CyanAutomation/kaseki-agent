@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
@@ -275,7 +274,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
   });
 
   test('GET /api/preflight reports readable GitHub App file credentials', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '12345';
       if (name === 'github_app_client_id') return 'Iv123client';
@@ -309,7 +308,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
   });
 
   test('GET /api/preflight flags incomplete GitHub App configuration', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     (readHostSecret as jest.Mock).mockReturnValue(null); // No GitHub App credentials
 
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-missing-'));
@@ -357,7 +356,7 @@ describe('kaseki-api-routes tail file descriptor cleanup', () => {
         closeSync: closeSyncMock,
       }));
 
-      const { readTailBytes } = require('./kaseki-api-routes') as typeof import('./kaseki-api-routes');
+      const { readTailBytes } = jest.requireActual('./kaseki-api-routes') as typeof import('./kaseki-api-routes');
       expect(() => readTailBytes('/tmp/fake.log', 200, 100)).toThrow('read failed');
     });
 
@@ -1696,7 +1695,7 @@ describe('kaseki-api-routes publish mode validation', () => {
   });
 
   test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
-    const { readHostSecret } = require('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
     // Ensure mock returns null for all GitHub App secrets
     (readHostSecret as jest.Mock).mockReset();
     (readHostSecret as jest.Mock).mockReturnValue(null);

@@ -212,7 +212,7 @@ export class DoctorCommand extends BaseCommand {
         } catch {
           unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'could not read content' });
         }
-      } catch (error) {
+      } catch {
         missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null });
       }
     }

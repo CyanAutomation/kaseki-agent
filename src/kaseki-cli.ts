@@ -26,7 +26,7 @@ import fs from 'fs';
 import path from 'path';
 import { Stats } from 'fs';
 
-interface FileStats extends Stats {}
+type FileStats = Stats
 
 interface FollowCallbacks {
   onInfo?: (message: string) => void;

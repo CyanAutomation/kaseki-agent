@@ -83,7 +83,7 @@ export function sendFileResponse(
       const content = fs.readFileSync(filePath, 'utf-8');
       res.send(content);
     }
-  } catch (error) {
+  } catch {
     sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read file: ${fileName}`);
   }
 }
