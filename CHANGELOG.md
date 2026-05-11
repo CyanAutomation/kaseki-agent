@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.23.0...v1.24.0) (2026-05-11)
+
+### Features
+
+* add validation tests for dist/lib packaging and module imports ([aaa3e76](https://github.com/CyanAutomation/kaseki-agent/commit/aaa3e76afb769e490170725cb69e83132a141760))
+
+### Bug Fixes
+
+* clean up code by removing unnecessary comments and improving error messages ([3765091](https://github.com/CyanAutomation/kaseki-agent/commit/3765091f384a1c5a7874ad19768608e668624b8f))
+
 ## [1.23.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.22.0...v1.23.0) (2026-05-11)
 
 ### Features
