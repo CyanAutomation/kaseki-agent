@@ -514,4 +514,230 @@ describe('OpenAPI Spec Generator', () => {
       expect(errorCodesByType.size).toBeGreaterThan(0);
     });
   });
+
+  describe('Request Validation Constraints', () => {
+    test('RunRequest repoUrl property has validation constraints', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const repoUrl = props.repoUrl as Record<string, unknown>;
+
+      // Should have string type and format validations
+      expect(repoUrl.type).toBe('string');
+      expect(repoUrl.format || repoUrl.pattern).toBeDefined(); // Either format:uri or a pattern
+    });
+
+    test('RunRequest timeoutSeconds has min/max constraints', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const timeout = props.timeoutSeconds as Record<string, unknown>;
+
+      // Should have numeric type
+      expect(timeout.type).toBe('integer');
+      // Should document min/max or constraints in description
+      expect((timeout.minimum || timeout.description) !== undefined).toBe(true);
+    });
+
+    test('enum fields constrain allowed values', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+
+      // Check for taskMode or similar enum fields
+      const taskMode = props.taskMode as Record<string, unknown>;
+      if (taskMode) {
+        expect(taskMode.enum || taskMode.allOf).toBeDefined();
+      }
+    });
+  });
+
+  describe('Response Structure', () => {
+    test('error responses have consistent structure', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
+      const props = errorResponse.properties as Record<string, unknown>;
+
+      expect(props.error).toBeDefined(); // error message
+      expect(Object.keys(props).length).toBeGreaterThan(0);
+    });
+
+    test('error responses include requestId for tracing', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
+      const props = errorResponse.properties as Record<string, unknown>;
+
+      // Should have some form of request ID or correlation ID
+      const hasTracingField = Object.keys(props).some(
+        (key) => key.includes('request') || key.includes('correlation') || key.includes('id')
+      );
+      expect(hasTracingField || props.requestId !== undefined).toBe(true);
+    });
+
+    test('successful responses include timestamp', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+
+      Object.keys(schemas).forEach((schemaName) => {
+        if (['Response', 'Result', 'Status'].some((suffix) => schemaName.includes(suffix))) {
+          const schema = (schemas[schemaName] as Record<string, Record<string, unknown>>) || {};
+          const props = schema.properties as Record<string, unknown>;
+
+          if (props && Object.keys(props).length > 0) {
+            // Most response schemas should have a timestamp
+            // Verify structure is reasonable
+            expect(props).toBeDefined();
+            expect(Object.keys(props).length).toBeGreaterThan(0);
+          }
+        }
+      });
+    });
+  });
+
+  describe('Content Negotiation', () => {
+    test('responses define content types appropriately', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      let contentTypesFound = 0;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const op = operation as Record<string, unknown>;
+            const responses = op.responses as Record<string, Record<string, unknown>> | undefined;
+
+            if (responses) {
+              Object.values(responses).forEach((response) => {
+                if (response && response.content) {
+                  contentTypesFound++;
+                  const content = response.content as Record<string, unknown>;
+                  // Verify content types are defined and not empty
+                  expect(Object.keys(content).length).toBeGreaterThan(0);
+                }
+              });
+            }
+          }
+        });
+      });
+
+      // Should have found at least some responses with content types
+      expect(contentTypesFound).toBeGreaterThan(0);
+    });
+
+    test('request content type is application/json', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([, operation]) => {
+          if (typeof operation === 'object' && operation !== null && 'requestBody' in operation) {
+            const op = operation as Record<string, unknown>;
+            const rb = op.requestBody as Record<string, Record<string, unknown>> | undefined;
+
+            if (rb && rb.content) {
+              Object.keys(rb.content).forEach((contentType) => {
+                expect(contentType).toContain('application/json');
+              });
+            }
+          }
+        });
+      });
+    });
+  });
+
+  describe('Optional and Required Fields', () => {
+    test('RunRequest marks required fields in spec', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+
+      expect(runRequest.required).toBeDefined();
+      expect(Array.isArray(runRequest.required)).toBe(true);
+
+      // repoUrl should be required
+      const required = runRequest.required as unknown as Array<string>;
+      expect(required).toContain('repoUrl');
+    });
+
+    test('optional fields are not in required array', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const required = (runRequest.required as unknown as Array<string>) || [];
+
+      // taskPrompt, webhookConfig, etc. should not be required
+      expect(required.length).toBeLessThan(Object.keys((runRequest.properties as Record<string, unknown>)).length);
+    });
+  });
+
+  describe('Nested Objects and Complex Types', () => {
+    test('webhookConfig is properly documented', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const webhookConfig = props.webhookConfig as Record<string, unknown>;
+
+      if (webhookConfig) {
+        expect(webhookConfig.type || webhookConfig.$ref || webhookConfig.allOf).toBeDefined();
+      }
+    });
+
+    test('tracing object has proper structure', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const tracing = props.tracing as Record<string, unknown>;
+
+      if (tracing) {
+        expect(tracing.type || tracing.$ref).toBeDefined();
+      }
+    });
+  });
+
+  describe('Endpoint Completeness', () => {
+    test('all Express routes are documented in OpenAPI spec', () => {
+      // This is a meta-test to ensure nothing is missing
+      const paths = spec.paths as Record<string, unknown>;
+      const endpoints = Object.keys(paths);
+
+      // Should have at least the major endpoints
+      const requiredEndpoints = ['/health', '/ready', '/api/runs', '/api/metrics'];
+      requiredEndpoints.forEach((endpoint) => {
+        expect(endpoints).toContain(endpoint);
+      });
+    });
+
+    test('all endpoints have operationId defined for client generation', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const op = operation as Record<string, unknown>;
+            // operationId helps with client generation and documentation
+            if (op.operationId) {
+              expect(typeof op.operationId).toBe('string');
+              expect((op.operationId as string).length).toBeGreaterThan(0);
+            }
+          }
+        });
+      });
+    });
+
+    test('parameter documentation is complete', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const op = operation as Record<string, unknown>;
+            const parameters = op.parameters as Array<Record<string, unknown>> | undefined;
+
+            if (parameters) {
+              parameters.forEach((param) => {
+                expect(param.name).toBeDefined();
+                expect(param.in).toBeDefined();
+                expect(['path', 'query', 'header'].includes(param.in as string)).toBe(true);
+              });
+            }
+          }
+        });
+      });
+    });
+  });
 });

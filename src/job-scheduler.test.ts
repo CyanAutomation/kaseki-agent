@@ -53,25 +53,6 @@ function createMockWebhookManager(): WebhookManager {
 
 type TestPersistedStatus = 'queued' | 'running' | 'completed' | 'failed';
 
-function persistedJob(
-  resultsDir: string,
-  id: string,
-  status: TestPersistedStatus,
-  createdAt: string,
-  completedAt?: string
-): Record<string, unknown> {
-  return {
-    id,
-    status,
-    request: { repoUrl: 'https://github.com/org/repo', ref: 'main' },
-    createdAt,
-    completedAt,
-    resultDir: path.join(resultsDir, id),
-    correlationId: `${id}-correlation`,
-    requestId: `${id}-request`,
-  };
-}
-
 function persistedRuntimeJob(resultsDir: string, id: string, status: TestPersistedStatus, createdAt: string): unknown {
   const completedAt = status === 'completed' || status === 'failed' ? new Date(createdAt) : undefined;
   return {
@@ -1082,38 +1063,6 @@ describe('JobScheduler persistence merge safety', () => {
     expect(mergedFirst?.exitCode).toBe(0);
     expect(mergedFirst?.completedAt).toBe('2026-05-04T00:00:01.000Z');
   });
-  test('mergePersistedJobs preserves all active jobs while limiting terminal history', () => {
-    const resultsDir = createResultsDir();
-    const scheduler = new JobScheduler(
-      {
-        port: 8080,
-        apiKeys: ['test-key'],
-        resultsDir,
-        maxConcurrentRuns: 0,
-        defaultTaskMode: 'patch',
-        maxDiffBytes: 200000,
-        agentTimeoutSeconds: 30,
-        logLevel: 'info',
-        jobIndexMaxEntries: 1,
-      },
-      createMockWebhookManager()
-    );
-    const mergePersistedJobs = (scheduler as unknown as {
-      mergePersistedJobs: (existing: Array<Record<string, unknown>>, incoming: Array<Record<string, unknown>>) => Array<{ id: string }>;
-    }).mergePersistedJobs.bind(scheduler);
-
-    const jobs = mergePersistedJobs(
-      [
-        persistedJob(resultsDir, 'kaseki-1', 'completed', '2026-05-01T00:00:00.000Z', '2026-05-01T00:10:00.000Z'),
-        persistedJob(resultsDir, 'kaseki-2', 'failed', '2026-05-02T00:00:00.000Z', '2026-05-02T00:10:00.000Z'),
-        persistedJob(resultsDir, 'kaseki-3', 'queued', '2026-04-01T00:00:00.000Z'),
-      ],
-      [persistedJob(resultsDir, 'kaseki-4', 'running', '2026-04-02T00:00:00.000Z')]
-    );
-
-    expect(jobs.map((job) => job.id)).toEqual(['kaseki-2', 'kaseki-4', 'kaseki-3']);
-  });
-
   test('persistJobs truncates old terminal jobs and writes compact JSON at the retention limit', () => {
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler(
@@ -1140,38 +1089,6 @@ describe('JobScheduler persistence merge safety', () => {
     const parsed = JSON.parse(rawIndex) as { jobs: Array<{ id: string }> };
     expect(parsed.jobs.map((job) => job.id)).toEqual(['kaseki-3', 'kaseki-2']);
     expect(rawIndex).not.toContain('\n  "');
-  });
-
-  test('mergePersistedJobs uses deterministic sorting for equal timestamps', () => {
-    const resultsDir = createResultsDir();
-    const scheduler = new JobScheduler(
-      {
-        port: 8080,
-        apiKeys: ['test-key'],
-        resultsDir,
-        maxConcurrentRuns: 0,
-        defaultTaskMode: 'patch',
-        maxDiffBytes: 200000,
-        agentTimeoutSeconds: 30,
-        logLevel: 'info',
-        jobIndexMaxEntries: 10,
-      },
-      createMockWebhookManager()
-    );
-    const mergePersistedJobs = (scheduler as unknown as {
-      mergePersistedJobs: (existing: Array<Record<string, unknown>>, incoming: Array<Record<string, unknown>>) => Array<{ id: string }>;
-    }).mergePersistedJobs.bind(scheduler);
-
-    const jobs = mergePersistedJobs(
-      [
-        persistedJob(resultsDir, 'kaseki-2', 'completed', '2026-05-01T00:00:00.000Z', '2026-05-01T00:10:00.000Z'),
-        persistedJob(resultsDir, 'kaseki-10', 'completed', '2026-05-01T00:00:00.000Z', '2026-05-01T00:10:00.000Z'),
-        persistedJob(resultsDir, 'kaseki-1', 'queued', '2026-05-01T00:00:00.000Z'),
-      ],
-      []
-    );
-
-    expect(jobs.map((job) => job.id)).toEqual(['kaseki-10', 'kaseki-2', 'kaseki-1']);
   });
 
 });

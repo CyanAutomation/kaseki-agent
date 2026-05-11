@@ -76,7 +76,7 @@ http://localhost:8080/docs
 
 ### Example: Testing `/api/runs` Endpoint
 
-1. Open http://localhost:8080/docs
+1. Open <http://localhost:8080/docs>
 2. Click **"Run Management"** → **"Trigger a new kaseki run"**
 3. Click **"Authorize"** in the top-right; enter your API key
 4. Click **"Try it out"**
