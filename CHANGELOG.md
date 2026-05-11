@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.24.5...v1.24.6) (2026-05-11)
+
+### Bug Fixes
+
+* ensure consistent exit code 0 for validation-output-filter to prevent pipeline failures ([5711e4b](https://github.com/CyanAutomation/kaseki-agent/commit/5711e4b0b8e911ed70cd722462890a19ea3a6c10))
+
 ## [1.24.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.24.4...v1.24.5) (2026-05-11)
 
 ### Bug Fixes
