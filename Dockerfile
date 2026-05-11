@@ -106,6 +106,8 @@ RUN chmod +x \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
+    && mkdir -p /usr/local/bin/lib \
+    && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
@@ -194,6 +196,8 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
+    && mkdir -p /usr/local/bin/lib \
+    && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
