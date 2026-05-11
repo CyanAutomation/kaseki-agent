@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.18.0...v1.19.0) (2026-05-11)
+
+### Features
+
+* add validation output filter script and update usage instructions ([d301ee3](https://github.com/CyanAutomation/kaseki-agent/commit/d301ee39c984ff4b00022eb013342bee5a8be8c0))
+* implement ToolBatchAggregator for efficient tool call batching and summary emission ([bdbf786](https://github.com/CyanAutomation/kaseki-agent/commit/bdbf78658285ee0ca4c987f38912456a48413e95))
+
+### Bug Fixes
+
+* remove unnecessary blank line before flushing tool batches ([cbf1987](https://github.com/CyanAutomation/kaseki-agent/commit/cbf198734079e2b1abaca0428ae67ea22e24b1c1))
+
 ## [1.18.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.17.0...v1.18.0) (2026-05-10)
 
 ### Features
