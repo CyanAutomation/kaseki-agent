@@ -2223,7 +2223,7 @@ log_validation_environment() {
     printf '[validation environment] NODE_PATH=%s\n' "${NODE_PATH:-<not set>}"
     printf '[validation environment] disk_space_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
     printf '[validation environment] disk_space_used=%s\n' "$(du -sh /results 2>/dev/null | cut -f1 || echo '<du failed>')"
-  } | tee -a /results/validation.log /results/validation-env.log
+  } | tee -a /results/validation.log "$VALIDATION_ENV_LOG"
 }
 log_validation_environment
 
@@ -2287,7 +2287,7 @@ else
       printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
       printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
       printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
-    } | tee -a /results/validation-env.log
+    } | tee -a "$VALIDATION_ENV_LOG"
     # Use pipefail to catch errors in any stage of the pipe
     set -o pipefail
     {
@@ -2300,7 +2300,7 @@ else
       command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
-    } 2>&1 | tee -a /results/validation.log /results/validation-raw.log | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
+    } 2>&1 | tee -a /results/validation.log "$VALIDATION_RAW_LOG" | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
     pipe_statuses=("${PIPESTATUS[@]}")
     set +o pipefail
     # pipe_statuses[0] = bash command exit code
