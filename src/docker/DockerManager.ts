@@ -1,6 +1,6 @@
 /**
  * Docker Manager
- * 
+ *
  * Handles Docker operations: image pulling, container spawning, log streaming
  */
 
@@ -140,7 +140,7 @@ export class DockerManager {
       child.on('exit', (code: number | null) => {
         // Check for Docker init errors in stderr
         if (code === 127 && stderr.includes('no such file or directory')) {
-          const enhancedStderr = 
+          const enhancedStderr =
             stderr +
             '\n\n❌ DOCKER INITIALIZATION FAILED\n' +
             'This usually means the Docker image is missing critical scripts or is corrupted.\n\n' +
@@ -153,7 +153,7 @@ export class DockerManager {
             '   kaseki-agent run <repo> <ref> <task>\n\n' +
             'If the problem persists, the image may need to be rebuilt locally:\n' +
             '   docker build -t kaseki-template:latest .';
-          
+
           resolve({
             exitCode: code ?? 1,
             stdout,

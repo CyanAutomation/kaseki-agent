@@ -452,7 +452,7 @@ export class KasekiApiClient {
 
     // Polling loop: condition checked inside; no syntax for "guaranteed exit" loops in JS
     // Pattern is safe: explicit break/return condition; timeout guard prevents infinite loop
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       const status = await this.getStatus(runId);
 
