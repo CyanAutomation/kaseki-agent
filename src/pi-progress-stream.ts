@@ -4,12 +4,10 @@ import fs from 'fs';
 import readline from 'readline';
 import { sanitizeToolName } from './progress-stream-utils.js';
 import {
-  formatProgressMessage,
   EventSampler,
-  extractFilePath,
-  detectError,
   formatElapsed,
   truncate,
+  extractTopic,
 } from './pi-progress-summarizer.js';
 import { ANSI_COLORS, stripAnsi } from './ansi-colors.js';
 
@@ -54,6 +52,53 @@ const startTime = Date.now();
 
 // Sample 1 in every 15 message_update events
 const messageSampler = new EventSampler(15);
+
+/**
+ * ToolBatchAggregator: Batches tool calls by type and emits summaries
+ * Reduces noise by aggregating rapid tool sequences
+ */
+class ToolBatchAggregator {
+  private toolBuffer: Map<string, number> = new Map(); // tool name -> count
+  private lastFlushTime: number = Date.now();
+  private coalesceWindow: number = 3000; // 3 seconds
+
+  recordTool(tool: string): void {
+    const count = (this.toolBuffer.get(tool) || 0) + 1;
+    this.toolBuffer.set(tool, count);
+    this.lastFlushTime = Date.now();
+  }
+
+  shouldFlush(): boolean {
+    const elapsed = Date.now() - this.lastFlushTime;
+    // Flush if buffer is full or coalesce window elapsed
+    return this.toolBuffer.size > 0 && elapsed > this.coalesceWindow;
+  }
+
+  flush(): void {
+    if (this.toolBuffer.size === 0) {
+      return;
+    }
+
+    // Build summary: "read_file (3x), write_file (1x), grep_search (2x)"
+    const summary = Array.from(this.toolBuffer.entries())
+      .map(([tool, count]) => `${tool} (${count}x)`)
+      .join(', ');
+
+    const elapsed = formatElapsed(startTime);
+    const message = `[tools] ${summary} (${elapsed})`;
+    emit('pi tool batch', stripAnsi(message), {
+      toolBatchSummary: Object.fromEntries(this.toolBuffer),
+    });
+
+    this.toolBuffer.clear();
+  }
+
+  clear(): void {
+    this.toolBuffer.clear();
+  }
+}
+
+const toolBatchAggregator = new ToolBatchAggregator();
 
 function append(file: string, text: string): void {
   fs.appendFileSync(file, text);
@@ -111,10 +156,6 @@ function emit(stage: string, message: string, extra: Record<string, any> = {}): 
   }
 }
 
-function eventTotal(): number {
-  return Object.values(counts).reduce((sum, count) => sum + count, 0);
-}
-
 function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void {
   const now = Date.now();
   if (!force && now - lastHeartbeat < 15000) {
@@ -122,43 +163,17 @@ function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void
   }
   lastHeartbeat = now;
 
+  // Flush any pending tool batches
+  if (toolBatchAggregator.shouldFlush()) {
+    toolBatchAggregator.flush();
+  }
+
   const elapsed = formatElapsed(startTime);
-  const workingMsg = `working; events=${eventTotal()}, tool starts=${toolStartCount}, tool ends=${toolEndCount}`;
-  const message = `${workingMsg} | ${ANSI_COLORS.DIM}${elapsed} elapsed${ANSI_COLORS.RESET}`;
+  const message = `${ANSI_COLORS.DIM}⏱ ${elapsed} elapsed${ANSI_COLORS.RESET}`;
 
   emit('pi coding agent', message, {
-    counts,
-    toolStartCount,
-    toolEndCount,
-    messageUpdateCount,
     reason,
   });
-}
-
-/**
- * Emit enhanced summary for tool execution
- */
-function emitToolSummary(event: PiEvent, tool: string, isStart: boolean): void {
-  if (!enableSummarization) {
-    return;
-  }
-
-  const elapsed = formatElapsed(startTime);
-  const action = extractFilePath(tool) || tool;
-  const { hasError } = detectError(JSON.stringify(event).substring(0, 500));
-  const level = hasError ? ('error' as const) : undefined;
-
-  const message = formatProgressMessage(
-    'pi tool',
-    `${isStart ? 'start' : 'end'} ${action}`,
-    undefined,
-    level,
-    elapsed
-  );
-
-  if (message && message.length > 0) {
-    emit('pi tool', stripAnsi(message.substring(13)), { level });
-  }
 }
 
 /**
@@ -170,32 +185,29 @@ function emitMessageSummary(event: PiEvent): void {
   }
 
   const elapsed = formatElapsed(startTime);
-  // Try to extract a brief insight from the message
   let detail: string | undefined;
 
   if (event.message?.content) {
     const content = event.message.content;
     const contentText = Array.isArray(content)
       ? content.map((c: any) => (c.text || c.content || '').substring(0, 50)).join(' ')
-      : String(content).substring(0, 100);
+      : String(content).substring(0, 200);
 
+    // Try to extract topic first (more concise)
     if (contentText.length > 10) {
-      detail = truncate(contentText, 60);
+      const topic = extractTopic(contentText);
+      if (topic) {
+        detail = topic;
+      } else {
+        // Fallback to truncated content
+        detail = truncate(contentText, 60);
+      }
     }
   }
 
   if (detail) {
-    const message = formatProgressMessage(
-      'pi coding agent',
-      'processing',
-      detail,
-      undefined,
-      elapsed
-    );
-
-    if (message && message.length > 0) {
-      emit('pi coding agent', stripAnsi(message.substring(13)), { type: 'message_update' });
-    }
+    const message = `pi coding agent: ${detail} (${elapsed})`;
+    emit('pi coding agent', stripAnsi(message), { type: 'message_update' });
   }
 }
 
@@ -232,22 +244,14 @@ rl.on('line', (line: string) => {
     const tool = toolName(event);
     toolStartCount += 1;
 
-    const startMsg = `started ${tool}`;
-    emit('pi tool', startMsg, { type, toolStartCount });
-
+    // Aggregate tool calls instead of emitting individual start messages
     if (enableSummarization) {
-      emitToolSummary(event, tool, true);
+      toolBatchAggregator.recordTool(tool);
     }
   } else if (type === 'tool_execution_end' || type === 'toolcall_end') {
-    const tool = toolName(event);
     toolEndCount += 1;
 
-    const endMsg = `finished ${tool}`;
-    emit('pi tool', endMsg, { type, toolEndCount });
-
-    if (enableSummarization) {
-      emitToolSummary(event, tool, false);
-    }
+    // Tool end is batched; suppress individual emission
   } else if (type === 'message_update') {
     messageUpdateCount += 1;
 
@@ -256,10 +260,15 @@ rl.on('line', (line: string) => {
     }
   } else if (type === 'agent_start') {
     messageSampler.reset();
+    toolBatchAggregator.clear();
     emit('pi coding agent', 'agent started', { type });
   } else if (type === 'agent_end') {
+    // Flush any pending tool batches before agent ends
+    toolBatchAggregator.flush();
     emit('pi coding agent', 'agent finished', { type });
   } else if (type === 'auto_retry_start') {
+    // Flush pending batches before retry
+    toolBatchAggregator.flush();
     emit(
       'pi coding agent',
       `${ANSI_COLORS.YELLOW}auto retry started${ANSI_COLORS.RESET}`,
@@ -275,6 +284,9 @@ rl.on('line', (line: string) => {
 rl.on('close', () => {
   streamOpen = false;
   clearInterval(heartbeatTimer);
+  
+  // Flush any pending tool batches
+  toolBatchAggregator.flush();
   maybeHeartbeat(true, 'close');
 
   const finalElapsed = formatElapsed(startTime);

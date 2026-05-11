@@ -146,6 +146,61 @@ export function extractDecision(content?: string): string | null {
 }
 
 /**
+ * Extract agent thinking topic from message content
+ * E.g., "Let me find and format the GitHub App Integration..." → "[thinking] formatting GitHub App Integration"
+ */
+export function extractTopic(content?: string): string | null {
+  if (!content) return null;
+
+  const lowerContent = content.toLowerCase();
+
+  // First, try to find a topic indicator + subject
+  // Check for variations of topic keywords (e.g., "format", "formatting", "formatted")
+  const topicPatterns = [
+    /\b(formatting?|format(?:ted|ing)?)/,
+    /\b(implement(?:ing)?|implement(?:ed)?)/,
+    /\b(check(?:ing)?|checked?)/,
+    /\b(find(?:ing)?|found)/,
+    /\b(analyz(?:ing|ed)?|analyzing|analyze)/,
+    /\b(review(?:ing)?|reviewed?)/,
+    /\b(fix(?:ing)?|fixed)/,
+    /\b(adding?|added)/,
+    /\b(updat(?:ing)?|updated)/,
+    /\b(organizing?|organized)/,
+    /\b(validat(?:ing)?|validated|validate)/,
+    /\b(test(?:ing)?|tested)/,
+  ];
+
+  for (const pattern of topicPatterns) {
+    const match = lowerContent.match(pattern);
+    if (match) {
+      const idx = match.index || 0;
+      // Extract up to 50 chars after the match to capture the subject
+      const end = Math.min(content.length, idx + match[1].length + 70);
+      let snippet = content.substring(idx, end).trim();
+
+      // Stop at sentence boundaries or key phrases
+      const stopPoints = ['\n', '.', '?', ';', ' now ', ' so ', ' and then'];
+      for (const stopPoint of stopPoints) {
+        const stopIdx = snippet.indexOf(stopPoint);
+        if (stopIdx > 0 && stopIdx < snippet.length - 1) {
+          snippet = snippet.substring(0, stopIdx).trim();
+          break;
+        }
+      }
+
+      if (snippet.length > 5 && snippet.length < 80) {
+        // Capitalize first letter
+        const formatted = snippet.charAt(0).toUpperCase() + snippet.slice(1);
+        return `[thinking] ${formatted}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Detect errors in tool output
  */
 export function detectError(content?: string): { hasError: boolean; snippet?: string } {
