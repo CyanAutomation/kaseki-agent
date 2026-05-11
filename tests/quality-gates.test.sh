@@ -139,6 +139,7 @@ echo "==> Test: Overly broad allowlist detection"
 # Test 5: Multiple file allowlist
 echo "==> Test: Multiple file allowlist patterns"
 {
+  # shellcheck disable=SC2034
   KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.validation.ts docs/README.md"
   allowlist_regex="$(build_allowlist_regex)"
   

@@ -146,7 +146,9 @@ info "Test 8: GitHub API validation function logic"
 {
   # Define validation function inline for testing
   test_validate_github_api_response() {
-    local http_status="$1" response="$2"
+    local http_status="$1" 
+    # shellcheck disable=SC2034
+    local response="$2"
     [ "$http_status" = "201" ] && return 0 || return 1
   }
   

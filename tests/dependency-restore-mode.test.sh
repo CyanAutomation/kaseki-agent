@@ -23,6 +23,7 @@ printf 'cached package\n' > "$TMP_DIR/cache/node_modules/pkg/index.js"
 
 (
   cd "$TMP_DIR/workspace"
+  # shellcheck disable=SC2317
   cp() {
     if [ "${1:-}" = "-al" ]; then
       return 1
