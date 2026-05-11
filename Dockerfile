@@ -187,9 +187,9 @@ COPY --from=runtime /app/dist ./dist
 COPY --from=runtime /app/lib ./lib
 COPY --from=runtime /app/node_modules ./node_modules
 
-# Copy only production dependencies (remove devDependencies)
-# Note: This only affects kaseki-agent's own dependencies; Pi CLI and workspace cache remain untouched.
-RUN npm prune --production
+# Keep devDependencies in final image (required for validation: npm run check, npm run test, npm run build)
+# These tools (typescript, eslint, jest, etc.) are essential for kaseki's validation pipeline.
+# Image size trade-off (~50-80 MB) is acceptable given validation is core functionality.
 
 # Install global binaries and set up scripts (from runtime stage)
 RUN mkdir -p /scripts \
