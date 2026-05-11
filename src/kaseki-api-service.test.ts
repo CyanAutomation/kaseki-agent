@@ -1,11 +1,3 @@
-import * as fs from 'fs';
-import type { Server } from 'http';
-import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
-import { loadConfig } from './kaseki-api-config';
-import { JobScheduler } from './job-scheduler';
-import { WebhookManager } from './webhook-manager';
-import { RunRequestSchema } from './kaseki-api-types';
-
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
@@ -15,6 +7,15 @@ jest.mock('./secrets/host-secrets-reader', () => ({
   })),
   clearSecretCache: jest.fn(),
 }));
+
+import * as fs from 'fs';
+import type { Server } from 'http';
+import * as hostSecretsReader from './secrets/host-secrets-reader';
+import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
+import { loadConfig } from './kaseki-api-config';
+import { JobScheduler } from './job-scheduler';
+import { WebhookManager } from './webhook-manager';
+import { RunRequestSchema } from './kaseki-api-types';
 
 describe('Kaseki API Configuration', () => {
   const originalEnv = process.env;
@@ -29,7 +30,7 @@ describe('Kaseki API Configuration', () => {
   });
 
   test('loadConfig requires KASEKI_API_KEYS or KASEKI_API_KEYS_FILE', async () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null);
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
@@ -69,7 +70,7 @@ describe('Kaseki API Configuration', () => {
       expectedPort: 65535,
     },
   ])('loadConfig port boundaries: $name', ({ port, expectedError, expectedPort }) => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue('test-key');
 
     process.env.KASEKI_API_PORT = port;
@@ -116,7 +117,7 @@ describe('Kaseki API Configuration', () => {
       },
     },
   ])('loadConfig normalization: $name', ({ apiKeysValue, port, maxConcurrentRuns, expectedConfig }) => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(apiKeysValue);
 
     if (port) process.env.KASEKI_API_PORT = port;
@@ -137,7 +138,7 @@ describe('Kaseki API Configuration', () => {
   });
 
   test('loadConfig parses API keys from file', async () => {
-    const { readHostSecret } = jest.requireActual('./secrets/host-secrets-reader') as typeof import('./secrets/host-secrets-reader');
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
     const fileContents = 'key1\n# comment\nkey2\n';
     (readHostSecret as jest.Mock).mockReturnValue(fileContents);
 
