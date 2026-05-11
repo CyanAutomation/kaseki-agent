@@ -9,6 +9,7 @@ import {
   truncate,
   formatProgressMessage,
   EventSampler,
+  extractTopic,
 } from '../src/pi-progress-summarizer';
 
 describe('pi-progress-summarizer', () => {
@@ -297,6 +298,117 @@ describe('pi-progress-summarizer', () => {
       const summary = summarizeEvent(event, 'unknown_tool', Date.now() - 5000);
       // Should return an object (elapsed is always added)
       expect(summary).toBeTruthy();
+    });
+  });
+
+  describe('extractTopic', () => {
+    it('extracts topic from formatting indicator', () => {
+      const result = extractTopic('Let me find and format the GitHub App Integration section');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result).toContain('[thinking]');
+        expect(result.toLowerCase()).toContain('format');
+      }
+    });
+
+    it('detects implementing topic', () => {
+      const result = extractTopic('Now I will implement the error handler for async operations');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result).toContain('[thinking]');
+        expect(result.toLowerCase()).toContain('implement');
+      }
+    });
+
+    it('detects checking topic', () => {
+      const result = extractTopic('Let me check if there are any invalid imports in the codebase');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result).toContain('[thinking]');
+        expect(result.toLowerCase()).toContain('check');
+      }
+    });
+
+    it('detects analyzing topic', () => {
+      const result = extractTopic('I should analyze the test failures to understand the root cause');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result).toContain('[thinking]');
+        expect(result.toLowerCase()).toContain('analyz');
+      }
+    });
+
+    it('returns null for content without topic indicators', () => {
+      expect(extractTopic('Just reading through the file')).toBeNull();
+      expect(extractTopic('Some random text without indicators')).toBeNull();
+    });
+
+    it('returns null for empty content', () => {
+      expect(extractTopic('')).toBeNull();
+      expect(extractTopic(undefined)).toBeNull();
+    });
+
+    it('stops at sentence boundaries', () => {
+      const result = extractTopic('Now I will format the config file. Then I need to test it.');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result.length).toBeLessThanOrEqual(100);
+        // Should not include content from second sentence
+        const lowerResult = result.toLowerCase();
+        expect(lowerResult).not.toContain('then');
+        expect(lowerResult).not.toContain('test it');
+      }
+    });
+
+    it('capitalizes first letter of extracted topic', () => {
+      const result = extractTopic('let me implement a new parser module for JSON files');
+      if (result) {
+        expect(result).toMatch(/\[thinking\] [A-Z]/);
+      }
+    });
+
+    it('handles multiple indicator keywords - picks first', () => {
+      const result = extractTopic('I will analyze and format the configuration properly');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result.toLowerCase()).toMatch(/analyz|format/);
+      }
+    });
+
+    it('extracts context after indicator', () => {
+      const result = extractTopic('I am checking if the environment variables are properly set');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result.toLowerCase()).toContain('check');
+      }
+    });
+
+    it('handles case-insensitive matching', () => {
+      const result = extractTopic('I will FORMAT the CONFIG file');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result).toContain('[thinking]');
+        expect(result.toLowerCase()).toContain('format');
+      }
+    });
+
+    it('extracts finding topic', () => {
+      const result = extractTopic('Let me find the root cause of the issue');
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result.toLowerCase()).toContain('find');
+      }
+    });
+
+    it('keeps topic snippet under length limit', () => {
+      const result = extractTopic(
+        'Now I will format all the configuration files across the entire application ' +
+          'to ensure consistency and compliance with the new standards'
+      );
+      expect(result).toBeTruthy();
+      if (result) {
+        expect(result.length).toBeLessThanOrEqual(120);
+      }
     });
   });
 });
