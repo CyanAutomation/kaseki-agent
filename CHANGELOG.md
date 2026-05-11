@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.22.0...v1.23.0) (2026-05-11)
+
+### Features
+
+* enhance validation logging by capturing stderr output for diagnostics ([895a070](https://github.com/CyanAutomation/kaseki-agent/commit/895a07099b61aabcc48555f5974241ad4f49e8d7))
+
+### Bug Fixes
+
+* suppress shellcheck warnings for unused variables in test scripts ([aabae68](https://github.com/CyanAutomation/kaseki-agent/commit/aabae6830f37c0c1208ca93c67827f85d105fb91))
+
 ## [1.22.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.21.0...v1.22.0) (2026-05-11)
 
 ### Features
