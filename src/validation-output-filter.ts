@@ -217,6 +217,11 @@ export function filterValidationOutput(input: string): string {
  * Main: read from stdin and process
  */
 function main(): void {
+  // Set exit code to 0 IMMEDIATELY as default.
+  // This ensures we always exit with 0, even if something crashes before 'close' fires.
+  // This is critical for avoiding SIGPIPE failures in pipelines.
+  process.exitCode = 0;
+
   const state = createInitialState();
 
   const rl = createInterface({
@@ -229,11 +234,13 @@ function main(): void {
   rl.on('error', (err) => {
     // Log to stderr but don't crash - allow graceful shutdown
     console.error(`[validation-output-filter] readline error: ${err.message}`);
+    // Ensure exit code stays at 0
+    process.exitCode = 0;
   });
 
   // Handle stdin close event
   rl.on('close', () => {
-    // Always exit with 0 (filter is diagnostic tool, not part of command logic).
+    // Confirm exit with 0 (filter is diagnostic tool, not part of command logic).
     // Internal errors are logged to stderr but don't block the pipeline.
     process.exitCode = 0;
   });
@@ -284,14 +291,16 @@ function main(): void {
   // Handle process-level errors (uncaught exceptions, unhandled rejections)
   process.on('error', (err) => {
     console.error(`[validation-output-filter] process error: ${err.message}`);
-    // Don't call process.exit() - let graceful shutdown via stdin close
+    // Ensure we exit with 0 (filter is diagnostic, errors don't block pipeline)
+    process.exitCode = 0;
   });
 
   process.on('uncaughtException', (err) => {
     console.error(
       `[validation-output-filter] uncaught exception: ${err instanceof Error ? err.message : String(err)}`
     );
-    // Don't call process.exit() - let graceful shutdown via stdin close
+    // Ensure we exit with 0
+    process.exitCode = 0;
   });
 
   // Handle unhandled promise rejections
@@ -299,8 +308,24 @@ function main(): void {
     console.error(
       `[validation-output-filter] unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`
     );
-    // Don't call process.exit() - let graceful shutdown via stdin close
+    // Ensure we exit with 0
+    process.exitCode = 0;
   });
+
+  // Fallback timeout: ensure we exit with 0 after 30 seconds even if something hangs
+  // This prevents the filter from hanging indefinitely in edge cases
+  const fallbackTimeout = setTimeout(() => {
+    console.error('[validation-output-filter] WARNING: Fallback timeout triggered (30s), forcing exit with code 0');
+    process.exitCode = 0;
+    process.exit(0);
+  }, 30000);
+
+  // Clear fallback timeout once readline closes (normal path)
+  const originalClose = rl.close.bind(rl);
+  rl.close = function() {
+    clearTimeout(fallbackTimeout);
+    return originalClose();
+  };
 }
 
 const entrypoint = process.argv[1] ? basename(process.argv[1]) : '';
