@@ -430,7 +430,7 @@ write_result_summary() {
 - Validation: $validation_status ($VALIDATION_EXIT)
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
+$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
