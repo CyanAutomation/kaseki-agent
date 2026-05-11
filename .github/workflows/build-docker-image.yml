@@ -102,14 +102,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build TypeScript
+        run: npm run build
+
       - name: Run lint
         run: npm run lint
 
       - name: Run tests
         run: npm test
-
-      - name: Build TypeScript
-        run: npm run build
 
       - name: Validate module imports (docker bin dependencies)
         run: npm run validate-module-imports
