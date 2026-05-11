@@ -319,6 +319,10 @@ Check GitHub → Settings → Code security → Dependabot alerts for any discov
 
 - Compiled TypeScript modules from `src/`
 - Pi CLI node_modules (from deps stage)
+- **Subdirectory structure preserved**: Helper modules in `dist/lib/` are copied to `/app/lib/lib/` to maintain import paths
+  - `event-timestamp-helpers.js` — Used by pi-event-filter
+  - `subprocess-helpers.js` — Used by kaseki-api-routes and job-scheduler
+  - This preservation ensures relative imports (`./lib/module.js`) resolve correctly at runtime
 
 **Working directories**:
 
