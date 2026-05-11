@@ -66,7 +66,7 @@ export function classifyDockerFailure(stderr: string): DockerFailureClassificati
  * @param result SpawnSync result object
  * @returns Combined error message string
  */
-export function extractErrorMessage(result: SpawnSyncReturns<string | Buffer>): string {
+function extractErrorMessage(result: SpawnSyncReturns<string | Buffer>): string {
   const parts: string[] = [];
   if (result.stderr) {
     parts.push(typeof result.stderr === 'string' ? result.stderr : result.stderr.toString());

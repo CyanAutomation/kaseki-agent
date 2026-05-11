@@ -4,32 +4,7 @@ import { once } from 'node:events';
 import readline from 'node:readline';
 import { EventCounterAggregator } from './event-aggregator.js';
 import { TimestampTracker } from './timestamp-tracker.js';
-
-interface PiEvent {
-  type?: string;
-  timestamp?: string | number;
-  message?: {
-    model?: string;
-    api?: string;
-    timestamp?: string | number;
-    content?: Array<{ type: string }>;
-  };
-  assistantMessageEvent?: {
-    type?: string;
-    message?: {
-      model?: string;
-      api?: string;
-      timestamp?: string | number;
-      content?: Array<{ type: string }>;
-    };
-    partial?: {
-      model?: string;
-      api?: string;
-      timestamp?: string | number;
-      content?: Array<{ type: string }>;
-    };
-  };
-}
+import { extractEventTimestamp, PiEvent } from './lib/event-timestamp-helpers.js';
 
 interface EventCountMap {
   [key: string]: number;
@@ -72,21 +47,6 @@ function stopRssSampler(): void {
   maxRssBytes = Math.max(maxRssBytes, process.memoryUsage().rss);
   process.stderr.write(`MAX_RSS_BYTES=${maxRssBytes}
 `);
-}
-
-function eventTimestamp(event: PiEvent): string | null {
-  const candidates = [
-    event.timestamp,
-    event.message?.timestamp,
-    event.assistantMessageEvent?.message?.timestamp,
-    event.assistantMessageEvent?.partial?.timestamp,
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' && Number.isFinite(value))
-      return new Date(value).toISOString();
-  }
-  return null;
 }
 
 function shouldKeep(event: PiEvent): boolean {
@@ -135,7 +95,7 @@ async function main(): Promise<void> {
     aggregator.recordEventType(event.type);
 
     // Track timestamp
-    const timestamp = eventTimestamp(event);
+    const timestamp = extractEventTimestamp(event);
     if (timestamp) {
       tracker.record(timestamp);
     }

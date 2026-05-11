@@ -115,13 +115,6 @@ function readSecretFromPath(filePath: string): string | null {
 }
 
 /**
- * Clear the secret cache. Useful for testing or forced re-read.
- */
-export function clearSecretCache(): void {
-  secretCache.clear();
-}
-
-/**
  * Get secret locations for debugging/error messages.
  *
  * @param secretName - Name of the secret
