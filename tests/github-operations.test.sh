@@ -262,9 +262,62 @@ else
   fail "Backoff calculation failed: $(cat "$RESULTS_DIR/test12.log")"
 fi
 
+
+# Test 13: Git push pipeline failures are not hidden by tee without pipefail
+info "Test 13: Git push failure survives tee when pipefail is disabled"
+{
+  GITHUB_PUSH_EXIT=0
+  git_push_log="$RESULTS_DIR/test13.log"
+  : > "$git_push_log"
+
+  simulate_github_push_with_tee() {
+    local git_push_exit
+
+    git() {
+      if [ "${1:-}" = "push" ]; then
+        printf 'simulated git push failure\n' >&2
+        return 42
+      fi
+      return 0
+    }
+
+    set +o pipefail
+    git push "https://github.com/owner-name/repo-name.git" "kaseki/test-instance" --force-with-lease 2>&1 | tee -a "$git_push_log"
+    git_push_exit="${PIPESTATUS[0]:-1}"
+    if [ "$git_push_exit" -eq 0 ]; then
+      printf 'Branch pushed successfully\n' | tee -a "$git_push_log"
+    else
+      printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a "$git_push_log" >&2
+      GITHUB_PUSH_EXIT="$git_push_exit"
+      return "$git_push_exit"
+    fi
+  }
+
+  simulate_github_push_with_tee || printf 'simulate_exit=%s\n' "$?" >> "$git_push_log"
+  printf 'GITHUB_PUSH_EXIT=%s\n' "$GITHUB_PUSH_EXIT" >> "$git_push_log"
+} > "$RESULTS_DIR/test13.out" 2>&1
+
+if grep -q "Branch pushed successfully" "$RESULTS_DIR/test13.log"; then
+  fail "Git push failure was hidden by tee: $(cat "$RESULTS_DIR/test13.log")"
+fi
+
+if grep -q "Failed to push branch (exit 42)" "$RESULTS_DIR/test13.log" && \
+   grep -q "GITHUB_PUSH_EXIT=42" "$RESULTS_DIR/test13.log"; then
+  pass "Git push failure is reported from PIPESTATUS despite pipefail being disabled"
+else
+  fail "Git push failure was not reported correctly: $(cat "$RESULTS_DIR/test13.log")"
+fi
+
+if grep -q 'git_push_exit="${PIPESTATUS\[0\]:-1}"' "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q 'Failed to push branch (exit %s)' "$ROOT_DIR/kaseki-agent.sh"; then
+  pass "Production GitHub push block records git push exit status"
+else
+  fail "Production GitHub push block does not record git push exit status"
+fi
+
 # Summary
 info "All tests passed!"
 printf '\n==> Summary\n'
-printf 'Tests run: 12\n'
-printf 'Passed: 12\n'
+printf 'Tests run: 13\n'
+printf 'Passed: 13\n'
 printf 'Failed: 0\n'
