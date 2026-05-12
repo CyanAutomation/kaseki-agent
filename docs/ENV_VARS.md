@@ -10,10 +10,10 @@ Complete reference for all environment variables used by kaseki-agent.
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL (<https://github.com/owner/repo>) |
+| `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL ([https://github.com/owner/repo](https://github.com/owner/repo)) |
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
-| `KASEKI_MODEL` | `openrouter/free` | string | Pi model identifier (see OpenRouter catalog) |
+| `KASEKI_MODEL` | `openrouter/free` | string | Pi model identifier (see [OpenRouter catalog](https://openrouter.ai/models)) |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
 
 ### API Keys & Credentials
@@ -29,8 +29,10 @@ Complete reference for all environment variables used by kaseki-agent.
 
 **Note:** Prefer file-based credential variables (with `_FILE` suffix) for security. Files are resolved from:
 
-1. `/agents/secrets/{name}` (preferred)
-2. `~/.secrets/{name}` (fallback)
+| Priority | Path |
+|----------|------|
+| 1 | `/agents/secrets/{name}` (preferred) |
+| 2 | `~/.secrets/{name}` (fallback) |
 
 ### GitHub App Configuration
 
@@ -44,17 +46,11 @@ Complete reference for all environment variables used by kaseki-agent.
 
 When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-agent automatically searches for credentials in:
 
-1. **Environment variables** (highest priority):
-   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`
-   
-2. **Secret files** (standard locations):
-   - `/agents/secrets/github_app_*`
-   - `~/.secrets/github_app_*`
-   
-3. **Auto-detected paths** (convenience locations):
-   - `~/.ssh/github-app-private-key` (private key only)
-   - `$PWD/.github-app-secrets/private-key` (private key only)
-   - `/etc/kaseki-secrets/github_app_private_key` (private key only)
+| Priority | Source | Details |
+|----------|--------|---------|
+| 1 | **Environment variables** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY` |
+| 2 | **Secret files** | `/agents/secrets/github_app_*`, `~/.secrets/github_app_*` |
+| 3 | **Auto-detected paths** | `~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key` (private key only) |
 
 **Behavior by `KASEKI_PUBLISH_MODE`:**
 

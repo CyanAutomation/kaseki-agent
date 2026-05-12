@@ -31,10 +31,12 @@ npx kaseki-agent run <repo> <ref>
 
 ### Requirements
 
-- **Node.js v24 or higher**
-- **Docker** (for running agent containers)
-- **Linux or macOS** (headless Linux recommended)
-- **Internet access** (for OpenRouter API)
+| Requirement | Description |
+|-------------|-------------|
+| **Node.js v24 or higher** | JavaScript runtime |
+| **Docker** | For running agent containers |
+| **Linux or macOS** | Headless Linux recommended |
+| **Internet access** | For OpenRouter API |
 
 ### Verify Installation
 
