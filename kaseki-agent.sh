@@ -37,6 +37,7 @@ KASEKI_STRICT_SCRIPT_CHECK="${KASEKI_STRICT_SCRIPT_CHECK:-0}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-auto}"
 KASEKI_GITHUB_PR_RETRIES="${KASEKI_GITHUB_PR_RETRIES:-3}"
+KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK="${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}"
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 CURRENT_STAGE="initializing"
@@ -1582,6 +1583,60 @@ $memory_section
 EOF
 }
 
+
+parse_github_repo_url() {
+  local repo_url repo_name
+  repo_url="$1"
+  GITHUB_REPO_OWNER=""
+  GITHUB_REPO_NAME=""
+
+  if [[ "$repo_url" =~ ^https?://github\.com/([^/]+)/([^/]+)(/|\.git)?$ ]]; then
+    repo_name="${BASH_REMATCH[2]}"
+    GITHUB_REPO_OWNER="${BASH_REMATCH[1]}"
+    GITHUB_REPO_NAME="${repo_name%.git}"
+    return 0
+  fi
+
+  return 1
+}
+
+parse_github_app_token_helper_failure() {
+  local helper_stdout helper_stderr helper_exit_code
+  helper_stdout="$1"
+  helper_stderr="$2"
+  helper_exit_code="$3"
+
+  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
+    const fs = require("fs");
+    const stdout = fs.readFileSync(0, "utf8");
+    const stderr = process.env.TOKEN_HELPER_STDERR || "";
+    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || "unknown";
+    const sanitize = (value) => String(value || "")
+      .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
+      .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
+      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/ {2,}/g, " ")
+      .trim();
+    let error = "";
+    let status = "";
+    try {
+      const parsed = JSON.parse(stdout || "{}");
+      error = parsed.error || parsed.message || "";
+      const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
+      if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
+    } catch (_) {}
+    error = sanitize(error);
+    if (!error) error = sanitize(stderr);
+    if (!error) error = `github-app-token helper exited with code ${exitCode}`;
+    if (!status) {
+      const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
+      if (match) status = match[1];
+    }
+    process.stdout.write(`${error}\t${status}`);
+  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
+}
+
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
@@ -1644,6 +1699,54 @@ check_github_operations_health() {
     return 1
   fi
   printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
+
+  # Check 7: Optional live GitHub App auth smoke test. Enabled by default
+  # (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1) so startup does not report a full
+  # GitHub preflight pass when credentials are readable but cannot mint an
+  # installation token for REPO_URL. Set KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+  # to skip this networked auth check; the later GitHub operations stage will
+  # still attempt token generation and report any failure.
+  if [ "${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}" = "1" ]; then
+    local owner repo app_id token_stdout_tmp token_stderr_tmp token_exit_code token_data token_stderr token_parse_result token_error
+    if parse_github_repo_url "$REPO_URL"; then
+      owner="$GITHUB_REPO_OWNER"
+      repo="$GITHUB_REPO_NAME"
+      app_id="$(cat /run/secrets/github_app_id 2>/dev/null)" || app_id=""
+      if [ -z "$app_id" ]; then
+        printf '[health-check] ERROR: Cannot read GitHub App ID for auth smoke test\n' | tee -a "$health_log" >&2
+        return 1
+      fi
+
+      token_stdout_tmp="$(mktemp /tmp/github-health-token-stdout.XXXXXX)" || {
+        printf '[health-check] ERROR: Failed to create token stdout temp file\n' | tee -a "$health_log" >&2
+        return 1
+      }
+      token_stderr_tmp="$(mktemp /tmp/github-health-token-stderr.XXXXXX)" || {
+        printf '[health-check] ERROR: Failed to create token stderr temp file\n' | tee -a "$health_log" >&2
+        rm -f "$token_stdout_tmp"
+        return 1
+      }
+
+      /usr/local/bin/github-app-token "$app_id" /run/secrets/github_app_private_key "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+      token_exit_code=$?
+      token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
+      token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
+      rm -f "$token_stdout_tmp" "$token_stderr_tmp"
+
+      if [ "$token_exit_code" -ne 0 ]; then
+        token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
+        token_error="${token_parse_result%%$'\t'*}"
+        printf '[health-check] ERROR: GitHub App token generation failed for owner/repo: %s\n' "$token_error" | tee -a "$health_log" >&2
+        return 1
+      fi
+
+      printf '[health-check] ✓ GitHub App token generation works for owner/repo\n' | tee -a "$health_log"
+    else
+      printf '[health-check] SKIP: Cannot parse GitHub repo URL for auth smoke test: %s\n' "$REPO_URL" | tee -a "$health_log"
+    fi
+  else
+    printf '[health-check] SKIP: GitHub App auth smoke test disabled (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=%s)\n' "${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-}" | tee -a "$health_log"
+  fi
   
   printf '[preflight] github operations health check PASSED\n' | tee -a "$health_log"
   return 0
@@ -1754,9 +1857,9 @@ run_github_operations() {
   private_key_file="/run/secrets/github_app_private_key"
   
   # Parse repo URL to extract owner and repo
-  if [[ "$REPO_URL" =~ ^https?://github\.com/([^/]+)/([^/]+)(/|\.git)?$ ]]; then
-    owner="${BASH_REMATCH[1]}"
-    repo="${BASH_REMATCH[2]}"
+  if parse_github_repo_url "$REPO_URL"; then
+    owner="$GITHUB_REPO_OWNER"
+    repo="$GITHUB_REPO_NAME"
   else
     printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a /results/git-push.log >&2
     return 7
@@ -1783,35 +1886,7 @@ run_github_operations() {
   token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
   rm -f "$token_stdout_tmp" "$token_stderr_tmp"
   if [ "$token_exit_code" -ne 0 ]; then
-    token_parse_result="$(printf '%s' "$token_data" | TOKEN_HELPER_STDERR="$token_stderr" TOKEN_HELPER_EXIT_CODE="$token_exit_code" node -e '
-      const fs = require("fs");
-      const stdout = fs.readFileSync(0, "utf8");
-      const stderr = process.env.TOKEN_HELPER_STDERR || "";
-      const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || "unknown";
-      const sanitize = (value) => String(value || "")
-        .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
-        .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
-        .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
-        .replace(/[\r\n\t]+/g, " ")
-        .replace(/ {2,}/g, " ")
-        .trim();
-      let error = "";
-      let status = "";
-      try {
-        const parsed = JSON.parse(stdout || "{}");
-        error = parsed.error || parsed.message || "";
-        const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
-        if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
-      } catch (_) {}
-      error = sanitize(error);
-      if (!error) error = sanitize(stderr);
-      if (!error) error = `github-app-token helper exited with code ${exitCode}`;
-      if (!status) {
-        const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
-        if (match) status = match[1];
-      }
-      process.stdout.write(`${error}\t${status}`);
-    ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$token_exit_code")"
+    token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
     token_error="${token_parse_result%%$'\t'*}"
     token_http_status=""
     if [ "$token_parse_result" != "$token_error" ]; then
