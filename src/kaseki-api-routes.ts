@@ -420,12 +420,13 @@ export function createApiRouter(
             : req.body?.startupCheck,
       });
 
-      if ((runRequest.publishMode === 'branch' || runRequest.publishMode === 'draft_pr') && !isGitHubAppReady()) {
+      const effectivePublishMode = runRequest.publishMode || 'draft_pr';
+      if ((effectivePublishMode === 'branch' || effectivePublishMode === 'draft_pr') && !isGitHubAppReady()) {
         return sendErrorResponse(
           res,
           400,
           'Bad Request',
-          `publishMode=${runRequest.publishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
+          `publishMode=${effectivePublishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
         );
       }
 
@@ -458,7 +459,7 @@ export function createApiRouter(
         repoUrl: runRequest.repoUrl,
         ref: runRequest.ref,
         taskMode: runRequest.taskMode,
-        publishMode: runRequest.publishMode,
+        publishMode: effectivePublishMode,
         startupCheck: runRequest.startupCheck,
         idempotencyKey,
       });

@@ -334,6 +334,41 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('defaults omitted publish mode to draft PR for controller runs', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_PUBLISH_MODE: 'draft_pr',
+        }),
+      }),
+    );
+  });
+
   test('passes requested publish mode to controller runs', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

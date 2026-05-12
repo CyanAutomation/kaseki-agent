@@ -1264,10 +1264,13 @@ When credentials are configured and publishing is enabled:
    - Body: Model, duration, validation result, quality checks
    - Draft: `true` for safety; review before merging
 
-Publishing modes are `none`, `branch`, and `draft_pr`. Controller requests that
-ask for `branch` or `draft_pr` fail before queueing unless GitHub App credentials
-are readable, so orchestrators can surface a clear setup error instead of waiting
-for a run that cannot publish.
+Publishing modes are `none`, `branch`, and `draft_pr`. Controller requests
+default omitted `publishMode` to `draft_pr`, so the normal controller path pushes
+a branch and opens a draft pull request after validation. Requests that resolve to
+`branch` or `draft_pr` fail before queueing unless GitHub App credentials are
+readable, so orchestrators can surface a clear setup error instead of waiting
+for a run that cannot publish. Set `publishMode` to `none` to opt out of GitHub
+publishing for a specific API run.
 
 ### Result Artifacts
 
@@ -1298,7 +1301,7 @@ for a run that cannot publish.
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
-| `KASEKI_PUBLISH_MODE` | auto | `none`, `branch`, or `draft_pr`; API requests use `publishMode` |
+| `KASEKI_PUBLISH_MODE` | auto | `none`, `branch`, or `draft_pr`; controller API requests default omitted `publishMode` to `draft_pr` and pass that to workers |
 | `KASEKI_STARTUP_CHECK_MODE` | boot | Dry-run startup check depth: `boot` or `baseline-validation` |
 
 ### Validation and Quality Gates
