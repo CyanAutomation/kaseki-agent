@@ -1708,12 +1708,12 @@ check_github_operations_health() {
   fi
   printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
   
-  # Check 3: Test Node.js github-app-token helper script exists
+  # Check 3: Test Node.js github-app-token helper file exists and is executable
   if ! [ -x /usr/local/bin/github-app-token ]; then
     printf '[health-check] ERROR: github-app-token helper not found at /usr/local/bin/github-app-token\n' | tee -a "$health_log" >&2
     return 1
   fi
-  printf '[health-check] ✓ github-app-token helper is available\n' | tee -a "$health_log"
+  printf '[health-check] ✓ github-app-token helper file exists and is executable\n' | tee -a "$health_log"
   
   # Check 4: Test Node.js is available
   if ! command -v node >/dev/null 2>&1; then
@@ -1734,14 +1734,43 @@ check_github_operations_health() {
   fi
   printf '[health-check] ✓ Node.js JSON parsing works\n' | tee -a "$health_log"
   
-  # Check 6: Test curl is available
+  # Check 6: Test github-app-token helper can start and resolve runtime imports
+  local helper_probe_stdout_tmp helper_probe_stderr_tmp helper_probe_exit_code helper_probe_stdout helper_probe_stderr helper_probe_parse_result helper_probe_error
+  helper_probe_stdout_tmp="$(mktemp /tmp/github-health-helper-probe-stdout.XXXXXX)" || {
+    printf '[health-check] ERROR: Failed to create helper load probe stdout temp file\n' | tee -a "$health_log" >&2
+    return 1
+  }
+  helper_probe_stderr_tmp="$(mktemp /tmp/github-health-helper-probe-stderr.XXXXXX)" || {
+    printf '[health-check] ERROR: Failed to create helper load probe stderr temp file\n' | tee -a "$health_log" >&2
+    rm -f "$helper_probe_stdout_tmp"
+    return 1
+  }
+
+  /usr/local/bin/github-app-token >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
+  helper_probe_exit_code=$?
+  helper_probe_stdout="$(cat "$helper_probe_stdout_tmp" 2>/dev/null || true)"
+  helper_probe_stderr="$(cat "$helper_probe_stderr_tmp" 2>/dev/null || true)"
+  rm -f "$helper_probe_stdout_tmp" "$helper_probe_stderr_tmp"
+
+  if [ "$helper_probe_exit_code" -eq 0 ] || ! printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -qi 'usage:.*github-app-token'; then
+    helper_probe_parse_result="$(parse_github_app_token_helper_failure "$helper_probe_stdout" "$helper_probe_stderr" "$helper_probe_exit_code")"
+    helper_probe_error="${helper_probe_parse_result%%$'\t'*}"
+    if printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -Eq 'github-app-private-key(\.js)?'; then
+      helper_probe_error='missing dependency github-app-private-key.js'
+    fi
+    printf '[health-check] ERROR: github-app-token helper failed to load: %s\n' "$helper_probe_error" | tee -a "$health_log" >&2
+    return 1
+  fi
+  printf '[health-check] ✓ github-app-token helper can start and resolve imports\n' | tee -a "$health_log"
+
+  # Check 7: Test curl is available
   if ! command -v curl >/dev/null 2>&1; then
     printf '[health-check] ERROR: curl is not available\n' | tee -a "$health_log" >&2
     return 1
   fi
   printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
 
-  # Check 7: Optional live GitHub App auth smoke test. Enabled by default
+  # Check 8: Optional live GitHub App auth smoke test. Enabled by default
   # (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1) so startup does not report a full
   # GitHub preflight pass when credentials are readable but cannot mint an
   # installation token for REPO_URL. Set KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
