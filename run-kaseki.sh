@@ -122,6 +122,42 @@ read_secret_value() {
   return 1
 }
 
+
+private_key_metadata_json() {
+  local key_file="$1"
+  local byte_count first_pem_header_line pem_footer_present sha256_fingerprint
+  byte_count="$(wc -c < "$key_file" | awk '{print $1}')"
+  first_pem_header_line="$(sed -n '1p' "$key_file")"
+  if ! printf '%s\n' "$first_pem_header_line" | grep -Eq '^-----BEGIN .*PRIVATE KEY-----$'; then
+    first_pem_header_line=""
+  fi
+  if grep -Eq '^-----END .*PRIVATE KEY-----$' "$key_file"; then
+    pem_footer_present="true"
+  else
+    pem_footer_present="false"
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256_fingerprint="$(sha256sum "$key_file" | awk '{print $1}')"
+  else
+    sha256_fingerprint="$(shasum -a 256 "$key_file" | awk '{print $1}')"
+  fi
+  cat <<META
+{
+  "byte_count": $byte_count,
+  "first_pem_header_line": $(json_string "$first_pem_header_line"),
+  "pem_footer_present": $pem_footer_present,
+  "sha256_fingerprint": $(json_string "$sha256_fingerprint")
+}
+META
+}
+
+write_private_key_metadata_diagnostics() {
+  local key_file="$1"
+  local metadata_file="$RESULT_DIR/github-app-private-key-metadata.json"
+  private_key_metadata_json "$key_file" > "$metadata_file"
+  printf 'GitHub App private key metadata: %s\n' "$(tr -d '\n' < "$metadata_file")" | tee -a "$RESULT_DIR/progress.log"
+}
+
 normalize_private_key_pem() {
   if ! command -v node >/dev/null 2>&1; then
     cat
@@ -945,6 +981,7 @@ if resolve_github_credentials; then
     chmod 0600 "$GITHUB_APP_CLIENT_ID_FILE"
     printf '%s' "$github_private_key_value" | normalize_private_key_pem > "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     chmod 0600 "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
+    write_private_key_metadata_diagnostics "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
     unset github_private_key_value
   else
     # Credentials not complete or publish mode is none
