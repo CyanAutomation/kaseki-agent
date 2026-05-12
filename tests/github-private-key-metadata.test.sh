@@ -34,11 +34,7 @@ EOF_DOCKER
 chmod +x "$FAKE_BIN/docker"
 
 PRIVATE_KEY_FILE="$TMP_DIR/private-key.pem"
-cat > "$PRIVATE_KEY_FILE" <<'EOF_KEY'
------BEGIN PRIVATE KEY-----
-HOST-SECRET-BODY-ghp_abcdefghijklmnopqrstuvwxyz1234567890
------END PRIVATE KEY-----
-EOF_KEY
+printf '%s' '-----BEGIN RSA PRIVATE KEY----- HOST-SECRET-BODY-ghp_abcdefghijklmnopqrstuvwxyz1234567890 -----END RSA PRIVATE KEY-----' > "$PRIVATE_KEY_FILE"
 
 KASEKI_ROOT="$TMP_DIR/kaseki"
 OUTPUT_LOG="$TMP_DIR/run-output.log"
@@ -73,15 +69,11 @@ node -e '
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-let value = fs.readFileSync(process.argv[2], "utf8").trim().replace(/\\n/g, "\n");
-const match = value.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/);
-if (!match) throw new Error("test key did not match PEM shape");
-const body = match[2].replace(/\s+/g, "");
-const lines = body.match(/.{1,64}/g) || [];
-const normalized = `-----BEGIN ${match[1]}-----\n${lines.join("\n")}\n-----END ${match[1]}-----\n`;
-const expectedHash = crypto.createHash("sha256").update(Buffer.from(normalized)).digest("hex");
-if (metadata.byte_count !== Buffer.byteLength(normalized)) throw new Error(`byte_count mismatch: ${metadata.byte_count}`);
-if (metadata.first_pem_header_line !== "-----BEGIN PRIVATE KEY-----") throw new Error("header mismatch");
+const input = fs.readFileSync(process.argv[2], "utf8");
+const expectedMetadataInput = input.endsWith("\n") ? input : `${input}\n`;
+const expectedHash = crypto.createHash("sha256").update(Buffer.from(expectedMetadataInput)).digest("hex");
+if (metadata.byte_count !== Buffer.byteLength(expectedMetadataInput)) throw new Error(`byte_count mismatch: ${metadata.byte_count}`);
+if (metadata.first_pem_header_line !== "-----BEGIN RSA PRIVATE KEY-----") throw new Error(`header mismatch: ${metadata.first_pem_header_line}`);
 if (metadata.pem_footer_present !== true) throw new Error("footer flag mismatch");
 if (metadata.sha256_fingerprint !== expectedHash) throw new Error("fingerprint mismatch");
 ' "$METADATA_FILE" "$PRIVATE_KEY_FILE"
