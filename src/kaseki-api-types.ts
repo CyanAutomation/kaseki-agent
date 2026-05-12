@@ -116,6 +116,10 @@ export const RunRequestSchema = z.object({
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
   publishMode: z.enum(['none', 'branch', 'draft_pr']).optional().describe('Publishing mode after validation'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
+  startupCheckMode: z
+    .enum(['boot', 'baseline-validation'])
+    .optional()
+    .describe('Startup check depth: boot-only container smoke test or baseline validation dry-run'),
   webhookConfig: WebhookConfigSchema.optional().describe('Webhook configuration for job events'),
   tracing: RequestTracingSchema.optional().describe('Request tracing identifiers'),
   idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
