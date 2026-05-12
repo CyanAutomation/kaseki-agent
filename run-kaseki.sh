@@ -20,6 +20,8 @@ KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
+KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
+KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_KEEP_WORKSPACE="${KASEKI_KEEP_WORKSPACE:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
@@ -231,7 +233,10 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   OPENROUTER_API_KEY_FILE           Path to file containing API key
   KASEKI_MODEL                      AI model (default: openrouter/free)
   KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
-  KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
+  KASEKI_PRE_AGENT_VALIDATION       Run baseline validation before Pi (default: 1)
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS
+                                    Semicolon-separated pre-agent validation cmds
+  KASEKI_VALIDATION_COMMANDS        Semicolon-separated post-agent validation cmds
   KASEKI_STARTUP_CHECK_MODE          boot or baseline-validation for dry-run startup checks
   KASEKI_STREAM_PROGRESS            Stream sanitized progress lines (default: 1)
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
@@ -680,7 +685,13 @@ initialize_result_artifacts() {
   : > "$RESULT_DIR/git.status"
   : > "$RESULT_DIR/git.diff"
   : > "$RESULT_DIR/changed-files.txt"
+  : > "$RESULT_DIR/pre-validation.log"
+  : > "$RESULT_DIR/pre-validation-raw.log"
+  : > "$RESULT_DIR/pre-validation-env.log"
+  : > "$RESULT_DIR/pre-validation-timings.tsv"
   : > "$RESULT_DIR/validation.log"
+  : > "$RESULT_DIR/validation-raw.log"
+  : > "$RESULT_DIR/validation-env.log"
   : > "$RESULT_DIR/validation-timings.tsv"
   : > "$RESULT_DIR/stage-timings.tsv"
   : > "$RESULT_DIR/dependency-cache.log"
@@ -984,6 +995,8 @@ docker_args=(
   -e KASEKI_PROVIDER="$KASEKI_PROVIDER"
   -e KASEKI_MODEL="$KASEKI_MODEL"
   -e KASEKI_AGENT_TIMEOUT_SECONDS="$KASEKI_AGENT_TIMEOUT_SECONDS"
+  -e KASEKI_PRE_AGENT_VALIDATION="$KASEKI_PRE_AGENT_VALIDATION"
+  -e KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
   -e KASEKI_VALIDATION_COMMANDS="$KASEKI_VALIDATION_COMMANDS"
   -e KASEKI_DEBUG_RAW_EVENTS="$KASEKI_DEBUG_RAW_EVENTS"
   -e KASEKI_TASK_MODE="$KASEKI_TASK_MODE"
