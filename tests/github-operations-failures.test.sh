@@ -200,7 +200,34 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 7: Diagnostic script exists =====
+# ===== Test 7: GitHub App token helper failure diagnostics =====
+test_case "GitHub App token helper failure diagnostics"
+
+if grep -q 'token_exit_code=\$?' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'github-app-token.*>"\$token_stdout_tmp" 2>"\$token_stderr_tmp"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Token helper captures stdout, stderr, and exit code\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Token helper capture logic not found\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if grep -q 'parsed.error || parsed.message' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'Failed to generate token: %s' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Token helper failures log parsed error details\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Token helper failure logging lacks parsed error details\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if grep -q 'GITHUB_API_ERROR_TYPE="github_app_token_error"' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'emit_error_event "github_app_token_failed"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Token helper failures set token-specific API error state and event type\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Token helper failures missing token-specific API error state or event\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# ===== Test 8: Diagnostic script exists =====
 test_case "Diagnostic script availability"
 
 DIAG_SCRIPT="$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh"
@@ -212,7 +239,7 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 8: Health check function exists =====
+# ===== Test 9: Health check function exists =====
 test_case "GitHub operations health check function"
 
 if grep -q 'check_github_operations_health()' "$PROJECT_ROOT/kaseki-agent.sh"; then
@@ -231,7 +258,7 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 9: GitHub credential auto-detection feature =====
+# ===== Test 10: GitHub credential auto-detection feature =====
 test_case "GitHub credential auto-detection"
 
 if grep -q 'resolve_github_credentials()' "$PROJECT_ROOT/run-kaseki.sh"; then
@@ -250,7 +277,7 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 10: GitHub App enabled by default =====
+# ===== Test 11: GitHub App enabled by default =====
 test_case "GitHub App default behavior"
 
 if grep -q 'GITHUB_APP_ENABLED="\${GITHUB_APP_ENABLED:-1}"' "$PROJECT_ROOT/run-kaseki.sh"; then
@@ -269,7 +296,7 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 11: Graceful credential degradation =====
+# ===== Test 12: Graceful credential degradation =====
 test_case "Graceful credential degradation"
 
 if grep -q 'KASEKI_PUBLISH_MODE=.*auto.*GITHUB_APP_ENABLED=0' "$PROJECT_ROOT/run-kaseki.sh" || grep -q 'graceful degrade' "$PROJECT_ROOT/run-kaseki.sh"; then
@@ -280,7 +307,7 @@ else
   ((TESTS_FAILED++))
 fi
 
-# ===== Test 12: Explicit disable still respected =====
+# ===== Test 13: Explicit disable still respected =====
 test_case "Explicit GitHub App disable respected"
 
 if grep -q 'GITHUB_APP_ENABLED="0"' "$PROJECT_ROOT/run-kaseki.sh"; then
