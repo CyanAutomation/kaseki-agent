@@ -4,7 +4,7 @@ Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run is a number
 
 ## Quick Start
 
-### **Installation (Recommended)**
+### Installation (Recommended)
 
 ```bash
 # Global install (recommended)
@@ -21,7 +21,7 @@ kaseki-agent list
 kaseki-agent report kaseki-1
 ```
 
-### **Without Global Install**
+### Without Global Install
 
 ```bash
 npm install @cyanautomation/kaseki-agent
@@ -29,7 +29,7 @@ npx kaseki-agent setup
 npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 ```
 
-### **Using Docker** ⭐ (Alternative)
+### Using Docker ⭐ (Alternative)
 
 If you prefer to avoid installing Node.js globally:
 
@@ -62,23 +62,23 @@ Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated worksp
 
 ## Getting Started
 
-### **1. Installation & Setup**
+### Installation & Setup
 
-**Option A: Global NPM**
+#### Option A: Global NPM
 
 ```bash
 npm install -g @cyanautomation/kaseki-agent
 kaseki-agent setup
 ```
 
-**Option B: Local NPM**
+#### Option B: Local NPM
 
 ```bash
 npm install @cyanautomation/kaseki-agent
 npx kaseki-agent setup
 ```
 
-**Option C: Docker**
+#### Option C: Docker
 
 ```bash
 docker run -it \
@@ -87,13 +87,13 @@ docker run -it \
   setup
 ```
 
-### **2. Verify Installation**
+### Verify Installation
 
 ```bash
 kaseki-agent doctor
 ```
 
-### **2.5. Configure Authentication**
+### Configure Authentication
 
 Kaseki needs three sets of credentials. Choose your preferred setup method:
 
@@ -134,7 +134,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setting up the kaseki-api servi
 
 **👉 Full guide:** [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md)
 
-### **3. Run Your First Task**
+### Run Your First Task
 
 ```bash
 # Simple example
@@ -145,7 +145,7 @@ kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
   "Fix the TypeScript errors in src/"
 ```
 
-### **4. View Results**
+### View Results
 
 ```bash
 # List all instances
@@ -159,7 +159,7 @@ kaseki-agent report kaseki-1
 
 ## CLI Commands
 
-### `setup` — Interactive Configuration Wizard
+#### `setup` — Interactive Configuration Wizard
 
 First-time setup to validate environment and store API credentials securely.
 
@@ -176,7 +176,7 @@ kaseki-agent setup
 - Saves configuration (project-local or user-global)
 - Runs doctor checks to verify everything works
 
-### `run` — Execute Agent on Repository
+#### `run` — Execute Agent on Repository
 
 ```bash
 kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
@@ -205,7 +205,7 @@ kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
 5. Stream agent output in real-time
 6. Collect results and generate report
 
-### `doctor` — Health Check & Validation
+#### `doctor` — Health Check & Validation
 
 ```bash
 kaseki-agent doctor [--json] [--fix]
@@ -226,7 +226,7 @@ kaseki-agent doctor [--json] [--fix]
 - `--json` — JSON output (useful for scripts)
 - `--fix` — Attempt auto-remediation (pull image, show install hints)
 
-### `list` — Show All Instances
+#### `list` — Show All Instances
 
 ```bash
 kaseki-agent list [--status STATE]
@@ -247,7 +247,7 @@ kaseki-agent list --status running
 - Creation date
 - Execution duration
 
-### `report` — View Instance Results
+#### `report` — View Instance Results
 
 ```bash
 kaseki-agent report <INSTANCE_ID>
@@ -260,7 +260,7 @@ kaseki-agent report <INSTANCE_ID>
 - Final status and exit code
 - Detailed summary (if available)
 
-### `config` — Manage Configuration
+#### `config` — Manage Configuration
 
 ```bash
 kaseki-agent config <SUBCOMMAND> [OPTIONS]
@@ -285,7 +285,7 @@ kaseki-agent config show
 kaseki-agent config locations
 ```
 
-### `secrets` — Manage Credentials
+#### `secrets` — Manage Credentials
 
 ```bash
 kaseki-agent secrets <SUBCOMMAND>
@@ -318,7 +318,7 @@ kaseki-agent secrets list
 - Linux: Uses `pass` (password-store) keyring
 - Headless: Falls back to `~/.kaseki/secrets/` (0600 permissions)
 
-### `serve` — Start REST API Service
+#### `serve` — Start REST API Service
 
 ```bash
 kaseki-agent serve [--port PORT]
@@ -373,6 +373,8 @@ Configuration is loaded from (in order of precedence):
 4. **Environment variables** (`KASEKI_*`, `OPENROUTER_*`, `GITHUB_*`)
 5. **Built-in defaults**
 
+### Example Configuration
+
 **Example `kaseki-agent.json`:**
 
 ```json
@@ -391,7 +393,7 @@ Configuration is loaded from (in order of precedence):
 }
 ```
 
-**Common Environment Variables:**
+### Common Environment Variables
 
 ```bash
 # Required
@@ -413,7 +415,7 @@ KASEKI_STARTUP_CHECK_MODE=boot          # boot or baseline-validation for dry-ru
 
 ### Deployment Patterns
 
-**1. CLI (Direct Execution)**
+#### CLI (Direct Execution)
 
 ```bash
 kaseki-agent run <repo> <ref>
@@ -423,7 +425,7 @@ kaseki-agent run <repo> <ref>
 - Immediate results
 - Best for: CI/CD, direct usage
 
-**2. REST API (Distributed)**
+#### REST API (Distributed)
 
 ```bash
 kaseki-agent serve --port 8080
@@ -434,7 +436,7 @@ kaseki-agent serve --port 8080
 - Async execution
 - Best for: Controllers, distributed systems
 
-**3. Docker (Self-Contained)**
+#### Docker (Self-Contained)
 
 ```bash
 docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
@@ -443,6 +445,8 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 - No host dependencies
 - Full isolation
 - Best for: Clean environments, CI/CD containers
+
+### Host and Container Layers
 
 **Host layer** — Management and orchestration:
 
@@ -455,7 +459,7 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 - `kaseki-agent.sh` — Inside the container (clones repo, installs deps, runs pre-agent validation, invokes Pi, runs post-agent validation, stores results)
 - `entrypoint.sh` — Container startup orchestrator
 
-**Validation lifecycle:**
+### Validation Lifecycle
 
 1. Clone the target repo/ref and install dependencies.
 2. Run **pre-agent validation** when `KASEKI_PRE_AGENT_VALIDATION=1` (default). These commands default to `KASEKI_VALIDATION_COMMANDS` through `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` and execute before Pi so Kaseki can detect an already-failing baseline. Inspect `/agents/kaseki-results/kaseki-N/pre-validation.log`, `/agents/kaseki-results/kaseki-N/pre-validation-raw.log`, `/agents/kaseki-results/kaseki-N/pre-validation-env.log`, and `/agents/kaseki-results/kaseki-N/pre-validation-timings.tsv`.
@@ -466,7 +470,7 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 > **Important:** `kaseki-agent.sh` runs from the Docker image (`/usr/local/bin/kaseki-agent`) and is **not** host-mounted during runs.
 > For Direct CLI mode, the host needs `run-kaseki.sh` (plus `scripts/kaseki-preflight.sh`) and Docker access; the agent script itself stays inside the image.
 
-**Supporting utilities (Node.js):**
+### Supporting Utilities (Node.js)
 
 - `pi-event-filter.js` — Filters raw Pi JSONL, strips thinking blocks, emits `pi-events.jsonl` + `pi-summary.json`
 - `kaseki-report.js` — Reads a results directory and prints diagnostic report
@@ -474,7 +478,7 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 - `kaseki-api-service.js` — REST API service for remote runs
 - `kaseki-api-client.ts` — TypeScript client for integration
 
-**Directory layout at runtime:**
+### Directory Layout at Runtime
 
 ```
 /agents/kaseki-template/          # Dockerfile, scripts (this repo)
@@ -489,7 +493,7 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 
 ## Deployment Modes
 
-### 1. Direct CLI (run-kaseki.sh)
+### Direct CLI (run-kaseki.sh)
 
 Simplest single-run invocation on a host:
 
@@ -509,7 +513,7 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 
 ---
 
-### 2. Remote Activation (kaseki-activate.sh)
+### Remote Activation (kaseki-activate.sh)
 
 For SSH/controller-driven setup and execution. Used by OpenClaw and similar orchestrators.
 
@@ -575,7 +579,7 @@ Returns newline-delimited JSON for each major step.
 
 ---
 
-### 3. REST API Service (kaseki-api)
+### REST API Service (kaseki-api)
 
 Long-running async orchestration service. Ideal for:
 
