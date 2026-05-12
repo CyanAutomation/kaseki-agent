@@ -51,7 +51,7 @@ export function generateOpenAPISpec(): Record<string, unknown> {
       },
       publishMode: {
         type: 'string',
-        enum: ['none', 'branch', 'draft_pr'],
+        enum: ['auto', 'none', 'branch', 'draft_pr'],
         description: 'Publishing mode after validation',
       },
       startupCheck: {
