@@ -158,7 +158,6 @@ if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
   mkdir_paths+=("${PI_CODING_AGENT_DIR}")
 fi
 mkdir -p "${mkdir_paths[@]}"
-PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/stdout.log
 : > /results/stderr.log
 : > /results/pi-events.jsonl
@@ -1980,7 +1979,7 @@ printf 'Repository: %s\n' "$REPO_URL"
 printf 'Git ref: %s\n' "$GIT_REF"
 printf 'Provider: %s\n' "$KASEKI_PROVIDER"
 printf 'Model: %s\n' "$KASEKI_MODEL"
-printf 'Pi version: %s\n' "$PI_VERSION"
+printf 'Pi version: %s\n' "${PI_VERSION:-not checked before pre-agent validation}"
 
 # Run preflight health check for GitHub operations if enabled
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
@@ -2242,6 +2241,8 @@ else
   fi
 fi
 
+PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
+printf 'Pi version: %s\n' "$PI_VERSION"
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
