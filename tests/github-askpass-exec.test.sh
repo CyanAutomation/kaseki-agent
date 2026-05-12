@@ -65,7 +65,7 @@ chmod +x "$FAKE_BIN/bash"
   [ "$GITHUB_PUSH_EXIT" -eq 8 ] || fail "execution failure set GITHUB_PUSH_EXIT=$GITHUB_PUSH_EXIT instead of 8"
 ) || exit 1
 
-if grep -q 'GitHub credential helper cannot be executed from directory' "$LOG_FILE"; then
+if grep -q 'GitHub askpass helper is not executable from' "$LOG_FILE"; then
   pass 'askpass execution failure is detected during smoke check before push'
 else
   fail "askpass execution failure log missing: $(cat "$LOG_FILE" 2>/dev/null || true)"
