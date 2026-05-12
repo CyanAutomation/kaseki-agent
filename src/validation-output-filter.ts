@@ -361,25 +361,45 @@ function main(): void {
     process.exitCode = 0;
   });
 
-  // Fallback timeout: ensure we exit with 0 after 30 seconds even if something hangs
-  // This prevents the filter from hanging indefinitely in edge cases
-  const fallbackTimeout = setTimeout(() => {
-    const msg = 'fallback_timeout_triggered (30s), forcing exit with code 0';
-    console.error(`[validation-output-filter] WARNING: ${msg}`);
-    logDiagnostic(`filter-warning: ${msg}`);
-    logDiagnostic(`filter-warning: lines_processed_at_timeout=${linesProcessed}`);
-    logDiagnostic(`filter-warning: lines_output_at_timeout=${linesOutput}`);
-    process.exitCode = 0;
-    process.exit(0);
-  }, 30000);
+  // No forced fallback timeout is installed by default. This filter is driven by
+  // stdin from an actively running validation command, so exiting on a fixed timer
+  // can close the pipeline while the command is still producing output. If an
+  // operator explicitly enables a watchdog for diagnostics, it only reports idle
+  // periods and resets on every line; it never terminates the process while stdin
+  // remains open.
+  const idleWatchdogSeconds = Number.parseInt(process.env.FILTER_IDLE_WATCHDOG_SECONDS || '0', 10);
+  let idleWatchdog: NodeJS.Timeout | null = null;
 
-  // Clear fallback timeout once readline closes (normal path)
-  const originalClose = rl.close.bind(rl);
-  rl.close = function() {
-    logDiagnostic('filter-event: closing_readline');
-    clearTimeout(fallbackTimeout);
-    return originalClose();
-  };
+  function clearIdleWatchdog(): void {
+    if (idleWatchdog !== null) {
+      clearTimeout(idleWatchdog);
+      idleWatchdog = null;
+    }
+  }
+
+  function resetIdleWatchdog(): void {
+    clearIdleWatchdog();
+    if (Number.isFinite(idleWatchdogSeconds) && idleWatchdogSeconds > 0) {
+      idleWatchdog = setTimeout(() => {
+        logDiagnostic(`filter-warning: idle_watchdog_observed_no_lines_for=${idleWatchdogSeconds}s`);
+        logDiagnostic('filter-warning: idle_watchdog_stdin_open=true');
+        logDiagnostic(`filter-warning: lines_processed_at_idle=${linesProcessed}`);
+        logDiagnostic(`filter-warning: lines_output_at_idle=${linesOutput}`);
+        resetIdleWatchdog();
+      }, idleWatchdogSeconds * 1000);
+    }
+  }
+
+  resetIdleWatchdog();
+
+  rl.on('line', () => {
+    resetIdleWatchdog();
+  });
+
+  rl.on('close', () => {
+    logDiagnostic('filter-event: clearing_idle_watchdog_after_stdin_close');
+    clearIdleWatchdog();
+  });
 }
 
 const entrypoint = process.argv[1] ? basename(process.argv[1]) : '';
