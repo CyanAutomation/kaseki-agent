@@ -26,6 +26,7 @@ import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
 import { metricsRegistry } from './metrics';
 import { ResultCache } from './result-cache';
+import { validateGitHubAppPrivateKey } from './github-app-private-key';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from './utils/utf8-helpers';
@@ -133,7 +134,6 @@ function checkGitHubAppCredentials(): PreflightCheck {
       remediation: `Create the missing secret files:\\n${secretLocations}`,
     };
   }
-  const keyLooksLikePem = /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(privateKey as string);
   if (!/^\d+$/.test(appId as string)) {
     return {
       name: 'github-app',
@@ -142,12 +142,13 @@ function checkGitHubAppCredentials(): PreflightCheck {
       remediation: 'The github_app_id secret file must contain only the numeric GitHub App ID.',
     };
   }
-  if (!keyLooksLikePem) {
+  const privateKeyValidation = validateGitHubAppPrivateKey(privateKey as string);
+  if (!privateKeyValidation.ok) {
     return {
       name: 'github-app',
       ok: false,
-      detail: 'GitHub App private key is present but does not look like a PEM private key.',
-      remediation: 'The github_app_private_key secret file must contain a valid PEM-format private key.',
+      detail: privateKeyValidation.error || 'GitHub App private key is not valid.',
+      remediation: privateKeyValidation.remediation,
     };
   }
 
