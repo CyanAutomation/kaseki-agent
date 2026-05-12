@@ -23,7 +23,7 @@ EOF_HELPER
 chmod +x "$HELPER_PATH"
 printf '123456\n' > "$SECRETS_DIR/github_app_id"
 printf 'Iv1.testclient\n' > "$SECRETS_DIR/github_app_client_id"
-printf '%s\n' '-----BEGIN PRIVATE KEY-----' 'SUPER-SECRET-PRIVATE-KEY-BODY' '-----END PRIVATE KEY-----' > "$SECRETS_DIR/github_app_private_key"
+printf '%s' '-----BEGIN RSA PRIVATE KEY----- SUPER-SECRET-PRIVATE-KEY-BODY -----END RSA PRIVATE KEY-----' > "$SECRETS_DIR/github_app_private_key"
 
 FUNCTIONS_FILE="$TMP_DIR/github-preflight-functions.sh"
 cat > "$FUNCTIONS_FILE" <<'EOF_JSON_ENCODE'
@@ -75,7 +75,7 @@ const metadata = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const key = fs.readFileSync(process.argv[2]);
 const expectedHash = crypto.createHash("sha256").update(key).digest("hex");
 if (metadata.byte_count !== key.length) throw new Error("byte_count mismatch");
-if (metadata.first_pem_header_line !== "-----BEGIN PRIVATE KEY-----") throw new Error("header mismatch");
+if (metadata.first_pem_header_line !== "-----BEGIN RSA PRIVATE KEY-----") throw new Error(`header mismatch: ${metadata.first_pem_header_line}`);
 if (metadata.pem_footer_present !== true) throw new Error("footer flag mismatch");
 if (metadata.sha256_fingerprint !== expectedHash) throw new Error("fingerprint mismatch");
 ' "$TMP_DIR/github-app-private-key-metadata.json" "$SECRETS_DIR/github_app_private_key"

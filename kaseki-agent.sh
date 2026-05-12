@@ -1648,11 +1648,8 @@ github_private_key_metadata_json() {
   local key_file="$1"
   local byte_count first_pem_header_line pem_footer_present sha256_fingerprint
   byte_count="$(wc -c < "$key_file" | awk '{print $1}')"
-  first_pem_header_line="$(sed -n '1p' "$key_file")"
-  if ! printf '%s\n' "$first_pem_header_line" | grep -Eq '^-----BEGIN .*PRIVATE KEY-----$'; then
-    first_pem_header_line=""
-  fi
-  if grep -Eq '^-----END .*PRIVATE KEY-----$' "$key_file"; then
+  first_pem_header_line="$(grep -aoE -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' "$key_file" | sed -n '1p')"
+  if grep -aoEq -- '-----END [A-Z0-9 ]*PRIVATE KEY-----' "$key_file"; then
     pem_footer_present="true"
   else
     pem_footer_present="false"
