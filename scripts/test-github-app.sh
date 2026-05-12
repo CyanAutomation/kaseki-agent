@@ -71,18 +71,37 @@ assert_token_error_contract 1 "ENOENT" "123" "$TMP_DIR/does-not-exist.pem" "owne
 MOCK_KEY="$TMP_DIR/mock-key.pem"
 openssl genrsa -out "$MOCK_KEY" 2048 >/dev/null 2>&1
 
+echo "Test 1b: helper private-key normalization + validation failures"
+MALFORMED_KEY="$TMP_DIR/malformed.pem"
+printf '%s\n' '-----BEGIN PRIVATE KEY-----' 'not-valid-base64' '-----END PRIVATE KEY-----' > "$MALFORMED_KEY"
+assert_token_error_contract 1 "GitHub App private key is not a valid PEM private key" "123" "$MALFORMED_KEY" "owner" "repo"
+
+OPENSSH_KEY="$TMP_DIR/openssh.pem"
+printf '%s\n' '-----BEGIN OPENSSH PRIVATE KEY-----' 'b3BlbnNzaC1rZXktdjEAAAAA' '-----END OPENSSH PRIVATE KEY-----' > "$OPENSSH_KEY"
+assert_token_error_contract 1 "GitHub App keys must be the PEM downloaded from GitHub App settings" "123" "$OPENSSH_KEY" "owner" "repo"
+
+PUBLIC_KEY="$TMP_DIR/public.pem"
+printf '%s\n' '-----BEGIN PUBLIC KEY-----' 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A' '-----END PUBLIC KEY-----' > "$PUBLIC_KEY"
+assert_token_error_contract 1 "this is not the GitHub App private key" "123" "$PUBLIC_KEY" "owner" "repo"
+
+ENCRYPTED_KEY="$TMP_DIR/encrypted.pem"
+printf '%s\n' '-----BEGIN ENCRYPTED PRIVATE KEY-----' 'MIIFHDBOBgkqhkiG9w0BBQ0wQTApBgkq' '-----END ENCRYPTED PRIVATE KEY-----' > "$ENCRYPTED_KEY"
+assert_token_error_contract 1 "Encrypted keys are not supported unless passphrase support is added" "123" "$ENCRYPTED_KEY" "owner" "repo"
+
 run_helper_with_https_mock() {
   local fixture="$1"
-  local stdout_file="$TMP_DIR/mock-${fixture}.stdout"
-  local stderr_file="$TMP_DIR/mock-${fixture}.stderr"
+  local key_file="${2:-$MOCK_KEY}"
+  local output_name="${3:-$fixture}"
+  local stdout_file="$TMP_DIR/mock-${output_name}.stdout"
+  local stderr_file="$TMP_DIR/mock-${output_name}.stderr"
 
   set +e
   NODE_OPTIONS="--require $TMP_DIR/mock-https.js" MOCK_GITHUB_FIXTURE="$fixture" \
-    node "$HELPER" "123" "$MOCK_KEY" "octo" "hello" >"$stdout_file" 2>"$stderr_file"
+    node "$HELPER" "123" "$key_file" "octo" "hello" >"$stdout_file" 2>"$stderr_file"
   local status=$?
   set -e
 
-  echo "$status" > "$TMP_DIR/mock-${fixture}.status"
+  echo "$status" > "$TMP_DIR/mock-${output_name}.status"
 }
 
 cat > "$TMP_DIR/mock-https.js" <<'EOF_JS'
@@ -143,6 +162,24 @@ const out = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 if (out.token !== "ghu_fixture_token") throw new Error("token mismatch");
 if (out.expires_at !== "2026-06-01T00:00:00Z") throw new Error("expires_at mismatch");
 ' "$TMP_DIR/mock-success-installation.stdout"
+
+BASE64_KEY="$TMP_DIR/base64-key.pem"
+base64 --wrap=0 "$MOCK_KEY" > "$BASE64_KEY"
+run_helper_with_https_mock success-installation "$BASE64_KEY" success-base64-key
+[ "$(cat "$TMP_DIR/mock-success-base64-key.status")" -eq 0 ] || { echo "Expected base64-wrapped key fixture to exit 0" >&2; exit 1; }
+node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (out.token !== "ghu_fixture_token") throw new Error("token mismatch for base64 key");' "$TMP_DIR/mock-success-base64-key.stdout"
+
+QUOTED_KEY="$TMP_DIR/quoted-key.pem"
+node --input-type=commonjs - "$MOCK_KEY" "$QUOTED_KEY" <<'NODEEOF'
+const fs = require('node:fs');
+const input = process.argv[2];
+const output = process.argv[3];
+const key = fs.readFileSync(input, 'utf8').replace(/\n/g, '\\n');
+fs.writeFileSync(output, `'${key}'`);
+NODEEOF
+run_helper_with_https_mock success-installation "$QUOTED_KEY" success-quoted-key
+[ "$(cat "$TMP_DIR/mock-success-quoted-key.status")" -eq 0 ] || { echo "Expected quoted key fixture to exit 0" >&2; exit 1; }
+node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (out.token !== "ghu_fixture_token") throw new Error("token mismatch for quoted key");' "$TMP_DIR/mock-success-quoted-key.stdout"
 
 run_helper_with_https_mock installation-failure
 [ "$(cat "$TMP_DIR/mock-installation-failure.status")" -eq 1 ] || { echo "Expected installation failure exit 1" >&2; exit 1; }
