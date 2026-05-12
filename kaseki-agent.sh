@@ -1229,7 +1229,7 @@ run_validation_commands() {
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
-  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run
+  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run pipefail_was_enabled
   local -a validation_commands
 
   execute_during_dry_run=false
@@ -1292,6 +1292,10 @@ run_validation_commands() {
           printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
         } | tee -a "$env_log"
         # Use pipefail to catch errors in any stage of the pipe.
+        pipefail_was_enabled=0
+        if set -o | grep -q '^pipefail[[:space:]]*on'; then
+          pipefail_was_enabled=1
+        fi
         set -o pipefail
         {
           printf '\n==> %s\n' "$trimmed"
@@ -1310,7 +1314,11 @@ run_validation_commands() {
               2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
           | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
-        set +o pipefail
+        if [ "$pipefail_was_enabled" -eq 1 ]; then
+          set -o pipefail
+        else
+          set +o pipefail
+        fi
         # pipe_statuses[0] = bash command exit code
         # pipe_statuses[1] = tee exit code
         # pipe_statuses[2] = validation-output-filter exit code
@@ -1919,7 +1927,7 @@ is_github_pr_error_retryable() {
 }
 
 run_github_operations() {
-  local app_id private_key_file owner repo feature_branch token token_data
+  local app_id private_key_file owner repo feature_branch token token_data git_push_exit
   
   # Load GitHub App credentials
   app_id="$(cat /run/secrets/github_app_id)" || { printf 'Failed to read app ID\n' >&2; return 7; }
@@ -2038,14 +2046,16 @@ esac
 EOF_ASKPASS
   chmod 0700 "$askpass_file"
 
-  if KASEKI_GITHUB_TOKEN="$token" GIT_ASKPASS="$askpass_file" GIT_TERMINAL_PROMPT=0 \
-    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log; then
+  KASEKI_GITHUB_TOKEN="$token" GIT_ASKPASS="$askpass_file" GIT_TERMINAL_PROMPT=0 \
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log
+  git_push_exit="${PIPESTATUS[0]:-1}"
+  if [ "$git_push_exit" -eq 0 ]; then
     printf 'Branch pushed successfully\n' | tee -a /results/git-push.log
   else
     rm -f "$askpass_file"
-    printf 'Failed to push branch\n' | tee -a /results/git-push.log >&2
-    GITHUB_PUSH_EXIT=8
-    return 8
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a /results/git-push.log >&2
+    GITHUB_PUSH_EXIT="$git_push_exit"
+    return "$git_push_exit"
   fi
   rm -f "$askpass_file"
 
