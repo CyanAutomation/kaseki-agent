@@ -239,6 +239,92 @@ else
   ((TESTS_FAILED++))
 fi
 
+
+# ===== Test 8b: Token generation phase metadata and final error handling =====
+test_case "GitHub token generation phase is distinct from push failures"
+
+if grep -q 'GITHUB_OPERATION_PHASE="token_generation"' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q '"github_operation_phase"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b GitHub operation phase tracks token generation and is written to metadata\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b GitHub operation phase token metadata not found\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if grep -q 'GitHub App token generation failed (exit code \$GITHUB_PUSH_EXIT)' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Final GitHub failure emission reports token generation precisely\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Final GitHub failure emission does not distinguish token generation\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# ===== Test 8c: Diagnostic script distinguishes token and push phases =====
+test_case "Diagnostic script reports token failures separately from push failures"
+
+DIAG_TMP_DIR="$(mktemp -d /tmp/kaseki-github-diagnose-test.XXXXXX)"
+TOKEN_RESULTS="$DIAG_TMP_DIR/token"
+PUSH_RESULTS="$DIAG_TMP_DIR/push"
+mkdir -p "$TOKEN_RESULTS" "$PUSH_RESULTS"
+cat > "$TOKEN_RESULTS/metadata.json" <<'JSON'
+{
+  "instance": "token-case",
+  "current_stage": "github operations",
+  "exit_code": 7,
+  "github_push_exit_code": 7,
+  "github_pr_exit_code": 0,
+  "github_operation_phase": "token_generation",
+  "github_api_error_type": "github_app_token_error",
+  "github_api_error_message": "installation not found",
+  "github_api_http_status": "404"
+}
+JSON
+cat > "$TOKEN_RESULTS/failure.json" <<'JSON'
+{"error":"token"}
+JSON
+printf 'Generating GitHub App installation token...\nFailed to generate token: installation not found\n' > "$TOKEN_RESULTS/git-push.log"
+
+cat > "$PUSH_RESULTS/metadata.json" <<'JSON'
+{
+  "instance": "push-case",
+  "current_stage": "github operations",
+  "exit_code": 8,
+  "github_push_exit_code": 8,
+  "github_pr_exit_code": 0,
+  "github_operation_phase": "push",
+  "github_api_error_type": "",
+  "github_api_error_message": "",
+  "github_api_http_status": ""
+}
+JSON
+cat > "$PUSH_RESULTS/failure.json" <<'JSON'
+{"error":"push"}
+JSON
+printf 'Pushing branch to GitHub...\nFailed to push branch\n' > "$PUSH_RESULTS/git-push.log"
+
+TOKEN_REPORT="$DIAG_TMP_DIR/token-report.txt"
+PUSH_REPORT="$DIAG_TMP_DIR/push-report.txt"
+if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$TOKEN_RESULTS" > "$TOKEN_REPORT" && \
+   grep -q 'GitHub App token generation failed' "$TOKEN_REPORT" && \
+   ! grep -q '\*\*Git push failed' "$TOKEN_REPORT"; then
+  printf '%b✓%b Diagnostic script reports token phase failures as token generation failures\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Diagnostic script did not report token phase distinctly\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$PUSH_RESULTS" > "$PUSH_REPORT" && \
+   grep -q '\*\*Git push failed (exit code: 8)\*\*' "$PUSH_REPORT" && \
+   ! grep -q 'GitHub App token generation failed' "$PUSH_REPORT"; then
+  printf '%b✓%b Diagnostic script still reports push phase failures as git push failures\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Diagnostic script did not preserve push failure diagnosis\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+rm -rf "$DIAG_TMP_DIR"
+
 # ===== Test 9: Health check function exists =====
 test_case "GitHub operations health check function"
 

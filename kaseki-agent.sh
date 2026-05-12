@@ -73,6 +73,7 @@ GITHUB_PR_EXIT=0
 GITHUB_API_ERROR_TYPE=""
 GITHUB_API_ERROR_MESSAGE=""
 GITHUB_API_HTTP_STATUS=""
+GITHUB_OPERATION_PHASE=""
 ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 GITHUB_SKIP_REASONS=()
@@ -378,6 +379,7 @@ write_metadata() {
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
   "github_push_exit_code": $GITHUB_PUSH_EXIT,
   "github_pr_exit_code": $GITHUB_PR_EXIT,
+  "github_operation_phase": $(printf '%s' "$GITHUB_OPERATION_PHASE" | json_encode),
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
@@ -437,7 +439,11 @@ write_result_summary() {
   fi
   if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
     if [ "$GITHUB_PUSH_EXIT" -ne 0 ]; then
-      pr_status="push failed"
+      if [ "$GITHUB_OPERATION_PHASE" = "token_generation" ]; then
+        pr_status="token generation failed"
+      else
+        pr_status="push failed"
+      fi
     elif [ "$GITHUB_PR_EXIT" -eq 0 ] && [ -n "$GITHUB_PR_URL" ]; then
       pr_status="created ($GITHUB_PR_URL)"
     elif [ "$GITHUB_PR_EXIT" -ne 0 ]; then
@@ -1866,12 +1872,14 @@ run_github_operations() {
   fi
   
   printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /results/git-push.log
+  GITHUB_OPERATION_PHASE="setup"
   
   # Set git user for commits
   git config user.name "GitHub App [$app_id]" || { printf 'Failed to set git user name\n' >&2; return 7; }
   git config user.email "${app_id}+kaseki@users.noreply.github.com" || { printf 'Failed to set git email\n' >&2; return 7; }
   
   # Generate GitHub App installation token
+  GITHUB_OPERATION_PHASE="token_generation"
   printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
   local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
   token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
@@ -1917,6 +1925,7 @@ run_github_operations() {
   printf 'Token generated successfully\n' | tee -a /results/git-push.log
   
   # Create and push feature branch
+  GITHUB_OPERATION_PHASE="branch_creation"
   feature_branch="kaseki/$INSTANCE_NAME"
   printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a /results/git-push.log
   git checkout -b "$feature_branch" || {
@@ -1926,6 +1935,7 @@ run_github_operations() {
   }
   
   # Commit changes (git should already have changes from pi agent)
+  GITHUB_OPERATION_PHASE="commit"
   printf 'Committing changes...\n' | tee -a /results/git-push.log
   if [ ! -s /results/changed-files.txt ]; then
     printf 'No changed files to stage\n' | tee -a /results/git-push.log >&2
@@ -1947,6 +1957,7 @@ run_github_operations() {
   fi
   
   # Push branch
+  GITHUB_OPERATION_PHASE="push"
   printf 'Pushing branch to GitHub...\n' | tee -a /results/git-push.log
   local askpass_file
   askpass_file="$(mktemp /tmp/kaseki-github-askpass.XXXXXX)" || {
@@ -1977,11 +1988,13 @@ EOF_ASKPASS
   if [ "$KASEKI_PUBLISH_MODE" = "branch" ]; then
     printf 'Publish mode branch: skipping pull request creation.\n' | tee -a /results/git-push.log
     GITHUB_PR_EXIT=0
+    GITHUB_OPERATION_PHASE="completed"
     unset token
     return 0
   fi
   
   # Create pull request
+  GITHUB_OPERATION_PHASE="pr_creation"
   printf 'Creating pull request...\n' | tee -a /results/git-push.log
   emit_progress "github operations" "pr_creation_starting"
   local pr_title pr_body pr_response pr_url pr_http_status
@@ -2134,6 +2147,7 @@ EOF
   fi
   
   # Clean up token
+  GITHUB_OPERATION_PHASE="completed"
   unset token
 }
 
@@ -2732,6 +2746,7 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
     run_github_operations
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
+    GITHUB_OPERATION_PHASE="secrets"
     printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a /results/git-push.log >&2
     emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
@@ -2776,8 +2791,13 @@ fi
 
 if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$GITHUB_PUSH_EXIT"
-  FAILED_COMMAND="github push"
-  emit_error_event "github_operation_failed" "GitHub push or PR creation failed (exit code $GITHUB_PUSH_EXIT)" "exit"
+  if [ "$GITHUB_OPERATION_PHASE" = "token_generation" ]; then
+    FAILED_COMMAND="github token generation"
+    emit_error_event "github_app_token_failed" "GitHub App token generation failed (exit code $GITHUB_PUSH_EXIT)" "exit"
+  else
+    FAILED_COMMAND="github push"
+    emit_error_event "github_operation_failed" "GitHub push or PR creation failed (exit code $GITHUB_PUSH_EXIT)" "exit"
+  fi
 fi
 
 if [ "$DIFF_NONEMPTY" != "true" ] &&
