@@ -42,6 +42,17 @@ function normalizePrivateKeyText(value: string): string {
   );
 }
 
+function rewrapPrivateKeyPem(value: string): string {
+  return value.replace(
+    /-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/g,
+    (_match, type: string, body: string) => {
+      const compactBody = body.replace(/\s+/g, '');
+      const bodyLines = compactBody.match(/.{1,64}/g) || [];
+      return `-----BEGIN ${type}-----\n${bodyLines.join('\n')}\n-----END ${type}-----\n`;
+    }
+  );
+}
+
 function sanitizeCryptoError(error: unknown): string {
   const rawMessage = error instanceof Error ? error.message : String(error);
   const normalizedMessage = rawMessage.replace(/\s+/g, ' ').trim();
@@ -53,7 +64,7 @@ function sanitizeCryptoError(error: unknown): string {
 }
 
 export function normalizeGitHubAppPrivateKey(value: string): string {
-  let normalizedPem = normalizePrivateKeyText(value);
+  let normalizedPem = rewrapPrivateKeyPem(normalizePrivateKeyText(value));
 
   if (!hasPrivateKeyPemHeader(normalizedPem) && looksLikeBase64(normalizedPem)) {
     const decodedPem = Buffer.from(
@@ -64,7 +75,7 @@ export function normalizeGitHubAppPrivateKey(value: string): string {
       hasPrivateKeyPemHeader(decodedPem) ||
       ANY_PEM_HEADER_PATTERN.test(decodedPem)
     ) {
-      normalizedPem = normalizePrivateKeyText(decodedPem);
+      normalizedPem = rewrapPrivateKeyPem(normalizePrivateKeyText(decodedPem));
     }
   }
 
