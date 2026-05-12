@@ -1770,11 +1770,61 @@ run_github_operations() {
   
   # Generate GitHub App installation token
   printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
-  token_data="$(node /usr/local/bin/github-app-token "$app_id" "$private_key_file" "$owner" "$repo")" || {
-    printf 'Failed to generate token\n' | tee -a /results/git-push.log >&2
-    GITHUB_PUSH_EXIT=7
+  local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
+  token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
+  token_stderr_tmp="$(mktemp /tmp/github-app-token-stderr.XXXXXX)" || {
+    printf 'Failed to create token stderr temp file\n' >&2
+    rm -f "$token_stdout_tmp"
     return 7
   }
+  node /usr/local/bin/github-app-token "$app_id" "$private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+  token_exit_code=$?
+  token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
+  token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
+  rm -f "$token_stdout_tmp" "$token_stderr_tmp"
+  if [ "$token_exit_code" -ne 0 ]; then
+    token_parse_result="$(printf '%s' "$token_data" | TOKEN_HELPER_STDERR="$token_stderr" TOKEN_HELPER_EXIT_CODE="$token_exit_code" node -e '
+      const fs = require("fs");
+      const stdout = fs.readFileSync(0, "utf8");
+      const stderr = process.env.TOKEN_HELPER_STDERR || "";
+      const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || "unknown";
+      const sanitize = (value) => String(value || "")
+        .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
+        .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
+        .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/ {2,}/g, " ")
+        .trim();
+      let error = "";
+      let status = "";
+      try {
+        const parsed = JSON.parse(stdout || "{}");
+        error = parsed.error || parsed.message || "";
+        const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
+        if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
+      } catch (_) {}
+      error = sanitize(error);
+      if (!error) error = sanitize(stderr);
+      if (!error) error = `github-app-token helper exited with code ${exitCode}`;
+      if (!status) {
+        const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
+        if (match) status = match[1];
+      }
+      process.stdout.write(`${error}\t${status}`);
+    ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$token_exit_code")"
+    token_error="${token_parse_result%%$'\t'*}"
+    token_http_status=""
+    if [ "$token_parse_result" != "$token_error" ]; then
+      token_http_status="${token_parse_result#*$'\t'}"
+    fi
+    printf 'Failed to generate token: %s\n' "$token_error" | tee -a /results/git-push.log >&2
+    GITHUB_API_ERROR_TYPE="github_app_token_error"
+    GITHUB_API_ERROR_MESSAGE="$token_error"
+    GITHUB_API_HTTP_STATUS="$token_http_status"
+    emit_error_event "github_app_token_failed" "Failed to generate GitHub App installation token: $GITHUB_API_ERROR_MESSAGE" "exit"
+    GITHUB_PUSH_EXIT=7
+    return 7
+  fi
   
   # Use helper to extract token from JSON response
   if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /results/git-push.log; then
