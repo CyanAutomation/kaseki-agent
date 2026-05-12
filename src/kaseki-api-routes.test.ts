@@ -1802,6 +1802,47 @@ describe('kaseki-api-routes publish mode validation', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
+  test('accepts auto publish mode without requiring GitHub App credentials', async () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockReset();
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-auto-publish',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-auto-publish'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          publishMode: 'auto',
+        }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        publishMode: 'auto',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('rejects omitted publish mode as draft PR when GitHub App credentials are not configured', async () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     // Ensure mock returns null for all GitHub App secrets

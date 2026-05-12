@@ -114,7 +114,7 @@ export const RunRequestSchema = z.object({
     .optional()
     .describe('Controller-friendly validation alias'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
-  publishMode: z.enum(['none', 'branch', 'draft_pr']).optional().describe('Publishing mode after validation'),
+  publishMode: z.enum(['auto', 'none', 'branch', 'draft_pr']).optional().describe('Publishing mode after validation'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
   startupCheckMode: z
     .enum(['boot', 'baseline-validation'])
