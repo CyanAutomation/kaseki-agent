@@ -402,6 +402,7 @@ KASEKI_ROOT=/agents                    # Base directory
 KASEKI_MODEL=openrouter/free           # AI model
 KASEKI_AGENT_TIMEOUT_SECONDS=1200      # Timeout
 KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
+KASEKI_STARTUP_CHECK_MODE=boot          # boot or baseline-validation for dry-run startup checks
 ```
 
 ---
@@ -1260,12 +1261,15 @@ for a run that cannot publish.
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
 | `KASEKI_PUBLISH_MODE` | auto | `none`, `branch`, or `draft_pr`; API requests use `publishMode` |
+| `KASEKI_STARTUP_CHECK_MODE` | boot | Dry-run startup check depth: `boot` or `baseline-validation` |
 
 ### Validation and Quality Gates
 
 | Variable | Default | Notes |
 |---|---|---|
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; set to `none` to skip. Missing npm scripts are skipped with a warning (non-fatal). |
+| `KASEKI_STARTUP_CHECK_MODE` | `boot` | For `KASEKI_DRY_RUN=1`, `boot` performs a container smoke test through `/bin/bash`; `baseline-validation` runs `/usr/local/bin/kaseki-agent` to clone, install dependencies, run pre-agent validation, and skip Pi. |
+| `KASEKI_BASELINE_VALIDATION_DRY_RUN` | `0` | Internal/API switch set with `baseline-validation` so pre-agent validation runs even though Pi remains disabled. |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_ALLOW_EMPTY_DIFF` | 0 | Set to `1` to allow empty diff with `KASEKI_TASK_MODE=patch` |
@@ -1276,6 +1280,8 @@ for a run that cannot publish.
 `KASEKI_CHANGED_FILES_ALLOWLIST` patterns are repo-relative globs. Exact paths match only that path; `*` and `?` match within a single path segment; `**` can span directory separators. A `**/` segment may match zero or more directories, so `src/**/*.ts` matches both `src/index.ts` and nested files such as `src/lib/file-storage.ts`.
 
 API controllers may send either the direct fields (`changedFilesAllowlist`, `validationCommands`) or the structured aliases (`allowlist.include`, `validation.commands`). The scheduler normalizes both forms before launching the worker.
+
+Startup checks have two depths. Boot-only startup checks (`startupCheck: true`, `startupCheckMode: "boot"`, or `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=boot`) use the minimal container boot path to verify runtime tools, mounts, and secrets without cloning the repository. Baseline validation startup checks (`startupCheckMode: "baseline-validation"`, or a startup check with validation commands) keep dry-run/Pi-skipping behavior but invoke `/usr/local/bin/kaseki-agent` far enough to clone the repository, prepare dependencies, and execute the pre-agent validation commands.
 
 ### Paths and Caching
 

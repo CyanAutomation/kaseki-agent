@@ -58,6 +58,11 @@ export function generateOpenAPISpec(): Record<string, unknown> {
         type: 'boolean',
         description: 'Start a worker container and exit after boot checks',
       },
+      startupCheckMode: {
+        type: 'string',
+        enum: ['boot', 'baseline-validation'],
+        description: 'Startup check depth: boot-only container smoke test or baseline validation dry-run',
+      },
       webhookConfig: {
         type: 'object',
         description: 'Webhook configuration for job events',

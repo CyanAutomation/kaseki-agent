@@ -447,6 +447,89 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('startup validation checks preserve request validation commands', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      startupCheck: true,
+      startupCheckMode: 'baseline-validation',
+      validationCommands: ['npm run lint', 'npm test'],
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main']),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_DRY_RUN: '1',
+          KASEKI_TASK_MODE: 'inspect',
+          KASEKI_STARTUP_CHECK_MODE: 'baseline-validation',
+          KASEKI_BASELINE_VALIDATION_DRY_RUN: '1',
+          KASEKI_VALIDATION_COMMANDS: 'npm run lint;npm test',
+        }),
+      }),
+    );
+  });
+
+  test('startup validation checks can be requested by providing validation commands', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      startupCheck: true,
+      validation: { commands: ['npm run check'] },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_STARTUP_CHECK_MODE: 'baseline-validation',
+          KASEKI_BASELINE_VALIDATION_DRY_RUN: '1',
+          KASEKI_VALIDATION_COMMANDS: 'npm run check',
+        }),
+      }),
+    );
+  });
+
   test('cancelled running jobs get non-empty API failure artifacts', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

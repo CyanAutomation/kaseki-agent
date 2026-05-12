@@ -268,13 +268,24 @@ export class JobScheduler {
     };
     this.populateGitHubAppEnv(env);
 
+    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    const startupCheckMode =
+      job.request.startupCheckMode || (job.request.startupCheck && validationCommands ? 'baseline-validation' : 'boot');
+
     if (job.request.startupCheck) {
       env.KASEKI_DRY_RUN = '1';
       env.KASEKI_TASK_MODE = 'inspect';
-      env.KASEKI_VALIDATION_COMMANDS = 'none';
+      env.KASEKI_STARTUP_CHECK_MODE = startupCheckMode;
+      if (startupCheckMode === 'baseline-validation') {
+        env.KASEKI_BASELINE_VALIDATION_DRY_RUN = '1';
+      } else {
+        env.KASEKI_VALIDATION_COMMANDS = 'none';
+      }
       env.TASK_PROMPT =
         job.request.taskPrompt ||
-        'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.';
+        (startupCheckMode === 'baseline-validation'
+          ? 'Run Kaseki baseline validation startup checks only. Clone the repo, install dependencies, run pre-agent validation, then exit without Pi agent work.'
+          : 'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.');
     }
 
     const changedFilesAllowlist = job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
@@ -282,7 +293,6 @@ export class JobScheduler {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
     }
 
-    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     }
