@@ -10,52 +10,64 @@
 
 Start here if you're new to kaseki-agent.
 
-1. [SETUP_GUIDE.md](SETUP_GUIDE.md) — Choose your deployment path (npm, Docker, or script-based)
-2. [NPM_SETUP.md](NPM_SETUP.md) — Install kaseki-agent as an npm package
-3. [DOCKER_SETUP.md](DOCKER_SETUP.md) — Deploy via Docker or docker-compose
-4. [AUTH_SETUP.md](AUTH_SETUP.md) — Configure credentials (API keys, GitHub tokens)
+| Document | Purpose |
+|---------|---------|
+| [SETUP_GUIDE.md](SETUP_GUIDE.md) | Choose your deployment path (npm, Docker, or script-based) |
+| [NPM_SETUP.md](NPM_SETUP.md) | Install kaseki-agent as an npm package |
+| [DOCKER_SETUP.md](DOCKER_SETUP.md) | Deploy via Docker or docker-compose |
+| [AUTH_SETUP.md](AUTH_SETUP.md) | Configure credentials (API keys, GitHub tokens) |
 
 ### 📚 Core Concepts
 
 Understand how kaseki-agent works.
 
-1. [DEVELOPMENT.md](DEVELOPMENT.md) — Architecture, API service components
-2. [EXIT_CODES.md](EXIT_CODES.md) — Understand exit codes and what they mean
-3. [QUALITY_GATES.md](QUALITY_GATES.md) — Quality validation, allowlists, diff size limits
-4. [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Writing effective task prompts
+| Document | Purpose |
+|---------|---------|
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture, API service components |
+| [EXIT_CODES.md](EXIT_CODES.md) | Understand exit codes and what they mean |
+| [QUALITY_GATES.md](QUALITY_GATES.md) | Quality validation, allowlists, diff size limits |
+| [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Writing effective task prompts |
 
 ### 🔧 Operations & Deployment
 
 Run and manage kaseki-agent in production.
 
-1. [DEPLOYMENT.md](DEPLOYMENT.md) — Deploy API service (Docker, Node.js, systemd)
-2. [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) — Multi-host and Kubernetes deployments
-3. [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) — Integrate with GitHub Actions, GitLab CI, Jenkins
-4. [CLI.md](CLI.md) — Use kaseki-cli for monitoring and analysis
+| Document | Purpose |
+|---------|---------|
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploy API service (Docker, Node.js, systemd) |
+| [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host and Kubernetes deployments |
+| [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | Integrate with GitHub Actions, GitLab CI, Jenkins |
+| [CLI.md](CLI.md) | Use kaseki-cli for monitoring and analysis |
 
 ### 🛠️ Usage & Examples
 
 Learn by example.
 
-1. [EXAMPLES.md](EXAMPLES.md) — 10+ real-world scenarios (bug fixes, features, tests)
-2. [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) — TypeScript/OpenClaw integration pattern
-3. [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Template prompts for common tasks
+| Document | Purpose |
+|---------|---------|
+| [EXAMPLES.md](EXAMPLES.md) | 10+ real-world scenarios (bug fixes, features, tests) |
+| [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) | TypeScript/OpenClaw integration pattern |
+| [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Template prompts for common tasks |
 
 ### ⚡ Optimization & Performance
 
 Tune for speed and cost.
 
-1. [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) — Timeout, cache, allowlist optimization
-2. [COST_ESTIMATION.md](COST_ESTIMATION.md) — Understand and manage costs
-3. [ENV_VARS.md](ENV_VARS.md) — Complete environment variable reference
+| Document | Purpose |
+|---------|---------|
+| [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Timeout, cache, allowlist optimization |
+| [COST_ESTIMATION.md](COST_ESTIMATION.md) | Understand and manage costs |
+| [ENV_VARS.md](ENV_VARS.md) | Complete environment variable reference |
 
 ### 🔍 Troubleshooting & Support
 
 Diagnose and fix issues.
 
-1. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Decision trees for common failures
-2. [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) — Recovery procedures and backups
-3. [EXIT_CODES.md](EXIT_CODES.md) — Exit code meanings and fixes
+| Document | Purpose |
+|---------|---------|
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Decision trees for common failures |
+| [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) | Recovery procedures and backups |
+| [EXIT_CODES.md](EXIT_CODES.md) | Exit code meanings and fixes |
 
 ---
 
@@ -65,55 +77,73 @@ Diagnose and fix issues.
 
 **Getting started:**
 
-- [NPM_SETUP.md](NPM_SETUP.md) — Install via npm
-- [EXAMPLES.md](EXAMPLES.md) — Real-world use cases
-- [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Write better prompts
+| Document | Purpose |
+|---------|---------|
+| [NPM_SETUP.md](NPM_SETUP.md) | Install via npm |
+| [EXAMPLES.md](EXAMPLES.md) | Real-world use cases |
+| [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Write better prompts |
 
 **Troubleshooting:**
 
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues and fixes
-- [EXIT_CODES.md](EXIT_CODES.md) — Understand failures
+| Document | Purpose |
+|---------|---------|
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and fixes |
+| [EXIT_CODES.md](EXIT_CODES.md) | Understand failures |
 
 **Advanced:**
 
-- [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) — Programmatic integration
-- [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) — Automate in CI/CD pipelines
+| Document | Purpose |
+|---------|---------|
+| [INTEGRATION_EXAMPLE.md](INTEGRATION_EXAMPLE.md) | Programmatic integration |
+| [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | Automate in CI/CD pipelines |
 
 ### For DevOps / Site Reliability Engineers
 
 **Setup & deployment:**
 
-- [DOCKER_SETUP.md](DOCKER_SETUP.md) — Container deployment
-- [DEPLOYMENT.md](DEPLOYMENT.md) — Production API service setup
-- [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) — Multi-host & Kubernetes
+| Document | Purpose |
+|---------|---------|
+| [DOCKER_SETUP.md](DOCKER_SETUP.md) | Container deployment |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production API service setup |
+| [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Multi-host & Kubernetes |
 
 **Operations:**
 
-- [CLI.md](CLI.md) — Monitoring with kaseki-cli
-- [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) — Backup and failure recovery
+| Document | Purpose |
+|---------|---------|
+| [CLI.md](CLI.md) | Monitoring with kaseki-cli |
+| [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) | Backup and failure recovery |
 
 **Optimization:**
 
-- [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) — Scaling and optimization
-- [COST_ESTIMATION.md](COST_ESTIMATION.md) — Budget planning
+| Document | Purpose |
+|---------|---------|
+| [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) | Scaling and optimization |
+| [COST_ESTIMATION.md](COST_ESTIMATION.md) | Budget planning |
 
 ### For Team Leads / Architects
 
 **Understanding scope:**
 
-- [DEVELOPMENT.md](DEVELOPMENT.md) — Architecture overview
-- [repo-maturity.md](repo-maturity.md) — Production readiness assessment
-- [QUALITY_GATES.md](QUALITY_GATES.md) — Quality & governance model
+| Document | Purpose |
+|---------|---------|
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Architecture overview |
+| [repo-maturity.md](repo-maturity.md) | Production readiness assessment |
+| [QUALITY_GATES.md](QUALITY_GATES.md) | Quality & governance model |
 
 **Decision-making:**
 
-- [COST_ESTIMATION.md](COST_ESTIMATION.md) — Cost analysis and budgeting
-- [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) — Deployment architecture options
+| Document | Purpose |
+|---------|---------|
+| [COST_ESTIMATION.md](COST_ESTIMATION.md) | Cost analysis and budgeting |
+| [DISTRIBUTED_SETUP.md](DISTRIBUTED_SETUP.md) | Deployment architecture options |
 
 **Governance:**
 
-- [AUTH_SETUP.md](AUTH_SETUP.md) — Security & credential management
-- [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) — Prompt guidelines
+| Document | Purpose |
+|---------|---------|
+| [AUTH_SETUP.md](AUTH_SETUP.md) | Security & credential management |
+| [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Prompt guidelines |
 
 ---
 
@@ -323,6 +353,8 @@ May 2026
 
 ## See Also
 
-- Root [README.md](../README.md) — Project overview
-- Root [CLAUDE.md](../CLAUDE.md) — AI coding agent guidance
-- Root [CHANGELOG.md](../CHANGELOG.md) — Release notes & archived docs
+| Document | Purpose |
+|---------|---------|
+| [README.md](../README.md) | Project overview |
+| [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
+| [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |

@@ -193,20 +193,27 @@ Start: What are you asking the agent to do?
 
 When kaseki detects files outside the allowlist:
 
-1. **Restoration Phase** (after agent completes, before validation)
-   - Files matching allowlist → logged as "kept"
-   - Files outside allowlist → automatically reverted using `git restore`
-   - Summary written to `quality.log`: "Restored: X files; Kept: Y files"
-   - Detailed events written to `restoration.jsonl` (JSONL format for parsing)
+### Restoration Phase (after agent completes, before validation)
 
-2. **Report Generation** (at end of run)
-   - `restoration-report.md` — human-readable summary with recommendations
-   - Includes allowlist coverage percentage
-   - Suggests next steps if coverage is low
+| Action | Description |
+|--------|-------------|
+| Files matching allowlist | Logged as "kept" |
+| Files outside allowlist | Automatically reverted using `git restore` |
+ | Summary | Written to `quality.log`: "Restored: X files; Kept: Y files" |
+| Detailed events | Written to `restoration.jsonl` (JSONL format for parsing) |
 
-3. **Metrics in Summary**
-   - `kaseki-report` shows: "Allowlist coverage: X/Y files (Z%)"
-   - Visual indicator of how restrictive the allowlist was
+### Report Generation (at end of run)
+
+| Report | Description |
+|--------|-------------|
+| `restoration-report.md` | Human-readable summary with recommendations |
+| Coverage percentage | Allowlist coverage percentage |
+| Next steps | Suggestions if coverage is low |
+
+### Metrics in Summary
+
+- `kaseki-report` shows: "Allowlist coverage: X/Y files (Z%)"
+- Visual indicator of how restrictive the allowlist was
 
 ### When Coverage is Low (0-50%)
 
