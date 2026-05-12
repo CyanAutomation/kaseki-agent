@@ -10,12 +10,14 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { classifyDockerFailure, decodeUtf8TailSafely, tailLogByLines } from './kaseki-api-routes';
 import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
+import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { createApiRouter } from './kaseki-api-routes';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
@@ -279,7 +281,10 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '12345';
       if (name === 'github_app_client_id') return 'Iv123client';
-      if (name === 'github_app_private_key') return '-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----';
+      if (name === 'github_app_private_key') {
+        const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        return privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+      }
       return null;
     });
 
@@ -301,6 +306,45 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         ok: true,
         detail: expect.stringContaining('GitHub App credentials are readable'),
       }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+    }
+  });
+
+  test('GET /api/preflight rejects malformed private-key-looking GitHub App credentials', async () => {
+    const malformedPrivateKey = '-----BEGIN RSA PRIVATE KEY-----\nnot-real-key-material\n-----END RSA PRIVATE KEY-----';
+    const expectedValidation = validateGitHubAppPrivateKey(malformedPrivateKey);
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      if (name === 'github_app_private_key') return malformedPrivateKey;
+      return null;
+    });
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-malformed-'));
+    process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const githubCheck = body.checks.find((check: any) => check.name === 'github-app');
+      expect(githubCheck).toEqual(expect.objectContaining({
+        ok: false,
+        detail: expectedValidation.error,
+        remediation: expectedValidation.remediation,
+      }));
+      expect(githubCheck.detail).not.toContain('not-real-key-material');
+      expect(githubCheck.remediation).not.toContain('not-real-key-material');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(resultsDir, { recursive: true, force: true });

@@ -17,6 +17,7 @@
 import fs from 'fs';
 import crypto from 'crypto';
 import https from 'https';
+import { validateGitHubAppPrivateKey } from './github-app-private-key';
 
 interface JWTHeader {
   alg: string;
@@ -51,91 +52,19 @@ const PRIVATE_KEY_FILE = process.argv[3];
 const OWNER = process.argv[4];
 const REPO = process.argv[5];
 
-function hasPrivateKeyPemHeader(value: string): boolean {
-  return /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(value);
-}
-
-function looksLikeBase64(value: string): boolean {
-  const compact = value.replace(/\s+/g, '');
-  return (
-    compact.length > 0 &&
-    compact.length % 4 === 0 &&
-    /^[A-Za-z0-9+/]+={0,2}$/.test(compact)
-  );
-}
-
-function removeMatchingOuterQuotes(value: string): string {
-  if (value.length >= 2) {
-    const first = value[0];
-    const last = value[value.length - 1];
-    if ((first === '"' || first === "'") && first === last) {
-      return value.slice(1, -1);
-    }
-  }
-
-  return value;
-}
-
-function rejectUnsupportedPrivateKeyFormat(value: string): void {
-  if (value.includes('-----BEGIN OPENSSH PRIVATE KEY-----')) {
-    throw new Error(
-      'GitHub App private key uses OpenSSH format. GitHub App keys must be the PEM downloaded from GitHub App settings.'
-    );
-  }
-
-  if (value.includes('-----BEGIN ENCRYPTED PRIVATE KEY-----')) {
-    throw new Error(
-      'GitHub App private key is encrypted. Encrypted keys are not supported unless passphrase support is added.'
-    );
-  }
-
-  if (/-----BEGIN [^-]*(PUBLIC KEY|CERTIFICATE)-----/.test(value)) {
-    throw new Error(
-      'GitHub App private key file contains a public key or certificate; this is not the GitHub App private key.'
-    );
-  }
-}
-
-function normalizePrivateKeyValue(value: string): string {
-  return removeMatchingOuterQuotes(
-    value.replace(/^\uFEFF/, '').trim().replace(/\\n/g, '\n')
-  );
-}
-
 function loadAndValidatePrivateKey(privateKeyFile: string): crypto.KeyObject {
-  let normalizedPem = normalizePrivateKeyValue(
+  const validation = validateGitHubAppPrivateKey(
     fs.readFileSync(privateKeyFile, 'utf8')
   );
 
-  if (!hasPrivateKeyPemHeader(normalizedPem) && looksLikeBase64(normalizedPem)) {
-    const decodedPem = Buffer.from(
-      normalizedPem.replace(/\s+/g, ''),
-      'base64'
-    ).toString('utf8');
-    if (
-      hasPrivateKeyPemHeader(decodedPem) ||
-      /-----BEGIN [^-]+-----/.test(decodedPem)
-    ) {
-      normalizedPem = normalizePrivateKeyValue(decodedPem);
-    }
+  if (!validation.ok || !validation.normalized) {
+    const message = validation.remediation
+      ? `${validation.error} ${validation.remediation}`
+      : validation.error;
+    throw new Error(message || 'GitHub App private key is not valid.');
   }
 
-  rejectUnsupportedPrivateKeyFormat(normalizedPem);
-
-  if (!hasPrivateKeyPemHeader(normalizedPem)) {
-    throw new Error(
-      'GitHub App private key file does not contain a private-key PEM header after normalization/base64 decode. Expected -----BEGIN ... PRIVATE KEY-----.'
-    );
-  }
-
-  try {
-    return crypto.createPrivateKey(normalizedPem);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `GitHub App private key is not a valid PEM private key: ${message.replace(/\s+/g, ' ').trim()}`
-    );
-  }
+  return crypto.createPrivateKey(validation.normalized);
 }
 
 async function generateJWT(appId: string, privateKey: crypto.KeyObject): Promise<string> {
