@@ -313,6 +313,49 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight accepts single-line GitHub App private key secret without leaking it', async () => {
+    const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const privateKeyPem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+    const singleLinePrivateKey = privateKeyPem.replace(/\n/g, ' ').trim();
+    const privateKeyBodyLine = privateKeyPem
+      .split('\n')
+      .find((line) => line && !line.includes('PRIVATE KEY'));
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      if (name === 'github_app_private_key') return singleLinePrivateKey;
+      return null;
+    });
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-github-single-line-'));
+    process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const githubCheck = body.checks.find((check: any) => check.name === 'github-app');
+      expect(githubCheck).toEqual(expect.objectContaining({
+        ok: true,
+        detail: expect.stringContaining('GitHub App credentials are readable'),
+      }));
+      const responseText = JSON.stringify(body);
+      expect(responseText).not.toContain(singleLinePrivateKey);
+      expect(responseText).not.toContain(privateKeyBodyLine);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+      restoreEnv(Object.fromEntries(githubEnvKeys.map((key) => [key, process.env[key]])));
+    }
+  });
+
   test('GET /api/preflight rejects malformed private-key-looking GitHub App credentials', async () => {
     const malformedPrivateKey = '-----BEGIN RSA PRIVATE KEY-----\nnot-real-key-material\n-----END RSA PRIVATE KEY-----';
     const expectedValidation = validateGitHubAppPrivateKey(malformedPrivateKey);
