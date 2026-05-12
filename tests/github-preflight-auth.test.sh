@@ -51,6 +51,51 @@ awk '
 # shellcheck disable=SC1090
 . "$FUNCTIONS_FILE"
 
+
+HEALTH_SOURCE="$TMP_DIR/check-github-operations-health.sh"
+awk '
+  /^check_github_operations_health\(\)/ { emit=1 }
+  /^validate_github_api_response\(\)/ { emit=0 }
+  emit { print }
+' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_SOURCE"
+ASKPASS_SOURCE="$TMP_DIR/github-askpass-helper.sh"
+awk '
+  /^create_github_askpass_helper\(\)/ { emit=1 }
+  /^check_github_operations_health\(\)/ { emit=0 }
+  emit { print }
+' "$PROJECT_ROOT/kaseki-agent.sh" > "$ASKPASS_SOURCE"
+
+if ! grep -Fq 'GitHub App token generation works for owner/repo' "$HEALTH_SOURCE" || \
+   ! grep -Fq 'create_github_askpass_helper "$health_log"' "$HEALTH_SOURCE" || \
+   ! grep -Fq '[health-check]' "$HEALTH_SOURCE"; then
+  printf '✗ preflight health check does not create the askpass helper after token generation succeeds\n'
+  cat "$HEALTH_SOURCE"
+  exit 1
+fi
+
+TOKEN_SUCCESS_LINE="$(grep -nF 'GitHub App token generation works for owner/repo' "$HEALTH_SOURCE" | head -n 1 | cut -d: -f1)"
+ASKPASS_CHECK_LINE="$(grep -nF 'create_github_askpass_helper "$health_log"' "$HEALTH_SOURCE" | head -n 1 | cut -d: -f1)"
+if [ "$ASKPASS_CHECK_LINE" -le "$TOKEN_SUCCESS_LINE" ]; then
+  printf '✗ preflight askpass helper check does not run after token generation succeeds\n'
+  cat "$HEALTH_SOURCE"
+  exit 1
+fi
+
+if ! grep -Fq 'Username for https://github.com' "$ASKPASS_SOURCE" || \
+   ! grep -Fq 'x-access-token' "$ASKPASS_SOURCE" || \
+   ! grep -Fq 'Password for https://github.com' "$ASKPASS_SOURCE" || \
+   ! grep -Fq '[ -z "$password_smoke_output" ]' "$ASKPASS_SOURCE"; then
+  printf '✗ askpass helper smoke check does not validate username and password prompt execution\n'
+  cat "$ASKPASS_SOURCE"
+  exit 1
+fi
+
+if ! grep -Fq 'GitHub askpass helper is not executable from %s' "$ASKPASS_SOURCE"; then
+  printf '✗ askpass helper execution failure does not report the runtime directory\n'
+  cat "$ASKPASS_SOURCE"
+  exit 1
+fi
+
 REPO_URL="https://github.com/acme/widgets"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1
 
