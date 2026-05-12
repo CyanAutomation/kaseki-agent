@@ -319,7 +319,10 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     const singleLinePrivateKey = privateKeyPem.replace(/\n/g, ' ').trim();
     const privateKeyBodyLine = privateKeyPem
       .split('\n')
-      .find((line) => line && !line.includes('PRIVATE KEY'));
+      .find((line) => line && !line.includes('BEGIN') && !line.includes('END') && !line.includes('PRIVATE KEY'));
+    if (!privateKeyBodyLine) {
+      throw new Error('Failed to extract private key body line from generated PEM');
+    }
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
       if (name === 'github_app_id') return '12345';
