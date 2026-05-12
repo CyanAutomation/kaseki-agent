@@ -27,6 +27,23 @@ import {
   type TestScheduler,
 } from './test-utils';
 
+const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+
+function mockReadableGithubAppCredentials(): void {
+  const { readHostSecret } = jest.mocked(hostSecretsReader);
+  (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+    if (name === 'github_app_id') return '12345';
+    if (name === 'github_app_client_id') return 'Iv123client';
+    if (name === 'github_app_private_key') return defaultGithubPrivateKeyPem;
+    return null;
+  });
+}
+
+beforeEach(() => {
+  mockReadableGithubAppCredentials();
+});
+
 /**
  * Complete test app setup for kaseki-api-routes testing.
  * Returns { app, server, port, idempotencyStore, preFlightValidator }.
@@ -1783,6 +1800,56 @@ describe('kaseki-api-routes publish mode validation', () => {
 
   afterEach(() => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('rejects omitted publish mode as draft PR when GitHub App credentials are not configured', async () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    // Ensure mock returns null for all GitHub App secrets
+    (readHostSecret as jest.Mock).mockReset();
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
+    const previousEnv = {
+      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
+      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
+      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
+      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
+      GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
+      GITHUB_APP_PRIVATE_KEY_FILE: process.env.GITHUB_APP_PRIVATE_KEY_FILE,
+    };
+    for (const key of Object.keys(previousEnv)) {
+      delete process.env[key];
+    }
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('publishMode=draft_pr requires readable GitHub App credentials');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   test('rejects draft PR publishing when GitHub App credentials are not configured', async () => {
