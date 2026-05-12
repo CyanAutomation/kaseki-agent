@@ -16,6 +16,8 @@ KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
 KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
+KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
+KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -50,8 +52,10 @@ VALIDATION_COMMANDS_ATTEMPTED=0
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 VALIDATION_RAW_LOG="/results/validation-raw.log"
+PRE_VALIDATION_RAW_LOG="/results/pre-validation-raw.log"
 FILTER_DIAGNOSTICS_LOG="/results/filter-diagnostics.log"
 VALIDATION_ENV_LOG="/results/validation-env.log"
+PRE_VALIDATION_ENV_LOG="/results/pre-validation-env.log"
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
@@ -65,6 +69,7 @@ ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 GITHUB_SKIP_REASONS=()
 VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
+PRE_VALIDATION_TIMINGS_FILE="/results/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
@@ -152,6 +157,9 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/pi-events.jsonl
 : > /results/pi-summary.json
 : > /results/validation.log
+: > /results/pre-validation.log
+: > "$PRE_VALIDATION_RAW_LOG"
+: > "$PRE_VALIDATION_ENV_LOG"
 : > /results/quality.log
 : > /results/secret-scan.log
 : > /results/git-push.log
@@ -161,6 +169,7 @@ PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 : > /results/failure.json
 : > /results/result-summary.md
 : > "$VALIDATION_TIMINGS_FILE"
+: > "$PRE_VALIDATION_TIMINGS_FILE"
 : >> "$STAGE_TIMINGS_FILE"
 : > "$DEPENDENCY_CACHE_LOG"
 setup_host_logging_mirror "$INSTANCE_NAME"
@@ -1164,12 +1173,167 @@ record_skipped_validation_command() {
   local command="$1"
   local script_name="$2"
   local duration_seconds="$3"
+  local log_file="${4:-/results/validation.log}"
+  local timings_file="${5:-$VALIDATION_TIMINGS_FILE}"
   {
     printf '\n==> %s\n' "$command"
     printf 'skipped: package.json does not define npm script "%s"\n' "$script_name"
-  } 2>&1 | tee -a /results/validation.log
-  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$VALIDATION_TIMINGS_FILE"
+  } 2>&1 | tee -a "$log_file"
+  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
 }
+
+run_validation_commands() {
+  local stage_label="$1"
+  local commands="$2"
+  local log_file="$3"
+  local raw_log="$4"
+  local timings_file="$5"
+  local env_log="$6"
+  local failure_reason_prefix="${7:-validation_command_failed}"
+  local stage_start validation_start validation_end duration command trimmed missing_npm_script
+  local command_exit filter_exit pipe_statuses
+
+  printf '\n==> %s\n' "$stage_label"
+  set_current_stage "$stage_label"
+  emit_progress "$stage_label" "started"
+  stage_start="$(date +%s)"
+
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
+    IFS=';' read -r -a VALIDATION_COMMANDS <<< "$commands"
+    for command in "${VALIDATION_COMMANDS[@]}"; do
+      trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+      [ -z "$trimmed" ] && continue
+      printf '  - %s\n' "$trimmed" | tee -a "$log_file"
+    done
+    VALIDATION_EXIT=0
+    record_stage_timing "$stage_label" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
+  elif [ -z "$commands" ] || [ "$commands" = "none" ]; then
+    printf 'Validation skipped because commands=%s.\n' "${commands:-<empty>}" | tee -a "$log_file"
+    record_stage_timing "$stage_label" 0 0 "skipped_by_config"
+  else
+    # Checkpoint: Verify working directory exists before validation.
+    if ! [ -d /workspace/repo ]; then
+      printf 'ERROR: Working directory /workspace/repo does not exist before %s\n' "$stage_label" | tee -a "$log_file"
+      printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
+      printf 'Filesystem state:\n' | tee -a "$log_file"
+      find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
+      VALIDATION_EXIT=1
+      VALIDATION_FAILED_COMMAND_DETAIL="Working directory /workspace/repo missing before $stage_label"
+      VALIDATION_FAILURE_REASON="$failure_reason_prefix: workspace_missing"
+      record_stage_timing "$stage_label" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
+    else
+      set +e
+      IFS=';' read -r -a VALIDATION_COMMANDS <<< "$commands"
+      for command in "${VALIDATION_COMMANDS[@]}"; do
+        trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+        [ -z "$trimmed" ] && continue
+        validation_start="$(date +%s)"
+        if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
+          validation_end="$(date +%s)"
+          duration=$((validation_end - validation_start))
+          record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration" "$log_file" "$timings_file"
+          emit_event "validation_command_skipped" "stage=$stage_label" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
+          continue
+        fi
+        ((VALIDATION_COMMANDS_ATTEMPTED++))
+        emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
+        # Log command environment state before execution.
+        {
+          printf '[validation command] stage=%s\n' "$stage_label"
+          printf '[validation command] command=%s\n' "$trimmed"
+          printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+          printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
+          printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
+          printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+        } | tee -a "$env_log"
+        # Use pipefail to catch errors in any stage of the pipe.
+        set -o pipefail
+        {
+          printf '\n==> %s\n' "$trimmed"
+          unset OPENROUTER_API_KEY
+          # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
+          # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
+          # errors when running in constrained filesystem environments (read-only root, etc.).
+          bash -c "$trimmed"
+          command_exit=$?
+          printf 'exit_code=%s\n' "$command_exit"
+          exit "$command_exit"
+        } 2>&1 | tee -a "$log_file" "$raw_log" | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
+        pipe_statuses=("${PIPESTATUS[@]}")
+        set +o pipefail
+        # pipe_statuses[0] = bash command exit code
+        # pipe_statuses[1] = tee exit code
+        # pipe_statuses[2] = validation-output-filter exit code
+        command_exit="${pipe_statuses[0]}"
+        filter_exit="${pipe_statuses[2]}"
+        validation_end="$(date +%s)"
+        duration=$((validation_end - validation_start))
+        printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$timings_file"
+        emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+
+        # Capture and process filter stderr for diagnostics.
+        if [ -f "$FILTER_STDERR_FILE" ] && [ -s "$FILTER_STDERR_FILE" ]; then
+          FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter stderr>')"
+          {
+            printf '\n[DIAGNOSTICS] Validation output filter stderr (last 50 lines):\n'
+            printf '%s\n' "$FILTER_STDERR_TAIL"
+          } | tee -a "$log_file" /results/quality.log
+          rm -f "$FILTER_STDERR_FILE"
+        fi
+
+        # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13).
+        if [ "$command_exit" -eq 141 ] && [ "$filter_exit" -ne 0 ]; then
+          {
+            printf '\n[DIAGNOSTICS] Validation command encountered SIGPIPE (signal 13) from output filter:\n'
+            printf '  Command exit code: 141 (SIGPIPE)\n'
+            printf '  Filter exit code: %s\n' "$filter_exit"
+            printf '  This typically indicates the validation-output-filter process encountered an error.\n'
+            if [ -n "$FILTER_STDERR_TAIL" ]; then
+              printf '  Filter stderr was captured above.\n'
+            else
+              printf '  (No stderr captured from filter)\n'
+            fi
+          } | tee -a /results/quality.log
+        fi
+
+        if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
+          VALIDATION_EXIT="$command_exit"
+          VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
+          VALIDATION_FAILURE_REASON="$failure_reason_prefix: $trimmed (exit $command_exit)"
+          # Enhanced diagnostics for getcwd-type errors.
+          if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
+            {
+              printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
+              printf 'Working directory status:\n'
+              printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
+              printf '  /workspace/repo exists: %s\n' "$([ -d /workspace/repo ] && echo 'yes' || echo 'no')"
+              if [ -L /workspace/repo/node_modules ]; then
+                printf '  node_modules is symlink → %s\n' "$(readlink /workspace/repo/node_modules 2>&1 || echo '<readlink failed>')"
+              fi
+              printf 'Last 20 lines of validation log:\n'
+              tail -20 "$log_file"
+            } | tee -a /results/quality.log
+          fi
+          # Fail-fast: if enabled, stop validation loop at first failure.
+          if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+            VALIDATION_STOPPED_EARLY=true
+            printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a "$log_file"
+            break
+          fi
+        fi
+      done
+      if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
+        printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a "$log_file"
+      fi
+      set +e
+    fi
+    record_stage_timing "$stage_label" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
+  fi
+  emit_progress "$stage_label" "finished with exit $VALIDATION_EXIT"
+  return "$VALIDATION_EXIT"
+}
+
 compute_repo_memory_key() {
   printf '%s\n%s' "$REPO_URL" "$GIT_REF" | sha256sum | awk '{print $1}'
 }
@@ -2009,6 +2173,32 @@ if ! run_step "prepare node dependencies" prepare_dependencies; then
   exit 0
 fi
 
+if [ "$KASEKI_PRE_AGENT_VALIDATION" = "0" ]; then
+  printf '\n==> pre-agent validation\n'
+  set_current_stage "pre-agent validation"
+  emit_progress "pre-agent validation" "skipped by KASEKI_PRE_AGENT_VALIDATION=0"
+  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a /results/pre-validation.log
+  record_stage_timing "pre-agent validation" 0 0 "skipped_by_config"
+else
+  run_validation_commands \
+    "pre-agent validation" \
+    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    /results/pre-validation.log \
+    "$PRE_VALIDATION_RAW_LOG" \
+    "$PRE_VALIDATION_TIMINGS_FILE" \
+    "$PRE_VALIDATION_ENV_LOG" \
+    "pre_agent_validation_failed"
+  if [ "$VALIDATION_EXIT" -ne 0 ]; then
+    STATUS="$VALIDATION_EXIT"
+    FAILED_COMMAND="pre-agent validation"
+    if [ -z "$VALIDATION_FAILURE_REASON" ]; then
+      VALIDATION_FAILURE_REASON="pre_agent_validation_failed"
+    fi
+    emit_error_event "pre_agent_validation_failed" "Pre-agent validation failed before Pi was invoked: ${VALIDATION_FAILED_COMMAND_DETAIL:-exit $VALIDATION_EXIT}" "exit"
+    exit 0
+  fi
+fi
+
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
@@ -2227,151 +2417,43 @@ log_validation_environment() {
 }
 log_validation_environment
 
-printf '\n==> validation\n'
-set_current_stage "validation"
-emit_progress "validation" "started"
-stage_start="$(date +%s)"
-if [ "$KASEKI_DRY_RUN" = "1" ]; then
-  printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a /results/validation.log
-  IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
-  for command in "${VALIDATION_COMMANDS[@]}"; do
-    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
-    [ -z "$trimmed" ] && continue
-    printf '  - %s\n' "$trimmed" | tee -a /results/validation.log
-  done
-  VALIDATION_EXIT=0
-  record_stage_timing "validation" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
-elif [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
-  printf 'Validation skipped because KASEKI_VALIDATION_COMMANDS=%s.\n' "${KASEKI_VALIDATION_COMMANDS:-<empty>}" | tee -a /results/validation.log
-  record_stage_timing "validation" 0 0 "skipped_by_config"
+if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
+  run_validation_commands \
+    "validation" \
+    "$KASEKI_VALIDATION_COMMANDS" \
+    /results/validation.log \
+    "$VALIDATION_RAW_LOG" \
+    "$VALIDATION_TIMINGS_FILE" \
+    "$VALIDATION_ENV_LOG" \
+    "validation_command_failed"
 elif [ "$QUALITY_EXIT" -ne 0 ]; then
+  printf '\n==> validation\n'
+  set_current_stage "validation"
+  emit_progress "validation" "started"
   printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a /results/validation.log
   VALIDATION_EXIT="$QUALITY_EXIT"
   if [ -z "$VALIDATION_FAILURE_REASON" ]; then
     VALIDATION_FAILURE_REASON="quality_gate_failed: $QUALITY_FAILURE_REASON"
   fi
   record_stage_timing "validation" "$QUALITY_EXIT" 0 "skipped_after_quality_failure"
+  emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; then
+  printf '\n==> validation\n'
+  set_current_stage "validation"
+  emit_progress "validation" "started"
   printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
+  emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 else
-  # Checkpoint: Verify working directory exists before validation
-  if ! [ -d /workspace/repo ]; then
-    printf 'ERROR: Working directory /workspace/repo does not exist before validation\n' | tee -a /results/validation.log
-    printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a /results/validation.log
-    printf 'Filesystem state:\n' | tee -a /results/validation.log
-    find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a /results/validation.log
-    VALIDATION_EXIT=1
-    VALIDATION_FAILED_COMMAND_DETAIL="Working directory /workspace/repo missing before validation"
-    record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
-  else
-    set +e
-    IFS=';' read -r -a VALIDATION_COMMANDS <<< "$KASEKI_VALIDATION_COMMANDS"
-  for command in "${VALIDATION_COMMANDS[@]}"; do
-    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
-    [ -z "$trimmed" ] && continue
-    validation_start="$(date +%s)"
-    if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
-      validation_end="$(date +%s)"
-      duration=$((validation_end - validation_start))
-      record_skipped_validation_command "$trimmed" "$missing_npm_script" "$duration"
-      emit_event "validation_command_skipped" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
-      continue
-    fi
-    ((VALIDATION_COMMANDS_ATTEMPTED++))
-    emit_event "validation_command_started" "command=$trimmed"
-    # Log command environment state before execution
-    {
-      printf '[validation command] command=%s\n' "$trimmed"
-      printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-      printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
-      printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
-      printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
-    } | tee -a "$VALIDATION_ENV_LOG"
-    # Use pipefail to catch errors in any stage of the pipe
-    set -o pipefail
-    {
-      printf '\n==> %s\n' "$trimmed"
-      unset OPENROUTER_API_KEY
-      # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers
-      # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
-      # errors when running in constrained filesystem environments (read-only root, etc.)
-      bash -c "$trimmed"
-      command_exit=$?
-      printf 'exit_code=%s\n' "$command_exit"
-      exit "$command_exit"
-    } 2>&1 | tee -a /results/validation.log "$VALIDATION_RAW_LOG" | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
-    pipe_statuses=("${PIPESTATUS[@]}")
-    set +o pipefail
-    # pipe_statuses[0] = bash command exit code
-    # pipe_statuses[1] = tee exit code
-    # pipe_statuses[2] = validation-output-filter exit code
-    command_exit="${pipe_statuses[0]}"
-    filter_exit="${pipe_statuses[2]}"
-    validation_end="$(date +%s)"
-    duration=$((validation_end - validation_start))
-    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$VALIDATION_TIMINGS_FILE"
-    emit_event "validation_command_finished" "command=$trimmed" "exit_code=$command_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
-    
-    # Capture and process filter stderr for diagnostics
-    if [ -f "$FILTER_STDERR_FILE" ] && [ -s "$FILTER_STDERR_FILE" ]; then
-      FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter stderr>')"
-      {
-        printf '\n[DIAGNOSTICS] Validation output filter stderr (last 50 lines):\n'
-        printf '%s\n' "$FILTER_STDERR_TAIL"
-      } | tee -a /results/validation.log /results/quality.log
-      rm -f "$FILTER_STDERR_FILE"
-    fi
-    
-    # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13)
-    if [ "$command_exit" -eq 141 ] && [ "$filter_exit" -ne 0 ]; then
-      {
-        printf '\n[DIAGNOSTICS] Validation command encountered SIGPIPE (signal 13) from output filter:\n'
-        printf '  Command exit code: 141 (SIGPIPE)\n'
-        printf '  Filter exit code: %s\n' "$filter_exit"
-        printf '  This typically indicates the validation-output-filter process encountered an error.\n'
-        if [ -n "$FILTER_STDERR_TAIL" ]; then
-          printf '  Filter stderr was captured above.\n'
-        else
-          printf '  (No stderr captured from filter)\n'
-        fi
-      } | tee -a /results/quality.log
-    fi
-    
-    if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
-      VALIDATION_EXIT="$command_exit"
-      VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
-      VALIDATION_FAILURE_REASON="validation_command_failed: $trimmed (exit $command_exit)"
-      # Enhanced diagnostics for getcwd-type errors
-      if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' /results/validation.log; then
-        {
-          printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
-          printf 'Working directory status:\n'
-          printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-          printf '  /workspace/repo exists: %s\n' "$([ -d /workspace/repo ] && echo 'yes' || echo 'no')"
-          if [ -L /workspace/repo/node_modules ]; then
-            printf '  node_modules is symlink → %s\n' "$(readlink /workspace/repo/node_modules 2>&1 || echo '<readlink failed>')"
-          fi
-          printf 'Last 20 lines of validation log:\n'
-          tail -20 /results/validation.log
-        } | tee -a /results/quality.log
-      fi
-      # Fail-fast: if enabled, stop validation loop at first failure
-      if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
-        VALIDATION_STOPPED_EARLY=true
-        printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a /results/validation.log
-        break
-      fi
-    fi
-  done
-    if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
-      printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a /results/validation.log
-    fi
-    set +e
-  fi
-  record_stage_timing "validation" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
+  run_validation_commands \
+    "validation" \
+    "$KASEKI_VALIDATION_COMMANDS" \
+    /results/validation.log \
+    "$VALIDATION_RAW_LOG" \
+    "$VALIDATION_TIMINGS_FILE" \
+    "$VALIDATION_ENV_LOG" \
+    "validation_command_failed"
 fi
-emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 
 # Check validation-phase allowlist (if configured)
 if [ "$VALIDATION_EXIT" -eq 0 ]; then
