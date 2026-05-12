@@ -162,6 +162,29 @@ EOF
 chmod 600 ~/secrets/github_app_private_key
 ```
 
+### Single-line/text PEM private keys
+
+The preferred GitHub App private key setup is still file based: paste the PEM
+text value into a dedicated secret file such as
+`/agents/secrets/github_app_private_key` for service/container deployments or
+`~/secrets/github_app_private_key` for local CLI usage, then configure
+`github_app_private_key_file` or `GITHUB_APP_PRIVATE_KEY_FILE` to point at that
+file.
+
+The private key reader normalizes common pasted formats. The secret file may
+contain the original multi-line PEM, escaped `\n` newlines, a base64-encoded
+PEM, or a single-line PEM where spaces separate the PEM header, body, and footer.
+
+`GITHUB_APP_PRIVATE_KEY` is only for local `run-kaseki.sh` experiments. It may
+be rejected by config-file and API service flows that enforce file-based
+secrets, so prefer `GITHUB_APP_PRIVATE_KEY_FILE` outside those local
+experiments.
+
+> **Security warning:** Do not paste real private keys into tickets, prompts,
+> logs, `.env` files, or source control. If a GitHub App private key is exposed,
+> regenerate it in the GitHub App settings and update the secret file anywhere
+> the old key was installed.
+
 ## Troubleshooting
 
 ### "Auth validation failed: Missing..."
