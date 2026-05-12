@@ -262,7 +262,7 @@ export class JobScheduler {
       // directory so the API does not accidentally reserve the final result path.
       KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
-      ...(job.request.publishMode ? { KASEKI_PUBLISH_MODE: job.request.publishMode } : {}),
+      KASEKI_PUBLISH_MODE: job.request.publishMode || 'draft_pr',
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
