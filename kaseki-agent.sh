@@ -1691,7 +1691,7 @@ github_askpass_runtime_dir() {
 }
 
 create_github_askpass_helper() {
-  local log_file log_prefix askpass_dir askpass_file smoke_output
+  local log_file log_prefix askpass_dir askpass_file username_smoke_output password_smoke_output
   log_file="${1:-/results/git-push.log}"
   log_prefix="${2:-[github-askpass]}"
   GITHUB_ASKPASS_FILE=""
@@ -1736,15 +1736,28 @@ EOF_ASKPASS
     return 8
   fi
 
-  smoke_output="$(KASEKI_GITHUB_TOKEN='__kaseki_askpass_smoke_token__' "$askpass_file" 'Username for https://github.com' 2>/dev/null)" || {
+  username_smoke_output="$(KASEKI_GITHUB_TOKEN='__kaseki_askpass_smoke_token__' "$askpass_file" 'Username for https://github.com' 2>/dev/null)" || {
     rm -f "$askpass_file"
-    printf '%s ERROR: GitHub credential helper cannot be executed from directory: %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
+    printf '%s ERROR: GitHub askpass helper is not executable from %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
     GITHUB_PUSH_EXIT=8
     return 8
   }
-  if [ "$smoke_output" != "x-access-token" ]; then
+  if [ "$username_smoke_output" != "x-access-token" ]; then
     rm -f "$askpass_file"
     printf '%s ERROR: GitHub credential helper smoke check returned unexpected username response\n' "$log_prefix" | tee -a "$log_file" >&2
+    GITHUB_PUSH_EXIT=8
+    return 8
+  fi
+
+  password_smoke_output="$(KASEKI_GITHUB_TOKEN='__kaseki_askpass_smoke_token__' "$askpass_file" 'Password for https://github.com' 2>/dev/null)" || {
+    rm -f "$askpass_file"
+    printf '%s ERROR: GitHub askpass helper is not executable from %s\n' "$log_prefix" "$askpass_dir" | tee -a "$log_file" >&2
+    GITHUB_PUSH_EXIT=8
+    return 8
+  }
+  if [ -z "$password_smoke_output" ]; then
+    rm -f "$askpass_file"
+    printf '%s ERROR: GitHub credential helper smoke check returned empty password response\n' "$log_prefix" | tee -a "$log_file" >&2
     GITHUB_PUSH_EXIT=8
     return 8
   fi
@@ -1839,23 +1852,14 @@ check_github_operations_health() {
   fi
   printf '[health-check] ✓ github-app-token helper can start and resolve imports\n' | tee -a "$health_log"
 
-  # Check 7: Test GitHub askpass helper can execute from the configured runtime directory
-  local askpass_file
-  if ! create_github_askpass_helper "$health_log" '[health-check]'; then
-    return 1
-  fi
-  askpass_file="$GITHUB_ASKPASS_FILE"
-  rm -f "$askpass_file"
-  printf '[health-check] ✓ GitHub askpass helper directory supports executable helpers: %s\n' "$(github_askpass_runtime_dir)" | tee -a "$health_log"
-
-  # Check 8: Test curl is available
+  # Check 7: Test curl is available
   if ! command -v curl >/dev/null 2>&1; then
     printf '[health-check] ERROR: curl is not available\n' | tee -a "$health_log" >&2
     return 1
   fi
   printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
 
-  # Check 9: Optional live GitHub App auth smoke test. Enabled by default
+  # Check 8: Optional live GitHub App auth smoke test. Enabled by default
   # (KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1) so startup does not report a full
   # GitHub preflight pass when credentials are readable but cannot mint an
   # installation token for REPO_URL. Set KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
@@ -1896,6 +1900,15 @@ check_github_operations_health() {
       fi
 
       printf '[health-check] ✓ GitHub App token generation works for owner/repo\n' | tee -a "$health_log"
+
+      # After token generation succeeds, exercise the same askpass helper path used by git push.
+      local askpass_file
+      if ! create_github_askpass_helper "$health_log" '[health-check]'; then
+        return 1
+      fi
+      askpass_file="$GITHUB_ASKPASS_FILE"
+      rm -f "$askpass_file"
+      printf '[health-check] ✓ GitHub askpass helper returned expected username and non-empty password responses from: %s\n' "$(github_askpass_runtime_dir)" | tee -a "$health_log"
     else
       printf '[health-check] SKIP: Cannot parse GitHub repo URL for auth smoke test: %s\n' "$REPO_URL" | tee -a "$health_log"
     fi
