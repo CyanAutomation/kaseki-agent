@@ -26,14 +26,16 @@ With constraints (template):
 
 Effective prompts contain:
 
-1. **Clear Task Goal** — what to do, not how
-2. **Scope Boundaries** — what files to touch/avoid
-3. **Success Criteria** — how to verify it works
-4. **Constraints** — what not to do
+| Element | Description |
+|---------|-------------|
+| **Clear Task Goal** | What to do, not how |
+| **Scope Boundaries** | What files to touch/avoid |
+| **Success Criteria** | How to verify it works |
+| **Constraints** | What not to do |
 
 ### Basic Template
 
-```
+```markdown
 [GOAL]
 Fix [specific behavior] in [file(s)].
 
@@ -59,7 +61,7 @@ The fix must:
 
 **When:** Fix a bug in one file, minimal test changes
 
-```
+```markdown
 Fix the [specific bug description] in `[file.ts]`.
 
 Restrict changes to:
@@ -80,7 +82,7 @@ The fix must:
 
 **Example:**
 
-```
+```markdown
 Fix the parser bug that fails on empty input in `src/lib/parser.ts`.
 
 Restrict changes to:
@@ -109,7 +111,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/parser.ts tests/parser.validation.ts"
 
 **When:** Fix a utility function, update related tests
 
-```
+```markdown
 Fix the [function] in `[utils file]` to [behavior change].
 
 Restrict changes to:
@@ -130,7 +132,7 @@ The fix must:
 
 **Example:**
 
-```
+```markdown
 Fix the `normalizeEmail()` function in `src/lib/email-utils.ts` to properly validate email format.
 
 Restrict changes to:
@@ -158,7 +160,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/lib/email-utils.ts tests/email-utils.test.ts
 
 **When:** Create or modify a UI component
 
-```
+```markdown
 [Implement|Update] the [ComponentName] component in `[path]`.
 
 [Description of component behavior and props]
@@ -184,7 +186,7 @@ The component must:
 
 **Example:**
 
-```
+```markdown
 Implement the PricingCard component in `src/components/pricing-card`.
 
 The component displays a pricing tier with plan name, price, features list, and CTA button.
