@@ -104,6 +104,7 @@ RUN chmod +x \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
+    && cp dist/github-app-private-key.js /app/lib/github-app-private-key.js \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
     && mkdir -p /usr/local/bin/lib \
@@ -119,6 +120,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && chmod 0755 \
@@ -209,6 +211,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \
