@@ -57,13 +57,14 @@ echo "✓ Jest available"
 
 # Test 4: Verify npm run check executes without SIGPIPE
 echo "[4/5] Testing npm run check execution..."
+set +e
 CONTAINER_OUTPUT=$(docker run --rm \
   --workdir /app \
   -v /app/dist:/app/dist:ro \
   "$IMAGE_NAME" \
-  bash -c "npm run check 2>&1" || true)
-
+  bash -c "npm run check 2>&1")
 EXIT_CODE=$?
+set -e
 
 # Check for SIGPIPE error (exit code 141 or 128+13)
 if [ "$EXIT_CODE" -eq 141 ] || [ "$EXIT_CODE" -eq 13 ]; then
