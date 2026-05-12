@@ -17,7 +17,7 @@ Exit Code?
   ├─ 4: Diff too large → Increase KASEKI_MAX_DIFF_BYTES or use allowlist
   ├─ 5: Allowlist violation → Review changed files
   ├─ 6: Secret detected → Audit code for credentials
-  ├─ 7: Validation failed → Check validation.log
+  ├─ 7: Validation failed → Check pre-validation.log or validation.log
   ├─ 124: Timeout → Increase KASEKI_AGENT_TIMEOUT_SECONDS
   └─ 127: Command not found → Verify installation
 ```
@@ -37,7 +37,7 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 | **4** | Diff exceeds limit | changed-files.txt, git.diff size | Use allowlist or increase KASEKI_MAX_DIFF_BYTES |
 | **5** | File outside allowlist | quality.log, changed-files.txt | Review KASEKI_CHANGED_FILES_ALLOWLIST |
 | **6** | Secret detected | secret-scan.log | Audit code for `sk-or-*` credentials |
-| **7** | Validation failed | validation.log | See "Validation Failures" below |
+| **7** | Validation failed | pre-validation.log or validation.log | See "Validation Failures" below |
 | **124** | Agent timeout | pi-summary.json `elapsed_seconds` | Increase KASEKI_AGENT_TIMEOUT_SECONDS |
 | **127** | Command not found | stdout.log, stderr.log | Reinstall; verify Node.js v24+ |
 
@@ -72,11 +72,20 @@ tail -50 /agents/kaseki-results/kaseki-N/pi-stderr.log
 cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds, .timeout_seconds'
 ```
 
-**Validation Phase Failed** (exit_code_stage: validation):
+**Pre-Agent Validation Failed** (baseline failure before Pi):
+
+```bash
+cat /agents/kaseki-results/kaseki-N/pre-validation.log
+cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv  # Which baseline command failed?
+```
+
+This means the requested repo/ref failed validation before Pi made any changes. Fix the baseline or choose a passing ref before judging agent output.
+
+**Post-Agent Validation Failed** (final diff failed validation):
 
 ```bash
 cat /agents/kaseki-results/kaseki-N/validation.log
-cat /agents/kaseki-results/kaseki-N/validation-timings.tsv  # Which command failed?
+cat /agents/kaseki-results/kaseki-N/validation-timings.tsv  # Which final-diff command failed?
 ```
 
 **Quality Gates Failed** (exit_code_stage: quality_gates):
@@ -100,9 +109,10 @@ cat /agents/kaseki-results/kaseki-N/secret-scan.log
 
 ```bash
 # Machine-readable failure reason
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.validation_failure_reason, .quality_failure_reason'
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.pre_validation_failure_reason, .validation_failure_reason, .quality_failure_reason'
 
-# Example:
+# Examples:
+# "pre_validation_failure_reason": "pre_agent_validation_failed: npm run check (exit 1)"
 # "validation_failure_reason": "validation_command_failed: npm run test (exit 1)"
 # "quality_failure_reason": "max_diff_bytes: 250000 exceeds limit of 200000"
 ```
@@ -113,21 +123,29 @@ cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.validation_failure_reas
 
 ### Problem: Validation Commands Fail
 
-Validation commands are executed sequentially (default: `npm run check;npm run test;npm run build`). If any exits non-zero, validation fails.
+Validation commands are executed sequentially (default: `npm run check;npm run test;npm run build`). Kaseki runs them in two phases:
 
-**Note on Log Output:** Validation command output is automatically filtered in real-time Docker logs to show only key milestones (test results, errors, warnings) and command boundaries, while preserving full unfiltered output in `/agents/kaseki-results/kaseki-N/validation.log`. This keeps `docker logs kaseki-N` clean while enabling full debugging via the stored log file.
+- **Pre-agent validation** runs before Pi. If this phase fails, the baseline repo/ref was already failing and Pi was not invoked. Use `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, and `pre-validation-timings.tsv`.
+- **Post-agent validation** runs after Pi, allowlist restoration, and quality gates. If this phase fails, the final agent output failed validation. Use `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
+
+**Note on Log Output:** Validation command output is automatically filtered in real-time Docker logs to show only key milestones (test results, errors, warnings) and command boundaries, while preserving full unfiltered output in `/agents/kaseki-results/kaseki-N/pre-validation.log` and `/agents/kaseki-results/kaseki-N/validation.log`. This keeps `docker logs kaseki-N` clean while enabling full debugging via the stored log files.
 
 ### Diagnosis
 
 ```bash
-# 1. Which command failed?
-cat /agents/kaseki-results/kaseki-N/validation.log | head -20  # Shows first failure
+# 1. Which validation phase failed?
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.failed_command, .pre_validation_failure_reason, .validation_failure_reason'
+cat /agents/kaseki-results/kaseki-N/stage-timings.tsv
 
-# 2. What exit code?
+# 2. If failed_command is "pre-agent validation", inspect baseline logs
+cat /agents/kaseki-results/kaseki-N/pre-validation.log | head -20
+cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv
+
+# 3. If failed_command is "validation", inspect final-diff logs
+cat /agents/kaseki-results/kaseki-N/validation.log | head -20
 cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
-# Columns: command, exit_code, elapsed_seconds
 
-# 3. Full error output?
+# 4. Full error output for a specific command
 grep -A 50 "npm run test" /agents/kaseki-results/kaseki-N/validation.log
 ```
 
@@ -142,14 +160,28 @@ npm ERR! missing script: test
 
 **Fix:** The script doesn't exist in package.json; this is non-fatal by design. Validation continues to next command.
 
-**Issue: Validation fails due to code changes**
+**Issue: Pre-agent validation fails before Pi starts**
 
 ```
 FAIL: src/__tests__/index.test.ts
 TypeError: expected X to be Y
 ```
 
-**Fix:** This is expected — agent made changes that broke tests. Either:
+**Fix:** This is a baseline problem, not an agent regression. The selected repo/ref failed before Pi changed anything. Either:
+
+- Re-run against a known-good ref
+- Fix the baseline repository state
+- Adjust `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` if the baseline phase is intentionally narrower than final validation
+- Set `KASEKI_PRE_AGENT_VALIDATION=0` only when you knowingly accept baseline failures
+
+**Issue: Post-agent validation fails due to code changes**
+
+```
+FAIL: src/__tests__/index.test.ts
+TypeError: expected X to be Y
+```
+
+**Fix:** The final diff failed validation, so the agent likely introduced or failed to resolve a regression. Either:
 
 - Adjust agent task prompt (see [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md))
 - Adjust allowlist to restrict agent changes (see [QUALITY_GATES.md](QUALITY_GATES.md))
