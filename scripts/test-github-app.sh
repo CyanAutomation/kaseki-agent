@@ -164,7 +164,7 @@ if (out.expires_at !== "2026-06-01T00:00:00Z") throw new Error("expires_at misma
 ' "$TMP_DIR/mock-success-installation.stdout"
 
 BASE64_KEY="$TMP_DIR/base64-key.pem"
-base64 --wrap=0 "$MOCK_KEY" > "$BASE64_KEY"
+base64 < "$MOCK_KEY" | tr -d '\n' > "$BASE64_KEY"
 run_helper_with_https_mock success-installation "$BASE64_KEY" success-base64-key
 [ "$(cat "$TMP_DIR/mock-success-base64-key.status")" -eq 0 ] || { echo "Expected base64-wrapped key fixture to exit 0" >&2; exit 1; }
 node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (out.token !== "ghu_fixture_token") throw new Error("token mismatch for base64 key");' "$TMP_DIR/mock-success-base64-key.stdout"
