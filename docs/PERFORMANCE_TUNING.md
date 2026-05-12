@@ -27,7 +27,8 @@ Agent timeout controls how long the Pi agent has to complete the task.
 ### Understanding Timeout
 
 ```
-KASEKI_AGENT_TIMEOUT_SECONDS = time limit for agent reasoning + code execution
+KASEKI_AGENT_TIMEOUT_SECONDS = time limit for agent reasoning +
+  code execution
 (Does not include: validation, quality gates, setup)
 ```
 
@@ -63,7 +64,8 @@ export KASEKI_AGENT_TIMEOUT_SECONDS=3600  # 1 hour for complex tasks
 
 ```bash
 # Check how much time agent actually used
-cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds'
+cat /agents/kaseki-results/kaseki-N/pi-summary.json |
+  jq '.elapsed_seconds'
 
 # Example: if agent used 150s but timeout was 1200s, reduce to 300s
 # if agent used 1180s but timeout was 1200s, increase to 1800s
@@ -174,7 +176,8 @@ Dependency caching accelerates `npm install` when running validation commands.
 ### How Caching Works
 
 ```
-Cache key = sha256(repo_url) + sha256(package-lock.json) + node_major_version
+Cache key = sha256(repo_url) + sha256(package-lock.json) +
+  node_major_version
 
 Directory structure:
 /agents/kaseki-cache/
@@ -210,7 +213,8 @@ environment:
 
 - First run: 30-60 seconds (cache miss, builds cache)
 - Subsequent runs: 5-10 seconds (cache hit)
-- Suitable for: repeated runs on same repo, API service with multiple runs
+- Suitable for: repeated runs on same repo, API service with
+  multiple runs
 
 ### Monitoring Cache
 

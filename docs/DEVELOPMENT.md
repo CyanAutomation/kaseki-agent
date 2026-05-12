@@ -141,7 +141,8 @@ High-level client library for integration:
 npm install
 npm run build                    # TypeScript → dist/
 npm run type-check              # TypeScript validation
-npm run validate-module-imports # Verify Docker binary dependencies
+npm run validate-module-imports # Verify Docker binary
+                                  # dependencies
 ```
 
 **About Module Validation:**
@@ -162,9 +163,13 @@ This prevents runtime `ERR_MODULE_NOT_FOUND` errors when the Docker image runs.
 ### Test
 
 ```bash
-npm run test:unit -- src/result-cache.test.ts      # Run a single Jest test file
-npm run test:unit -- -t "caches successful result" # Run tests matching a name pattern
-npm run test:ci                                     # Full CI-style validation (build + type-check + jest + bash tests)
+npm run test:unit -- src/result-cache.test.ts      # Run a single
+                                                 # Jest test file
+npm run test:unit -- -t "caches successful result" # Run tests matching
+                                                 # a name pattern
+npm run test:ci                                     # Full CI-style
+                                                 # validation (build + type-check
+                                                 # + jest + bash tests)
 npm run test:watch                                  # Jest watch mode
 npm run test:coverage                               # Coverage report
 ```
@@ -184,9 +189,11 @@ npm run lint:fix   # Auto-fix issues
 KASEKI_API_KEYS=sk-dev npm run kaseki-api
 
 # Terminal 2: Test endpoints
-curl -H "Authorization: Bearer sk-dev" http://localhost:8080/api/health
+curl -H "Authorization: Bearer sk-dev" \
+  http://localhost:8080/api/health
 
-# Terminal 3: Submit a run (requires actual kaseki-agent setup)
+# Terminal 3: Submit a run (requires actual
+# kaseki-agent setup)
 curl -X POST http://localhost:8080/api/runs \
   -H "Authorization: Bearer sk-dev" \
   -H "Content-Type: application/json" \
@@ -197,9 +204,11 @@ curl -X POST http://localhost:8080/api/runs \
 
 ### Unit Tests (`src/*.test.ts`)
 
-- **Kaseki API Configuration:** Config loading, validation, API key parsing
+- **Kaseki API Configuration:** Config loading, validation,
+  API key parsing
 - **Request Validation:** Zod schema validation, error cases
-- **Job Scheduler:** Queue operations, job submission, timeout handling
+- **Job Scheduler:** Queue operations, job submission, timeout
+  handling
 - **Result Cache:** Caching, TTL, eviction, cleanup
 
 ### Integration Tests (`test/kaseki-api.integration.test.sh`)
@@ -219,7 +228,8 @@ Example test flow:
 Manual testing via TypeScript client:
 
 ```typescript
-const client = new KasekiApiClient('http://localhost:8080', 'sk-dev');
+const client = new KasekiApiClient('http://localhost:8080', 
+  'sk-dev');
 const run = await client.submit({ repoUrl: '...' });
 const final = await client.waitForCompletion(run.id);
 console.log(final.status === 'completed' ? 'SUCCESS' : 'FAILED');
@@ -255,20 +265,23 @@ console.log(final.status === 'completed' ? 'SUCCESS' : 'FAILED');
 
 ```typescript
 // In src/kaseki-api-config.ts
-KASEKI_API_MAX_CONCURRENT_RUNS = 3;  // Increase for more parallelism
+KASEKI_API_MAX_CONCURRENT_RUNS = 3;  // Increase for more
+                                  # parallelism
 ```
 
 Monitor via:
 
 ```bash
-curl -H "Authorization: Bearer ..." http://localhost:8080/api/runs
+curl -H "Authorization: Bearer ..." \
+  http://localhost:8080/api/runs
 ```
 
 ### Result Cache
 
 ```typescript
 // In src/kaseki-api-routes.ts
-const cache = new ResultCache(20, 5 * 60 * 1000);  // 20 entries, 5 min TTL
+const cache = new ResultCache(20, 5 * 60 * 1000);  // 20
+                                              # entries, 5 min TTL
 ```
 
 Check stats:
@@ -280,7 +293,8 @@ console.log(`${stats.entries} cached, ${stats.bytes} bytes`);
 
 ### Database (Future)
 
-Current in-memory design sufficient for <100 recent runs. For persistence across restarts, add:
+Current in-memory design sufficient for <100 recent runs.
+For persistence across restarts, add:
 
 - SQLite or JSON file-based run log
 - Cleanup job for old artifacts
@@ -326,14 +340,15 @@ test('my-endpoint returns data', () => {
 
 ### Improve Error Handling
 
-Current pattern using `sendErrorResponse(res, status, title, detail)` follows RFC 7807.
+Current pattern using `sendErrorResponse(res, status, title,
+  detail)` follows RFC 7807.
 
 To add new error type:
 
 ```typescript
 // In route handler
 if (someCondition) {
-  return sendErrorResponse(res, 422, 'Unprocessable Entity', 
+  return sendErrorResponse(res, 422, 'Unprocessable Entity',
     'Helpful error message here');
 }
 ```
@@ -351,7 +366,8 @@ KASEKI_API_LOG_LEVEL=debug npm run kaseki-api
 Connect to running service and query:
 
 ```bash
-curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs | jq .
+curl -H "Authorization: Bearer sk-key" \
+  http://localhost:8080/api/runs | jq .
 ```
 
 ### Test Job Spawning
@@ -359,7 +375,8 @@ curl -H "Authorization: Bearer sk-key" http://localhost:8080/api/runs | jq .
 Add test repo and try to trigger a run:
 
 ```bash
-# (Requires actual kaseki-agent, docker, OpenRouter API key setup)
+# (Requires actual kaseki-agent, docker,
+# OpenRouter API key setup)
 ```
 
 ### Memory Leaks

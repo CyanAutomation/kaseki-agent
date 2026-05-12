@@ -48,7 +48,8 @@ OPENROUTER_API_KEY=sk-or-v1-your-key docker run -it \
 **Or with wrapper:**
 
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-your-key ./kaseki run-mode https://github.com/your-org/your-repo main
+OPENROUTER_API_KEY=sk-or-v1-your-key ./kaseki run-mode \
+  https://github.com/your-org/your-repo main
 ```
 
 ---
@@ -164,7 +165,8 @@ docker run -it \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v results:/results \
   docker.io/cyanautomation/kaseki-agent:latest \
-  agent https://github.com/CyanAutomation/crudmapper main "Refactor the auth module"
+  agent https://github.com/CyanAutomation/crudmapper main \
+    "Refactor the auth module"
 ```
 
 **Environment variables (optional):**
@@ -184,7 +186,8 @@ docker run -it \
 
 ### `run-mode` — One-Command Run
 
-**Purpose:** Execute a complete run with API key from environment variable (no pre-setup)
+**Purpose:** Execute a complete run with API key from
+  environment variable (no pre-setup)
 
 **Usage:**
 
@@ -219,7 +222,8 @@ OPENROUTER_API_KEY=sk-or-v1-abc... docker run -it \
 
 ### `setup-remote` — Remote Host Setup
 
-**Purpose:** Bootstrap kaseki-agent on a remote host via SSH (orchestrated from container)
+**Purpose:** Bootstrap kaseki-agent on a remote host via SSH
+  (orchestrated from container)
 
 **Usage:**
 
@@ -245,7 +249,8 @@ docker run \
 # API key from file
 docker run \
   docker.io/cyanautomation/kaseki-agent:latest \
-  setup-remote pi@192.168.88.202 ~/.kaseki/secrets/openrouter_api_key
+  setup-remote pi@192.168.88.202 ~/.kaseki/secrets/
+    openrouter_api_key
 ```
 
 **What it does:**
@@ -431,17 +436,20 @@ echo "All hosts completed!"
 
 ### "Docker daemon not responding"
 
-The container needs access to the Docker socket. Make sure you're mounting it:
+The container needs access to the Docker socket. Make sure
+you're mounting it:
 
 ```bash
 docker run -v /var/run/docker.sock:/var/run/docker.sock ...
 ```
 
-If using Docker Desktop (Mac/Windows), ensure Docker Desktop is running.
+If using Docker Desktop (Mac/Windows), ensure Docker Desktop
+is running.
 
 ### "API key file not found"
 
-For `setup` and `agent` modes, the API key file must exist at `~/.kaseki/secrets/openrouter_api_key`:
+For `setup` and `agent` modes, the API key file must exist at
+`~/.kaseki/secrets/openrouter_api_key`:
 
 ```bash
 # Create it manually if needed
@@ -459,7 +467,8 @@ docker run -it \
 
 ### "OPENROUTER_API_KEY environment variable is required"
 
-For `run-mode`, you must pass the API key as an environment variable:
+For `run-mode`, you must pass the API key as an environment
+variable:
 
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-... docker run -it \
