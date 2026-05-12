@@ -16,6 +16,10 @@ mkdir -p "$SECRETS_DIR"
 
 cat > "$HELPER_PATH" <<'EOF_HELPER'
 #!/usr/bin/env bash
+if [ "$#" -eq 0 ]; then
+  printf 'Usage: node github-app-token.js <app-id> <private-key-file> <owner> <repo>\n' >&2
+  exit 1
+fi
 printf '{"error":"HTTP 404: installation not found for supplied repository","status":404}\n'
 printf 'debug token ghp_abcdefghijklmnopqrstuvwxyz1234567890 should be redacted\n' >&2
 exit 1
