@@ -224,6 +224,7 @@ function main() {
     'instance-state-derivation.js',
     'instance-metadata-reader.js',
     'github-app-token.js',
+    'github-app-private-key.js',
   ];
 
   log(colors.blue, '→', 'Checking for required utility files...');
