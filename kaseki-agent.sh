@@ -1222,7 +1222,7 @@ run_validation_commands() {
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
-  local command_exit filter_exit pipe_statuses execute_during_dry_run
+  local command_exit tee_exit filter_exit pipe_statuses execute_during_dry_run
   local -a validation_commands
 
   execute_during_dry_run=false
@@ -1296,45 +1296,83 @@ run_validation_commands() {
           command_exit=$?
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
-        } 2>&1 | tee -a "$log_file" "$raw_log" | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
+        } 2>&1 \
+          | tee --output-error=warn \
+              >(cat >> "$log_file") \
+              >(cat >> "$raw_log") \
+              2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
+          | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
         set +o pipefail
         # pipe_statuses[0] = bash command exit code
         # pipe_statuses[1] = tee exit code
         # pipe_statuses[2] = validation-output-filter exit code
-        command_exit="${pipe_statuses[0]}"
-        filter_exit="${pipe_statuses[2]}"
+        command_exit="${pipe_statuses[0]:-1}"
+        tee_exit="${pipe_statuses[1]:-1}"
+        filter_exit="${pipe_statuses[2]:-1}"
         validation_end="$(date +%s)"
         duration=$((validation_end - validation_start))
-        printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$timings_file"
-        emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+        printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" >> "$timings_file"
+        emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "tee_exit_code=$tee_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
 
-        # Capture and process filter stderr for diagnostics.
+        FILTER_STDERR_TAIL=""
+        {
+          printf '\n[validation pipeline] command=%s\n' "$trimmed"
+          printf '[validation pipeline] statuses: command=%s tee=%s filter=%s\n' "$command_exit" "$tee_exit" "$filter_exit"
+          printf '[validation pipeline] logs: visible=%s raw=%s diagnostics=%s\n' "$log_file" "$raw_log" "$FILTER_DIAGNOSTICS_LOG"
+        } >> "$log_file"
+        {
+          printf '\n[validation pipeline] command=%s\n' "$trimmed"
+          printf '[validation pipeline] statuses: command=%s tee=%s filter=%s\n' "$command_exit" "$tee_exit" "$filter_exit"
+        } >> "$FILTER_DIAGNOSTICS_LOG"
+
+        # Capture and process filter/tee stderr for diagnostics.
         if [ -f "$FILTER_STDERR_FILE" ] && [ -s "$FILTER_STDERR_FILE" ]; then
-          FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter stderr>')"
+          FILTER_STDERR_TAIL="$(tail -50 "$FILTER_STDERR_FILE" 2>/dev/null || echo '<failed to read filter/tee stderr>')"
           {
-            printf '\n[DIAGNOSTICS] Validation output filter stderr (last 50 lines):\n'
+            printf '\n[DIAGNOSTICS] Validation pipeline stderr from filter/tee (last 50 lines):\n'
             printf '%s\n' "$FILTER_STDERR_TAIL"
           } | tee -a "$log_file" /results/quality.log
+          {
+            printf '\n[validation pipeline stderr tail]\n'
+            printf '%s\n' "$FILTER_STDERR_TAIL"
+          } >> "$FILTER_DIAGNOSTICS_LOG"
           rm -f "$FILTER_STDERR_FILE"
         fi
 
         # Detect and handle SIGPIPE errors (exit code 141 = 128 + 13).
-        if [ "$command_exit" -eq 141 ] && [ "$filter_exit" -ne 0 ]; then
+        # When tee or the filter also reports a broken pipe/early close, classify
+        # the result as validation infrastructure failure instead of a normal
+        # npm/check failure.
+        validation_infra_failure=false
+        if [ "$command_exit" -eq 141 ] && { [ "$tee_exit" -ne 0 ] || [ "$filter_exit" -ne 0 ]; }; then
+          validation_infra_failure=true
           {
-            printf '\n[DIAGNOSTICS] Validation command encountered SIGPIPE (signal 13) from output filter:\n'
+            printf '\n[DIAGNOSTICS] Validation infrastructure failure: upstream command received SIGPIPE while output pipeline was unhealthy.\n'
             printf '  Command exit code: 141 (SIGPIPE)\n'
+            printf '  Tee exit code: %s\n' "$tee_exit"
             printf '  Filter exit code: %s\n' "$filter_exit"
-            printf '  This typically indicates the validation-output-filter process encountered an error.\n'
+            printf '  Classification: validation_infrastructure_failure (not a normal validation command failure)\n'
+            printf '  Full raw command output: %s\n' "$raw_log"
+            printf '  Filter diagnostics: %s\n' "$FILTER_DIAGNOSTICS_LOG"
             if [ -n "$FILTER_STDERR_TAIL" ]; then
-              printf '  Filter stderr was captured above.\n'
+              printf '  Filter/tee stderr was captured above.\n'
             else
-              printf '  (No stderr captured from filter)\n'
+              printf '  (No stderr captured from filter/tee)\n'
             fi
-          } | tee -a /results/quality.log
+          } | tee -a "$log_file" /results/quality.log "$FILTER_DIAGNOSTICS_LOG"
         fi
 
-        if [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
+        if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
+          validation_exit_ref=1
+          validation_detail_ref="validation infrastructure failure while running \"$trimmed\": command SIGPIPE with tee exit $tee_exit and filter exit $filter_exit"
+          validation_reason_ref="validation_infrastructure_failure: $trimmed (command exit $command_exit, tee exit $tee_exit, filter exit $filter_exit)"
+          if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+            validation_stopped_ref=true
+            printf 'Validation stopped because the validation output pipeline failed (fail-fast mode enabled).\n' | tee -a "$log_file"
+            break
+          fi
+        elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref="$command_exit"
           validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
           validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
