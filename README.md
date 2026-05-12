@@ -1185,6 +1185,28 @@ container environment.
 
 3. Install the app on the target repository
 
+### Single-line/text PEM private keys
+
+The preferred approach is to paste the GitHub App private key text into a
+secret file, then reference that file with `GITHUB_APP_PRIVATE_KEY_FILE`. For
+example, store the value at `/agents/secrets/github_app_private_key` for
+container or service deployments, or at `~/secrets/github_app_private_key` for
+local CLI runs.
+
+Kaseki normalizes the private key after reading it, so the file may contain the
+original multi-line PEM, a PEM where newlines are escaped as `\n`, a base64-
+encoded PEM, or a single-line PEM where spaces are used in place of PEM
+newlines.
+
+`GITHUB_APP_PRIVATE_KEY` is only for local `run-kaseki.sh` experiments. Config
+and API service flows may reject inline private keys because they enforce
+file-based secrets; use `GITHUB_APP_PRIVATE_KEY_FILE` for those flows.
+
+> **Security warning:** Never paste real private keys into tickets, prompts,
+> logs, `.env` files, or source control. If a GitHub App private key is exposed,
+> regenerate the private key in the GitHub App settings and replace the secret
+> file everywhere it is used.
+
 ### Setup
 
 ```bash
@@ -1219,10 +1241,12 @@ volumes:
   - /agents:/agents:rw
 ```
 
-`GITHUB_APP_PRIVATE_KEY` is still accepted as a fallback for local experiments,
-including escaped `\n` or single-line PEM values, but avoid it for shared hosts:
-environment variables are easier to leak through process inspection, logs, and
-orchestration UIs.
+`GITHUB_APP_PRIVATE_KEY` is still accepted as a fallback for local
+`run-kaseki.sh` experiments, including escaped `\n`, base64 PEM, or
+single-line PEM values after normalization. Avoid inline private keys for shared
+hosts: environment variables are easier to leak through process inspection,
+logs, and orchestration UIs, and config/API service flows may reject inline
+secrets in favor of file-based secret paths.
 
 ### Behavior
 
