@@ -79,19 +79,24 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | string | Semicolon-separated validation commands |
+| `KASEKI_PRE_AGENT_VALIDATION` | `1` | boolean | Run validation before Pi so existing baseline failures are caught before agent work starts |
+| `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | string | Semicolon-separated validation commands for the pre-agent baseline phase |
+| `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | string | Semicolon-separated validation commands for the post-agent final-diff phase |
 
 **Behavior:**
 
-- Commands are executed sequentially
-- Missing npm scripts are skipped (non-fatal)
-- First failure stops validation and exits with code 7
-- Empty string (`KASEKI_VALIDATION_COMMANDS=""`) skips validation entirely
+- Pre-agent commands run after clone/dependency setup and before Pi. A failure means the selected repo/ref was already failing; inspect `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, and `pre-validation-timings.tsv`.
+- Post-agent commands run after Pi, allowlist restoration, and quality gates. A failure means the final agent output failed validation; inspect `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
+- Commands are executed sequentially within each phase.
+- Missing npm scripts are skipped (non-fatal).
+- First failure stops that validation phase and exits with code 7.
+- Empty or `none` post-agent commands (`KASEKI_VALIDATION_COMMANDS=""` or `KASEKI_VALIDATION_COMMANDS=none`) skip post-agent validation.
+- Set `KASEKI_PRE_AGENT_VALIDATION=0` to skip the baseline phase; otherwise `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` defaults to the post-agent command list.
 
 ### Startup Check Dry-Run Modes
 
 - `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=boot` is boot-only. `run-kaseki.sh` uses a minimal `/bin/bash` container path to verify Node, Git, Pi CLI availability, secret/mount readability, and writable workspace/results/cache paths. It does not clone the target repository or install dependencies.
-- `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=baseline-validation` is a baseline validation dry-run. `run-kaseki.sh` invokes `/usr/local/bin/kaseki-agent`, which clones the repository, installs dependencies, runs the pre-agent validation commands from `KASEKI_VALIDATION_COMMANDS`, then skips Pi agent execution.
+- `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=baseline-validation` is a baseline validation dry-run. `run-kaseki.sh` invokes `/usr/local/bin/kaseki-agent`, which clones the repository, installs dependencies, runs the pre-agent validation commands from `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` (defaulting to `KASEKI_VALIDATION_COMMANDS`), then skips Pi agent execution.
 - API startup checks with `startupCheckMode: "baseline-validation"` or explicit validation commands set `KASEKI_BASELINE_VALIDATION_DRY_RUN=1` automatically so pre-agent validation is not treated as a no-op dry-run preview.
 
 ### Caching
