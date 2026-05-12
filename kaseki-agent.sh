@@ -49,6 +49,11 @@ VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
+PRE_VALIDATION_EXIT=0
+PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
+PRE_VALIDATION_FAILURE_REASON=""
+PRE_VALIDATION_STOPPED_EARLY=false
+PRE_VALIDATION_COMMANDS_ATTEMPTED=0
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 VALIDATION_RAW_LOG="/results/validation-raw.log"
@@ -356,11 +361,16 @@ write_metadata() {
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
+  "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "pi_exit_code": $PI_EXIT,
+  "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
+  "pre_validation_stopped_early": $([[ "$PRE_VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
   "validation_stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
+  "pre_validation_commands_attempted": $PRE_VALIDATION_COMMANDS_ATTEMPTED,
   "validation_commands_attempted": $VALIDATION_COMMANDS_ATTEMPTED,
   "quality_exit_code": $QUALITY_EXIT,
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
@@ -443,10 +453,14 @@ write_result_summary() {
 - Requested model: $KASEKI_MODEL
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
+- Pre-agent validation: $([ "$PRE_VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed') ($PRE_VALIDATION_EXIT)
+$(if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$PRE_VALIDATION_FAILURE_REASON"; fi)
+- Pre-agent validation failure detail: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-none}
+$(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pre-agent validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Validation: $validation_status ($VALIDATION_EXIT)
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$(printf '%s' "${VALIDATION_COMMANDS[@]}" | wc -w)" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
+$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -459,6 +473,8 @@ Artifacts:
 - metadata.json
 - pi-summary.json
 - pi-events.jsonl
+- pre-validation.log
+- pre-validation-timings.tsv
 - validation.log
 - validation-timings.tsv
 - stage-timings.tsv
@@ -485,8 +501,12 @@ write_failure_json() {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
+  "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
+  "validation_exit_code": $VALIDATION_EXIT,
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
+  "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
@@ -1190,8 +1210,19 @@ run_validation_commands() {
   local timings_file="$5"
   local env_log="$6"
   local failure_reason_prefix="${7:-validation_command_failed}"
+  local exit_var="${8:-VALIDATION_EXIT}"
+  local detail_var="${9:-VALIDATION_FAILED_COMMAND_DETAIL}"
+  local reason_var="${10:-VALIDATION_FAILURE_REASON}"
+  local stopped_var="${11:-VALIDATION_STOPPED_EARLY}"
+  local attempted_var="${12:-VALIDATION_COMMANDS_ATTEMPTED}"
+  local -n validation_exit_ref="$exit_var"
+  local -n validation_detail_ref="$detail_var"
+  local -n validation_reason_ref="$reason_var"
+  local -n validation_stopped_ref="$stopped_var"
+  local -n validation_attempted_ref="$attempted_var"
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
   local command_exit filter_exit pipe_statuses
+  local -a validation_commands
 
   printf '\n==> %s\n' "$stage_label"
   set_current_stage "$stage_label"
@@ -1200,13 +1231,13 @@ run_validation_commands() {
 
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
     printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
-    IFS=';' read -r -a VALIDATION_COMMANDS <<< "$commands"
-    for command in "${VALIDATION_COMMANDS[@]}"; do
+    IFS=';' read -r -a validation_commands <<< "$commands"
+    for command in "${validation_commands[@]}"; do
       trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
       [ -z "$trimmed" ] && continue
       printf '  - %s\n' "$trimmed" | tee -a "$log_file"
     done
-    VALIDATION_EXIT=0
+    validation_exit_ref=0
     record_stage_timing "$stage_label" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
   elif [ -z "$commands" ] || [ "$commands" = "none" ]; then
     printf 'Validation skipped because commands=%s.\n' "${commands:-<empty>}" | tee -a "$log_file"
@@ -1218,14 +1249,14 @@ run_validation_commands() {
       printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
       printf 'Filesystem state:\n' | tee -a "$log_file"
       find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
-      VALIDATION_EXIT=1
-      VALIDATION_FAILED_COMMAND_DETAIL="Working directory /workspace/repo missing before $stage_label"
-      VALIDATION_FAILURE_REASON="$failure_reason_prefix: workspace_missing"
-      record_stage_timing "$stage_label" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
+      validation_exit_ref=1
+      validation_detail_ref="Working directory /workspace/repo missing before $stage_label"
+      validation_reason_ref="$failure_reason_prefix: workspace_missing"
+      record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
     else
       set +e
-      IFS=';' read -r -a VALIDATION_COMMANDS <<< "$commands"
-      for command in "${VALIDATION_COMMANDS[@]}"; do
+      IFS=';' read -r -a validation_commands <<< "$commands"
+      for command in "${validation_commands[@]}"; do
         trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
         [ -z "$trimmed" ] && continue
         validation_start="$(date +%s)"
@@ -1236,7 +1267,7 @@ run_validation_commands() {
           emit_event "validation_command_skipped" "stage=$stage_label" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
           continue
         fi
-        ((VALIDATION_COMMANDS_ATTEMPTED++))
+        ((validation_attempted_ref++))
         emit_event "validation_command_started" "stage=$stage_label" "command=$trimmed"
         # Log command environment state before execution.
         {
@@ -1297,10 +1328,10 @@ run_validation_commands() {
           } | tee -a /results/quality.log
         fi
 
-        if [ "$command_exit" -ne 0 ] && [ "$VALIDATION_EXIT" -eq 0 ]; then
-          VALIDATION_EXIT="$command_exit"
-          VALIDATION_FAILED_COMMAND_DETAIL="first failing command was \"$trimmed\" with exit $command_exit"
-          VALIDATION_FAILURE_REASON="$failure_reason_prefix: $trimmed (exit $command_exit)"
+        if [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
+          validation_exit_ref="$command_exit"
+          validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
+          validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
           # Enhanced diagnostics for getcwd-type errors.
           if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
             {
@@ -1317,21 +1348,21 @@ run_validation_commands() {
           fi
           # Fail-fast: if enabled, stop validation loop at first failure.
           if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
-            VALIDATION_STOPPED_EARLY=true
+            validation_stopped_ref=true
             printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a "$log_file"
             break
           fi
         fi
       done
-      if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
-        printf 'Validation failed: %s\n' "$VALIDATION_FAILED_COMMAND_DETAIL" | tee -a "$log_file"
+      if [ -n "$validation_detail_ref" ]; then
+        printf 'Validation failed: %s\n' "$validation_detail_ref" | tee -a "$log_file"
       fi
       set +e
     fi
-    record_stage_timing "$stage_label" "$VALIDATION_EXIT" "$(($(date +%s) - stage_start))" ""
+    record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" ""
   fi
-  emit_progress "$stage_label" "finished with exit $VALIDATION_EXIT"
-  return "$VALIDATION_EXIT"
+  emit_progress "$stage_label" "finished with exit $validation_exit_ref"
+  return "$validation_exit_ref"
 }
 
 compute_repo_memory_key() {
@@ -2187,14 +2218,19 @@ else
     "$PRE_VALIDATION_RAW_LOG" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
     "$PRE_VALIDATION_ENV_LOG" \
-    "pre_agent_validation_failed"
-  if [ "$VALIDATION_EXIT" -ne 0 ]; then
-    STATUS="$VALIDATION_EXIT"
+    "pre_agent_validation_failed" \
+    PRE_VALIDATION_EXIT \
+    PRE_VALIDATION_FAILED_COMMAND_DETAIL \
+    PRE_VALIDATION_FAILURE_REASON \
+    PRE_VALIDATION_STOPPED_EARLY \
+    PRE_VALIDATION_COMMANDS_ATTEMPTED
+  if [ "$PRE_VALIDATION_EXIT" -ne 0 ]; then
+    STATUS="$PRE_VALIDATION_EXIT"
     FAILED_COMMAND="pre-agent validation"
-    if [ -z "$VALIDATION_FAILURE_REASON" ]; then
-      VALIDATION_FAILURE_REASON="pre_agent_validation_failed"
+    if [ -z "$PRE_VALIDATION_FAILURE_REASON" ]; then
+      PRE_VALIDATION_FAILURE_REASON="pre_agent_validation_failed"
     fi
-    emit_error_event "pre_agent_validation_failed" "Pre-agent validation failed before Pi was invoked: ${VALIDATION_FAILED_COMMAND_DETAIL:-exit $VALIDATION_EXIT}" "exit"
+    emit_error_event "pre_agent_validation_failed" "Pre-agent validation failed before Pi was invoked: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-exit $PRE_VALIDATION_EXIT}" "exit"
     exit 0
   fi
 fi
