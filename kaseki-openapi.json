@@ -314,6 +314,7 @@
                   "publishMode": {
                     "type": "string",
                     "enum": [
+                      "auto",
                       "none",
                       "branch",
                       "draft_pr"
@@ -508,6 +509,7 @@
                   "publishMode": {
                     "type": "string",
                     "enum": [
+                      "auto",
                       "none",
                       "branch",
                       "draft_pr"
@@ -1925,6 +1927,7 @@
           "publishMode": {
             "type": "string",
             "enum": [
+              "auto",
               "none",
               "branch",
               "draft_pr"

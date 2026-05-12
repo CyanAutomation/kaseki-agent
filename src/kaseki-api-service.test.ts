@@ -172,6 +172,11 @@ describe('Kaseki API Request Validation', () => {
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'draft_pr' },
     },
     {
+      name: 'accepts graceful auto publishing mode',
+      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'auto' },
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'auto' },
+    },
+    {
       name: 'accepts controller-style allowlist and validation aliases',
       request: {
         repoUrl: 'https://github.com/org/repo',
