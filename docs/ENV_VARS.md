@@ -72,6 +72,8 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_MAX_DIFF_BYTES` | `200000` | integer | Maximum diff size in bytes (gates exit code 4) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for allowed file changes (gates exit code 5) |
 | `KASEKI_VALIDATION_ALLOWLIST` | `` (none) | string | Space-separated glob patterns for validation-phase file restrictions (gates exit code 7) |
+| `KASEKI_STARTUP_CHECK_MODE` | `boot` | enum | Dry-run startup check depth: `boot` or `baseline-validation` |
+| `KASEKI_BASELINE_VALIDATION_DRY_RUN` | `0` | boolean | Run pre-agent validation during a dry-run startup check while still skipping Pi |
 
 ### Validation Commands
 
@@ -85,6 +87,12 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 - Missing npm scripts are skipped (non-fatal)
 - First failure stops validation and exits with code 7
 - Empty string (`KASEKI_VALIDATION_COMMANDS=""`) skips validation entirely
+
+### Startup Check Dry-Run Modes
+
+- `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=boot` is boot-only. `run-kaseki.sh` uses a minimal `/bin/bash` container path to verify Node, Git, Pi CLI availability, secret/mount readability, and writable workspace/results/cache paths. It does not clone the target repository or install dependencies.
+- `KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=baseline-validation` is a baseline validation dry-run. `run-kaseki.sh` invokes `/usr/local/bin/kaseki-agent`, which clones the repository, installs dependencies, runs the pre-agent validation commands from `KASEKI_VALIDATION_COMMANDS`, then skips Pi agent execution.
+- API startup checks with `startupCheckMode: "baseline-validation"` or explicit validation commands set `KASEKI_BASELINE_VALIDATION_DRY_RUN=1` automatically so pre-agent validation is not treated as a no-op dry-run preview.
 
 ### Caching
 

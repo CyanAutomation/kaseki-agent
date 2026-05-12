@@ -9,6 +9,8 @@ GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
 KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
+KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
+KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-1200}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test;npm run build}"
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
@@ -1221,15 +1223,20 @@ run_validation_commands() {
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
   local stage_start validation_start validation_end duration command trimmed missing_npm_script
-  local command_exit filter_exit pipe_statuses
+  local command_exit filter_exit pipe_statuses execute_during_dry_run
   local -a validation_commands
+
+  execute_during_dry_run=false
+  if [ "$KASEKI_BASELINE_VALIDATION_DRY_RUN" = "1" ] && [ "$stage_label" = "pre-agent validation" ]; then
+    execute_during_dry_run=true
+  fi
 
   printf '\n==> %s\n' "$stage_label"
   set_current_stage "$stage_label"
   emit_progress "$stage_label" "started"
   stage_start="$(date +%s)"
 
-  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$execute_during_dry_run" != "true" ]; then
     printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
     IFS=';' read -r -a validation_commands <<< "$commands"
     for command in "${validation_commands[@]}"; do

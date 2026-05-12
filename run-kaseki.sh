@@ -34,6 +34,8 @@ KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
 KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
+KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
+KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
@@ -230,6 +232,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   KASEKI_MODEL                      AI model (default: openrouter/free)
   KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
   KASEKI_VALIDATION_COMMANDS        Semicolon-separated validation cmds
+  KASEKI_STARTUP_CHECK_MODE          boot or baseline-validation for dry-run startup checks
   KASEKI_STREAM_PROGRESS            Stream sanitized progress lines (default: 1)
   KASEKI_KEEP_WORKSPACE             Keep per-run workspace after exit (default: 0)
   KASEKI_VALIDATE_AFTER_AGENT_FAILURE
@@ -268,9 +271,12 @@ EXAMPLES:
   # Via environment variables (legacy)
   REPO_URL=https://... GIT_REF=main ./run-kaseki.sh
 
-  # Dry-run mode (no agent execution, tests setup and validation)
+  # Boot-only startup check (no repo clone/dependency install/agent execution)
   ./run-kaseki.sh --dry-run
   KASEKI_DRY_RUN=1 ./run-kaseki.sh
+
+  # Baseline validation startup check (clone, install, run pre-agent validation, skip Pi)
+  KASEKI_DRY_RUN=1 KASEKI_STARTUP_CHECK_MODE=baseline-validation ./run-kaseki.sh
 
   # Health check
   ./run-kaseki.sh --doctor
@@ -397,6 +403,18 @@ done
 
 if [ "${SHOW_DOCTOR:-0}" = "1" ]; then
   INSTANCE=""
+fi
+
+case "$KASEKI_STARTUP_CHECK_MODE" in
+  boot|baseline-validation)
+    ;;
+  *)
+    usage_error "KASEKI_STARTUP_CHECK_MODE must be boot or baseline-validation, got: $KASEKI_STARTUP_CHECK_MODE"
+    ;;
+esac
+
+if [ "$KASEKI_STARTUP_CHECK_MODE" = "baseline-validation" ]; then
+  KASEKI_BASELINE_VALIDATION_DRY_RUN="1"
 fi
 
 if [ "${SHOW_DOCTOR:-0}" != "1" ]; then
@@ -812,6 +830,7 @@ cat > "$RESULT_DIR/host-start.json" <<META
   "task_mode": $(json_string "$KASEKI_TASK_MODE"),
   "allow_empty_diff": $(json_string "$KASEKI_ALLOW_EMPTY_DIFF"),
   "dry_run": $(json_string "$KASEKI_DRY_RUN"),
+  "startup_check_mode": $(json_string "$KASEKI_STARTUP_CHECK_MODE"),
   "container_user": $(json_string "$KASEKI_CONTAINER_USER"),
   "changed_files_allowlist": $(json_string "$KASEKI_CHANGED_FILES_ALLOWLIST"),
   "max_diff_bytes": $MAX_DIFF_BYTES_VALUE,
@@ -976,6 +995,8 @@ docker_args=(
   -e KASEKI_RESTORE_DISALLOWED_CHANGES="$KASEKI_RESTORE_DISALLOWED_CHANGES"
   -e KASEKI_NPM_OMIT_DEV="$KASEKI_NPM_OMIT_DEV"
   -e KASEKI_DRY_RUN="$KASEKI_DRY_RUN"
+  -e KASEKI_STARTUP_CHECK_MODE="$KASEKI_STARTUP_CHECK_MODE"
+  -e KASEKI_BASELINE_VALIDATION_DRY_RUN="$KASEKI_BASELINE_VALIDATION_DRY_RUN"
   -e KASEKI_LOG_DIR="/results"
   -e TASK_PROMPT="$TASK_PROMPT"
   -e GITHUB_APP_ENABLED="$GITHUB_APP_ENABLED"
@@ -1000,14 +1021,14 @@ if [ "$GITHUB_APP_ENABLED" = "1" ]; then
     -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/github_app_private_key:ro"
   )
 fi
-if [ "$KASEKI_DRY_RUN" = "1" ]; then
+if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$KASEKI_STARTUP_CHECK_MODE" != "baseline-validation" ]; then
   docker_args+=(--entrypoint /bin/bash)
 fi
 docker_args+=(
   -w /workspace
   "$IMAGE"
 )
-if [ "$KASEKI_DRY_RUN" = "1" ]; then
+if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$KASEKI_STARTUP_CHECK_MODE" != "baseline-validation" ]; then
   docker_args+=(
     -lc
     'set -euo pipefail

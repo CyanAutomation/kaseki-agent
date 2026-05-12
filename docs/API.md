@@ -256,7 +256,7 @@ and `draft_pr` pushes a branch and opens a draft pull request. Requests with
 `branch` or `draft_pr` fail before queueing unless GitHub App credentials are
 readable; call `GET /api/preflight` first to verify that readiness.
 
-For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. This starts the same worker path as a normal run, verifies the cloned repo, OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI, then exits before spending a full agent run.
+For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 
 Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.
 
