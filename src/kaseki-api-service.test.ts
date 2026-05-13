@@ -167,6 +167,11 @@ describe('Kaseki API Request Validation', () => {
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', startupCheck: true },
     },
     {
+      name: 'accepts explicit PR publishing mode',
+      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'pr' },
+      expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'pr' },
+    },
+    {
       name: 'accepts explicit draft PR publishing mode',
       request: { repoUrl: 'https://github.com/org/repo', publishMode: 'draft_pr' },
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'draft_pr' },
@@ -216,11 +221,11 @@ describe('Kaseki API Request Validation', () => {
     },
     {
       name: 'rejects invalid publishMode enum',
-      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'pr' },
+      request: { repoUrl: 'https://github.com/org/repo', publishMode: 'invalid' },
       expectedIssue: {
         path: ['publishMode'],
         messagePattern: /invalid (option|enum)|expected/i,
-        value: 'pr',
+        value: 'invalid',
       },
     },
   ])('RunRequestSchema rejects invalid payloads: $name', ({ request, expectedIssue }) => {
