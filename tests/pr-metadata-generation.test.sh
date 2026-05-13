@@ -141,6 +141,7 @@ for expected in \
   '2. Add regression tests.' \
   '- Keep reviewer notes readable.' \
   '## Files changed' \
+  '3 files changed.' \
   'kaseki-agent.sh' \
   'tests/pr-metadata-generation.test.sh' \
   'docs/usage-[redacted]' \
@@ -174,6 +175,48 @@ for expected in \
     fail "PR body missing expected text: $expected"
   fi
 done
+
+if grep -Fq '<details><summary>View files</summary>' <<<"$pr_body"; then
+  fail "Short PR file list should render inline without collapsed details"
+else
+  pass "Short PR file list renders inline without collapsed details"
+fi
+
+: > /results/changed-files.txt
+for file_number in $(seq 1 101); do
+  printf 'src/file-%03d.sh\n' "$file_number" >> /results/changed-files.txt
+done
+long_pr_body="$(build_pr_body)"
+for expected in \
+  '101 files changed.' \
+  '<details><summary>View files</summary>' \
+  '- src/file-001.sh' \
+  '- src/file-100.sh' \
+  '- ...additional changed files omitted' \
+  '</details>'; do
+  if grep -Fq -- "$expected" <<<"$long_pr_body"; then
+    pass "Long PR body contains collapsed file-list text: $expected"
+  else
+    fail "Long PR body missing collapsed file-list text: $expected"
+  fi
+done
+
+if grep -Fq -- '- src/file-101.sh' <<<"$long_pr_body"; then
+  fail "Long PR body should cap the changed-files list at 100 entries"
+else
+  pass "Long PR body caps the changed-files list at 100 entries"
+fi
+
+omitted_line="$(grep -nF -- '- ...additional changed files omitted' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
+files_details_close_line="$(grep -nF '</details>' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
+original_prompt_line_for_long="$(grep -nF '## Original task prompt' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$omitted_line" ] && [ -n "$files_details_close_line" ] && [ -n "$original_prompt_line_for_long" ] \
+  && [ "$omitted_line" -lt "$files_details_close_line" ] \
+  && [ "$files_details_close_line" -lt "$original_prompt_line_for_long" ]; then
+  pass "Long PR body keeps omitted-files message inside the file details block"
+else
+  fail "Long PR body did not keep omitted-files message inside the file details block"
+fi
 
 summary_line="$(grep -nF '## Summary' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 validation_line="$(grep -nF '## Validation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"

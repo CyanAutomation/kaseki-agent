@@ -2205,26 +2205,51 @@ format_pr_command_results() {
 
 format_pr_changed_files() {
   local changed_files_file="/results/changed-files.txt"
+  local details_threshold=8
   if [ ! -s "$changed_files_file" ]; then
-    printf -- '- none\n'
+    printf '0 files changed.\n'
     return 0
   fi
 
-  local path safe_path rows=0
+  local path safe_path rows=0 total=0 omitted=0 list_output=""
   while IFS= read -r path || [ -n "$path" ]; do
     [ -n "$path" ] || continue
     safe_path="$(printf '%s' "$path" | sanitize_pr_metadata_text)"
     safe_path="$(truncate_pr_metadata_text 300 "$safe_path")"
     [ -n "$safe_path" ] || continue
-    printf -- '- %s\n' "$safe_path"
-    rows=$((rows + 1))
-    [ "$rows" -lt 100 ] || break
+    total=$((total + 1))
+    if [ "$rows" -lt 100 ]; then
+      list_output="${list_output}- ${safe_path}
+"
+      rows=$((rows + 1))
+    else
+      omitted=1
+    fi
   done < "$changed_files_file"
 
-  if [ "$rows" -eq 0 ]; then
-    printf -- '- none\n'
-  elif [ "$rows" -eq 100 ]; then
-    printf -- '- ...additional changed files omitted\n'
+  if [ "$total" -eq 1 ]; then
+    printf '1 file changed.\n'
+  else
+    printf '%s files changed.\n' "$total"
+  fi
+
+  if [ "$total" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ "$rows" -eq 100 ]; then
+    omitted=1
+  fi
+
+  if [ "$total" -gt "$details_threshold" ]; then
+    printf '\n<details><summary>View files</summary>\n\n'
+    printf '%b' "$list_output"
+    if [ "$omitted" -eq 1 ]; then
+      printf -- '- ...additional changed files omitted\n'
+    fi
+    printf '\n</details>\n'
+  else
+    printf '%b' "$list_output"
   fi
 }
 
@@ -2365,7 +2390,7 @@ EOF_JSON_SUMMARY
   fi
 }
 build_pr_body() {
-  local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at
+  local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
   duration_seconds="$(($(date +%s) - START_EPOCH))"
   pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
@@ -2375,6 +2400,7 @@ build_pr_body() {
   task_summary="$(truncate_pr_metadata_text 1000 "$task_summary")"
   model_summary="requested $(printf '%s' "$KASEKI_MODEL" | sanitize_pr_metadata_text); actual $(printf '%s' "${ACTUAL_MODEL:-unknown}" | sanitize_pr_metadata_text)"
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  changed_files_summary="$(format_pr_changed_files)"
 
   cat <<EOF
 ## Summary
@@ -2394,7 +2420,7 @@ $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
 $(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
 
 ## Files changed
-$(format_pr_changed_files)
+$changed_files_summary
 
 ## Original task prompt
 <details><summary>Original task prompt</summary>
