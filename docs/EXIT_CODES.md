@@ -95,7 +95,9 @@ The git diff exceeded the configured maximum size (`KASEKI_MAX_DIFF_BYTES`, defa
 
 ### 5 — Allowlist Violation (Agent Phase)
 
-Changed files are outside the agent phase allowlist. This is a quality gate to prevent the agent from modifying unintended files.
+Changed files are outside the agent phase allowlist. This is
+a quality gate to prevent the agent from modifying unintended
+files.
 
 **Common causes:**
 
@@ -105,13 +107,18 @@ Changed files are outside the agent phase allowlist. This is a quality gate to p
 
 **Action:**
 
-1. Review changed files: `cat /agents/kaseki-results/<instance-id>/changed-files.txt`
-2. Check the allowlist: `kaseki-agent config get validation.allowlist`
+1. Review changed files: `cat /agents/kaseki-results/
+  <instance-id>/changed-files.txt`
+2. Check the allowlist: `kaseki-agent config get
+  validation.allowlist`
 3. Adjust either:
-   - The task prompt to be more specific (prevents agent from making changes)
-   - The `KASEKI_CHANGED_FILES_ALLOWLIST` to include the necessary files
+   - The task prompt to be more specific (prevents agent
+     from making changes)
+   - The `KASEKI_CHANGED_FILES_ALLOWLIST` to include the
+     necessary files
 
-See [QUALITY_GATES.md](QUALITY_GATES.md) for pattern syntax and examples.
+See [QUALITY_GATES.md](QUALITY_GATES.md) for pattern syntax
+and examples.
 
 ---
 
@@ -138,26 +145,34 @@ The secret scan detected a potential credential (e.g., API key, auth token) in t
 
 ### 7 — Validation Allowlist Violation
 
-Files changed during the validation phase (when running test/build commands) are outside the validation allowlist.
+Files changed during the validation phase (when running
+test/build commands) are outside the validation allowlist.
 
 **Common causes:**
 
 - Validation commands generated unexpected artifacts
 - Test commands modified source files
-- Build processes created/modified files outside the expected locations
+- Build processes created/modified files outside the
+  expected locations
 
 **Action:**
 
-1. Check the restoration report: `cat /agents/kaseki-results/<instance-id>/restoration-report.md`
-2. Review what validation commands ran: `cat /agents/kaseki-results/<instance-id>/validation.log`
-3. Adjust `KASEKI_VALIDATION_ALLOWLIST` to include the necessary patterns, OR
-4. Adjust validation commands to not modify unintended files
+1. Check the restoration report: `cat /agents/kaseki-results/
+  <instance-id>/restoration-report.md`
+2. Review what validation commands ran: `cat /agents/kaseki-results/
+  <instance-id>/validation.log`
+3. Adjust `KASEKI_VALIDATION_ALLOWLIST` to include the
+  necessary patterns, OR
+4. Adjust validation commands to not modify unintended
+  files
 
 ---
 
 ### 124 — Agent Timeout
 
-The Pi agent invocation exceeded the configured timeout (`KASEKI_AGENT_TIMEOUT_SECONDS`, default: 1200 seconds / 20 minutes).
+The Pi agent invocation exceeded the configured timeout
+(`KASEKI_AGENT_TIMEOUT_SECONDS`, default: 1200 seconds / 20
+minutes).
 
 **Common causes:**
 
@@ -167,14 +182,18 @@ The Pi agent invocation exceeded the configured timeout (`KASEKI_AGENT_TIMEOUT_S
 
 **Action:**
 
-1. Check if the agent was actively working: `kaseki-agent report <instance-id>`
-2. Increase the timeout if the task genuinely requires more time:
+1. Check if the agent was actively working: `kaseki-agent
+  report <instance-id>`
+2. Increase the timeout if the task genuinely requires more
+   time:
 
    ```bash
-   kaseki-agent config set agent.timeout_seconds 1800  # 30 minutes
+   kaseki-agent config set agent.timeout_seconds 1800
+     # 30 minutes
    ```
 
-3. Simplify the task prompt to make the agent work more efficiently
+3. Simplify the task prompt to make the agent work more
+   efficiently
 4. Reduce validation commands that are slow
 
 ---
@@ -229,21 +248,28 @@ docker run --rm docker.io/cyanautomation/kaseki-agent:latest ls -la /usr/local/b
 
 The validation command encountered SIGPIPE (signal 13), which indicates the output filter process (`validation-output-filter`) crashed or exited unexpectedly while processing command output.
 
-**Root cause:** When a process in a pipe chain exits abruptly without properly closing its input/output, the upstream process receives SIGPIPE (signal 13 = exit code 128 + 13 = 141).
+**Root cause:** When a process in a pipe chain exits abruptly
+without properly closing its input/output, the upstream process
+receives SIGPIPE (signal 13 = exit code 128 + 13 = 141).
 
 **Common causes:**
 
-- `validation-output-filter` encountered an error while processing output (e.g., readline error, encoding issue)
-- Underlying npm/test/build command produced output that triggered an unhandled exception in the filter
-- System resource constraint (memory, file descriptors) caused filter process to abort
+- `validation-output-filter` encountered an error while
+  processing output (e.g., readline error, encoding issue)
+- Underlying npm/test/build command produced output that
+  triggered an unhandled exception in the filter
+- System resource constraint (memory, file descriptors) caused
+  filter process to abort
 - Filter received a signal that caused abnormal termination
 
 **Diagnosis:**
 
-1. Check the validation log for error messages from the filter:
+1. Check the validation log for error messages from the
+   filter:
 
    ```bash
-   grep -i "validation-output-filter" /agents/kaseki-results/<instance-id>/validation.log
+   grep -i "validation-output-filter" /agents/kaseki-results/
+     <instance-id>/validation.log
    cat /agents/kaseki-results/<instance-id>/validation.log
    ```
 
@@ -256,32 +282,40 @@ The validation command encountered SIGPIPE (signal 13), which indicates the outp
 3. Look for filter-specific errors in quality diagnostics:
 
    ```bash
-   grep "DIAGNOSTICS" -A 10 /agents/kaseki-results/<instance-id>/quality.log
+   grep "DIAGNOSTICS" -A 10 /agents/kaseki-results/
+     <instance-id>/quality.log
    ```
 
 **Action:**
 
-1. **First attempt:** Re-run the same command to see if it was a transient error:
+1. **First attempt:** Re-run the same command to see if it was
+   a transient error:
 
    ```bash
    kaseki-agent run --retry
    ```
 
-2. **If persists:** Disable the validation output filter temporarily:
+2. **If persists:** Disable the validation output filter
+   temporarily:
 
    ```bash
-   KASEKI_VALIDATION_NO_FILTER=1 kaseki-agent run <repo> <ref> <task>
+   KASEKI_VALIDATION_NO_FILTER=1 kaseki-agent run <repo> 
+     <ref> <task>
    ```
 
-3. **Investigate:** If disabling the filter helps, report the issue with:
+3. **Investigate:** If disabling the filter helps, report the
+   issue with:
    - Full validation.log output
    - Details about what validation command was running
-   - Output size (check `wc -l /agents/kaseki-results/<instance-id>/validation.log`)
+   - Output size (check `wc -l /agents/kaseki-results/
+     <instance-id>/validation.log`)
 
-4. **Review the task:** Large or unusual validation output may trigger edge cases:
+4. **Review the task:** Large or unusual validation output may
+   trigger edge cases:
    - Simplify validation commands if possible
    - Consider splitting large test suites
-   - Check if validation commands are producing unusually large output
+   - Check if validation commands are producing unusually
+     large output
 
 ---
 

@@ -13,7 +13,8 @@ This guide provides procedures for recovering from common failure scenarios and 
 0 2 * * * \
   tar czf /tmp/kaseki-backup-$(date +\%Y\%m\%d).tar.gz \
     /agents/kaseki-results && \
-  aws s3 cp /tmp/kaseki-backup-*.tar.gz s3://kaseki-backups/ && \
+  aws s3 cp /tmp/kaseki-backup-*.tar.gz \
+    s3://kaseki-backups/ && \
   rm /tmp/kaseki-backup-*.tar.gz
 
 # Keep 30 days of backups
@@ -100,7 +101,8 @@ ls -ld /agents
 ls -ld /agents/kaseki-results
 
 # Check for orphaned files
-find /agents -type f -newermt '30 days ago' ! -newermt 'now' | wc -l
+find /agents -type f -newermt '30 days ago' ! -newermt 'now' |
+  wc -l
 ```
 
 **Recovery:**
@@ -112,7 +114,8 @@ sudo chmod 755 /agents
 
 # If disk full
 # Archive old runs
-find /agents/kaseki-results -type d -newermt '60 days ago' -delete
+find /agents/kaseki-results -type d -newermt '60 days ago' \
+  -delete
 
 # If filesystem corrupted (dangerous operation)
 # Requires downtime
@@ -138,7 +141,8 @@ docker-compose up -d
 
 ```bash
 # Check if key is readable
-test -f /agents/secrets/openrouter_api_key && echo "✓ Key file exists"
+test -f /agents/secrets/openrouter_api_key && \
+  echo "✓ Key file exists"
 
 # Test key validity
 curl -H "Authorization: Bearer $(cat /agents/secrets/openrouter_api_key)" \
@@ -266,7 +270,8 @@ docker-compose restart kaseki-api
 
 ```bash
 # Review what changed
-cat /agents/kaseki-results/kaseki-N/git.diff | head -100
+cat /agents/kaseki-results/kaseki-N/git.diff |
+  head -100
 
 # Check if PR was created
 gh pr list --search "kaseki"
@@ -312,7 +317,7 @@ find /agents/kaseki-results -type f -name metadata.json | \
   xargs ls -lt | head -1
 
 # Check if stuck
-cat /agents/kaseki-results/kaseki-N/pi-summary.json | \
+cat /agents/kaseki-results/kaseki-N/pi-summary.json |
   jq '.elapsed_seconds, .timeout_seconds'
 ```
 
@@ -330,7 +335,8 @@ export KASEKI_API_MAX_CONCURRENT_RUNS=1
 docker-compose restart kaseki-api
 
 # Process queue slowly
-while curl -s http://localhost:8080/health | jq -r '.queue.pending' | grep -q '[1-9]'; do
+while curl -s http://localhost:8080/health | \
+  jq -r '.queue.pending' | grep -q '[1-9]'; do
   echo "Processing queue..."
   sleep 60
 done
