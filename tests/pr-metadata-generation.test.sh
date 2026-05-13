@@ -30,6 +30,7 @@ extract_function() {
 eval "$(extract_function sanitize_pr_metadata_text)"
 eval "$(extract_function truncate_pr_metadata_text)"
 eval "$(extract_function derive_pr_title)"
+eval "$(extract_function is_pr_draft_mode)"
 eval "$(extract_function format_pr_command_results)"
 eval "$(extract_function format_pr_changed_files)"
 eval "$(extract_function build_pr_improvements_summary)"
@@ -58,6 +59,7 @@ VALIDATION_EXIT=0
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
 GIT_REF='main'
+KASEKI_PUBLISH_MODE='auto'
 feature_branch='kaseki/kaseki-test-instance'
 
 pr_title="$(derive_pr_title)"
@@ -150,15 +152,50 @@ else
   fail "PR body missing run duration"
 fi
 
+if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$pr_body"; then
+  fail "Normal PR body should not include draft review sentence"
+else
+  pass "Normal PR body omits draft review sentence"
+fi
+
+if is_pr_draft_mode; then
+  pr_draft_json=true
+else
+  pr_draft_json=false
+fi
+
 # Preserve the existing safe JSON encoding path used by the GitHub PR API payload.
 run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "$TMP_DIR/node.log"
 run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "$TMP_DIR/node.log"
-payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": true}"
+payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}"
 
 PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
 if (!payload.title.startsWith('fix: OAuth flow')) process.exit(1);
 if (!payload.body.includes('## Original task prompt')) process.exit(2);
-if (!payload.draft) process.exit(3);
+if (payload.draft !== false) process.exit(3);
 NODE
-pass "GitHub PR API payload JSON preserves generated title/body"
+pass "Normal GitHub PR API payload marks the PR as ready for review"
+
+KASEKI_PUBLISH_MODE='draft_pr'
+draft_pr_body="$(build_pr_body)"
+if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$draft_pr_body"; then
+  pass "Draft PR body includes draft review sentence"
+else
+  fail "Draft PR body missing draft review sentence"
+fi
+
+if is_pr_draft_mode; then
+  pr_draft_json=true
+else
+  pr_draft_json=false
+fi
+run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$draft_pr_body" "$TMP_DIR/node.log"
+payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}"
+
+PAYLOAD="$payload" node <<'NODE'
+const payload = JSON.parse(process.env.PAYLOAD);
+if (!payload.body.includes('This PR is in draft status. Please review before merging.')) process.exit(1);
+if (payload.draft !== true) process.exit(2);
+NODE
+pass "Draft GitHub PR API payload marks the PR as draft"
