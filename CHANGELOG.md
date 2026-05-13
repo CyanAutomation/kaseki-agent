@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.25.4...v1.26.0) (2026-05-13)
+
+### Features
+
+* add bootstrap validation and error handling to API service and scripts ([386cfb7](https://github.com/CyanAutomation/kaseki-agent/commit/386cfb742304104ad05c96196f9bf70ea3958599))
+
+### Bug Fixes
+
+* update string quotes for consistency in error messages and environment variable setup ([59b62c9](https://github.com/CyanAutomation/kaseki-agent/commit/59b62c989a35b4602cc38df77f2d53e5fe648224))
+* update trap syntax for temporary file cleanup and add shellcheck disables for clarity ([261504d](https://github.com/CyanAutomation/kaseki-agent/commit/261504d004707f59d66d6220dcfb390ebea2f801))
+
 ## [1.25.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.25.3...v1.25.4) (2026-05-13)
 
 ### Bug Fixes
