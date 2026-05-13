@@ -18,7 +18,8 @@ The kaseki-api service uses a persistent host volume to store run artifacts and 
 
 ### Volume Mount Requirement
 
-When deploying the API container, mount the host's `/agents` directory as read-write:
+When deploying the API container, mount the host's `/agents`
+directory as read-write:
 
 ```yaml
 volumes:
@@ -26,32 +27,44 @@ volumes:
   - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-The container will **automatically create** the required subdirectories:
+The container will **automatically create** the required
+subdirectories:
 
-- `/agents/kaseki-results/` — Persistent run artifacts (metadata, diffs, logs)
+- `/agents/kaseki-results/` — Persistent run artifacts (metadata,
+  diffs, logs)
   - **Auto-created** on API startup (no pre-setup needed)
   - Contains per-run subdirectories: `kaseki-1/`, `kaseki-2/`, …
   - Written to by the API service and spawned worker containers
 
-- `/agents/kaseki-runs/` — Per-run workspace directories (cloned repos, node_modules)
-  - Created by ephemeral worker containers (not used by API service itself)
-  - Cleaned up after each run (if `KASEKI_KEEP_WORKSPACE=0`, the default)
+- `/agents/kaseki-runs/` — Per-run workspace directories (cloned
+  repos, node_modules)
+  - Created by ephemeral worker containers (not used by API service
+  itself)
+  - Cleaned up after each run (if `KASEKI_KEEP_WORKSPACE=0`, the
+  default)
 
 - `/agents/kaseki-cache/` — Optional dependency cache (npm packages)
   - Created by worker containers if `KASEKI_CACHE_ENABLED=1`
-  - Speeds up repeated runs by sharing npm dependencies across instances
+  - Speeds up repeated runs by sharing npm dependencies across
+  instances
 
 ### Docker User & Permissions
 
 The container runs as **UID 10000** (kaseki user, non-root):
 
 ```yaml
-user: "10000:10000"  # Consistent across API service, kaseki-agent, and docker-compose
+user: "10000:10000"  # Consistent across API service, kaseki-agent,
+                     # and docker-compose
 ```
 
-**Important:** This UID (10000) is chosen to avoid conflicts with reserved system UIDs in the base image (GID 1000 is already taken). The UID must match the container image build (Dockerfile lines 12, 43, 152) and docker-compose configuration (line 4). Mismatches cause permission denied errors when writing to `/agents/kaseki-results/`.
+**Important:** This UID (10000) is chosen to avoid conflicts with
+reserved system UIDs in the base image (GID 1000 is already taken).
+The UID must match the container image build (Dockerfile lines 12, 43,
+152) and docker-compose configuration (line 4). Mismatches cause
+permission denied errors when writing to `/agents/kaseki-results/`.
 
-**Critical:** Ensure the host `/agents` directory has write permissions for UID 1000:
+**Critical:** Ensure the host `/agents` directory has write
+permissions for UID 1000:
 
 #### Option A: Preferred (if you own /agents on host)
 
@@ -79,19 +92,26 @@ chmod 777 /agents
 **Troubleshooting permission errors:**
 
 - If you see `Permission denied` errors when writing to `/results/`:
-  - Verify the host `/agents` directory exists and is writable: `ls -ld /agents`
+  - Verify the host `/agents` directory exists and is writable:
+    `ls -ld /agents`
   - If owned by root with 755: run `sudo chmod 777 /agents`
-  - If the issue persists, restart docker-compose: `docker-compose down && docker-compose up -d`
+  - If the issue persists, restart docker-compose:
+    `docker-compose down && docker-compose up -d`
 
 ### Dockhand/Portainer Deployment
 
 When deploying via a container UI (Dockhand, Portainer):
 
-1. Configure the volume mount in the service definition: `-v /agents:/agents:rw`
-2. On the host, pre-create `/agents` with write permissions: `mkdir -p /agents && chmod 777 /agents`
-3. The container will auto-create required subdirectories on startup with proper permissions
-4. Check logs for: `KASEKI_RESULTS_DIR: /agents/kaseki-results` (confirms successful mount and auto-creation)
-5. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" http://localhost:8080/api/preflight`
+1. Configure the volume mount in the service definition:
+   `-v /agents:/agents:rw`
+2. On the host, pre-create `/agents` with write permissions:
+   `mkdir -p /agents && chmod 777 /agents`
+3. The container will auto-create required subdirectories on
+   startup with proper permissions
+4. Check logs for: `KASEKI_RESULTS_DIR: /agents/kaseki-results`
+   (confirms successful mount and auto-creation)
+5. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
+   http://localhost:8080/api/preflight`
 
 ## Quick Start
 
@@ -107,7 +127,8 @@ export KASEKI_API_KEYS=sk-your-secret-key-here
 # Build image from this repo
 docker build -t kaseki-agent:node24-local .
 
-# Start services (uses KASEKI_API_IMAGE, default: kaseki-agent:node24-local)
+# Start services (uses KASEKI_API_IMAGE, default:
+# kaseki-agent:node24-local)
 docker-compose up -d
 
 # View logs
@@ -117,14 +138,18 @@ docker-compose logs -f kaseki-api
 docker-compose down
 ```
 
-The API container runs as the `/agents` owner by default (`10000:10000`) and must also be able to use the host Docker socket so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID` to the group owner of `/var/run/docker.sock`:
+The API container runs as the `/agents` owner by default
+(`10000:10000`) and must also be able to use the host Docker socket
+so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID`
+to the group owner of `/var/run/docker.sock`:
 
 ```bash
 export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
 docker-compose up -d
 ```
 
-In Dockhand, Portainer, or another compose manager, keep the same shape:
+In Dockhand, Portainer, or another compose manager, keep the same
+shape:
 
 ```yaml
 services:
@@ -137,7 +162,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-After deployment, verify controller readiness with the authenticated preflight endpoint:
+After deployment, verify controller readiness with the
+authenticated preflight endpoint:
 
 ```bash
 curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
@@ -155,7 +181,9 @@ Secrets are resolved from the host filesystem in this order:
 1. **Primary path**: `/agents/secrets/{secret-name}`
 2. **Fallback path**: `~/.secrets/{secret-name}` (user home directory)
 
-The system will check the primary location first and fall back to the user directory if not found. Use whichever path is convenient for your deployment.
+The system will check the primary location first and fall back to
+the user directory if not found. Use whichever path is convenient
+for your deployment.
 
 ### Required Secret Files
 
@@ -163,7 +191,8 @@ Create these files on your host machine:
 
 #### 1. OpenRouter API Key (Required)
 
-File: `/agents/secrets/openrouter_api_key` or `~/.secrets/openrouter_api_key`
+File: `/agents/secrets/openrouter_api_key` or
+`~/.secrets/openrouter_api_key`
 
 ```bash
 # Get your API key from: https://openrouter.ai/keys
@@ -178,9 +207,11 @@ cat /agents/secrets/openrouter_api_key
 
 #### 2. Kaseki API Keys (Required)
 
-File: `/agents/secrets/kaseki_api_keys` or `~/.secrets/kaseki_api_keys`
+File: `/agents/secrets/kaseki_api_keys` or
+`~/.secrets/kaseki_api_keys`
 
-Format: One API key per line (newline-separated). Comment lines starting with `#` are ignored.
+Format: One API key per line (newline-separated). Comment lines
+starting with `#` are ignored.
 
 ```bash
 mkdir -p /agents/secrets
@@ -198,9 +229,11 @@ cat /agents/secrets/kaseki_api_keys
 
 #### 3. GitHub App Credentials (Optional, for PR creation)
 
-If you want to enable GitHub App authentication for PR creation, create these files:
+If you want to enable GitHub App authentication for PR creation,
+create these files:
 
-File: `/agents/secrets/github_app_id` or `~/.secrets/github_app_id`
+File: `/agents/secrets/github_app_id` or
+`~/.secrets/github_app_id`
 Content: Numeric GitHub App ID
 
 ```bash
@@ -208,7 +241,8 @@ echo "123456" > /agents/secrets/github_app_id
 chmod 600 /agents/secrets/github_app_id
 ```
 
-File: `/agents/secrets/github_app_client_id` or `~/.secrets/github_app_client_id`
+File: `/agents/secrets/github_app_client_id` or
+`~/.secrets/github_app_client_id`
 Content: OAuth Client ID (Iv1.abc...)
 
 ```bash
@@ -216,7 +250,8 @@ echo "Iv1.abcdef..." > /agents/secrets/github_app_client_id
 chmod 600 /agents/secrets/github_app_client_id
 ```
 
-File: `/agents/secrets/github_app_private_key` or `~/.secrets/github_app_private_key`
+File: `/agents/secrets/github_app_private_key` or
+`~/.secrets/github_app_private_key`
 Content: PEM-format private key
 
 ```bash
@@ -226,21 +261,27 @@ chmod 600 /agents/secrets/github_app_private_key
 
 ### GitHub App Credential Auto-Detection
 
-GitHub App credentials are now **enabled by default** if available. Kaseki Agent automatically searches for credentials in multiple locations, reducing setup friction:
+GitHub App credentials are now **enabled by default** if available.
+Kaseki Agent automatically searches for credentials in multiple
+locations, reducing setup friction:
 
 **Search Order (by priority):**
 
 1. **Environment variables** (highest priority)
-   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`
+   - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`,
+     `GITHUB_APP_PRIVATE_KEY`
 
 2. **Standard secret paths**
    - `/agents/secrets/github_app_*`
    - `~/.secrets/github_app_*`
 
 3. **Convenience auto-detect locations** (private key only)
-   - `~/.ssh/github-app-private-key` — SSH directory for easy key management
-   - `$PWD/.github-app-secrets/private-key` — Workspace-local secrets
-   - `/etc/kaseki-secrets/github_app_private_key` — System-wide secrets
+   - `~/.ssh/github-app-private-key` — SSH directory for easy
+     key management
+   - `$PWD/.github-app-secrets/private-key` — Workspace-local
+     secrets
+   - `/etc/kaseki-secrets/github_app_private_key` — System-wide
+     secrets
 
 **Examples:**
 
@@ -270,9 +311,12 @@ export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
 
 **Behavior by Mode:**
 
-- `KASEKI_PUBLISH_MODE=auto` (default) — Enables GitHub ops if all 3 credentials found; gracefully skips if missing
-- `KASEKI_PUBLISH_MODE=branch` or `draft_pr` — Requires all 3 credentials; fails with exit code 7 if missing
-- `KASEKI_PUBLISH_MODE=none` — Always skips GitHub operations (ignores credentials)
+- `KASEKI_PUBLISH_MODE=auto` (default) — Enables GitHub ops if all
+  3 credentials found; gracefully skips if missing
+- `KASEKI_PUBLISH_MODE=branch` or `draft_pr` — Requires all 3
+  credentials; fails with exit code 7 if missing
+- `KASEKI_PUBLISH_MODE=none` — Always skips GitHub operations
+  (ignores credentials)
 
 ### Verification
 
@@ -280,15 +324,19 @@ Check that the secrets are readable:
 
 ```bash
 # Test reading secrets (all should return non-empty values)
-test -s /agents/secrets/openrouter_api_key && echo "✓ OpenRouter key found" || echo "✗ OpenRouter key missing"
-test -s /agents/secrets/kaseki_api_keys && echo "✓ API keys found" || echo "✗ API keys missing"
+test -s /agents/secrets/openrouter_api_key && \
+  echo "✓ OpenRouter key found" || echo "✗ OpenRouter key missing"
+test -s /agents/secrets/kaseki_api_keys && \
+  echo "✓ API keys found" || echo "✗ API keys missing"
 ```
 
-After starting the API container, verify with the preflight endpoint:
+After starting the API container, verify with the preflight
+endpoint:
 
 ```bash
 curl -H "Authorization: Bearer sk-api-key-1" \
-  http://localhost:8080/api/preflight | jq '.checks[] | select(.name == "openrouter-key")'
+  http://localhost:8080/api/preflight | \
+  jq '.checks[] | select(.name == "openrouter-key")'
 ```
 
 Should return:
@@ -318,7 +366,8 @@ GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
 # Core settings
 KASEKI_API_PORT=8080                        # API listen port (default: 8080)
 KASEKI_API_LOG_LEVEL=info                  # Log level: debug/info/warn/error
-KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from this repo's Dockerfile
+KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from
+                                            # this repo's Dockerfile
 
 # Performance
 KASEKI_API_MAX_CONCURRENT_RUNS=3           # Max concurrent jobs (default: 3)
@@ -330,7 +379,10 @@ KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
-**Note on secrets:** All secret file variables are optional if your files are in the default locations (`/agents/secrets/` or `~/.secrets/`). Only set them if your files are in non-standard locations.
+**Note on secrets:** All secret file variables are optional if
+your files are in the default locations (`/agents/secrets/` or
+`~/.secrets/`). Only set them if your files are in non-standard
+locations.
 
 ---
 
@@ -361,7 +413,7 @@ KASEKI_API_KEYS_FILE=/agents/secrets/kaseki_api_keys       # Path to API keys fi
 OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
 GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional
 GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id    # Optional
-GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
+GASEKI_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key # Optional
 
 # Core settings
 KASEKI_API_PORT=8080                        # Default: 8080
@@ -457,34 +509,40 @@ docker run --rm \
 ## Security Best Practices
 
 1. **API Key Management**
-   - Store keys in environment files with mode `0600` (or use Docker secrets)
+   - Store keys in environment files with mode `0600` (or use
+     Docker secrets)
    - Never commit keys to version control
    - Rotate keys regularly
    - Use separate keys for different environments (dev/staging/prod)
    - For GitHub App authentication, prefer mounted files:
      `GITHUB_APP_ID_FILE`, `GITHUB_APP_CLIENT_ID_FILE`, and
-     `GITHUB_APP_PRIVATE_KEY_FILE`. Avoid placing the private key PEM directly
-     in `.env`; environment variables are more likely to appear in process
-     inspection output, container metadata, and deployment UI history.
+     `GITHUB_APP_PRIVATE_KEY_FILE`. Avoid placing the private key
+     PEM directly in `.env`; environment variables are more likely
+     to appear in process inspection output, container metadata,
+     and deployment UI history.
 
 2. **Network Security**
    - Expose API only on trusted networks (localhost or VPN)
    - Use firewall rules to restrict access:
 
      ```bash
-     sudo ufw allow from 10.0.0.0/8 to any port 8080  # Example: allow from private network
+     sudo ufw allow from 10.0.0.0/8 to any port 8080
+       # Example: allow from private network
      ```
 
-   - Consider putting API behind a reverse proxy (nginx) with authentication
+   - Consider putting API behind a reverse proxy (nginx)
+     with authentication
 
 3. **Container Hardening**
    - All Docker deployments use:
      - `--cap-drop ALL` — Remove all Linux capabilities
-     - `--security-opt no-new-privileges:true` — Prevent privilege escalation
+     - `--security-opt no-new-privileges:true` — Prevent privilege
+       escalation
      - `--read-only` — Read-only root filesystem
      - `tmpfs` — Temporary write-able directories
    - API runs as a non-root user that owns `/agents`
-   - Add only the host Docker socket group as a supplemental group; do not run the API as root just to reach Docker
+   - Add only the host Docker socket group as a supplemental group;
+     do not run the API as root just to reach Docker
 
 4. **TLS/HTTPS**
    - Forward HTTPS traffic via reverse proxy (e.g., nginx):
@@ -497,8 +555,10 @@ docker run --rm \
      server {
        listen 443 ssl http2;
        server_name api.kaseki.local;
-       ssl_certificate /etc/letsencrypt/live/api.kaseki.local/fullchain.pem;
-       ssl_certificate_key /etc/letsencrypt/live/api.kaseki.local/privkey.pem;
+       ssl_certificate /etc/letsencrypt/live/api.kaseki.local/
+         fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/api.kaseki.local/
+         privkey.pem;
 
        location / {
          proxy_pass http://kaseki_api;
@@ -539,15 +599,22 @@ Expected response:
 
 ### Dependency Cache Behavior
 
-- Worker installs are lockfile-only (`npm ci --omit=dev`) and will fail when no `package-lock.json` or `npm-shrinkwrap.json` is present.
-- Scheduler/runner containers must keep a persistent cache mount at `/agents/kaseki-cache` (or override with `KASEKI_CACHE_DIR`) so dependency cache data survives between runs.
-- `run-kaseki.sh` mounts that directory into workers at `/cache`, and workers use:
+- Worker installs are lockfile-only (`npm ci --omit=dev`) and will
+  fail when no `package-lock.json` or `npm-shrinkwrap.json` is present.
+- Scheduler/runner containers must keep a persistent cache mount at
+  `/agents/kaseki-cache` (or override with `KASEKI_CACHE_DIR`) so
+  dependency cache data survives between runs.
+- `run-kaseki.sh` mounts that directory into workers at `/cache`, and
+  workers use:
   - `KASEKI_DEPENDENCY_CACHE_DIR=/cache/dependencies`
   - `NPM_CONFIG_CACHE=/cache/npm-cache`
-- Cache key is deterministic: `sha256(repo_url) + lockfile sha256 + Node major version`.
+- Cache key is deterministic: `sha256(repo_url) + lockfile sha256 +
+  Node major version`.
 - Progress + timing artifacts include install/cache signals:
-  - `progress.jsonl` / `progress.log`: dependency install stage, cache hit/miss, elapsed seconds.
-  - `stage-timings.tsv`: `dependency install` row with cache source and install flags.
+  - `progress.jsonl` / `progress.log`: dependency install stage,
+    cache hit/miss, elapsed seconds.
+  - `stage-timings.tsv`: `dependency install` row with cache source
+    and install flags.
   - `dependency-cache.log`: summarized cache status.
 
 ### Docker Compose

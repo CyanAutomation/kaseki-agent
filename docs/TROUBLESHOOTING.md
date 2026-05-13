@@ -14,10 +14,12 @@ Exit Code?
   ├─ 1: Generic failure → Run diagnostics
   ├─ 2: Config error → Check env vars & auth
   ├─ 3: Empty diff → Code unchanged, expected
-  ├─ 4: Diff too large → Increase KASEKI_MAX_DIFF_BYTES or use allowlist
+  ├─ 4: Diff too large → Increase KASEKI_MAX_DIFF_BYTES
+      or use allowlist
   ├─ 5: Allowlist violation → Review changed files
   ├─ 6: Secret detected → Audit code for credentials
-  ├─ 7: Validation failed → Check pre-validation.log or validation.log
+  ├─ 7: Validation failed → Check pre-validation.log or
+      validation.log
   ├─ 124: Timeout → Increase KASEKI_AGENT_TIMEOUT_SECONDS
   └─ 127: Command not found → Verify installation
 ```
@@ -31,15 +33,24 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 | Code | Issue | Check | Fix |
 |------|-------|-------|-----|
 | **0** | ✓ Success | None | N/A |
-| **1** | Generic failure | metadata.json `exit_code_stage`, logs | See "Generic Failure" below |
-| **2** | Config/auth missing | KASEKI_API_KEYS, OPENROUTER_API_KEY | Set API key in env or file |
-| **3** | No changes made | result-summary.md | Expected if code unchanged |
-| **4** | Diff exceeds limit | changed-files.txt, git.diff size | Use allowlist or increase KASEKI_MAX_DIFF_BYTES |
-| **5** | File outside allowlist | quality.log, changed-files.txt | Review KASEKI_CHANGED_FILES_ALLOWLIST |
-| **6** | Secret detected | secret-scan.log | Audit code for `sk-or-*` credentials |
-| **7** | Validation failed | pre-validation.log or validation.log | See "Validation Failures" below |
-| **124** | Agent timeout | pi-summary.json `elapsed_seconds` | Increase KASEKI_AGENT_TIMEOUT_SECONDS |
-| **127** | Command not found | stdout.log, stderr.log | Reinstall; verify Node.js v24+ |
+| **1** | Generic failure | metadata.json `exit_code_stage`, logs | See "Generic
+  Failure" below |
+| **2** | Config/auth missing | KASEKI_API_KEYS, OPENROUTER_API_KEY | Set API key in
+  env or file |
+| **3** | No changes made | result-summary.md | Expected if code
+  unchanged |
+| **4** | Diff exceeds limit | changed-files.txt, git.diff size | Use allowlist or
+  increase KASEKI_MAX_DIFF_BYTES |
+| **5** | File outside allowlist | quality.log, changed-files.txt | Review
+  KASEKI_CHANGED_FILES_ALLOWLIST |
+| **6** | Secret detected | secret-scan.log | Audit code for `sk-or-*`
+  credentials |
+| **7** | Validation failed | pre-validation.log or validation.log | See "Validation
+  Failures" below |
+| **124** | Agent timeout | pi-summary.json `elapsed_seconds` | Increase
+  KASEKI_AGENT_TIMEOUT_SECONDS |
+| **127** | Command not found | stdout.log, stderr.log | Reinstall; verify
+  Node.js v24+ |
 
 ---
 
@@ -49,7 +60,8 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 
 ```bash
 # Extract per-stage exit codes
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.stages'
+cat /agents/kaseki-results/kaseki-N/metadata.json |
+  jq '.stages'
 
 # Output example:
 # {
@@ -65,27 +77,34 @@ cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.stages'
 **Agent Phase Failed** (exit_code_stage: agent):
 
 ```bash
-tail -100 /agents/kaseki-results/kaseki-N/stdout.log | grep -i error
+tail -100 /agents/kaseki-results/kaseki-N/stdout.log |
+  grep -i error
 tail -50 /agents/kaseki-results/kaseki-N/pi-stderr.log
 
 # Agent timeout?
-cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds, .timeout_seconds'
+cat /agents/kaseki-results/kaseki-N/pi-summary.json |
+  jq '.elapsed_seconds, .timeout_seconds'
 ```
 
 **Pre-Agent Validation Failed** (baseline failure before Pi):
 
 ```bash
 cat /agents/kaseki-results/kaseki-N/pre-validation.log
-cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv  # Which baseline command failed?
+cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv
+  # Which baseline command failed?
 ```
 
-This means the requested repo/ref failed validation before Pi made any changes. Fix the baseline or choose a passing ref before judging agent output.
+This means the requested repo/ref failed validation before Pi
+made any changes. Fix the baseline or choose a passing ref
+before judging agent output.
 
-**Post-Agent Validation Failed** (final diff failed validation):
+**Post-Agent Validation Failed** (final diff failed
+  validation):
 
 ```bash
 cat /agents/kaseki-results/kaseki-N/validation.log
-cat /agents/kaseki-results/kaseki-N/validation-timings.tsv  # Which final-diff command failed?
+cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
+  # Which final-diff command failed?
 ```
 
 **Quality Gates Failed** (exit_code_stage: quality_gates):
@@ -102,14 +121,16 @@ cat /agents/kaseki-results/kaseki-N/quality.log
 
 ```bash
 cat /agents/kaseki-results/kaseki-N/secret-scan.log
-# Lists files with detected credential patterns (sk-or-*)
+# Lists files with detected credential patterns
+# (sk-or-*)
 ```
 
 ### Step 3: Read Structured Failure Reason
 
 ```bash
 # Machine-readable failure reason
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.pre_validation_failure_reason, .validation_failure_reason, .quality_failure_reason'
+cat /agents/kaseki-results/kaseki-N/metadata.json |
+  jq '.pre_validation_failure_reason, .validation_failure_reason, .quality_failure_reason'
 
 # Examples:
 # "pre_validation_failure_reason": "pre_agent_validation_failed: npm run check (exit 1)"
@@ -134,15 +155,19 @@ Validation commands are executed sequentially (default: `npm run check;npm run t
 
 ```bash
 # 1. Which validation phase failed?
-cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.failed_command, .pre_validation_failure_reason, .validation_failure_reason'
+cat /agents/kaseki-results/kaseki-N/metadata.json |
+  jq '.failed_command, .pre_validation_failure_reason, .validation_failure_reason'
 cat /agents/kaseki-results/kaseki-N/stage-timings.tsv
 
-# 2. If failed_command is "pre-agent validation", inspect baseline logs
-cat /agents/kaseki-results/kaseki-N/pre-validation.log | head -20
+# 2. If failed_command is "pre-agent validation", inspect
+#    baseline logs
+cat /agents/kaseki-results/kaseki-N/pre-validation.log |
+  head -20
 cat /agents/kaseki-results/kaseki-N/pre-validation-timings.tsv
 
 # 3. If failed_command is "validation", inspect final-diff logs
-cat /agents/kaseki-results/kaseki-N/validation.log | head -20
+cat /agents/kaseki-results/kaseki-N/validation.log |
+  head -20
 cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
 
 # 4. Full error output for a specific command
@@ -167,12 +192,15 @@ FAIL: src/__tests__/index.test.ts
 TypeError: expected X to be Y
 ```
 
-**Fix:** This is a baseline problem, not an agent regression. The selected repo/ref failed before Pi changed anything. Either:
+**Fix:** This is a baseline problem, not an agent regression. The
+selected repo/ref failed before Pi changed anything. Either:
 
 - Re-run against a known-good ref
 - Fix the baseline repository state
-- Adjust `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` if the baseline phase is intentionally narrower than final validation
-- Set `KASEKI_PRE_AGENT_VALIDATION=0` only when you knowingly accept baseline failures
+- Adjust `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` if the
+  baseline phase is intentionally narrower than final validation
+- Set `KASEKI_PRE_AGENT_VALIDATION=0` only when you knowingly
+  accept baseline failures
 
 **Issue: Post-agent validation fails due to code changes**
 
@@ -181,10 +209,13 @@ FAIL: src/__tests__/index.test.ts
 TypeError: expected X to be Y
 ```
 
-**Fix:** The final diff failed validation, so the agent likely introduced or failed to resolve a regression. Either:
+**Fix:** The final diff failed validation, so the agent likely
+introduced or failed to resolve a regression. Either:
 
-- Adjust agent task prompt (see [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md))
-- Adjust allowlist to restrict agent changes (see [QUALITY_GATES.md](QUALITY_GATES.md))
+- Adjust agent task prompt (see
+  [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md))
+- Adjust allowlist to restrict agent changes (see
+  [QUALITY_GATES.md](QUALITY_GATES.md))
 - Review agent's changes and accept/modify them manually
 
 **Issue: Validation fails due to missing dependencies**
@@ -364,7 +395,8 @@ kaseki-cli watch kaseki-5 --interval=2
 kaseki-cli follow kaseki-5
 
 # Follow with search filter (e.g., only errors)
-kaseki-cli follow kaseki-5 | grep -i error
+kaseki-cli follow kaseki-5 |
+  grep -i error
 ```
 
 ### Post-Run Analysis
@@ -374,7 +406,8 @@ kaseki-cli follow kaseki-5 | grep -i error
 kaseki-report /agents/kaseki-results/kaseki-5
 
 # Review what changed
-cat /agents/kaseki-results/kaseki-5/git.diff | head -100
+cat /agents/kaseki-results/kaseki-5/git.diff |
+  head -100
 
 # Check validation results
 cat /agents/kaseki-results/kaseki-5/validation-timings.tsv
@@ -386,11 +419,14 @@ cat /agents/kaseki-results/kaseki-5/validation-timings.tsv
 
 ### Too Many Files Being Restored
 
-When validation runs, files outside the allowlist are restored to their original state. If many files are restored, it means the agent modified files outside the intended scope.
+When validation runs, files outside the allowlist are
+restored to their original state. If many files are restored,
+it means the agent modified files outside the intended scope.
 
 ```bash
 # Count restored files
-grep "restore:" /agents/kaseki-results/kaseki-N/restoration.jsonl | wc -l
+grep "restore:" /agents/kaseki-results/kaseki-N/restoration.jsonl |
+  wc -l
 
 # Review restoration report
 cat /agents/kaseki-results/kaseki-N/restoration-report.md
@@ -398,10 +434,12 @@ cat /agents/kaseki-results/kaseki-N/restoration-report.md
 
 **Solutions:**
 
-1. **Use pre-flight validation** to preview what agent will change:
+1. **Use pre-flight validation** to preview what agent will
+   change:
 
    ```bash
-   bash /path/to/scripts/dry-run-allowlist.sh <repo_url> <git_ref> "<task>"
+   bash /path/to/scripts/dry-run-allowlist.sh <repo_url> 
+     <git_ref> "<task>"
    ```
 
 2. **Use suggested allowlist** from a test run:
@@ -432,7 +470,8 @@ Exit code 124: command timed out after KASEKI_AGENT_TIMEOUT_SECONDS
 
 ```bash
 # How much time elapsed?
-cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.elapsed_seconds, .timeout_seconds'
+cat /agents/kaseki-results/kaseki-N/pi-summary.json |
+  jq '.elapsed_seconds, .timeout_seconds'
 
 # What was agent doing when timeout hit?
 tail -50 /agents/kaseki-results/kaseki-N/progress.log
@@ -472,7 +511,8 @@ cat /agents/kaseki-results/kaseki-N/validation-timings.tsv
 awk -F'\t' '{print $1, $3 " seconds"}' /agents/kaseki-results/kaseki-N/validation-timings.tsv
 ```
 
-**Fix:** Check [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) for optimization tips.
+**Fix:** Check [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) for
+optimization tips.
 
 ### High API Queue Backlog
 
