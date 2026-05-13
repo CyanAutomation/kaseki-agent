@@ -120,7 +120,7 @@ for expected in \
   'kaseki-agent.sh' \
   'tests/pr-metadata-generation.test.sh' \
   'docs/usage-[redacted]' \
-  '## Summary of improvements' \
+  '## Summary' \
   'Changed files: 3 total.' \
   'Source files updated: 1.' \
   'Tests updated: 1.' \
@@ -133,7 +133,8 @@ for expected in \
   '### Post-agent validation commands' \
   'npm run check — exit 0, 3s' \
   'npm run test -- --[redacted] — exit 0, 12s' \
-  '## Quality checks' \
+  '<details><summary>Original task prompt</summary>' \
+  '</details>' \
   'Quality gate: passed' \
   'Secret scan: passed' \
   '## Run metadata' \
@@ -145,6 +146,33 @@ for expected in \
     fail "PR body missing expected text: $expected"
   fi
 done
+
+summary_line="$(grep -nF '## Summary' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+validation_line="$(grep -nF '## Validation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+files_changed_line="$(grep -nF '## Files changed' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+original_prompt_line="$(grep -nF '## Original task prompt' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+run_metadata_line="$(grep -nF '## Run metadata' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$summary_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$original_prompt_line" ] && [ -n "$run_metadata_line" ] \
+  && [ "$summary_line" -lt "$validation_line" ] \
+  && [ "$validation_line" -lt "$files_changed_line" ] \
+  && [ "$files_changed_line" -lt "$original_prompt_line" ] \
+  && [ "$original_prompt_line" -lt "$run_metadata_line" ]; then
+  pass "PR body orders Summary, Validation, Files changed, Original task prompt, and Run metadata sections"
+else
+  fail "PR body sections were not in expected order"
+fi
+
+if [ "$summary_line" -lt "$original_prompt_line" ]; then
+  pass "PR body places Summary before Original task prompt"
+else
+  fail "PR body did not place Summary before Original task prompt"
+fi
+
+if grep -Fq '## Quality checks' <<<"$pr_body"; then
+  fail "PR body should not include a separate Quality checks section"
+else
+  pass "PR body folds quality checks into Validation"
+fi
 
 if grep -Eq 'Duration: 12[0-9]s' <<<"$pr_body"; then
   pass "PR body contains run duration"
