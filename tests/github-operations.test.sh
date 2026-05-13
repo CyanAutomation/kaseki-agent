@@ -315,9 +315,38 @@ else
   fail "Production GitHub push block does not record git push exit status"
 fi
 
+# Test 14: Pull request label application wiring
+info "Test 14: Pull request label application wiring"
+if grep -q 'https://api.github.com/repos/$owner/$repo/issues/$issue_number/labels' "$ROOT_DIR/kaseki-agent.sh"; then
+  pass "PR labels endpoint is used"
+else
+  fail "PR labels endpoint is missing"
+fi
+
+if grep -Fq "labels: ['kaseki-agent']" "$ROOT_DIR/kaseki-agent.sh"; then
+  pass "PR label payload uses exactly the kaseki-agent label"
+else
+  fail "PR label payload does not use the expected kaseki-agent label"
+fi
+
+if grep -q 'Number.isInteger(d.number)' "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q 'run_node_subprocess pr_number' "$ROOT_DIR/kaseki-agent.sh"; then
+  pass "PR number is extracted from the create-PR response number field"
+else
+  fail "PR number extraction from create-PR response is missing"
+fi
+
+if grep -q 'apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /results/git-push.log || true' "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q 'Warning: failed to apply kaseki-agent label' "$ROOT_DIR/kaseki-agent.sh" && \
+   grep -q 'preserving created PR' "$ROOT_DIR/kaseki-agent.sh"; then
+  pass "PR label failures are warning-only and preserve the created PR"
+else
+  fail "PR label failure policy is not warning-only"
+fi
+
 # Summary
 info "All tests passed!"
 printf '\n==> Summary\n'
-printf 'Tests run: 13\n'
-printf 'Passed: 13\n'
+printf 'Tests run: 14\n'
+printf 'Passed: 14\n'
 printf 'Failed: 0\n'
