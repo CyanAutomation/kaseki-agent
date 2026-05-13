@@ -154,6 +154,7 @@ for expected in \
   'Documentation updated: 1.' \
   'Diff stats: +2/-1 lines' \
   '## Validation' \
+  '### Validation statuses' \
   'Pre-agent validation: passed' \
   'Post-agent validation: passed' \
   '### Pre-agent validation commands' \
@@ -223,6 +224,26 @@ if grep -Fq '## Quality checks' <<<"$pr_body"; then
   fail "PR body should not include a separate Quality checks section"
 else
   pass "PR body folds quality checks into Validation"
+fi
+
+quality_gate_count="$(awk 'index($0, "Quality gate:") { count++ } END { print count + 0 }' <<<"$pr_body")"
+secret_scan_count="$(awk 'index($0, "Secret scan:") { count++ } END { print count + 0 }' <<<"$pr_body")"
+quality_gate_line="$(grep -nF 'Quality gate:' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+secret_scan_line="$(grep -nF 'Secret scan:' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+if [ "$quality_gate_count" -eq 1 ] && [ -n "$quality_gate_line" ] \
+  && [ "$validation_line" -lt "$quality_gate_line" ] \
+  && [ "$quality_gate_line" -lt "$files_changed_line" ]; then
+  pass "PR body has one Quality gate status in Validation"
+else
+  fail "PR body should include exactly one Quality gate status in Validation"
+fi
+
+if [ "$secret_scan_count" -eq 1 ] && [ -n "$secret_scan_line" ] \
+  && [ "$validation_line" -lt "$secret_scan_line" ] \
+  && [ "$secret_scan_line" -lt "$files_changed_line" ]; then
+  pass "PR body has one Secret scan status in Validation"
+else
+  fail "PR body should include exactly one Secret scan status in Validation"
 fi
 
 if grep -Eq 'Duration: 12[0-9]s' <<<"$pr_body"; then
