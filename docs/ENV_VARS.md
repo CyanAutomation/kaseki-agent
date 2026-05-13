@@ -60,8 +60,8 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 - `pr` — Require GitHub credentials; fail with exit code 7 if missing (creates normal PR)
 - `draft_pr` — Require GitHub credentials; fail with exit code 7 if missing (creates draft PR)
 
-Controller API requests default omitted `publishMode` to `pr`; the scheduler
-therefore sends `KASEKI_PUBLISH_MODE=pr` to the worker unless the request
+Controller API requests with omitted `publishMode` default to normal PR mode
+(`pr`); the scheduler therefore sends `KASEKI_PUBLISH_MODE=pr` to the worker unless the request
 explicitly sets `publishMode` to `auto`, `none`, `branch`, or `draft_pr`. Explicit API
 `publishMode: "auto"` keeps the worker/CLI graceful auto behavior. Because
 `branch`, `pr`, and `draft_pr` are strict publishing modes, API submission fails before
