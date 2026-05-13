@@ -1391,6 +1391,7 @@ run_validation_commands() {
         elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
           validation_exit_ref="$command_exit"
           validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
+          # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
           validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
           # Enhanced diagnostics for getcwd-type errors.
           if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
@@ -1408,6 +1409,7 @@ run_validation_commands() {
           fi
           # Fail-fast: if enabled, stop validation loop at first failure.
           if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
+            # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
             validation_stopped_ref=true
             printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a "$log_file"
             break
@@ -1621,11 +1623,11 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
-    const fs = require("fs");
-    const stdout = fs.readFileSync(0, "utf8");
-    const stderr = process.env.TOKEN_HELPER_STDERR || "";
-    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || "unknown";
+  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e "
+    const fs = require('fs');
+    const stdout = fs.readFileSync(0, 'utf8');
+    const stderr = process.env.TOKEN_HELPER_STDERR || '';
+    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
     const sanitize = (value) => String(value || "")
       .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
       .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
@@ -1649,7 +1651,7 @@ parse_github_app_token_helper_failure() {
       if (match) status = match[1];
     }
     process.stdout.write(`${error}\t${status}`);
-  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
+  " 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
 }
 
 
@@ -2358,6 +2360,8 @@ NODE
 $json_text
 EOF_JSON_SUMMARY
     else
+      # shellcheck disable=SC2094 # File is only read, not written; output goes to stdout
+      summary_file_content="$(cat "$summary_source" 2>/dev/null || echo '')"
       while IFS= read -r raw_line || [ -n "$raw_line" ]; do
         case "$raw_line" in
           \#*)
@@ -2384,7 +2388,9 @@ EOF_JSON_SUMMARY
         printf -- '- %s\n' "$safe_line"
         summary_rows=$((summary_rows + 1))
         [ "$summary_rows" -lt 4 ] || break
-      done < "$summary_source"
+      done <<EOF_SUMMARY_FILE
+$summary_file_content
+EOF_SUMMARY_FILE
     fi
   fi
 
