@@ -472,7 +472,7 @@ export function createApiRouter(
             400,
             'Bad Request',
             `Kaseki bootstrap is not complete. The run-kaseki.sh script is missing at ${runScript}. ` +
-            `Run 'scripts/kaseki-activate.sh --controller bootstrap' to initialize the system, then check /api/preflight to verify readiness.`,
+            'Run \'scripts/kaseki-activate.sh --controller bootstrap\' to initialize the system, then check /api/preflight to verify readiness.',
           );
         }
       }
