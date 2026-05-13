@@ -41,7 +41,7 @@ function mockReadableGithubAppCredentials(): void {
 }
 
 beforeEach(() => {
-    process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = "1";
+  process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
   mockReadableGithubAppCredentials();
 });
 
