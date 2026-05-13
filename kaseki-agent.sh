@@ -2381,6 +2381,7 @@ build_pr_body() {
 $(build_pr_improvements_summary)
 
 ## Validation
+### Validation statuses
 - Pre-agent validation: $pre_validation_status
 - Post-agent validation: $validation_status
 - Quality gate: $quality_status
