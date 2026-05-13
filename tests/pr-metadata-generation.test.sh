@@ -116,8 +116,57 @@ else
   pass "PR metadata redacts secret-like values"
 fi
 
+INSTANCE_NAME="kaseki-title-cases"
+: > /results/changed-files.txt
+TASK_PROMPT=$(cat <<'PROMPT'
+1. Update userfacing onboarding copy.
+2. Add implementation coverage.
+PROMPT
+)
+rm -f /results/result-summary.md
+numbered_prompt_pr_title="$(derive_pr_title)"
+case "$numbered_prompt_pr_title" in
+  "chore: user-facing onboarding copy"*) pass "PR title removes numbered prompt marker and normalizes compound wording" ;;
+  *) fail "PR title did not normalize numbered prompt candidate: $numbered_prompt_pr_title" ;;
+esac
+
+TASK_PROMPT=$(cat <<'PROMPT'
+1. Implement internal retry plumbing.
+2. Update tests.
+PROMPT
+)
+cat > /results/result-summary.md <<'SUMMARY'
+# Kaseki result
+
+## Summary
+- Updated userfacing settings labels for account admins.
+- Added tests for the label rendering.
+
+## Validation
+- npm test passed.
+SUMMARY
+summary_pr_title="$(derive_pr_title)"
+case "$summary_pr_title" in
+  "test: Updated user-facing settings labels"*) pass "PR title prefers concise result summary line and normalizes compound wording" ;;
+  *) fail "PR title did not prefer summary candidate: $summary_pr_title" ;;
+esac
+
+TASK_PROMPT="Fix OAuth fallback path"
+cat > /results/result-summary.md <<'SUMMARY'
+# Kaseki result
+
+## Validation
+- npm test passed.
+SUMMARY
+no_summary_pr_title="$(derive_pr_title)"
+case "$no_summary_pr_title" in
+  "fix: OAuth fallback path"*) pass "PR title falls back to prompt when result summary has no summary line" ;;
+  *) fail "PR title did not fall back to prompt candidate: $no_summary_pr_title" ;;
+esac
+
 INSTANCE_NAME="kaseki-42"
 TASK_PROMPT="Update $(printf 'verylong %.0s' {1..20})"
+rm -f /results/result-summary.md
 long_pr_title="$(derive_pr_title)"
 if [ "${#long_pr_title}" -le 72 ] && [[ "$long_pr_title" == *" ($INSTANCE_NAME)" ]]; then
   pass "Long PR titles truncate before preserving the instance suffix"
