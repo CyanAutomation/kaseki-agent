@@ -313,7 +313,7 @@ export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
 
 - `KASEKI_PUBLISH_MODE=auto` (default) — Enables GitHub ops if all
   3 credentials found; gracefully skips if missing
-- `KASEKI_PUBLISH_MODE=branch` or `draft_pr` — Requires all 3
+- `KASEKI_PUBLISH_MODE=branch`, `pr`, or `draft_pr` — Requires all 3
   credentials; fails with exit code 7 if missing
 - `KASEKI_PUBLISH_MODE=none` — Always skips GitHub operations
   (ignores credentials)
