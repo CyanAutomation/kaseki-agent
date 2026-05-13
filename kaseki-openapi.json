@@ -317,6 +317,7 @@
                       "auto",
                       "none",
                       "branch",
+                      "pr",
                       "draft_pr"
                     ],
                     "description": "Publishing mode after validation"
@@ -512,6 +513,7 @@
                       "auto",
                       "none",
                       "branch",
+                      "pr",
                       "draft_pr"
                     ],
                     "description": "Publishing mode after validation"
@@ -1930,6 +1932,7 @@
               "auto",
               "none",
               "branch",
+              "pr",
               "draft_pr"
             ],
             "description": "Publishing mode after validation"

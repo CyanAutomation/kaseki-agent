@@ -334,7 +334,7 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
-  test('defaults omitted publish mode to draft PR for controller runs', async () => {
+  test('defaults omitted publish mode to normal PR for controller runs', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -363,7 +363,7 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          KASEKI_PUBLISH_MODE: 'draft_pr',
+          KASEKI_PUBLISH_MODE: 'pr',
         }),
       }),
     );

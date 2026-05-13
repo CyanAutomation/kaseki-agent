@@ -420,8 +420,15 @@ export function createApiRouter(
             : req.body?.startupCheck,
       });
 
-      const effectivePublishMode = runRequest.publishMode || 'draft_pr';
-      if ((effectivePublishMode === 'branch' || effectivePublishMode === 'draft_pr') && !isGitHubAppReady()) {
+      const effectivePublishMode = runRequest.publishMode || 'pr';
+      const effectiveRunRequest = {
+        ...runRequest,
+        publishMode: effectivePublishMode,
+      };
+      if (
+        (effectivePublishMode === 'branch' || effectivePublishMode === 'pr' || effectivePublishMode === 'draft_pr') &&
+        !isGitHubAppReady()
+      ) {
         return sendErrorResponse(
           res,
           400,
@@ -432,7 +439,7 @@ export function createApiRouter(
 
       // Auto-generate idempotency key if not provided
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
-      const requestFingerprint = buildRequestFingerprint(runRequest as Record<string, unknown>);
+      const requestFingerprint = buildRequestFingerprint(effectiveRunRequest as Record<string, unknown>);
 
       const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
       if (claimResult.kind === 'fulfilled') {
@@ -465,7 +472,7 @@ export function createApiRouter(
       });
 
       // Submit to scheduler
-      const job = await scheduler.submitJob(runRequest);
+      const job = await scheduler.submitJob(effectiveRunRequest);
 
       // Store idempotency key on job
       job.idempotencyKey = idempotencyKey;
