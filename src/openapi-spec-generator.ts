@@ -52,7 +52,7 @@ export function generateOpenAPISpec(): Record<string, unknown> {
       publishMode: {
         type: 'string',
         enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
-        description: 'Publishing mode after validation',
+        description: 'Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing',
       },
       startupCheck: {
         type: 'boolean',

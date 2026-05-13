@@ -32,7 +32,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 5700 | Timeout for agent (95 min) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
-| `KASEKI_PUBLISH_MODE` | auto | Publish behavior for workers/CLI/API: auto, none, branch, pr, or draft_pr. Controller API runs default omitted `publishMode` to `pr`; explicit API `publishMode: "auto"` uses graceful worker auto publishing. |
+| `KASEKI_PUBLISH_MODE` | auto | Publish behavior for workers/CLI/API: `pr` creates a normal PR, `draft_pr` creates a draft PR, `branch` pushes without PR creation, `auto` publishes only when credentials are available, and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`; explicit API `publishMode: "auto"` uses graceful worker auto publishing. |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
@@ -253,10 +253,11 @@ curl -X POST http://localhost:8080/api/runs \
 Omitting `publishMode` defaults controller API runs to `pr`, which pushes
 a Kaseki branch and creates a normal pull request after validation. Set
 `publishMode` when a controller needs different publish behavior:
-`auto` lets the worker publish when credentials are available and gracefully skip
-when they are not, `none` skips GitHub publishing, `branch` pushes a Kaseki
-branch after validation, `pr` creates a normal pull request after validation, and `draft_pr` explicitly creates a draft pull request. Requests
-with effective publish mode `branch`, `pr`, or `draft_pr` fail before queueing unless
+`pr` creates a normal pull request after validation, `draft_pr` explicitly
+creates a draft pull request, `branch` pushes a Kaseki branch after validation
+without opening a PR, `auto` lets the worker publish when credentials are
+available and gracefully skip when they are not, and `none` skips GitHub
+publishing. Requests with effective publish mode `branch`, `pr`, or `draft_pr` fail before queueing unless
 GitHub App credentials are readable; call `GET /api/preflight` first to verify that readiness.
 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.

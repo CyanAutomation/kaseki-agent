@@ -626,8 +626,7 @@ curl -X POST http://localhost:8080/api/runs \
     "changedFilesAllowlist": ["src/lib/parser.ts"],
     "allowlist": { "include": ["src/lib/parser.ts"] },
     "validationCommands": ["npm run test", "npm run build"],
-    "validation": { "commands": ["npm run test", "npm run build"] },
-    "publishMode": "draft_pr"
+    "validation": { "commands": ["npm run test", "npm run build"] }
   }'
 
 # Returns: {"id":"kaseki-42","status":"queued","createdAt":"2026-05-02T..."}
@@ -1172,7 +1171,7 @@ OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 
 ## GitHub App Integration (Optional)
 
-Kaseki can automatically push changes and create draft pull requests using a GitHub App.
+Kaseki can automatically push changes and create pull requests using a GitHub App.
 Use file-mounted secrets for the private key. It is acceptable to provide the App ID
 and Client ID as environment variables, but production deployments should keep all
 three values in files or Docker secrets and pass only `*_FILE` paths through the
@@ -1259,15 +1258,15 @@ When credentials are configured and publishing is enabled:
 1. After validation passes and diff is non-empty, Kaseki generates a GitHub App installation token
 2. Creates a feature branch `kaseki/<instance-name>`
 3. Commits and pushes changes to remote
-4. Creates a PR against the target branch when `KASEKI_PUBLISH_MODE=pr` or API `publishMode` is `pr` (normal PR), or when `KASEKI_PUBLISH_MODE=draft_pr` or API `publishMode` is `draft_pr` (explicit draft PR). The `auto` mode creates a draft PR when worker credentials are available, with:
+4. Creates a PR against the target branch when `KASEKI_PUBLISH_MODE=pr` or API `publishMode` is `pr` (normal PR), when `KASEKI_PUBLISH_MODE=auto` finds worker credentials (normal PR), or when `KASEKI_PUBLISH_MODE=draft_pr` or API `publishMode` is `draft_pr` (explicit draft PR), with:
    - Title: `Kaseki: <instance-name>`
    - Body: Model, duration, validation result, quality checks
-   - Draft: `true` for safety when using `auto` mode; review before merging
+   - Draft: `true` only for explicit `draft_pr` mode; otherwise `false`
 
 Publishing modes are `auto`, `none`, `branch`, `pr`, and `draft_pr`. Controller
-requests default omitted `publishMode` to `pr`, so the normal controller path
+requests with omitted `publishMode` default to `pr`, so the normal controller path
 pushes a branch and creates a normal pull request after validation. The `draft_pr`
- mode remains available for explicit draft PR creation. Explicit API `publishMode: "auto"`
+mode remains available for explicit draft PR creation. Explicit API `publishMode: "auto"`
 is accepted for graceful worker auto publishing: the worker publishes when
 credentials are available and skips GitHub operations when they are not. Requests
 that resolve to `branch`, `pr`, or `draft_pr` fail before queueing unless GitHub
@@ -1304,7 +1303,7 @@ to opt out of GitHub publishing for a specific API run.
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
-| `KASEKI_PUBLISH_MODE` | auto | `auto`, `none`, `branch`, `pr`, or `draft_pr`; controller API requests default omitted `publishMode` to `pr`, while explicit API `publishMode: "auto"` passes graceful auto publishing to workers; direct worker/CLI execution defaults to `auto` if unchanged |
+| `KASEKI_PUBLISH_MODE` | auto | `auto`, `none`, `branch`, `pr`, or `draft_pr`; controller API requests with omitted `publishMode` default to `pr`, while explicit API `publishMode: "auto"` passes graceful auto publishing to workers; direct worker/CLI execution defaults to `auto` if unchanged |
 | `KASEKI_STARTUP_CHECK_MODE` | boot | Dry-run startup check depth: `boot` or `baseline-validation` |
 
 ### Validation and Quality Gates
