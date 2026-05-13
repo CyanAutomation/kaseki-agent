@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.26.0...v1.26.1) (2026-05-13)
+
+### Bug Fixes
+
+* enhance validation command diagnostics and improve summary file handling ([c0dda19](https://github.com/CyanAutomation/kaseki-agent/commit/c0dda19efd150a284037f01408187c1a2c8a49c5))
+* update shellcheck disables and correct string quotes in token helper function ([5e52003](https://github.com/CyanAutomation/kaseki-agent/commit/5e52003c55832434f86b60600351bb42d628c280))
+
 ## [1.26.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.25.4...v1.26.0) (2026-05-13)
 
 ### Features
