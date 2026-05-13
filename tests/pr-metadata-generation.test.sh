@@ -59,7 +59,7 @@ VALIDATION_EXIT=0
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
 GIT_REF='main'
-KASEKI_PUBLISH_MODE='auto'
+KASEKI_PUBLISH_MODE='pr'
 feature_branch='kaseki/kaseki-test-instance'
 
 pr_title="$(derive_pr_title)"
@@ -175,7 +175,7 @@ if (!payload.title.startsWith('fix: OAuth flow')) process.exit(1);
 if (!payload.body.includes('## Original task prompt')) process.exit(2);
 if (payload.draft !== false) process.exit(3);
 NODE
-pass "Normal GitHub PR API payload marks the PR as ready for review"
+pass "Explicit normal PR mode GitHub PR API payload marks the PR as ready for review"
 
 KASEKI_PUBLISH_MODE='draft_pr'
 draft_pr_body="$(build_pr_body)"
