@@ -2129,7 +2129,7 @@ truncate_pr_metadata_text() {
 }
 
 derive_pr_title() {
-  local candidate stripped fallback prefix title suffix safe_instance max_title_length=72
+  local candidate summary_candidate stripped fallback prefix title suffix safe_instance max_title_length=72
   local available_summary_length changed_files prompt_for_prefix
 
   safe_instance="$(printf '%s' "${INSTANCE_NAME:-kaseki}" | sanitize_pr_metadata_text)"
@@ -2137,12 +2137,31 @@ derive_pr_title() {
     safe_instance="kaseki"
   fi
   suffix=" ($safe_instance)"
+  summary_candidate=""
 
   candidate="$(printf '%s' "${TASK_PROMPT:-}" | sanitize_pr_metadata_text)"
   prompt_for_prefix="$candidate"
-  if [ -z "$candidate" ] && [ -s /results/result-summary.md ]; then
+  if [ -s /results/result-summary.md ]; then
+    summary_candidate="$(
+      awk '
+        /^##[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
+        in_summary && /^##[[:space:]]+/ { exit }
+        in_summary {
+          line=$0
+          sub(/^[[:space:]]*[-*][[:space:]]+/, "", line)
+          sub(/^[[:space:]]*[0-9]+[.)][[:space:]]+/, "", line)
+          if (line !~ /^[[:space:]]*$/) { print line; exit }
+        }
+      ' /results/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
+    )"
+  fi
+  if [ -n "$summary_candidate" ]; then
+    candidate="$summary_candidate"
+  elif [ -z "$candidate" ] && [ -s /results/result-summary.md ]; then
     candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' /results/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
   fi
+
+  candidate="$(printf '%s' "$candidate" | sed -E 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//' | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/(^|[[:space:]])[0-9]+[.)][[:space:]]+/\1/g; s/(^|[[:space:]])[-*][[:space:]]+/\1/g; s/userfacing/user-facing/Ig; s/customerfacing/customer-facing/Ig; s/front[ -]?end/frontend/Ig; s/back[ -]?end/backend/Ig; s/full[ -]?stack/full-stack/Ig; s/^[[:space:]]+//; s/[[:space:]]+$//')"
 
   stripped="$(printf '%s' "$candidate" | sed -E 's/^(task|request|please|implement|update|fix|add)[[:space:]:-]+//I')"
   if [ -n "$stripped" ] && [ "$stripped" != "$candidate" ]; then
