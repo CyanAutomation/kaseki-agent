@@ -2077,6 +2077,13 @@ is_pr_draft_mode() {
   [ "${KASEKI_PUBLISH_MODE:-auto}" = "draft_pr" ]
 }
 
+is_pr_creation_mode() {
+  case "${KASEKI_PUBLISH_MODE:-auto}" in
+    auto|pr|draft_pr) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 
 # Sanitize user/model-generated text before it is copied into GitHub PR metadata.
 # The PR payload should be useful for reviewers without echoing raw environment
@@ -2422,8 +2429,16 @@ run_github_operations() {
     unset token
     return 0
   fi
+  if ! is_pr_creation_mode; then
+    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a /results/git-push.log
+    GITHUB_PR_EXIT=0
+    GITHUB_OPERATION_PHASE="completed"
+    unset token
+    return 0
+  fi
   
-  # Create pull request
+  # Create pull request. Both pr and draft_pr push a branch and create a PR;
+  # only draft_pr marks the GitHub Pulls API request as draft.
   GITHUB_OPERATION_PHASE="pr_creation"
   printf 'Creating pull request...\n' | tee -a /results/git-push.log
   emit_progress "github operations" "pr_creation_starting"
