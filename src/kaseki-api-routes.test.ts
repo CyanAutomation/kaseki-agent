@@ -1843,7 +1843,43 @@ describe('kaseki-api-routes publish mode validation', () => {
     }
   });
 
-  test('rejects omitted publish mode as draft PR when GitHub App credentials are not configured', async () => {
+  test('resolves omitted publish mode to normal PR when GitHub App credentials are configured', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-default-pr-publish',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-default-pr-publish'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+        }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        publishMode: 'pr',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rejects omitted publish mode as normal PR when GitHub App credentials are not configured', async () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     // Ensure mock returns null for all GitHub App secrets
     (readHostSecret as jest.Mock).mockReset();
@@ -1879,7 +1915,58 @@ describe('kaseki-api-routes publish mode validation', () => {
 
       expect(response.status).toBe(400);
       const body = (await response.json()) as any;
-      expect(body.detail).toContain('publishMode=draft_pr requires readable GitHub App credentials');
+      expect(body.detail).toContain('publishMode=pr requires readable GitHub App credentials');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+
+  test('rejects normal PR publishing when GitHub App credentials are not configured', async () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    // Ensure mock returns null for all GitHub App secrets
+    (readHostSecret as jest.Mock).mockReset();
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
+    const previousEnv = {
+      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
+      GITHUB_APP_ID_FILE: process.env.GITHUB_APP_ID_FILE,
+      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
+      GITHUB_APP_CLIENT_ID_FILE: process.env.GITHUB_APP_CLIENT_ID_FILE,
+      GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
+      GITHUB_APP_PRIVATE_KEY_FILE: process.env.GITHUB_APP_PRIVATE_KEY_FILE,
+    };
+    for (const key of Object.keys(previousEnv)) {
+      delete process.env[key];
+    }
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          publishMode: 'pr',
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('publishMode=pr requires readable GitHub App credentials');
       expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);

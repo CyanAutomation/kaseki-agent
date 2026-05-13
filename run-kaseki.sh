@@ -943,9 +943,9 @@ fi
 # Handle GitHub App credentials (optional) - enabled by default if available
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 case "$KASEKI_PUBLISH_MODE" in
-  auto|none|branch|draft_pr) ;;
+  auto|none|branch|pr|draft_pr) ;;
   *)
-    fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, or draft_pr)"
+    fail_host 2 "invalid publish mode" "Invalid KASEKI_PUBLISH_MODE: $KASEKI_PUBLISH_MODE (expected auto, none, branch, pr, or draft_pr)"
     ;;
 esac
 
@@ -984,19 +984,19 @@ if resolve_github_credentials; then
     # Credentials not complete or publish mode is none
     if [ "$KASEKI_PUBLISH_MODE" = "auto" ] || [ "$KASEKI_PUBLISH_MODE" = "none" ]; then
       printf 'GitHub App credentials: not available, disabling GitHub operations (graceful degrade)\n'
-      GITHUB_APP_ENABLED="0"
     fi
+    GITHUB_APP_ENABLED="0"
   fi
 else
   # No credentials found or only partial
   if [ "$KASEKI_PUBLISH_MODE" = "auto" ] || [ "$KASEKI_PUBLISH_MODE" = "none" ]; then
     printf 'GitHub App credentials: not found, disabling GitHub operations (graceful degrade)\n'
-    GITHUB_APP_ENABLED="0"
   fi
+  GITHUB_APP_ENABLED="0"
 fi
 unset GITHUB_APP_PRIVATE_KEY github_app_id_value github_app_client_id_value
 
-if { [ "$KASEKI_PUBLISH_MODE" = "branch" ] || [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; } && [ "$GITHUB_APP_ENABLED" != "1" ]; then
+if { [ "$KASEKI_PUBLISH_MODE" = "branch" ] || [ "$KASEKI_PUBLISH_MODE" = "pr" ] || [ "$KASEKI_PUBLISH_MODE" = "draft_pr" ]; } && [ "$GITHUB_APP_ENABLED" != "1" ]; then
   fail_host 7 "github app credentials" "KASEKI_PUBLISH_MODE=$KASEKI_PUBLISH_MODE requires readable GitHub App credentials."
 fi
 
