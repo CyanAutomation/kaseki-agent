@@ -2261,13 +2261,7 @@ build_pr_body() {
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   cat <<EOF
-## Original task prompt
-$task_summary
-
-## Files changed
-$(format_pr_changed_files)
-
-## Summary of improvements
+## Summary
 $(build_pr_improvements_summary)
 
 ## Validation
@@ -2282,9 +2276,15 @@ $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
 ### Post-agent validation commands
 $(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
 
-## Quality checks
-- Quality gate: $quality_status
-- Secret scan: $secret_scan_status
+## Files changed
+$(format_pr_changed_files)
+
+## Original task prompt
+<details><summary>Original task prompt</summary>
+
+$task_summary
+
+</details>
 
 ## Run metadata
 - Model: $model_summary
