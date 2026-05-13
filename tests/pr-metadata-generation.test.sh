@@ -182,6 +182,64 @@ else
   pass "Short PR file list renders inline without collapsed details"
 fi
 
+if awk '
+  /<details><summary>Pre-agent validation commands<\/summary>/ { in_details=1; saw_details=1; next }
+  in_details && /### Pre-agent validation commands/ { saw_heading=1; next }
+  in_details && /npm run check — exit 0, 3s/ { saw_command=1; next }
+  in_details && /<\/details>/ { exit(saw_details && saw_heading && saw_command ? 0 : 1) }
+  END { if (!saw_details) exit 1 }
+' <<<"$pr_body"; then
+  pass "Passing pre-agent validation command list is collapsed in details"
+else
+  fail "Passing pre-agent validation command list was not collapsed in details"
+fi
+
+if awk '
+  /<details><summary>Post-agent validation commands<\/summary>/ { in_details=1; saw_details=1; next }
+  in_details && /### Post-agent validation commands/ { saw_heading=1; next }
+  in_details && /npm run test -- --\[redacted\] — exit 0, 12s/ { saw_command=1; next }
+  in_details && /<\/details>/ { exit(saw_details && saw_heading && saw_command ? 0 : 1) }
+  END { if (!saw_details) exit 1 }
+' <<<"$pr_body"; then
+  pass "Passing post-agent validation command list is collapsed in details"
+else
+  fail "Passing post-agent validation command list was not collapsed in details"
+fi
+
+cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
+npm run lint	0	2	tee_exit=0 filter_exit=0
+npm run test -- --token=abc123	1	8	tee_exit=0 filter_exit=0
+npm run build	0	4	tee_exit=0 filter_exit=0
+TSV
+VALIDATION_EXIT=1
+failed_validation_pr_body="$(build_pr_body)"
+VALIDATION_EXIT=0
+cat > "$VALIDATION_TIMINGS_FILE" <<'TSV'
+npm run test -- --token=abc123	0	12	tee_exit=0 filter_exit=0
+npm run build	0	5	tee_exit=0 filter_exit=0
+TSV
+
+failed_command_line="$(grep -nF -- '- npm run test -- --[redacted] — exit 1, 8s' <<<"$failed_validation_pr_body" | head -n 1 | cut -d: -f1)"
+full_post_details_line="$(grep -nF '<details><summary>Full post-agent validation command list</summary>' <<<"$failed_validation_pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$failed_command_line" ] && [ -n "$full_post_details_line" ] && [ "$failed_command_line" -lt "$full_post_details_line" ]; then
+  pass "Failed validation command row is visible above collapsed full command list"
+else
+  fail "Failed validation command row was not visible above collapsed full command list"
+fi
+
+if awk '
+  /<details><summary>Full post-agent validation command list<\/summary>/ { in_details=1; saw_details=1; next }
+  in_details && /npm run lint — exit 0, 2s/ { saw_lint=1; next }
+  in_details && /npm run test -- --\[redacted\] — exit 1, 8s/ { saw_test=1; next }
+  in_details && /npm run build — exit 0, 4s/ { saw_build=1; next }
+  in_details && /<\/details>/ { exit(saw_details && saw_lint && saw_test && saw_build ? 0 : 1) }
+  END { if (!saw_details) exit 1 }
+' <<<"$failed_validation_pr_body"; then
+  pass "Failed validation body includes full command list inside details"
+else
+  fail "Failed validation body did not include full command list inside details"
+fi
+
 : > /results/changed-files.txt
 for file_number in $(seq 1 101); do
   printf 'src/file-%03d.sh\n' "$file_number" >> /results/changed-files.txt
@@ -208,7 +266,10 @@ else
 fi
 
 omitted_line="$(grep -nF -- '- ...additional changed files omitted' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
-files_details_close_line="$(grep -nF '</details>' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
+files_details_close_line="$(awk '
+  /<details><summary>View files<\/summary>/ { in_files=1; next }
+  in_files && /<\/details>/ { print NR; exit }
+' <<<"$long_pr_body")"
 original_prompt_line_for_long="$(grep -nF '## Original task prompt' <<<"$long_pr_body" | head -n 1 | cut -d: -f1)"
 if [ -n "$omitted_line" ] && [ -n "$files_details_close_line" ] && [ -n "$original_prompt_line_for_long" ] \
   && [ "$omitted_line" -lt "$files_details_close_line" ] \
