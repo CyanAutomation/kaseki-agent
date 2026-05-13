@@ -1259,17 +1259,18 @@ When credentials are configured and publishing is enabled:
 1. After validation passes and diff is non-empty, Kaseki generates a GitHub App installation token
 2. Creates a feature branch `kaseki/<instance-name>`
 3. Commits and pushes changes to remote
-4. Creates a draft PR against the target branch when `KASEKI_PUBLISH_MODE=draft_pr` or API `publishMode` is `draft_pr`; `auto` can also create a draft PR when worker credentials are available, with:
+4. Creates a PR against the target branch when `KASEKI_PUBLISH_MODE=pr` or API `publishMode` is `pr`; creates a draft PR when `KASEKI_PUBLISH_MODE=draft_pr` or API `publishMode` is `draft_pr`. When `draft_pr` mode is used, the PR is created as a draft for safety; `pr` mode creates a normal PR that can be merged directly. `auto` mode can create either a normal PR or draft PR based on worker credentials availability, with:
    - Title: `Kaseki: <instance-name>`
    - Body: Model, duration, validation result, quality checks
-   - Draft: `true` for safety; review before merging
+   - Draft: `true` for draft PRs, `false` for normal PRs
 
-Publishing modes are `auto`, `none`, `branch`, and `draft_pr`. Controller
-requests default omitted `publishMode` to `draft_pr`, so the normal controller
-path pushes a branch and opens a draft pull request after validation. Explicit
+Publishing modes are `auto`, `none`, `branch`, `pr`, and `draft_pr`. Controller
+requests default omitted `publishMode` to `pr`, so the normal controller path pushes
+a branch and creates a normal pull request after validation. Use `draft_pr` for
+explicit draft PR creation when review before merging is required. Explicit
 API `publishMode: "auto"` is accepted for graceful worker auto publishing: the
 worker publishes when credentials are available and skips GitHub operations when
-they are not. Requests that resolve to `branch` or `draft_pr` fail before
+they are not. Requests that resolve to `branch`, `pr`, or `draft_pr` fail before
 queueing unless GitHub App credentials are readable, so orchestrators can surface
 a clear setup error instead of waiting for a run that cannot publish. Set
 `publishMode` to `none` to opt out of GitHub publishing for a specific API run.
@@ -1303,7 +1304,7 @@ a clear setup error instead of waiting for a run that cannot publish. Set
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
-| `KASEKI_PUBLISH_MODE` | auto | `auto`, `none`, `branch`, or `draft_pr`; controller API requests default omitted `publishMode` to `draft_pr`, while explicit API `publishMode: "auto"` passes graceful auto publishing to workers |
+| `KASEKI_PUBLISH_MODE` | auto | `auto`, `none`, `branch`, `pr`, or `draft_pr`; controller API requests default omitted `publishMode` to `pr` for normal PR creation, while explicit API `publishMode: "auto"` passes graceful auto publishing to workers; direct worker/CLI default remains `auto` if unchanged |
 | `KASEKI_STARTUP_CHECK_MODE` | boot | Dry-run startup check depth: `boot` or `baseline-validation` |
 
 ### Validation and Quality Gates
