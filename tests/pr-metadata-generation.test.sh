@@ -31,11 +31,13 @@ eval "$(extract_function sanitize_pr_metadata_text)"
 eval "$(extract_function truncate_pr_metadata_text)"
 eval "$(extract_function derive_pr_title)"
 eval "$(extract_function format_pr_command_results)"
+eval "$(extract_function format_pr_changed_files)"
+eval "$(extract_function build_pr_improvements_summary)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
 
 mkdir -p /results "$TMP_DIR/results"
-rm -f /results/result-summary.md /results/changed-files.txt
+rm -f /results/result-summary.md /results/changed-files.txt /results/git.diff
 PRE_VALIDATION_TIMINGS_FILE="$TMP_DIR/results/pre-validation-timings.tsv"
 VALIDATION_TIMINGS_FILE="$TMP_DIR/results/validation-timings.tsv"
 cat > "$PRE_VALIDATION_TIMINGS_FILE" <<'TSV'
@@ -51,6 +53,7 @@ TASK_PROMPT='Fix OAuth flow for quoted "input" using secret=abc123 and ghp_12345
 KASEKI_MODEL='openrouter/test-model'
 ACTUAL_MODEL='openrouter/actual-model'
 START_EPOCH=$(($(date +%s) - 125))
+PRE_VALIDATION_EXIT=0
 VALIDATION_EXIT=0
 QUALITY_EXIT=0
 SECRET_SCAN_EXIT=0
@@ -58,6 +61,20 @@ GIT_REF='main'
 feature_branch='kaseki/kaseki-test-instance'
 
 pr_title="$(derive_pr_title)"
+cat > /results/changed-files.txt <<'FILES'
+kaseki-agent.sh
+tests/pr-metadata-generation.test.sh
+docs/usage-token=abc123.md
+FILES
+cat > /results/git.diff <<'DIFF'
+diff --git a/kaseki-agent.sh b/kaseki-agent.sh
+--- a/kaseki-agent.sh
++++ b/kaseki-agent.sh
+@@ -1,2 +1,3 @@
+-old
++new
++another
+DIFF
 pr_body="$(build_pr_body)"
 
 case "$pr_title" in
@@ -95,8 +112,21 @@ else
 fi
 
 for expected in \
-  '## Request summary' \
+  '## Original task prompt' \
+  'Fix OAuth flow for quoted "input" using [redacted] and [redacted]; add regression tests.' \
+  '## Files changed' \
+  'kaseki-agent.sh' \
+  'tests/pr-metadata-generation.test.sh' \
+  'docs/usage-[redacted]' \
+  '## Summary of improvements' \
+  'Changed files: 3 total.' \
+  'Source files updated: 1.' \
+  'Tests updated: 1.' \
+  'Documentation updated: 1.' \
+  'Diff stats: +2/-1 lines' \
   '## Validation' \
+  'Pre-agent validation: passed' \
+  'Post-agent validation: passed' \
   '### Pre-agent validation commands' \
   '### Post-agent validation commands' \
   'npm run check — exit 0, 3s' \
@@ -128,7 +158,7 @@ payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$featu
 PAYLOAD="$payload" node <<'NODE'
 const payload = JSON.parse(process.env.PAYLOAD);
 if (!payload.title.startsWith('fix: OAuth flow')) process.exit(1);
-if (!payload.body.includes('## Request summary')) process.exit(2);
+if (!payload.body.includes('## Original task prompt')) process.exit(2);
 if (!payload.draft) process.exit(3);
 NODE
 pass "GitHub PR API payload JSON preserves generated title/body"

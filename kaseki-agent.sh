@@ -2116,9 +2116,74 @@ format_pr_command_results() {
   fi
 }
 
+format_pr_changed_files() {
+  local changed_files_file="/results/changed-files.txt"
+  if [ ! -s "$changed_files_file" ]; then
+    printf -- '- none\n'
+    return 0
+  fi
+
+  local path safe_path rows=0
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -n "$path" ] || continue
+    safe_path="$(printf '%s' "$path" | sanitize_pr_metadata_text)"
+    safe_path="$(truncate_pr_metadata_text 300 "$safe_path")"
+    [ -n "$safe_path" ] || continue
+    printf -- '- %s\n' "$safe_path"
+    rows=$((rows + 1))
+    [ "$rows" -lt 100 ] || break
+  done < "$changed_files_file"
+
+  if [ "$rows" -eq 0 ]; then
+    printf -- '- none\n'
+  elif [ "$rows" -eq 100 ]; then
+    printf -- '- ...additional changed files omitted\n'
+  fi
+}
+
+build_pr_improvements_summary() {
+  local changed_files_file="/results/changed-files.txt"
+  local diff_file="/results/git.diff"
+  local total=0 source_count=0 test_count=0 docs_count=0 config_count=0 other_count=0
+  local path lower additions deletions
+
+  if [ -s "$changed_files_file" ]; then
+    while IFS= read -r path || [ -n "$path" ]; do
+      [ -n "$path" ] || continue
+      lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+      total=$((total + 1))
+      case "$lower" in
+        tests/*|test/*|*.test.*|*.spec.*|*test*|*spec*) test_count=$((test_count + 1)) ;;
+        docs/*|doc/*|*.md|*.markdown|*.rst|*.txt) docs_count=$((docs_count + 1)) ;;
+        package.json|package-lock.json|pnpm-lock.yaml|yarn.lock|*.yml|*.yaml|*.json|*.toml|*.ini|*.cfg|*.conf|dockerfile|*.dockerfile|.github/*) config_count=$((config_count + 1)) ;;
+        *.sh|*.bash|*.js|*.jsx|*.ts|*.tsx|*.py|*.rb|*.go|*.rs|*.java|*.kt|*.kts|*.c|*.cc|*.cpp|*.h|*.hpp|*.cs|*.php|*.swift|*.m|*.mm|*.scala|*.lua|*.pl|*.r) source_count=$((source_count + 1)) ;;
+        *) other_count=$((other_count + 1)) ;;
+      esac
+    done < "$changed_files_file"
+  fi
+
+  if [ "$total" -eq 0 ]; then
+    printf -- '- No file changes detected in local artifacts.\n'
+  else
+    printf -- '- Changed files: %s total.\n' "$total"
+    [ "$source_count" -eq 0 ] || printf -- '- Source files updated: %s.\n' "$source_count"
+    [ "$test_count" -eq 0 ] || printf -- '- Tests updated: %s.\n' "$test_count"
+    [ "$docs_count" -eq 0 ] || printf -- '- Documentation updated: %s.\n' "$docs_count"
+    [ "$config_count" -eq 0 ] || printf -- '- Configuration or metadata updated: %s.\n' "$config_count"
+    [ "$other_count" -eq 0 ] || printf -- '- Other files updated: %s.\n' "$other_count"
+  fi
+
+  if [ -s "$diff_file" ]; then
+    additions="$(awk '/^\+/ && !/^\+\+\+/ { count++ } END { print count + 0 }' "$diff_file" 2>/dev/null || printf '0')"
+    deletions="$(awk '/^-/ && !/^---/ { count++ } END { print count + 0 }' "$diff_file" 2>/dev/null || printf '0')"
+    printf -- '- Diff stats: +%s/-%s lines from sanitized local diff metadata.\n' "$additions" "$deletions"
+  fi
+}
+
 build_pr_body() {
-  local duration_seconds validation_status quality_status secret_scan_status task_summary model_summary generated_at
+  local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at
   duration_seconds="$(($(date +%s) - START_EPOCH))"
+  pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
   quality_status="$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$QUALITY_EXIT")"
   secret_scan_status="$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$SECRET_SCAN_EXIT")"
@@ -2128,11 +2193,20 @@ build_pr_body() {
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   cat <<EOF
-## Request summary
+## Original task prompt
 $task_summary
 
+## Files changed
+$(format_pr_changed_files)
+
+## Summary of improvements
+$(build_pr_improvements_summary)
+
 ## Validation
-**Overall:** $validation_status
+- Pre-agent validation: $pre_validation_status
+- Post-agent validation: $validation_status
+- Quality gate: $quality_status
+- Secret scan: $secret_scan_status
 
 ### Pre-agent validation commands
 $(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
