@@ -2042,22 +2042,48 @@ truncate_pr_metadata_text() {
 }
 
 derive_pr_title() {
-  local fallback candidate title max_title_length=72
-  fallback="Kaseki: $(printf '%s' "$INSTANCE_NAME" | sanitize_pr_metadata_text)"
+  local candidate stripped fallback prefix title suffix safe_instance max_title_length=72
+  local available_summary_length changed_files prompt_for_prefix
+
+  safe_instance="$(printf '%s' "${INSTANCE_NAME:-kaseki}" | sanitize_pr_metadata_text)"
+  if [ -z "$safe_instance" ]; then
+    safe_instance="kaseki"
+  fi
+  suffix=" ($safe_instance)"
 
   candidate="$(printf '%s' "${TASK_PROMPT:-}" | sanitize_pr_metadata_text)"
+  prompt_for_prefix="$candidate"
   if [ -z "$candidate" ] && [ -s /results/result-summary.md ]; then
     candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' /results/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
   fi
 
-  candidate="$(printf '%s' "$candidate" | sed -E 's/^(task|request|please|implement|update|fix|add)[[:space:]:-]+//I')"
+  stripped="$(printf '%s' "$candidate" | sed -E 's/^(task|request|please|implement|update|fix|add)[[:space:]:-]+//I')"
+  if [ -n "$stripped" ] && [ "$stripped" != "$candidate" ]; then
+    candidate="$stripped"
+  fi
+
+  changed_files="$(cat /results/changed-files.txt 2>/dev/null | sanitize_pr_metadata_text || true)"
+  prefix="chore:"
+  case "$(printf '%s %s' "$prompt_for_prefix" "$changed_files" | tr '[:upper:]' '[:lower:]')" in
+    *doc*|*readme*|*.md*|*markdown*) prefix="docs:" ;;
+    *fix*|*bug*|*error*|*fail*|*regression*|*broken*) prefix="fix:" ;;
+    *test*|*spec*) prefix="test:" ;;
+    *chore*|*config*|*ci*|*dependenc*|*build*) prefix="chore:" ;;
+  esac
+
+  fallback="chore: Kaseki agent changes$suffix"
   if [ -n "$candidate" ]; then
-    title="Kaseki: $candidate"
+    available_summary_length=$((max_title_length - ${#prefix} - 1 - ${#suffix}))
+    if [ "$available_summary_length" -gt 0 ]; then
+      candidate="$(truncate_pr_metadata_text "$available_summary_length" "$candidate")"
+      title="$prefix $candidate$suffix"
+    else
+      title="$prefix$suffix"
+    fi
   else
     title="$fallback"
   fi
 
-  title="$(truncate_pr_metadata_text "$max_title_length" "$title")"
   if [ -z "$(printf '%s' "$title" | sanitize_pr_metadata_text)" ]; then
     title="$fallback"
   fi
