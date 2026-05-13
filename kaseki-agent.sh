@@ -2095,6 +2095,25 @@ sanitize_pr_metadata_text() {
     | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
 
+sanitize_pr_body_text() {
+  tr '\r' '\n' \
+    | tr -cd '\11\12\40-\176' \
+    | sed -E 's/(gh[pousr]_[A-Za-z0-9_]+)/[redacted]/g; s/(sk-[A-Za-z0-9_-]+)/[redacted]/g; s/([A-Za-z0-9._%+-]+:x-oauth-basic)/[redacted]/Ig; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | awk '
+        {
+          sub(/[[:blank:]]+$/, "")
+          if ($0 ~ /^[[:blank:]]*$/) {
+            blank++
+            if (seen && blank == 1) print ""
+          } else {
+            seen=1
+            blank=0
+            print
+          }
+        }
+      '
+}
+
 truncate_pr_metadata_text() {
   local max_length="$1"
   local text="$2"
@@ -2255,7 +2274,7 @@ build_pr_body() {
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
   quality_status="$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$QUALITY_EXIT")"
   secret_scan_status="$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$SECRET_SCAN_EXIT")"
-  task_summary="$(printf '%s' "${TASK_PROMPT:-Not provided}" | sanitize_pr_metadata_text)"
+  task_summary="$(printf '%s' "${TASK_PROMPT:-Not provided}" | sanitize_pr_body_text)"
   task_summary="$(truncate_pr_metadata_text 1000 "$task_summary")"
   model_summary="requested $(printf '%s' "$KASEKI_MODEL" | sanitize_pr_metadata_text); actual $(printf '%s' "${ACTUAL_MODEL:-unknown}" | sanitize_pr_metadata_text)"
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
