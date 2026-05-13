@@ -94,6 +94,7 @@ test_restoration_report_missing_file() {
   
   rm -f results/restoration.jsonl
   generate_restoration_report  # Should return 0 (skip silently)
+  # shellcheck disable=SC2181 # Explicit exit code check for clarity in test
   [ $? -eq 0 ]
 }
 
@@ -104,6 +105,7 @@ test_restoration_report_empty_file() {
   
   : > results/restoration.jsonl
   generate_restoration_report  # Should return 0 (no changes to report)
+  # shellcheck disable=SC2181 # Explicit exit code check for clarity in test
   [ $? -eq 0 ]
 }
 
@@ -178,6 +180,7 @@ test_restoration_report_low_coverage_warning() {
 test_printf_valid_numeric() {
   local test_var=42
   printf 'test: %d\n' "$test_var" > /dev/null 2>&1
+  # shellcheck disable=SC2181 # Explicit exit code check for clarity in test
   [ $? -eq 0 ]
 }
 

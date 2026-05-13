@@ -53,7 +53,9 @@ echo ""
 echo -e "${YELLOW}[INFO]${NC} Verifying local dist/lib/ structure (what will be packaged):"
 if [ -d "$ROOT_DIR/dist/lib" ]; then
   echo -e "${GREEN}[OK]${NC} Local dist/lib/ directory exists"
-  ls -la "$ROOT_DIR/dist/lib" | grep -E "\.js$" | awk '{print "     - " $9}' || true
+  for file in "$ROOT_DIR"/dist/lib/*.js; do
+    [ -f "$file" ] && echo "     - $(basename "$file")"
+  done || true
 else
   echo -e "${RED}[FAILED]${NC} Local dist/lib/ directory does not exist"
   exit 1

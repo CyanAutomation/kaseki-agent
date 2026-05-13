@@ -1225,6 +1225,7 @@ run_validation_commands() {
   local attempted_var="${12:-VALIDATION_COMMANDS_ATTEMPTED}"
   local -n validation_exit_ref="$exit_var"
   local -n validation_detail_ref="$detail_var"
+  # shellcheck disable=SC2034 # These are reference variables assigned indirectly via function parameters
   local -n validation_reason_ref="$reason_var"
   local -n validation_stopped_ref="$stopped_var"
   local -n validation_attempted_ref="$attempted_var"
@@ -2168,7 +2169,7 @@ derive_pr_title() {
     candidate="$stripped"
   fi
 
-  changed_files="$(cat /results/changed-files.txt 2>/dev/null | sanitize_pr_metadata_text || true)"
+  changed_files="$(sanitize_pr_metadata_text < /results/changed-files.txt || true)"
   prefix="chore:"
   case "$(printf '%s %s' "$prompt_for_prefix" "$changed_files" | tr '[:upper:]' '[:lower:]')" in
     *doc*|*readme*|*.md*|*markdown*) prefix="docs:" ;;

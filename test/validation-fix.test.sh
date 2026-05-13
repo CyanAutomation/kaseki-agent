@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck disable=SC2034 # RUNNER is kept for potential test extensions
 RUNNER="$REPO_ROOT/run-kaseki.sh"
 
 pass() { printf '✓ %s\n' "$1"; }
@@ -12,6 +13,7 @@ fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 # Test 1: Verify non-login shell syntax in kaseki-agent.sh
 test_non_login_shell_syntax() {
   local line
+  # shellcheck disable=SC2016 # The $ escape is intentional for grep pattern matching
   line=$(grep -n 'bash -c "\$trimmed"' "$REPO_ROOT/kaseki-agent.sh" | head -1 | cut -d: -f1)
   [ -n "$line" ] || fail "Non-login shell (bash -c) not found in kaseki-agent.sh"
   pass "Non-login shell syntax found at line $line"
@@ -54,7 +56,7 @@ test_script_syntax() {
 test_non_login_npm_command() {
   local tmpdir exit_code
   tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" EXIT
+  trap 'rm -rf "$tmpdir"' EXIT
   
   cd "$tmpdir"
   npm init -y >/dev/null 2>&1

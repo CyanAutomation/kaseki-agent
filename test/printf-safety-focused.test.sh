@@ -64,7 +64,7 @@ fi
 echo ""
 echo "Test 6: Verify grep count fallback never returns '-'"
 test_file=$(mktemp)
-trap "rm -f '$test_file'" EXIT
+trap 'rm -f "$test_file"' EXIT
 
 # Empty file
 count=$(grep -c 'pattern' "$test_file" 2>/dev/null || echo 0)

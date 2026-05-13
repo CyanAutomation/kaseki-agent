@@ -96,6 +96,7 @@ if ! grep -Fq 'GitHub askpass helper is not executable from %s' "$ASKPASS_SOURCE
   exit 1
 fi
 
+# shellcheck disable=SC2034 # These variables are used by sourced functions
 REPO_URL="https://github.com/acme/widgets"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=1
 

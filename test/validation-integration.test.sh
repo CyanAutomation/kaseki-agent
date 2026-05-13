@@ -41,7 +41,7 @@ EOF
 test_non_login_validation() {
   local tmpdir exit_code
   tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" EXIT
+  trap 'rm -rf "$tmpdir"' EXIT
   
   setup_test_repo "$tmpdir"
   cd "$tmpdir"
@@ -59,7 +59,7 @@ test_non_login_validation() {
 test_directory_checkpoint() {
   local tmpdir validation_log exit_code
   tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" EXIT
+  trap 'rm -rf "$tmpdir"' EXIT
   validation_log="$tmpdir/validation.log"
   
   # Simulate the checkpoint logic from kaseki-agent.sh
@@ -81,7 +81,7 @@ test_directory_checkpoint() {
 test_diagnostics_capture() {
   local tmpdir quality_log
   tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" EXIT
+  trap 'rm -rf "$tmpdir"' EXIT
   quality_log="$tmpdir/quality.log"
   
   # Simulate a getcwd error and verify diagnostics capture

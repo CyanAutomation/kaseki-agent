@@ -15,7 +15,7 @@ eval "$(awk '
 emit_event() { :; }
 emit_error_event() { :; }
 
-# shellcheck disable=SC2034
+# shellcheck disable=SC2034 # All variables below are used by sourced functions or in subshells
 REPO_URL="https://example.com/acme/widgets.git"
 GIT_REF="main"
 TASK_PROMPT="Fix the widget parser."
@@ -87,6 +87,7 @@ TIMINGS
 STATUS=0
 PI_EXIT=0
 SECRET_SCAN_EXIT=0
+# shellcheck disable=SC2209 # 'patch' is a string value, not a command
 KASEKI_TASK_MODE=patch
 START_ISO="2026-05-06T12:00:00Z"
 VALIDATION_EXIT=0
