@@ -1991,6 +1991,63 @@ validate_github_api_response() {
   return 1
 }
 
+
+apply_github_pr_labels() {
+  local owner repo issue_number token log_file label_payload label_status_file curl_exit response_with_status label_http_status label_response
+  owner="$1"
+  repo="$2"
+  issue_number="$3"
+  token="$4"
+  log_file="${5:-/results/git-push.log}"
+
+  if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ] || [ -z "$token" ]; then
+    printf 'Warning: skipping PR label application because owner, repo, issue number, or token is missing\n' | tee -a "$log_file" >&2
+    return 1
+  fi
+
+  if ! run_node_subprocess label_payload "const payload = { labels: ['kaseki-agent'] }; process.stdout.write(JSON.stringify(payload));" "" "$log_file"; then
+    printf 'Warning: failed to JSON encode PR label payload; leaving PR unlabeled\n' | tee -a "$log_file" >&2
+    return 1
+  fi
+
+  label_status_file="$(mktemp /tmp/kaseki-label-status.XXXXXX)" || {
+    printf 'Warning: failed to create temp file for PR label status; leaving PR unlabeled\n' | tee -a "$log_file" >&2
+    return 1
+  }
+
+  curl -s -w '%{http_code}' -X POST \
+    -H "Authorization: token $token" \
+    -H "Accept: application/vnd.github.v3+json" \
+    -H "Content-Type: application/json" \
+    "https://api.github.com/repos/$owner/$repo/issues/$issue_number/labels" \
+    -d "$label_payload" > "$label_status_file" 2>&1
+  curl_exit=$?
+
+  response_with_status="$(cat "$label_status_file" 2>/dev/null || true)"
+  label_http_status="${response_with_status: -3}"
+  label_response="${response_with_status%???}"
+  rm -f "$label_status_file"
+
+  if [ "$curl_exit" -ne 0 ]; then
+    printf 'Warning: failed to apply kaseki-agent label to PR #%s: curl exited with code %d\n' "$issue_number" "$curl_exit" | tee -a "$log_file" >&2
+    return 1
+  fi
+
+  case "$label_http_status" in
+    200|201)
+      printf 'Applied kaseki-agent label to PR #%s\n' "$issue_number" | tee -a "$log_file"
+      return 0
+      ;;
+    *)
+      printf 'Warning: failed to apply kaseki-agent label to PR #%s (HTTP %s); preserving created PR\n' "$issue_number" "$label_http_status" | tee -a "$log_file" >&2
+      if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
+        printf 'Debug: Label API response:\n%s\n' "$label_response" | tee -a "$log_file"
+      fi
+      return 1
+      ;;
+  esac
+}
+
 is_github_pr_error_retryable() {
   local http_status error_type
   http_status="$1"
@@ -2364,7 +2421,7 @@ run_github_operations() {
   GITHUB_OPERATION_PHASE="pr_creation"
   printf 'Creating pull request...\n' | tee -a /results/git-push.log
   emit_progress "github operations" "pr_creation_starting"
-  local pr_title pr_body pr_response pr_url pr_http_status
+  local pr_title pr_body pr_response pr_url pr_number pr_http_status
   pr_title="$(derive_pr_title)"
   pr_body="$(build_pr_body)"
   
@@ -2446,18 +2503,27 @@ run_github_operations() {
     
     # Validate the API response
     if validate_github_api_response "$pr_http_status" "$pr_response" /results/git-push.log; then
-      # API returned success (201); now extract the URL using helper
+      # API returned success (201); now extract the URL and issue number using helper
       if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" /results/git-push.log; then
         printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a /results/git-push.log >&2
         emit_error_event "github_pr_response_malformed" "Failed to parse PR API response to extract html_url" "exit"
         GITHUB_PR_EXIT=9
         pr_url=""
       fi
+      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" /results/git-push.log; then
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a /results/git-push.log >&2
+        pr_number=""
+      fi
       
       if [ -n "$pr_url" ]; then
         GITHUB_PR_URL="$pr_url"
         GITHUB_PR_EXIT=0
         printf 'Pull request created: %s\n' "$pr_url" | tee -a /results/git-push.log
+        if [ -n "$pr_number" ]; then
+          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /results/git-push.log || true
+        else
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a /results/git-push.log >&2
+        fi
         pr_created=1
         rm -f "$pr_response_file"
         break
