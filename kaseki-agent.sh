@@ -2232,7 +2232,8 @@ build_pr_improvements_summary() {
   local changed_files_file="/results/changed-files.txt"
   local diff_file="/results/git.diff"
   local total=0 source_count=0 test_count=0 docs_count=0 config_count=0 other_count=0
-  local path lower additions deletions
+  local path lower additions deletions summary_rows=0 summary_source=""
+  local artifact raw_line line safe_line summary_capture=0 content json_text
 
   if [ -s "$changed_files_file" ]; then
     while IFS= read -r path || [ -n "$path" ]; do
@@ -2249,6 +2250,103 @@ build_pr_improvements_summary() {
     done < "$changed_files_file"
   fi
 
+  if [ -s /results/result-summary.md ]; then
+    summary_source="/results/result-summary.md"
+  else
+    for artifact in /results/analysis.md /results/pi-summary.json; do
+      if [ -s "$artifact" ]; then
+        summary_source="$artifact"
+        break
+      fi
+    done
+  fi
+
+  if [ -n "$summary_source" ]; then
+    if [ "${summary_source##*.}" = "json" ]; then
+      json_text="$(node - "$summary_source" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+const file = process.argv[2];
+const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+const keys = new Set(['summary', 'changes', 'changed', 'improvements', 'notes', 'title', 'description']);
+const out = [];
+function visit(value, key = '') {
+  if (out.length >= 8 || value == null) return;
+  if (typeof value === 'string') {
+    if (!key || keys.has(key.toLowerCase()) || value.length <= 240) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) visit(item, key);
+    return;
+  }
+  if (typeof value === 'object') {
+    for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
+  }
+}
+visit(data);
+console.log(out.join('\n'));
+NODE
+)"
+      while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+        line="$(printf '%s' "$raw_line" | sanitize_pr_metadata_text)"
+        [ -n "$line" ] || continue
+        line="$(printf '%s' "$line" | sed -E 's/^[-*][[:space:]]+//; s/^[0-9]+[.)][[:space:]]+//')"
+        safe_line="$(truncate_pr_metadata_text 180 "$line")"
+        [ -n "$safe_line" ] || continue
+        printf -- '- %s\n' "$safe_line"
+        summary_rows=$((summary_rows + 1))
+        [ "$summary_rows" -lt 4 ] || break
+      done <<EOF_JSON_SUMMARY
+$json_text
+EOF_JSON_SUMMARY
+    else
+      while IFS= read -r raw_line || [ -n "$raw_line" ]; do
+        case "$raw_line" in
+          \#*)
+            if printf '%s' "$raw_line" | grep -Eiq '^#{1,3}[[:space:]]+summary[[:space:]]*$'; then
+              summary_capture=1
+              continue
+            fi
+            [ "$summary_capture" -eq 1 ] && break
+            continue
+            ;;
+        esac
+        if [ "$summary_capture" -eq 0 ] && [ "$summary_source" = "/results/result-summary.md" ]; then
+          continue
+        fi
+        line="$(printf '%s' "$raw_line" | sanitize_pr_metadata_text)"
+        [ -n "$line" ] || continue
+        case "$line" in
+          '```'*|'<'*'>'*) continue ;;
+        esac
+        content="$(printf '%s' "$line" | sed -E 's/^[-*][[:space:]]+//; s/^[0-9]+[.)][[:space:]]+//')"
+        [ -n "$content" ] || continue
+        safe_line="$(truncate_pr_metadata_text 180 "$content")"
+        [ -n "$safe_line" ] || continue
+        printf -- '- %s\n' "$safe_line"
+        summary_rows=$((summary_rows + 1))
+        [ "$summary_rows" -lt 4 ] || break
+      done < "$summary_source"
+    fi
+  fi
+
+  if [ "$summary_rows" -eq 0 ]; then
+    if [ "$total" -eq 0 ]; then
+      printf -- '- No file changes detected in local artifacts.\n'
+    else
+      local categories=""
+      [ "$source_count" -eq 0 ] || categories="${categories}source, "
+      [ "$test_count" -eq 0 ] || categories="${categories}tests, "
+      [ "$docs_count" -eq 0 ] || categories="${categories}documentation, "
+      [ "$config_count" -eq 0 ] || categories="${categories}configuration or metadata, "
+      [ "$other_count" -eq 0 ] || categories="${categories}other files, "
+      categories="${categories%, }"
+      [ -n "$categories" ] || categories="local files"
+      printf -- '- Updated %s across %s changed file(s).\n' "$categories" "$total"
+    fi
+  fi
+
+  printf '\n### Change metadata\n'
   if [ "$total" -eq 0 ]; then
     printf -- '- No file changes detected in local artifacts.\n'
   else
@@ -2266,7 +2364,6 @@ build_pr_improvements_summary() {
     printf -- '- Diff stats: +%s/-%s lines from sanitized local diff metadata.\n' "$additions" "$deletions"
   fi
 }
-
 build_pr_body() {
   local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at
   duration_seconds="$(($(date +%s) - START_EPOCH))"

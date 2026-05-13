@@ -88,6 +88,16 @@ diff --git a/kaseki-agent.sh b/kaseki-agent.sh
 +new
 +another
 DIFF
+cat > /results/result-summary.md <<'SUMMARY'
+# Kaseki result
+
+## Summary
+- Updated publish mode documentation to describe normal PR creation as the default.
+- Regenerated API metadata so publishMode includes pr and token=abc123.
+
+## Validation
+- Do not include this validation detail in the reviewer summary.
+SUMMARY
 pr_body="$(build_pr_body)"
 
 case "$pr_title" in
@@ -135,6 +145,9 @@ for expected in \
   'tests/pr-metadata-generation.test.sh' \
   'docs/usage-[redacted]' \
   '## Summary' \
+  'Updated publish mode documentation to describe normal PR creation as the default.' \
+  'Regenerated API metadata so publishMode includes pr and [redacted]' \
+  '### Change metadata' \
   'Changed files: 3 total.' \
   'Source files updated: 1.' \
   'Tests updated: 1.' \
