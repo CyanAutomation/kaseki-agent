@@ -2179,27 +2179,40 @@ derive_pr_title() {
 
 format_pr_command_results() {
   local timings_file="$1"
+  local include_failed_summary="${2:-0}"
   if [ ! -s "$timings_file" ]; then
     printf -- '- Not recorded\n'
     return 0
   fi
 
-  local command exit_code duration detail safe_command safe_detail rows=0
+  local command exit_code duration detail safe_command safe_detail row rows=0 all_rows="" failed_rows=""
   while IFS=$'\t' read -r command exit_code duration detail || [ -n "$command" ]; do
     [ -n "$command" ] || continue
     safe_command="$(printf '%s' "$command" | sanitize_pr_metadata_text)"
     safe_detail="$(printf '%s' "${detail:-}" | sanitize_pr_metadata_text)"
     if [ -n "$safe_detail" ]; then
-      printf -- '- %s — exit %s, %ss (%s)\n' "$safe_command" "${exit_code:-unknown}" "${duration:-0}" "$safe_detail"
+      row="- ${safe_command} — exit ${exit_code:-unknown}, ${duration:-0}s (${safe_detail})"
     else
-      printf -- '- %s — exit %s, %ss\n' "$safe_command" "${exit_code:-unknown}" "${duration:-0}"
+      row="- ${safe_command} — exit ${exit_code:-unknown}, ${duration:-0}s"
+    fi
+    all_rows="${all_rows}${row}
+"
+    if [ "${exit_code:-0}" != "0" ]; then
+      failed_rows="${failed_rows}${row}
+"
     fi
     rows=$((rows + 1))
-    [ "$rows" -lt 10 ] || break
   done < "$timings_file"
 
   if [ "$rows" -eq 0 ]; then
     printf -- '- Not recorded\n'
+    return 0
+  fi
+
+  if [ "$include_failed_summary" = "1" ] && [ -n "$failed_rows" ]; then
+    printf '%b' "$failed_rows"
+  else
+    printf '%b' "$all_rows"
   fi
 }
 
@@ -2391,6 +2404,7 @@ EOF_JSON_SUMMARY
 }
 build_pr_body() {
   local duration_seconds pre_validation_status validation_status quality_status secret_scan_status task_summary model_summary generated_at changed_files_summary
+  local pre_validation_commands pre_validation_full_commands post_validation_commands post_validation_full_commands validation_command_sections all_validation_statuses_pass
   duration_seconds="$(($(date +%s) - START_EPOCH))"
   pre_validation_status="$([ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$PRE_VALIDATION_EXIT")"
   validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
@@ -2401,6 +2415,56 @@ build_pr_body() {
   model_summary="requested $(printf '%s' "$KASEKI_MODEL" | sanitize_pr_metadata_text); actual $(printf '%s' "${ACTUAL_MODEL:-unknown}" | sanitize_pr_metadata_text)"
   generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   changed_files_summary="$(format_pr_changed_files)"
+
+  if [ "${PRE_VALIDATION_EXIT:-0}" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$SECRET_SCAN_EXIT" -eq 0 ]; then
+    all_validation_statuses_pass=1
+  else
+    all_validation_statuses_pass=0
+  fi
+
+  if [ "$all_validation_statuses_pass" -eq 1 ]; then
+    validation_command_sections="<details><summary>Pre-agent validation commands</summary>
+
+### Pre-agent validation commands
+$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
+
+</details>
+
+<details><summary>Post-agent validation commands</summary>
+
+### Post-agent validation commands
+$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
+
+</details>"
+  else
+    pre_validation_full_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")"
+    pre_validation_commands="$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE" 1)"
+    if [ "$pre_validation_full_commands" != "$pre_validation_commands" ]; then
+      pre_validation_commands="${pre_validation_commands}
+<details><summary>Full pre-agent validation command list</summary>
+
+$pre_validation_full_commands
+
+</details>"
+    fi
+
+    post_validation_full_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")"
+    post_validation_commands="$(format_pr_command_results "$VALIDATION_TIMINGS_FILE" 1)"
+    if [ "$post_validation_full_commands" != "$post_validation_commands" ]; then
+      post_validation_commands="${post_validation_commands}
+<details><summary>Full post-agent validation command list</summary>
+
+$post_validation_full_commands
+
+</details>"
+    fi
+
+    validation_command_sections="### Pre-agent validation commands
+$pre_validation_commands
+
+### Post-agent validation commands
+$post_validation_commands"
+  fi
 
   cat <<EOF
 ## Summary
@@ -2413,11 +2477,7 @@ $(build_pr_improvements_summary)
 - Quality gate: $quality_status
 - Secret scan: $secret_scan_status
 
-### Pre-agent validation commands
-$(format_pr_command_results "$PRE_VALIDATION_TIMINGS_FILE")
-
-### Post-agent validation commands
-$(format_pr_command_results "$VALIDATION_TIMINGS_FILE")
+$validation_command_sections
 
 ## Files changed
 $changed_files_summary
