@@ -420,6 +420,7 @@ fi
 # Preserve the existing safe JSON encoding path used by the GitHub PR API payload.
 run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "$TMP_DIR/node.log"
 run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "$TMP_DIR/node.log"
+# shellcheck disable=SC2154 # Variables set by run_node_subprocess function
 payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": $pr_draft_json}"
 
 PAYLOAD="$payload" node <<'NODE'

@@ -48,6 +48,7 @@ awk '
 # shellcheck disable=SC1090
 . "$FUNCTIONS_FILE"
 
+# shellcheck disable=SC2034 # These variables are used by sourced functions
 REPO_URL="https://github.com/acme/widgets"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
 
