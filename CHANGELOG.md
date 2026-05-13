@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.25.3...v1.25.4) (2026-05-13)
+
+### Bug Fixes
+
+* collapse long PR file lists ([32582fb](https://github.com/CyanAutomation/kaseki-agent/commit/32582fbb9acc658fc33ba1ab4031fdc834bf485c))
+* collapse long PR file lists ([#278](https://github.com/CyanAutomation/kaseki-agent/issues/278)) ([37b6455](https://github.com/CyanAutomation/kaseki-agent/commit/37b6455cc8b727560545eb063060c698042ee69b))
+
 ## [1.25.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.25.2...v1.25.3) (2026-05-13)
 
 ### Bug Fixes
