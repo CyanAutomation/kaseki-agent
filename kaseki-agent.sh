@@ -1623,8 +1623,9 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e "
-    const fs = require('fs');
+  # shellcheck disable=SC2016,SC1078,SC1079,SC2026
+  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
+    const fs = require(\"fs\");
     const stdout = fs.readFileSync(0, 'utf8');
     const stderr = process.env.TOKEN_HELPER_STDERR || '';
     const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
@@ -1651,7 +1652,7 @@ parse_github_app_token_helper_failure() {
       if (match) status = match[1];
     }
     process.stdout.write(`${error}\t${status}`);
-  " 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
+  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
 }
 
 
