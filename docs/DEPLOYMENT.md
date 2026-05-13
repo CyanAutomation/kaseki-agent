@@ -113,6 +113,60 @@ When deploying via a container UI (Dockhand, Portainer):
 5. Verify with: `curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
    http://localhost:8080/api/preflight`
 
+## Bootstrap Requirement
+
+**⚠️ Critical:** Before starting the Kaseki API service, you MUST run the bootstrap process on the host. This extracts the run-kaseki.sh script and other deployment files from the Docker image to the host filesystem.
+
+### Bootstrap Checklist
+
+**Step 1: Run Bootstrap**
+
+```bash
+# From the kaseki-agent repository directory
+./scripts/kaseki-activate.sh --controller bootstrap
+```
+
+This command:
+- Clones the kaseki-agent repository to `/agents/kaseki-agent`
+- Extracts the Docker image to `/agents/kaseki-template/`
+- Verifies all critical files are present
+- Runs a health check via `/agents/kaseki-template/run-kaseki.sh --doctor`
+
+**Step 2: Verify Bootstrap Completed Successfully**
+
+Check for the critical file:
+
+```bash
+# Must exist and be executable
+ls -la /agents/kaseki-template/run-kaseki.sh
+
+# Check status
+./scripts/kaseki-activate.sh status
+```
+
+**Step 3: Fix Common Bootstrap Issues**
+
+| Error | Remediation |
+|-------|-------------|
+| `mkdir: cannot create directory '/agents'` | Run as root or ensure `/agents` exists: `sudo mkdir -p /agents && sudo chown $USER:$USER /agents` |
+| `Docker image not found` | Pull image first: `docker pull docker.io/cyanautomation/kaseki-agent:latest` |
+| `run-kaseki.sh not found after bootstrap` | Image may be corrupted; try: `docker pull --no-cache docker.io/cyanautomation/kaseki-agent:latest` and re-run bootstrap |
+| `/api/runs` returns 400 "bootstrap not complete" | File is missing; run bootstrap again |
+
+**Step 4: Start the API Service**
+
+Only after bootstrap verification passes, start the API service:
+
+```bash
+docker-compose up -d
+```
+
+If the API starts before bootstrap, it will log a warning but continue running. Job submissions will fail with a 400 error until bootstrap is complete. Restart the API after bootstrap:
+
+```bash
+docker-compose restart kaseki-api
+```
+
 ## Quick Start
 
 ### ✅ Recommended: Docker Compose

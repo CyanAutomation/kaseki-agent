@@ -41,6 +41,7 @@ function mockReadableGithubAppCredentials(): void {
 }
 
 beforeEach(() => {
+    process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = "1";
   mockReadableGithubAppCredentials();
 });
 
@@ -172,6 +173,7 @@ describe('kaseki-api-routes artifact read behavior', () => {
   });
 
   afterEach(() => {
+    delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 

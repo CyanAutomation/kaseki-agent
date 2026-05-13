@@ -461,6 +461,22 @@ export function createApiRouter(
         return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
       }
 
+      // Validate that bootstrap has been completed
+      // Skip validation during tests (via KASEKI_SKIP_BOOTSTRAP_CHECK env var)
+      if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
+        const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+        const runScript = path.join(templateDir, 'run-kaseki.sh');
+        if (!fs.existsSync(runScript)) {
+          return sendErrorResponse(
+            res,
+            400,
+            'Bad Request',
+            `Kaseki bootstrap is not complete. The run-kaseki.sh script is missing at ${runScript}. ` +
+            `Run 'scripts/kaseki-activate.sh --controller bootstrap' to initialize the system, then check /api/preflight to verify readiness.`,
+          );
+        }
+      }
+
       // Log request
       logger.event('api_run_request', {
         repoUrl: runRequest.repoUrl,

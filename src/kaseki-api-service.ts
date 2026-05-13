@@ -1,6 +1,8 @@
 import express from 'express';
 import type { Server } from 'http';
 import swaggerUi from 'swagger-ui-express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -168,6 +170,18 @@ async function main(): Promise<void> {
 
   // Create scheduler
   const scheduler = new JobScheduler(config, webhookManager, artifactCache);
+
+  // Validate that bootstrap has been completed
+  const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  const runScript = path.join(templateDir, 'run-kaseki.sh');
+  if (!fs.existsSync(runScript)) {
+    logger.warn(`⚠️  Bootstrap not complete: run-kaseki.sh is missing at ${runScript}`, {
+      templateDir,
+      runScript,
+      remediation: "Run 'scripts/kaseki-activate.sh --controller bootstrap' to initialize the system.",
+    });
+    logger.info('Kaseki API will still start, but job submissions will fail until bootstrap is complete.');
+  }
 
   // Mount API routes
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);

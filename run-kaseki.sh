@@ -327,6 +327,25 @@ usage_error() {
   exit 2
 }
 
+fail_host() {
+  local code="$1"
+  local category="$2"
+  local detail="${3-}"
+  
+  # Log the error
+  emit_json_log "preflight" "error" "Host-side validation failed: $category - $detail"
+  
+  # Print human-readable error
+  {
+    printf '❌ Host Validation Failed\n'
+    printf 'Category: %s\n' "$category"
+    printf 'Detail: %s\n' "$detail"
+    printf '\nRemediation: Check bootstrap status with: scripts/kaseki-activate.sh status\n'
+  } >&2
+  
+  exit "$code"
+}
+
 json_encode() {
   local value
   value="$(cat)"
