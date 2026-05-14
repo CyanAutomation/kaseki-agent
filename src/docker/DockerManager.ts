@@ -28,7 +28,7 @@ export interface ContainerResult {
   stderr: string;
 }
 
-class DockerManager {
+export class DockerManager {
   /**
    * Check if Docker is available and daemon is running
    */

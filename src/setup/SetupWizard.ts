@@ -13,6 +13,8 @@ import { execSync } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
+import { readFileSync } from 'fs';
+import { randomBytes } from 'crypto';
 import Enquirer from 'enquirer';
 import { createLogger } from '../logger';
 
@@ -183,7 +185,7 @@ export class SetupWizard {
     } catch {
       // Check for cgroup cgroup markers (kubernetes, other container runtimes)
       try {
-        const cgroup = require('fs').readFileSync('/proc/self/cgroup', 'utf-8');
+        const cgroup = readFileSync('/proc/self/cgroup', 'utf-8');
         return cgroup.includes('/docker') || cgroup.includes('/kubepods') || cgroup.includes('/lxc');
       } catch {
         return false;
@@ -353,7 +355,7 @@ export class SetupWizard {
    * Generate secure random key for API authentication
    */
   private generateSecureKey(): string {
-    return `sk-${require('crypto').randomBytes(32).toString('hex')}`;
+    return `sk-${randomBytes(32).toString('hex')}`;
   }
 
   /**
@@ -542,7 +544,7 @@ ${essential8.kasekiApiKeys ? `# API Service\nKASEKI_API_KEYS=${essential8.kaseki
     const pathInstructions: Record<ExecutionPath, string> = {
       'single-run': `
 Run a single task with:
-  export OPENROUTER_API_KEY=\$(grep openrouter_api_key ${context.secretsPath} | cut -d'"' -f4)
+  export OPENROUTER_API_KEY=$(grep openrouter_api_key ${context.secretsPath} | cut -d'"' -f4)
   ./run-kaseki.sh --repo https://github.com/user/repo --ref main
       `,
       'local-api': `
