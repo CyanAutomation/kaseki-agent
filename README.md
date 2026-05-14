@@ -114,7 +114,7 @@ Create `~/.kaseki/config.json`:
   "auth": {
     "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
     "github_app_id_file": "/home/pi/secrets/github_app_id",
-    "github_app_client_id_file": "/home/pi/secrets/github_client_id",
+    "github_app_client_id_file": "/home/pi/secrets/github_app_client_id",
     "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
   }
 }
@@ -127,7 +127,7 @@ Create `~/.kaseki/config.json`:
 ```bash
 export OPENROUTER_API_KEY_FILE=/path/to/openrouter_key
 export GITHUB_APP_ID_FILE=/path/to/github_app_id
-export GITHUB_APP_CLIENT_ID_FILE=/path/to/github_client_id
+export GITHUB_APP_CLIENT_ID_FILE=/path/to/github_app_client_id
 export GITHUB_APP_PRIVATE_KEY_FILE=/path/to/github_app_private_key
 
 # If using sudo, preserve env vars with -E flag
@@ -1272,7 +1272,7 @@ mkdir -p ~/secrets
 chmod 0700 ~/secrets
 
 echo "YOUR_APP_ID" > ~/secrets/github_app_id
-echo "YOUR_CLIENT_ID" > ~/secrets/github_client_id
+echo "YOUR_CLIENT_ID" > ~/secrets/github_app_client_id
 cp ~/path/to/private-key.pem ~/secrets/github_app_private_key
 chmod 0600 ~/secrets/github_app_*
 ```
@@ -1282,7 +1282,7 @@ chmod 0600 ~/secrets/github_app_*
 ```bash
 OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key \
 GITHUB_APP_ID_FILE=~/secrets/github_app_id \
-GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_client_id \
+GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id \
 GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key \
   /agents/kaseki-template/run-kaseki.sh https://github.com/org/repo
 ```
@@ -1293,7 +1293,7 @@ and pass paths rather than embedding the PEM in `.env`:
 ```yaml
 environment:
   GITHUB_APP_ID_FILE: /agents/secrets/github_app_id
-  GITHUB_APP_CLIENT_ID_FILE: /agents/secrets/github_client_id
+  GITHUB_APP_CLIENT_ID_FILE: /agents/secrets/github_app_client_id
   GITHUB_APP_PRIVATE_KEY_FILE: /agents/secrets/github_app_private_key
 volumes:
   - /agents:/agents:rw

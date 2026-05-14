@@ -22,7 +22,7 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
      "auth": {
        "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
        "github_app_id_file": "/home/pi/secrets/github_app_id",
-       "github_app_client_id_file": "/home/pi/secrets/github_client_id",
+       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
      }
    }
@@ -37,7 +37,7 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
      "auth": {
        "openrouter_api_key_file": "/home/pi/secrets/openrouter_api_key",
        "github_app_id_file": "/home/pi/secrets/github_app_id",
-       "github_app_client_id_file": "/home/pi/secrets/github_client_id",
+       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id",
        "github_app_private_key_file": "/home/pi/secrets/github_app_private_key"
      }
    }
@@ -64,7 +64,7 @@ This guide covers how to configure authentication credentials for Kaseki Agent, 
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
 export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_client_id
+export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
 
 kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task here"
@@ -75,7 +75,7 @@ kaseki-agent run https://github.com/CyanAutomation/kaseki-agent main "Your task 
 ```bash
 export OPENROUTER_API_KEY_FILE=/home/pi/secrets/openrouter_api_key
 export GITHUB_APP_ID_FILE=/home/pi/secrets/github_app_id
-export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_client_id
+export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
 export GITHUB_APP_PRIVATE_KEY_FILE=/home/pi/secrets/github_app_private_key
 
 # Use -E flag to preserve environment variables
@@ -126,7 +126,7 @@ Kaseki Agent looks for configuration in this order (highest to lowest priority):
   "auth": {
     "openrouter_api_key_file": "/path/to/openrouter_key",
     "github_app_id_file": "/path/to/github_app_id",
-    "github_app_client_id_file": "/path/to/github_client_id",
+    "github_app_client_id_file": "/path/to/github_app_client_id",
     "github_app_private_key_file": "/path/to/github_app_private_key"
   }
 }
@@ -152,8 +152,8 @@ echo "123456" > ~/secrets/github_app_id
 chmod 600 ~/secrets/github_app_id
 
 # GitHub App Client ID
-echo "Iv1.abcd1234..." > ~/secrets/github_client_id
-chmod 600 ~/secrets/github_client_id
+echo "Iv1.abcd1234..." > ~/secrets/github_app_client_id
+chmod 600 ~/secrets/github_app_client_id
 
 # GitHub App Private Key (PEM format, usually multi-line)
 cat > ~/secrets/github_app_private_key << 'EOF'
