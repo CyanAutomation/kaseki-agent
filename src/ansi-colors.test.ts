@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, jest } from '@jest/globals';
-import { ANSI_COLORS, stripAnsi } from '../src/ansi-colors';
+import { stripAnsi } from '../src/ansi-colors';
 
 const originalTerm = process.env.TERM;
 const originalNoColor = process.env.NO_COLOR;
@@ -34,17 +34,6 @@ afterEach(() => {
 });
 
 describe('ansi-colors', () => {
-  describe('ANSI_COLORS', () => {
-    it('exports color constants', () => {
-      // Colors might be empty strings if not a TTY, but should exist
-      expect(ANSI_COLORS).toHaveProperty('RED');
-      expect(ANSI_COLORS).toHaveProperty('YELLOW');
-      expect(ANSI_COLORS).toHaveProperty('GREEN');
-      expect(ANSI_COLORS).toHaveProperty('BLUE');
-      expect(ANSI_COLORS).toHaveProperty('RESET');
-    });
-  });
-
   describe('stripAnsi', () => {
     it('strips text wrapped with enabled color constants and reset', async () => {
       setStdoutIsTTY(true);
@@ -75,13 +64,24 @@ describe('ansi-colors', () => {
       }
     });
 
-    it('removes multiple color codes', () => {
-      const text = `${ANSI_COLORS.YELLOW}warn${ANSI_COLORS.RESET} and ${ANSI_COLORS.RED}error${ANSI_COLORS.RESET}`;
-      const stripped = stripAnsi(text);
-      expect(stripped).toBe('warn and error');
+    it('strips mixed colored output from enabled color constants', async () => {
+      setStdoutIsTTY(true);
+      process.env.TERM = 'xterm-256color';
+      delete process.env.NO_COLOR;
+      jest.resetModules();
+
+      const { ANSI_COLORS: enabledColors, stripAnsi: stripFreshAnsi } = await import('../src/ansi-colors');
+      const text = [
+        `${enabledColors.YELLOW}warn${enabledColors.RESET}`,
+        'and',
+        `${enabledColors.RED}${enabledColors.BOLD}error${enabledColors.RESET}`,
+        `${enabledColors.DIM}retrying${enabledColors.RESET}`,
+      ].join(' ');
+
+      expect(stripFreshAnsi(text)).toBe('warn and error retrying');
     });
 
-    it('handles text without color codes', () => {
+    it('preserves uncolored text', () => {
       const text = 'plain text';
       expect(stripAnsi(text)).toBe('plain text');
     });
