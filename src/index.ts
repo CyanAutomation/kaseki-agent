@@ -8,7 +8,18 @@ export { WebhookManager } from './webhook-manager';
 
 // Configuration & Utilities
 export { KasekiApiConfig, validateApiKey, loadConfig } from './kaseki-api-config';
-export { createGracefulShutdown, assertSupportedNodeVersion } from './kaseki-api-service';
+
+// Kaseki API orchestration (refactored modules)
+export {
+  initializeSetup,
+  type SetupContext,
+} from './kaseki-api/setup-orchestrator';
+export {
+  bootstrapServices,
+  gracefulShutdown,
+  type BootstrappedServices,
+  type ShutdownDeps,
+} from './kaseki-api/service-bootstrapper';
 
 // Types
 export type {
