@@ -12,6 +12,7 @@ import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
 import { ResultCache } from './result-cache';
 import { generateOpenAPISpec } from './openapi-spec-generator';
+import { execSync } from 'child_process';
 
 type ShutdownDeps = {
   server: Server;
@@ -93,12 +94,89 @@ export function assertSupportedNodeVersion(
 }
 
 /**
+ * Phase 3: Auto-initialize /agents/kaseki-template if missing
+ * This eliminates the need for manual 'kaseki-activate.sh --controller bootstrap'
+ */
+async function ensureTemplateInitialized(templateDir: string): Promise<void> {
+  const logger = createEventLogger('kaseki-api');
+  const runScript = path.join(templateDir, 'run-kaseki.sh');
+
+  // Check if bootstrap is already complete
+  if (fs.existsSync(runScript)) {
+    logger.info('Template directory is initialized', { templateDir, runScript });
+    return;
+  }
+
+  // Template is missing - try to initialize it
+  logger.info('Template directory missing; attempting auto-initialization...', { templateDir });
+
+  try {
+    // Ensure parent directory exists
+    const parentDir = path.dirname(templateDir);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true, mode: 0o755 });
+      logger.info('Created parent directory', { parentDir });
+    }
+
+    // Try strategy 1: Copy from image
+    // If we're running in Docker and the template exists at /app/kaseki-template, copy it
+    const imageTemplateDir = '/app/kaseki-template';
+    if (fs.existsSync(imageTemplateDir) && fs.existsSync(path.join(imageTemplateDir, 'run-kaseki.sh'))) {
+      try {
+        execSync(`cp -r "${imageTemplateDir}" "${templateDir}"`, { stdio: 'pipe' });
+        logger.info('Template initialized from Docker image', { templateDir });
+        return;
+      } catch (err) {
+        logger.warn('Failed to copy template from image; trying alternate strategy', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Try strategy 2: Create symlink to /app (if we're in Docker)
+    if (fs.existsSync('/app/run-kaseki.sh')) {
+      try {
+        // Create template directory and symlink key files
+        fs.mkdirSync(templateDir, { recursive: true, mode: 0o755 });
+        fs.symlinkSync('/app/run-kaseki.sh', runScript, 'file');
+        logger.info('Template initialized via symlink to /app', { templateDir });
+        return;
+      } catch (err) {
+        logger.warn('Failed to create symlink; trying alternate strategy', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Strategy 3 failed - log warning but continue
+    // The API will start but jobs will fail with clear error message
+    logger.warn(
+      'Could not auto-initialize template directory. Jobs will fail until bootstrap is completed manually.',
+      {
+        templateDir,
+        remediation: 'Run: docker exec <container> /scripts/startup-checks.sh bootstrap',
+      },
+    );
+  } catch (err) {
+    logger.error('Unexpected error during template initialization', {
+      error: err instanceof Error ? err.message : String(err),
+      templateDir,
+    });
+    // Continue anyway - jobs will fail with clear error message
+  }
+}
+
+/**
  * Main Kaseki API service.
  */
 async function main(): Promise<void> {
   const logger = createEventLogger('kaseki-api');
 
   assertSupportedNodeVersion();
+
+  // Phase 3: Auto-initialize template directory
+  const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  await ensureTemplateInitialized(templateDir);
 
   // Load configuration
   let config;
@@ -179,18 +257,6 @@ async function main(): Promise<void> {
 
   // Create scheduler
   const scheduler = new JobScheduler(config, webhookManager, artifactCache);
-
-  // Validate that bootstrap has been completed
-  const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-  const runScript = path.join(templateDir, 'run-kaseki.sh');
-  if (!fs.existsSync(runScript)) {
-    logger.warn(`⚠️  Bootstrap not complete: run-kaseki.sh is missing at ${runScript}`, {
-      templateDir,
-      runScript,
-      remediation: "Run 'scripts/kaseki-activate.sh --controller bootstrap' to initialize the system.",
-    });
-    logger.info('Kaseki API will still start, but job submissions will fail until bootstrap is complete.');
-  }
 
   // Mount API routes
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);

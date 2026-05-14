@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Phase 2: Run early startup checks to catch permission and config issues
+# This runs before any kaseki operation to prevent silent failures
+if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
+  /scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}" || {
+    exit_code=$?
+    # Exit code 2 = configuration error (block startup)
+    # Exit code 3 = warning (continue anyway)
+    if [ "$exit_code" = "2" ]; then
+      echo "Startup checks failed: configuration error detected" >&2
+      exit 1
+    fi
+  }
+fi
+
 case "${1:-agent}" in
   setup)
     # Interactive setup wizard inside container

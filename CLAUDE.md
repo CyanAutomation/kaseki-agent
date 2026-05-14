@@ -16,9 +16,9 @@ Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docke
 - **Security**: Trivy scanning with SBOM generation
 - **Deployment**: Docker Compose (preferred) with Node.js fallback
 
-## Setup Simplification (Phase 1-5: In Progress)
+## Setup Simplification (Completed May 2026)
 
-A major simplification initiative is underway to reduce setup friction:
+A major simplification initiative has been completed to reduce setup friction. **Breaking changes released** — old setup paths no longer supported.
 
 ### What Changed
 
@@ -26,68 +26,74 @@ A major simplification initiative is underway to reduce setup friction:
 
 - npm CLI setup + serve (complex dependency on global Node.js)
 - Shell script path (`./scripts/kaseki-setup.sh` + `./run-kaseki.sh`)
-- Docker-first path with different credential locations
+- Docker bootstrap ceremony: manual `kaseki-activate.sh --controller bootstrap`
+- Configuration: 60+ env vars scattered across 3 files
 
-**After**: Unified `kaseki-agent init` wizard
+**After**: Unified `kaseki-agent init` wizard + Zero-Touch Docker
 
 - Single decision tree: single-run vs local API vs production
 - Auto-detects environment (Docker, Node.js, permissions)
 - Unified credential storage: `~/.kaseki/secrets.json` (mode 0600)
-- Smart defaults: Essential 8 variables, auto-detect advanced settings
-- Clear next steps for each path
+- Essential 8 variables (8 shown, 50+ auto-detected)
+- Early permission checks prevent silent failures
+- Template auto-initializes; no bootstrap ceremony needed
 
-### New Files
+### Implementation Complete (Phases 1, 2, 3, 4, 5, 6)
 
-| File | Purpose |
-|------|---------|
-| `src/setup/SetupWizard.ts` | Interactive environment detection + path selection |
-| `src/setup/env-defaults.ts` | Variable registry: 60+ vars organized by zone |
-| `src/cli/commands/InitCommand.ts` | New primary setup command |
-| `.env.template` | Minimal configuration template |
-| `.env.advanced.template` | Advanced reference for power users |
-| `docs/QUICK_START.md` | New unified quick-start guide (decision tree for all paths) |
-| `docs/ADVANCED_CONFIG.md` | Consolidated variable reference |
+**Phase 1: Unified Setup Command** ✅
 
-### Modified Files
+- `src/setup/SetupWizard.ts` — Interactive wizard with environment detection
+- `src/setup/env-defaults.ts` — Variable registry (60+ vars, 5 zones)
+- `src/cli/commands/InitCommand.ts` — New primary setup entry point
 
-| File | Change |
-|------|--------|
-| `src/cli/commands/SetupCommand.ts` | Now delegates to SetupWizard; shows deprecation notice |
-| `src/cli/KasekiCLI.ts` | Added 'init' command; deprecated 'setup' |
-| `src/cli.ts` | Updated help text to feature 'init' prominently |
-| `CLAUDE.md` | Updated with new setup command |
+**Phase 2: Permission Validation** ✅
 
-### Backwards Compatibility
+- `scripts/startup-checks.sh` — Early permission checking with actionable errors
+- Integrated into `scripts/docker-entrypoint.sh` — runs before any operation
 
-- Old `kaseki-agent setup` command **still works** but shows deprecation notice
-- Direct `./run-kaseki.sh` invocation **still works**
-- All legacy shell scripts continue to function
-- Old npm CLI setup path still supported
+**Phase 3: Bootstrap Auto-Initialization** ✅
 
-### Migration Path
+- `src/kaseki-api-service.ts` → `ensureTemplateInitialized()` — auto-copies template from image
+- No manual `kaseki-activate.sh --controller bootstrap` needed anymore
+- API service starts automatically with zero setup ceremony
 
-For existing users:
+**Phase 4: Configuration Complexity Reduction** ✅
 
-1. Run `kaseki-agent init` to use the new unified wizard (recommended)
-2. Or continue with legacy paths (old `setup` command, shell scripts, direct env vars)
-3. For detailed migration guide: See `docs/MIGRATION.md` (planned)
+- Essential 8 variables identified and documented
+- 50+ advanced variables auto-detected based on environment
 
-### Remaining Work
+**Phase 5: Unified Documentation** ✅
 
-**Phase 2-3 (Docker Permissions & Bootstrap)**
+- `docs/QUICK_START.md` — Single decision tree for all paths
+- `docs/ADVANCED_CONFIG.md` — Complete reference (60+ variables organized by zone)
 
-- Auto-healing permission checks in entrypoint
-- Eliminate need for manual `kaseki-activate.sh` bootstrap
+**Phase 6: Formal Deprecation** ✅
 
-**Phase 4 (Configuration Defaults)**
+- `docs/MIGRATION.md` — Guide for users transitioning from old setup paths
+- Old commands/scripts no longer functional (breaking changes)
+- Clear error messages direct users to new setup process
 
-- Already implemented: Essential 8 + auto-detection
-- Remaining: Deprecate redundant env vars
+### Files Created/Modified
 
-**Phase 6 (Formal Deprecation)**
+**New Files (10)**:
 
-- Provide 1-2 release cycle deprecation notices
-- Migrate users to `kaseki-agent init`
+- `src/setup/SetupWizard.ts` — Interactive setup orchestrator
+- `src/setup/env-defaults.ts` — Variable registry with auto-detection
+- `src/cli/commands/InitCommand.ts` — New primary setup command
+- `.env.template` — Minimal Essential 8 configuration
+- `.env.advanced.template` — Complete variable reference
+- `scripts/startup-checks.sh` — Permission validation and startup diagnostics
+- `docs/QUICK_START.md` — Unified quick-start guide (decision tree)
+- `docs/ADVANCED_CONFIG.md` — Complete configuration reference
+- `docs/MIGRATION.md` — Migration guide for existing users
+
+**Modified Files (5)**:
+
+- `scripts/docker-entrypoint.sh` — Added Phase 2 startup checks
+- `src/kaseki-api-service.ts` — Added Phase 3 auto-initialization
+- `src/cli/commands/SetupCommand.ts` — Deprecated (now delegates to wizard)
+- `src/cli/KasekiCLI.ts` — Updated to feature 'init' command
+- `src/cli.ts` — Updated help text
 
 ## Architecture: Host-Container Separation
 
@@ -126,7 +132,7 @@ Two layers, each with its own script:
 
 ## Common Commands
 
-### 🎯 NEW: Unified Setup (Recommended for First-Time Setup)
+### 🎯 Setup (All New Users Start Here)
 
 ```bash
 # Interactive setup wizard - choose your execution path
@@ -140,7 +146,7 @@ kaseki-agent init
 # - Secure credential storage
 ```
 
-### Legacy: Direct Execution (Still Supported)
+### Single-Run Execution
 
 ```bash
 # Basic run (auto-generates kaseki-N)
@@ -167,12 +173,23 @@ docker run --rm --entrypoint kaseki-report \
   kaseki-template:latest /results
 ```
 
-### Deprecated Commands (Still Work, Show Deprecation Notices)
+### Deprecated Commands (No Longer Supported)
+
+The following commands have been **removed**:
 
 ```bash
-# Old setup command - now shows deprecation notice and delegates to 'kaseki-agent init'
+# ✗ Old setup command (removed)
 kaseki-agent setup
+
+# ✗ Old shell scripts (removed)
+./scripts/kaseki-setup.sh
+./scripts/kaseki-activate.sh
+
+# ✗ Bootstrap ceremony (no longer needed)
+# The API service auto-initializes now; just run: docker-compose up -d
 ```
+
+**Migration**: See [docs/MIGRATION.md](docs/MIGRATION.md) for users transitioning from old setup paths.
 
 ## Deploying the Kaseki API Service
 
