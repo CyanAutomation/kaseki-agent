@@ -49,22 +49,22 @@ describe('Build Artifacts Validation', () => {
             url: pathToFileURL(entryPath).href,
             exportName,
           })))};
-           const helperExports = ${JSON.stringify(helperExports.map(({ path: helperPath, exportName }) => ({
-             url: pathToFileURL(helperPath).href,
-             exportName,
-           })))};
-           for (const { url, exportName } of entryPoints) {
-             const module = await import(url);
-             if (typeof module[exportName] !== 'function') {
-               throw new Error(\`entry point ${'${url}'} did not export ${'${exportName}'}\`);
-             }
-           }
-           for (const { url, exportName } of helperExports) {
-             const module = await import(url);
-             if (typeof module[exportName] !== 'function') {
-               throw new Error(\`helper ${'${url}'} did not export ${'${exportName}'}\`);
-             }
-           }`,
+        const helperExports = ${JSON.stringify(helperExports.map(({ path: helperPath, exportName }) => ({
+    url: pathToFileURL(helperPath).href,
+    exportName,
+  })))};
+        for (const { url, exportName } of entryPoints) {
+          const module = await import(url);
+          if (typeof module[exportName] !== 'function') {
+            throw new Error(\`entry point ${'${url}'} did not export ${'${exportName}'}\`);
+          }
+        }
+        for (const { url, exportName } of helperExports) {
+          const module = await import(url);
+          if (typeof module[exportName] !== 'function') {
+            throw new Error(\`helper ${'${url}'} did not export ${'${exportName}'}\`);
+          }
+        }`,
         ], { encoding: 'utf8' });
       } catch (error) {
         throw new Error(`Failed to validate built package runtime imports. Run npm run build before this smoke test. ${error instanceof Error ? error.message : String(error)}`);
