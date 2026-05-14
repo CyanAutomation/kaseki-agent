@@ -9,6 +9,15 @@ import {
   buildAllSchemas,
 } from './schemas';
 
+type JsonSchemaObject = {
+  type?: string;
+  format?: string;
+  enum?: string[];
+  required?: string[];
+  properties?: Record<string, JsonSchemaObject>;
+  example?: string;
+};
+
 describe('OpenAPI Schema Builders', () => {
   describe('buildRunRequestSchema', () => {
     it('should have repoUrl as required property', () => {
@@ -139,48 +148,60 @@ describe('OpenAPI Schema Builders', () => {
   });
 
   describe('buildAllSchemas', () => {
-    it('should return object of all schemas', () => {
+    it('should include RunRequest schema with required client-facing request fields', () => {
       const schemas = buildAllSchemas();
+      const runRequest = schemas.RunRequest as JsonSchemaObject;
+      const properties = runRequest.properties;
 
-      expect(schemas).toBeDefined();
-      expect(typeof schemas).toBe('object');
+      expect(runRequest.required).toEqual(['repoUrl']);
+      expect(properties?.repoUrl).toMatchObject({
+        type: 'string',
+        format: 'uri',
+      });
+      expect(properties?.taskPrompt).toMatchObject({
+        type: 'string',
+      });
+      expect(properties?.taskMode).toMatchObject({
+        type: 'string',
+        enum: ['patch', 'inspect'],
+      });
+      expect(properties?.publishMode).toMatchObject({
+        type: 'string',
+        enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+      });
     });
 
-    it('should include RunRequest schema', () => {
+    it('should include RunResponse schema with required client-facing response fields', () => {
       const schemas = buildAllSchemas();
+      const runResponse = schemas.RunResponse as JsonSchemaObject;
+      const properties = runResponse.properties;
 
-      expect(schemas.RunRequest).toBeDefined();
-      expect(schemas.RunRequest.type).toBe('object');
+      expect(runResponse.required).toEqual(['id', 'status', 'createdAt']);
+      expect(properties?.id).toMatchObject({
+        type: 'string',
+        example: 'kaseki-42',
+      });
+      expect(properties?.status).toMatchObject({
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
+      });
+      expect(properties?.createdAt).toMatchObject({
+        type: 'string',
+        format: 'date-time',
+      });
     });
 
-    it('should include RunResponse schema', () => {
+    it('should include ErrorResponse schema with required client-facing error fields', () => {
       const schemas = buildAllSchemas();
+      const errorResponse = schemas.ErrorResponse as JsonSchemaObject;
+      const properties = errorResponse.properties;
 
-      expect(schemas.RunResponse).toBeDefined();
-      expect(schemas.RunResponse.type).toBe('object');
-    });
-
-    it('should include ErrorResponse schema', () => {
-      const schemas = buildAllSchemas();
-
-      expect(schemas.ErrorResponse).toBeDefined();
-      expect(schemas.ErrorResponse.type).toBe('object');
-    });
-
-    it('should include at least 3 schemas', () => {
-      const schemas = buildAllSchemas();
-      const keys = Object.keys(schemas);
-
-      expect(keys.length).toBeGreaterThanOrEqual(3);
-    });
-
-    it('each schema should be a valid object', () => {
-      const schemas = buildAllSchemas();
-
-      Object.entries(schemas).forEach(([name, schema]) => {
-        expect(typeof schema).toBe('object');
-        expect(schema.type).toBeDefined();
-        expect(typeof name).toBe('string');
+      expect(errorResponse.required).toEqual(['error']);
+      expect(properties?.error).toMatchObject({
+        type: 'string',
+      });
+      expect(properties?.requestId).toMatchObject({
+        type: 'string',
       });
     });
 
