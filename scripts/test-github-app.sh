@@ -197,8 +197,9 @@ set -euo pipefail
 if [ "${1:-}" = "ls-remote" ]; then
   exit 0
 fi
-if command -v /usr/bin/git >/dev/null 2>&1; then
-  exec /usr/bin/git "$@"
+real_git="$(command -v git 2>/dev/null || true)"
+if [ -n "$real_git" ]; then
+  exec "$real_git" "$@"
 fi
 echo "unsupported git invocation: $*" >&2
 exit 1
