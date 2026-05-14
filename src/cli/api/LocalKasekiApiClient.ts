@@ -136,7 +136,7 @@ export class LocalKasekiApiClient {
 
   static fromConfig(configManager: ConfigManager): LocalKasekiApiClient {
     const configuredBaseUrl = configManager.get<string>('api.base_url', DEFAULT_LOCAL_API_BASE_URL);
-    const baseUrl = process.env.KASEKI_API_BASE_URL || configuredBaseUrl || DEFAULT_LOCAL_API_BASE_URL;
+    const baseUrl = process.env.KASEKI_API_URL || process.env.KASEKI_API_BASE_URL || configuredBaseUrl || DEFAULT_LOCAL_API_BASE_URL;
     const configuredApiKey = configManager.get<string>('api.key', '');
     const configuredApiKeys = configManager.get<string[]>('api.keys', []);
     const apiKey = process.env.KASEKI_API_KEY || configuredApiKey || configuredApiKeys[0] || undefined;
@@ -198,7 +198,14 @@ export class LocalKasekiApiClient {
     return LogResponseSchema.parse(data);
   }
 
-  private async requestJson(path: string, failureMessage: string): Promise<unknown> {
+  async cancelRun(runId: string): Promise<StatusResponse> {
+    const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/cancel`, 'Failed to cancel run through local Kaseki API', {
+      method: 'POST',
+    });
+    return StatusResponseSchema.parse(data);
+  }
+
+  private async requestJson(path: string, failureMessage: string, init: { method?: string } = {}): Promise<unknown> {
     const headers: Record<string, string> = {};
 
     if (this.apiKey) {
@@ -207,7 +214,7 @@ export class LocalKasekiApiClient {
 
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, { headers });
+      response = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     } catch (error) {
       throw new Error(`${failureMessage}: ${error instanceof Error ? error.message : String(error)}`);
     }
