@@ -192,6 +192,13 @@ docker-compose logs -f kaseki-api
 docker-compose down
 ```
 
+On a fresh host, run the host setup helper before starting the API, or any time
+`/api/preflight` reports missing results/template directories:
+
+```bash
+/agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix
+```
+
 The API container runs as the `/agents` owner by default
 (`10000:10000`) and must also be able to use the host Docker socket
 so it can launch ephemeral `kaseki-N` containers. Set `DOCKER_GID`
@@ -422,6 +429,7 @@ KASEKI_API_PORT=8080                        # API listen port (default: 8080)
 KASEKI_API_LOG_LEVEL=info                  # Log level: debug/info/warn/error
 KASEKI_API_IMAGE=kaseki-agent:node24-local # Must be built from
                                             # this repo's Dockerfile
+KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS=15000    # Pi-safe template doctor timeout
 
 # Performance
 KASEKI_API_MAX_CONCURRENT_RUNS=3           # Max concurrent jobs (default: 3)

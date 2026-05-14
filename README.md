@@ -576,15 +576,24 @@ For SSH/controller-driven setup and execution. Used by OpenClaw and similar orch
 
 ```bash
 # Single SSH command to bootstrap a Pi (install, deploy, doctor)
-ssh pi@192.168.1.100 'curl -fsSL https://raw.githubusercontent.com//main/scripts/kaseki-install.sh | \
-  KASEKI_CONTROLLER_MODE=1 \
-  sh'
+ssh pi@192.168.1.100 'tmp=$(mktemp) && \
+  curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh -o "$tmp" && \
+  KASEKI_CONTROLLER_MODE=1 sh "$tmp"'
 ```
 
 Controller bootstrap can install, deploy, and run host diagnostics without an
 OpenRouter key. Actual `run` commands still require `OPENROUTER_API_KEY` or
 `OPENROUTER_API_KEY_FILE`, unless the API container provides the key for
 HTTP-triggered runs.
+
+If the host has never run Kaseki before, run the host setup helper first. It
+creates the expected `/agents` directories, verifies writable results storage,
+and bootstraps the template when the checkout is present:
+
+```bash
+ssh pi@192.168.1.100 'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh -o "$tmp" && KASEKI_CONTROLLER_MODE=1 sh "$tmp"'
+ssh pi@192.168.1.100 '/agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix'
+```
 
 #### Local Activation (No SSH)
 
@@ -603,6 +612,9 @@ KASEKI_REPO_URL=https://github.com/org/repo \
 
 # Health check
 ./scripts/kaseki-activate.sh doctor
+
+# First-run host setup/repair
+./scripts/kaseki-setup-host.sh --fix
 
 # Run a task
 TASK_PROMPT='Fix the bug in parser.ts' \
@@ -1205,6 +1217,12 @@ Run the doctor command before first use or after host changes:
 Run doctor from the deployed template directory, not directly from a source-only
 checkout. The deployed template includes generated `lib/*.js` helper payloads
 extracted from the Docker image.
+
+For a brand-new host, prefer the setup helper:
+
+```bash
+/agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix
+```
 
 Checks:
 

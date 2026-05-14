@@ -11,7 +11,7 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import type { Server } from 'http';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
-import { assertSupportedNodeVersion, createGracefulShutdown } from './kaseki-api-service';
+import { assertSupportedNodeVersion, createGracefulShutdown, ensureResultsDir } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -149,6 +149,21 @@ describe('Kaseki API Configuration', () => {
 
     const config = loadConfig();
     expect(config.apiKeys).toEqual(['key1', 'key2']);
+  });
+});
+
+describe('Kaseki API startup filesystem checks', () => {
+  test('ensureResultsDir creates a missing writable results directory', () => {
+    const parent = fs.mkdtempSync('/tmp/kaseki-api-results-parent-');
+    const resultsDir = `${parent}/nested/results`;
+
+    try {
+      ensureResultsDir(resultsDir);
+      expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+      fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
   });
 });
 

@@ -33,8 +33,17 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
 const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootstrap.';
-const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 3000;
+const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 15000;
 const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
+const REQUIRED_TEMPLATE_FILES = [
+  'run-kaseki.sh',
+  'kaseki-agent.sh',
+  'scripts/kaseki-activate.sh',
+  'scripts/kaseki-preflight.sh',
+  'lib/pi-event-filter.js',
+  'lib/pi-progress-stream.js',
+  'lib/kaseki-report.js',
+] as const;
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -81,6 +90,7 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
   const checkoutRef = getTemplateCheckoutRef(checkoutDir);
   const runScript = path.join(templateDir, 'run-kaseki.sh');
+  const missingFiles = REQUIRED_TEMPLATE_FILES.filter((file) => !fs.existsSync(path.join(templateDir, file)));
 
   if (!fs.existsSync(runScript)) {
     return {
@@ -91,6 +101,18 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
       checkoutRef,
       detail: `Missing template runner: ${runScript}`,
       remediation: TEMPLATE_REMEDIATION,
+    };
+  }
+
+  if (missingFiles.length > 0) {
+    return {
+      ok: false,
+      templateDir,
+      runScript,
+      checkoutDir,
+      checkoutRef,
+      detail: `Template is incomplete at ${templateDir}; missing ${missingFiles.join(', ')}.`,
+      remediation: 'Run scripts/kaseki-activate.sh --controller bootstrap, or scripts/kaseki-setup-host.sh --fix before starting the API.',
     };
   }
 
@@ -625,6 +647,23 @@ export function createApiRouter(
         );
       }
 
+      if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
+        const templateHealth = buildTemplateHealthStatus();
+        if (!templateHealth.ok) {
+          return res.status(400).json({
+            type: 'https://api.kaseki.local/errors#template-not-ready',
+            title: 'Bad Request',
+            status: 400,
+            detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
+            templatePath: templateHealth.templateDir,
+            checkoutRef: templateHealth.checkoutRef ?? 'unknown',
+            doctorCommand: templateHealth.doctorCommand,
+            doctorStderrTail: templateHealth.doctorStderrTail,
+            remediation: TEMPLATE_REMEDIATION,
+          });
+        }
+      }
+
       const templateCompatibility = checkTemplatePublishModeCompatibility(effectivePublishMode);
       if (!templateCompatibility.ok) {
         return res.status(400).json({
@@ -660,25 +699,6 @@ export function createApiRouter(
       }
       if (claimResult.kind === 'pending') {
         return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
-      }
-
-      // Validate that bootstrap has been completed
-      // Skip validation during tests (via KASEKI_SKIP_BOOTSTRAP_CHECK env var)
-      if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
-        const templateHealth = buildTemplateHealthStatus();
-        if (!templateHealth.ok) {
-          return res.status(400).json({
-            type: 'https://api.kaseki.local/errors#template-not-ready',
-            title: 'Bad Request',
-            status: 400,
-            detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
-            templatePath: templateHealth.templateDir,
-            checkoutRef: templateHealth.checkoutRef ?? 'unknown',
-            doctorCommand: templateHealth.doctorCommand,
-            doctorStderrTail: templateHealth.doctorStderrTail,
-            remediation: TEMPLATE_REMEDIATION,
-          });
-        }
       }
 
       // Log request
