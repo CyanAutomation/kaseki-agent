@@ -17,13 +17,6 @@ describe('OpenAPI Path Builders', () => {
   });
 
   describe('buildAllPaths', () => {
-    it('should build all paths object', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths).toBeDefined();
-      expect(typeof paths).toBe('object');
-    });
-
     it('should include health check endpoints', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
@@ -145,12 +138,52 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('POST /api/runs should accept RunRequest schema', () => {
+    it('POST /api/runs should define the trigger run contract', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
       const runsPath = paths['/api/runs'] as Record<string, any>;
 
-      expect(runsPath.post).toBeDefined();
-      expect(runsPath.post.requestBody).toBeDefined();
+      expect(Object.keys(runsPath)).toEqual(expect.arrayContaining(['post']));
+      expect(runsPath.post.operationId).toBe('triggerRun');
+      expect(runsPath.post.requestBody).toEqual({
+        required: true,
+        content: {
+          'application/json': {
+            schema: requestSchema,
+          },
+        },
+      });
+      expect(runsPath.post.responses).toEqual(
+        expect.objectContaining({
+          '202': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: responseSchema,
+              },
+            },
+          }),
+          '200': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: responseSchema,
+              },
+            },
+          }),
+          '400': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: errorSchema,
+              },
+            },
+          }),
+          '401': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: errorSchema,
+              },
+            },
+          }),
+        })
+      );
     });
 
     it('should have summary and description for endpoints', () => {
