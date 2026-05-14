@@ -113,6 +113,8 @@ async function main(): Promise<void> {
   logger.info(`KASEKI_RESULTS_DIR: ${config.resultsDir}`);
   logger.event('service_startup_config', {
     port: config.port,
+    host: config.host,
+    authMode: config.apiKeys.length > 0 ? 'bearer' : 'loopback-unauthenticated',
     logLevel: config.logLevel,
     maxConcurrentRuns: config.maxConcurrentRuns,
     resultsDir: config.resultsDir,
@@ -126,6 +128,13 @@ async function main(): Promise<void> {
     platform: process.platform,
     arch: process.arch,
   });
+
+  if (config.apiKeys.length === 0) {
+    logger.warn(
+      '⚠️  Kaseki API authentication is disabled; service will only bind to loopback for trusted local development.',
+      { host: config.host, remediation: 'Set KASEKI_API_KEYS before exposing the API on a network interface.' }
+    );
+  }
 
   // Log environment info
   logger.event('service_startup_environment', {
@@ -189,10 +198,13 @@ async function main(): Promise<void> {
   app.use('/', apiRouter);
 
   // Start server
-  const server = app.listen(config.port, () => {
-    const baseUrl = `http://localhost:${config.port}`;
+  const onListening = () => {
+    const displayHost = config.host || 'localhost';
+    const baseUrl = `http://${displayHost}:${config.port}`;
     logger.event('service_started', {
       port: config.port,
+      host: config.host,
+      authMode: config.apiKeys.length > 0 ? 'bearer' : 'loopback-unauthenticated',
       logLevel: config.logLevel,
       maxConcurrentRuns: config.maxConcurrentRuns,
       resultsDir: config.resultsDir,
@@ -200,7 +212,10 @@ async function main(): Promise<void> {
       swaggerDocumentationUrl: `${baseUrl}/docs`,
       openApiSpecUrl: `${baseUrl}/api/openapi.json`,
     });
-  });
+  };
+  const server = config.host
+    ? app.listen(config.port, config.host, onListening)
+    : app.listen(config.port, onListening);
 
   // Graceful shutdown
   const gracefulShutdown = createGracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });

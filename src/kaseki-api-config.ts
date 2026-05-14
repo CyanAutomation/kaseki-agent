@@ -12,6 +12,8 @@ const DEFAULT_ARTIFACT_CACHE_MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 export interface KasekiApiConfig {
   port: number;
+  /** Optional HTTP bind host. Omitted values keep Node's default all-interface binding. */
+  host?: string;
   apiKeys: string[];
   resultsDir: string;
   maxConcurrentRuns: number;
@@ -42,6 +44,35 @@ function validatePort(envVar: string = 'KASEKI_API_PORT', defaultPort: number = 
     throw new Error(`${envVar} must be a valid port number, got: ${process.env[envVar]}`);
   }
   return port;
+}
+
+/**
+ * Determine whether a bind host is limited to the local machine.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized === 'localhost' || normalized === '::1' || normalized.startsWith('127.');
+}
+
+/**
+ * Validate and parse API bind host.
+ * Unauthenticated local development mode must stay bound to loopback.
+ */
+function validateApiHost(apiKeys: string[]): string | undefined {
+  const rawHost = process.env.KASEKI_API_HOST?.trim();
+
+  if (!rawHost) {
+    return apiKeys.length === 0 ? '127.0.0.1' : undefined;
+  }
+
+  if (apiKeys.length === 0 && !isLoopbackHost(rawHost)) {
+    throw new Error(
+      'KASEKI_API_HOST must be localhost, 127.0.0.1, or ::1 when KASEKI_API_KEYS is empty. ' +
+      'Configure KASEKI_API_KEYS before binding the unauthenticated API to a network interface.'
+    );
+  }
+
+  return rawHost;
 }
 
 /**
@@ -158,6 +189,7 @@ export function loadConfig(): KasekiApiConfig {
   const apiKeys = loadApiKeys();
 
   const port = validatePort('KASEKI_API_PORT', 8080);
+  const host = validateApiHost(apiKeys);
   const maxConcurrentRuns = validatePositiveInt('KASEKI_API_MAX_CONCURRENT_RUNS', 3, 1, 'KASEKI_API_MAX_CONCURRENT_RUNS');
   const agentTimeoutSeconds = validatePositiveInt('KASEKI_AGENT_TIMEOUT_SECONDS', 5700, 1, 'KASEKI_AGENT_TIMEOUT_SECONDS');
   const maxDiffBytes = validatePositiveInt('KASEKI_MAX_DIFF_BYTES', 200000, 1, 'KASEKI_MAX_DIFF_BYTES');
@@ -177,6 +209,7 @@ export function loadConfig(): KasekiApiConfig {
 
   return {
     port,
+    host,
     apiKeys,
     resultsDir,
     maxConcurrentRuns,
