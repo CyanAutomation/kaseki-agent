@@ -50,5 +50,3 @@ export function generateOpenAPISpec(): Record<string, unknown> {
   };
 }
 
-export default generateOpenAPISpec;
-

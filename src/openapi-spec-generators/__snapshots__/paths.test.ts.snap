@@ -1,0 +1,1755 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`OpenAPI Path Builders buildAllPaths should match snapshot 1`] = `
+{
+  "/api/metrics": {
+    "get": {
+      "description": "Returns Prometheus-formatted metrics (artifact cache + queue stats)",
+      "operationId": "getMetrics",
+      "responses": {
+        "200": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+              },
+            },
+          },
+          "description": "Metrics in Prometheus text format",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Prometheus metrics",
+      "tags": [
+        "Service Info",
+      ],
+    },
+  },
+  "/api/preflight": {
+    "get": {
+      "description": "Validates that the controller (Docker, image, GitHub App) is configured correctly. Returns checks for all dependencies.",
+      "operationId": "getPreFlight",
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "checks": {
+                    "items": {
+                      "properties": {
+                        "detail": {
+                          "type": "string",
+                        },
+                        "name": {
+                          "type": "string",
+                        },
+                        "ok": {
+                          "type": "boolean",
+                        },
+                        "remediation": {
+                          "type": "string",
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "type": "array",
+                  },
+                  "errors": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "isValid": {
+                    "type": "boolean",
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                },
+                "required": [
+                  "isValid",
+                  "checks",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Pre-flight checks complete",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Pre-flight validation",
+      "tags": [
+        "Service Info",
+      ],
+    },
+  },
+  "/api/results/{id}/{file}": {
+    "get": {
+      "description": "Downloads a specific artifact file (e.g., git.diff, metadata.json, result-summary.md). Use \`/api/runs/{id}/artifacts\` to list available files.",
+      "operationId": "downloadArtifact",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "Artifact filename (e.g., git.diff, metadata.json)",
+          "in": "path",
+          "name": "file",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "*/*": {
+              "schema": {
+                "format": "binary",
+                "type": "string",
+              },
+            },
+          },
+          "description": "Artifact file content",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Artifact not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Download artifact file",
+      "tags": [
+        "Artifacts",
+      ],
+    },
+  },
+  "/api/runs": {
+    "get": {
+      "description": "Returns paginated list of all kaseki runs, newest first. Includes basic metadata for each run.",
+      "operationId": "listRuns",
+      "parameters": [
+        {
+          "description": "Maximum number of runs to return",
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "default": 50,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+        {
+          "description": "Offset for pagination",
+          "in": "query",
+          "name": "offset",
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "runs": {
+                    "items": {
+                      "properties": {
+                        "cached": {
+                          "description": "True when returned from idempotency replay",
+                          "type": "boolean",
+                        },
+                        "completedAt": {
+                          "description": "ISO 8601 timestamp when the job completed",
+                          "format": "date-time",
+                          "type": "string",
+                        },
+                        "correlationId": {
+                          "description": "Request correlation ID for tracing",
+                          "type": "string",
+                        },
+                        "createdAt": {
+                          "description": "ISO 8601 timestamp when the job was created",
+                          "format": "date-time",
+                          "type": "string",
+                        },
+                        "error": {
+                          "description": "Error message if the job failed",
+                          "type": "string",
+                        },
+                        "exitCode": {
+                          "description": "Exit code from kaseki execution",
+                          "type": "integer",
+                        },
+                        "failureClass": {
+                          "description": "Classification of failure (e.g., validation_failed, timeout)",
+                          "type": "string",
+                        },
+                        "id": {
+                          "description": "Unique kaseki instance ID (kaseki-N)",
+                          "example": "kaseki-42",
+                          "type": "string",
+                        },
+                        "requestId": {
+                          "description": "Unique request ID",
+                          "type": "string",
+                        },
+                        "status": {
+                          "description": "Current job status",
+                          "enum": [
+                            "queued",
+                            "running",
+                            "completed",
+                            "failed",
+                          ],
+                          "type": "string",
+                        },
+                      },
+                      "required": [
+                        "id",
+                        "status",
+                        "createdAt",
+                      ],
+                      "type": "object",
+                    },
+                    "type": "array",
+                  },
+                  "total": {
+                    "description": "Total number of runs available",
+                    "type": "integer",
+                  },
+                },
+                "required": [
+                  "runs",
+                  "total",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "List of runs",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "List all runs",
+      "tags": [
+        "Run Management",
+      ],
+    },
+    "post": {
+      "description": "Submits a new job to the queue. Returns 202 Accepted with job metadata. Use the ID to poll status.",
+      "operationId": "triggerRun",
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "properties": {
+                "changedFilesAllowlist": {
+                  "description": "File patterns to allow changes in",
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "idempotencyKey": {
+                  "description": "Idempotency key for safe retries",
+                  "format": "uuid",
+                  "type": "string",
+                },
+                "maxDiffBytes": {
+                  "description": "Max diff size in bytes",
+                  "type": "integer",
+                },
+                "publishMode": {
+                  "description": "Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing",
+                  "enum": [
+                    "auto",
+                    "none",
+                    "branch",
+                    "pr",
+                    "draft_pr",
+                  ],
+                  "type": "string",
+                },
+                "ref": {
+                  "default": "main",
+                  "description": "Git branch/tag/commit",
+                  "type": "string",
+                },
+                "repoUrl": {
+                  "description": "Git repository URL",
+                  "format": "uri",
+                  "type": "string",
+                },
+                "startupCheck": {
+                  "description": "Start a worker container and exit after boot checks",
+                  "type": "boolean",
+                },
+                "startupCheckMode": {
+                  "description": "Startup check depth: boot-only container smoke test or baseline validation dry-run",
+                  "enum": [
+                    "boot",
+                    "baseline-validation",
+                  ],
+                  "type": "string",
+                },
+                "taskMode": {
+                  "description": "Task mode",
+                  "enum": [
+                    "patch",
+                    "inspect",
+                  ],
+                  "type": "string",
+                },
+                "taskPrompt": {
+                  "description": "Task prompt for Pi agent",
+                  "type": "string",
+                },
+                "timeoutSeconds": {
+                  "description": "Per-run timeout in seconds",
+                  "maximum": 10800,
+                  "minimum": 60,
+                  "type": "integer",
+                },
+                "tracing": {
+                  "description": "Request tracing identifiers",
+                  "type": "object",
+                },
+                "validationCommands": {
+                  "description": "Validation commands to run",
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "webhookConfig": {
+                  "description": "Webhook configuration for job events",
+                  "type": "object",
+                },
+              },
+              "required": [
+                "repoUrl",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "cached": {
+                    "description": "True when returned from idempotency replay",
+                    "type": "boolean",
+                  },
+                  "completedAt": {
+                    "description": "ISO 8601 timestamp when the job completed",
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "correlationId": {
+                    "description": "Request correlation ID for tracing",
+                    "type": "string",
+                  },
+                  "createdAt": {
+                    "description": "ISO 8601 timestamp when the job was created",
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "error": {
+                    "description": "Error message if the job failed",
+                    "type": "string",
+                  },
+                  "exitCode": {
+                    "description": "Exit code from kaseki execution",
+                    "type": "integer",
+                  },
+                  "failureClass": {
+                    "description": "Classification of failure (e.g., validation_failed, timeout)",
+                    "type": "string",
+                  },
+                  "id": {
+                    "description": "Unique kaseki instance ID (kaseki-N)",
+                    "example": "kaseki-42",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Unique request ID",
+                    "type": "string",
+                  },
+                  "status": {
+                    "description": "Current job status",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed",
+                      "failed",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "id",
+                  "status",
+                  "createdAt",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Idempotency replay: job already exists with same configuration",
+        },
+        "202": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "cached": {
+                    "description": "True when returned from idempotency replay",
+                    "type": "boolean",
+                  },
+                  "completedAt": {
+                    "description": "ISO 8601 timestamp when the job completed",
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "correlationId": {
+                    "description": "Request correlation ID for tracing",
+                    "type": "string",
+                  },
+                  "createdAt": {
+                    "description": "ISO 8601 timestamp when the job was created",
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "error": {
+                    "description": "Error message if the job failed",
+                    "type": "string",
+                  },
+                  "exitCode": {
+                    "description": "Exit code from kaseki execution",
+                    "type": "integer",
+                  },
+                  "failureClass": {
+                    "description": "Classification of failure (e.g., validation_failed, timeout)",
+                    "type": "string",
+                  },
+                  "id": {
+                    "description": "Unique kaseki instance ID (kaseki-N)",
+                    "example": "kaseki-42",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Unique request ID",
+                    "type": "string",
+                  },
+                  "status": {
+                    "description": "Current job status",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed",
+                      "failed",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "id",
+                  "status",
+                  "createdAt",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Job accepted and queued",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Invalid request",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Trigger a new kaseki run",
+      "tags": [
+        "Run Management",
+      ],
+    },
+  },
+  "/api/runs/{id}/analysis": {
+    "get": {
+      "description": "Returns a comprehensive post-run analysis including metadata, changes, validation results, and failure details.",
+      "operationId": "getRunAnalysis",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "changes": {
+                    "properties": {
+                      "changedFiles": {
+                        "items": {
+                          "type": "string",
+                        },
+                        "type": "array",
+                      },
+                      "diffSize": {
+                        "type": "integer",
+                      },
+                    },
+                    "type": "object",
+                  },
+                  "completedAt": {
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "createdAt": {
+                    "format": "date-time",
+                    "type": "string",
+                  },
+                  "elapsedSeconds": {
+                    "type": "number",
+                  },
+                  "errors": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "exitCode": {
+                    "type": "integer",
+                  },
+                  "failureClass": {
+                    "type": "string",
+                  },
+                  "id": {
+                    "type": "string",
+                  },
+                  "metadata": {
+                    "type": "object",
+                  },
+                  "status": {
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed",
+                      "failed",
+                    ],
+                    "type": "string",
+                  },
+                  "validation": {
+                    "properties": {
+                      "commandResults": {
+                        "items": {
+                          "type": "object",
+                        },
+                        "type": "array",
+                      },
+                      "passed": {
+                        "type": "boolean",
+                      },
+                    },
+                    "type": "object",
+                  },
+                },
+                "required": [
+                  "id",
+                  "status",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run analysis",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Get comprehensive run analysis",
+      "tags": [
+        "Run Details",
+      ],
+    },
+  },
+  "/api/runs/{id}/artifacts": {
+    "get": {
+      "description": "Returns metadata for all available artifacts from a run (metadata.json, git.diff, validation.log, etc.)",
+      "operationId": "getRunArtifacts",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "artifactCount": {
+                    "type": "integer",
+                  },
+                  "artifacts": {
+                    "items": {
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                        },
+                        "contentType": {
+                          "type": "string",
+                        },
+                        "description": {
+                          "type": "string",
+                        },
+                        "name": {
+                          "type": "string",
+                        },
+                        "size": {
+                          "type": "integer",
+                        },
+                      },
+                      "type": "object",
+                    },
+                    "type": "array",
+                  },
+                  "exitCode": {
+                    "type": "integer",
+                  },
+                  "id": {
+                    "type": "string",
+                  },
+                  "recommended": {
+                    "description": "Recommended artifacts to review first",
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "runStatus": {
+                    "enum": [
+                      "queued",
+                      "running",
+                      "completed",
+                      "failed",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "id",
+                  "artifacts",
+                  "artifactCount",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Artifacts list",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "List artifacts",
+      "tags": [
+        "Artifacts",
+      ],
+    },
+  },
+  "/api/runs/{id}/cancel": {
+    "post": {
+      "description": "Cancels a queued or running kaseki job. Returns 200 if cancellation was accepted; operation may complete asynchronously.",
+      "operationId": "cancelRun",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "id": {
+                    "type": "string",
+                  },
+                  "message": {
+                    "type": "string",
+                  },
+                  "status": {
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "Cancellation accepted",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Cancel a run",
+      "tags": [
+        "Run Management",
+      ],
+    },
+  },
+  "/api/runs/{id}/logs/{logtype}": {
+    "get": {
+      "description": "Returns a specific log file (stdout, stderr, validation, progress, quality, or secret-scan). Large logs are truncated.",
+      "operationId": "getRunLog",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "Log type to retrieve",
+          "in": "path",
+          "name": "logtype",
+          "required": true,
+          "schema": {
+            "enum": [
+              "stdout",
+              "stderr",
+              "validation",
+              "progress",
+              "quality",
+              "secret-scan",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "description": "Number of lines to tail (default: 100)",
+          "in": "query",
+          "name": "tail",
+          "schema": {
+            "default": 100,
+            "minimum": 1,
+            "type": "integer",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string",
+              },
+            },
+          },
+          "description": "Log content",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run or log not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Get specific log file",
+      "tags": [
+        "Run Logs & Progress",
+      ],
+    },
+  },
+  "/api/runs/{id}/progress": {
+    "get": {
+      "description": "Returns progress events for a run. Supports Server-Sent Events (SSE) streaming via \`?stream=sse\` query parameter.",
+      "operationId": "getRunProgress",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "Set to "sse" to enable Server-Sent Events streaming",
+          "in": "query",
+          "name": "stream",
+          "schema": {
+            "enum": [
+              "sse",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "description": "Each line is a JSON progress event",
+                "type": "object",
+              },
+            },
+            "text/event-stream": {
+              "schema": {
+                "description": "Server-Sent Events format (when stream=sse)",
+                "type": "object",
+              },
+            },
+          },
+          "description": "Progress events (JSONL or SSE format)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Get progress events",
+      "tags": [
+        "Run Logs & Progress",
+      ],
+    },
+  },
+  "/api/runs/{id}/status": {
+    "get": {
+      "description": "Returns current status of a kaseki run, including progress, elapsed time, and timeout risk percentage.",
+      "operationId": "getRunStatus",
+      "parameters": [
+        {
+          "description": "Kaseki instance ID (e.g., kaseki-42)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "pattern": "^kaseki-\\d+$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusResponse",
+              },
+            },
+          },
+          "description": "Current run status",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Run not found",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Poll run status",
+      "tags": [
+        "Run Management",
+      ],
+    },
+  },
+  "/api/validate": {
+    "post": {
+      "description": "Validates the task configuration before submitting a run. Performs pre-flight checks on the task prompt and constraints.",
+      "operationId": "validateTask",
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "properties": {
+                "changedFilesAllowlist": {
+                  "description": "File patterns to allow changes in",
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "idempotencyKey": {
+                  "description": "Idempotency key for safe retries",
+                  "format": "uuid",
+                  "type": "string",
+                },
+                "maxDiffBytes": {
+                  "description": "Max diff size in bytes",
+                  "type": "integer",
+                },
+                "publishMode": {
+                  "description": "Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing",
+                  "enum": [
+                    "auto",
+                    "none",
+                    "branch",
+                    "pr",
+                    "draft_pr",
+                  ],
+                  "type": "string",
+                },
+                "ref": {
+                  "default": "main",
+                  "description": "Git branch/tag/commit",
+                  "type": "string",
+                },
+                "repoUrl": {
+                  "description": "Git repository URL",
+                  "format": "uri",
+                  "type": "string",
+                },
+                "startupCheck": {
+                  "description": "Start a worker container and exit after boot checks",
+                  "type": "boolean",
+                },
+                "startupCheckMode": {
+                  "description": "Startup check depth: boot-only container smoke test or baseline validation dry-run",
+                  "enum": [
+                    "boot",
+                    "baseline-validation",
+                  ],
+                  "type": "string",
+                },
+                "taskMode": {
+                  "description": "Task mode",
+                  "enum": [
+                    "patch",
+                    "inspect",
+                  ],
+                  "type": "string",
+                },
+                "taskPrompt": {
+                  "description": "Task prompt for Pi agent",
+                  "type": "string",
+                },
+                "timeoutSeconds": {
+                  "description": "Per-run timeout in seconds",
+                  "maximum": 10800,
+                  "minimum": 60,
+                  "type": "integer",
+                },
+                "tracing": {
+                  "description": "Request tracing identifiers",
+                  "type": "object",
+                },
+                "validationCommands": {
+                  "description": "Validation commands to run",
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "webhookConfig": {
+                  "description": "Webhook configuration for job events",
+                  "type": "object",
+                },
+              },
+              "required": [
+                "repoUrl",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "checks": {
+                    "items": {
+                      "type": "object",
+                    },
+                    "type": "array",
+                  },
+                  "errors": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "estimatedDurationSeconds": {
+                    "type": "integer",
+                  },
+                  "isValid": {
+                    "type": "boolean",
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "Validation result",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Invalid request",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Validate task configuration",
+      "tags": [
+        "Service Info",
+      ],
+    },
+  },
+  "/api/webhooks/test": {
+    "post": {
+      "description": "Tests a webhook configuration by sending a test event to the specified URL.",
+      "operationId": "testWebhook",
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "properties": {
+                "secret": {
+                  "type": "string",
+                },
+                "url": {
+                  "format": "uri",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "url",
+              ],
+              "type": "object",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "message": {
+                    "type": "string",
+                  },
+                  "statusCode": {
+                    "type": "integer",
+                  },
+                  "success": {
+                    "type": "boolean",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "Webhook test successful",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Invalid webhook configuration",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Unauthorized",
+        },
+      },
+      "security": [
+        {
+          "BearerAuth": [],
+        },
+      ],
+      "summary": "Test webhook configuration",
+      "tags": [
+        "Webhooks",
+      ],
+    },
+  },
+  "/health": {
+    "get": {
+      "description": "Returns 200 OK if the service is running. No authentication required.",
+      "operationId": "getHealth",
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "ok",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "Service is healthy",
+        },
+      },
+      "summary": "Health check endpoint",
+      "tags": [
+        "Health & Status",
+      ],
+    },
+  },
+  "/ready": {
+    "get": {
+      "description": "Returns 200 OK when the service is ready to accept requests. Checks queue and scheduler dependencies. No authentication required.",
+      "operationId": "getReady",
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "message": {
+                    "type": "string",
+                  },
+                  "ready": {
+                    "type": "boolean",
+                  },
+                },
+                "type": "object",
+              },
+            },
+          },
+          "description": "Service is ready",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "error": {
+                    "description": "Error message",
+                    "type": "string",
+                  },
+                  "requestId": {
+                    "description": "Request ID for debugging",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "error",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Service is not ready",
+        },
+      },
+      "summary": "Readiness probe",
+      "tags": [
+        "Health & Status",
+      ],
+    },
+  },
+}
+`;
