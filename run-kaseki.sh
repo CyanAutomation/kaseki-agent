@@ -1107,6 +1107,29 @@ test -w /workspace
 test -w /results
 test -w /cache
 printf "startup_check=ok\n" > /results/startup-check.txt
+cat > /results/metadata.json <<META
+{
+  "startupCheck": true,
+  "startup_check": true,
+  "dryRun": true,
+  "dry_run": "1",
+  "exit_code": 0,
+  "current_stage": "startup check",
+  "node_version": "$(node --version)",
+  "git_version": "$(git --version)",
+  "pi_version": "$(pi --version 2>/dev/null || true)"
+}
+META
+cat > /results/result-summary.md <<SUMMARY
+# Kaseki Startup Check
+
+- Status: passed
+- Container booted: yes
+- OpenRouter secret mounted: yes
+- Workspace writable: yes
+- Results writable: yes
+- Cache writable: yes
+SUMMARY
 printf "[progress] startup check: completed\n"'
   )
 fi

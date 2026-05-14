@@ -48,6 +48,7 @@ export class IdempotencyStore {
   private readRemainder = '';
 
   constructor(resultsDir: string, ttlHours: number = 24) {
+    fs.mkdirSync(resultsDir, { recursive: true });
     this.persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
     this.lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     this.logger = createEventLogger('idempotency-store');
