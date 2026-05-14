@@ -363,7 +363,7 @@ if (result.status === 'completed') {
 |----------|---------|-------------|
 | `KASEKI_API_PORT` | 8080 | HTTP listen port |
 | `KASEKI_API_KEYS` | — | **Required**: comma-separated API keys |
-| `KASEKI_API_KEYS_FILE` | — | Alternatively, path to key file |
+| Host secret files | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | Alternative to `KASEKI_API_KEYS`; one key per line |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max parallel jobs |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | 20-minute timeout |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | 200 KB max diff |
