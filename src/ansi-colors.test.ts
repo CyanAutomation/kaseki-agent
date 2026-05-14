@@ -52,10 +52,10 @@ describe('ansi-colors', () => {
 
   describe('stripAnsi', () => {
     it('strips text wrapped with enabled color constants and reset', async () => {
-      jest.resetModules();
       setStdoutIsTTY(true);
       process.env.TERM = 'xterm-256color';
       delete process.env.NO_COLOR;
+      jest.resetModules();
 
       const { ANSI_COLORS: enabledColors, stripAnsi: stripFreshAnsi } = await import('../src/ansi-colors');
       const enabledConstantNames = [
