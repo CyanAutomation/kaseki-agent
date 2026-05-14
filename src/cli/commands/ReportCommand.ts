@@ -276,7 +276,7 @@ export class ReportCommand extends BaseCommand {
       }
 
       await this.printDiskSummary(fs, path.join(resultsDir, 'result-summary.md'));
-      return metadata.exitCode === 0 ? 0 : 1;
+      return metadata.exitCode === 0 ? 0 : (metadata.exitCode === undefined ? 0 : 1);
     } catch (error) {
       console.error(`Instance not found on disk: ${instanceId}`);
       logger.debug(`Failed to read instance from disk: ${error}`);
