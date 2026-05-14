@@ -501,4 +501,73 @@ export class ConfigManager {
     this.configFilePath = null;
     this.loaded = false;
   }
+
+  /**
+   * Validate authentication file paths and detect common mistakes
+   * Returns diagnostics about any path naming issues
+   */
+  validateAuthPaths(): { warnings: string[]; suggestions: Map<string, string> } {
+    const warnings: string[] = [];
+    const suggestions = new Map<string, string>();
+
+    const authFiles = {
+      'auth.openrouter_api_key_file': 'OpenRouter API Key',
+      'auth.github_app_id_file': 'GitHub App ID',
+      'auth.github_app_client_id_file': 'GitHub App Client ID',
+      'auth.github_app_private_key_file': 'GitHub App Private Key',
+    };
+
+    for (const [configKey, _label] of Object.entries(authFiles)) {
+      try {
+        const filePath: string = this.get(configKey, '') as string;
+        if (!filePath) continue;
+
+        // Check for common naming mistake: github_client_id instead of github_app_client_id
+        if (filePath.includes('github_client_id') && !filePath.includes('github_app_client_id')) {
+          const suggestion = filePath.replace(/github_client_id/g, 'github_app_client_id');
+          const warning =
+            `Path for ${configKey} contains "github_client_id" instead of "github_app_client_id": ${filePath}`;
+          warnings.push(warning);
+          suggestions.set(filePath, suggestion);
+          logger.warn(warning);
+          logger.warn(`  Suggestion: ${suggestion}`);
+        }
+
+        // Check for missing path separators or other obvious issues
+        if (filePath.includes('github_app_id_file') && !filePath.includes('github_app_id')) {
+          const suggestion = filePath.replace(/github_app_id_file/g, 'github_app_id');
+          warnings.push(
+            `Path for ${configKey} appears to contain filename "github_app_id_file" instead of "github_app_id": ${filePath}`
+          );
+          suggestions.set(filePath, suggestion);
+        }
+      } catch {
+        // Key not found, skip
+      }
+    }
+
+    return { warnings, suggestions };
+  }
+
+  /**
+   * Get diagnostics for a specific auth path
+   * Used by DoctorCommand to provide helpful error messages
+   */
+  getPathDiagnostics(configKey: string): {
+    path: string | null;
+    hasWarning: boolean;
+    suggestion: string | null;
+  } {
+    try {
+      const path = this.get(configKey, '');
+      const { warnings, suggestions } = this.validateAuthPaths();
+
+      const hasWarning = warnings.some((w) => w.includes(configKey));
+      const suggestion = path && suggestions.has(path) ? suggestions.get(path) || null : null;
+
+      return { path: path || null, hasWarning, suggestion };
+    } catch {
+      return { path: null, hasWarning: false, suggestion: null };
+    }
+  }
 }
