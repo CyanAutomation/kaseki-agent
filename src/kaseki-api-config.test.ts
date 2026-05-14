@@ -98,6 +98,28 @@ describe('kaseki-api-config load configuration', () => {
     const config = loadConfig();
 
     expect(config.apiKeys).toEqual([]);
+    expect(config.host).toBe('127.0.0.1');
+  });
+
+  test('loadConfig rejects unauthenticated mode on non-loopback hosts', () => {
+    const { readHostSecret } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockReturnValue(null);
+
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_API_HOST = '0.0.0.0';
+
+    expect(() => loadConfig()).toThrow('KASEKI_API_HOST must be localhost, 127.0.0.1, or ::1');
+  });
+
+  test('loadConfig allows configured API keys on non-loopback hosts', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+    process.env.KASEKI_API_HOST = '0.0.0.0';
+
+    const config = loadConfig();
+
+    expect(config.apiKeys).toEqual(['test-key']);
+    expect(config.host).toBe('0.0.0.0');
   });
 
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {

@@ -36,6 +36,17 @@ const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootst
 const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 3000;
 const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
 
+function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
+  if (!remoteAddress) {
+    return false;
+  }
+
+  return remoteAddress === '::1' ||
+    remoteAddress === '127.0.0.1' ||
+    remoteAddress === '::ffff:127.0.0.1' ||
+    remoteAddress.startsWith('127.');
+}
+
 interface TemplateHealthStatus {
   ok: boolean;
   templateDir: string;
@@ -477,7 +488,21 @@ export function createApiRouter(
     }
 
     if (config.apiKeys.length === 0) {
-      return next();
+      if (isLoopbackRemoteAddress(req.socket.remoteAddress)) {
+        return next();
+      }
+
+      logger.event('api_auth_failed', {
+        path: req.path,
+        reason: 'unauthenticated_mode_non_loopback_request',
+        remoteAddress: req.socket.remoteAddress,
+      });
+      return sendErrorResponse(
+        res,
+        401,
+        'Unauthorized',
+        'Unauthenticated local mode only accepts loopback requests'
+      );
     }
 
     const authHeader = req.get('Authorization');

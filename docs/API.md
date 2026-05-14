@@ -24,6 +24,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KASEKI_API_PORT` | 8080 | HTTP port for API server |
+| `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
 | `KASEKI_API_KEYS_FILE` | — | Path to file with newline-separated keys |
 | `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | CLI client base URL for submitting `kaseki-agent run` requests |
@@ -52,7 +53,11 @@ All endpoints (except `/health`, `/api/health`, `/ready`, and `/api/ready`) requ
 curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
 ```
 
-The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.keys` value as a bearer token. For trusted local development only, run the API with `KASEKI_API_KEYS` empty and omit `KASEKI_API_KEY`; the CLI will submit requests without an `Authorization` header. If auth is enabled and the token is missing or invalid, the API returns `401 Unauthorized`.
+The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.keys` value as a bearer token. If auth is enabled and the token is missing or invalid, the API returns `401 Unauthorized`.
+
+> **Warning: unauthenticated mode is for trusted local development only.** When `KASEKI_API_KEYS` is empty, the API service binds to `127.0.0.1` by default, rejects non-loopback requests in route middleware, and refuses to start if `KASEKI_API_HOST` is set to a non-loopback address such as `0.0.0.0`. Do not expose unauthenticated mode through containers, reverse proxies, SSH tunnels, or load balancers. Configure `KASEKI_API_KEYS` before any production or network-accessible deployment.
+
+For intentional local-only development, run the API with `KASEKI_API_KEYS` empty and omit `KASEKI_API_KEY`; the CLI will submit requests without an `Authorization` header.
 
 ## Interactive Swagger Documentation
 
@@ -782,9 +787,11 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 4. **Limit concurrent runs** — Set `KASEKI_API_MAX_CONCURRENT_RUNS` to prevent host overload.
 
-5. **Rotate API keys** — Keep keys in secure storage (`KASEKI_API_KEYS_FILE`), not in scripts.
+5. **Require authentication outside localhost** — Set `KASEKI_API_KEYS` before binding the API to any network-accessible interface or proxy. Empty-key mode is blocked on non-loopback binds and should never be used in production.
 
-6. **Parse errors** — Check `failureClass` in status to determine failure root cause:
+6. **Rotate API keys** — Keep keys in secure storage (`KASEKI_API_KEYS_FILE`), not in scripts.
+
+7. **Parse errors** — Check `failureClass` in status to determine failure root cause:
    - `validation` — Validation command failed
    - `timeout` — Agent timeout
    - `quality` — Diff/allowlist/secret scan violation
