@@ -246,11 +246,18 @@ describe('DoctorCommand', () => {
         { name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE', path: null },
       ];
       const unreadableFiles: any[] = [];
+      const mockIsSudo = jest.spyOn(command as any, 'isSudo').mockReturnValue(false);
 
       const message = (command as any).buildAuthErrorMessage(missingFiles, unreadableFiles);
 
       expect(message).toContain('~/.kaseki/config.json');
       expect(message).toContain('github_app_id_file');
+      expect(message).toContain('~/.../github_app_client_id');
+      expect(message).toContain('/path/to/github_app_client_id');
+      expect(message).not.toContain('/path/to/github_client_id');
+      expect(message).not.toContain('~/.../client_id');
+
+      mockIsSudo.mockRestore();
     });
 
     test('should include docker-compose option', async () => {
