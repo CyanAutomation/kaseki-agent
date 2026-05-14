@@ -1,5 +1,8 @@
 # Performance Tuning & Optimization Guide
 
+> **NPM CLI note:** examples that use `kaseki-agent run` submit work through the configured Kaseki API. Start `kaseki-agent serve` locally or set `KASEKI_API_URL` before benchmarking or tuning task runs.
+
+
 This guide helps you optimize kaseki-agent for your specific use case: managing timeouts, cache strategies, API rate limits, and resource allocation.
 
 ---

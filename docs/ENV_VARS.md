@@ -18,10 +18,12 @@ Complete reference for all environment variables used by kaseki-agent.
 
 ### API Keys & Credentials
 
-| Variable | File-based Alternative | Type | Purpose |
+| Variable | Default / Alternative | Type | Purpose |
 |----------|---|---|---|
 | `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter.ai API key (required) |
-| `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys for Kaseki service |
+| `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
+| `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
 | `GITHUB_TOKEN` | (env var only) | string | GitHub API token for PR creation |
 | `GITHUB_APP_ID` | `GITHUB_APP_ID_FILE` | string | GitHub App ID (numeric) |
 | `GITHUB_APP_CLIENT_ID` | `GITHUB_APP_CLIENT_ID_FILE` | string | GitHub OAuth Client ID |
@@ -265,7 +267,7 @@ export GIT_REF="main"
 export TASK_PROMPT="Fix the null pointer bug in src/parser.ts"
 export OPENROUTER_API_KEY="sk-or-your-key-here"
 
-kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
+KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
 
 ### Production Setup (API Service)
@@ -301,7 +303,7 @@ export KASEKI_MAX_DIFF_BYTES=50000
 export KASEKI_AGENT_TIMEOUT_SECONDS=900
 export KASEKI_CACHE_ENABLED=1
 
-kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
+KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
 
 ### High-Performance Setup
