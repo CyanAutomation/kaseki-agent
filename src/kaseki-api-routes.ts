@@ -141,7 +141,6 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
   };
 }
 
-
 interface TemplateVersionMetadata {
   gitRef?: string;
   supportedPublishModes?: string[];

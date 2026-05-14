@@ -180,7 +180,6 @@ export class KasekiCLI {
     }
   }
 
-
   /**
    * Print command-specific help without executing checks or API calls.
    */
