@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.26.1...v1.27.0) (2026-05-14)
+
+### Features
+
+* Add .fallowrc.json configuration and update .gitignore to include .fallow/ ([f06c45a](https://github.com/CyanAutomation/kaseki-agent/commit/f06c45ae7a1908f6b9e9e6ebdd81f9d3e48c4d70))
+* Add conventional-changelog-conventionalcommits dependency for automated changelog generation ([63fe9fa](https://github.com/CyanAutomation/kaseki-agent/commit/63fe9fa5abb8d9f57f1311bb1ebe6738ce172783))
+* add OpenAPI path and schema builders for Kaseki Agent API ([8fb517c](https://github.com/CyanAutomation/kaseki-agent/commit/8fb517c77ff5507686ea74942ce6e56a80e104c6))
+* add validation for GitHub client ID file naming and provide suggestions in ConfigManager and DoctorCommand ([8cd5758](https://github.com/CyanAutomation/kaseki-agent/commit/8cd575850d55012e792116eddb7a7e30d6cf50e6))
+* Complete setup simplification with auto-initialization, unified commands, and migration guide ([a7441d1](https://github.com/CyanAutomation/kaseki-agent/commit/a7441d17a0ff4836f303fb9c22005b95c3d82e09))
+* Export class and function declarations for DockerManager, KasekiApiClient, SecretValueCache, SetupWizard, and test utilities ([12f3f27](https://github.com/CyanAutomation/kaseki-agent/commit/12f3f27ca123e4fd29936b25a1afe1f186d00fb5))
+* export classes and functions for improved accessibility in DockerManager, SecretValueCache, and test utilities ([3015d7c](https://github.com/CyanAutomation/kaseki-agent/commit/3015d7c49a3e409245e19008349e2df128fb745f))
+* implement OpenAPI component builders for security schemes, tags, info, and servers ([f25a97f](https://github.com/CyanAutomation/kaseki-agent/commit/f25a97f6055411253490815475e6582a5b67bb60))
+* Increase KASEKI_AGENT_TIMEOUT_SECONDS from 3600 to 7200 for longer agent invocations ([43459ad](https://github.com/CyanAutomation/kaseki-agent/commit/43459adf3004496dc74a9b39f356c0aecb49e91a))
+* Introduce unified setup wizard for kaseki-agent ([761c177](https://github.com/CyanAutomation/kaseki-agent/commit/761c1772ea1ac11abd93bfa16d3bf64f1add006d))
+* Simplify setup process with unified init wizard and updated documentation ([184365c](https://github.com/CyanAutomation/kaseki-agent/commit/184365c4b0665031b812b79d02f8205f3badb3cc))
+
 ## [1.26.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.26.0...v1.26.1) (2026-05-13)
 
 ### Bug Fixes
