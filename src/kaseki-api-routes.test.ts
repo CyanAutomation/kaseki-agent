@@ -232,6 +232,20 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
     }
   });
 
+  test('GET /api/metrics allows trusted unauthenticated local mode when no API keys are configured', async () => {
+    const scheduler = createMockScheduler();
+    const config = { ...createTestConfig(resultsDir), apiKeys: [] };
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/metrics`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/plain');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('GET /api/metrics returns prometheus content type and expected metric keys', async () => {
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);

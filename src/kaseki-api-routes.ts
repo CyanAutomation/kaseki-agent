@@ -476,6 +476,10 @@ export function createApiRouter(
       return next();
     }
 
+    if (config.apiKeys.length === 0) {
+      return next();
+    }
+
     const authHeader = req.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       logger.event('api_auth_failed', {
