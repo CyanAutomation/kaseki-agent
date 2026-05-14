@@ -1,5 +1,6 @@
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
+import * as fs from 'fs';
 import { loadConfig } from './kaseki-api-config';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
@@ -14,6 +15,11 @@ export { assertSupportedNodeVersion, ensureTemplateInitialized };
  */
 export function createGracefulShutdown(deps: ShutdownDeps) {
   return () => gracefulShutdown(deps);
+}
+
+export function ensureResultsDir(resultsDir: string): void {
+  fs.mkdirSync(resultsDir, { recursive: true });
+  fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
 }
 
 /**
@@ -32,6 +38,17 @@ async function main(): Promise<void> {
     config = loadConfig();
   } catch (err) {
     logger.error('Configuration error:', { error: String(err) });
+    process.exit(1);
+  }
+
+  try {
+    ensureResultsDir(config.resultsDir);
+  } catch (err) {
+    logger.error('Results directory is not ready:', {
+      resultsDir: config.resultsDir,
+      error: String(err),
+      remediation: 'Create the directory and make it writable by the API container user, or run scripts/kaseki-setup-host.sh --fix.',
+    });
     process.exit(1);
   }
 

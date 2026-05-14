@@ -66,6 +66,7 @@ async function createTestApp(
 }> {
   const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
   const preFlightValidator = new PreFlightValidator();
+  process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = process.env.KASEKI_SKIP_BOOTSTRAP_CHECK ?? '1';
 
   const app = express();
   app.use(express.json());
@@ -289,6 +290,67 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       expect(body).toContain('kaseki_run_duration_seconds');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
+describe('kaseki-api-routes template readiness gate', () => {
+  let resultsDir: string;
+  let originalSkipBootstrapCheck: string | undefined;
+  let originalTemplateDir: string | undefined;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-template-gate-test-'));
+    originalSkipBootstrapCheck = process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+    originalTemplateDir = process.env.KASEKI_TEMPLATE_DIR;
+    delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+    if (originalSkipBootstrapCheck === undefined) {
+      delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+    } else {
+      process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = originalSkipBootstrapCheck;
+    }
+    if (originalTemplateDir === undefined) {
+      delete process.env.KASEKI_TEMPLATE_DIR;
+    } else {
+      process.env.KASEKI_TEMPLATE_DIR = originalTemplateDir;
+    }
+  });
+
+  test('POST /api/runs rejects incomplete templates before queueing', async () => {
+    const templateDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-incomplete-template-'));
+    process.env.KASEKI_TEMPLATE_DIR = templateDir;
+    fs.writeFileSync(path.join(templateDir, 'run-kaseki.sh'), '#!/usr/bin/env bash\n');
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo' }),
+      });
+      const body = (await res.json()) as any;
+
+      expect(res.status).toBe(400);
+      expect(body.type).toBe('https://api.kaseki.local/errors#template-not-ready');
+      expect(body.detail).toContain('Template is incomplete');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+      expect(fs.existsSync(path.join(resultsDir, '.kaseki-api-idempotency.jsonl'))).toBe(false);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(templateDir, { recursive: true, force: true });
     }
   });
 });
