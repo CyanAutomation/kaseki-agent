@@ -265,7 +265,7 @@ export class DoctorCommand extends BaseCommand {
               `    ⚠️  Hint: Did you mean '${replacement}'?`
             );
             lines.push(
-              `    The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".`
+              '    The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".'
             );
           } else {
             lines.push(`  • ${file.name}: not found at ${file.path}`);
