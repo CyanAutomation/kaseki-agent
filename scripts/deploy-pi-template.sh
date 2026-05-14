@@ -267,6 +267,34 @@ write_image_metadata() {
   fi
 }
 
+write_template_metadata() {
+  local target="$1"
+  local configured_image="$2"
+  local deployed_image="$3"
+  local git_ref="unknown"
+  local image_digest=""
+
+  git_ref="$(git -C "$SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null || true)"
+  if [ -z "$git_ref" ]; then
+    git_ref="$(git -C "$SOURCE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  fi
+  if [ -z "$git_ref" ]; then
+    git_ref="unknown"
+  fi
+
+  image_digest="$(docker image inspect "$deployed_image" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -n 1 || true)"
+
+  cat > "$target/.kaseki-template-version" <<JSON
+{
+  "gitRef": "$(json_escape "$git_ref")",
+  "supportedPublishModes": ["auto", "none", "branch", "pr", "draft_pr"],
+  "image": "$(json_escape "$configured_image")",
+  "deployedImage": "$(json_escape "$deployed_image")",
+  "imageDigest": "$(json_escape "$image_digest")"
+}
+JSON
+}
+
 printf 'Kaseki template deployment\n'
 printf 'Source: %s\n' "$SOURCE_DIR"
 printf 'Target: %s\n' "$TARGET_DIR"
@@ -287,6 +315,7 @@ docker rm "$CONTAINER"
 CONTAINER=""
 
 write_image_metadata "$TARGET_DIR" "$REQUESTED_IMAGE" "$IMAGE"
+write_template_metadata "$TARGET_DIR" "$REQUESTED_IMAGE" "$IMAGE"
 verify_template "$TARGET_DIR"
 
 emit_json_log "deploy" "finished" "Deployment completed successfully"
