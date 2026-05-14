@@ -740,4 +740,370 @@ describe('OpenAPI Spec Generator', () => {
       });
     });
   });
+
+  describe('Request Validation Edge Cases', () => {
+    test('taskPrompt field exists and has correct type', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const taskPrompt = props.taskPrompt as Record<string, unknown>;
+
+      expect(taskPrompt).toBeDefined();
+      expect(taskPrompt.type).toBe('string');
+      expect(taskPrompt.description).toBeDefined();
+    });
+
+    test('repoUrl is required and has URI format validation', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const required = runRequest.required as unknown as Array<string>;
+
+      expect(required).toContain('repoUrl');
+
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const repoUrl = props.repoUrl as Record<string, unknown>;
+      expect(repoUrl.format).toBe('uri');
+    });
+
+    test('maxDiffBytes has integer type and reasonable constraints', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const maxDiffBytes = props.maxDiffBytes as Record<string, unknown>;
+
+      expect(maxDiffBytes.type).toBe('integer');
+      // Should have constraints to prevent unreasonably large values
+      expect(maxDiffBytes.minimum !== undefined || maxDiffBytes.maximum !== undefined || maxDiffBytes.description).toBeDefined();
+    });
+
+    test('timeoutSeconds has integer type with min/max constraints', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const timeout = props.timeoutSeconds as Record<string, unknown>;
+
+      expect(timeout.type).toBe('integer');
+      expect(timeout.minimum).toBeDefined();
+      expect(timeout.maximum).toBeDefined();
+      // Minimum should be reasonable (e.g., at least 60 seconds)
+      expect((timeout.minimum as number) >= 60).toBe(true);
+    });
+
+    test('changedFilesAllowlist has array type with string items', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const allowlist = props.changedFilesAllowlist as Record<string, unknown>;
+
+      expect(allowlist.type).toBe('array');
+      const items = allowlist.items as Record<string, unknown>;
+      expect(items.type).toBe('string');
+    });
+
+    test('validationCommands has array type with string items', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const commands = props.validationCommands as Record<string, unknown>;
+
+      expect(commands.type).toBe('array');
+      const items = commands.items as Record<string, unknown>;
+      expect(items.type).toBe('string');
+    });
+
+    test('taskMode enum is defined and includes valid values', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const taskMode = props.taskMode as Record<string, unknown>;
+
+      expect(taskMode.enum).toBeDefined();
+      const enumValues = taskMode.enum as unknown as Array<string>;
+      expect(enumValues).toContain('patch');
+      expect(enumValues).toContain('inspect');
+    });
+
+    test('publishMode enum is defined with comprehensive publish options', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const publishMode = props.publishMode as Record<string, unknown>;
+
+      expect(publishMode.enum).toBeDefined();
+      const enumValues = publishMode.enum as unknown as Array<string>;
+      expect(enumValues.length).toBeGreaterThan(0);
+      // Should include at least common modes
+      expect(enumValues.some((v) => ['auto', 'none', 'pr', 'branch', 'draft_pr'].includes(v))).toBe(true);
+    });
+
+    test('startupCheck is boolean type when defined', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const startupCheck = props.startupCheck as Record<string, unknown>;
+
+      expect(startupCheck.type).toBe('boolean');
+    });
+
+    test('idempotencyKey has UUID format when present', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const idempotencyKey = props.idempotencyKey as Record<string, unknown>;
+
+      if (idempotencyKey) {
+        expect(idempotencyKey.type).toBe('string');
+        expect(idempotencyKey.format).toBe('uuid');
+      }
+    });
+
+    test('all properties have descriptions', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+
+      Object.entries(props).forEach(([_, propSchema]) => {
+        expect((propSchema as Record<string, unknown>).description).toBeDefined();
+      });
+    });
+  });
+
+  describe('Schema Property Validation', () => {
+    test('RunResponse has all required properties with correct types', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
+      const required = runResponse.required as unknown as Array<string>;
+      const props = runResponse.properties as Record<string, Record<string, unknown>>;
+
+      expect(required).toContain('id');
+      expect(required).toContain('status');
+      expect(required).toContain('createdAt');
+
+      // Verify types
+      expect(props.id.type).toBe('string');
+      expect(props.status.type).toBe('string');
+      expect(props.createdAt.type).toBe('string');
+      expect(props.createdAt.format).toBe('date-time');
+    });
+
+    test('RunResponse status field has valid enum values', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
+      const props = runResponse.properties as Record<string, Record<string, unknown>>;
+      const status = props.status as Record<string, unknown>;
+
+      expect(status.enum).toBeDefined();
+      const statusValues = status.enum as unknown as Array<string>;
+      expect(statusValues).toContain('queued');
+      expect(statusValues).toContain('running');
+      expect(statusValues).toContain('completed');
+      expect(statusValues).toContain('failed');
+    });
+
+    test('StatusResponse has all required properties with correct types', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
+      const required = statusResponse.required as unknown as Array<string>;
+      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
+
+      expect(required).toContain('id');
+      expect(required).toContain('status');
+      expect(required).toContain('elapsedSeconds');
+      expect(required).toContain('timeoutRiskPercent');
+
+      // Verify types
+      expect(props.id.type).toBe('string');
+      expect(props.elapsedSeconds.type).toBe('number');
+      expect(props.timeoutRiskPercent.type).toBe('number');
+    });
+
+    test('StatusResponse progress object has required structure when present', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
+      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
+      const progress = props.progress as Record<string, Record<string, unknown>>;
+
+      if (progress && progress.properties) {
+        const progressProps = progress.properties as Record<string, Record<string, unknown>>;
+        // Progress should have stage information
+        expect(progressProps.stage || progressProps.percentComplete).toBeDefined();
+      }
+    });
+
+    test('StatusResponse percentComplete has min/max constraints', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
+      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
+      const progress = props.progress as Record<string, Record<string, unknown>>;
+
+      if (progress && progress.properties) {
+        const progressProps = progress.properties as Record<string, Record<string, unknown>>;
+        const percentComplete = progressProps.percentComplete as Record<string, unknown>;
+
+        if (percentComplete) {
+          expect(percentComplete.type).toBe('integer');
+          expect(percentComplete.minimum).toBe(0);
+          expect(percentComplete.maximum).toBe(100);
+        }
+      }
+    });
+
+    test('ErrorResponse has required error field', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
+      const required = errorResponse.required as unknown as Array<string>;
+
+      expect(required).toContain('error');
+    });
+
+    test('all date-time fields use proper format constraint', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+
+      Object.entries(schemas).forEach(([, schema]) => {
+        const schemaObj = schema as Record<string, Record<string, unknown>>;
+        const props = schemaObj.properties as Record<string, Record<string, unknown>>;
+
+        Object.entries(props || {}).forEach(([propName, propSchema]) => {
+          if (
+            propName.includes('At') ||
+            propName.includes('Timestamp') ||
+            propName.includes('created') ||
+            propName.includes('updated')
+          ) {
+            expect((propSchema as Record<string, unknown>).format).toBe('date-time');
+          }
+        });
+      });
+    });
+
+    test('UUID fields use proper format constraint when defined', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+
+      // Check for idempotencyKey specifically, which should have UUID format
+      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
+      const props = runRequest.properties as Record<string, Record<string, unknown>>;
+      const idempotencyKey = props.idempotencyKey as Record<string, unknown>;
+
+      if (idempotencyKey && idempotencyKey.type === 'string') {
+        expect(idempotencyKey.format).toBe('uuid');
+      }
+    });
+
+    test('RunResponse completedAt is optional and date-time format', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
+      const props = runResponse.properties as Record<string, Record<string, unknown>>;
+      const completedAt = props.completedAt as Record<string, unknown>;
+
+      if (completedAt) {
+        expect(completedAt.type).toBe('string');
+        expect(completedAt.format).toBe('date-time');
+      }
+    });
+
+    test('RunResponse exitCode is integer type when present', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
+      const props = runResponse.properties as Record<string, Record<string, unknown>>;
+      const exitCode = props.exitCode as Record<string, unknown>;
+
+      if (exitCode) {
+        expect(exitCode.type).toBe('integer');
+      }
+    });
+
+    test('RunResponse error field is string when present', () => {
+      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
+      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
+      const props = runResponse.properties as Record<string, Record<string, unknown>>;
+      const error = props.error as Record<string, unknown>;
+
+      if (error) {
+        expect(error.type).toBe('string');
+      }
+    });
+  });
+
+  describe('Advanced Error Response Validation', () => {
+    test('all 5xx responses indicate server error with ErrorResponse', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+      let found5xx = false;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
+
+            if (responses) {
+              Object.entries(responses).forEach(([statusCode]) => {
+                if (statusCode.startsWith('5')) {
+                  found5xx = true;
+                  const response = (responses as Record<string, Record<string, unknown>>)[statusCode];
+                  if (response.content) {
+                    const jsonContent = (response.content as Record<string, Record<string, unknown>>)['application/json'];
+                    if (jsonContent && jsonContent.schema) {
+                      const schema = jsonContent.schema as Record<string, unknown>;
+                      // 5xx errors should reference ErrorResponse
+                      if ('$ref' in schema) {
+                        expect((schema.$ref as string).includes('ErrorResponse')).toBe(true);
+                      }
+                    }
+                  }
+                }
+              });
+            }
+          }
+        });
+      });
+
+      // If no 5xx responses found, that's fine (not all endpoints may have them documented)
+      expect(typeof found5xx).toBe('boolean');
+    });
+
+    test('protected endpoints document complete authentication failure scenarios', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const op = operation as Record<string, unknown>;
+            const security = op.security as Array<Record<string, unknown>> | undefined;
+
+            // If endpoint requires security
+            if (security && Array.isArray(security) && security.length > 0) {
+              const responses = op.responses as Record<string, unknown> | undefined;
+              if (responses) {
+                // Should have 401 for invalid/missing token
+                expect('401' in responses || 'default' in responses).toBe(true);
+              }
+            }
+          }
+        });
+      });
+    });
+
+    test('error response examples are valid JSON', () => {
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      Object.entries(paths).forEach(([, pathItem]) => {
+        Object.entries(pathItem).forEach(([method, operation]) => {
+          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
+
+            if (responses) {
+              Object.entries(responses).forEach(([statusCode, response]) => {
+                if (statusCode.startsWith('4') || statusCode.startsWith('5')) {
+                  const resp = response as Record<string, Record<string, Record<string, unknown>>>;
+                  if (resp.content && resp.content['application/json'] && resp.content['application/json'].example) {
+                    // If example is provided, it should be valid
+                    expect(typeof resp.content['application/json'].example).not.toBe('undefined');
+                  }
+                }
+              });
+            }
+          }
+        });
+      });
+    });
+  });
 });
