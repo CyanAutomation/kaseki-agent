@@ -52,7 +52,7 @@ log_info() {
 # Check if a directory is writable (even if it doesn't exist yet)
 is_writable_or_creatable() {
   local target_dir="$1"
-  local parent_dir parent_part
+  local parent_dir
   
   # If directory exists, check if it's writable
   if [ -d "$target_dir" ]; then

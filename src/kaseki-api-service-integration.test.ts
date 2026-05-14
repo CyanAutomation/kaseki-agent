@@ -99,7 +99,7 @@ describe('KasekiApiService Integration', () => {
         'utf-8',
       );
       const lines = content.split('\n').filter(line => line.trim().length > 0);
-      
+
       // Should be significantly smaller than original ~370 LOC
       expect(lines.length).toBeLessThan(180); // Accounting for whitespace, comments, etc.
     });
@@ -111,7 +111,7 @@ describe('KasekiApiService Integration', () => {
         'utf-8',
       );
       const lines = content.split('\n').filter(line => line.trim().length > 0);
-      
+
       expect(lines.length).toBeGreaterThan(50);
       expect(lines.length).toBeLessThan(150);
     });
@@ -123,7 +123,7 @@ describe('KasekiApiService Integration', () => {
         'utf-8',
       );
       const lines = content.split('\n').filter(line => line.trim().length > 0);
-      
+
       expect(lines.length).toBeGreaterThan(80);
       expect(lines.length).toBeLessThan(180);
     });
