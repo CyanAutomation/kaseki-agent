@@ -1650,6 +1650,75 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.chmodSync(scriptPath, 0o755);
   }
 
+  function writeTemplateMetadata(supportedPublishModes: string[]): void {
+    fs.writeFileSync(
+      path.join(templateDir, '.kaseki-template-version'),
+      JSON.stringify({
+        gitRef: 'test-ref',
+        supportedPublishModes,
+        imageDigest: 'docker.io/cyanautomation/kaseki-agent@sha256:test',
+      }),
+    );
+  }
+
+  test('allows PR run submission when template metadata supports pr', async () => {
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-template-pr-supported',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-template-pr-supported'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        publishMode: 'pr',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rejects PR run submission before startup when template metadata lacks pr', async () => {
+    writeTemplateMetadata(['auto', 'none', 'branch']);
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.detail).toBe('Template does not support publish mode `pr`; redeploy kaseki-agent.');
+      expect(body.templateMetadataPath).toBe(path.join(templateDir, '.kaseki-template-version'));
+      expect(body.supportedPublishModes).toEqual(['auto', 'none', 'branch']);
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('rejects run submission when run-kaseki.sh is missing', async () => {
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
