@@ -11,17 +11,12 @@ import {
 
 describe('OpenAPI Schema Builders', () => {
   describe('buildRunRequestSchema', () => {
-    it('should build valid OpenAPI schema object', () => {
+    it('should have repoUrl as required property', () => {
       const schema = buildRunRequestSchema();
 
       expect(schema).toBeDefined();
       expect(typeof schema).toBe('object');
       expect(schema.type).toBe('object');
-    });
-
-    it('should have repoUrl as required property', () => {
-      const schema = buildRunRequestSchema();
-
       expect(schema.required).toBeDefined();
       expect(Array.isArray(schema.required)).toBe(true);
       expect(schema.required).toContain('repoUrl');
