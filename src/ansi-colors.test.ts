@@ -1,5 +1,37 @@
-import { describe, it, expect } from '@jest/globals';
+import { afterEach, describe, it, expect, jest } from '@jest/globals';
 import { ANSI_COLORS, stripAnsi } from '../src/ansi-colors';
+
+const originalTerm = process.env.TERM;
+const originalNoColor = process.env.NO_COLOR;
+const originalIsTTYDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+
+function setStdoutIsTTY(isTTY: boolean): void {
+  Object.defineProperty(process.stdout, 'isTTY', {
+    configurable: true,
+    value: isTTY,
+  });
+}
+
+function restoreStdoutIsTTY(): void {
+  if (originalIsTTYDescriptor) {
+    Object.defineProperty(process.stdout, 'isTTY', originalIsTTYDescriptor);
+  } else {
+    delete (process.stdout as { isTTY?: boolean }).isTTY;
+  }
+}
+
+afterEach(() => {
+  process.env.TERM = originalTerm;
+
+  if (originalNoColor === undefined) {
+    delete process.env.NO_COLOR;
+  } else {
+    process.env.NO_COLOR = originalNoColor;
+  }
+
+  restoreStdoutIsTTY();
+  jest.resetModules();
+});
 
 describe('ansi-colors', () => {
   describe('ANSI_COLORS', () => {
@@ -16,19 +48,36 @@ describe('ansi-colors', () => {
       expect(ANSI_COLORS).toHaveProperty('BOLD');
       expect(ANSI_COLORS).toHaveProperty('DIM');
     });
-
-    it('color codes are strings (possibly empty)', () => {
-      expect(typeof ANSI_COLORS.RED).toBe('string');
-      expect(typeof ANSI_COLORS.YELLOW).toBe('string');
-      expect(typeof ANSI_COLORS.RESET).toBe('string');
-    });
   });
 
   describe('stripAnsi', () => {
-    it('removes red color codes', () => {
-      const text = `${ANSI_COLORS.RED}error message${ANSI_COLORS.RESET}`;
-      const stripped = stripAnsi(text);
-      expect(stripped).toBe('error message');
+    it('strips text wrapped with enabled color constants and reset', async () => {
+      setStdoutIsTTY(true);
+      process.env.TERM = 'xterm-256color';
+      delete process.env.NO_COLOR;
+      jest.resetModules();
+
+      const { ANSI_COLORS: enabledColors, stripAnsi: stripFreshAnsi } = await import('../src/ansi-colors');
+      const enabledConstantNames = [
+        'RED',
+        'YELLOW',
+        'GREEN',
+        'BLUE',
+        'CYAN',
+        'MAGENTA',
+        'WHITE',
+        'BOLD',
+        'DIM',
+      ] as const;
+
+      expect(enabledColors.RESET).not.toBe('');
+
+      for (const constantName of enabledConstantNames) {
+        const plainText = `${constantName.toLowerCase()} message`;
+
+        expect(enabledColors[constantName]).not.toBe('');
+        expect(stripFreshAnsi(`${enabledColors[constantName]}${plainText}${enabledColors.RESET}`)).toBe(plainText);
+      }
     });
 
     it('removes multiple color codes', () => {
