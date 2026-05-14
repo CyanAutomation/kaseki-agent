@@ -1,5 +1,4 @@
 import { Response } from 'express';
-import * as fs from 'fs';
 import { ErrorResponse, StatusResponse } from '../kaseki-api-types';
 
 /**
@@ -56,36 +55,6 @@ export function buildStatusResponse(jobData: {
   }
 
   return response;
-}
-
-/**
- * Send a file response with appropriate headers for artifact delivery.
- * Handles Content-Type detection and streaming.
- */
-function sendFileResponse(
-  res: Response,
-  filePath: string,
-  fileName: string,
-  options?: { stream?: boolean }
-): void {
-  try {
-    const stat = fs.statSync(filePath);
-    const contentType = detectContentType(fileName);
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
-
-    if (options?.stream) {
-      const stream = fs.createReadStream(filePath);
-      stream.pipe(res);
-    } else {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      res.send(content);
-    }
-  } catch {
-    sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read file: ${fileName}`);
-  }
 }
 
 /**
