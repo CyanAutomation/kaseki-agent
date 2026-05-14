@@ -127,7 +127,7 @@ export class KasekiCLI {
       description: 'Alias for cancel; stops a task through the local Kaseki API',
       execute: async (args) => {
         const { CancelCommand } = await import('./commands/CancelCommand.js');
-        const cmd = new CancelCommand(this.configManager);
+        const cmd = new CancelCommand(this.configManager, undefined, 'stop');
         return cmd.execute(args);
       },
     });

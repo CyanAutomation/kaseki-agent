@@ -133,7 +133,7 @@ EXAMPLES
 
   # Poll or cancel an API-backed task
   kaseki-agent status kaseki-1
-  kaseki-agent cancel kaseki-1
+  kaseki-agent stop kaseki-1
 
   # Inspect local result files without the API
   kaseki-agent report kaseki-1 --from-disk
