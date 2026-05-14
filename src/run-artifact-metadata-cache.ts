@@ -168,7 +168,7 @@ export class RunArtifactMetadataCache {
   }
 }
 
-export const runArtifactMetadataCache = new RunArtifactMetadataCache();
+const runArtifactMetadataCache = new RunArtifactMetadataCache();
 
 export function getRunArtifactMetadata(
   jobId: string,

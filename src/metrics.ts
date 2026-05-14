@@ -1,4 +1,4 @@
-export class MetricsRegistry {
+class MetricsRegistry {
   private queuePending = 0;
   private runningJobs = 0;
   private runsTotal = { success: 0, failure: 0 };

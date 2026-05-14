@@ -62,7 +62,7 @@ export function buildStatusResponse(jobData: {
  * Send a file response with appropriate headers for artifact delivery.
  * Handles Content-Type detection and streaming.
  */
-export function sendFileResponse(
+function sendFileResponse(
   res: Response,
   filePath: string,
   fileName: string,

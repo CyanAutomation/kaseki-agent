@@ -30,7 +30,7 @@ import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 
 // Re-export UTF-8 helpers for backward compatibility
-export { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from './utils/utf8-helpers';
+export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
 const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootstrap.';
 const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 3000;
