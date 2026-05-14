@@ -233,7 +233,7 @@ Kaseki Agent reads all secrets from host-based files instead of environment vari
 Secrets are resolved from the host filesystem in this order:
 
 1. **Primary path**: `/agents/secrets/{secret-name}`
-2. **Fallback path**: `~/.secrets/{secret-name}` (user home directory)
+2. **Fallback path**: `~/secrets/{secret-name}` (user home directory)
 
 The system will check the primary location first and fall back to
 the user directory if not found. Use whichever path is convenient
@@ -246,7 +246,7 @@ Create these files on your host machine:
 #### 1. OpenRouter API Key (Required)
 
 File: `/agents/secrets/openrouter_api_key` or
-`~/.secrets/openrouter_api_key`
+`~/secrets/openrouter_api_key`
 
 ```bash
 # Get your API key from: https://openrouter.ai/keys
@@ -262,7 +262,7 @@ cat /agents/secrets/openrouter_api_key
 #### 2. Kaseki API Keys (Required)
 
 File: `/agents/secrets/kaseki_api_keys` or
-`~/.secrets/kaseki_api_keys`
+`~/secrets/kaseki_api_keys`
 
 Format: One API key per line (newline-separated). Comment lines
 starting with `#` are ignored.
@@ -287,7 +287,7 @@ If you want to enable GitHub App authentication for PR creation,
 create these files:
 
 File: `/agents/secrets/github_app_id` or
-`~/.secrets/github_app_id`
+`~/secrets/github_app_id`
 Content: Numeric GitHub App ID
 
 ```bash
@@ -296,7 +296,7 @@ chmod 600 /agents/secrets/github_app_id
 ```
 
 File: `/agents/secrets/github_app_client_id` or
-`~/.secrets/github_app_client_id`
+`~/secrets/github_app_client_id`
 Content: OAuth Client ID (Iv1.abc...)
 
 ```bash
@@ -305,7 +305,7 @@ chmod 600 /agents/secrets/github_app_client_id
 ```
 
 File: `/agents/secrets/github_app_private_key` or
-`~/.secrets/github_app_private_key`
+`~/secrets/github_app_private_key`
 Content: PEM-format private key
 
 ```bash
@@ -327,7 +327,7 @@ locations, reducing setup friction:
 
 2. **Standard secret paths**
    - `/agents/secrets/github_app_*`
-   - `~/.secrets/github_app_*`
+   - `~/secrets/github_app_*`
 
 3. **Convenience auto-detect locations** (private key only)
    - `~/.ssh/github-app-private-key` — SSH directory for easy
@@ -411,7 +411,7 @@ Should return:
 
 ```bash
 # Secrets (read from files, see "Secret File Setup" section)
-KASEKI_API_KEYS_FILE=/agents/secrets/kaseki_api_keys       # Path to API keys file
+# Kaseki API keys are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
 OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
 GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional: Path to GitHub App ID
 GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id   # Optional
@@ -433,10 +433,7 @@ KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
-**Note on secrets:** All secret file variables are optional if
-your files are in the default locations (`/agents/secrets/` or
-`~/.secrets/`). Only set them if your files are in non-standard
-locations.
+**Note on secrets:** Kaseki API keys are read from the fixed host-secret locations (`/agents/secrets/kaseki_api_keys` or `~/secrets/kaseki_api_keys`). Other supported secret file variables are optional if their files are in the default locations (`/agents/secrets/` or `~/secrets/`); set them only for non-standard locations.
 
 ---
 
@@ -463,7 +460,7 @@ KASEKI_API_KEYS=sk-dev-key npm run kaseki-api
 
 ```bash
 # Secrets (must be set up in host files first, see "Secret File Setup" section)
-KASEKI_API_KEYS_FILE=/agents/secrets/kaseki_api_keys       # Path to API keys file
+# Kaseki API keys are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
 OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key # Path to OpenRouter key
 GITHUB_APP_ID_FILE=/agents/secrets/github_app_id           # Optional
 GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id    # Optional

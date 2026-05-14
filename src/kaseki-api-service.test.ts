@@ -140,7 +140,7 @@ describe('Kaseki API Configuration', () => {
     }).toEqual(expectedConfig);
   });
 
-  test('loadConfig parses API keys from file', async () => {
+  test('loadConfig parses API keys from host secrets', async () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     const fileContents = 'key1\n# comment\nkey2\n';
     (readHostSecret as jest.Mock).mockReturnValue(fileContents);
