@@ -13,7 +13,7 @@ describe('Build Artifacts Validation', () => {
       const distStats = fs.statSync(distDir, {
         throwIfNoEntry: false,
       });
-      expect(distStats?.isDirectory()).toBe(true);
+      expect(distStats?.isDirectory() ?? false).toBe(true);
 
       const distLibStats = fs.statSync(distLibDir, {
         throwIfNoEntry: false,
