@@ -8,3 +8,4 @@ coverage/
 *.log
 *.tmp
 .DS_Store
+.fallow/
