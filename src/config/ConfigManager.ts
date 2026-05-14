@@ -91,6 +91,8 @@ export const ConfigSchema = z.object({
   // REST API service
   api: z.object({
     port: z.number().int().min(1).max(65535).optional(),
+    base_url: z.string().url().optional(),
+    key: z.string().optional(),
     keys: z.array(z.string()).optional(),
     log_level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
     max_concurrent_runs: z.number().int().positive().optional(),
@@ -167,6 +169,7 @@ const DEFAULT_CONFIG: Config = {
   },
   api: {
     port: 8080,
+    base_url: 'http://localhost:8080/api',
     log_level: 'info',
     max_concurrent_runs: 3,
   },
@@ -272,13 +275,12 @@ export class ConfigManager {
 
   /**
    * Apply environment variables to config (lowest priority after files)
-   * Only accepts *_FILE variables, rejects inline secrets (hard requirement)
+   * Only accepts *_FILE variables for provider/GitHub credentials; Kaseki API client keys are allowed.
    */
   private applyEnvironmentVariables(): void {
     // Check for inline secret variables and reject them
     const inlineSecrets = [
       'OPENROUTER_API_KEY',
-      'KASEKI_API_KEYS',
       'GITHUB_APP_ID',
       'GITHUB_APP_CLIENT_ID',
       'GITHUB_APP_PRIVATE_KEY',
@@ -357,9 +359,17 @@ export class ConfigManager {
         if (!this.config.api) this.config.api = {};
         this.config.api.port = parseInt(v, 10);
       },
+      KASEKI_API_BASE_URL: (v) => {
+        if (!this.config.api) this.config.api = {};
+        this.config.api.base_url = v;
+      },
+      KASEKI_API_KEY: (v) => {
+        if (!this.config.api) this.config.api = {};
+        this.config.api.key = v;
+      },
       KASEKI_API_KEYS: (v) => {
         if (!this.config.api) this.config.api = {};
-        this.config.api.keys = v.split(',').map((k) => k.trim());
+        this.config.api.keys = v.split(',').map((k) => k.trim()).filter(Boolean);
       },
 
       // Directories
