@@ -1,7 +1,7 @@
 {
   "name": "@cyanautomation/kaseki-agent",
   "version": "1.26.1",
-  "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation",
+  "description": "Admin/helper/doctor toolbox and local API client for Kaseki diagnostics, setup, and API-backed coding-agent task workflows",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -30,11 +30,13 @@
     "provenance": true
   },
   "keywords": [
-    "pi-cli",
-    "openrouter",
-    "coding-agent",
-    "docker",
-    "automation"
+    "admin",
+    "helper",
+    "doctor",
+    "diagnostics",
+    "local-api-client",
+    "kaseki",
+    "coding-agent"
   ],
   "author": "CyanAutomation",
   "bugs": {

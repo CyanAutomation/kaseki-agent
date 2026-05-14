@@ -4,7 +4,7 @@
  * Kaseki Agent CLI
  *
  * Main entry point for @cyanautomation/kaseki-agent npm package
- * Provides subcommands for setup, running agents, health checks, configuration, and reporting
+ * Provides an admin/helper/doctor toolbox plus local API client commands for task workflows
  */
 
 import process from 'process';
@@ -82,21 +82,28 @@ async function getVersion(): Promise<string> {
  */
 function printHelp(): void {
   console.log(`
-kaseki-agent - Ephemeral coding-agent runner
+kaseki-agent - Admin/helper/doctor toolbox and local API client for Kaseki workflows
 
 USAGE
   kaseki-agent <command> [options]
 
 COMMANDS
-  setup                      Interactive setup wizard (first-time configuration)
-  run [REPO] [REF]          Run kaseki agent on target repository
-  doctor [--json] [--fix]   Health checks and dependency validation
-  serve [--port N]          Start REST API service for async execution
+  Admin/helper
+  doctor [--json] [--fix]   Diagnose host, dependencies, templates, and configuration
+  setup                     Interactive setup wizard (first-time configuration)
   config [--get|--set]      Manage configuration
-  list [--status STATE]     List all kaseki instances
-  report <INSTANCE_ID> [--from-disk]
-                             Generate report from API (or inspect local result files)
   secrets                   Manage stored secrets (keyring/file)
+
+  API service
+  serve [--port N]          Start the local REST API service for async task execution
+
+  API-backed task management
+  run [REPO] [REF]          Submit a task run through the local Kaseki API
+  list [--status STATE]     List task runs through the local Kaseki API
+  report <RUN_ID> [--from-disk]
+                            Generate an API-backed report (or inspect local result files)
+  status <RUN_ID> [--json]  Poll task status through the local Kaseki API
+  stop|cancel <RUN_ID>      Cancel a queued/running task through the local Kaseki API
 
 COMMON OPTIONS
   --help, -h                Show this help message
@@ -112,14 +119,21 @@ EXAMPLES
   # Verify environment
   kaseki-agent doctor --verbose
 
-  # Run agent on a repository
-  kaseki-agent run https://github.com/CyanAutomation/crudmapper main
-
-  # Start API service
+  # Start the local API service before API-backed task commands
   kaseki-agent serve --port 8080
 
-  # List completed instances
+  # Submit a task through that local API service
+  kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+
+  # Or point the CLI at an existing controller API
+  KASEKI_API_URL=https://controller.example.com/api kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+
+  # List completed runs through the local API
   kaseki-agent list --status completed
+
+  # Poll or cancel an API-backed task
+  kaseki-agent status kaseki-1
+  kaseki-agent cancel kaseki-1
 
   # Inspect local result files without the API
   kaseki-agent report kaseki-1 --from-disk
@@ -130,6 +144,7 @@ DOCUMENTATION
 
 ENVIRONMENT
   KASEKI_ROOT              Base directory for runs/results (default: /agents)
+  KASEKI_API_URL           API base URL for task commands (default: http://localhost:8080/api)
   OPENROUTER_API_KEY_FILE  Path to API key file (default: ~/.kaseki/secrets/openrouter_api_key)
   DEBUG                    Enable debug output (set to 1)
 `);
