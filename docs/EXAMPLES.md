@@ -1,5 +1,8 @@
 # Real-World Examples & Integration Patterns
 
+> **NPM CLI note:** `kaseki-agent run`, `list`, `report`, `status`, and `stop`/`cancel` are API-backed commands. Start `kaseki-agent serve` locally or set `KASEKI_API_URL` (and `KASEKI_API_KEY` for authenticated services) before running these examples.
+
+
 This document provides concrete examples for common kaseki-agent use cases and integration patterns. Each example is executable and can be adapted to your workflow.
 
 ---

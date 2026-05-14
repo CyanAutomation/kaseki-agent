@@ -28,8 +28,9 @@ export KASEKI_TIMEOUT_SECONDS=1200
 npm install -g @cyanautomation/kaseki-agent
 kaseki-agent setup
 
-# Run agent
-kaseki-agent run https://github.com/repo main
+# Start local API service, then submit an API-backed task
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+KASEKI_API_KEY=sk-dev KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/repo main
 
 # Configuration files instead of env vars
 # kaseki-agent.json or ~/.kaseki/config.json
@@ -60,7 +61,7 @@ kaseki-agent setup
 ```bash
 npm install @cyanautomation/kaseki-agent
 npx kaseki-agent setup
-npx kaseki-agent run <repo> <ref>
+KASEKI_API_URL=http://localhost:8080/api npx kaseki-agent run <repo> <ref>
 ```
 
 ### 3. Docker Container
@@ -75,9 +76,9 @@ docker run -it docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 | Shell Script | NPM Command | Notes |
 |---|---|---|
 | `./scripts/kaseki-setup.sh` | `kaseki-agent setup` | Interactive setup wizard |
-| `./run-kaseki.sh <repo> <ref>` | `kaseki-agent run <repo> <ref>` | Execute agent |
+| `./run-kaseki.sh <repo> <ref>` | `kaseki-agent run <repo> <ref>` | Submit task through the configured API service |
 | `./scripts/kaseki-setup.sh --doctor` | `kaseki-agent doctor` | Health checks |
-| — | `kaseki-agent list` | List instances (new) |
+| — | `kaseki-agent list` | List instances through the configured API service |
 | — | `kaseki-agent report <id>` | View results (new) |
 | — | `kaseki-agent config get/set` | Configuration (new) |
 | — | `kaseki-agent secrets init/set/get` | Secrets management (new) |
@@ -112,7 +113,7 @@ export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test"
 }
 
 # Or kaseki-agent.json (project-local)
-kaseki-agent run https://github.com/repo main
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/repo main
 ```
 
 ### Environment Variables Still Supported
@@ -258,7 +259,7 @@ The following shell scripts can now be archived (kept in git history):
 
 **Can be archived:**
 
-- `run-kaseki.sh` → `kaseki-agent run`
+- `run-kaseki.sh` → `kaseki-agent run` (API-backed; start `kaseki-agent serve` locally or set `KASEKI_API_URL`)
 - `scripts/kaseki-setup.sh` → `kaseki-agent setup`
 - `scripts/kaseki-healthcheck.sh` → `kaseki-agent doctor`
 - Various other helper scripts → equivalent npm commands
@@ -346,7 +347,7 @@ archived/scripts/dry-run-allowlist.sh
 
 1. Install npm package: `npm install -g @cyanautomation/kaseki-agent`
 2. Run setup: `kaseki-agent setup`
-3. Start using: `kaseki-agent run <repo> <ref>`
+3. Start `kaseki-agent serve` locally or set `KASEKI_API_URL`, then submit tasks with `kaseki-agent run <repo> <ref>`
 
 ### For Maintainers
 
