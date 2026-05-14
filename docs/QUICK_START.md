@@ -58,7 +58,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**" ./run-kaseki.sh --repo https://github.co
 ### Common Issues
 
 **Error: `Docker is not installed or not accessible`**  
-→ Install Docker: https://docs.docker.com/install/
+→ Install Docker: <https://docs.docker.com/install/>
 
 **Error: `Permission denied` when writing to `/agents`**  
 → Create the directory: `sudo mkdir -p /agents && sudo chmod 777 /agents`
@@ -81,6 +81,7 @@ kaseki-agent init
 ```
 
 Follow the wizard. It will:
+
 - Auto-detect your environment
 - Ask which path you want (select "Local API service")
 - Save credentials securely to `~/.kaseki/secrets.json`
@@ -125,6 +126,7 @@ npx kaseki-agent report kaseki-1 --follow
 ### Customization
 
 Edit `.env` to change:
+
 - Validation commands (`KASEKI_VALIDATION_COMMANDS`)
 - AI model (`KASEKI_MODEL`)
 - Timeout (`KASEKI_AGENT_TIMEOUT_SECONDS`)
@@ -210,6 +212,7 @@ KASEKI_API_URL=http://localhost:8080/api kaseki-agent run https://github.com/use
 ### Customization
 
 Edit `.env` to change:
+
 - API port: `KASEKI_API_PORT=8080`
 - Concurrent runs: `KASEKI_API_MAX_CONCURRENT_RUNS=3`
 - Log directory: `KASEKI_LOG_DIR=/var/log/kaseki`
@@ -227,6 +230,7 @@ Edit `.env` to change:
 ### Common Issues
 
 **Permission denied writing to `/agents`**  
+
 ```bash
 sudo mkdir -p /agents
 sudo chown 10000:10000 /agents
@@ -234,6 +238,7 @@ sudo chmod 755 /agents
 ```
 
 **Docker socket not accessible**  
+
 ```bash
 # Verify socket exists and is readable
 ls -la /var/run/docker.sock
@@ -243,6 +248,7 @@ ls -la /var/run/docker.sock
 ```
 
 **API service won't start**  
+
 ```bash
 # Check logs
 docker-compose logs kaseki-api
@@ -260,21 +266,25 @@ All three paths support advanced customization via environment variables:
 ### Common Customizations
 
 **Restrict files agent can modify**:
+
 ```bash
 KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
 ```
 
 **Use a different AI model** (costs more, better quality):
+
 ```bash
 KASEKI_MODEL=openrouter/openai/gpt-4-turbo
 ```
 
 **Increase timeout for complex tasks**:
+
 ```bash
 KASEKI_AGENT_TIMEOUT_SECONDS=3600  # 1 hour
 ```
 
 **Skip pre-flight validation** (only validate after agent runs):
+
 ```bash
 KASEKI_PRE_AGENT_VALIDATION=false
 ```
@@ -285,6 +295,7 @@ For full documentation of all 60+ configuration variables:
 → See [docs/ADVANCED_CONFIG.md](../docs/ADVANCED_CONFIG.md)
 
 Variables are organized by zone:
+
 - **Execution**: What code to run
 - **Validation**: What to check
 - **Caching**: Performance optimization
@@ -325,7 +336,7 @@ Variables are organized by zone:
 → Check: [docs/TROUBLESHOOTING_FLOW.md](../docs/TROUBLESHOOTING_FLOW.md)
 
 **Found a bug?**  
-→ Open an issue: https://github.com/CyanAutomation/kaseki-agent/issues
+→ Open an issue: <https://github.com/CyanAutomation/kaseki-agent/issues>
 
 **Want to contribute?**  
 → See: [CONTRIBUTING.md](../CONTRIBUTING.md)
