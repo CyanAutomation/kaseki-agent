@@ -878,5 +878,3 @@ export function buildAllPaths(
     ...buildWebhookPaths(errorResponseSchema),
   };
 }
-
-export default buildAllPaths;
