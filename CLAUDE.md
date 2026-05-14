@@ -16,6 +16,79 @@ Kaseki Agent is an ephemeral coding-agent runner: it spins up a disposable Docke
 - **Security**: Trivy scanning with SBOM generation
 - **Deployment**: Docker Compose (preferred) with Node.js fallback
 
+## Setup Simplification (Phase 1-5: In Progress)
+
+A major simplification initiative is underway to reduce setup friction:
+
+### What Changed
+
+**Before**: 3 fragmented entry points
+
+- npm CLI setup + serve (complex dependency on global Node.js)
+- Shell script path (`./scripts/kaseki-setup.sh` + `./run-kaseki.sh`)
+- Docker-first path with different credential locations
+
+**After**: Unified `kaseki-agent init` wizard
+
+- Single decision tree: single-run vs local API vs production
+- Auto-detects environment (Docker, Node.js, permissions)
+- Unified credential storage: `~/.kaseki/secrets.json` (mode 0600)
+- Smart defaults: Essential 8 variables, auto-detect advanced settings
+- Clear next steps for each path
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/setup/SetupWizard.ts` | Interactive environment detection + path selection |
+| `src/setup/env-defaults.ts` | Variable registry: 60+ vars organized by zone |
+| `src/cli/commands/InitCommand.ts` | New primary setup command |
+| `.env.template` | Minimal configuration template |
+| `.env.advanced.template` | Advanced reference for power users |
+| `docs/QUICK_START.md` | New unified quick-start guide (decision tree for all paths) |
+| `docs/ADVANCED_CONFIG.md` | Consolidated variable reference |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `src/cli/commands/SetupCommand.ts` | Now delegates to SetupWizard; shows deprecation notice |
+| `src/cli/KasekiCLI.ts` | Added 'init' command; deprecated 'setup' |
+| `src/cli.ts` | Updated help text to feature 'init' prominently |
+| `CLAUDE.md` | Updated with new setup command |
+
+### Backwards Compatibility
+
+- Old `kaseki-agent setup` command **still works** but shows deprecation notice
+- Direct `./run-kaseki.sh` invocation **still works**
+- All legacy shell scripts continue to function
+- Old npm CLI setup path still supported
+
+### Migration Path
+
+For existing users:
+
+1. Run `kaseki-agent init` to use the new unified wizard (recommended)
+2. Or continue with legacy paths (old `setup` command, shell scripts, direct env vars)
+3. For detailed migration guide: See `docs/MIGRATION.md` (planned)
+
+### Remaining Work
+
+**Phase 2-3 (Docker Permissions & Bootstrap)**
+
+- Auto-healing permission checks in entrypoint
+- Eliminate need for manual `kaseki-activate.sh` bootstrap
+
+**Phase 4 (Configuration Defaults)**
+
+- Already implemented: Essential 8 + auto-detection
+- Remaining: Deprecate redundant env vars
+
+**Phase 6 (Formal Deprecation)**
+
+- Provide 1-2 release cycle deprecation notices
+- Migrate users to `kaseki-agent init`
+
 ## Architecture: Host-Container Separation
 
 Two layers, each with its own script:
@@ -53,6 +126,22 @@ Two layers, each with its own script:
 
 ## Common Commands
 
+### 🎯 NEW: Unified Setup (Recommended for First-Time Setup)
+
+```bash
+# Interactive setup wizard - choose your execution path
+kaseki-agent init
+
+# This guides you through:
+# - Environment detection (Docker, Node.js, permissions)
+# - Path selection (single-run vs local API vs production)
+# - Essential 8 configuration (API key, validation, timeouts)
+# - Auto-generated smart defaults
+# - Secure credential storage
+```
+
+### Legacy: Direct Execution (Still Supported)
+
 ```bash
 # Basic run (auto-generates kaseki-N)
 OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
@@ -61,7 +150,7 @@ OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
 OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh kaseki-7
 
 # API key via secret file
-OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key ./run-kaseki.sh
+OPENROUTER_API_KEY_FILE=~/.kaseki/secrets.json ./run-kaseki.sh
 
 # Custom target repo + branch
 REPO_URL=https://github.com/org/repo GIT_REF=feature/branch OPENROUTER_API_KEY=... ./run-kaseki.sh
@@ -76,6 +165,13 @@ docker build -t kaseki-template:latest .
 docker run --rm --entrypoint kaseki-report \
   -v /agents/kaseki-results/kaseki-4:/results:ro \
   kaseki-template:latest /results
+```
+
+### Deprecated Commands (Still Work, Show Deprecation Notices)
+
+```bash
+# Old setup command - now shows deprecation notice and delegates to 'kaseki-agent init'
+kaseki-agent setup
 ```
 
 ## Deploying the Kaseki API Service
