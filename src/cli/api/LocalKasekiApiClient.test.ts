@@ -81,4 +81,26 @@ describe('LocalKasekiApiClient', () => {
       headers: { 'Content-Type': 'application/json' },
     }));
   });
+
+  test('gets runs and status from local API endpoints', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          runs: [{ id: 'kaseki-1', status: 'completed', createdAt: '2026-05-14T00:00:00.000Z', exitCode: 0 }],
+          total: 1,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'kaseki-1', status: 'completed', exitCode: 0 }),
+      } as Response);
+    const client = new LocalKasekiApiClient({ baseUrl: 'http://localhost:8080/api' });
+
+    await expect(client.listRuns()).resolves.toMatchObject({ total: 1 });
+    await expect(client.getRunStatus('kaseki-1')).resolves.toMatchObject({ id: 'kaseki-1', status: 'completed' });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://localhost:8080/api/runs', { headers: {} });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:8080/api/runs/kaseki-1/status', { headers: {} });
+  });
 });

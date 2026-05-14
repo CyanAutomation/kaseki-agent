@@ -94,7 +94,8 @@ COMMANDS
   serve [--port N]          Start REST API service for async execution
   config [--get|--set]      Manage configuration
   list [--status STATE]     List all kaseki instances
-  report <INSTANCE_ID>      Generate report for completed instance
+  report <INSTANCE_ID> [--from-disk]
+                             Generate report from API (or inspect local result files)
   secrets                   Manage stored secrets (keyring/file)
 
 COMMON OPTIONS
@@ -119,6 +120,9 @@ EXAMPLES
 
   # List completed instances
   kaseki-agent list --status completed
+
+  # Inspect local result files without the API
+  kaseki-agent report kaseki-1 --from-disk
 
 DOCUMENTATION
   For more information, visit: https://github.com/CyanAutomation/kaseki-agent
