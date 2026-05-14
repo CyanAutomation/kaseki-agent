@@ -246,6 +246,32 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
     }
   });
 
+  test('GET /api/metrics rejects unauthenticated non-loopback requests when no API keys are configured', async () => {
+    const scheduler = createMockScheduler();
+    const config = { ...createTestConfig(resultsDir), apiKeys: [] };
+    const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use((_req, _res, next) => {
+      Object.defineProperty(_req.socket, 'remoteAddress', {
+        value: '10.0.0.25',
+        configurable: true,
+      });
+      next();
+    });
+    app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/metrics`);
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as any;
+      expect(body.detail).toBe('Unauthenticated local mode only accepts loopback requests');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('GET /api/metrics returns prometheus content type and expected metric keys', async () => {
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);

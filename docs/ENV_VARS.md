@@ -137,6 +137,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
 | `KASEKI_API_PORT` | `8080` | integer | HTTP listen port |
+| `KASEKI_API_HOST` | loopback when unauthenticated | string | Optional bind host; unauthenticated empty-key mode is restricted to `localhost`, `127.0.0.1`, or `::1` |
 | `KASEKI_API_LOG_LEVEL` | `info` | string | Log verbosity (debug/info/warn/error) |
 | `NODE_ENV` | `production` | string | Node.js environment mode |
 
