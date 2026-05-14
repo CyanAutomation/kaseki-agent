@@ -23,8 +23,11 @@ extract_function() {
       }
       if (capture && depth == 0) exit
     }
-  ' "$ROOT_DIR/kaseki-agent.sh"
+  ' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/results#$RESULTS_DIR#g"
 }
+
+RESULTS_DIR="$TMP_DIR/results"
+mkdir -p "$RESULTS_DIR"
 
 # Load only the helpers needed for PR metadata and the existing JSON encoding path.
 eval "$(extract_function sanitize_pr_metadata_text)"
@@ -38,10 +41,8 @@ eval "$(extract_function build_pr_improvements_summary)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
 
-mkdir -p /results "$TMP_DIR/results"
-rm -f /results/result-summary.md /results/changed-files.txt /results/git.diff
-PRE_VALIDATION_TIMINGS_FILE="$TMP_DIR/results/pre-validation-timings.tsv"
-VALIDATION_TIMINGS_FILE="$TMP_DIR/results/validation-timings.tsv"
+PRE_VALIDATION_TIMINGS_FILE="$RESULTS_DIR/pre-validation-timings.tsv"
+VALIDATION_TIMINGS_FILE="$RESULTS_DIR/validation-timings.tsv"
 cat > "$PRE_VALIDATION_TIMINGS_FILE" <<'TSV'
 npm run check	0	3	tee_exit=0 filter_exit=0
 TSV
@@ -74,12 +75,12 @@ KASEKI_PUBLISH_MODE='pr'
 feature_branch='kaseki/kaseki-test-instance'
 
 pr_title="$(derive_pr_title)"
-cat > /results/changed-files.txt <<'FILES'
+cat > "$RESULTS_DIR/changed-files.txt" <<'FILES'
 kaseki-agent.sh
 tests/pr-metadata-generation.test.sh
 docs/usage-token=abc123.md
 FILES
-cat > /results/git.diff <<'DIFF'
+cat > "$RESULTS_DIR/git.diff" <<'DIFF'
 diff --git a/kaseki-agent.sh b/kaseki-agent.sh
 --- a/kaseki-agent.sh
 +++ b/kaseki-agent.sh
@@ -88,7 +89,7 @@ diff --git a/kaseki-agent.sh b/kaseki-agent.sh
 +new
 +another
 DIFF
-cat > /results/result-summary.md <<'SUMMARY'
+cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
 # Kaseki result
 
 ## Summary
@@ -98,6 +99,10 @@ cat > /results/result-summary.md <<'SUMMARY'
 ## Validation
 - Do not include this validation detail in the reviewer summary.
 SUMMARY
+
+# Mock kaseki-agent.sh global variables that normally point to /results
+KASEKI_RESULTS_DIR="$RESULTS_DIR"
+
 pr_body="$(build_pr_body)"
 
 case "$pr_title" in
@@ -117,13 +122,13 @@ else
 fi
 
 INSTANCE_NAME="kaseki-title-cases"
-: > /results/changed-files.txt
+: > "$RESULTS_DIR/changed-files.txt"
 TASK_PROMPT=$(cat <<'PROMPT'
 1. Update userfacing onboarding copy.
 2. Add implementation coverage.
 PROMPT
 )
-rm -f /results/result-summary.md
+rm -f "$RESULTS_DIR/result-summary.md"
 numbered_prompt_pr_title="$(derive_pr_title)"
 case "$numbered_prompt_pr_title" in
   "chore: user-facing onboarding copy"*) pass "PR title removes numbered prompt marker and normalizes compound wording" ;;
@@ -135,7 +140,7 @@ TASK_PROMPT=$(cat <<'PROMPT'
 2. Update tests.
 PROMPT
 )
-cat > /results/result-summary.md <<'SUMMARY'
+cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
 # Kaseki result
 
 ## Summary
@@ -152,7 +157,7 @@ case "$summary_pr_title" in
 esac
 
 TASK_PROMPT="Fix OAuth fallback path"
-cat > /results/result-summary.md <<'SUMMARY'
+cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
 # Kaseki result
 
 ## Validation
@@ -166,7 +171,7 @@ esac
 
 INSTANCE_NAME="kaseki-42"
 TASK_PROMPT="Update $(printf 'verylong %.0s' {1..20})"
-rm -f /results/result-summary.md
+rm -f "$RESULTS_DIR/result-summary.md"
 long_pr_title="$(derive_pr_title)"
 if [ "${#long_pr_title}" -le 72 ] && [[ "$long_pr_title" == *" ($INSTANCE_NAME)" ]]; then
   pass "Long PR titles truncate before preserving the instance suffix"
@@ -175,7 +180,7 @@ else
 fi
 
 TASK_PROMPT=''
-rm -f /results/result-summary.md
+rm -f "$RESULTS_DIR/result-summary.md"
 fallback_pr_title="$(derive_pr_title)"
 if [ "$fallback_pr_title" = "chore: Kaseki agent changes ($INSTANCE_NAME)" ]; then
   pass "Empty prompts produce conventional fallback title with instance suffix"
@@ -289,9 +294,9 @@ else
   fail "Failed validation body did not include full command list inside details"
 fi
 
-: > /results/changed-files.txt
+: > "$RESULTS_DIR/changed-files.txt"
 for file_number in $(seq 1 101); do
-  printf 'src/file-%03d.sh\n' "$file_number" >> /results/changed-files.txt
+  printf 'src/file-%03d.sh\n' "$file_number" >> "$RESULTS_DIR/changed-files.txt"
 done
 long_pr_body="$(build_pr_body)"
 for expected in \
