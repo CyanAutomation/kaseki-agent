@@ -32,9 +32,22 @@ export class KasekiCLI {
   private registerCommands(): void {
     // Commands will be loaded dynamically to avoid circular dependencies
     // and reduce startup time
+
+    // NEW: Unified setup wizard (preferred)
+    this.commands.set('init', {
+      name: 'init',
+      description: 'Unified setup wizard (single-run, local API, or production)',
+      execute: async (args) => {
+        const { InitCommand } = await import('./commands/InitCommand.js');
+        const cmd = new InitCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
+
+    // DEPRECATED: Old setup command (delegated to InitCommand for backwards compat)
     this.commands.set('setup', {
       name: 'setup',
-      description: 'Interactive setup wizard (first-time configuration)',
+      description: '(DEPRECATED: use "init" instead) Interactive setup wizard',
       execute: async (args) => {
         const { SetupCommand } = await import('./commands/SetupCommand.js');
         const cmd = new SetupCommand(this.configManager);

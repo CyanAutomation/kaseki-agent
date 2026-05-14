@@ -90,16 +90,17 @@ USAGE
   kaseki-agent <command> [options]
 
 COMMANDS
-  Admin/helper
+  Setup & Configuration
+  init [--dry-run]          Unified setup wizard (recommended for first-time setup)
+  setup                     (DEPRECATED) Interactive setup wizard (use 'init' instead)
   doctor [--json] [--fix]   Diagnose host, dependencies, templates, and configuration
-  setup                     Interactive setup wizard (first-time configuration)
   config [--get|--set]      Manage configuration
   secrets                   Manage stored secrets (keyring/file)
 
-  API service
+  Local API Service
   serve [--port N]          Start the local REST API service for async task execution
 
-  API-backed task management
+  Task Management
   run [REPO] [REF]          Submit a task run through the local Kaseki API
   list [--status STATE]     List task runs through the local Kaseki API
   report <RUN_ID> [--from-disk]
@@ -114,40 +115,37 @@ COMMON OPTIONS
   --verbose                 Verbose output
   --json                    JSON output format
 
-EXAMPLES
-  # First-time setup
-  kaseki-agent setup
+QUICK START
+  # First-time setup (unified wizard)
+  kaseki-agent init
 
   # Verify environment
   kaseki-agent doctor --verbose
 
-  # Start the local API service before API-backed task commands
+  # Start the local API service
   kaseki-agent serve --port 8080
 
-  # Submit a task through that local API service
+  # Submit a task (requires running API service)
   kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 
-  # Or point the CLI at an existing controller API
-  KASEKI_API_URL=https://controller.example.com/api kaseki-agent run https://github.com/CyanAutomation/crudmapper main
-
-  # List completed runs through the local API
-  kaseki-agent list --status completed
-
-  # Poll or cancel an API-backed task
+  # Check task status and list runs
+  kaseki-agent list
   kaseki-agent status kaseki-1
-  kaseki-agent stop kaseki-1
 
-  # Inspect local result files without the API
+  # Inspect completed results locally
   kaseki-agent report kaseki-1 --from-disk
 
 DOCUMENTATION
-  For more information, visit: https://github.com/CyanAutomation/kaseki-agent
-  Check README.md and docs/ for detailed guides
+  For more information:
+  - Unified quick start: docs/QUICK_START.md
+  - Advanced configuration: docs/ADVANCED_CONFIG.md
+  - Troubleshooting: docs/TROUBLESHOOTING_FLOW.md
+  - API reference: docs/API.md
 
 ENVIRONMENT
   KASEKI_ROOT              Base directory for runs/results (default: /agents)
   KASEKI_API_URL           API base URL for task commands (default: http://localhost:8080/api)
-  OPENROUTER_API_KEY_FILE  Path to API key file (default: ~/.kaseki/secrets/openrouter_api_key)
+  OPENROUTER_API_KEY_FILE  Path to API key file (default: ~/.kaseki/secrets.json)
   DEBUG                    Enable debug output (set to 1)
 `);
 }
