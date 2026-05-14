@@ -1,5 +1,7 @@
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 describe('Build Artifacts Validation', () => {
   const projectRoot = path.join(__dirname, '..');
@@ -11,13 +13,6 @@ describe('Build Artifacts Validation', () => {
       expect(fs.existsSync(distLibDir)).toBe(true);
       const stats = fs.statSync(distLibDir);
       expect(stats.isDirectory()).toBe(true);
-    });
-
-    it('should have event-timestamp-helpers.js in dist/lib/', () => {
-      const filePath = path.join(distLibDir, 'event-timestamp-helpers.js');
-      expect(fs.existsSync(filePath)).toBe(true);
-      const content = fs.readFileSync(filePath, 'utf8');
-      expect(content.length).toBeGreaterThan(0);
     });
 
     it('should have subprocess-helpers.js in dist/lib/', () => {
@@ -36,11 +31,25 @@ describe('Build Artifacts Validation', () => {
   });
 
   describe('Module imports in compiled output', () => {
-    it('pi-event-filter.js should import from ./lib/event-timestamp-helpers.js', () => {
-      const filePath = path.join(distDir, 'pi-event-filter.js');
-      const content = fs.readFileSync(filePath, 'utf8');
-      // Verify the import statement is preserved in the compiled output
-      expect(content).toMatch(/from\s+['"]\.\/lib\/event-timestamp-helpers\.js['"]|require\(['"]\.\/lib\/event-timestamp-helpers\.js['"]\)/);
+    it('pi-event-filter should preserve an importable event timestamp helper contract', () => {
+      const sourcePath = path.join(projectRoot, 'src', 'pi-event-filter.ts');
+      const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+      expect(sourceContent).toMatch(/from\s+['"]\.\/lib\/event-timestamp-helpers\.js['"]/);
+
+      const compiledPath = path.join(distDir, 'pi-event-filter.js');
+      const compiledContent = fs.readFileSync(compiledPath, 'utf8');
+      expect(compiledContent).toMatch(/from\s+['"]\.\/lib\/event-timestamp-helpers\.js['"]|require\(['"]\.\/lib\/event-timestamp-helpers\.js['"]\)/);
+
+      const helperPath = path.join(distLibDir, 'event-timestamp-helpers.js');
+      const helperImportUrl = pathToFileURL(helperPath).href;
+      execFileSync(process.execPath, [
+        '--input-type=module',
+        '--eval',
+        `const helper = await import(${JSON.stringify(helperImportUrl)});
+         if (typeof helper.extractEventTimestamp !== 'function') {
+           throw new Error('event timestamp helper did not export extractEventTimestamp');
+         }`,
+      ]);
     });
 
     it('kaseki-api-routes.js should import from ./lib/subprocess-helpers', () => {
@@ -57,13 +66,6 @@ describe('Build Artifacts Validation', () => {
   });
 
   describe('Module exports from lib/', () => {
-    it('event-timestamp-helpers.js should export expected symbols', () => {
-      const filePath = path.join(distLibDir, 'event-timestamp-helpers.js');
-      const content = fs.readFileSync(filePath, 'utf8');
-      // Verify exports for functions used by pi-event-filter
-      expect(content).toMatch(/export.*extractEventTimestamp|exports\.extractEventTimestamp/);
-    });
-
     it('subprocess-helpers.js should export expected symbols', () => {
       const filePath = path.join(distLibDir, 'subprocess-helpers.js');
       const content = fs.readFileSync(filePath, 'utf8');
