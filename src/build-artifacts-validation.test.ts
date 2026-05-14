@@ -42,14 +42,18 @@ describe('Build Artifacts Validation', () => {
 
       const helperPath = path.join(distLibDir, 'event-timestamp-helpers.js');
       const helperImportUrl = pathToFileURL(helperPath).href;
-      execFileSync(process.execPath, [
-        '--input-type=module',
-        '--eval',
-        `const helper = await import(${JSON.stringify(helperImportUrl)});
-         if (typeof helper.extractEventTimestamp !== 'function') {
-           throw new Error('event timestamp helper did not export extractEventTimestamp');
-         }`,
-      ]);
+      try {
+        execFileSync(process.execPath, [
+          '--input-type=module',
+          '--eval',
+          `const helper = await import(${JSON.stringify(helperImportUrl)});
+           if (typeof helper.extractEventTimestamp !== 'function') {
+             throw new Error('event timestamp helper did not export extractEventTimestamp');
+           }`,
+        ], { encoding: 'utf8' });
+      } catch (error) {
+        throw new Error(`Failed to import or validate event-timestamp-helpers: ${error instanceof Error ? error.message : String(error)}`);
+      }
     });
 
     it('kaseki-api-routes.js should import from ./lib/subprocess-helpers', () => {
