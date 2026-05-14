@@ -49,13 +49,17 @@ describe('SetupOrchestrator', () => {
 
     it('should use KASEKI_TEMPLATE_DIR env var if provided', async () => {
       const envTemplateDir = path.join(os.tmpdir(), 'kaseki-env-test-' + Date.now());
+      const originalEnv = process.env.KASEKI_TEMPLATE_DIR;
       try {
-        const originalEnv = process.env.KASEKI_TEMPLATE_DIR;
         process.env.KASEKI_TEMPLATE_DIR = envTemplateDir;
         const result = await setupOrchestrator.initializeSetup(undefined, skipNodeVersionCheck());
         expect(result.templateDir).toBe(envTemplateDir);
-        process.env.KASEKI_TEMPLATE_DIR = originalEnv;
       } finally {
+        if (originalEnv === undefined) {
+          delete process.env.KASEKI_TEMPLATE_DIR;
+        } else {
+          process.env.KASEKI_TEMPLATE_DIR = originalEnv;
+        }
         if (fs.existsSync(envTemplateDir)) {
           fs.rmSync(envTemplateDir, { recursive: true, force: true });
         }
@@ -69,7 +73,11 @@ describe('SetupOrchestrator', () => {
         const result = await setupOrchestrator.initializeSetup(undefined, skipNodeVersionCheck());
         expect(result.templateDir).toBe('/agents/kaseki-template');
       } finally {
-        process.env.KASEKI_TEMPLATE_DIR = originalEnv;
+        if (originalEnv === undefined) {
+          delete process.env.KASEKI_TEMPLATE_DIR;
+        } else {
+          process.env.KASEKI_TEMPLATE_DIR = originalEnv;
+        }
       }
     });
 
