@@ -33,8 +33,10 @@ async function main() {
       process.exit(0);
     }
 
-    // Handle --help first (quick check)
-    if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+    // Handle top-level --help first (quick check). Command-specific help is
+    // dispatched below so it can print focused usage without running checks or
+    // API calls.
+    if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
       printHelp();
       process.exit(0);
     }

@@ -1,5 +1,8 @@
 # Authentication Setup Guide
 
+> **NPM CLI note:** `kaseki-agent run`, `list`, `report`, `status`, and `stop`/`cancel` are API-backed commands. Configure service-side `KASEKI_API_KEYS` for `kaseki-agent serve` and client-side `KASEKI_API_URL` / `KASEKI_API_KEY` for the npm task commands.
+
+
 This guide covers how to configure authentication credentials for Kaseki Agent, including OpenRouter API keys and GitHub App credentials.
 
 ## Quick Start (Choose One)

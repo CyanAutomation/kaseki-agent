@@ -1,470 +1,224 @@
 # NPM Package Setup Guide
 
-This guide covers installation and usage of `@cyanautomation/kaseki-agent` as an npm package.
+This guide covers installing and using `@cyanautomation/kaseki-agent` as an npm package. The npm CLI is primarily an admin/helper toolbox (`doctor`, `setup`, `config`, and `secrets`) plus a client for API-backed task workflows.
 
 ## Installation
 
-### Global Install (Recommended)
+### Global install (recommended)
 
 ```bash
 npm install -g @cyanautomation/kaseki-agent
+kaseki-agent --help
 ```
 
-Provides the `kaseki-agent` command globally. After installation, run:
-
-```bash
-kaseki-agent setup
-```
-
-### Local Project Install
+### Local project install
 
 ```bash
 npm install @cyanautomation/kaseki-agent
+npx kaseki-agent --help
 ```
 
-Use with `npx`:
+Use the same commands through `npx` when you do not want a global install:
 
 ```bash
+npx kaseki-agent doctor
 npx kaseki-agent setup
-npx kaseki-agent run <repo> <ref>
+npx kaseki-agent config show
+npx kaseki-agent secrets list
 ```
 
-### Requirements
+## Requirements
 
-| Requirement | Description |
-|-------------|-------------|
-| **Node.js v24 or higher** | JavaScript runtime |
-| **Docker** | For running agent containers |
-| **Linux or macOS** | Headless Linux recommended |
-| **Internet access** | For OpenRouter API |
+| Requirement | Needed for | Description |
+|-------------|------------|-------------|
+| **Node.js v24 or higher** | All npm workflows | JavaScript runtime for the CLI |
+| **npm** | Install and `npx` usage | Package manager |
+| **git** | Setup checks and agent service runs | Repository access |
+| **Docker** | Local API service / worker execution | Required by the Kaseki API service when it launches agent containers; not required to print command help |
+| **Kaseki API service** | `run`, `list`, `report`, `status`, `stop`, `cancel` | Local service from `kaseki-agent serve` or a remote controller configured with `KASEKI_API_URL` |
+| **OpenRouter credentials** | Agent execution | Used by workers that run coding-agent tasks |
 
-### Verify Installation
+## Primary npm workflows
+
+### 1. `doctor` — verify the host and configuration
+
+Run this after install and any time the host changes:
 
 ```bash
 kaseki-agent doctor
 ```
 
-Should output:
+Use help or JSON output in automation without starting Docker containers:
 
-```
-✓ Docker daemon running
-✓ Node.js v24.x available
-✓ npm available
-✓ git available
-✓ API key configured
-✓ Disk space: XXX GB available
+```bash
+kaseki-agent doctor --help
+kaseki-agent doctor --json
 ```
 
----
+`doctor` validates the local host dependencies, configuration files, auth files, Docker availability, image status, and disk space. It is the fastest way to confirm whether this machine can host Kaseki services or workers.
 
-## First-Time Setup
-
-### 1. Get API Key
-
-Sign up for [OpenRouter](https://openrouter.ai/) and create an API key.
-
-### 2. Run Setup Wizard
+### 2. `setup` — first-time interactive configuration
 
 ```bash
 kaseki-agent setup
 ```
 
-This interactive wizard will:
+The setup wizard validates the environment, prompts for key settings, stores credentials, writes config in the selected scope, and suggests follow-up checks.
 
-- Validate your environment
-- Prompt for OpenRouter API key
-- Save configuration (locally or globally)
-- Run health checks
-
-### 3. Test with `doctor`
+### 3. `config` — inspect and edit configuration
 
 ```bash
-kaseki-agent doctor
+# Show effective configuration
+kaseki-agent config show
+
+# Store a user-global API controller URL for task commands
+kaseki-agent config set api.base_url http://localhost:8080/api --global
+
+# Store a bearer token for an authenticated controller
+kaseki-agent config set api.key sk-your-kaseki-api-key --global
+
+# Inspect locations that can provide config
+kaseki-agent config locations
 ```
 
-All checks should pass.
+Project config can live in `kaseki-agent.json`; user-global config lives under `~/.kaseki/`.
 
----
-
-## Basic Usage
-
-### Run Agent on a Repository
+### 4. `secrets` — manage local secret material
 
 ```bash
-kaseki-agent run https://github.com/your-org/your-repo main
+# Initialize the secret backend when needed
+kaseki-agent secrets init
+
+# Store an OpenRouter key for local worker execution
+kaseki-agent secrets set openrouter-api-key sk-or-...
+
+# Store a Kaseki API client key for an authenticated controller
+kaseki-agent secrets set kaseki-api-key sk-your-kaseki-api-key
+
+# List and inspect stored secret names
+kaseki-agent secrets list
+kaseki-agent secrets get openrouter-api-key
+
+# Explicitly print a value when you really need it
+kaseki-agent secrets get openrouter-api-key --show
 ```
 
-This will:
+On headless Linux hosts, secrets can fall back to files under `~/.kaseki/secrets/` with restrictive permissions.
 
-1. Create instance `kaseki-1` (or next available number)
-2. Clone repository at specified branch
-3. Run Pi agent in Docker container
-4. Collect results
-5. Display summary
+## API-backed task commands
 
-### View Results
+The following commands are API clients. They do **not** run the agent directly from the npm process. They require either:
+
+1. a local API service listening at the default `http://localhost:8080/api`, or
+2. `KASEKI_API_URL` / `api.base_url` pointing at an existing Kaseki controller API.
+
+Start a local API service when this host should execute work:
 
 ```bash
-# List all instances
-kaseki-agent list
+# For local-only unauthenticated development on localhost
+kaseki-agent serve --port 8080
 
-# View specific instance
-kaseki-agent report kaseki-1
+# For authenticated or network-exposed service mode
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
 ```
 
----
-
-## Configuration
-
-### Project-Level Configuration
-
-Create `kaseki-agent.json` in your project:
-
-```json
-{
-  "repo": {
-    "url": "https://github.com/your-org/your-repo",
-    "ref": "main"
-  },
-  "agent": {
-    "model": "openrouter/free",
-    "timeout_seconds": 1200,
-    "provider": "openrouter"
-  },
-  "validation": {
-    "allowlist": ["src/lib/", "tests/"],
-    "max_diff_bytes": 200000,
-    "commands": ["npm run check", "npm run test"]
-  }
-}
-```
-
-Then run without args:
+Point the CLI at a controller API when the service is elsewhere:
 
 ```bash
-kaseki-agent run
+export KASEKI_API_URL=https://controller.example.com/api
+export KASEKI_API_KEY=sk-your-kaseki-api-key
 ```
 
-### User-Level Configuration
-
-Set global defaults:
-
-```bash
-kaseki-agent config set agent.timeout_seconds 1800 --global
-kaseki-agent config set docker.auto_pull true --global
-```
-
-View global config:
-
-```bash
-kaseki-agent config show --global
-```
-
-### Environment Variables
-
-Override configuration via environment:
-
-```bash
-export KASEKI_MODEL=openrouter/free
-export KASEKI_AGENT_TIMEOUT_SECONDS=1200
-export OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
-
-kaseki-agent run <repo> <ref>
-```
-
-**Common variables:**
-
-- `KASEKI_ROOT` — Results/runs directory (default: /agents)
-- `KASEKI_MODEL` — AI model string
-- `KASEKI_AGENT_TIMEOUT_SECONDS` — Timeout for agent
-- `KASEKI_VALIDATION_COMMANDS` — Validation commands (semicolon-separated)
-- `KASEKI_CHANGED_FILES_ALLOWLIST` — File patterns to allow (space-separated)
-- `OPENROUTER_API_KEY_FILE` — Path to API key file
-
----
-
-## Advanced Usage
-
-### Custom Task Prompts
+### `run` — submit a task
 
 ```bash
 kaseki-agent run https://github.com/your-org/your-repo main \
-  "Fix all TypeScript compilation errors in src/"
+  "Fix the TypeScript errors in src/"
 ```
 
-The task prompt is passed to the Pi agent for context-specific instructions.
+`run` submits `repoUrl`, `gitRef`, and `taskPrompt` to `POST /api/runs`, then prints the returned run ID and status URL.
 
-### Filtering Instances
+### `list` — list API-known runs
 
 ```bash
-# Show only completed
+kaseki-agent list
 kaseki-agent list --status completed
-
-# Show only failed
 kaseki-agent list --status failed
 ```
 
-### Viewing Detailed Reports
+`list` reads the controller's run index from `GET /api/runs`. It does not scan local result directories.
+
+### `report` — retrieve API-backed run diagnostics
 
 ```bash
 kaseki-agent report kaseki-1
 ```
 
-Shows:
-
-- Instance metadata
-- Execution stages and timing
-- Exit code and status
-- Detailed summary
-
-### Secret Management
-
-Store sensitive credentials securely:
+By default, `report` calls API status, analysis, artifact, and log endpoints. For legacy local-result inspection without an API, opt in explicitly:
 
 ```bash
-# Store API key
-kaseki-agent secrets set openrouter-api-key sk-or-...
-
-# List stored secrets
-kaseki-agent secrets list
-
-# Retrieve (hidden)
-kaseki-agent secrets get openrouter-api-key
-
-# Show value (explicit)
-kaseki-agent secrets get openrouter-api-key --show
-
-# Delete
-kaseki-agent secrets delete openrouter-api-key
+kaseki-agent report kaseki-1 --from-disk
 ```
 
-**Storage:**
-
-- Linux: `pass` (password-store) keyring
-- Headless: `~/.kaseki/secrets/` (0600 permissions)
-
----
-
-## Using Docker Image
-
-If you don't want to install Node.js:
-
-### Setup
+### `status` — poll one run
 
 ```bash
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  setup
+kaseki-agent status kaseki-1
+kaseki-agent status kaseki-1 --json
 ```
 
-### Run Agent
+`status` reads `GET /api/runs/:id/status` and exits non-zero only when a terminal API result reports failure.
+
+### `stop` / `cancel` — cancel queued or running work
 
 ```bash
-docker run -it \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  run https://github.com/your-org/your-repo main
+kaseki-agent stop kaseki-1
+# equivalent:
+kaseki-agent cancel kaseki-1
 ```
 
-### Start API Service
+Both commands call the controller API cancel endpoint and require the same API URL/auth configuration as `run` and `status`.
+
+## Environment and config keys
+
+| Key | Type | Used by | Description |
+|-----|------|---------|-------------|
+| `KASEKI_API_URL` | Environment | npm API-client commands | Base URL for task commands, for example `http://localhost:8080/api` or `https://controller.example.com/api`. Overrides config. |
+| `KASEKI_API_BASE_URL` | Environment | npm API-client commands | Backward-compatible alias for `KASEKI_API_URL`. |
+| `KASEKI_API_KEY` | Environment | npm API-client commands | Bearer token sent to an authenticated API service. Overrides config. |
+| `api.base_url` | Config | npm API-client commands | Persistent base URL used when `KASEKI_API_URL` is unset. |
+| `api.key` | Config | npm API-client commands | Persistent bearer token used when `KASEKI_API_KEY` is unset. |
+| `api.keys` | Config | npm API-client commands | Legacy list; the first key is used as the client bearer token if `api.key` is unset. |
+| `KASEKI_API_KEYS` | Environment | API service | Comma- or newline-separated bearer tokens accepted by `kaseki-agent serve`. Required before exposing the service on non-localhost interfaces. |
+| `OPENROUTER_API_KEY_FILE` | Environment/config auth | Worker execution | Path to an OpenRouter API key file used by agent workers. |
+| `KASEKI_ROOT` | Environment | Host/service paths | Base directory for Kaseki run and result data. |
+| `KASEKI_RUNS_DIR` | Environment | Host/service paths | Per-run workspace root. |
+| `KASEKI_RESULTS_DIR` | Environment | Host/service paths | Persistent run artifact directory. |
+| `KASEKI_MODEL` | Environment | Worker execution | Model identifier passed to the coding agent. |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | Environment | Worker execution | Agent execution timeout. |
+| `KASEKI_VALIDATION_COMMANDS` | Environment | Worker validation | Semicolon-separated validation commands run after agent changes. |
+| `KASEKI_CHANGED_FILES_ALLOWLIST` | Environment | Quality gates | Space-separated file patterns allowed in the final diff. |
+
+## Minimal local development flow
 
 ```bash
-docker run -d \
-  -p 8080:8080 \
-  -v ~/.kaseki/secrets:/secrets \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  docker.io/cyanautomation/kaseki-agent:latest \
-  serve --port 8080
+npm install -g @cyanautomation/kaseki-agent
+kaseki-agent doctor --help
+kaseki-agent setup
+kaseki-agent config set api.base_url http://localhost:8080/api --global
+
+# Start the API service in one terminal.
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+
+# Use the API-backed client commands in another terminal.
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/your-org/your-repo main "Make the requested change"
+KASEKI_API_KEY=sk-dev kaseki-agent status kaseki-1
+KASEKI_API_KEY=sk-dev kaseki-agent report kaseki-1
 ```
-
----
-
-## REST API Service
-
-For distributed/async execution:
-
-### Start Service
-
-```bash
-kaseki-agent serve --port 8080
-```
-
-Or with custom port:
-
-```bash
-kaseki-agent serve --port 9000
-```
-
-### API Endpoints
-
-**Health Check**
-
-```bash
-curl http://localhost:8080/health
-```
-
-**List Instances**
-
-```bash
-curl http://localhost:8080/api/runs
-```
-
-**Start Run**
-
-```bash
-curl -X POST http://localhost:8080/api/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "repo": "https://github.com/your-org/your-repo",
-    "ref": "main",
-    "task": "Fix TypeScript errors"
-  }'
-```
-
-**Get Instance Status**
-
-```bash
-curl http://localhost:8080/api/runs/kaseki-1
-```
-
-**Stream Logs**
-
-```bash
-curl http://localhost:8080/api/runs/kaseki-1/logs
-```
-
----
 
 ## Troubleshooting
 
-### Issue: Doctor fails
-
-```bash
-kaseki-agent doctor --fix
-```
-
-This attempts auto-remediation:
-
-- Pulls Docker image
-- Provides install instructions
-
-### Issue: Agent times out
-
-Increase timeout:
-
-```bash
-kaseki-agent config set agent.timeout_seconds 1800 --global
-```
-
-Or for single run:
-
-```bash
-KASEKI_AGENT_TIMEOUT_SECONDS=1800 kaseki-agent run <repo> <ref>
-```
-
-### Issue: Docker permission denied
-
-```bash
-# Add current user to docker group
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-### Issue: API key not found
-
-```bash
-# Check stored secrets
-kaseki-agent secrets list
-
-# Re-setup if needed
-kaseki-agent setup
-
-# Or manually set
-kaseki-agent secrets set openrouter-api-key sk-or-...
-```
-
-### Issue: Out of disk space
-
-```bash
-# Check available space
-kaseki-agent doctor
-
-# Clean old instances (optional)
-rm -rf /agents/kaseki-results/kaseki-*
-```
-
----
-
-## Configuration Precedence
-
-Settings are loaded in this order (first wins):
-
-1. **CLI flags** (`--flag=value`)
-2. **kaseki-agent.json** (project directory)
-3. **~/.kaseki/config.json** (home directory)
-4. **Environment variables** (`KASEKI_*`, `OPENROUTER_*`)
-5. **Built-in defaults**
-
-Example:
-
-```bash
-# Uses CLI flag (highest precedence)
-KASEKI_AGENT_TIMEOUT_SECONDS=900 kaseki-agent run <repo> <ref> --model=custom-model
-```
-
----
-
-## Example Workflow
-
-```bash
-# 1. One-time setup
-kaseki-agent setup
-
-# 2. Verify environment
-kaseki-agent doctor
-
-# 3. Create project config
-cat > kaseki-agent.json << 'EOF'
-{
-  "agent": {
-    "timeout_seconds": 1200
-  },
-  "validation": {
-    "allowlist": ["src/", "tests/"]
-  }
-}
-EOF
-
-# 4. Run agent
-kaseki-agent run https://github.com/your-org/your-repo main
-
-# 5. Check results
-kaseki-agent list
-kaseki-agent report kaseki-1
-
-# 6. Start API service for continuous use
-kaseki-agent serve --port 8080
-```
-
----
-
-## Documentation
-
-- [README.md](../README.md) — Overview and quick start
-- [docs/SETUP_GUIDE.md](SETUP_GUIDE.md) — Detailed setup walkthrough
-- [docs/CLI.md](CLI.md) — CLI monitoring and debugging
-- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — Production deployment
-- [docs/QUALITY_GATES.md](QUALITY_GATES.md) — Quality gate configuration
-
----
-
-## Support
-
-For issues:
-
-1. Run `kaseki-agent doctor` to check environment
-2. Check logs in `/agents/kaseki-results/kaseki-N/`
-3. Enable verbose output: `kaseki-agent --verbose run <repo> <ref>`
-4. Open issue on [GitHub](https://github.com/CyanAutomation/kaseki-agent)
+- Use `kaseki-agent --help` and `<command> --help` to verify CLI installation without Docker or an API service.
+- If `run`, `list`, `report`, `status`, `stop`, or `cancel` fail with a connection error, start `kaseki-agent serve` locally or set `KASEKI_API_URL` to a reachable controller.
+- If the API returns `401`, set `KASEKI_API_KEY` or `api.key` to one of the service-side `KASEKI_API_KEYS` values.
+- If `doctor` reports Docker failures, the admin workflows still work, but local task execution through `kaseki-agent serve` will not launch workers successfully until Docker is installed and running.

@@ -159,6 +159,11 @@ export class KasekiCLI {
       return 1;
     }
 
+    if (args.includes('--help') || args.includes('-h')) {
+      this.printCommandHelp(command.name);
+      return 0;
+    }
+
     try {
       logger.debug(`Executing command: ${subcommand}`);
       return await command.execute(args);
@@ -173,6 +178,92 @@ export class KasekiCLI {
       }
       return 1;
     }
+  }
+
+
+  /**
+   * Print command-specific help without executing checks or API calls.
+   */
+  private printCommandHelp(commandName: string): void {
+    const help: Record<string, string> = {
+      doctor: `doctor - diagnose host, dependencies, templates, and configuration
+
+USAGE
+  kaseki-agent doctor [--json] [--fix] [--verbose]
+
+OPTIONS
+  --json       Emit machine-readable check results
+  --fix        Attempt safe auto-remediation for fixable checks
+  --verbose    Include more diagnostic context where available`,
+      setup: `setup - interactive first-time configuration wizard
+
+USAGE
+  kaseki-agent setup`,
+      config: `config - manage Kaseki configuration
+
+USAGE
+  kaseki-agent config get <KEY> [--global]
+  kaseki-agent config set <KEY> <VALUE> [--global]
+  kaseki-agent config show [--global]
+  kaseki-agent config locations`,
+      secrets: `secrets - manage stored secrets
+
+USAGE
+  kaseki-agent secrets init
+  kaseki-agent secrets set <NAME> <VALUE>
+  kaseki-agent secrets get <NAME> [--show]
+  kaseki-agent secrets list
+  kaseki-agent secrets delete <NAME>`,
+      serve: `serve - start the local REST API service
+
+USAGE
+  kaseki-agent serve [--port PORT]`,
+      run: `run - submit a task run through the configured Kaseki API
+
+USAGE
+  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
+  Set KASEKI_API_KEY when the API requires bearer-token authentication.`,
+      list: `list - list task runs through the configured Kaseki API
+
+USAGE
+  kaseki-agent list [--status queued|running|completed|failed]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
+      report: `report - generate a run report
+
+USAGE
+  kaseki-agent report <RUN_ID> [--from-disk]
+
+REQUIRES
+  API mode requires a local API service or KASEKI_API_URL. Use --from-disk to inspect local result files without API access.`,
+      status: `status - poll task status through the configured Kaseki API
+
+USAGE
+  kaseki-agent status <RUN_ID> [--json]
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
+      cancel: `cancel - cancel a queued or running task through the configured Kaseki API
+
+USAGE
+  kaseki-agent cancel <RUN_ID>
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
+      stop: `stop - alias for cancel
+
+USAGE
+  kaseki-agent stop <RUN_ID>
+
+REQUIRES
+  A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
+    };
+
+    console.log(help[commandName] || `${commandName} - no detailed help available`);
   }
 
   /**
