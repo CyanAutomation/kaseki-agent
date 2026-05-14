@@ -84,7 +84,7 @@ export class ReportCommand extends BaseCommand {
     this.printArtifactSummary(status, artifacts);
     this.printSummary(status, stderrLog);
 
-    return status.exitCode === 0 ? 0 : 1;
+    return status.exitCode === 0 ? 0 : (status.exitCode === undefined ? 0 : 1);
   }
 
   private printStatus(status: StatusResponse, analysis?: AnalysisResponse): void {
