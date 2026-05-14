@@ -451,41 +451,41 @@ export function validateVariable(
   value: any
 ): { valid: boolean; error?: string } {
   switch (variable.type) {
-    case 'string':
-      if (typeof value !== 'string') {
-        return { valid: false, error: `Expected string, got ${typeof value}` };
+  case 'string':
+    if (typeof value !== 'string') {
+      return { valid: false, error: `Expected string, got ${typeof value}` };
+    }
+    // Validate specific constraints (e.g., API key format)
+    if (variable.name === 'OPENROUTER_API_KEY_FILE') {
+      // Should be a valid file path
+      if (!value.startsWith('/') && !value.startsWith('~')) {
+        return { valid: false, error: 'Must be an absolute path or ~/' };
       }
-      // Validate specific constraints (e.g., API key format)
-      if (variable.name === 'OPENROUTER_API_KEY_FILE') {
-        // Should be a valid file path
-        if (!value.startsWith('/') && !value.startsWith('~')) {
-          return { valid: false, error: 'Must be an absolute path or ~/' };
-        }
-      }
-      return { valid: true };
+    }
+    return { valid: true };
 
-    case 'number':
-      if (typeof value !== 'number' || !Number.isInteger(value)) {
-        return { valid: false, error: `Expected integer, got ${typeof value}` };
-      }
-      if (value <= 0) {
-        return { valid: false, error: 'Must be greater than 0' };
-      }
-      return { valid: true };
+  case 'number':
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+      return { valid: false, error: `Expected integer, got ${typeof value}` };
+    }
+    if (value <= 0) {
+      return { valid: false, error: 'Must be greater than 0' };
+    }
+    return { valid: true };
 
-    case 'boolean':
-      if (typeof value !== 'boolean') {
-        return { valid: false, error: `Expected boolean, got ${typeof value}` };
-      }
-      return { valid: true };
+  case 'boolean':
+    if (typeof value !== 'boolean') {
+      return { valid: false, error: `Expected boolean, got ${typeof value}` };
+    }
+    return { valid: true };
 
-    case 'array':
-      if (!Array.isArray(value)) {
-        return { valid: false, error: `Expected array, got ${typeof value}` };
-      }
-      return { valid: true };
+  case 'array':
+    if (!Array.isArray(value)) {
+      return { valid: false, error: `Expected array, got ${typeof value}` };
+    }
+    return { valid: true };
 
-    default:
-      return { valid: true };
+  default:
+    return { valid: true };
   }
 }
