@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.27.3...v1.27.4) (2026-05-14)
+
+### Bug Fixes
+
+* enhance Node version validation in SetupOrchestrator tests and mock assertSupportedNodeVersion ([9613538](https://github.com/CyanAutomation/kaseki-agent/commit/96135384623124e9767c4a040dc9e887b69d2191))
+
 ## [1.27.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.27.2...v1.27.3) (2026-05-14)
 
 ### Bug Fixes
