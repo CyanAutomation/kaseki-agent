@@ -44,7 +44,7 @@ export class KasekiCLI {
 
     this.commands.set('run', {
       name: 'run',
-      description: 'Run kaseki agent on target repository',
+      description: 'Submit a task run through the local Kaseki API',
       execute: async (args) => {
         const { RunCommand } = await import('./commands/RunCommand.js');
         const cmd = new RunCommand(this.configManager);
@@ -64,7 +64,7 @@ export class KasekiCLI {
 
     this.commands.set('serve', {
       name: 'serve',
-      description: 'Start REST API service for async execution',
+      description: 'Start the local REST API service for async task execution',
       execute: async (args) => {
         const { ServeCommand } = await import('./commands/ServeCommand.js');
         const cmd = new ServeCommand(this.configManager);
@@ -84,7 +84,7 @@ export class KasekiCLI {
 
     this.commands.set('list', {
       name: 'list',
-      description: 'List all kaseki instances',
+      description: 'List task runs through the local Kaseki API',
       execute: async (args) => {
         const { ListCommand } = await import('./commands/ListCommand.js');
         const cmd = new ListCommand(this.configManager);
@@ -94,10 +94,40 @@ export class KasekiCLI {
 
     this.commands.set('report', {
       name: 'report',
-      description: 'Generate report for completed instance',
+      description: 'Generate a task report through the local Kaseki API',
       execute: async (args) => {
         const { ReportCommand } = await import('./commands/ReportCommand.js');
         const cmd = new ReportCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
+
+    this.commands.set('status', {
+      name: 'status',
+      description: 'Poll task status through the local Kaseki API',
+      execute: async (args) => {
+        const { StatusCommand } = await import('./commands/StatusCommand.js');
+        const cmd = new StatusCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
+
+    this.commands.set('cancel', {
+      name: 'cancel',
+      description: 'Cancel a queued or running task through the local Kaseki API',
+      execute: async (args) => {
+        const { CancelCommand } = await import('./commands/CancelCommand.js');
+        const cmd = new CancelCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
+
+    this.commands.set('stop', {
+      name: 'stop',
+      description: 'Alias for cancel; stops a task through the local Kaseki API',
+      execute: async (args) => {
+        const { CancelCommand } = await import('./commands/CancelCommand.js');
+        const cmd = new CancelCommand(this.configManager);
         return cmd.execute(args);
       },
     });

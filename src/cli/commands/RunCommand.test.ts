@@ -9,11 +9,13 @@ describe('RunCommand', () => {
   const originalApiKey = process.env.KASEKI_API_KEY;
   const originalApiKeys = process.env.KASEKI_API_KEYS;
   const originalApiBaseUrl = process.env.KASEKI_API_BASE_URL;
+  const originalApiUrl = process.env.KASEKI_API_URL;
 
   beforeEach(() => {
     delete process.env.KASEKI_API_KEY;
     delete process.env.KASEKI_API_KEYS;
     delete process.env.KASEKI_API_BASE_URL;
+    delete process.env.KASEKI_API_URL;
 
     configManager = new ConfigManager();
     consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -29,6 +31,8 @@ describe('RunCommand', () => {
     else process.env.KASEKI_API_KEYS = originalApiKeys;
     if (originalApiBaseUrl === undefined) delete process.env.KASEKI_API_BASE_URL;
     else process.env.KASEKI_API_BASE_URL = originalApiBaseUrl;
+    if (originalApiUrl === undefined) delete process.env.KASEKI_API_URL;
+    else process.env.KASEKI_API_URL = originalApiUrl;
     jest.restoreAllMocks();
   });
 
