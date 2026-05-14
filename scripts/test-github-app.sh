@@ -190,6 +190,22 @@ run_helper_with_https_mock token-failure
 node --input-type=commonjs -e 'const f=require("node:fs"); const out=JSON.parse(f.readFileSync(process.argv[1],"utf8")); if (!out.error.includes("Failed to get access token")) throw new Error("missing token error");' "$TMP_DIR/mock-token-failure.stdout"
 
 echo "Test 3/4: run-kaseki metadata + credential artifact handling"
+GIT_BIN="$TMP_DIR/git"
+cat > "$GIT_BIN" <<'EOF_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "ls-remote" ]; then
+  exit 0
+fi
+real_git="$(command -v git 2>/dev/null || true)"
+if [ -n "$real_git" ]; then
+  exec "$real_git" "$@"
+fi
+echo "unsupported git invocation: $*" >&2
+exit 1
+EOF_GIT
+chmod +x "$GIT_BIN"
+
 DOCKER_BIN="$TMP_DIR/docker"
 cat > "$DOCKER_BIN" <<'EOF_DOCKER'
 #!/usr/bin/env bash
@@ -225,7 +241,7 @@ chmod +x "$DOCKER_BIN"
 KASEKI_ROOT="$TMP_DIR/kaseki-root"
 mkdir -p "$KASEKI_ROOT"
 HOST_KEY_FILE="$TMP_DIR/github-app.pem"
-printf '%s\n' 'PRIVATEKEY' > "$HOST_KEY_FILE"
+cp "$MOCK_KEY" "$HOST_KEY_FILE"
 HOST_APP_ID_FILE="$TMP_DIR/github-app-id"
 HOST_CLIENT_ID_FILE="$TMP_DIR/github-app-client-id"
 printf '%s\n' '1' > "$HOST_APP_ID_FILE"
@@ -252,6 +268,8 @@ set -e
 if [ "$run_status" -ne 0 ]; then
   echo "Expected run-kaseki.sh to exit 0, got $run_status" >&2
   cat "$TMP_DIR/run.stderr" >&2 || true
+  cat "$TMP_DIR/run.stdout" >&2 || true
+  find "$KASEKI_ROOT/kaseki-results" -maxdepth 2 -type f -name "*.log" -print -exec sh -c 'printf "==== %s\n" "$1"; sed -n "1,120p" "$1"' sh {} \; >&2 || true
   exit 1
 fi
 
