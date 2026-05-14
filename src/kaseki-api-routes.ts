@@ -130,6 +130,65 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
   };
 }
 
+
+interface TemplateVersionMetadata {
+  gitRef?: string;
+  supportedPublishModes?: string[];
+  imageDigest?: string;
+}
+
+interface TemplatePublishModeCompatibility {
+  ok: boolean;
+  metadataPath: string;
+  supportedPublishModes?: string[];
+  detail?: string;
+  remediation?: string;
+}
+
+function readTemplateVersionMetadata(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateVersionMetadata | undefined {
+  const metadataPath = path.join(templateDir, '.kaseki-template-version');
+  if (!fs.existsSync(metadataPath)) {
+    return undefined;
+  }
+
+  const raw = fs.readFileSync(metadataPath, 'utf-8');
+  const parsed = JSON.parse(raw) as TemplateVersionMetadata;
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Template metadata is invalid: ${metadataPath}`);
+  }
+  if (parsed.supportedPublishModes !== undefined && !Array.isArray(parsed.supportedPublishModes)) {
+    throw new Error(`Template metadata has invalid supportedPublishModes: ${metadataPath}`);
+  }
+  return parsed;
+}
+
+function checkTemplatePublishModeCompatibility(
+  publishMode: string,
+  templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
+): TemplatePublishModeCompatibility {
+  const metadataPath = path.join(templateDir, '.kaseki-template-version');
+  const metadata = readTemplateVersionMetadata(templateDir);
+
+  // Legacy templates do not have this metadata file. Allow them to continue so
+  // operators can roll the API and template in either order; once present, the
+  // metadata becomes authoritative for compatibility checks.
+  if (!metadata?.supportedPublishModes) {
+    return { ok: true, metadataPath };
+  }
+
+  if (metadata.supportedPublishModes.includes(publishMode)) {
+    return { ok: true, metadataPath, supportedPublishModes: metadata.supportedPublishModes };
+  }
+
+  return {
+    ok: false,
+    metadataPath,
+    supportedPublishModes: metadata.supportedPublishModes,
+    detail: `Template does not support publish mode \`${publishMode}\`; redeploy kaseki-agent.`,
+    remediation: 'Redeploy kaseki-agent.',
+  };
+}
+
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(',')}]`;
@@ -536,6 +595,19 @@ export function createApiRouter(
           'Bad Request',
           `publishMode=${effectivePublishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
         );
+      }
+
+      const templateCompatibility = checkTemplatePublishModeCompatibility(effectivePublishMode);
+      if (!templateCompatibility.ok) {
+        return res.status(400).json({
+          type: 'https://api.kaseki.local/errors#template-incompatible',
+          title: 'Bad Request',
+          status: 400,
+          detail: templateCompatibility.detail,
+          templateMetadataPath: templateCompatibility.metadataPath,
+          supportedPublishModes: templateCompatibility.supportedPublishModes,
+          remediation: templateCompatibility.remediation,
+        });
       }
 
       // Auto-generate idempotency key if not provided
