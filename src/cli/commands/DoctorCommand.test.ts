@@ -271,6 +271,40 @@ describe('DoctorCommand', () => {
       expect(message).toContain('Docker Compose');
       expect(message).toContain('DEPLOYMENT.md');
     });
+
+    test('should detect and suggest correction for github_client_id naming mistake', async () => {
+      const missingFiles = [
+        { name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', path: '/home/pi/secrets/github_client_id' },
+      ];
+      const unreadableFiles: any[] = [];
+      const mockIsSudo = jest.spyOn(command as any, 'isSudo').mockReturnValue(false);
+
+      const message = (command as any).buildAuthErrorMessage(missingFiles, unreadableFiles);
+
+      expect(message).toContain('/home/pi/secrets/github_client_id');
+      expect(message).toContain('github_app_client_id');
+      expect(message).toContain('Did you mean');
+      expect(message).toContain('/home/pi/secrets/github_app_client_id');
+      expect(message).toContain('with "app_" prefix');
+
+      mockIsSudo.mockRestore();
+    });
+
+    test('should not suggest correction for correctly named paths', async () => {
+      const missingFiles = [
+        { name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', path: '/home/pi/secrets/github_app_client_id' },
+      ];
+      const unreadableFiles: any[] = [];
+      const mockIsSudo = jest.spyOn(command as any, 'isSudo').mockReturnValue(false);
+
+      const message = (command as any).buildAuthErrorMessage(missingFiles, unreadableFiles);
+
+      expect(message).toContain('/home/pi/secrets/github_app_client_id');
+      expect(message).not.toContain('Did you mean');
+      expect(message).not.toContain('Hint:');
+
+      mockIsSudo.mockRestore();
+    });
   });
 
   describe('execute', () => {

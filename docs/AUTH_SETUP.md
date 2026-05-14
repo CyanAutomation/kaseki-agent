@@ -2,7 +2,6 @@
 
 > **NPM CLI note:** `kaseki-agent run`, `list`, `report`, `status`, and `stop`/`cancel` are API-backed commands. Configure service-side `KASEKI_API_KEYS` for `kaseki-agent serve` and client-side `KASEKI_API_URL` / `KASEKI_API_KEY` for the npm task commands.
 
-
 This guide covers how to configure authentication credentials for Kaseki Agent, including OpenRouter API keys and GitHub App credentials.
 
 ## Quick Start (Choose One)
@@ -199,6 +198,54 @@ kaseki-agent doctor
 ```
 
 The output will suggest all three approaches (env vars, config file, docker-compose).
+
+### ⚠️ Common mistake: github_client_id vs github_app_client_id
+
+**Problem**: Error mentions path like `/home/pi/secrets/github_client_id` instead of `github_app_client_id`
+
+```
+❌ GitHub App Client ID File: not found at /home/pi/secrets/github_client_id
+   Hint: Did you mean "/home/pi/secrets/github_app_client_id"?
+   The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".
+```
+
+**Solution**: The filename must include the `app_` prefix:
+
+```bash
+# ❌ WRONG
+export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_client_id
+
+# ✅ CORRECT
+export GITHUB_APP_CLIENT_ID_FILE=/home/pi/secrets/github_app_client_id
+```
+
+**Fix**:
+
+1. **If using environment variables**: Update the path in your shell profile or `.env` file:
+
+   ```bash
+   # ~/.bashrc or ~/.env
+   export GITHUB_APP_CLIENT_ID_FILE=~/.../github_app_client_id  # Add "app_" prefix
+   ```
+
+2. **If using config file**: Fix the path in `~/.kaseki/config.json`:
+
+   ```json
+   {
+     "auth": {
+       "github_app_client_id_file": "/home/pi/secrets/github_app_client_id"
+     }
+   }
+   ```
+
+3. **If using Docker**: Verify your secret filename in the container or docker-compose volume:
+
+   ```bash
+   # Correct secret name
+   /agents/secrets/github_app_client_id
+   ```
+
+Then run `kaseki-agent doctor` again to verify the fix.
 
 ### Sudo environment variables not working
 
