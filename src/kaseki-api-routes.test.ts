@@ -506,7 +506,7 @@ describe('kaseki-api-routes tail file descriptor cleanup', () => {
         closeSync: closeSyncMock,
       }));
 
-      const { readTailBytes } = jest.requireActual('./kaseki-api-routes') as typeof import('./kaseki-api-routes');
+      const { readTailBytes } = jest.requireActual('./utils/utf8-helpers') as typeof import('./utils/utf8-helpers');
       expect(() => readTailBytes('/tmp/fake.log', 200, 100)).toThrow('read failed');
     });
 

@@ -474,17 +474,3 @@ export class KasekiApiClient {
     }
   }
 }
-
-/**
- * Helper to create a client with sensible defaults.
- */
-function createKasekiClient(baseUrl?: string, apiKey?: string): KasekiApiClient {
-  const url = baseUrl || process.env.KASEKI_API_URL || 'http://localhost:8080';
-  const key = apiKey || process.env.KASEKI_API_KEY;
-
-  if (!key) {
-    throw new Error('KASEKI_API_KEY environment variable is required');
-  }
-
-  return new KasekiApiClient(url, key);
-}
