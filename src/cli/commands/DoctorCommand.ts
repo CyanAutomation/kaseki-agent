@@ -285,7 +285,7 @@ export class DoctorCommand extends BaseCommand {
       lines.push('   $ sudo -E kaseki-agent run ...');
     } else {
       lines.push('   $ export GITHUB_APP_ID_FILE=~/.../id');
-      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/.../client_id');
+      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/.../github_app_client_id');
       lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/.../private_key');
       lines.push('   $ export OPENROUTER_API_KEY_FILE=~/.../openrouter_key');
       lines.push('   $ kaseki-agent run <repo> <branch> <task>');
@@ -299,7 +299,7 @@ export class DoctorCommand extends BaseCommand {
     lines.push('     "auth": {');
     lines.push('       "openrouter_api_key_file": "/path/to/openrouter_key",');
     lines.push('       "github_app_id_file": "/path/to/github_app_id",');
-    lines.push('       "github_app_client_id_file": "/path/to/github_client_id",');
+    lines.push('       "github_app_client_id_file": "/path/to/github_app_client_id",');
     lines.push('       "github_app_private_key_file": "/path/to/github_private_key"');
     lines.push('     }');
     lines.push('   }');
