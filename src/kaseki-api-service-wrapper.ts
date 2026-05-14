@@ -7,14 +7,10 @@
 import express from 'express';
 import type { Server } from 'http';
 import { loadConfig } from './kaseki-api-config';
-import { JobScheduler } from './job-scheduler';
-import { WebhookManager } from './webhook-manager';
-import { IdempotencyStore } from './idempotency-store';
-import { PreFlightValidator } from './pre-flight-validator';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
-import { ResultCache } from './result-cache';
-import { createGracefulShutdown, assertSupportedNodeVersion } from './kaseki-api-service';
+import { initializeSetup } from './kaseki-api/setup-orchestrator';
+import { bootstrapServices, gracefulShutdown, type BootstrappedServices } from './kaseki-api/service-bootstrapper';
 
 interface KasekiAPIServiceOptions {
   port?: number;
@@ -25,10 +21,7 @@ interface KasekiAPIServiceOptions {
 class KasekiAPIServiceImpl {
   private server: Server | null = null;
   private logger = createEventLogger('kaseki-api');
-  private scheduler: JobScheduler | null = null;
-  private webhookManager: WebhookManager | null = null;
-  private idempotencyStore: IdempotencyStore | null = null;
-  private artifactCache: ResultCache | null = null;
+  private services: BootstrappedServices | null = null;
   private config = loadConfig();
 
   constructor(options: KasekiAPIServiceOptions = {}) {
@@ -63,8 +56,8 @@ class KasekiAPIServiceImpl {
    */
   async start(): Promise<void> {
     try {
-      // Validate Node.js version
-      assertSupportedNodeVersion();
+      // Initialize setup (Node version check, template init)
+      await initializeSetup();
 
       // Log startup configuration
       this.logger.event('service_startup_config', {
@@ -84,35 +77,20 @@ class KasekiAPIServiceImpl {
         );
       }
 
+      // Bootstrap service components
+      this.services = await bootstrapServices(this.config);
+
       // Create Express app
       const app = express();
       app.use(express.json());
 
-      // Create managers
-      this.artifactCache = new ResultCache({
-        maxEntries: this.config.artifactCacheMaxEntries,
-        ttlMs: this.config.artifactCacheTtlMs,
-        maxFileBytes: this.config.artifactCacheMaxFileBytes,
-      });
-
-      this.webhookManager = new WebhookManager(this.config.resultsDir);
-      this.idempotencyStore = new IdempotencyStore(this.config.resultsDir, 24);
-      const preFlightValidator = new PreFlightValidator();
-
-      // Create scheduler
-      this.scheduler = new JobScheduler(
-        this.config,
-        this.webhookManager,
-        this.artifactCache
-      );
-
       // Mount API routes
       const apiRouter = createApiRouter(
-        this.scheduler,
+        this.services.scheduler,
         this.config,
-        this.idempotencyStore,
-        preFlightValidator,
-        this.artifactCache
+        this.services.idempotencyStore,
+        this.services.preFlightValidator,
+        this.services.artifactCache
       );
       app.use('/api', apiRouter);
       app.use('/', apiRouter);
@@ -136,16 +114,19 @@ class KasekiAPIServiceImpl {
         : app.listen(this.config.port, onListening);
 
       // Setup graceful shutdown
-      if (this.server && this.scheduler && this.webhookManager && this.idempotencyStore) {
-        const gracefulShutdown = createGracefulShutdown({
-          server: this.server,
-          scheduler: this.scheduler,
-          webhookManager: this.webhookManager,
-          idempotencyStore: this.idempotencyStore,
-        });
-
-        process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
-        process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+      if (this.server && this.services) {
+        process.on('SIGTERM', () => void gracefulShutdown({
+          server: this.server!,
+          scheduler: this.services!.scheduler,
+          webhookManager: this.services!.webhookManager,
+          idempotencyStore: this.services!.idempotencyStore,
+        }));
+        process.on('SIGINT', () => void gracefulShutdown({
+          server: this.server!,
+          scheduler: this.services!.scheduler,
+          webhookManager: this.services!.webhookManager,
+          idempotencyStore: this.services!.idempotencyStore,
+        }));
       }
 
       // Catch unhandled errors

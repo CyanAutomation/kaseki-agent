@@ -1,169 +1,19 @@
 import express from 'express';
-import type { Server } from 'http';
 import swaggerUi from 'swagger-ui-express';
-import * as fs from 'fs';
-import * as path from 'path';
 import { loadConfig } from './kaseki-api-config';
-import { JobScheduler } from './job-scheduler';
-import { WebhookManager } from './webhook-manager';
-import { IdempotencyStore } from './idempotency-store';
-import { PreFlightValidator } from './pre-flight-validator';
 import { createApiRouter } from './kaseki-api-routes';
 import { createEventLogger } from './logger';
-import { ResultCache } from './result-cache';
 import { generateOpenAPISpec } from './openapi-spec-generator';
-import { execSync } from 'child_process';
+import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
+import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
 
-type ShutdownDeps = {
-  server: Server;
-  scheduler: Pick<JobScheduler, 'shutdown'>;
-  webhookManager: WebhookManager;
-  idempotencyStore: IdempotencyStore;
-  forceExitAfterMs?: number;
-  exit?: (code: number) => never;
-};
-
-export function createGracefulShutdown({
-  server,
-  scheduler,
-  webhookManager,
-  idempotencyStore,
-  forceExitAfterMs = 8000,
-  exit = process.exit,
-}: ShutdownDeps): (signal: string) => Promise<void> {
-  const logger = createEventLogger('kaseki-api');
-
-  return async (signal: string) => {
-    logger.info(`Received ${signal}, shutting down gracefully...`);
-
-    const hardTimeout = setTimeout(() => {
-      logger.error(
-        `Graceful shutdown timeout after ${forceExitAfterMs}ms, forcing exit`,
-      );
-      exit(1);
-    }, forceExitAfterMs);
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.close((err?: Error) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          logger.info('HTTP server closed');
-          resolve();
-        });
-      });
-
-      scheduler.shutdown();
-      logger.info('Job scheduler shutdown');
-
-      await webhookManager.shutdown();
-      logger.info('Webhook manager shutdown');
-
-      idempotencyStore.shutdown();
-      logger.info('Idempotency store shutdown');
-
-      exit(0);
-    } catch (err) {
-      logger.error('Error during graceful shutdown:', { error: String(err) });
-      exit(1);
-    } finally {
-      clearTimeout(hardTimeout);
-    }
-  };
-}
-
-export function assertSupportedNodeVersion(
-  version: string = process.versions.node,
-  minimumMajor: number = 24,
-): void {
-  const normalizedVersion = version.trim();
-  const isValidVersion = /^\d+(?:\.\d+){0,2}$/.test(normalizedVersion);
-  const major = Number.parseInt(normalizedVersion.split('.')[0] ?? '', 10);
-
-  const logger = createEventLogger('kaseki-api');
-  logger.info(`Node runtime detected: v${normalizedVersion}`);
-
-  if (!isValidVersion || !Number.isFinite(major) || major < minimumMajor) {
-    logger.error(
-      `Unsupported Node.js runtime v${normalizedVersion}. Kaseki API service requires Node.js >= ${minimumMajor}. Please upgrade Node or deploy the Docker image built from this repo's Dockerfile (node:24-bookworm-slim).`,
-    );
-    process.exit(1);
-  }
-}
+export { assertSupportedNodeVersion, ensureTemplateInitialized };
 
 /**
- * Phase 3: Auto-initialize /agents/kaseki-template if missing
- * This eliminates the need for manual 'kaseki-activate.sh --controller bootstrap'
+ * Legacy wrapper for gracefulShutdown to maintain backwards compatibility
  */
-async function ensureTemplateInitialized(templateDir: string): Promise<void> {
-  const logger = createEventLogger('kaseki-api');
-  const runScript = path.join(templateDir, 'run-kaseki.sh');
-
-  // Check if bootstrap is already complete
-  if (fs.existsSync(runScript)) {
-    logger.info('Template directory is initialized', { templateDir, runScript });
-    return;
-  }
-
-  // Template is missing - try to initialize it
-  logger.info('Template directory missing; attempting auto-initialization...', { templateDir });
-
-  try {
-    // Ensure parent directory exists
-    const parentDir = path.dirname(templateDir);
-    if (!fs.existsSync(parentDir)) {
-      fs.mkdirSync(parentDir, { recursive: true, mode: 0o755 });
-      logger.info('Created parent directory', { parentDir });
-    }
-
-    // Try strategy 1: Copy from image
-    // If we're running in Docker and the template exists at /app/kaseki-template, copy it
-    const imageTemplateDir = '/app/kaseki-template';
-    if (fs.existsSync(imageTemplateDir) && fs.existsSync(path.join(imageTemplateDir, 'run-kaseki.sh'))) {
-      try {
-        execSync(`cp -r "${imageTemplateDir}" "${templateDir}"`, { stdio: 'pipe' });
-        logger.info('Template initialized from Docker image', { templateDir });
-        return;
-      } catch (err) {
-        logger.warn('Failed to copy template from image; trying alternate strategy', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    // Try strategy 2: Create symlink to /app (if we're in Docker)
-    if (fs.existsSync('/app/run-kaseki.sh')) {
-      try {
-        // Create template directory and symlink key files
-        fs.mkdirSync(templateDir, { recursive: true, mode: 0o755 });
-        fs.symlinkSync('/app/run-kaseki.sh', runScript, 'file');
-        logger.info('Template initialized via symlink to /app', { templateDir });
-        return;
-      } catch (err) {
-        logger.warn('Failed to create symlink; trying alternate strategy', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    // Strategy 3 failed - log warning but continue
-    // The API will start but jobs will fail with clear error message
-    logger.warn(
-      'Could not auto-initialize template directory. Jobs will fail until bootstrap is completed manually.',
-      {
-        templateDir,
-        remediation: 'Run: docker exec <container> /scripts/startup-checks.sh bootstrap',
-      },
-    );
-  } catch (err) {
-    logger.error('Unexpected error during template initialization', {
-      error: err instanceof Error ? err.message : String(err),
-      templateDir,
-    });
-    // Continue anyway - jobs will fail with clear error message
-  }
+export function createGracefulShutdown(deps: ShutdownDeps) {
+  return () => gracefulShutdown(deps);
 }
 
 /**
@@ -172,11 +22,9 @@ async function ensureTemplateInitialized(templateDir: string): Promise<void> {
 async function main(): Promise<void> {
   const logger = createEventLogger('kaseki-api');
 
-  assertSupportedNodeVersion();
-
-  // Phase 3: Auto-initialize template directory
+  // Phase 3: Auto-initialize setup (Node version and template directory)
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-  await ensureTemplateInitialized(templateDir);
+  await initializeSetup(templateDir);
 
   // Load configuration
   let config;
@@ -222,6 +70,15 @@ async function main(): Promise<void> {
     cpuUsage: JSON.stringify(process.cpuUsage()),
   });
 
+  // Bootstrap all services
+  const {
+    artifactCache,
+    webhookManager,
+    idempotencyStore,
+    preFlightValidator,
+    scheduler
+  } = await bootstrapServices(config);
+
   // Create Express app
   const app = express();
   app.use(express.json());
@@ -238,25 +95,6 @@ async function main(): Promise<void> {
   app.get('/api/openapi.json', (_req, res) => {
     res.json(openApiSpec);
   });
-
-  // Create shared artifact content cache
-  const artifactCache = new ResultCache({
-    maxEntries: config.artifactCacheMaxEntries,
-    ttlMs: config.artifactCacheTtlMs,
-    maxFileBytes: config.artifactCacheMaxFileBytes,
-  });
-
-  // Create webhook manager
-  const webhookManager = new WebhookManager(config.resultsDir);
-
-  // Create idempotency store
-  const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
-
-  // Create pre-flight validator
-  const preFlightValidator = new PreFlightValidator();
-
-  // Create scheduler
-  const scheduler = new JobScheduler(config, webhookManager, artifactCache);
 
   // Mount API routes
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
@@ -284,10 +122,10 @@ async function main(): Promise<void> {
     : app.listen(config.port, onListening);
 
   // Graceful shutdown
-  const gracefulShutdown = createGracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
+  const shutdown = () => gracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
 
-  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', () => void shutdown());
 
   // Catch unhandled errors
   process.on('uncaughtException', (err) => {

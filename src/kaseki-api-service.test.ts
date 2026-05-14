@@ -394,7 +394,7 @@ describe('Kaseki API graceful shutdown', () => {
       exit,
     });
 
-    const shutdownPromise = gracefulShutdown('SIGTERM');
+    const shutdownPromise = gracefulShutdown();
 
     expect(server.close).toHaveBeenCalledTimes(1);
     expect(scheduler.shutdown).not.toHaveBeenCalled();
