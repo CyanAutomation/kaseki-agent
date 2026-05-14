@@ -77,3 +77,12 @@ afterAll(() => {
 if (process.env.KASEKI_RESTORE_LOGS === '1') {
   console.log = originalLog;
 }
+
+/**
+ * Mock process.exit to prevent Jest process from terminating during tests
+ * By default, spy on process.exit to prevent actual exit
+ */
+jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+  const error = new Error(`process.exit(${code ?? 0}) called`);
+  throw error;
+}) as never);

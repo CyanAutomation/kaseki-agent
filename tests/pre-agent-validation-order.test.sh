@@ -12,8 +12,8 @@ FAKE_REPO="$TMP_DIR/fake-repo"
 FAKE_BIN="$TMP_DIR/bin"
 PI_MARKER="$TMP_DIR/pi-invoked.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
-RESULTS_DIR="/results"
-WORKSPACE_REPO="/workspace/repo"
+RESULTS_DIR="$TMP_DIR/results"
+WORKSPACE_REPO="$TMP_DIR/repo"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -32,6 +32,9 @@ fail() {
 assert_file_contains() {
   local file="$1"
   local pattern="$2"
+  if ! [ -f "$file" ]; then
+    fail "expected file $file does not exist"
+  fi
   if ! grep -qE "$pattern" "$file"; then
     fail "expected $file to contain pattern: $pattern"
   fi
@@ -41,8 +44,12 @@ if [ ! -f "$DIST_FILTER" ]; then
   fail "dist/validation-output-filter.js is missing; run npm run build before this test"
 fi
 
-rm -rf "$RESULTS_DIR" "$WORKSPACE_REPO"
-mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN"
+mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO"
+
+# Create a temporary version of the script with paths redirected to $TMP_DIR
+MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
+sed "s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g" "$SCRIPT_UNDER_TEST" > "$MODIFIED_SCRIPT"
+chmod +x "$MODIFIED_SCRIPT"
 
 mkdir -p "$FAKE_REPO/deps/fake-dep"
 cat > "$FAKE_REPO/package.json" <<'JSON'
@@ -128,7 +135,7 @@ env \
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check;npm run test" \
   KASEKI_VALIDATION_COMMANDS="npm run check;npm run test" \
   KASEKI_VALIDATION_FAIL_FAST=1 \
-  bash "$SCRIPT_UNDER_TEST" > "$RUN_LOG" 2>&1
+  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
