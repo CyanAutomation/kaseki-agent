@@ -16,7 +16,7 @@
  * Build health and status check endpoints.
  * These are unauthenticated endpoints for service health verification.
  */
-export function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/health': {
       get: {
@@ -82,7 +82,7 @@ export function buildHealthCheckPaths(errorResponseSchema: Record<string, unknow
  * Build service info endpoints.
  * These endpoints provide service metadata, metrics, and configuration validation.
  */
-export function buildServiceInfoPaths(
+function buildServiceInfoPaths(
   errorResponseSchema: Record<string, unknown>,
   runRequestSchema: Record<string, unknown>
 ): Record<string, unknown> {
@@ -226,7 +226,7 @@ export function buildServiceInfoPaths(
  * Build run management endpoints.
  * These endpoints allow triggering, listing, and controlling kaseki runs.
  */
-export function buildRunManagementPaths(
+function buildRunManagementPaths(
   errorResponseSchema: Record<string, unknown>,
   runRequestSchema: Record<string, unknown>,
   runResponseSchema: Record<string, unknown>
@@ -444,7 +444,7 @@ export function buildRunManagementPaths(
  * Build logs and progress endpoints.
  * These endpoints provide access to run progress events and log files.
  */
-export function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/runs/{id}/progress': {
       get: {
@@ -575,7 +575,7 @@ export function buildLogsProgressPaths(errorResponseSchema: Record<string, unkno
  * Build artifact endpoints.
  * These endpoints provide access to run artifacts and their metadata.
  */
-export function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/runs/{id}/artifacts': {
       get: {
@@ -712,7 +712,7 @@ export function buildArtifactPaths(errorResponseSchema: Record<string, unknown>)
  * Build run analysis and details endpoints.
  * These endpoints provide comprehensive run analysis and diagnostics.
  */
-export function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/runs/{id}/analysis': {
       get: {
@@ -797,7 +797,7 @@ export function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknow
  * Build webhook endpoints.
  * These endpoints provide webhook configuration and testing.
  */
-export function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
   return {
     '/api/webhooks/test': {
       post: {
