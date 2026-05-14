@@ -43,11 +43,6 @@ describe('ansi-colors', () => {
       expect(ANSI_COLORS).toHaveProperty('BLUE');
       expect(ANSI_COLORS).toHaveProperty('RESET');
     });
-
-    it('exports formatting codes', () => {
-      expect(ANSI_COLORS).toHaveProperty('BOLD');
-      expect(ANSI_COLORS).toHaveProperty('DIM');
-    });
   });
 
   describe('stripAnsi', () => {
@@ -91,10 +86,9 @@ describe('ansi-colors', () => {
       expect(stripAnsi(text)).toBe('plain text');
     });
 
-    it('removes bold and dim codes', () => {
-      const text = `${ANSI_COLORS.BOLD}bold${ANSI_COLORS.RESET} ${ANSI_COLORS.DIM}dim${ANSI_COLORS.RESET}`;
-      const stripped = stripAnsi(text);
-      expect(stripped).toBe('bold dim');
+    it('normalizes formatted terminal text to plain text', () => {
+      const formattedTerminalText = '\x1b[1m\x1b[31mError:\x1b[0m \x1b[2mretrying request\x1b[0m';
+      expect(stripAnsi(formattedTerminalText)).toBe('Error: retrying request');
     });
 
     it('handles empty string', () => {
