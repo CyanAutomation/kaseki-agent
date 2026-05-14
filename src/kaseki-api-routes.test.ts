@@ -1649,7 +1649,6 @@ describe('kaseki-api-routes status artifact hints', () => {
   });
 });
 
-
 describe('kaseki-api-routes template bootstrap health', () => {
   let resultsDir: string;
   let templateDir: string;
