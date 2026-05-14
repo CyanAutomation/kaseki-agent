@@ -58,36 +58,42 @@ describe('OpenAPI Schema Builders', () => {
   });
 
   describe('buildRunResponseSchema', () => {
-    it('should build valid OpenAPI response schema', () => {
+    it('should have exact required properties', () => {
       const schema = buildRunResponseSchema();
 
-      expect(schema).toBeDefined();
-      expect(typeof schema).toBe('object');
-      expect(schema.type).toBe('object');
+      expect(schema.required).toEqual(['id', 'status', 'createdAt']);
     });
 
-    it('should have required properties', () => {
+    it('should define semantic types for required client-visible properties', () => {
       const schema = buildRunResponseSchema();
+      const properties = schema.properties as Record<string, any>;
 
-      expect(schema.required).toBeDefined();
-      expect(Array.isArray(schema.required)).toBe(true);
+      expect(properties.id).toMatchObject({
+        type: 'string',
+        example: 'kaseki-42',
+      });
+      expect(properties.status).toMatchObject({
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
+      });
+      expect(properties.createdAt).toMatchObject({
+        type: 'string',
+        format: 'date-time',
+      });
     });
 
-    it('should define id, status, and createdAt properties', () => {
+    it('should define semantic types for optional client-visible tracing properties', () => {
       const schema = buildRunResponseSchema();
-      const properties = schema.properties as Record<string, unknown>;
+      const properties = schema.properties as Record<string, any>;
 
-      expect(properties.id).toBeDefined();
-      expect(properties.status).toBeDefined();
-      expect(properties.createdAt).toBeDefined();
-    });
-
-    it('should include optional tracing properties', () => {
-      const schema = buildRunResponseSchema();
-      const properties = schema.properties as Record<string, unknown>;
-
-      expect(properties.correlationId).toBeDefined();
-      expect(properties.requestId).toBeDefined();
+      expect(properties.correlationId).toMatchObject({
+        type: 'string',
+      });
+      expect(properties.requestId).toMatchObject({
+        type: 'string',
+      });
+      expect(schema.required).not.toContain('correlationId');
+      expect(schema.required).not.toContain('requestId');
     });
 
     it('should match snapshot', () => {
