@@ -46,7 +46,7 @@ export interface MockJob {
  * const scheduler = createMockScheduler();
  * scheduler.getReadiness.mockReturnValue({ ready: false, reasons: ['error'] });
  */
-export function createMockScheduler(jobData?: { [jobId: string]: MockJob }): TestScheduler {
+function createMockScheduler(jobData?: { [jobId: string]: MockJob }): TestScheduler {
   return {
     getQueueStatus: jest.fn(() => ({ pending: 0, running: 0, maxConcurrent: 1 })),
     getReadiness: jest.fn(() => ({ ready: true, reasons: [] })),
@@ -64,7 +64,7 @@ export function createMockScheduler(jobData?: { [jobId: string]: MockJob }): Tes
  * @example
  * const config = createTestConfig('/tmp/results');
  */
-export function createTestConfig(resultsDir: string): KasekiApiConfig {
+function createTestConfig(resultsDir: string): KasekiApiConfig {
   return {
     port: 0,
     apiKeys: ['test-key'],

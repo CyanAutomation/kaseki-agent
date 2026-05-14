@@ -91,7 +91,7 @@ export function buildRunRequestSchema(): Record<string, unknown> {
  * Build the WebhookConfig schema.
  * Defines the configuration structure for webhook delivery.
  */
-export function buildWebhookConfigSchema(): Record<string, unknown> {
+function buildWebhookConfigSchema(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -121,7 +121,7 @@ export function buildWebhookConfigSchema(): Record<string, unknown> {
  * Build the RequestTracing schema.
  * Defines correlation and request ID tracking fields.
  */
-export function buildRequestTracingSchema(): Record<string, unknown> {
+function buildRequestTracingSchema(): Record<string, unknown> {
   return {
     type: 'object',
     properties: {
@@ -200,7 +200,7 @@ export function buildRunResponseSchema(): Record<string, unknown> {
  * Build the StatusResponse schema.
  * Defines the structure of status polling responses, including progress and timeout metrics.
  */
-export function buildStatusResponseSchema(): Record<string, unknown> {
+function buildStatusResponseSchema(): Record<string, unknown> {
   return {
     type: 'object',
     required: ['id', 'status', 'elapsedSeconds', 'timeoutRiskPercent'],
