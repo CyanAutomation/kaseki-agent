@@ -38,7 +38,7 @@ assert_file_empty() {
 run_once() {
   local root="$1" marker="$2"
   local start end elapsed_ms code oldpwd
-  start="$(date +%s%3N)"
+  start="$(now_ms)"
   oldpwd="$(pwd)"
   cd "$REPO_ROOT"
   export KASEKI_ROOT="$root"
@@ -55,10 +55,14 @@ run_once() {
   code=$?
   set -e
   cd "$oldpwd"
-  end="$(date +%s%3N)"
+  end="$(now_ms)"
   elapsed_ms=$((end-start))
   echo "$code" > "$root/exit-${marker}.txt"
   echo "$elapsed_ms" > "$root/runtime-${marker}.ms"
+}
+
+now_ms() {
+  node -e 'process.stdout.write(String(Date.now()))'
 }
 
 echo "=== Testing --dry-run runtime behavior ==="
@@ -101,10 +105,12 @@ json_field_equals "$result1/metadata.json" "dry_run" "1"
 pass "host-start.json and metadata.json include dry_run=1"
 
 require_file "$result1/stage-timings.tsv"
-assert_stage_detail "$result1/stage-timings.tsv" "pi coding agent" "dry_run=true"
-assert_stage_detail "$result1/stage-timings.tsv" "validation" "dry_run=true"
-assert_stage_detail "$result1/stage-timings.tsv" "secret scan" "dry_run=true"
-pass "stage timing details capture semantic dry-run skips"
+assert_stage_detail "$result1/stage-timings.tsv" "preflight git ref" "ok"
+require_file "$result1/startup-check.txt"
+grep -q "startup_check=ok" "$result1/startup-check.txt" || fail "startup-check.txt should record startup_check=ok"
+require_file "$result1/result-summary.md"
+grep -q "Status: passed" "$result1/result-summary.md" || fail "result-summary.md should summarize passed startup check"
+pass "startup-check artifacts capture boot and preflight success"
 
 assert_file_empty "$result1/pi-events.jsonl"
 assert_file_empty "$result1/validation-timings.tsv"

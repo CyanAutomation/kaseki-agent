@@ -565,6 +565,21 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('idempotency store creates a missing results directory', () => {
+    const parent = fs.mkdtempSync('/tmp/kaseki-idempotency-parent-');
+    const resultsDir = path.join(parent, 'missing-results');
+
+    try {
+      const { IdempotencyStore } = jest.requireActual('./idempotency-store') as typeof import('./idempotency-store');
+      const store = new IdempotencyStore(resultsDir, 24);
+      store.shutdown();
+
+      expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   test('cancelled running jobs get non-empty API failure artifacts', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

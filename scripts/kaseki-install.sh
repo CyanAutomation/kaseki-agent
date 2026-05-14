@@ -21,7 +21,23 @@ if ! command -v git >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$(dirname "$KASEKI_CHECKOUT_DIR")"
+ensure_checkout_parent() {
+  local parent
+  parent="$(dirname "$KASEKI_CHECKOUT_DIR")"
+  if mkdir -p "$parent" 2>/dev/null; then
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "$parent"
+    sudo chown "$(id -u):$(id -g)" "$parent" 2>/dev/null || true
+    return 0
+  fi
+  printf 'Error: cannot create checkout parent directory: %s\n' "$parent" >&2
+  printf 'Create it manually or run scripts/kaseki-setup-host.sh --fix with sufficient privileges.\n' >&2
+  exit 1
+}
+
+ensure_checkout_parent
 
 if [ -d "$KASEKI_CHECKOUT_DIR/.git" ]; then
   if [ -n "$(git -C "$KASEKI_CHECKOUT_DIR" status --porcelain)" ]; then

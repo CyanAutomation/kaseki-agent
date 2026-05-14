@@ -9,13 +9,15 @@ export function sendErrorResponse(
   res: Response,
   status: number,
   title: string,
-  detail: string
+  detail: string,
+  extra?: Record<string, unknown>
 ): void {
   const response: ErrorResponse = {
     type: 'https://api.kaseki.local/errors#' + title.toLowerCase().replace(/\s+/g, '-'),
     title,
     status,
     detail,
+    ...extra,
   };
 
   res.status(status).json(response);
