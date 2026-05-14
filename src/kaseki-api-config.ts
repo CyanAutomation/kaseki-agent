@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { readHostSecret, getSecretLocations } from './secrets/host-secrets-reader';
+import { readHostSecret } from './secrets/host-secrets-reader';
 
 /**
  * Configuration for the Kaseki API service.
@@ -156,12 +156,6 @@ function loadArtifactCacheConfig(): {
  */
 export function loadConfig(): KasekiApiConfig {
   const apiKeys = loadApiKeys();
-  if (!apiKeys || apiKeys.length === 0) {
-    throw new Error(
-      'KASEKI_API_KEYS environment variable is required. ' +
-        'Set it to a comma-separated list of API keys, or KASEKI_API_KEYS_FILE pointing to a file.'
-    );
-  }
 
   const port = validatePort('KASEKI_API_PORT', 8080);
   const maxConcurrentRuns = validatePositiveInt('KASEKI_API_MAX_CONCURRENT_RUNS', 3, 1, 'KASEKI_API_MAX_CONCURRENT_RUNS');
@@ -198,25 +192,28 @@ export function loadConfig(): KasekiApiConfig {
 }
 
 /**
- * Load API keys from host-based secret files (required, no env var fallback).
- * Reads from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys.
+ * Load API keys from KASEKI_API_KEYS or host-based secret files.
+ * Host secrets are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys.
+ * Returns an empty list for trusted unauthenticated local mode.
  */
-function loadApiKeys(): string[] {
-  const keysValue = readHostSecret('kaseki_api_keys');
-  if (!keysValue) {
-    const locations = getSecretLocations('kaseki_api_keys');
-    throw new Error(
-      'KASEKI_API_KEYS is required. Create a secret file with your API keys (one per line):\n' +
-      `  Primary: ${locations.primary}\n` +
-      `  Fallback: ${locations.secondary}\n` +
-      'File format: one API key per line (newline-separated, skip blank lines and comments starting with #)'
-    );
-  }
-
+function parseApiKeys(keysValue: string): string[] {
   return keysValue
-    .split('\n')
+    .split(/[\n,]/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
+}
+
+function loadApiKeys(): string[] {
+  if (process.env.KASEKI_API_KEYS !== undefined) {
+    return parseApiKeys(process.env.KASEKI_API_KEYS);
+  }
+
+  const keysValue = readHostSecret('kaseki_api_keys');
+  if (!keysValue) {
+    return [];
+  }
+
+  return parseApiKeys(keysValue);
 }
 
 /**

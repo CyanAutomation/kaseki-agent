@@ -76,6 +76,7 @@ describe('kaseki-api-config load configuration', () => {
 
     const config = loadConfig();
 
+    expect(config.apiKeys).toEqual(['default-key']);
     expect(config.port).toBe(8080); // default
     expect(config.maxConcurrentRuns).toBe(3); // default
     expect(config.agentTimeoutSeconds).toBe(5700); // default
@@ -88,13 +89,15 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.artifactCacheMaxFileBytes).toBe(10 * 1024 * 1024); // default
   });
 
-  test('loadConfig throws when KASEKI_API_KEYS is not set', () => {
+  test('loadConfig allows empty API keys for trusted unauthenticated local mode', () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null);
 
     process.env.KASEKI_RESULTS_DIR = testDir;
 
-    expect(() => loadConfig()).toThrow('KASEKI_API_KEYS is required');
+    const config = loadConfig();
+
+    expect(config.apiKeys).toEqual([]);
   });
 
   test('loadConfig throws when KASEKI_API_PORT is invalid', () => {

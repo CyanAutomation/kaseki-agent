@@ -24,8 +24,10 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KASEKI_API_PORT` | 8080 | HTTP port for API server |
-| `KASEKI_API_KEYS` | *(required)* | Comma-separated API keys for auth |
+| `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
 | `KASEKI_API_KEYS_FILE` | — | Path to file with newline-separated keys |
+| `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | CLI client base URL for submitting `kaseki-agent run` requests |
+| `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
 | `KASEKI_RESULTS_DIR` | /agents/kaseki-results | Directory for run artifacts |
@@ -44,13 +46,13 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 
 ## Authentication
 
-All endpoints (except `/health`, `/api/health`, `/ready`, and `/api/ready`) require Bearer token authentication:
+All endpoints (except `/health`, `/api/health`, `/ready`, and `/api/ready`) require Bearer token authentication when the API service is configured with one or more keys:
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" http://localhost:8080/api/runs
 ```
 
-If the token is missing or invalid, the API returns `401 Unauthorized`.
+The CLI client uses `KASEKI_API_KEY`, `api.key`, or the first configured `api.keys` value as a bearer token. For trusted local development only, run the API with `KASEKI_API_KEYS` empty and omit `KASEKI_API_KEY`; the CLI will submit requests without an `Authorization` header. If auth is enabled and the token is missing or invalid, the API returns `401 Unauthorized`.
 
 ## Interactive Swagger Documentation
 
