@@ -5,7 +5,7 @@ import * as os from 'os';
 
 const testTemplateDir = path.join(os.tmpdir(), 'kaseki-setup-test-' + Date.now());
 const currentNodeMajor = parseInt(process.versions.node.split('.')[0], 10);
-const initializeSetupIt = currentNodeMajor >= 24 ? it : it.skip;
+const skipNodeVersionCheck = () => ({ assertNodeVersion: jest.fn() });
 
 describe('SetupOrchestrator', () => {
   beforeEach(() => {
@@ -24,8 +24,8 @@ describe('SetupOrchestrator', () => {
   });
 
   describe('initializeSetup', () => {
-    initializeSetupIt('should initialize setup with valid configuration', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+    it('should initialize setup with valid configuration', async () => {
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result).toEqual({
         nodeVersionValid: true,
         templateInitialized: true,
@@ -33,12 +33,26 @@ describe('SetupOrchestrator', () => {
       });
     });
 
-    initializeSetupIt('should use KASEKI_TEMPLATE_DIR env var if provided', async () => {
+    it('should use injected setup dependencies when provided', async () => {
+      const assertNodeVersion = jest.fn();
+      const ensureTemplate = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
+
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, {
+        assertNodeVersion,
+        ensureTemplate,
+      });
+
+      expect(assertNodeVersion).toHaveBeenCalledTimes(1);
+      expect(ensureTemplate).toHaveBeenCalledWith(testTemplateDir);
+      expect(result.templateDir).toBe(testTemplateDir);
+    });
+
+    it('should use KASEKI_TEMPLATE_DIR env var if provided', async () => {
       const envTemplateDir = path.join(os.tmpdir(), 'kaseki-env-test-' + Date.now());
       try {
         const originalEnv = process.env.KASEKI_TEMPLATE_DIR;
         process.env.KASEKI_TEMPLATE_DIR = envTemplateDir;
-        const result = await setupOrchestrator.initializeSetup();
+        const result = await setupOrchestrator.initializeSetup(undefined, skipNodeVersionCheck());
         expect(result.templateDir).toBe(envTemplateDir);
         process.env.KASEKI_TEMPLATE_DIR = originalEnv;
       } finally {
@@ -48,43 +62,43 @@ describe('SetupOrchestrator', () => {
       }
     });
 
-    initializeSetupIt('should use default template dir if nothing is provided', async () => {
+    it('should use default template dir if nothing is provided', async () => {
       const originalEnv = process.env.KASEKI_TEMPLATE_DIR;
       delete process.env.KASEKI_TEMPLATE_DIR;
       try {
-        const result = await setupOrchestrator.initializeSetup(undefined);
+        const result = await setupOrchestrator.initializeSetup(undefined, skipNodeVersionCheck());
         expect(result.templateDir).toBe('/agents/kaseki-template');
       } finally {
         process.env.KASEKI_TEMPLATE_DIR = originalEnv;
       }
     });
 
-    initializeSetupIt('should create parent directories if they do not exist', async () => {
+    it('should create parent directories if they do not exist', async () => {
       const deepDir = path.join(testTemplateDir, 'deep', 'nested', 'path', 'template');
-      const result = await setupOrchestrator.initializeSetup(deepDir);
+      const result = await setupOrchestrator.initializeSetup(deepDir, skipNodeVersionCheck());
       expect(result.templateDir).toBe(deepDir);
       expect(fs.existsSync(path.dirname(deepDir))).toBe(true);
     });
 
-    initializeSetupIt('should handle already-initialized template directory', async () => {
+    it('should handle already-initialized template directory', async () => {
       fs.mkdirSync(testTemplateDir, { recursive: true });
       fs.writeFileSync(path.join(testTemplateDir, 'run-kaseki.sh'), '#!/bin/bash\necho "test"');
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result.templateInitialized).toBe(true);
     });
 
-    initializeSetupIt('should handle template initialization with symlink fallback', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+    it('should handle template initialization with symlink fallback', async () => {
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result.nodeVersionValid).toBe(true);
     });
 
-    initializeSetupIt('should handle template init errors gracefully and continue', async () => {
+    it('should handle template init errors gracefully and continue', async () => {
       const readOnlyDir = path.join(os.tmpdir(), 'kaseki-readonly-' + Date.now());
       const templateInReadOnly = path.join(readOnlyDir, 'template');
       try {
         fs.mkdirSync(readOnlyDir, { recursive: true });
         fs.chmodSync(readOnlyDir, 0o444);
-        const result = await setupOrchestrator.initializeSetup(templateInReadOnly);
+        const result = await setupOrchestrator.initializeSetup(templateInReadOnly, skipNodeVersionCheck());
         expect(result.nodeVersionValid).toBe(true);
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
@@ -139,8 +153,8 @@ describe('SetupOrchestrator', () => {
   });
 
   describe('setup context return value', () => {
-    initializeSetupIt('should return SetupContext with all required properties', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+    it('should return SetupContext with all required properties', async () => {
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result).toHaveProperty('nodeVersionValid');
       expect(result).toHaveProperty('templateInitialized');
       expect(result).toHaveProperty('templateDir');
@@ -149,13 +163,13 @@ describe('SetupOrchestrator', () => {
       expect(typeof result.templateDir).toBe('string');
     });
 
-    initializeSetupIt('should mark nodeVersionValid as true after successful init', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+    it('should mark nodeVersionValid as true after successful init', async () => {
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result.nodeVersionValid).toBe(true);
     });
 
-    initializeSetupIt('should mark templateInitialized as true after setup', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
+    it('should mark templateInitialized as true after setup', async () => {
+      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
       expect(result.templateInitialized).toBe(true);
     });
   });

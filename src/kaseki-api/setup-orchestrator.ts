@@ -15,6 +15,14 @@ export interface SetupContext {
 }
 
 /**
+ * Internal test seam for setup orchestration dependencies.
+ */
+export interface InitializeSetupDependencies {
+  assertNodeVersion?: () => void;
+  ensureTemplate?: (templateDir: string) => Promise<void>;
+}
+
+/**
  * Validates that the runtime Node version meets minimum requirements
  * @throws Calls process.exit(1) if validation fails
  */
@@ -122,16 +130,19 @@ export async function ensureTemplateInitialized(templateDir: string): Promise<vo
  */
 export async function initializeSetup(
   templateDir?: string,
+  dependencies: InitializeSetupDependencies = {},
 ): Promise<SetupContext> {
   const resolvedTemplateDir = templateDir || process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  const assertNodeVersion = dependencies.assertNodeVersion ?? assertSupportedNodeVersion;
+  const ensureTemplate = dependencies.ensureTemplate ?? ensureTemplateInitialized;
 
   logger.info('Starting setup orchestration', { templateDir: resolvedTemplateDir });
 
   // Validate Node version (will call process.exit(1) if invalid)
-  assertSupportedNodeVersion();
+  assertNodeVersion();
 
   // Initialize template directory
-  await ensureTemplateInitialized(resolvedTemplateDir);
+  await ensureTemplate(resolvedTemplateDir);
 
   logger.info('Setup orchestration complete');
 
