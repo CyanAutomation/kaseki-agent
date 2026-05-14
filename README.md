@@ -37,7 +37,7 @@ npx kaseki-agent setup
 KASEKI_API_URL=http://localhost:8080/api npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 ```
 
-### Using Docker ⭐ (Alternative)
+### Using Docker (Alternative)
 
 If you prefer to avoid installing Node.js globally:
 
