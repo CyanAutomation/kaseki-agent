@@ -29,13 +29,16 @@ describe('Kaseki API Configuration', () => {
     process.env = originalEnv;
   });
 
-  test('loadConfig requires KASEKI_API_KEYS or KASEKI_API_KEYS_FILE', async () => {
+  test('loadConfig allows empty API keys for trusted unauthenticated local mode', () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockReturnValue(null);
 
     process.env.KASEKI_RESULTS_DIR = '/tmp';
 
-    expect(() => loadConfig()).toThrow(/KASEKI_API_KEYS.*required/i);
+    const config = loadConfig();
+
+    expect(config.apiKeys).toEqual([]);
+    expect(config.host).toBe('127.0.0.1');
   });
 
   test.each([
