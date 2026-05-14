@@ -20,13 +20,16 @@ type CancelApiClientFactory = (configManager: ConfigManager) => CancelApiClient;
 
 export class CancelCommand extends BaseCommand {
   private readonly apiClientFactory: CancelApiClientFactory;
+  private readonly commandName: string;
 
   constructor(
     configManager: ConfigManager,
-    apiClientFactory: CancelApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager)
+    apiClientFactory: CancelApiClientFactory = (manager) => LocalKasekiApiClient.fromConfig(manager),
+    commandName = 'cancel'
   ) {
     super(configManager);
     this.apiClientFactory = apiClientFactory;
+    this.commandName = commandName;
   }
 
   async execute(args: string[]): Promise<number> {
@@ -35,7 +38,7 @@ export class CancelCommand extends BaseCommand {
       const runId = positional[0];
 
       if (!runId) {
-        console.error('Usage: kaseki-agent cancel <RUN_ID> [--json]');
+        console.error(`Usage: kaseki-agent ${this.commandName} <RUN_ID> [--json]`);
         return 1;
       }
 
