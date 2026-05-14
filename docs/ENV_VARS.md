@@ -21,18 +21,18 @@ Complete reference for all environment variables used by kaseki-agent.
 | Variable | File-based Alternative | Type | Purpose |
 |----------|---|---|---|
 | `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter.ai API key (required) |
-| `KASEKI_API_KEYS` | `KASEKI_API_KEYS_FILE` | string | Newline-separated API keys for Kaseki service |
+| `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys for Kaseki service |
 | `GITHUB_TOKEN` | (env var only) | string | GitHub API token for PR creation |
 | `GITHUB_APP_ID` | `GITHUB_APP_ID_FILE` | string | GitHub App ID (numeric) |
 | `GITHUB_APP_CLIENT_ID` | `GITHUB_APP_CLIENT_ID_FILE` | string | GitHub OAuth Client ID |
 | `GITHUB_APP_PRIVATE_KEY` | `GITHUB_APP_PRIVATE_KEY_FILE` | string | GitHub App private key (PEM format) |
 
-**Note:** Prefer file-based credential variables (with `_FILE` suffix) for security. Files are resolved from:
+**Note:** Prefer host-secret files for security. Most credentials also support explicit `_FILE` variables; Kaseki API keys use the fixed host-secret files listed above instead of a path environment variable. Files are resolved from:
 
 | Priority | Path |
 |----------|------|
 | 1 | `/agents/secrets/{name}` (preferred) |
-| 2 | `~/.secrets/{name}` (fallback) |
+| 2 | `~/secrets/{name}` (fallback) |
 
 ### GitHub App Configuration
 
@@ -49,7 +49,7 @@ When `GITHUB_APP_ENABLED=1` and credentials are not explicitly provided, kaseki-
 | Priority | Source | Details |
 |----------|--------|---------|
 | 1 | **Environment variables** | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY` |
-| 2 | **Secret files** | `/agents/secrets/github_app_*`, `~/.secrets/github_app_*` |
+| 2 | **Secret files** | `/agents/secrets/github_app_*`, `~/secrets/github_app_*` |
 | 3 | **Auto-detected paths** | `~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key` (private key only) |
 
 **Behavior by `KASEKI_PUBLISH_MODE`:**
@@ -232,7 +232,7 @@ All secrets support **two-path resolution**:
 
 ```
 Primary:   /agents/secrets/{secret-name}
-Fallback:  ~/.secrets/{secret-name}
+Fallback:  ~/secrets/{secret-name}
 ```
 
 **Secret Files:**
@@ -272,7 +272,7 @@ kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 
 ```bash
 # API server configuration
-export KASEKI_API_KEYS_FILE="/agents/secrets/kaseki_api_keys"
+# Put one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
 export OPENROUTER_API_KEY_FILE="/agents/secrets/openrouter_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info
@@ -332,7 +332,7 @@ Configuration is resolved in this order (first match wins):
 1. **Explicit env var** (e.g., `OPENROUTER_API_KEY=...`)
 2. **File-based env var** (e.g., `OPENROUTER_API_KEY_FILE=...`)
 3. **Default location** (e.g., `/agents/secrets/openrouter_api_key`)
-4. **Fallback location** (e.g., `~/.secrets/openrouter_api_key`)
+4. **Fallback location** (e.g., `~/secrets/openrouter_api_key`)
 5. **Compiled default** (e.g., `openrouter/free` for `KASEKI_MODEL`)
 
 ---
@@ -356,11 +356,11 @@ for var in "${REQUIRED[@]}"; do
 done
 
 # Check credentials
-test -s "${OPENROUTER_API_KEY_FILE:-$HOME/.secrets/openrouter_api_key}" && \
+test -s "${OPENROUTER_API_KEY_FILE:-$HOME/secrets/openrouter_api_key}" && \
   echo "✓ OpenRouter key found" || \
   echo "✗ OpenRouter key missing"
 
-test -s "${KASEKI_API_KEYS_FILE:-$HOME/.secrets/kaseki_api_keys}" && \
+{ test -s /agents/secrets/kaseki_api_keys || test -s "$HOME/secrets/kaseki_api_keys"; } && \
   echo "✓ Kaseki API keys found" || \
   echo "✗ Kaseki API keys missing"
 ```

@@ -66,18 +66,17 @@ export KASEKI_API_KEYS=sk-your-secret-key-here
 export KASEKI_API_KEYS="sk-key1,sk-key2,sk-key3"
 ```
 
-Or store in a file:
+Or store keys in a host-secret file at `/agents/secrets/kaseki_api_keys` (preferred) or `~/secrets/kaseki_api_keys`:
 
 ```bash
 # Create file with one key per line
-cat > ~/.kaseki/api-keys.txt << 'EOF'
+mkdir -p /agents/secrets
+cat > /agents/secrets/kaseki_api_keys << 'EOF'
 sk-key1
 sk-key2
 sk-key3
 EOF
-
-# Set environment to point to file
-export KASEKI_API_KEYS_FILE=~/.kaseki/api-keys.txt
+chmod 600 /agents/secrets/kaseki_api_keys
 ```
 
 ## Step 3: Configure OpenRouter API Key
@@ -276,7 +275,7 @@ curl -H "Authorization: Bearer sk-your-secret-key-here" \
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `KASEKI_API_KEYS` | — | Required: comma-separated API keys |
-| `KASEKI_API_KEYS_FILE` | — | Alternative: file with newline-separated keys |
+| Host secret files | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | Alternative to `KASEKI_API_KEYS`; one key per line |
 | `KASEKI_API_PORT` | `8080` | HTTP listen port |
 | `KASEKI_API_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `KASEKI_API_IMAGE` | `docker.io/cyanautomation/kaseki-agent:latest` | Docker image to use |

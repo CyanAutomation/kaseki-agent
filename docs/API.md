@@ -12,8 +12,8 @@ The Kaseki API Service provides HTTP endpoints for remotely triggering, monitori
 # Set API keys and start
 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 
-# Or with configuration file
-KASEKI_API_KEYS_FILE=~/.kaseki-api-keys npm run kaseki-api
+# Or place one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
+npm run kaseki-api
 
 # Specify custom port
 KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
@@ -26,7 +26,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_PORT` | 8080 | HTTP port for API server |
 | `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
-| `KASEKI_API_KEYS_FILE` | — | Path to file with newline-separated keys |
+| Host secret files | `/agents/secrets/kaseki_api_keys`, then `~/secrets/kaseki_api_keys` | Newline-separated API keys for auth when `KASEKI_API_KEYS` is unset |
 | `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | CLI client base URL for submitting `kaseki-agent run` requests |
 | `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
@@ -789,7 +789,7 @@ curl -H "Authorization: Bearer sk-test-key" \
 
 5. **Require authentication outside localhost** — Set `KASEKI_API_KEYS` before binding the API to any network-accessible interface or proxy. Empty-key mode is blocked on non-loopback binds and should never be used in production.
 
-6. **Rotate API keys** — Keep keys in secure storage (`KASEKI_API_KEYS_FILE`), not in scripts.
+6. **Rotate API keys** — Keep keys in secure host-secret files (`/agents/secrets/kaseki_api_keys` or `~/secrets/kaseki_api_keys`), not in scripts.
 
 7. **Parse errors** — Check `failureClass` in status to determine failure root cause:
    - `validation` — Validation command failed
