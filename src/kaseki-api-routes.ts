@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { readHostSecret, getSecretLocations } from './secrets/host-secrets-reader';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
@@ -30,6 +31,104 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from './utils/utf8-helpers';
+
+const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootstrap.';
+const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 3000;
+const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
+
+interface TemplateHealthStatus {
+  ok: boolean;
+  templateDir: string;
+  runScript: string;
+  checkoutDir: string;
+  checkoutRef?: string;
+  doctorCommand?: string;
+  doctorExitCode?: number | null;
+  doctorSignal?: NodeJS.Signals | null;
+  doctorStderrTail?: string;
+  detail: string;
+  remediation?: string;
+}
+
+function getTemplateCheckoutRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
+  return fs.existsSync(path.join(checkoutDir, '.git'))
+    ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
+    : undefined;
+}
+
+function getTemplateDoctorTimeoutMs(): number {
+  const configured = Number.parseInt(process.env.KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS || '', 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS;
+}
+
+function tailTextByLines(content: string, lineCount: number): string {
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  return lines.slice(-lineCount).join('\n').trim();
+}
+
+function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateHealthStatus {
+  const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+  const checkoutRef = getTemplateCheckoutRef(checkoutDir);
+  const runScript = path.join(templateDir, 'run-kaseki.sh');
+
+  if (!fs.existsSync(runScript)) {
+    return {
+      ok: false,
+      templateDir,
+      runScript,
+      checkoutDir,
+      checkoutRef,
+      detail: `Missing template runner: ${runScript}`,
+      remediation: TEMPLATE_REMEDIATION,
+    };
+  }
+
+  const activateScript = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
+  const doctorArgs = fs.existsSync(activateScript)
+    ? [activateScript, '--json', 'doctor']
+    : [runScript, '--doctor'];
+  const doctorCommand = doctorArgs.join(' ');
+  const doctorResult = spawnSync(doctorArgs[0], doctorArgs.slice(1), {
+    cwd: fs.existsSync(checkoutDir) ? checkoutDir : undefined,
+    encoding: 'utf-8',
+    timeout: getTemplateDoctorTimeoutMs(),
+    maxBuffer: 128 * 1024,
+  });
+  const stderr = `${doctorResult.stderr || ''}${doctorResult.error ? `\n${doctorResult.error.message}` : ''}`;
+  const doctorStderrTail = tailTextByLines(stderr, TEMPLATE_DOCTOR_STDERR_TAIL_LINES);
+
+  if (doctorResult.error || doctorResult.status !== 0) {
+    const timedOut = doctorResult.error?.message.toLowerCase().includes('timeout') || doctorResult.signal === 'SIGTERM';
+    return {
+      ok: false,
+      templateDir,
+      runScript,
+      checkoutDir,
+      checkoutRef,
+      doctorCommand,
+      doctorExitCode: doctorResult.status,
+      doctorSignal: doctorResult.signal,
+      doctorStderrTail,
+      detail: timedOut
+        ? `Template doctor timed out after ${getTemplateDoctorTimeoutMs()}ms: ${doctorCommand}`
+        : `Template doctor failed: ${doctorCommand} exited with ${doctorResult.status ?? 'unknown'}`,
+      remediation: TEMPLATE_REMEDIATION,
+    };
+  }
+
+  return {
+    ok: true,
+    templateDir,
+    runScript,
+    checkoutDir,
+    checkoutRef,
+    doctorCommand,
+    doctorExitCode: doctorResult.status,
+    doctorSignal: doctorResult.signal,
+    doctorStderrTail,
+    detail: `Template runner passed doctor check: ${runScript}`,
+  };
+}
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
@@ -169,9 +268,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const image = readKasekiImage(templateDir);
   const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
-  const templateRef = fs.existsSync(path.join(checkoutDir, '.git'))
-    ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
-    : undefined;
+  const templateRef = getTemplateCheckoutRef(checkoutDir);
   const checks: PreflightCheck[] = [];
 
   try {
@@ -211,12 +308,16 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     });
   }
 
-  const runScript = path.join(templateDir, 'run-kaseki.sh');
+  const templateHealth = buildTemplateHealthStatus(templateDir);
   checks.push({
     name: 'template',
-    ok: fs.existsSync(runScript),
-    detail: fs.existsSync(runScript) ? `Template runner exists: ${runScript}` : `Missing template runner: ${runScript}`,
-    remediation: fs.existsSync(runScript) ? undefined : 'Run scripts/kaseki-activate.sh --controller bootstrap.',
+    ok: templateHealth.ok,
+    detail: templateHealth.detail,
+    remediation: templateHealth.remediation,
+    templatePath: templateHealth.templateDir,
+    checkoutRef: templateHealth.checkoutRef,
+    doctorCommand: templateHealth.doctorCommand,
+    doctorStderrTail: templateHealth.doctorStderrTail,
   });
 
   const status = checks.every((check) => check.ok)
@@ -464,16 +565,19 @@ export function createApiRouter(
       // Validate that bootstrap has been completed
       // Skip validation during tests (via KASEKI_SKIP_BOOTSTRAP_CHECK env var)
       if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
-        const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-        const runScript = path.join(templateDir, 'run-kaseki.sh');
-        if (!fs.existsSync(runScript)) {
-          return sendErrorResponse(
-            res,
-            400,
-            'Bad Request',
-            `Kaseki bootstrap is not complete. The run-kaseki.sh script is missing at ${runScript}. ` +
-            'Run \'scripts/kaseki-activate.sh --controller bootstrap\' to initialize the system, then check /api/preflight to verify readiness.',
-          );
+        const templateHealth = buildTemplateHealthStatus();
+        if (!templateHealth.ok) {
+          return res.status(400).json({
+            type: 'https://api.kaseki.local/errors#template-not-ready',
+            title: 'Bad Request',
+            status: 400,
+            detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
+            templatePath: templateHealth.templateDir,
+            checkoutRef: templateHealth.checkoutRef ?? 'unknown',
+            doctorCommand: templateHealth.doctorCommand,
+            doctorStderrTail: templateHealth.doctorStderrTail,
+            remediation: TEMPLATE_REMEDIATION,
+          });
         }
       }
 

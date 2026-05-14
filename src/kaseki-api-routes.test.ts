@@ -1609,6 +1609,128 @@ describe('kaseki-api-routes status artifact hints', () => {
   });
 });
 
+
+describe('kaseki-api-routes template bootstrap health', () => {
+  let resultsDir: string;
+  let templateDir: string;
+  let checkoutDir: string;
+  const previousEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-template-results-'));
+    templateDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-template-'));
+    checkoutDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-checkout-'));
+    previousEnv.KASEKI_SKIP_BOOTSTRAP_CHECK = process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+    previousEnv.KASEKI_TEMPLATE_DIR = process.env.KASEKI_TEMPLATE_DIR;
+    previousEnv.KASEKI_CHECKOUT_DIR = process.env.KASEKI_CHECKOUT_DIR;
+    delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
+    process.env.KASEKI_TEMPLATE_DIR = templateDir;
+    process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+    fs.rmSync(templateDir, { recursive: true, force: true });
+    fs.rmSync(checkoutDir, { recursive: true, force: true });
+  });
+
+  function writeRunKasekiDoctor(exitCode: number, stderr: string): void {
+    const scriptPath = path.join(templateDir, 'run-kaseki.sh');
+    fs.writeFileSync(
+      scriptPath,
+      `#!/usr/bin/env bash\nif [[ "$1" == "--doctor" ]]; then\n  echo ${JSON.stringify(stderr)} >&2\n  exit ${exitCode}\nfi\nexit 0\n`,
+    );
+    fs.chmodSync(scriptPath, 0o755);
+  }
+
+  test('rejects run submission when run-kaseki.sh is missing', async () => {
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.templatePath).toBe(templateDir);
+      expect(body.detail).toContain('Missing template runner');
+      expect(body.remediation).toBe('Run scripts/kaseki-activate.sh --controller bootstrap.');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rejects run submission when existing template doctor fails', async () => {
+    writeRunKasekiDoctor(42, 'doctor failed because template dependency is missing');
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.templatePath).toBe(templateDir);
+      expect(body.doctorCommand).toContain(path.join(templateDir, 'run-kaseki.sh'));
+      expect(body.doctorStderrTail).toContain('template dependency is missing');
+      expect(body.remediation).toBe('Run scripts/kaseki-activate.sh --controller bootstrap.');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('accepts run submission when template doctor passes', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-template-healthy',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-template-healthy'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' }),
+      });
+
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        publishMode: 'auto',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
 describe('kaseki-api-routes idempotency concurrency', () => {
   let resultsDir: string;
 

@@ -304,6 +304,10 @@ export interface PreflightCheck {
   ok: boolean;
   detail?: string;
   remediation?: string;
+  templatePath?: string;
+  checkoutRef?: string;
+  doctorCommand?: string;
+  doctorStderrTail?: string;
 }
 
 export interface PreflightResponse {
