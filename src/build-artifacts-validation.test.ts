@@ -15,13 +15,6 @@ describe('Build Artifacts Validation', () => {
       expect(stats.isDirectory()).toBe(true);
     });
 
-    it('should have subprocess-helpers.js in dist/lib/', () => {
-      const filePath = path.join(distLibDir, 'subprocess-helpers.js');
-      expect(fs.existsSync(filePath)).toBe(true);
-      const content = fs.readFileSync(filePath, 'utf8');
-      expect(content.length).toBeGreaterThan(0);
-    });
-
     it('should have TypeScript declaration files (.d.ts) in dist/lib/', () => {
       const dtsFiles = fs.readdirSync(distLibDir).filter((f) => f.endsWith('.d.ts'));
       expect(dtsFiles.length).toBeGreaterThan(0);
@@ -56,25 +49,52 @@ describe('Build Artifacts Validation', () => {
       }
     });
 
-    it('kaseki-api-routes.js should import from ./lib/subprocess-helpers', () => {
-      const filePath = path.join(distDir, 'kaseki-api-routes.js');
-      const content = fs.readFileSync(filePath, 'utf8');
-      expect(content).toMatch(/from\s+['"]\.\/lib\/subprocess-helpers|require\(['"]\.\/lib\/subprocess-helpers/);
-    });
+    it('subprocess helper consumers should resolve and import the emitted helper path', () => {
+      const consumers = [
+        {
+          sourceFile: 'kaseki-api-routes.ts',
+          distFile: 'kaseki-api-routes.js',
+          importPattern: /import\s+\{\s*execDockerCommand\s*\}\s+from\s+['"]\.\/lib\/subprocess-helpers['"]/,
+        },
+        {
+          sourceFile: 'job-scheduler.ts',
+          distFile: 'job-scheduler.js',
+          importPattern: /import\s+\{\s*execSubprocess\s*\}\s+from\s+['"]\.\/lib\/subprocess-helpers['"]/,
+        },
+      ];
 
-    it('job-scheduler.js should import from ./lib/subprocess-helpers', () => {
-      const filePath = path.join(distDir, 'job-scheduler.js');
-      const content = fs.readFileSync(filePath, 'utf8');
-      expect(content).toMatch(/from\s+['"]\.\/lib\/subprocess-helpers|require\(['"]\.\/lib\/subprocess-helpers/);
-    });
-  });
+      for (const { sourceFile, distFile, importPattern } of consumers) {
+        const sourcePath = path.join(projectRoot, 'src', sourceFile);
+        const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+        expect(sourceContent).toMatch(importPattern);
 
-  describe('Module exports from lib/', () => {
-    it('subprocess-helpers.js should export expected symbols', () => {
-      const filePath = path.join(distLibDir, 'subprocess-helpers.js');
-      const content = fs.readFileSync(filePath, 'utf8');
-      // Verify exports for functions used by kaseki-api-routes and job-scheduler
-      expect(content).toMatch(/export.*execDockerCommand|export.*execSubprocess|exports\.execDockerCommand|exports\.execSubprocess/);
+        const compiledPath = path.join(distDir, distFile);
+        const compiledContent = fs.readFileSync(compiledPath, 'utf8');
+        expect(compiledContent).toMatch(/from\s+['"]\.\/lib\/subprocess-helpers\.js['"]|require\(['"]\.\/lib\/subprocess-helpers\.js['"]\)/);
+      }
+
+      const helperPath = path.join(distLibDir, 'subprocess-helpers.js');
+      const helperImportUrl = pathToFileURL(helperPath).href;
+      const consumerImportUrls = consumers.map(({ distFile }) => pathToFileURL(path.join(distDir, distFile)).href);
+
+      try {
+        execFileSync(process.execPath, [
+          '--input-type=module',
+          '--eval',
+          `const helper = await import(${JSON.stringify(helperImportUrl)});
+           if (typeof helper.execDockerCommand !== 'function') {
+             throw new Error('subprocess helper did not export execDockerCommand');
+           }
+           if (typeof helper.execSubprocess !== 'function') {
+             throw new Error('subprocess helper did not export execSubprocess');
+           }
+           for (const consumerUrl of ${JSON.stringify(consumerImportUrls)}) {
+             await import(consumerUrl);
+           }`,
+        ], { encoding: 'utf8' });
+      } catch (error) {
+        throw new Error(`Failed to import subprocess helper consumers: ${error instanceof Error ? error.message : String(error)}`);
+      }
     });
   });
 });
