@@ -66,7 +66,6 @@ async function createTestApp(
 }> {
   const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
   const preFlightValidator = new PreFlightValidator();
-  process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = process.env.KASEKI_SKIP_BOOTSTRAP_CHECK ?? '1';
 
   const app = express();
   app.use(express.json());
@@ -1743,12 +1742,20 @@ describe('kaseki-api-routes template bootstrap health', () => {
   });
 
   function writeRunKasekiDoctor(exitCode: number, stderr: string): void {
+    fs.mkdirSync(path.join(templateDir, 'scripts'), { recursive: true });
+    fs.mkdirSync(path.join(templateDir, 'lib'), { recursive: true });
     const scriptPath = path.join(templateDir, 'run-kaseki.sh');
     fs.writeFileSync(
       scriptPath,
       `#!/usr/bin/env bash\nif [[ "$1" == "--doctor" ]]; then\n  echo ${JSON.stringify(stderr)} >&2\n  exit ${exitCode}\nfi\nexit 0\n`,
     );
     fs.chmodSync(scriptPath, 0o755);
+    fs.writeFileSync(path.join(templateDir, 'kaseki-agent.sh'), '#!/usr/bin/env bash\n');
+    fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-activate.sh'), '#!/usr/bin/env bash\n');
+    fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-preflight.sh'), '#!/usr/bin/env bash\n');
+    fs.writeFileSync(path.join(templateDir, 'lib', 'pi-event-filter.js'), 'export {};\n');
+    fs.writeFileSync(path.join(templateDir, 'lib', 'pi-progress-stream.js'), 'export {};\n');
+    fs.writeFileSync(path.join(templateDir, 'lib', 'kaseki-report.js'), 'export {};\n');
   }
 
   function writeTemplateMetadata(supportedPublishModes: string[]): void {

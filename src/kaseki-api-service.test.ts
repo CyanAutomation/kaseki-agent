@@ -12,7 +12,6 @@ import * as fs from 'fs';
 import type { Server } from 'http';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { assertSupportedNodeVersion, createGracefulShutdown, ensureResultsDir } from './kaseki-api-service';
-import * as hostSecretsReader from './secrets/host-secrets-reader';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
