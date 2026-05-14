@@ -9,9 +9,10 @@
 ### Prerequisites
 
 - **Node.js v24+** — JavaScript runtime
-- **Docker** (required) — handles containerized agent runs  
-- **Git** (required) — for cloning target repositories
-- **OpenRouter API Key** (required) — authenticates Pi agent calls
+- **Docker** — required for local API service / worker execution; not required for CLI help or config workflows
+- **Git** (required) — for cloning target repositories during worker execution
+- **Kaseki API service** — required for `run`, `list`, `report`, `status`, and `stop`/`cancel` task commands
+- **OpenRouter API Key** — required by workers that execute Pi agent calls
 - **Linux or macOS**
 
 ### Installation
@@ -23,14 +24,19 @@ npm install -g @cyanautomation/kaseki-agent
 # Run setup wizard
 kaseki-agent setup
 
-# Verify
+# Verify and manage local setup
 kaseki-agent doctor
+kaseki-agent config show
+kaseki-agent secrets list
 
-# Run your first task
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+# Start an API service before task commands
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+
+# Run your first API-backed task
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 ```
 
-That's it! For detailed documentation, see [NPM_SETUP.md](NPM_SETUP.md).
+The npm package primary workflows are `doctor`, `setup`, `config`, and `secrets`. Task commands are API-backed; for detailed documentation, see [NPM_SETUP.md](NPM_SETUP.md).
 
 ---
 
@@ -76,13 +82,13 @@ Kaseki supports three deployment patterns. Choose the one that matches your need
 
 | Pattern | Use Case | Complexity | Effort |
 |---------|----------|-----------|--------|
-| **Direct CLI** | One-off runs, local development, single host | Simple | Low |
+| **NPM CLI + Local API** | Host setup plus API-backed task commands on one machine | Simple | Low |
 | **Remote Activation** | Multi-host setup, controller-driven orchestration | Medium | Medium |
 | **REST API Service** | Long-running service, async execution, distributed orchestration | Complex | High |
 
-### Pattern 1: Direct CLI (Recommended for Single Host)
+### Pattern 1: NPM CLI + Local API (Recommended for Single Host)
 
-**Scenario**: You're on a Pi or single host and want to run kaseki-agent directly.
+**Scenario**: You're on a Pi or single host and want to use npm for setup/diagnostics and the local API service for task execution.
 
 **Setup**: Run `./scripts/kaseki-setup.sh` once, then:
 

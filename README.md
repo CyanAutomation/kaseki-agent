@@ -10,15 +10,23 @@ Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run is a number
 # Global install (recommended)
 npm install -g @cyanautomation/kaseki-agent
 
-# First-time setup
+# First-time admin workflows
+kaseki-agent doctor
 kaseki-agent setup
+kaseki-agent config show
+kaseki-agent secrets list
+```
 
-# Run agent on a repository
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+The npm CLI is primarily an admin/helper toolbox (`doctor`, `setup`, `config`, and `secrets`) plus an API client for task workflows. Task commands such as `run`, `list`, `report`, `status`, and `stop`/`cancel` require a running local API service or a configured `KASEKI_API_URL`.
 
-# View results
-kaseki-agent list
-kaseki-agent report kaseki-1
+```bash
+# Start a local API service in one terminal
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+
+# Submit and inspect work through that API in another terminal
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+KASEKI_API_KEY=sk-dev kaseki-agent list
+KASEKI_API_KEY=sk-dev kaseki-agent report kaseki-1
 ```
 
 ### Without Global Install
@@ -26,7 +34,7 @@ kaseki-agent report kaseki-1
 ```bash
 npm install @cyanautomation/kaseki-agent
 npx kaseki-agent setup
-npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+KASEKI_API_URL=http://localhost:8080/api npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 ```
 
 ### Using Docker ⭐ (Alternative)
@@ -52,11 +60,11 @@ docker run -it \
 
 **Kaseki** orchestrates three deployment patterns:
 
-1. **CLI** — `kaseki-agent` command for direct execution (this package)
-2. **Docker** — Containerized execution without host dependencies  
-3. **REST API** — `kaseki-agent serve` for distributed orchestration
+1. **NPM CLI** — admin/helper workflows plus API-backed task clients (this package)
+2. **Docker** — containerized setup and service execution without host Node.js
+3. **REST API** — `kaseki-agent serve` for local or distributed orchestration
 
-Each produces a numbered instance (kaseki-1, kaseki-2, …) with isolated workspace and results.
+Task execution produces a numbered instance (kaseki-1, kaseki-2, …) with isolated workspace and results.
 
 ---
 
@@ -123,7 +131,7 @@ export GITHUB_APP_CLIENT_ID_FILE=/path/to/github_client_id
 export GITHUB_APP_PRIVATE_KEY_FILE=/path/to/github_app_private_key
 
 # If using sudo, preserve env vars with -E flag
-sudo -E kaseki-agent run ...
+sudo -E env KASEKI_API_URL=http://localhost:8080/api kaseki-agent run ...
 ```
 
 **Advantages:** Works for one-off runs, CI/CD pipelines.
@@ -134,25 +142,38 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setting up the kaseki-api servi
 
 **👉 Full guide:** [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md)
 
-### Run Your First Task
+### Run Your First API-Backed Task
+
+Start or select a Kaseki API controller before using task commands:
+
+```bash
+# Local controller
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
+
+# Or remote controller
+export KASEKI_API_URL=https://controller.example.com/api
+export KASEKI_API_KEY=sk-your-kaseki-api-key
+```
+
+Then submit work through the API client:
 
 ```bash
 # Simple example
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 
 # With custom task prompt
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
   "Fix the TypeScript errors in src/"
 ```
 
-### View Results
+### View API Results
 
 ```bash
-# List all instances
-kaseki-agent list
+# List all API-known instances
+KASEKI_API_KEY=sk-dev kaseki-agent list
 
-# View specific instance
-kaseki-agent report kaseki-1
+# View a specific API-backed instance
+KASEKI_API_KEY=sk-dev kaseki-agent report kaseki-1
 ```
 
 ---
@@ -176,34 +197,40 @@ kaseki-agent setup
 - Saves configuration (project-local or user-global)
 - Runs doctor checks to verify everything works
 
-#### `run` — Execute Agent on Repository
+#### `run` — Submit Agent Task Through the API
 
 ```bash
 kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
 ```
 
+`run` is an API-backed client command. Start `kaseki-agent serve` locally first, or set `KASEKI_API_URL` to an existing controller. Set `KASEKI_API_KEY` when the service requires bearer authentication.
+
 **Examples:**
 
 ```bash
-# Simple execution (uses main branch)
-kaseki-agent run https://github.com/CyanAutomation/crudmapper
+# Local API service in another terminal
+KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
 
-# Specify branch
+# Simple API submission (uses main branch)
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper
+
+# Remote controller
+KASEKI_API_URL=https://controller.example.com/api \
+KASEKI_API_KEY=sk-your-kaseki-api-key \
 kaseki-agent run https://github.com/CyanAutomation/crudmapper develop
 
 # With custom task prompt
-kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
+KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main \
   "Fix all TypeScript errors in src/"
 ```
 
-**Execution Flow:**
+**API Flow:**
 
-1. Pre-flight checks (docker, node, npm, git, API key)
-2. Auto-pull Docker image (if needed)
-3. Create instance directories (workspace + results)
-4. Spawn container with security hardening
-5. Stream agent output in real-time
-6. Collect results and generate report
+1. Resolve the API base URL from `KASEKI_API_URL`, config `api.base_url`, or `http://localhost:8080/api`.
+2. Include `Authorization: Bearer $KASEKI_API_KEY` when configured.
+3. Submit the task to `POST /api/runs`.
+4. Print the controller-provided run ID and status URL.
+5. Use `status`, `list`, or `report` to inspect the API-backed run.
 
 #### `doctor` — Health Check & Validation
 
@@ -226,11 +253,13 @@ kaseki-agent doctor [--json] [--fix]
 - `--json` — JSON output (useful for scripts)
 - `--fix` — Attempt auto-remediation (pull image, show install hints)
 
-#### `list` — Show All Instances
+#### `list` — Show API-Known Instances
 
 ```bash
 kaseki-agent list [--status STATE]
 ```
+
+`list` reads the configured Kaseki API. It requires a local API service or `KASEKI_API_URL`; it does not scan local result directories.
 
 **Filter by status:**
 
@@ -247,11 +276,13 @@ kaseki-agent list --status running
 - Creation date
 - Execution duration
 
-#### `report` — View Instance Results
+#### `report` — View API-Backed Instance Results
 
 ```bash
 kaseki-agent report <INSTANCE_ID>
 ```
+
+By default, `report` reads status, analysis, artifact, and log endpoints from the configured API. Use `kaseki-agent report <INSTANCE_ID> --from-disk` only when intentionally inspecting local result files without an API.
 
 **Shows:**
 
@@ -259,6 +290,23 @@ kaseki-agent report <INSTANCE_ID>
 - Execution stages with timing
 - Final status and exit code
 - Detailed summary (if available)
+
+#### `status` — Poll API Run Status
+
+```bash
+kaseki-agent status <INSTANCE_ID> [--json]
+```
+
+`status` requires a local API service or configured `KASEKI_API_URL`.
+
+#### `stop` / `cancel` — Cancel API-Backed Work
+
+```bash
+kaseki-agent stop <INSTANCE_ID>
+kaseki-agent cancel <INSTANCE_ID>
+```
+
+Both commands call the configured API to cancel queued or running work.
 
 #### `config` — Manage Configuration
 
@@ -399,7 +447,11 @@ Configuration is loaded from (in order of precedence):
 # Required
 OPENROUTER_API_KEY_FILE=~/.kaseki/secrets/openrouter_api_key
 
-# Optional
+# API-client commands
+KASEKI_API_URL=http://localhost:8080/api  # Controller API base URL
+KASEKI_API_KEY=sk-your-kaseki-api-key     # Bearer token for authenticated APIs
+
+# Optional worker/service settings
 KASEKI_ROOT=/agents                    # Base directory
 KASEKI_MODEL=openrouter/free           # AI model
 KASEKI_AGENT_TIMEOUT_SECONDS=1200      # Timeout
@@ -415,15 +467,18 @@ KASEKI_STARTUP_CHECK_MODE=boot          # boot or baseline-validation for dry-ru
 
 ### Deployment Patterns
 
-#### CLI (Direct Execution)
+#### npm CLI (Admin Toolbox + API Client)
 
 ```bash
+kaseki-agent doctor
+kaseki-agent setup
+kaseki-agent config show
 kaseki-agent run <repo> <ref>
 ```
 
-- Single-step orchestration
-- Immediate results
-- Best for: CI/CD, direct usage
+- Primary workflows: `doctor`, `setup`, `config`, and `secrets`
+- Task workflows: `run`, `list`, `report`, `status`, and `stop`/`cancel` call the Kaseki API
+- Best for: host setup, diagnostics, and submitting work to a local or remote controller
 
 #### REST API (Distributed)
 
@@ -664,7 +719,7 @@ curl -H "Authorization: Bearer sk-your-secret-key" \
 | `GET` | `/api/runs/:id/analysis` | Comprehensive summary |
 | `GET` | `/api/results/:id/:file` | Download artifact (diff, metadata) |
 
-**Full API documentation:** See [docs/API.md](docs/API.md)  
+**Full API documentation:** See [docs/API.md](docs/API.md)
 **Deployment guide:** See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 **When to use:** Distributed orchestration, external controller integration, multi-user scenarios.
@@ -1364,7 +1419,9 @@ Startup checks have two depths. Boot-only startup checks (`startupCheck: true`, 
 
 | Variable | Default | Notes |
 |---|---|---|
-| `KASEKI_API_KEYS` | — | Comma-separated API keys (required for service) |
+| `KASEKI_API_URL` | `http://localhost:8080/api` | Client-side API base URL for npm task commands |
+| `KASEKI_API_KEY` | — | Client-side bearer token for npm task commands |
+| `KASEKI_API_KEYS` | — | Comma-separated API keys accepted by the service |
 | `KASEKI_API_PORT` | 8080 | HTTP listen port |
 | `KASEKI_API_LOG_LEVEL` | info | Log verbosity: debug/info/warn/error |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent jobs |

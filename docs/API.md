@@ -27,7 +27,8 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_API_HOST` | loopback when unauthenticated; Node default when authenticated | Optional API bind host. Empty-key unauthenticated mode is rejected unless this is `localhost`, `127.0.0.1`, or `::1`. |
 | `KASEKI_API_KEYS` | *(empty/local unauthenticated)* | Comma-separated API keys for auth; leave empty only for trusted local development |
 | Host secret files | `/agents/secrets/kaseki_api_keys`, then `~/secrets/kaseki_api_keys` | Newline-separated API keys for auth when `KASEKI_API_KEYS` is unset |
-| `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | CLI client base URL for submitting `kaseki-agent run` requests |
+| `KASEKI_API_URL` | `http://localhost:8080/api` | Preferred CLI client base URL for API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
+| `KASEKI_API_BASE_URL` | `http://localhost:8080/api` | Backward-compatible CLI client base URL alias |
 | `KASEKI_API_KEY` | — | CLI client bearer token; omit when the local API is intentionally running with empty `KASEKI_API_KEYS` |
 | `KASEKI_API_LOG_DIR` | /var/log/kaseki-api/ | Log file output directory |
 | `KASEKI_API_MAX_CONCURRENT_RUNS` | 3 | Max concurrent kaseki jobs |
