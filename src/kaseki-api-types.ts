@@ -41,7 +41,6 @@ export interface ArtifactFileInfo {
 export enum WebhookEventType {
   JOB_SUBMITTED = 'job.submitted',
   JOB_STARTED = 'job.started',
-  JOB_PROGRESS = 'job.progress',
   JOB_COMPLETED = 'job.completed',
   JOB_FAILED = 'job.failed',
   JOB_CANCELLED = 'job.cancelled',
@@ -50,7 +49,7 @@ export enum WebhookEventType {
 /**
  * Webhook configuration for a run.
  */
-export const WebhookConfigSchema = z.object({
+const WebhookConfigSchema = z.object({
   url: z.string().url('Webhook URL must be valid'),
   secret: z.string().min(16).optional().describe('HMAC secret for signature verification'),
   events: z.array(z.nativeEnum(WebhookEventType)).optional().describe('Event types to deliver'),
@@ -84,7 +83,7 @@ export interface WebhookPayload {
 /**
  * Request tracing info.
  */
-export const RequestTracingSchema = z.object({
+const RequestTracingSchema = z.object({
   correlationId: z.string().uuid().optional().describe('Correlation ID for tracking'),
   requestId: z.string().uuid().optional().describe('Unique request ID'),
 });

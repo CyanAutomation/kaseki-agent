@@ -22,7 +22,7 @@ interface KasekiAPIServiceOptions {
   logLevel?: string;
 }
 
-export class KasekiAPIServiceImpl {
+class KasekiAPIServiceImpl {
   private server: Server | null = null;
   private logger = createEventLogger('kaseki-api');
   private scheduler: JobScheduler | null = null;

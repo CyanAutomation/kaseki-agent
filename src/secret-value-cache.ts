@@ -11,7 +11,7 @@ type SecretCacheEntry = {
  * process stays alive. Entries are keyed by file path and invalidated whenever
  * the file metadata changes.
  */
-export class SecretValueCache {
+class SecretValueCache {
   private entries = new Map<string, SecretCacheEntry>();
 
   readFile(filePath: string): string {
@@ -52,4 +52,4 @@ export class SecretValueCache {
   }
 }
 
-export const secretValueCache = new SecretValueCache();
+const secretValueCache = new SecretValueCache();

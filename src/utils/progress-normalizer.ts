@@ -3,7 +3,7 @@ import { StructuredProgress } from '../kaseki-api-types';
 const SHELL_DIAGNOSTIC_PATTERN = /\/[^\s:]+(?:\/[^\s:]+)*:\s+line\s+\d+:\s+.*$/;
 const GIT_CLONE_STDERR_PATTERN = /Cloning into '[^']+'\.\.\.$/;
 
-export function sanitizeProgressMessage(message: string): string {
+function sanitizeProgressMessage(message: string): string {
   return message
     .replace(SHELL_DIAGNOSTIC_PATTERN, '')
     .replace(GIT_CLONE_STDERR_PATTERN, '')

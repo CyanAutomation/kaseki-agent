@@ -49,7 +49,7 @@ function validatePort(envVar: string = 'KASEKI_API_PORT', defaultPort: number = 
 /**
  * Determine whether a bind host is limited to the local machine.
  */
-export function isLoopbackHost(host: string): boolean {
+function isLoopbackHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
   return normalized === 'localhost' || normalized === '::1' || normalized.startsWith('127.');
 }

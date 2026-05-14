@@ -20,7 +20,7 @@ const logger = createLogger('config');
 /**
  * Full configuration schema with validation
  */
-export const ConfigSchema = z.object({
+const ConfigSchema = z.object({
   // Authentication
   auth: z.object({
     openrouter_api_key_file: z.string().optional(),
