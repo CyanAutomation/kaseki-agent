@@ -1,6 +1,6 @@
 {
   "name": "@cyanautomation/kaseki-agent",
-  "version": "1.28.0",
+  "version": "1.29.0",
   "description": "Admin/helper/doctor toolbox and local API client for Kaseki diagnostics, setup, and API-backed coding-agent task workflows",
   "type": "module",
   "license": "MIT",
