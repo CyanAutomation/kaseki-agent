@@ -18,7 +18,7 @@ KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
 KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"
 KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
-MODE="${1:-all}"  # all, permissions, bootstrap, or quick
+MODE="${1:-all}"  # all, permissions, bootstrap, quick, boot, or baseline-validation
 
 # Current UID inside container (typically UID 10000 for non-root user)
 CONTAINER_UID="${CONTAINER_UID:-$(id -u)}"
@@ -240,14 +240,21 @@ main() {
       check_bootstrap_status || overall_exit=$?
       ;;
     
-    quick)
+    quick|boot)
       # Minimal checks (just essentials)
       check_kaseki_root || overall_exit=$?
+      ;;
+
+    baseline-validation)
+      # Startup smoke test mode used by API dry-runs before repository validation.
+      check_kaseki_root || overall_exit=$?
+      check_subdirectories || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     
     *)
       log_error "Unknown mode: $MODE"
-      echo "Usage: $0 [all|permissions|bootstrap|quick]"
+      echo "Usage: $0 [all|permissions|bootstrap|quick|boot|baseline-validation]"
       return 1
       ;;
   esac
