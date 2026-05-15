@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.27.5...v1.28.0) (2026-05-15)
+
+### Features
+
+* add --force option to InitCommand and enhance SetupWizard with permission checks ([76a3397](https://github.com/CyanAutomation/kaseki-agent/commit/76a339797528ebc960f6e7a0ada04e56960b6c5a))
+* add shared OpenAPI test assertion helpers to simplify tests ([2a91b27](https://github.com/CyanAutomation/kaseki-agent/commit/2a91b273b8d6f5a6926b8431432095e223bab26b))
+* enhance Docker setup documentation and add pre-flight validation script ([b4b37fd](https://github.com/CyanAutomation/kaseki-agent/commit/b4b37fd99e8aa653b4c369fcb56fa06a68a5f211))
+
+### Bug Fixes
+
+* remove unnecessary blank lines in runTemplateDoctor and buildTemplateHealthStatus functions ([3ba4efc](https://github.com/CyanAutomation/kaseki-agent/commit/3ba4efc1dd4acaa60f85da750cf981fa3d8a1f62))
+
 ## [1.27.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.27.4...v1.27.5) (2026-05-14)
 
 ### Bug Fixes
