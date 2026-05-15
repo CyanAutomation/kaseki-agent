@@ -2,7 +2,7 @@
  * Host-Based Secrets Reader
  *
  * Reads secrets from host filesystem with dual-path resolution:
- * 1. Primary path: /agents/secrets/{secretName}
+ * 1. Primary path: $KASEKI_SECRETS_DIR/{secretName} or /agents/secrets/{secretName}
  * 2. Fallback path: ~/secrets/{secretName}
  *
  * No fallback to environment variables (hard requirement).
@@ -27,7 +27,9 @@ const secretCache = new Map<string, CacheEntry>();
 /**
  * Primary location for secrets on host
  */
-const PRIMARY_SECRETS_DIR = '/agents/secrets';
+const getPrimarySecretsDir = (): string => {
+  return process.env.KASEKI_SECRETS_DIR || '/agents/secrets';
+};
 
 /**
  * Fallback location for secrets (user home directory)
@@ -51,7 +53,7 @@ export function readHostSecret(secretName: string): string | null {
     throw new Error(`Invalid secret name: ${secretName}`);
   }
 
-  const primaryPath = path.join(PRIMARY_SECRETS_DIR, secretName);
+  const primaryPath = path.join(getPrimarySecretsDir(), secretName);
   const secondaryPath = path.join(getSecondarySecretsDir(), secretName);
 
   // Try primary location first
@@ -125,7 +127,7 @@ export function getSecretLocations(secretName: string): {
   secondary: string;
 } {
   return {
-    primary: path.join(PRIMARY_SECRETS_DIR, secretName),
+    primary: path.join(getPrimarySecretsDir(), secretName),
     secondary: path.join(getSecondarySecretsDir(), secretName),
   };
 }

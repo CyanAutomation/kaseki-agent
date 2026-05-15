@@ -93,7 +93,7 @@ export type RequestTracing = z.infer<typeof RequestTracingSchema>;
 /**
  * Request to trigger a new kaseki run.
  */
-export const RunRequestSchema = z.object({
+const RunRequestShape = z.object({
   repoUrl: z.string().url('Repository URL must be valid').describe('Git repository URL'),
   ref: z.string().min(1).default('main').describe('Git branch/tag/commit'),
   taskPrompt: z.string().min(10).optional().describe('Task prompt for Pi agent'),
@@ -124,6 +124,39 @@ export const RunRequestSchema = z.object({
   idempotencyKey: z.string().uuid().optional().describe('Idempotency key for safe retries'),
   timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Per-run timeout in seconds'),
 });
+
+function normalizeRunRequestAliases(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return input;
+  }
+
+  const request = { ...(input as Record<string, unknown>) };
+  const aliases: Array<[string, string]> = [
+    ['repo_url', 'repoUrl'],
+    ['git_ref', 'ref'],
+    ['task_prompt', 'taskPrompt'],
+    ['changed_files_allowlist', 'changedFilesAllowlist'],
+    ['max_diff_bytes', 'maxDiffBytes'],
+    ['validation_commands', 'validationCommands'],
+    ['task_mode', 'taskMode'],
+    ['publish_mode', 'publishMode'],
+    ['startup_check', 'startupCheck'],
+    ['startup_check_mode', 'startupCheckMode'],
+    ['webhook_config', 'webhookConfig'],
+    ['idempotency_key', 'idempotencyKey'],
+    ['timeout_seconds', 'timeoutSeconds'],
+  ];
+
+  for (const [snakeCase, camelCase] of aliases) {
+    if (request[camelCase] === undefined && request[snakeCase] !== undefined) {
+      request[camelCase] = request[snakeCase];
+    }
+  }
+
+  return request;
+}
+
+export const RunRequestSchema = z.preprocess(normalizeRunRequestAliases, RunRequestShape);
 
 export type RunRequest = z.infer<typeof RunRequestSchema>;
 

@@ -213,6 +213,35 @@ describe('Kaseki API Request Validation', () => {
         validation: { commands: ['npm test -- parser'] },
       },
     },
+    {
+      name: 'accepts snake_case HTTP payload aliases',
+      request: {
+        repo_url: 'https://github.com/org/repo',
+        git_ref: 'feature/setup',
+        task_prompt: 'Run a first-time setup smoke test',
+        changed_files_allowlist: ['src/**'],
+        max_diff_bytes: 400000,
+        validation_commands: ['npm test'],
+        task_mode: 'inspect',
+        publish_mode: 'none',
+        startup_check: true,
+        startup_check_mode: 'boot',
+        timeout_seconds: 600,
+      },
+      expected: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'feature/setup',
+        taskPrompt: 'Run a first-time setup smoke test',
+        changedFilesAllowlist: ['src/**'],
+        maxDiffBytes: 400000,
+        validationCommands: ['npm test'],
+        taskMode: 'inspect',
+        publishMode: 'none',
+        startupCheck: true,
+        startupCheckMode: 'boot',
+        timeoutSeconds: 600,
+      },
+    },
   ])('RunRequestSchema success cases: $name', ({ request, expected }) => {
     const result = RunRequestSchema.parse(request);
     expect(result).toMatchObject(expected);

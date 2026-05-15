@@ -61,7 +61,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**" ./run-kaseki.sh --repo https://github.co
 → Install Docker: <https://docs.docker.com/install/>
 
 **Error: `Permission denied` when writing to `/agents`**  
-→ Create the directory: `sudo mkdir -p /agents && sudo chmod 777 /agents`
+→ Run the host prep helper: `sudo /agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix`
 
 **Exit code 4: Diff exceeds maximum size**  
 → Increase the limit: `KASEKI_MAX_DIFF_BYTES=400000 ./run-kaseki.sh ...`
@@ -164,49 +164,80 @@ brew install docker-compose  # macOS
 sudo apt-get install docker-compose  # Ubuntu/Debian
 ```
 
-### Step 2: Setup (first-time)
+### Step 2: Prepare the host (first-time)
 
 ```bash
-# Run unified setup wizard
-kaseki-agent init
+# From a kaseki-agent checkout on the host
+sudo ./scripts/kaseki-setup-host.sh --fix
 ```
 
-Select "Production REST API" and follow prompts.
+This creates `/agents`, `/agents/kaseki-results`, `/agents/kaseki-runs`, and
+`/agents/kaseki-cache` for the container user `10000:10000`. It also normalizes
+`~/secrets` so files are readable by group `10000` without making them
+world-readable.
+
+Expected secret files:
+
+```text
+~/secrets/openrouter_api_key
+~/secrets/github_app_id
+~/secrets/github_app_client_id
+~/secrets/github_app_private_key
+~/secrets/kaseki_api_keys
+```
 
 ### Step 3: Start the service
 
 ```bash
-docker-compose up -d
+docker compose up -d --force-recreate
 ```
 
 ### Step 4: Verify it's running
 
 ```bash
-# Health check
+# Liveness check
 curl http://localhost:8080/health
 
+# Readiness/preflight diagnostics
+curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  http://localhost:8080/api/preflight
+
 # View logs
-docker-compose logs -f kaseki-api
+docker compose logs -f kaseki-api
 
 # List running instances
-curl http://localhost:8080/api/runs
+curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  http://localhost:8080/api/runs
 ```
 
 ### Step 5: Submit tasks via API
 
 ```bash
-# Via curl
-curl -X POST http://localhost:8080/api/runs \
-  -H "Authorization: Bearer $(grep KASEKI_API_KEYS .env | cut -d= -f2)" \
+# Validate first
+curl -X POST http://localhost:8080/api/validate \
+  -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
   -H "Content-Type: application/json" \
   -d '{
-    "repo_url": "https://github.com/user/repo",
-    "git_ref": "main",
-    "task_prompt": "Fix TypeScript errors"
+    "repoUrl": "https://github.com/user/repo",
+    "ref": "main",
+    "taskPrompt": "First-time setup smoke test"
+  }'
+
+# Then submit
+curl -X POST http://localhost:8080/api/runs \
+  -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/user/repo",
+    "ref": "main",
+    "taskPrompt": "Fix TypeScript errors",
+    "publishMode": "none"
   }'
 
 # Via CLI (if installed locally)
-KASEKI_API_URL=http://localhost:8080/api kaseki-agent run https://github.com/user/repo main
+KASEKI_API_URL=http://localhost:8080/api \
+KASEKI_API_KEY="$(cat ~/secrets/kaseki_api_keys)" \
+  kaseki-agent run https://github.com/user/repo main
 ```
 
 ### Customization
@@ -220,7 +251,7 @@ Edit `.env` to change:
 ### Production Checklist
 
 - [ ] `/agents` directory exists and is writable by Docker (UID 10000)
-- [ ] API keys stored securely in `~/.kaseki/secrets.json` (mode 0600)
+- [ ] Secret files live in `~/secrets`, directory mode `0750`, file mode `0640`, group `10000`
 - [ ] Docker socket mounted: `-v /var/run/docker.sock:/var/run/docker.sock`
 - [ ] Results volume persistent: `-v /agents:/agents`
 - [ ] API accessible from CI/CD: correct base URL and firewall rules
@@ -234,7 +265,19 @@ Edit `.env` to change:
 ```bash
 sudo mkdir -p /agents
 sudo chown 10000:10000 /agents
-sudo chmod 755 /agents
+sudo chmod 775 /agents
+```
+
+Or run: `sudo ./scripts/kaseki-setup-host.sh --fix`
+
+**Preflight reports a deleted bind mount**
+
+The host directory was removed after the container started. Recreate the host
+directories, then recreate the container:
+
+```bash
+sudo ./scripts/kaseki-setup-host.sh --fix
+docker compose up -d --force-recreate
 ```
 
 **Docker socket not accessible**  
