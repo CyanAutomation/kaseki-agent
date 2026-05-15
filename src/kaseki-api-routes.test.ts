@@ -293,6 +293,87 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
   });
 });
 
+describe('kaseki-api-routes request aliases', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-request-aliases-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('POST /api/validate accepts snake_case payload aliases', async () => {
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore, preFlightValidator } = await createTestApp(scheduler, config);
+    jest.spyOn(preFlightValidator, 'validate').mockResolvedValue({
+      isValid: true,
+      checks: [],
+      warnings: [],
+      errors: [],
+      estimatedDurationSeconds: 60,
+    });
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/validate`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo_url: 'https://github.com/org/repo',
+          git_ref: 'main',
+          task_prompt: 'Run a first-time setup validation smoke test',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(preFlightValidator.validate).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Run a first-time setup validation smoke test',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('POST /api/runs accepts snake_case payload aliases', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockResolvedValue({
+      id: 'kaseki-alias',
+      status: 'queued',
+      createdAt: new Date('2026-05-15T00:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-alias'),
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repo_url: 'https://github.com/org/repo',
+          git_ref: 'main',
+          task_prompt: 'Run a first-time setup task smoke test',
+          publish_mode: 'none',
+        }),
+      });
+
+      expect(res.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Run a first-time setup task smoke test',
+        publishMode: 'none',
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+});
+
 describe('kaseki-api-routes template readiness gate', () => {
   let resultsDir: string;
   let originalSkipBootstrapCheck: string | undefined;
@@ -394,6 +475,45 @@ describe('kaseki-api-routes preflight diagnostics', () => {
 
     expect(result.detail).toMatch(/unreachable/);
     expect(result.remediation).toMatch(/daemon/);
+  });
+
+  test('GET /api/preflight reports deleted bind mounts for Kaseki paths', async () => {
+    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'kaseki-deleted-mount-'));
+    const resultsDir = path.join(tempRoot, 'kaseki-results');
+    fs.mkdirSync(resultsDir, { recursive: true });
+    const mountInfoPath = path.join(tempRoot, 'mountinfo');
+    const originalMountInfoPath = process.env.KASEKI_MOUNTINFO_PATH;
+    process.env.KASEKI_MOUNTINFO_PATH = mountInfoPath;
+    fs.writeFileSync(
+      mountInfoPath,
+      `101 99 179:2 /agents//deleted ${tempRoot} rw,noatime - ext4 /dev/mmcblk0p2 rw\n`,
+    );
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const mountCheck = body.checks.find((check: any) => check.name === 'bind-mounts');
+      expect(mountCheck).toEqual(expect.objectContaining({
+        ok: false,
+        detail: expect.stringContaining('/agents//deleted'),
+        remediation: expect.stringContaining('recreate the kaseki-api container'),
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalMountInfoPath === undefined) {
+        delete process.env.KASEKI_MOUNTINFO_PATH;
+      } else {
+        process.env.KASEKI_MOUNTINFO_PATH = originalMountInfoPath;
+      }
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   test('GET /api/preflight reports readable GitHub App file credentials', async () => {

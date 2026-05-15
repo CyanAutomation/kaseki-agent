@@ -6,10 +6,10 @@ set -euo pipefail
 if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
   /scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}" || {
     exit_code=$?
-    # Exit code 2 = configuration error (block startup)
-    # Exit code 3 = warning (continue anyway)
-    if [ "$exit_code" = "2" ]; then
-      echo "Startup checks failed: configuration error detected" >&2
+    # Exit codes 1 and 2 are blocking setup/permission failures.
+    # Exit code 3 is a warning that the API can surface through /api/preflight.
+    if [ "$exit_code" != "3" ]; then
+      echo "Startup checks failed: blocking startup issue detected (exit $exit_code)" >&2
       exit 1
     fi
   }

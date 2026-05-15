@@ -177,9 +177,9 @@ curl -X POST http://localhost:8080/api/run \
   -H "Authorization: Bearer sk-your-secret-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "repo_url": "https://github.com/your-org/your-repo",
-    "git_ref": "main",
-    "task_prompt": "Fix the parsing bug"
+    "repoUrl": "https://github.com/your-org/your-repo",
+    "ref": "main",
+    "taskPrompt": "Fix the parsing bug"
   }'
 ```
 
