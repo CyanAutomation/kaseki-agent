@@ -8,6 +8,84 @@ Welcome! This guide will help you set up and use kaseki-agent in **5 minutes or 
 
 ## Decision Tree
 
+**What's your deployment environment?**
+
+- [**Docker Compose**](#docker-compose-deployment) — Standard single-server deployment (recommended)
+  - Perfect for: Dockhand, Portainer, systemd+docker
+  - Includes init container that auto-fixes permissions
+  - Setup time: 3-5 minutes
+
+- [**Single-Run Execution**](#single-run-execution) — One-off tasks without persistence
+  - Perfect for: CI/CD scripts, quick testing, local development
+  - Setup time: 2 minutes
+  - No infrastructure needed
+
+- [**Kubernetes**](#kubernetes-deployment) — Multi-replica, cloud-native deployments
+  - Perfect for: Multi-instance setups, advanced orchestration
+  - Setup time: 10-15 minutes
+  - Requires Helm or manual manifest editing
+
+---
+
+### Docker Compose Deployment
+
+**Best for**: Production deployments, Dockhand, Portainer, VMs  
+**Setup time**: 3-5 minutes  
+**Persistence**: Yes (results in `/agents/kaseki-results/`)
+
+#### Step 1: Get Your API Key
+
+1. Visit [OpenRouter](https://openrouter.ai) and sign up
+2. Go to **Settings** → **API Keys** and create a new key
+3. Copy the key (starts with `sk-or-`)
+
+#### Step 2: Prepare `/agents` Directory
+
+The init container will attempt to fix permissions automatically, but you may need to pre-create the directory:
+
+```bash
+# On the host running Docker:
+sudo mkdir -p /agents
+sudo chmod 755 /agents
+# (Init container will set UID 10000 ownership if it can)
+```
+
+#### Step 3: Deploy the API Service
+
+```bash
+# In the kaseki-agent repository directory
+export OPENROUTER_API_KEY=sk-or-your-key-here
+mkdir -p /home/pi/secrets
+echo "$OPENROUTER_API_KEY" > /home/pi/secrets/openrouter_api_key
+chmod 600 /home/pi/secrets/openrouter_api_key
+
+# Start the service (includes init container)
+docker-compose up -d
+
+# Monitor startup
+docker-compose logs -f kaseki-api
+```
+
+#### Step 4: Verify Deployment
+
+```bash
+# Check if API is responding
+curl http://localhost:8080/ready
+
+# Check preflight status
+curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+  http://localhost:8080/api/preflight | jq .
+```
+
+**If you see permission errors:**
+  - Check init container logs: `docker-compose logs kaseki-init`
+  - Follow the error message in logs (provides platform-specific fix)
+  - Or see [Dockhand/Portainer guide](#dockhandandportainer) in DEPLOYMENT.md
+
+---
+
+## Decision Tree
+
 **What do you want to do?**
 
 - [**Run one-off code tasks**](#single-run-execution) — Submit individual tasks without persistence
