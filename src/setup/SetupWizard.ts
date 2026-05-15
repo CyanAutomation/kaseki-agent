@@ -32,7 +32,9 @@ export interface EnvironmentInfo {
   platform: string;
   homeDir: string;
   agentsDir: string;
-  hasWritePermissionToAgents: boolean;
+  hasWritePermissionToAgents: boolean; // Current user can write to /agents
+  hasWritePermissionByContainerUid?: boolean; // Container UID 10000 can write to /agents
+  hasSudo?: boolean; // Current user has sudo access
 }
 
 /**
@@ -90,7 +92,7 @@ export class SetupWizard {
   /**
    * Main setup flow - orchestrates all steps
    */
-  async run(options?: { dryRun?: boolean; importLegacy?: boolean }): Promise<SetupContext> {
+  async run(options?: { dryRun?: boolean; importLegacy?: boolean; force?: boolean }): Promise<SetupContext> {
     console.log('\n🚀 Kaseki Agent Unified Setup\n');
     console.log('This wizard will guide you through setup in a few simple steps.\n');
 
@@ -101,7 +103,7 @@ export class SetupWizard {
 
     // Step 2: Select execution path
     console.log('\nStep 2/5: What do you want to do?');
-    const path = await this.selectExecutionPath(environment);
+    const path = await this.selectExecutionPath(environment, options?.force);
     console.log(`  → Selected: ${this.describeExecutionPath(path)}\n`);
 
     // Step 3: Collect Essential 8 configuration
@@ -151,7 +153,7 @@ export class SetupWizard {
     // Check Git
     const hasGit = this.checkGitAvailable();
 
-    // Check write permission to /agents
+    // Check write permission to /agents by current user
     let hasWritePermissionToAgents = false;
     try {
       await fs.access(agentsDir, fs.constants.W_OK);
@@ -160,6 +162,12 @@ export class SetupWizard {
       // Directory doesn't exist or not writable
       hasWritePermissionToAgents = false;
     }
+
+    // Check if /agents is writable by container UID (10000) for production API
+    const hasWritePermissionByContainerUid = this.checkWritePermissionByContainerUid(agentsDir);
+
+    // Check if user has sudo access
+    const hasSudo = this.checkSudoAccess();
 
     return {
       isContainer,
@@ -171,6 +179,8 @@ export class SetupWizard {
       homeDir,
       agentsDir,
       hasWritePermissionToAgents,
+      hasWritePermissionByContainerUid,
+      hasSudo,
     };
   }
 
@@ -231,7 +241,56 @@ export class SetupWizard {
   }
 
   /**
-   * Print environment detection results
+   * Check if /agents is writable by container UID 10000
+   * Uses 'test -w /agents' to probe real filesystem permissions
+   */
+  private checkWritePermissionByContainerUid(agentsDir: string): boolean {
+    try {
+      // First check if directory exists
+      execSync(`test -d ${agentsDir}`, { stdio: 'ignore' });
+
+      // Try to access with current user first (fast path)
+      try {
+        execSync(`test -w ${agentsDir}`, { stdio: 'ignore' });
+        return true; // Current user can write, so container uid 10000 should be able to (if owned by 10000)
+      } catch {
+        // Can't write as current user; check directory ownership
+        // For production API, we need /agents to be owned by or writable by UID 10000
+        try {
+          const stat = execSync(`stat -c '%U:%G' ${agentsDir}`, {
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }).trim();
+          // If owned by 10000 (container uid), it's writable by container
+          if (stat.startsWith('10000:')) {
+            return true;
+          }
+          return false;
+        } catch {
+          // stat might not be available (macOS); assume not writable
+          return false;
+        }
+      }
+    } catch {
+      // Directory doesn't exist or other error
+      return false;
+    }
+  }
+
+  /**
+   * Check if user has sudo access
+   */
+  private checkSudoAccess(): boolean {
+    try {
+      execSync('sudo -n true', { stdio: 'ignore', timeout: 1000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Print environment detection results with context-aware messaging
    */
   private printEnvironmentInfo(env: EnvironmentInfo): void {
     console.log(`  Platform: ${env.platform}`);
@@ -239,13 +298,21 @@ export class SetupWizard {
     console.log(`  Docker: ${env.hasDocker ? '✓ Available' : '✗ Not available'}`);
     console.log(`  Node.js: ${env.hasNodeJs ? `✓ ${env.nodeVersion}` : '✗ Not installed'}`);
     console.log(`  Git: ${env.hasGit ? '✓ Available' : '✗ Not available'}`);
-    console.log(`  /agents writable: ${env.hasWritePermissionToAgents ? '✓ Yes' : '✗ No'}`);
+
+    // Permission messaging with context
+    const hostWritable = env.hasWritePermissionToAgents ? '✓' : '✗';
+    const containerWritable = env.hasWritePermissionByContainerUid ? '✓' : '✗';
+    const sudoAvailable = env.hasSudo ? 'available' : 'not available';
+
+    console.log(`  /agents writable by you: ${hostWritable}`);
+    console.log(`  /agents writable by container (UID 10000): ${containerWritable}`);
+    console.log(`  sudo access: ${sudoAvailable}`);
   }
 
   /**
    * Step 2: Guide user to select execution path based on environment
    */
-  private async selectExecutionPath(env: EnvironmentInfo): Promise<ExecutionPath> {
+  private async selectExecutionPath(env: EnvironmentInfo, force?: boolean): Promise<ExecutionPath> {
     // If running in container already, only offer production API
     if (env.isContainer) {
       console.log('  (Running in container - using production API path)\n');
@@ -278,7 +345,77 @@ export class SetupWizard {
       choices,
     }) as any;
 
-    return answer.path as ExecutionPath;
+    const selectedPath = answer.path as ExecutionPath;
+
+    // Validate production-api path requirements
+    if (selectedPath === 'production-api') {
+      await this.validateProductionApiPrerequisites(env, force);
+    }
+
+    return selectedPath;
+  }
+
+  /**
+   * Validate prerequisites for production-api path
+   * For production API, /agents must be writable by container UID 10000
+   */
+  private async validateProductionApiPrerequisites(env: EnvironmentInfo, _force?: boolean): Promise<void> {
+    if (env.hasWritePermissionByContainerUid) {
+      // All good
+      return;
+    }
+
+    if (_force) {
+      // Force flag bypasses validation
+      logger.warn('⚠️  Skipping /agents permission validation (--force flag used)');
+      console.log('\n⚠️  Warning: Skipping /agents permission validation.');
+      console.log('The container may fail to write results if /agents is not writable by UID 10000.');
+      console.log('You can fix permissions later by running: sudo scripts/kaseki-setup-host.sh --fix\n');
+      return;
+    }
+
+
+    // Not writable by container UID - warn and offer solutions
+    console.log('\n⚠️  Production API Prerequisites');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('The /agents directory needs to be writable by container UID 10000.');
+    console.log('Currently: /agents is NOT writable by UID 10000.\n');
+
+    if (env.hasSudo) {
+      console.log('✓ You have sudo access. Run this command to fix:\n');
+      console.log('  sudo scripts/kaseki-setup-host.sh --fix\n');
+      console.log('Or manually:\n');
+      console.log('  sudo mkdir -p /agents');
+      console.log('  sudo chown 10000:10000 /agents');
+      console.log('  sudo chmod 755 /agents\n');
+    } else {
+      console.log('✗ You do NOT have sudo access. Ask your sysadmin to run:\n');
+      console.log('  sudo scripts/kaseki-setup-host.sh --fix\n');
+      console.log('Or manually:\n');
+      console.log('  sudo chown 10000:10000 /agents && sudo chmod 755 /agents\n');
+    }
+
+    const answer = await this.enquirer.prompt({
+      type: 'confirm',
+      name: 'continue',
+      message: 'Have you fixed /agents permissions? (yes to continue, no to abort)',
+      initial: false,
+    }) as any;
+
+    if (!answer.continue) {
+      console.log('\n❌ Setup aborted. Please fix /agents permissions and try again.');
+      process.exit(1);
+    }
+
+    // Re-check permissions
+    const hasWritePermissionByContainerUid = this.checkWritePermissionByContainerUid(env.agentsDir);
+    if (!hasWritePermissionByContainerUid) {
+      console.log('\n❌ Setup aborted. /agents is still not writable by UID 10000.');
+      console.log('Please run the fix command above and try again.\n');
+      process.exit(1);
+    }
+
+    console.log('✓ /agents permissions verified. Continuing setup...\n');
   }
 
   /**
