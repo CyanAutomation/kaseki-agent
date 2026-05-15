@@ -6,10 +6,43 @@ The Kaseki API Service allows remote execution and monitoring of kaseki-agent ru
 
 **Authoritative deployment mode: Docker container runtime** (docker-compose, systemd+docker, or manual `docker run`). Host Node.js process mode is fallback/dev-only and is not the production reference path.
 
+## 🚀 Docker Compose Quick Start
+
+**Before deploying**, ensure the host `/agents` directory exists with correct permissions:
+
+```bash
+# 1. Create /agents on the host with UID 10000 ownership
+sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
+
+# 2. (Optional) Validate setup with pre-flight checks
+./scripts/kaseki-preflight-docker-compose.sh
+
+# 3. Create secrets directory (if using file-based credentials)
+mkdir -p /home/pi/secrets
+echo "sk-or-YOUR-API-KEY-HERE" > /home/pi/secrets/openrouter_api_key
+chmod 600 /home/pi/secrets/openrouter_api_key
+
+# 4. Deploy the API service
+docker-compose up -d
+
+# 5. Monitor startup (should complete without permission errors)
+docker-compose logs -f kaseki-api
+```
+
+**Why the `/agents` prerequisite?** The container runs as UID 10000 (non-root hardening). During startup, it validates that `/agents` is writable by this UID. Without correct ownership:
+- Startup checks will fail (exit code 2)
+- Container will exit and Docker Compose will restart it (restart loop)
+- You'll see: `✗ /agents exists but is not writable by UID 10000`
+
+See [Troubleshooting Startup Failures](#troubleshooting-startup-failures) for diagnosis if issues persist.
+
 ## Prerequisites
 
 - Docker + Docker Compose (for docker-compose deployment)
-- Node.js ≥ 24.x (for Node.js fallback deployment)
+- Host `/agents` directory with UID 10000 ownership (see Docker Compose Quick Start above)
+- Node.js ≥ 24.x (for Node.js fallback deployment only)
 - OpenRouter API key for Pi agent invocation (inherited from kaseki-agent)
 
 ## Volume Mounts & Directory Structure
@@ -57,46 +90,85 @@ user: "10000:10000"  # Consistent across API service, kaseki-agent,
                      # and docker-compose
 ```
 
-**Important:** This UID (10000) is chosen to avoid conflicts with
-reserved system UIDs in the base image (GID 1000 is already taken).
-The UID must match the container image build (Dockerfile lines 12, 43,
-152) and docker-compose configuration (line 4). Mismatches cause
-permission denied errors when writing to `/agents/kaseki-results/`.
+**Important:** This UID (10000) is chosen to avoid conflicts with reserved system UIDs (GID 1000 is already taken by www-data in the base image). The UID must match the container image build (Dockerfile) and docker-compose configuration to avoid permission errors.
 
-**Critical:** Ensure the host `/agents` directory has write
-permissions for UID 1000:
-
-#### Option A: Preferred (if you own /agents on host)
+**Critical:** Ensure the host `/agents` directory is owned by UID 10000:
 
 ```bash
-mkdir -p /agents
-chown 10000:10000 /agents
-chmod 755 /agents
+# Before docker-compose up -d, run on the host:
+sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
+
+# Verify:
+ls -ld /agents  # Should show: drwxr-xr-x 2 10000 10000 ...
 ```
 
-#### Option B: Required if /agents is owned by root
+## Troubleshooting Startup Failures
 
+### Symptom: Container repeatedly restarts with permission errors
+
+**Logs show:**
+```
+✗ /agents exists but is not writable by UID 10000
+✗ Fix: Run on host: sudo chown 10000:10000 /agents
+⚠ Some warnings detected; continuing anyway
+```
+
+**Cause:** The host `/agents` directory is owned by root or another user, not UID 10000.
+
+**Fix:**
 ```bash
-# Make /agents world-writable to allow container user (1000) to write
-mkdir -p /agents
-sudo chmod 777 /agents
+# On the host (not in container):
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
+
+# Restart the container:
+docker-compose down
+docker-compose up -d
+
+# Monitor:
+docker-compose logs -f kaseki-api
 ```
 
-#### Option C: WSL or rootless Docker (if sudo isn't available)
+### Symptom: "Could not create /agents/kaseki-template"
 
+**Logs show:**
+```
+⚠ Could not create /agents/kaseki-template (will try later)
+⚠ Bootstrap incomplete: run-kaseki.sh missing at /agents/kaseki-template/run-kaseki.sh
+ℹ   (This is normal on first startup; will be auto-initialized by API service)
+```
+
+**Cause:** This is **normal** on first startup. The API service will auto-initialize the template once it starts. If this warning persists after the API service finishes starting, check permissions.
+
+**Verify fix:** After API service finishes starting, confirm the template was initialized:
 ```bash
-mkdir -p /agents
-chmod 777 /agents
+ls -la /agents/kaseki-template/run-kaseki.sh  # Should exist
+docker-compose logs kaseki-api | grep "Template initialized"
 ```
 
-**Troubleshooting permission errors:**
+### Symptom: Permission denied errors in validation logs
 
-- If you see `Permission denied` errors when writing to `/results/`:
-  - Verify the host `/agents` directory exists and is writable:
-    `ls -ld /agents`
-  - If owned by root with 755: run `sudo chmod 777 /agents`
-  - If the issue persists, restart docker-compose:
-    `docker-compose down && docker-compose up -d`
+**Logs show:**
+```
+✓ /agents is writable by UID 10000
+⚠ Bootstrap incomplete
+✗ Validation phase failed: Permission denied writing to /agents/kaseki-results
+```
+
+**Cause:** Some subdirectories have incorrect ownership (inherited from root).
+
+**Fix:**
+```bash
+# Recursively fix all subdirectories:
+sudo chown -R 10000:10000 /agents
+sudo chmod -R 755 /agents
+
+# Restart:
+docker-compose down
+docker-compose up -d
+```
 
 ### Dockhand/Portainer Deployment
 

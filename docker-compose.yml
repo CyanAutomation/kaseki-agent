@@ -1,5 +1,38 @@
 ---
 # Kaseki Agent Docker Compose Configuration
+#
+# IMPORTANT: Host Setup Prerequisites (REQUIRED before running docker-compose up -d)
+# ═══════════════════════════════════════════════════════════════════════════════════
+#
+# 1. Create /agents directory with UID 10000 ownership:
+#
+#    sudo mkdir -p /agents
+#    sudo chown 10000:10000 /agents
+#    sudo chmod 755 /agents
+#
+# Why? The container runs as UID 10000 (non-root hardening). The /agents volume must
+# be writable by this UID for the API service to initialize template, results, and
+# run directories. Without correct ownership, startup checks will fail and the
+# container will restart repeatedly.
+#
+# 2. (Optional) Validate setup before deploying:
+#
+#    ./scripts/kaseki-preflight-docker-compose.sh
+#
+# This script checks /agents ownership, Docker daemon access, docker-compose syntax,
+# and other prerequisites. Run it to catch issues before docker-compose up -d.
+#
+# 3. Provide OpenRouter API credentials:
+#
+#    Option A: File-based (recommended)
+#      mkdir -p /home/pi/secrets
+#      echo "sk-or-..." > /home/pi/secrets/openrouter_api_key
+#      chmod 600 /home/pi/secrets/openrouter_api_key
+#
+#    Option B: Environment variable
+#      export OPENROUTER_API_KEY_FILE=/path/to/api/key
+#
+# ═══════════════════════════════════════════════════════════════════════════════════
 
 services:
   kaseki-api:
@@ -28,9 +61,17 @@ services:
       GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
     volumes:
+      # /agents: Shared workspace for template, runs, results, and cache
+      #   - Must be a host directory writable by UID 10000 (see Prerequisites above)
+      #   - run-kaseki.sh and ephemeral worker containers use /agents/kaseki-runs/{instance}
+      #   - API service stores persistent results in /agents/kaseki-results/{instance}
+      #   - Auto-initializes /agents/kaseki-template on first startup
       - /agents:/agents:rw
+      # Secrets: Mount readonly for API key and GitHub App credentials
       - /home/pi/secrets:/run/secrets/kaseki:ro
+      # Logs: Persistent API service logs with rotation
       - kaseki-logs:/var/log/kaseki-api
+      # Docker socket: Allows API service to spawn worker containers
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     cap_drop:
