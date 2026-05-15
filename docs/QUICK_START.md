@@ -61,7 +61,8 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**" ./run-kaseki.sh --repo https://github.co
 → Install Docker: <https://docs.docker.com/install/>
 
 **Error: `Permission denied` when writing to `/agents`**  
-→ Run the host prep helper: `sudo /agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix`
+→ Run on the host: `sudo chown 10000:10000 /agents && sudo chmod 755 /agents`  
+→ Then restart: `docker-compose down && docker-compose up -d` (if using Docker Compose)
 
 **Exit code 4: Diff exceeds maximum size**  
 → Increase the limit: `KASEKI_MAX_DIFF_BYTES=400000 ./run-kaseki.sh ...`
@@ -164,58 +165,85 @@ brew install docker-compose  # macOS
 sudo apt-get install docker-compose  # Ubuntu/Debian
 ```
 
-### Step 2: Prepare the host (first-time)
+### Step 2: Prepare the host (first-time setup)
+
+Create the `/agents` directory on the host with correct ownership for UID 10000 (the container user):
 
 ```bash
-# From a kaseki-agent checkout on the host
-sudo ./scripts/kaseki-setup-host.sh --fix
+# Create and fix ownership
+sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
+
+# Verify
+ls -ld /agents  # Should show: drwxr-xr-x 2 10000 10000 ...
 ```
 
-This creates `/agents`, `/agents/kaseki-results`, `/agents/kaseki-runs`, and
-`/agents/kaseki-cache` for the container user `10000:10000`. It also normalizes
-`~/secrets` so files are readable by group `10000` without making them
-world-readable.
+**Why?** The container runs as UID 10000 (non-root hardening). The `/agents` directory must be writable by this UID. Without correct ownership, startup checks will fail and the container will restart repeatedly. See [Troubleshooting](#common-issues) below if you encounter permission errors.
 
-Expected secret files:
+### Step 3: Prepare secrets (first-time)
 
-```text
-~/secrets/openrouter_api_key
-~/secrets/github_app_id
-~/secrets/github_app_client_id
-~/secrets/github_app_private_key
-~/secrets/kaseki_api_keys
-```
-
-### Step 3: Start the service
+Create the secrets directory and add your API key:
 
 ```bash
-docker compose up -d --force-recreate
+mkdir -p /home/pi/secrets
+echo "sk-or-your-openrouter-api-key" > /home/pi/secrets/openrouter_api_key
+chmod 600 /home/pi/secrets/openrouter_api_key
+
+# Optional: GitHub App credentials (for GitHub integration)
+echo "your-app-id" > /home/pi/secrets/github_app_id
+echo "your-client-id" > /home/pi/secrets/github_app_client_id
+echo "-----BEGIN RSA PRIVATE KEY-----" > /home/pi/secrets/github_app_private_key
+# ... paste full private key ...
+echo "-----END RSA PRIVATE KEY-----" >> /home/pi/secrets/github_app_private_key
 ```
 
-### Step 4: Verify it's running
+### Step 4: Validate setup (optional but recommended)
+
+Run the pre-flight validation script to catch configuration issues before deploying:
 
 ```bash
-# Liveness check
+./scripts/kaseki-preflight-docker-compose.sh
+
+# Expected output (all checks passing):
+# ✓ /agents directory exists
+# ✓ /agents is owned by UID:GID 10000:10000
+# ✓ docker command found
+# ✓ Docker daemon is accessible
+# ✓ docker-compose is available
+# ✓ docker-compose.yml is valid
+```
+
+### Step 5: Start the service
+
+```bash
+docker-compose up -d
+```
+
+### Step 6: Verify it's running
+
+```bash
+# Watch startup logs (should show no permission errors)
+docker-compose logs -f kaseki-api
+
+# Liveness check (wait ~30s for startup)
 curl http://localhost:8080/health
 
 # Readiness/preflight diagnostics
-curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+curl -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
   http://localhost:8080/api/preflight
 
-# View logs
-docker compose logs -f kaseki-api
-
-# List running instances
-curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+# View current runs
+curl -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
   http://localhost:8080/api/runs
 ```
 
-### Step 5: Submit tasks via API
+### Step 7: Submit tasks via API
 
 ```bash
 # Validate first
 curl -X POST http://localhost:8080/api/validate \
-  -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
   -H "Content-Type: application/json" \
   -d '{
     "repoUrl": "https://github.com/user/repo",
@@ -225,7 +253,7 @@ curl -X POST http://localhost:8080/api/validate \
 
 # Then submit
 curl -X POST http://localhost:8080/api/runs \
-  -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
   -H "Content-Type: application/json" \
   -d '{
     "repoUrl": "https://github.com/user/repo",
@@ -236,7 +264,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 # Via CLI (if installed locally)
 KASEKI_API_URL=http://localhost:8080/api \
-KASEKI_API_KEY="$(cat ~/secrets/kaseki_api_keys)" \
+KASEKI_API_KEY="$(cat /home/pi/secrets/openrouter_api_key)" \
   kaseki-agent run https://github.com/user/repo main
 ```
 
@@ -247,6 +275,44 @@ Edit `.env` to change:
 - API port: `KASEKI_API_PORT=8080`
 - Concurrent runs: `KASEKI_API_MAX_CONCURRENT_RUNS=3`
 - Log directory: `KASEKI_LOG_DIR=/var/log/kaseki`
+
+### Common Issues
+
+**Error: Container repeatedly restarts with permission errors**
+
+Logs show:
+```
+✗ /agents exists but is not writable by UID 10000
+✗ Fix: Run on host: sudo chown 10000:10000 /agents
+```
+
+Solution:
+```bash
+# On the host (not in container):
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
+docker-compose down
+docker-compose up -d
+```
+
+**Error: "Could not create /agents/kaseki-template"**
+
+This warning is **normal** on first startup. The API service will auto-initialize the template. If it persists after startup completes, check permissions are correct (see above).
+
+**Error: Health check fails or times out**
+
+```bash
+# Check logs
+docker-compose logs kaseki-api | tail -50
+
+# Verify /agents ownership is correct
+ls -ld /agents
+
+# Ensure API key file is readable
+ls -la /home/pi/secrets/openrouter_api_key
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md#troubleshooting-startup-failures) for comprehensive troubleshooting.
 
 ### Production Checklist
 
