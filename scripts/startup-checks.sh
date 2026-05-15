@@ -16,8 +16,8 @@ set -euo pipefail
 # --- Configuration ---
 KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
-KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/results}"
-KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/runs}"
+KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"
+KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
 MODE="${1:-all}"  # all, permissions, bootstrap, or quick
 
 # Current UID inside container (typically UID 10000 for non-root user)

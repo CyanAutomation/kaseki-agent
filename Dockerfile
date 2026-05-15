@@ -89,6 +89,7 @@ RUN chmod +x \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
+    && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
     && mkdir -p /app/lib/lib \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
     && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
@@ -198,6 +199,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
+    && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
     && mkdir -p /usr/local/bin/lib \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \

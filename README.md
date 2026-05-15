@@ -29,6 +29,26 @@ KASEKI_API_KEY=sk-dev kaseki-agent list
 KASEKI_API_KEY=sk-dev kaseki-agent report kaseki-1
 ```
 
+### First-Run API Host Setup
+
+For a Docker Compose API host, prepare storage and secrets before starting the
+service:
+
+```bash
+cd /agents/kaseki-agent
+sudo ./scripts/kaseki-setup-host.sh --fix
+docker compose up -d --force-recreate
+
+curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
+  http://localhost:8080/api/preflight
+```
+
+The host prep helper creates `/agents`, `/agents/kaseki-results`,
+`/agents/kaseki-runs`, and `/agents/kaseki-cache` for UID/GID `10000:10000`,
+then normalizes `~/secrets` to directory mode `0750` and file mode `0640` with
+group `10000`. If preflight reports a deleted bind mount, recreate the container
+after rerunning the helper.
+
 ### Without Global Install
 
 ```bash
