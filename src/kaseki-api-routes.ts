@@ -132,7 +132,7 @@ function runTemplateDoctor(runScript: string, checkoutDir: string) {
   const doctorArgs = fs.existsSync(activateScript)
     ? [activateScript, '--json', 'doctor']
     : [runScript, '--doctor'];
-  
+
   return spawnSync(doctorArgs[0], doctorArgs.slice(1), {
     cwd: fs.existsSync(checkoutDir) ? checkoutDir : undefined,
     encoding: 'utf-8',
@@ -197,7 +197,7 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
   const doctorArgs = fs.existsSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'))
     ? `${path.join(checkoutDir, 'scripts', 'kaseki-activate.sh')} --json doctor`
     : `${runScript} --doctor`;
-  
+
   return {
     ok: true,
     templateDir,
