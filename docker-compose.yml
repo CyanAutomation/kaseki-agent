@@ -1,28 +1,25 @@
 ---
 # Kaseki Agent Docker Compose Configuration
 #
-# IMPORTANT: Host Setup Prerequisites (REQUIRED before running docker-compose up -d)
+# IMPORTANT: Host Setup Prerequisites (mostly automated via init container now)
 # ═══════════════════════════════════════════════════════════════════════════════════
 #
-# 1. Create /agents directory with UID 10000 ownership:
+# The init container runs first and attempts to fix /agents permissions automatically.
+# If your environment is restricted (read-only volumes, no permission escalation),
+# you may need to pre-create the directory on the host:
 #
 #    sudo mkdir -p /agents
 #    sudo chown 10000:10000 /agents
 #    sudo chmod 755 /agents
 #
-# Why? The container runs as UID 10000 (non-root hardening). The /agents volume must
-# be writable by this UID for the API service to initialize template, results, and
-# run directories. Without correct ownership, startup checks will fail and the
-# container will restart repeatedly.
+# For Dockhand/Portainer users: See docs/DEPLOYMENT.md#dockhand-portainer for
+# step-by-step screenshot-based setup instructions.
 #
-# 2. (Optional) Validate setup before deploying:
+# Validate setup before deploying (optional):
 #
 #    ./scripts/kaseki-preflight-docker-compose.sh
 #
-# This script checks /agents ownership, Docker daemon access, docker-compose syntax,
-# and other prerequisites. Run it to catch issues before docker-compose up -d.
-#
-# 3. Provide OpenRouter API credentials:
+# Provide OpenRouter API credentials:
 #
 #    Option A: File-based (recommended)
 #      mkdir -p /home/pi/secrets
@@ -35,10 +32,37 @@
 # ═══════════════════════════════════════════════════════════════════════════════════
 
 services:
+  
+  kaseki-init:
+    image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+    container_name: kaseki-init
+    user: "${KASEKI_API_USER:-10000:10000}"
+    command: ["/scripts/kaseki-init-container.sh"]
+    volumes:
+      # /agents: Shared workspace - init container attempts to fix permissions
+      - /agents:/agents:rw
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    # Run once at startup and exit (don't restart)
+    restart: "no"
+    # Give init container 10 seconds to complete before api service starts
+    # (depends_on is handled via wait logic in api service health check)
   kaseki-api:
     image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
     container_name: kaseki-api
     user: "${KASEKI_API_USER:-10000:10000}"
+    depends_on:
+      # Init container runs first, attempts to fix /agents permissions
+      # If it fails (exit code 1), api service still starts but logs
+      # will show actionable error messages for manual remediation
+      kaseki-init:
+        condition: service_completed_successfully
     group_add:
       - "${DOCKER_GID:-985}"
     command: ["api"]
@@ -62,7 +86,8 @@ services:
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache
-      #   - Must be a host directory writable by UID 10000 (see Prerequisites above)
+      #   - Init container attempts to fix permissions automatically
+      #   - If init fails, must be writable by UID 10000 (see Prerequisites above)
       #   - run-kaseki.sh and ephemeral worker containers use /agents/kaseki-runs/{instance}
       #   - API service stores persistent results in /agents/kaseki-results/{instance}
       #   - Auto-initializes /agents/kaseki-template on first startup
