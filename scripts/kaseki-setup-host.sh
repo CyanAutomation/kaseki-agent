@@ -93,7 +93,7 @@ print_recreate_hint_if_needed() {
     printf 'remediation: recreate %s, then recreate the container so Docker drops stale/deleted bind mounts.\n' "$KASEKI_ROOT"
     return
   fi
-  if ! docker exec kaseki-api sh -lc "grep -q ' deleted\\|/deleted' /proc/self/mountinfo" 2>/dev/null; then
+  if ! docker exec kaseki-api sh -lc "grep -qE '( |/)deleted' /proc/self/mountinfo" 2>/dev/null; then
     return
   fi
   printf 'warning: kaseki-api container has a deleted bind mount; recreate the container after this setup completes.\n'
