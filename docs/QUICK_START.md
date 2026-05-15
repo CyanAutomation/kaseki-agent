@@ -281,12 +281,14 @@ Edit `.env` to change:
 **Error: Container repeatedly restarts with permission errors**
 
 Logs show:
+
 ```
 ✗ /agents exists but is not writable by UID 10000
 ✗ Fix: Run on host: sudo chown 10000:10000 /agents
 ```
 
 Solution:
+
 ```bash
 # On the host (not in container):
 sudo chown 10000:10000 /agents
