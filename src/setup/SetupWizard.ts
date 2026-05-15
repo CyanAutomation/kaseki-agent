@@ -374,7 +374,6 @@ export class SetupWizard {
       return;
     }
 
-
     // Not writable by container UID - warn and offer solutions
     console.log('\n⚠️  Production API Prerequisites');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
