@@ -263,6 +263,58 @@ function inspectImageDigest(image: string): string | undefined {
 // Re-export from subprocess-helpers for backward compatibility with tests
 export { classifyDockerFailure } from './lib/subprocess-helpers';
 
+function parseMountInfo(): Array<{ root: string; mountPoint: string }> {
+  try {
+    const mountInfoPath = process.env.KASEKI_MOUNTINFO_PATH || '/proc/self/mountinfo';
+    const content = fs.readFileSync(mountInfoPath, 'utf-8');
+    return content
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => {
+        const fields = line.split(' ');
+        return {
+          root: fields[3] || '',
+          mountPoint: fields[4] || '',
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+function checkDeletedBindMounts(paths: string[]): PreflightCheck {
+  const mountInfo = parseMountInfo();
+  const uniquePaths = [...new Set(paths.filter(Boolean))];
+  const deletedMounts = mountInfo.filter((mount) => {
+    const root = mount.root.toLowerCase();
+    if (!root.includes('deleted')) {
+      return false;
+    }
+    return uniquePaths.some((targetPath) => (
+      targetPath === mount.mountPoint || targetPath.startsWith(`${mount.mountPoint}/`)
+    ));
+  });
+
+  if (deletedMounts.length === 0) {
+    return {
+      name: 'bind-mounts',
+      ok: true,
+      detail: 'No deleted bind mounts detected for Kaseki paths.',
+    };
+  }
+
+  const details = deletedMounts
+    .map((mount) => `${mount.mountPoint} is backed by deleted source ${mount.root}`)
+    .join('; ');
+
+  return {
+    name: 'bind-mounts',
+    ok: false,
+    detail: details,
+    remediation: 'Recreate the missing host directory, then recreate the kaseki-api container so Docker binds the live path. For the default layout: sudo /agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix && docker compose up -d --force-recreate.',
+  };
+}
+
 function checkOpenRouterKey(): PreflightCheck {
   const keyValue = readHostSecret('openrouter_api_key');
   if (keyValue) {
@@ -356,11 +408,14 @@ function isGitHubAppReady(): boolean {
 
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  const secretsDir = process.env.KASEKI_SECRETS_DIR || '/agents/secrets';
   const image = readKasekiImage(templateDir);
   const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
   const templateRef = getTemplateCheckoutRef(checkoutDir);
   const checks: PreflightCheck[] = [];
+
+  checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
 
   try {
     fs.accessSync(config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
