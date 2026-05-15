@@ -154,6 +154,16 @@ export class KasekiCLI {
         return cmd.execute(args);
       },
     });
+
+    this.commands.set('host', {
+      name: 'host',
+      description: 'Prepare or recover a Docker Compose API host',
+      execute: async (args) => {
+        const { HostCommand } = await import('./commands/HostCommand.js');
+        const cmd = new HostCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
   }
 
   /**
@@ -226,6 +236,14 @@ USAGE
   kaseki-agent secrets get <NAME> [--show]
   kaseki-agent secrets list
   kaseki-agent secrets delete <NAME>`,
+      host: `host - prepare or recover a Docker Compose API host
+
+USAGE
+  kaseki-agent host setup [--fix] [--recreate-api]
+
+EXAMPLES
+  kaseki-agent host setup
+  sudo kaseki-agent host setup --fix --recreate-api`,
       serve: `serve - start the local REST API service
 
 USAGE
@@ -233,11 +251,15 @@ USAGE
       run: `run - submit a task run through the configured Kaseki API
 
 USAGE
-  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT]
+  kaseki-agent run <REPO_URL> [GIT_REF] [TASK_PROMPT] [--dry-run]
 
 REQUIRES
   A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.
-  Set KASEKI_API_KEY when the API requires bearer-token authentication.`,
+  Set KASEKI_API_KEY when the API requires bearer-token authentication.
+
+OPTIONS
+  --dry-run              Submit a startup-check run without Pi agent work.
+  --baseline-validation  With --dry-run, clone and run baseline validation before exiting.`,
       list: `list - list task runs through the configured Kaseki API
 
 USAGE

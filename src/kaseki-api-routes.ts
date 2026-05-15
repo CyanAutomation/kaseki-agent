@@ -311,7 +311,7 @@ function checkDeletedBindMounts(paths: string[]): PreflightCheck {
     name: 'bind-mounts',
     ok: false,
     detail: details,
-    remediation: 'Recreate the missing host directory, then recreate the kaseki-api container so Docker binds the live path. For the default layout: sudo /agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix && docker compose up -d --force-recreate.',
+    remediation: 'Run: sudo kaseki-agent host setup --fix --recreate-api. If the npm CLI is unavailable, run the packaged scripts/kaseki-setup-host.sh with KASEKI_HOST_SECRETS_DIR set to the host secrets directory.',
   };
 }
 

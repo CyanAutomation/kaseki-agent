@@ -167,14 +167,15 @@ sudo apt-get install docker-compose  # Ubuntu/Debian
 ### Step 2: Prepare the host (first-time)
 
 ```bash
-# From a kaseki-agent checkout on the host
-sudo ./scripts/kaseki-setup-host.sh --fix
+sudo kaseki-agent host setup --fix --recreate-api
 ```
 
 This creates `/agents`, `/agents/kaseki-results`, `/agents/kaseki-runs`, and
 `/agents/kaseki-cache` for the container user `10000:10000`. It also normalizes
 `~/secrets` so files are readable by group `10000` without making them
-world-readable.
+world-readable. When run through `sudo`, it keeps using the original user's
+home directory for `~/secrets`; set `KASEKI_HOST_SECRETS_DIR` if your secrets
+live somewhere else.
 
 Expected secret files:
 
@@ -268,7 +269,7 @@ sudo chown 10000:10000 /agents
 sudo chmod 775 /agents
 ```
 
-Or run: `sudo ./scripts/kaseki-setup-host.sh --fix`
+Or run: `sudo kaseki-agent host setup --fix`
 
 **Preflight reports a deleted bind mount**
 
@@ -276,8 +277,7 @@ The host directory was removed after the container started. Recreate the host
 directories, then recreate the container:
 
 ```bash
-sudo ./scripts/kaseki-setup-host.sh --fix
-docker compose up -d --force-recreate
+sudo kaseki-agent host setup --fix --recreate-api
 ```
 
 **Docker socket not accessible**  

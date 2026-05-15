@@ -35,9 +35,7 @@ For a Docker Compose API host, prepare storage and secrets before starting the
 service:
 
 ```bash
-cd /agents/kaseki-agent
-sudo ./scripts/kaseki-setup-host.sh --fix
-docker compose up -d --force-recreate
+sudo kaseki-agent host setup --fix --recreate-api
 
 curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
   http://localhost:8080/api/preflight
@@ -46,8 +44,10 @@ curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
 The host prep helper creates `/agents`, `/agents/kaseki-results`,
 `/agents/kaseki-runs`, and `/agents/kaseki-cache` for UID/GID `10000:10000`,
 then normalizes `~/secrets` to directory mode `0750` and file mode `0640` with
-group `10000`. If preflight reports a deleted bind mount, recreate the container
-after rerunning the helper.
+group `10000`. It is sudo-aware and uses the original invoking user's
+`~/secrets` by default; set `KASEKI_HOST_SECRETS_DIR=/path/to/secrets` for a
+non-standard location. If preflight reports a deleted bind mount, rerun the
+same command with `--recreate-api`.
 
 ### Without Global Install
 
