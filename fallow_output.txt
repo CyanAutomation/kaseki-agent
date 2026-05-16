@@ -1,0 +1,1368 @@
+loaded config: /workspaces/kaseki-agent/.fallowrc.json
+loaded config: /workspaces/kaseki-agent/.fallowrc.json
+loaded config: /workspaces/kaseki-agent/.fallowrc.json
+[2m   0.095677472s[0m [33m WARN[0m invalid entry pattern '${TAGS/,': error parsing glob '${TAGS/,': unclosed alternate group; missing '}' (maybe escape '{' with '[{]'?)
+loaded config: /workspaces/kaseki-agent/.fallowrc.json
+
+■ Metrics: dead files 40.7% (57 of 140) · dead exports 4.3% (14 of 329) · MI 83.7 (moderate)
+  140 files analyzed
+  26 entry points detected (15 config, 6 package.json, 4 plugin, 1 manual entry)
+  1 refactoring target
+
+── Dead Code ──────────────────────────────────────
+
+  Note: 96% of unused files are under src/ — run `fallow list --entry-points` to verify entry-point detection — https://docs.fallow.tools/explanations/dead-code#unused-files
+── Unused Code ─────────────────────────────────────
+
+● Unused files (57)
+  fix-tests.ts
+  perf/pi-event-filter.benchmark.test.ts
+  src/ansi-colors.test.ts
+  src/build-artifacts-validation.test.ts
+  src/cli/api/LocalKasekiApiClient.test.ts
+  src/cli/commands/CancelCommand.test.ts
+  src/cli/commands/DoctorCommand.test.ts
+  src/cli/commands/ListCommand.test.ts
+  src/cli/commands/ReportCommand.test.ts
+  src/cli/commands/RunCommand.test.ts
+  ... and 47 more (--format json for full list)
+  Files not reachable from any entry point — https://docs.fallow.tools/explanations/dead-code#unused-files
+  To suppress: // fallow-ignore-next-line unused-files
+
+● Unused exports (1)
+  src/openapi-spec-generators/schemas.ts
+    :321 default
+  Exported symbols with no known consumers — https://docs.fallow.tools/explanations/dead-code#unused-exports
+  (8 more in files already reported as unused)
+
+● Unused type exports (2)
+  src/kaseki-api-types.ts (2)
+    :28 ArtifactFileInfo
+    :91 RequestTracing
+  Type exports with no known consumers — https://docs.fallow.tools/explanations/dead-code#unused-types
+  (3 more in files already reported as unused)
+
+● Unused class members (27)
+  src/kaseki-api-client.ts (9)
+    :169 KasekiApiClient.getHealth
+    :255 KasekiApiClient.submit
+    :308 KasekiApiClient.cancel
+    :329 KasekiApiClient.getProgress
+    :352 KasekiApiClient.getAnalysis
+    ... and 4 more (--format json for full list)
+  src/cli/api/LocalKasekiApiClient.ts (4)
+    :147 LocalKasekiApiClient.getRunStatusUrl
+    :186 LocalKasekiApiClient.getRunAnalysis
+    :191 LocalKasekiApiClient.getRunArtifacts
+    :196 LocalKasekiApiClient.getRunLog
+  src/config/ConfigManager.ts (4)
+    :416 ConfigManager.getConfig
+    :473 ConfigManager.save
+    :492 ConfigManager.getConfigFilePath
+    :499 ConfigManager.reset
+  src/cli/KasekiCLI.ts
+    :284 KasekiCLI.getCommands
+  src/cli/commands/CancelCommand.ts
+    :35 CancelCommand.execute
+  src/cli/commands/ConfigCommand.ts
+    :15 ConfigCommand.execute
+  src/cli/commands/DoctorCommand.ts
+    :21 DoctorCommand.execute
+  src/cli/commands/InitCommand.ts
+    :18 InitCommand.execute
+  src/cli/commands/ServeCommand.ts
+    :13 ServeCommand.execute
+  src/cli/commands/SetupCommand.ts
+    :16 SetupCommand.execute
+  ... and 3 more in 3 files (--format json for full list)
+  Class methods or properties never referenced outside their class — https://docs.fallow.tools/explanations/dead-code#unused-class-members
+  To suppress: // fallow-ignore-next-line unused-class-members
+
+── Dependencies ─────────────────────────────────────
+
+● Unused dependencies (1)
+  fallow
+  Listed in dependencies but never imported — https://docs.fallow.tools/explanations/dead-code#unused-dependencies
+
+● Unused devDependencies (1)
+  conventional-changelog-conventionalcommits
+  Listed in devDependencies but never imported or referenced — https://docs.fallow.tools/explanations/dead-code#unused-dependencies
+
+● Unlisted dependencies (2)
+  @eslint/js
+  @jest/globals
+  Packages imported in code but missing from package.json — https://docs.fallow.tools/explanations/dead-code#unlisted-dependencies
+
+✗ 57 files · 1 export · 2 types · 1 unused dependency · 1 dev/optional dependency · 27 class members · 2 unlisted dependencies (0.15s)
+
+── Duplication ────────────────────────────────────
+note: hid 101 clone groups below minOccurrences=3 (lower --min-occurrences to see them)
+
+● Duplicates (35 clone groups)
+
+     40 lines  3 instances
+    src/kaseki-api-routes.test.ts:797-829
+    src/kaseki-api-routes.test.ts:852-883
+    src/kaseki-api-routes.test.ts:1051-1090
+
+     39 lines  5 instances
+    src/kaseki-api-routes.test.ts:791-829
+    src/kaseki-api-routes.test.ts:916-954
+    src/kaseki-api-routes.test.ts:1345-1383
+    src/kaseki-api-routes.test.ts:1692-1727
+    src/kaseki-api-routes.test.ts:1741-1776
+
+     35 lines  3 instances
+    src/kaseki-api-routes.test.ts:1283-1316
+    src/kaseki-api-routes.test.ts:1452-1486
+    src/kaseki-api-routes.test.ts:1506-1525
+
+     33 lines  3 instances
+    src/kaseki-api-routes.test.ts:1547-1577
+    src/kaseki-api-routes.test.ts:1598-1630
+    src/kaseki-api-routes.test.ts:1646-1676
+
+     32 lines  4 instances
+    src/kaseki-api-routes.test.ts:1115-1146
+    src/kaseki-api-routes.test.ts:1287-1315
+    src/kaseki-api-routes.test.ts:1456-1485
+    src/kaseki-api-routes.test.ts:1510-1524
+
+     31 lines  17 instances
+    src/kaseki-api-routes.test.ts:799-826
+    src/kaseki-api-routes.test.ts:853-880
+    src/kaseki-api-routes.test.ts:922-949
+    src/kaseki-api-routes.test.ts:1061-1087
+    src/kaseki-api-routes.test.ts:1119-1145
+    src/kaseki-api-routes.test.ts:1241-1267
+    src/kaseki-api-routes.test.ts:1288-1314
+    src/kaseki-api-routes.test.ts:1353-1380
+    src/kaseki-api-routes.test.ts:1457-1484
+    src/kaseki-api-routes.test.ts:1511-1523
+    src/kaseki-api-routes.test.ts:1548-1573
+    src/kaseki-api-routes.test.ts:1601-1626
+    src/kaseki-api-routes.test.ts:1647-1672
+    src/kaseki-api-routes.test.ts:1698-1724
+    src/kaseki-api-routes.test.ts:1747-1773
+    src/kaseki-api-routes.test.ts:1795-1821
+    src/kaseki-api-routes.test.ts:2120-2150
+
+     31 lines  3 instances
+    src/kaseki-api-routes.test.ts:1240-1270
+    src/kaseki-api-routes.test.ts:1599-1629
+    src/kaseki-api-routes.test.ts:1646-1675
+
+     31 lines  3 instances
+    src/kaseki-api-routes.test.ts:2303-2333
+    src/kaseki-api-routes.test.ts:2353-2383
+    src/kaseki-api-routes.test.ts:2404-2434
+
+     25 lines  17 instances
+    src/kaseki-api-routes.test.ts:800-824
+    src/kaseki-api-routes.test.ts:854-878
+    src/kaseki-api-routes.test.ts:923-947
+    src/kaseki-api-routes.test.ts:1062-1085
+    src/kaseki-api-routes.test.ts:1120-1143
+    src/kaseki-api-routes.test.ts:1242-1265
+    src/kaseki-api-routes.test.ts:1289-1312
+    src/kaseki-api-routes.test.ts:1354-1378
+    src/kaseki-api-routes.test.ts:1409-1432
+    src/kaseki-api-routes.test.ts:1458-1482
+    src/kaseki-api-routes.test.ts:1512-1523
+    src/kaseki-api-routes.test.ts:1549-1571
+    src/kaseki-api-routes.test.ts:1602-1624
+    src/kaseki-api-routes.test.ts:1648-1670
+    src/kaseki-api-routes.test.ts:1699-1722
+    src/kaseki-api-routes.test.ts:1748-1771
+    src/kaseki-api-routes.test.ts:1796-1819
+
+     25 lines  7 instances
+    src/openapi-spec-generator.test.ts:102-108
+    src/openapi-spec-generator.test.ts:205-218
+    src/openapi-spec-generator.test.ts:415-439
+    src/openapi-spec-generator.test.ts:705-717
+    src/openapi-spec-generator.test.ts:722-738
+    src/openapi-spec-generator.test.ts:1063-1080
+    src/openapi-spec-generator.test.ts:1085-1104
+
+  ... and 25 more clone groups
+  Identical code blocks detected via suffix-array analysis — https://docs.fallow.tools/explanations/duplication#clone-groups
+
+● Clone families (3 with multiple groups)
+
+  4 groups, 84 lines across src/job-scheduler.test.ts
+    → Extract 4 shared clone groups (84 lines) from job-scheduler.test.ts into src
+
+  18 groups, 419 lines across src/kaseki-api-routes.test.ts
+    → Extract 18 shared clone groups (419 lines) from kaseki-api-routes.test.ts into src
+
+  5 groups, 71 lines across src/openapi-spec-generator.test.ts
+    → Extract 5 shared clone groups (71 lines) from openapi-spec-generator.test.ts into src
+
+  Groups of related clones across the same files — https://docs.fallow.tools/explanations/duplication#clone-families
+
+✗ 3,702 lines (11.1%) duplicated across 49 files (0.19s)
+
+── Complexity ─────────────────────────────────────
+
+■ Metrics: 33,618 LOC · dead files 40.7% · dead exports 4.3% · avg cyclomatic 2.0 · p90 cyclomatic 4 · maintainability 83.7 (moderate) · 0 churn hotspots · 2 unused deps
+
+  Function size: 70% low · 14% medium · 9% high · 7% very high  (1-15 / 16-30 / 31-60 / >60 LOC)
+
+● Large functions (10 shown, 161 total)
+  src/openapi-spec-generator.test.ts
+    :7 <arrow>  1103 lines
+  src/job-scheduler.test.ts
+    :71 <arrow>  703 lines
+  src/kaseki-cli-lib.test.ts
+    :7 <arrow>  546 lines
+  src/pre-flight-validator.test.ts
+    :4 <arrow>  509 lines
+  src/kaseki-api-routes.test.ts
+    :1328 <arrow>  504 lines
+  src/validation-output-filter.test.ts
+    :14 <arrow>  461 lines
+  src/utils/progress-normalizer.test.ts
+    :3 <arrow>  440 lines
+  src/kaseki-api-routes.ts
+    :517 createApiRouter  409 lines
+  src/pi-progress-summarizer.test.ts
+    :15 <arrow>  400 lines
+  src/routes/log-routes.ts
+    :16 createLogRoutes  376 lines
+  Functions exceeding 60 lines of code (very high risk): https://docs.fallow.tools/explanations/health#unit-size
+  use --top 161 to see all
+
+● High complexity functions (222)
+  src/webhook-manager.ts
+    :333 loadDeliveryLog CRITICAL
+          23 cyclomatic   23 cognitive   79 lines
+         552.0 CRAP
+  src/job-scheduler.ts
+    :228 executeJob CRITICAL
+          22 cyclomatic   22 cognitive  208 lines
+         506.0 CRAP
+  src/kaseki-api-routes.ts
+    :677 <arrow> CRITICAL
+          21 cyclomatic   20 cognitive  121 lines
+         462.0 CRAP
+  src/kaseki-cli-lib.ts
+    :412 getInstanceStatus CRITICAL
+          21 cyclomatic   22 cognitive   80 lines
+         462.0 CRAP
+  src/routes/log-routes.ts
+    :216 <arrow> CRITICAL
+          21 cyclomatic   26 cognitive   91 lines
+         462.0 CRAP
+  src/cli/commands/ReportCommand.ts
+    :222 executeFromDisk CRITICAL
+          20 cyclomatic   26 cognitive   64 lines
+         420.0 CRAP
+  src/kaseki-report.ts
+    :111 generateKasekiReport CRITICAL
+          20 cyclomatic   18 cognitive   78 lines
+         420.0 CRAP
+  src/cli/commands/ReportCommand.ts
+    :90 printStatus CRITICAL
+          20 cyclomatic   14 cognitive   44 lines
+         420.0 CRAP
+  src/idempotency-store.ts
+    :222 loadFromDisk CRITICAL
+          18 cyclomatic   19 cognitive   78 lines
+         342.0 CRAP
+  src/kaseki-cli.ts
+    :114 poll CRITICAL
+          18 cyclomatic   22 cognitive  107 lines
+         342.0 CRAP
+  src/cli/commands/StatusCommand.ts
+    :32 execute CRITICAL
+          17 cyclomatic   23 cognitive   50 lines
+         306.0 CRAP
+  src/kaseki-api-routes.ts
+    :409 buildPreflightResponse CRITICAL
+          17 cyclomatic   18 cognitive   89 lines
+         306.0 CRAP
+  src/utils/file-helpers.ts
+    :50 readLastJsonlEvent CRITICAL
+          17 cyclomatic   21 cognitive   59 lines
+         306.0 CRAP
+  src/utils/status-response-builder.ts
+    :95 addArtifactInfo CRITICAL
+          17 cyclomatic   24 cognitive   63 lines
+         306.0 CRAP
+  src/cli/commands/SecretsCommand.ts
+    :13 execute CRITICAL
+          16 cyclomatic   20 cognitive  107 lines
+         272.0 CRAP
+  src/pi-progress-stream.ts
+    :226 <arrow> CRITICAL
+          16 cyclomatic   17 cognitive   57 lines
+         272.0 CRAP
+  src/pre-flight-validator.ts
+    :173 runValidation CRITICAL
+          15 cyclomatic   17 cognitive   75 lines
+         240.0 CRAP
+  src/result-cache.ts
+    :64 getOrLoad CRITICAL
+          15 cyclomatic   22 cognitive   49 lines
+         240.0 CRAP
+  src/cli/commands/ConfigCommand.ts
+    :15 execute CRITICAL
+          14 cyclomatic   18 cognitive  106 lines
+         210.0 CRAP
+  src/pi-event-filter.ts
+    :74 main CRITICAL
+          14 cyclomatic   18 cognitive   64 lines
+         210.0 CRAP
+  src/routes/log-routes.ts
+    :22 <arrow> CRITICAL
+          14 cyclomatic   16 cognitive  136 lines
+         210.0 CRAP
+    :165 <arrow> CRITICAL
+          14 cyclomatic   19 cognitive   47 lines
+         210.0 CRAP
+  src/kaseki-cli.ts
+    :633 main CRITICAL
+          14 cyclomatic    4 cognitive   44 lines
+         210.0 CRAP
+  src/kaseki-api-routes.ts
+    :89 buildTemplateHealthStatus CRITICAL
+          14 cyclomatic   14 cognitive   76 lines
+         210.0 CRAP
+  src/instance-state-derivation.ts
+    :127 classifyFailure CRITICAL
+          14 cyclomatic   13 cognitive   22 lines
+         210.0 CRAP
+  scripts/validate-module-imports.js
+    :151 main CRITICAL
+          13 cyclomatic   23 cognitive  104 lines
+         182.0 CRAP
+  src/kaseki-cli-lib.ts
+    :679 getAnalysis CRITICAL
+          13 cyclomatic   11 cognitive   40 lines
+         182.0 CRAP
+  scripts/validate-module-imports.js
+    :74 resolveDependencies CRITICAL
+          12 cyclomatic   22 cognitive   73 lines
+         156.0 CRAP
+  src/kaseki-api/setup-orchestrator.ts
+    :56 ensureTemplateInitialized CRITICAL
+          12 cyclomatic   18 cognitive   67 lines
+         156.0 CRAP
+  src/kaseki-cli-lib.ts
+    :527 scanLogForErrors CRITICAL
+          12 cyclomatic   14 cognitive   58 lines
+         156.0 CRAP
+  src/kaseki-cli.ts
+    :472 watch CRITICAL
+          12 cyclomatic   14 cognitive   42 lines
+         156.0 CRAP
+  src/cli/commands/ReportCommand.ts
+    :135 printAnalysis CRITICAL
+          11 cyclomatic   16 cognitive   34 lines
+         132.0 CRAP
+  src/routes/log-routes.ts
+    :41 sendProgressUpdate CRITICAL
+          11 cyclomatic   16 cognitive   49 lines
+         132.0 CRAP
+  src/webhook-manager.ts
+    :156 deliverWebhook CRITICAL
+          11 cyclomatic   18 cognitive  134 lines
+         132.0 CRAP
+  src/kaseki-api-client.ts
+    :441 waitForCompletion CRITICAL
+          11 cyclomatic   10 cognitive   35 lines
+         132.0 CRAP
+  src/kaseki-cli-lib.ts
+    :219 listInstances CRITICAL
+          11 cyclomatic   10 cognitive   55 lines
+         132.0 CRAP
+  src/utils/http-client-factory.ts
+    :98 retryWithBackoff CRITICAL
+          11 cyclomatic   15 cognitive   41 lines
+         132.0 CRAP
+  src/lib/subprocess-helpers.ts
+    :101 execSubprocess CRITICAL
+          11 cyclomatic    7 cognitive   25 lines
+         132.0 CRAP
+  src/routes/webhook-routes.ts
+    :17 <arrow> CRITICAL
+          11 cyclomatic   11 cognitive   78 lines
+         132.0 CRAP
+  src/utils/failure-artifact-writer.ts
+    :83 writeAnalysis CRITICAL
+          11 cyclomatic   13 cognitive   31 lines
+         132.0 CRAP
+  src/utils/progress-normalizer.ts
+    :40 toStructuredProgress CRITICAL
+          11 cyclomatic   12 cognitive   29 lines
+         132.0 CRAP
+  src/kaseki-api-routes.ts
+    :342 checkGitHubAppCredentials CRITICAL
+          11 cyclomatic    9 cognitive   61 lines
+         132.0 CRAP
+    :802 <arrow> CRITICAL
+          11 cyclomatic   11 cognitive   78 lines
+         132.0 CRAP
+  src/cli/commands/ReportCommand.ts
+    :170 printArtifactSummary CRITICAL
+          11 cyclomatic    9 cognitive   22 lines
+         132.0 CRAP
+    :193 printSummary CRITICAL
+          11 cyclomatic   11 cognitive   28 lines
+         132.0 CRAP
+  src/pre-flight-validator.ts
+    :530 validateAllowlistPatterns CRITICAL
+          11 cyclomatic   11 cognitive   34 lines
+         132.0 CRAP
+  src/routes/artifact-routes.ts
+    :101 <arrow> CRITICAL
+          11 cyclomatic   11 cognitive   70 lines
+         132.0 CRAP
+  src/pi-progress-summarizer.ts
+    :152 extractTopic CRITICAL
+          10 cyclomatic   17 cognitive   50 lines
+         110.0 CRAP
+  src/kaseki-api-client.ts
+    :186 retryWithBackoff CRITICAL
+          10 cyclomatic   14 cognitive   40 lines
+         110.0 CRAP
+  src/job-scheduler.ts
+    :355 <arrow> CRITICAL
+          10 cyclomatic   10 cognitive   60 lines
+         110.0 CRAP
+  src/cli/commands/DoctorCommand.ts
+    :172 checkAuthFiles CRITICAL
+          10 cyclomatic   15 cognitive   63 lines
+         110.0 CRAP
+  src/config/ConfigManager.ts
+    :199 load CRITICAL
+          10 cyclomatic   11 cognitive   56 lines
+         110.0 CRAP
+  src/pi-progress-summarizer.ts
+    :227 summarizeEvent CRITICAL
+          10 cyclomatic   11 cognitive   41 lines
+         110.0 CRAP
+  src/utils/failure-artifact-writer.ts
+    :156 writeStderrLog CRITICAL
+          10 cyclomatic   13 cognitive   26 lines
+         110.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :451 <arrow> CRITICAL
+          10 cyclomatic   11 cognitive   14 lines
+         110.0 CRAP
+  src/pre-flight-validator.ts
+    :54 validateAllowlistPatternMatching CRITICAL
+          10 cyclomatic   12 cognitive   41 lines
+         110.0 CRAP
+  src/cli/commands/DoctorCommand.ts
+    :246 buildAuthErrorMessage HIGH
+           9 cyclomatic   18 cognitive   87 lines
+          90.0 CRAP
+  src/kaseki-cli.ts
+    :377 cmdProgress HIGH
+           9 cyclomatic    9 cognitive   26 lines
+          90.0 CRAP
+  src/cli.ts
+    :24 main HIGH
+           9 cyclomatic   11 cognitive   43 lines
+          90.0 CRAP
+  src/cli/commands/RunCommand.ts
+    :33 execute HIGH
+           9 cyclomatic    9 cognitive   48 lines
+          90.0 CRAP
+    :82 buildRunRequest HIGH
+           9 cyclomatic    9 cognitive   40 lines
+          90.0 CRAP
+  src/job-scheduler.ts
+    :613 completeJob HIGH
+           9 cyclomatic    8 cognitive   37 lines
+          90.0 CRAP
+    :797 shutdown HIGH
+           9 cyclomatic   11 cognitive   53 lines
+          90.0 CRAP
+  src/lib/subprocess-helpers.ts
+    :69 extractErrorMessage HIGH
+           9 cyclomatic    9 cognitive   13 lines
+          90.0 CRAP
+  src/pi-progress-stream.ts
+    :107 eventType HIGH
+           9 cyclomatic    1 cognitive    3 lines
+          90.0 CRAP
+    :111 toolName HIGH
+           9 cyclomatic    5 cognitive   21 lines
+          90.0 CRAP
+    :182 emitMessageSummary HIGH
+           9 cyclomatic   12 cognitive   31 lines
+          90.0 CRAP
+  src/routes/log-routes.ts
+    :311 <arrow> HIGH
+           9 cyclomatic    9 cognitive   78 lines
+          90.0 CRAP
+  src/pi-progress-summarizer.ts
+    :58 extractFilePath HIGH
+           9 cyclomatic   14 cognitive   47 lines
+          90.0 CRAP
+  src/utils/failure-artifact-writer.ts
+    :115 writeMetadata HIGH
+           9 cyclomatic    9 cognitive   40 lines
+          90.0 CRAP
+  src/run-artifact-metadata-cache.ts
+    :60 clear HIGH
+           9 cyclomatic   10 cognitive   18 lines
+          90.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :1067 <arrow> HIGH
+           9 cyclomatic    9 cognitive   15 lines
+          90.0 CRAP
+  src/routes/status-routes.ts
+    :75 resolveJobExitCode HIGH
+           9 cyclomatic    8 cognitive   18 lines
+          90.0 CRAP
+  src/routes/artifact-routes.ts
+    :27 isArtifactAvailable HIGH
+           9 cyclomatic    5 cognitive   35 lines
+          90.0 CRAP
+  src/kaseki-cli-lib.test.ts
+    :28 createMockInstance HIGH
+           8 cyclomatic    7 cognitive  124 lines
+          72.0 CRAP
+  src/kaseki-cli.ts
+    :67 isRecoverableError HIGH
+           8 cyclomatic    5 cognitive   13 lines
+          72.0 CRAP
+  src/job-scheduler.ts
+    :459 finalizeJobIfNeeded HIGH
+           8 cyclomatic    7 cognitive   27 lines
+          72.0 CRAP
+    :487 emitTerminalWebhook HIGH
+           8 cyclomatic    7 cognitive   54 lines
+          72.0 CRAP
+  src/cli/commands/DoctorCommand.ts
+    :21 execute HIGH
+           8 cyclomatic   11 cognitive   56 lines
+          72.0 CRAP
+  src/kaseki-api-service.ts
+    :28 main HIGH
+           8 cyclomatic    7 cognitive  130 lines
+          72.0 CRAP
+  src/cli/KasekiCLI.ts
+    :162 dispatch HIGH
+           8 cyclomatic   11 cognitive   33 lines
+          72.0 CRAP
+  src/utils/status-response-builder.ts
+    :64 addProgressInfo HIGH
+           8 cyclomatic   11 cognitive   30 lines
+          72.0 CRAP
+  src/config/ConfigManager.ts
+    :509 validateAuthPaths HIGH
+           8 cyclomatic   11 cognitive   42 lines
+          72.0 CRAP
+  src/idempotency-store.ts
+    :319 cleanup HIGH
+           8 cyclomatic   11 cognitive   43 lines
+          72.0 CRAP
+  src/utils/failure-artifact-writer.ts
+    :22 writeFailureArtifacts HIGH
+           8 cyclomatic    4 cognitive   23 lines
+          72.0 CRAP
+  src/kaseki-api-routes.ts
+    :560 <arrow> HIGH
+           8 cyclomatic    8 cognitive   44 lines
+          72.0 CRAP
+  src/lib/event-timestamp-helpers.ts
+    :53 extractEventTimestamp HIGH
+           8 cyclomatic    6 cognitive   17 lines
+          72.0 CRAP
+    :80 normalizeTimestamp HIGH
+           8 cyclomatic    7 cognitive   18 lines
+          72.0 CRAP
+  jest.setup.ts
+    :28 isJsonEventLog HIGH
+           8 cyclomatic    3 cognitive   15 lines
+          72.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :424 <arrow> HIGH
+           8 cyclomatic   13 cognitive   14 lines
+          72.0 CRAP
+  src/validation-output-filter.ts
+    :220 main HIGH
+           8 cyclomatic    7 cognitive  184 lines
+          72.0 CRAP
+  src/job-persistence-manager.ts
+    :50 <arrow> HIGH
+           8 cyclomatic    9 cognitive   28 lines
+          72.0 CRAP
+  src/cli/commands/CancelCommand.ts
+    :35 execute HIGH
+           7 cyclomatic    7 cognitive   35 lines
+          56.0 CRAP
+  src/docker/DockerManager.ts
+    :197 buildDockerArgs HIGH
+           7 cyclomatic    7 cognitive   56 lines
+          56.0 CRAP
+  src/kaseki-api-config.ts
+    :123 ensureResultsDir HIGH
+           7 cyclomatic   10 cognitive   29 lines
+          56.0 CRAP
+  src/utils/response-helpers.ts
+    :30 buildStatusResponse HIGH
+           7 cyclomatic    6 cognitive   31 lines
+          56.0 CRAP
+  src/job-scheduler.ts
+    :139 cancelJob HIGH
+           7 cyclomatic    6 cognitive   73 lines
+          56.0 CRAP
+  src/kaseki-api-service-wrapper.ts
+    :27 constructor HIGH
+           7 cyclomatic    7 cognitive   26 lines
+          56.0 CRAP
+    :57 start HIGH
+           7 cyclomatic    6 cognitive   93 lines
+          56.0 CRAP
+  src/kaseki-api-types.ts
+    :128 normalizeRunRequestAliases HIGH
+           7 cyclomatic    6 cognitive   30 lines
+          56.0 CRAP
+  src/utils/status-response-builder.ts
+    :171 resolveExitCode HIGH
+           7 cyclomatic    6 cognitive   17 lines
+          56.0 CRAP
+  src/config/ConfigManager.ts
+    :397 deepMerge HIGH
+           7 cyclomatic    7 cognitive   15 lines
+          56.0 CRAP
+  src/kaseki-report.ts
+    :93 parseRestorationMetrics HIGH
+           7 cyclomatic    9 cognitive   17 lines
+          56.0 CRAP
+  src/utils/utf8-helpers.ts
+    :35 decodeUtf8TailSafely HIGH
+           7 cyclomatic   11 cognitive   28 lines
+          56.0 CRAP
+  src/utils/progress-normalizer.ts
+    :18 normalizeProgressEvent HIGH
+           7 cyclomatic    9 cognitive   17 lines
+          56.0 CRAP
+  src/instance/InstanceManager.ts
+    :187 recordStage HIGH
+           7 cyclomatic    6 cognitive   46 lines
+          56.0 CRAP
+  src/github-app-token.ts
+    :198 main HIGH
+           7 cyclomatic    5 cognitive   32 lines
+          56.0 CRAP
+  src/kaseki-api-routes.ts
+    :180 readTemplateVersionMetadata HIGH
+           7 cyclomatic    6 cognitive   16 lines
+          56.0 CRAP
+  src/secrets/host-secrets-reader.ts
+    :83 readSecretFromPath HIGH
+           7 cyclomatic    6 cognitive   35 lines
+          56.0 CRAP
+  src/cli/api/LocalKasekiApiClient.ts
+    :137 fromConfig HIGH
+           7 cyclomatic    2 cognitive    9 lines
+          56.0 CRAP
+    :208 requestJson HIGH
+           7 cyclomatic    7 cognitive   22 lines
+          56.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :314 <arrow> HIGH
+           7 cyclomatic    6 cognitive   16 lines
+          56.0 CRAP
+    :338 <arrow> HIGH
+           7 cyclomatic    8 cognitive   13 lines
+          56.0 CRAP
+  src/instance-metadata-reader.ts
+    :88 readInstanceMetadata HIGH
+           7 cyclomatic   12 cognitive   42 lines
+          56.0 CRAP
+  perf/pi-event-filter.benchmark.test.ts
+    :13 <arrow> HIGH
+           7 cyclomatic    9 cognitive   85 lines
+          56.0 CRAP
+  src/pre-flight-validator.ts
+    :496 validateCommandsSyntax HIGH
+           7 cyclomatic    8 cognitive   30 lines
+          56.0 CRAP
+  src/job-persistence-manager.ts
+    :300 discoverNextId HIGH
+           7 cyclomatic    7 cognitive   16 lines
+          56.0 CRAP
+  src/routes/artifact-routes.ts
+    :186 artifacts HIGH
+           7 cyclomatic    2 cognitive   15 lines
+          56.0 CRAP
+  src/cli/commands/InitCommand.ts
+    :18 execute
+           6 cyclomatic    6 cognitive   33 lines
+          42.0 CRAP
+  src/kaseki-cli.ts
+    :249 parsePositiveIntOption
+           6 cyclomatic    4 cognitive   16 lines
+          42.0 CRAP
+    :348 cmdLogs
+           6 cyclomatic    6 cognitive   25 lines
+          42.0 CRAP
+  src/cli/BaseCommand.ts
+    :20 parseArgs
+           6 cyclomatic    7 cognitive   20 lines
+          42.0 CRAP
+  src/job-scheduler.ts
+    :68 submitJob
+           6 cyclomatic    3 cognitive   51 lines
+          42.0 CRAP
+    :672 getLiveProgressEvents
+           6 cyclomatic    6 cognitive   19 lines
+          42.0 CRAP
+    :773 getReadiness
+           6 cyclomatic    5 cognitive   20 lines
+          42.0 CRAP
+  src/lib/subprocess-helpers.ts
+    :41 classifyDockerFailure
+           6 cyclomatic    5 cognitive   20 lines
+          42.0 CRAP
+  src/cli/commands/DoctorCommand.ts
+    :337 checkDockkerImage
+           6 cyclomatic    6 cognitive   61 lines
+          42.0 CRAP
+  src/pi-event-filter.test.ts
+    :14 runFilter
+           6 cyclomatic    5 cognitive   44 lines
+          42.0 CRAP
+  src/setup/SetupWizard.ts
+    :93 run
+           6 cyclomatic    1 cognitive   40 lines
+          42.0 CRAP
+    :236 printEnvironmentInfo
+           6 cyclomatic    5 cognitive    8 lines
+          42.0 CRAP
+  src/cli/commands/ServeCommand.ts
+    :13 execute
+           6 cyclomatic    5 cognitive   49 lines
+          42.0 CRAP
+  src/github-app-private-key.ts
+    :85 validateGitHubAppPrivateKey
+           6 cyclomatic    5 cognitive   50 lines
+          42.0 CRAP
+  src/secrets/SecretsManager.ts
+    :283 list
+           6 cyclomatic    7 cognitive   22 lines
+          42.0 CRAP
+  src/config/ConfigManager.ts
+    :426 get
+           6 cyclomatic    7 cognitive   20 lines
+          42.0 CRAP
+    :556 getPathDiagnostics
+           6 cyclomatic    5 cognitive   17 lines
+          42.0 CRAP
+  src/job-scheduler.test.ts
+    :1158 <arrow>
+           6 cyclomatic    1 cognitive   41 lines
+          42.0 CRAP
+  src/idempotency-store.ts
+    :150 acquireLock
+           6 cyclomatic   12 cognitive   30 lines
+          42.0 CRAP
+  src/utils/failure-artifact-writer.ts
+    :46 writeFailureJson
+           6 cyclomatic    6 cognitive   16 lines
+          42.0 CRAP
+    :63 writeResultSummary
+           6 cyclomatic    5 cognitive   19 lines
+          42.0 CRAP
+  src/metrics.ts
+    :17 observeRunDuration
+           6 cyclomatic    8 cognitive   13 lines
+          42.0 CRAP
+  src/webhook-manager.ts
+    :133 entry
+           6 cyclomatic    3 cognitive    7 lines
+          42.0 CRAP
+  src/timestamp-tracker.ts
+    :45 record
+           6 cyclomatic    7 cognitive   18 lines
+          42.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :209 <arrow>
+           6 cyclomatic    5 cognitive   11 lines
+          42.0 CRAP
+    :360 <arrow>
+           6 cyclomatic    5 cognitive   18 lines
+          42.0 CRAP
+    :493 <arrow>
+           6 cyclomatic    7 cognitive   17 lines
+          42.0 CRAP
+    :629 <arrow>
+           6 cyclomatic    5 cognitive   12 lines
+          42.0 CRAP
+    :1038 <arrow>
+           6 cyclomatic   11 cognitive   16 lines
+          42.0 CRAP
+    :1094 <arrow>
+           6 cyclomatic    5 cognitive    9 lines
+          42.0 CRAP
+  src/job-persistence-manager.ts
+    :160 deserializeJob
+           6 cyclomatic    5 cognitive   10 lines
+          42.0 CRAP
+    :188 mergePersistedJobs
+           6 cyclomatic    8 cognitive   30 lines
+          42.0 CRAP
+  src/routes/artifact-routes.ts
+    :63 artifactContentType
+           6 cyclomatic    5 cognitive   12 lines
+          42.0 CRAP
+  src/kaseki-cli-lib.ts
+    :590 detectErrors
+           5 cyclomatic    4 cognitive   80 lines
+          30.0 CRAP
+  src/kaseki-cli.ts
+    :532 cmdFollow
+           5 cyclomatic    5 cognitive   43 lines
+          30.0 CRAP
+  src/docker/DockerManager.ts
+    :140 <arrow>
+           5 cyclomatic    5 cognitive   30 lines
+          30.0 CRAP
+  src/kaseki-api-config.ts
+    :41 validatePort
+           5 cyclomatic    3 cognitive    7 lines
+          30.0 CRAP
+    :61 validateApiHost
+           5 cyclomatic    5 cognitive   16 lines
+          30.0 CRAP
+  src/utils/response-helpers.ts
+    :66 detectContentType
+           5 cyclomatic    4 cognitive    7 lines
+          30.0 CRAP
+  src/job-scheduler.ts
+    :663 getLiveDockerLogTail
+           5 cyclomatic    4 cognitive    8 lines
+          30.0 CRAP
+  src/openapi-spec-generators/paths.test.ts
+    :77 <arrow>
+           5 cyclomatic    1 cognitive   11 lines
+          30.0 CRAP
+  src/cli/commands/ConfigCommand.ts
+    :125 setNestedValue
+           5 cyclomatic    5 cognitive   20 lines
+          30.0 CRAP
+  src/utils/webhook-event-builder.ts
+    :70 createJobFailedEvent
+           5 cyclomatic    3 cognitive   18 lines
+          30.0 CRAP
+  src/setup/SetupWizard.ts
+    :180 isRunningInContainer
+           5 cyclomatic    4 cognitive   15 lines
+          30.0 CRAP
+  src/utils/progress-normalizer.test.ts
+    :430 <arrow>
+           5 cyclomatic    0 cognitive   11 lines
+          30.0 CRAP
+  src/github-app-private-key.ts
+    :27 removeMatchingOuterQuotes
+           5 cyclomatic    5 cognitive   11 lines
+          30.0 CRAP
+    :66 normalizeGitHubAppPrivateKey
+           5 cyclomatic    5 cognitive   18 lines
+          30.0 CRAP
+  src/result-cache.ts
+    :45 constructor
+           5 cyclomatic    5 cognitive   15 lines
+          30.0 CRAP
+  src/secrets/SecretsManager.ts
+    :243 retrieve
+           5 cyclomatic    5 cognitive   17 lines
+          30.0 CRAP
+    :264 delete
+           5 cyclomatic    5 cognitive   15 lines
+          30.0 CRAP
+  src/utils/status-response-builder.ts
+    :27 buildStatus
+           5 cyclomatic    4 cognitive   25 lines
+          30.0 CRAP
+  src/config/ConfigManager.ts
+    :280 applyEnvironmentVariables
+           5 cyclomatic    6 cognitive  113 lines
+          30.0 CRAP
+  src/pi-progress-summarizer.ts
+    :128 extractDecision
+           5 cyclomatic    7 cognitive   19 lines
+          30.0 CRAP
+    :294 formatProgressMessage
+           5 cyclomatic    4 cognitive   27 lines
+          30.0 CRAP
+  src/pi-event-filter.ts
+    :58 sanitize
+           5 cyclomatic    2 cognitive   15 lines
+          30.0 CRAP
+  src/event-aggregator.ts
+    :48 incrementMap
+           5 cyclomatic    4 cognitive   16 lines
+          30.0 CRAP
+  src/check-dist-dynamic-imports.ts
+    :25 findJavaScriptFiles
+           5 cyclomatic    5 cognitive   16 lines
+          30.0 CRAP
+  src/kaseki-api/setup-orchestrator.ts
+    :29 assertSupportedNodeVersion
+           5 cyclomatic    3 cognitive   17 lines
+          30.0 CRAP
+    :131 initializeSetup
+           5 cyclomatic    3 cognitive   24 lines
+          30.0 CRAP
+  src/idempotency-store.ts
+    :64 <arrow>
+           5 cyclomatic    4 cognitive   39 lines
+          30.0 CRAP
+  src/utils/utf8-helpers.ts
+    :19 utf8SequenceLength
+           5 cyclomatic    4 cognitive    7 lines
+          30.0 CRAP
+  src/ansi-colors.ts
+    :22 shouldUseColor
+           5 cyclomatic    2 cognitive    8 lines
+          30.0 CRAP
+  src/github-app-token.ts
+    :55 loadAndValidatePrivateKey
+           5 cyclomatic    5 cognitive   14 lines
+          30.0 CRAP
+  src/kaseki-api-routes.ts
+    :48 isLoopbackRemoteAddress
+           5 cyclomatic    2 cognitive   10 lines
+          30.0 CRAP
+    :197 checkTemplatePublishModeCompatibility
+           5 cyclomatic    3 cognitive   26 lines
+          30.0 CRAP
+  src/secrets/host-secrets-reader.ts
+    :50 readHostSecret
+           5 cyclomatic    4 cognitive   24 lines
+          30.0 CRAP
+  src/cli/commands/RunCommand.test.ts
+    :25 <arrow>
+           5 cyclomatic    8 cognitive   13 lines
+          30.0 CRAP
+  src/cli/api/LocalKasekiApiClient.test.ts
+    :18 <arrow>
+           5 cyclomatic    8 cognitive   11 lines
+          30.0 CRAP
+  src/openapi-spec-generators/schemas.test.ts
+    :151 <arrow>
+           5 cyclomatic    0 cognitive   22 lines
+          30.0 CRAP
+  src/run-artifact-metadata-cache.ts
+    :83 isUsable
+           5 cyclomatic    6 cognitive   18 lines
+          30.0 CRAP
+    :122 sameSnapshot
+           5 cyclomatic    4 cognitive    9 lines
+          30.0 CRAP
+  src/cli/api/LocalKasekiApiClient.ts
+    :151 createRun
+           5 cyclomatic    4 cognitive   24 lines
+          30.0 CRAP
+  src/cli/commands/ListCommand.ts
+    :34 execute
+           5 cyclomatic    5 cognitive   40 lines
+          30.0 CRAP
+  src/cli/commands/ReportCommand.ts
+    :47 execute
+           5 cyclomatic    5 cognitive   23 lines
+          30.0 CRAP
+  src/cli/commands/DoctorCommand.test.ts
+    :317 <arrow>
+           5 cyclomatic    4 cognitive   12 lines
+          30.0 CRAP
+  src/openapi-spec-generator.test.ts
+    :128 <arrow>
+           5 cyclomatic    4 cognitive    9 lines
+          30.0 CRAP
+    :147 <arrow>
+           5 cyclomatic    4 cognitive    9 lines
+          30.0 CRAP
+    :230 <arrow>
+           5 cyclomatic    4 cognitive    9 lines
+          30.0 CRAP
+    :268 <arrow>
+           5 cyclomatic    4 cognitive    8 lines
+          30.0 CRAP
+    :366 <arrow>
+           5 cyclomatic    5 cognitive    9 lines
+          30.0 CRAP
+    :396 <arrow>
+           5 cyclomatic    5 cognitive    9 lines
+          30.0 CRAP
+    :387 <arrow>
+           5 cyclomatic    4 cognitive   23 lines
+          30.0 CRAP
+    :419 <arrow>
+           5 cyclomatic    4 cognitive   22 lines
+          30.0 CRAP
+    :473 <arrow>
+           5 cyclomatic    5 cognitive   12 lines
+          30.0 CRAP
+    :580 <arrow>
+           5 cyclomatic    5 cognitive   13 lines
+          30.0 CRAP
+    :602 <arrow>
+           5 cyclomatic    4 cognitive   17 lines
+          30.0 CRAP
+    :709 <arrow>
+           5 cyclomatic    4 cognitive   10 lines
+          30.0 CRAP
+    :726 <arrow>
+           5 cyclomatic    4 cognitive   14 lines
+          30.0 CRAP
+    :966 <arrow>
+           5 cyclomatic    2 cognitive   10 lines
+          30.0 CRAP
+    :1033 <arrow>
+           5 cyclomatic    4 cognitive   24 lines
+          30.0 CRAP
+    :1089 <arrow>
+           5 cyclomatic    4 cognitive   17 lines
+          30.0 CRAP
+  src/instance-metadata-reader.ts
+    :50 readElapsedSeconds
+           5 cyclomatic    4 cognitive   22 lines
+          30.0 CRAP
+  src/instance-state-derivation.ts
+    :18 normalizeExitCodeCandidate
+           5 cyclomatic    4 cognitive    9 lines
+          30.0 CRAP
+    :68 getCurrentStage
+           5 cyclomatic    4 cognitive   17 lines
+          30.0 CRAP
+  src/secret-value-cache.ts
+    :33 readSecretValue
+           5 cyclomatic    4 cognitive   16 lines
+          30.0 CRAP
+  src/pre-flight-validator.ts
+    :307 parsePositiveIntegerEnv
+           5 cyclomatic    4 cognitive   14 lines
+          30.0 CRAP
+    :405 checkGitRef
+           5 cyclomatic    4 cognitive   33 lines
+          30.0 CRAP
+  scripts/validate-module-imports.js
+    :44 extractImports
+           5 cyclomatic    6 cognitive   26 lines
+          30.0 CRAP
+  src/validation-output-filter.ts
+    :132 shouldShow
+           5 cyclomatic    4 cognitive   24 lines
+          30.0 CRAP
+    :160 processLine
+           5 cyclomatic    4 cognitive   33 lines
+          30.0 CRAP
+    :197 filterValidationOutput
+           5 cyclomatic    5 cognitive   19 lines
+          30.0 CRAP
+    :282 <arrow>
+           5 cyclomatic    6 cognitive   22 lines
+          30.0 CRAP
+  src/job-persistence-manager.ts
+    :339 withLock
+           5 cyclomatic    7 cognitive   27 lines
+          30.0 CRAP
+  src/build-artifacts-validation.test.ts
+    :12 <arrow>
+           5 cyclomatic    5 cognitive   61 lines
+          30.0 CRAP
+  Functions exceeding cyclomatic, cognitive, or CRAP thresholds (https://docs.fallow.tools/explanations/health#complexity-metrics)
+  To suppress: // fallow-ignore-next-line complexity
+
+● File health scores (132 files)
+
+   67.3    src/kaseki-api-routes.test.ts
+           2563 LOC    0 fan-in    8 fan-out  100% dead  0.13 density  20.0 risk
+
+   67.9    src/openapi-spec-generator.test.ts
+           1110 LOC    0 fan-in    1 fan-out  100% dead  0.31 density  110.0 risk
+
+   68.5    src/kaseki-api-service-integration.test.ts
+            132 LOC    0 fan-in    4 fan-out  100% dead  0.17 density  2.0 risk
+
+   68.9    src/kaseki-api-service.test.ts
+            488 LOC    0 fan-in    6 fan-out  100% dead  0.11 density  20.0 risk
+
+   69.3    src/pi-progress-summarizer.test.ts
+            415 LOC    0 fan-in    2 fan-out  100% dead  0.21 density  12.0 risk
+
+   69.7    src/cli/commands/RunCommand.test.ts
+             91 LOC    0 fan-in    3 fan-out  100% dead  0.16 density  30.0 risk
+
+   70.2    src/pre-flight-validator.test.ts
+            513 LOC    0 fan-in    2 fan-out  100% dead  0.18 density  20.0 risk
+
+   70.3    src/cli/commands/ListCommand.test.ts
+             69 LOC    0 fan-in    3 fan-out  100% dead  0.14 density  2.0 risk
+
+   70.3    src/cli/commands/StatusCommand.test.ts
+             81 LOC    0 fan-in    3 fan-out  100% dead  0.14 density  2.0 risk
+
+   70.5    src/openapi-spec-generators/paths.test.ts
+            230 LOC    0 fan-in    2 fan-out  100% dead  0.17 density  30.0 risk
+
+  ... and 122 more files (--format json for full list)
+
+  Composite file quality scores based on complexity, coupling, and dead code. Risk: low <15, moderate 15-30, high >=30. CRAP estimated from export references (85% direct, 40% indirect, 0% untested). Use --coverage for exact scores. https://docs.fallow.tools/explanations/health#file-health-scores
+
+● Hotspots (79 files, since 6 months)
+
+   38.5 ▼  src/kaseki-api-routes.ts
+          55 commits   3101 churn  0.18 density   3 fan-in  ▼ cooling
+
+   36.5 ▼  src/job-scheduler.ts
+          50 commits   2456 churn  0.19 density  12 fan-in  ▼ cooling
+
+   32.5 ▼  src/kaseki-api-routes.test.ts [test]
+          64 commits   3082 churn  0.13 density   0 fan-in  ▼ cooling
+
+   15.8 ▼  src/kaseki-api-service.test.ts [test]
+          37 commits    853 churn  0.11 density   0 fan-in  ▼ cooling
+
+   13.1 ▼  src/kaseki-api-client.ts
+          26 commits    992 churn  0.13 density   1 fan-in  ▼ cooling
+
+   11.3 ─  src/kaseki-api-config.ts
+          18 commits    571 churn  0.16 density  16 fan-in  ─ stable
+
+   11.1 ▼  src/kaseki-api-service.ts
+          22 commits    679 churn  0.13 density   2 fan-in  ▼ cooling
+
+   10.0 ▼  src/pi-event-filter.ts
+          11 commits    433 churn  0.24 density   0 fan-in  ▼ cooling
+
+    9.8 ▼  src/job-scheduler.test.ts [test]
+          36 commits   1809 churn  0.07 density   0 fan-in  ▼ cooling
+
+    9.7 ▼  src/idempotency-store.ts
+          18 commits    764 churn  0.14 density   4 fan-in  ▼ cooling
+
+    8.6 ─  src/pi-progress-stream.ts
+          10 commits    505 churn  0.22 density   0 fan-in  ─ stable
+
+    7.5 ─  src/instance-state-derivation.ts
+           7 commits    164 churn  0.28 density   5 fan-in  ─ stable
+
+    6.9 ▼  src/routes/status-routes.ts
+          10 commits    442 churn  0.18 density   2 fan-in  ▼ cooling
+
+    6.6 ─  src/kaseki-api-config.test.ts [test]
+          12 commits    626 churn  0.14 density   0 fan-in  ─ stable
+
+    6.2 ─  src/validation-output-filter.ts
+          11 commits    605 churn  0.14 density   1 fan-in  ─ stable
+
+    6.1 ─  src/cli/commands/ReportCommand.ts
+           5 commits    470 churn  0.30 density   2 fan-in  ─ stable
+
+    6.1 ▼  src/utils/status-response-builder.ts
+           6 commits    226 churn  0.26 density   2 fan-in  ▼ cooling
+
+    6.1 ▼  src/kaseki-cli-lib.ts
+          10 commits   1248 churn  0.16 density   2 fan-in  ▼ cooling
+
+    6.0 ▲  src/kaseki-report.ts
+           7 commits    395 churn  0.22 density   1 fan-in  ▲ accelerating
+
+    5.8 ▼  src/result-cache.test.ts [test]
+          17 commits    289 churn  0.09 density   0 fan-in  ▼ cooling
+
+    5.8 ▲  src/utils/response-helpers.ts
+           8 commits    168 churn  0.18 density   9 fan-in  ▲ accelerating
+
+    5.8 ▼  src/cli/commands/DoctorCommand.ts
+          12 commits    664 churn  0.12 density   2 fan-in  ▼ cooling
+
+    5.7 ▼  src/routes/artifact-routes.ts
+           7 commits    355 churn  0.21 density   3 fan-in  ▼ cooling
+
+    5.7 ▼  src/cli/commands/RunCommand.ts
+           9 commits    630 churn  0.16 density   2 fan-in  ▼ cooling
+
+    5.6 ▼  src/kaseki-cli.ts
+           7 commits    698 churn  0.21 density   0 fan-in  ▼ cooling
+
+    5.5 ▼  src/config/ConfigManager.ts
+           8 commits    591 churn  0.17 density  17 fan-in  ▼ cooling
+
+    5.1 ─  src/docker/DockerManager.ts
+           9 commits    372 churn  0.14 density   1 fan-in  ─ stable
+
+    5.0 ▼  src/openapi-spec-generator.test.ts [test]
+           4 commits   1109 churn  0.31 density   0 fan-in  ▼ cooling
+
+    4.9 ▲  src/utils/file-helpers.test.ts [test]
+           7 commits    291 churn  0.18 density   0 fan-in  ▲ accelerating
+
+    4.8 ▼  src/kaseki-cli-lib.test.ts [test]
+          14 commits    610 churn  0.09 density   0 fan-in  ▼ cooling
+
+    4.8 ─  src/result-cache.ts
+           7 commits    227 churn  0.18 density   7 fan-in  ─ stable
+
+    4.7 ─  src/kaseki-api/setup-orchestrator.test.ts [test]
+           6 commits    398 churn  0.19 density   0 fan-in  ─ stable
+
+    4.6 ▲  src/progress-stream-utils.ts
+           3 commits     28 churn  0.40 density   2 fan-in  ▲ accelerating
+
+    4.4 ▲  src/build-artifacts-validation.test.ts [test]
+           9 commits    354 churn  0.12 density   0 fan-in  ▲ accelerating
+
+    4.3 ▼  src/webhook-manager.ts
+           7 commits    485 churn  0.16 density   6 fan-in  ▼ cooling
+
+    4.2 ▲  src/pre-flight-validator.test.ts [test]
+           6 commits    536 churn  0.18 density   0 fan-in  ▲ accelerating
+
+    4.2 ─  src/pre-flight-validator.ts
+           6 commits    942 churn  0.18 density   4 fan-in  ─ stable
+
+    3.9 ─  src/kaseki-api-service-wrapper.ts
+           6 commits    298 churn  0.16 density   1 fan-in  ─ stable
+
+    3.7 ▲  src/secret-value-cache.ts
+           5 commits     71 churn  0.18 density   2 fan-in  ▲ accelerating
+
+    3.6 ▼  src/test-utils.ts
+          10 commits    251 churn  0.09 density   1 fan-in  ▼ cooling
+
+    3.5 ▲  src/utils/progress-normalizer.test.ts [test]
+           6 commits    524 churn  0.15 density   0 fan-in  ▲ accelerating
+
+    3.3 ▼  src/utils/progress-normalizer.ts
+           3 commits     76 churn  0.28 density   4 fan-in  ▼ cooling
+
+    3.1 ▼  src/instance-state-derivation.test.ts [test]
+           5 commits    273 churn  0.16 density   0 fan-in  ▼ cooling
+
+    3.1 ▲  src/routes/log-routes.ts
+           4 commits    589 churn  0.20 density   2 fan-in  ▲ accelerating
+
+    3.0 ▼  src/cli/commands/ListCommand.ts
+           4 commits    237 churn  0.19 density   2 fan-in  ▼ cooling
+
+    3.0 ▼  src/add-js-extensions.ts
+           6 commits    104 churn  0.13 density   0 fan-in  ▼ cooling
+
+    2.9 ▲  src/cli/KasekiCLI.ts
+           8 commits    321 churn  0.09 density   1 fan-in  ▲ accelerating
+
+    2.8 ▼  src/cli/commands/ServeCommand.ts
+           5 commits    110 churn  0.14 density   1 fan-in  ▼ cooling
+
+    2.7 ▲  src/ansi-colors.test.ts [test]
+           5 commits    181 churn  0.13 density   0 fan-in  ▲ accelerating
+
+    2.7 ▼  src/pi-progress-summarizer.ts
+           4 commits    346 churn  0.17 density   2 fan-in  ▼ cooling
+
+    2.6 ─  src/pi-event-filter.test.ts [test]
+          10 commits    367 churn  0.07 density   0 fan-in  ─ stable
+
+    2.6 ▲  src/cli.ts
+           7 commits    245 churn  0.09 density   0 fan-in  ▲ accelerating
+
+    2.6 ▼  src/metrics.ts
+           3 commits     70 churn  0.22 density   2 fan-in  ▼ cooling
+
+    2.5 ─  src/openapi-spec-generators/schemas.test.ts [test]
+           4 commits    329 churn  0.15 density   0 fan-in  ─ stable
+
+    2.4 ▼  src/kaseki-report.test.ts [test]
+           8 commits    146 churn  0.08 density   0 fan-in  ▼ cooling
+
+    2.4 ▲  src/utils/file-helpers.ts
+           3 commits    170 churn  0.21 density   5 fan-in  ▲ accelerating
+
+    2.3 ▼  src/instance-metadata-reader.test.ts [test]
+           5 commits    210 churn  0.12 density   0 fan-in  ▼ cooling
+
+    2.3 ▼  src/secrets/SecretsManager.ts
+           3 commits    353 churn  0.19 density   1 fan-in  ▼ cooling
+
+    2.1 ─  src/cli/commands/DoctorCommand.test.ts [test]
+           4 commits    374 churn  0.13 density   0 fan-in  ─ stable
+
+    2.0 ▼  src/kaseki-api-types.ts
+          26 commits    471 churn  0.02 density  37 fan-in  ▼ cooling
+
+    1.7 ▲  src/utils/webhook-event-builder.test.ts [test]
+           3 commits    203 churn  0.15 density   0 fan-in  ▲ accelerating
+
+    1.7 ▲  src/cli/api/LocalKasekiApiClient.test.ts [test]
+           3 commits    121 churn  0.14 density   0 fan-in  ▲ accelerating
+
+    1.7 ▲  src/utils/response-helpers.test.ts [test]
+           3 commits    196 churn  0.15 density   0 fan-in  ▲ accelerating
+
+    1.7 ─  src/timestamp-tracker.test.ts [test]
+           4 commits    140 churn  0.11 density   0 fan-in  ─ stable
+
+    1.7 ▼  src/event-aggregator.test.ts [test]
+           5 commits    157 churn  0.09 density   0 fan-in  ▼ cooling
+
+    1.7 ▲  src/cli/api/LocalKasekiApiClient.ts
+           3 commits    248 churn  0.14 density   6 fan-in  ▲ accelerating
+
+    1.6 ▼  src/docker-entrypoint-packaging.test.ts [test]
+           4 commits     50 churn  0.10 density   0 fan-in  ▼ cooling
+
+    1.5 ▲  src/idempotency-store.test.ts [test]
+           3 commits    137 churn  0.13 density   0 fan-in  ▲ accelerating
+
+    1.5 ▲  src/utils/http-client-factory.test.ts [test]
+           8 commits    313 churn  0.05 density   0 fan-in  ▲ accelerating
+
+    1.5 ▲  src/cli/commands/SecretsCommand.ts
+           3 commits    298 churn  0.13 density   1 fan-in  ▲ accelerating
+
+    1.5 ▲  src/cli/commands/ConfigCommand.ts
+           3 commits    337 churn  0.13 density   1 fan-in  ▲ accelerating
+
+    1.5 ▲  src/github-app-token.ts
+           3 commits    395 churn  0.13 density   0 fan-in  ▲ accelerating
+
+    1.5 ▼  src/secrets/host-secrets-reader.ts
+           3 commits    155 churn  0.12 density   8 fan-in  ▼ cooling
+
+    1.3 ▼  src/cli/commands/SetupCommand.ts
+           4 commits    683 churn  0.08 density   1 fan-in  ▼ cooling
+
+    1.2 ▼  src/validation-output-filter.test.ts [test]
+           3 commits    550 churn  0.10 density   0 fan-in  ▼ cooling
+
+    1.1 ▼  src/ansi-colors.ts
+           3 commits    113 churn  0.09 density   4 fan-in  ▼ cooling
+
+    1.0 ▼  src/middleware/job-lookup.ts
+           3 commits     46 churn  0.09 density   2 fan-in  ▼ cooling
+
+    0.7 ▲  src/openapi-spec-generator.ts
+           8 commits   2306 churn  0.02 density   3 fan-in  ▲ accelerating
+
+    0.1 ▼  src/openapi-spec-generators/paths.ts
+           3 commits    898 churn  0.01 density   2 fan-in  ▼ cooling
+
+  53 files excluded (< 3 commits)
+
+  Files with high churn and high complexity — https://docs.fallow.tools/explanations/health#hotspot-metrics
+
+● Refactoring targets (1)
+  1 high
+    score = quick-win ROI (higher = better) · pri = absolute priority
+
+   10.6  pri:31.8    src/openapi-spec-generator.test.ts
+         untested risk · effort:high · confidence:high  27 complex functions lack test coverage path, add tests before modifying
+
+  Prioritized refactoring recommendations based on complexity, churn, and coupling signals — https://docs.fallow.tools/explanations/health#refactoring-targets
+
+✗ 222 above threshold · 2405 analyzed · maintainability 83.7 (moderate) (0.02s)
+  Maintainability scale: good ≥85, moderate ≥65, low <65 (0–100)
+
+Failed: dead-code (102 issues), dupes (35 clone groups), health (222 above threshold)

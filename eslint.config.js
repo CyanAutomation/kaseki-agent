@@ -63,6 +63,33 @@ const jestGlobals = {
   jest: 'readonly'
 };
 
+// Base rules shared across JS, TS, and test configs
+const baseRules = {
+  'indent': ['warn', 2],
+  'linebreak-style': ['error', 'unix'],
+  'quotes': ['warn', 'single', { avoidEscape: true }],
+  'semi': ['warn', 'always'],
+  'no-trailing-spaces': 'warn',
+  'no-multiple-empty-lines': ['warn', { max: 1 }],
+  'no-console': 'off',
+  'no-process-exit': 'off',
+  'no-empty': ['error', { allowEmptyCatch: true }]
+};
+
+// TypeScript-specific unused-imports rules (shared across TS configs)
+const tsUnusedImportsRules = {
+  'unused-imports/no-unused-imports': 'warn',
+  'unused-imports/no-unused-vars': [
+    'warn',
+    {
+      vars: 'all',
+      varsIgnorePattern: '^_',
+      args: 'after-used',
+      argsIgnorePattern: '^_'
+    }
+  ]
+};
+
 export default [
   {
     ignores: ignorePatterns
@@ -76,21 +103,13 @@ export default [
     },
     rules: {
       ...js.configs.recommended.rules,
-      'indent': ['warn', 2],
-      'linebreak-style': ['error', 'unix'],
-      'quotes': ['warn', 'single', { avoidEscape: true }],
-      'semi': ['warn', 'always'],
-      'no-trailing-spaces': 'warn',
-      'no-multiple-empty-lines': ['warn', { max: 1 }],
-      'no-console': 'off',
-      'no-process-exit': 'off',
-      'no-empty': ['error', { allowEmptyCatch: true }],
+      ...baseRules,
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
     }
   },
   // Test files - must come before generic TypeScript config
   {
-    files: ['src/**/*.test.ts', 'src/test-utils.ts', 'perf/**/*.test.ts', 'test/**/*.ts', 'tests/**/*.ts'],
+    files: ['src/**/*.test.ts', 'src/__test-utils/**/*.ts', 'src/test-utils.ts', 'perf/**/*.test.ts', 'test/**/*.ts', 'tests/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       sourceType: 'module',
@@ -107,27 +126,10 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...tsPlugin.configs.recommended.rules,
-      'indent': ['warn', 2],
-      'linebreak-style': ['error', 'unix'],
-      'quotes': ['warn', 'single', { avoidEscape: true }],
-      'semi': ['warn', 'always'],
-      'no-trailing-spaces': 'warn',
-      'no-multiple-empty-lines': ['warn', { max: 1 }],
-      'no-console': 'off',
-      'no-process-exit': 'off',
-      'no-empty': ['error', { allowEmptyCatch: true }],
+      ...baseRules,
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-      'unused-imports/no-unused-imports': 'warn',
-      'unused-imports/no-unused-vars': [
-        'warn',
-        {
-          vars: 'all',
-          varsIgnorePattern: '^_',
-          args: 'after-used',
-          argsIgnorePattern: '^_'
-        }
-      ],
+      ...tsUnusedImportsRules,
       '@typescript-eslint/no-explicit-any': 'off'
     }
   },
@@ -149,27 +151,10 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       ...tsPlugin.configs.recommended.rules,
-      'indent': ['warn', 2],
-      'linebreak-style': ['error', 'unix'],
-      'quotes': ['warn', 'single', { avoidEscape: true }],
-      'semi': ['warn', 'always'],
-      'no-trailing-spaces': 'warn',
-      'no-multiple-empty-lines': ['warn', { max: 1 }],
-      'no-console': 'off',
-      'no-process-exit': 'off',
-      'no-empty': ['error', { allowEmptyCatch: true }],
+      ...baseRules,
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-      'unused-imports/no-unused-imports': 'warn',
-      'unused-imports/no-unused-vars': [
-        'warn',
-        {
-          vars: 'all',
-          varsIgnorePattern: '^_',
-          args: 'after-used',
-          argsIgnorePattern: '^_'
-        }
-      ],
+      ...tsUnusedImportsRules,
       '@typescript-eslint/no-explicit-any': 'off'
     }
   }

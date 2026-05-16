@@ -86,49 +86,73 @@ function tailTextByLines(content: string, lineCount: number): string {
   return lines.slice(-lineCount).join('\n').trim();
 }
 
-function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateHealthStatus {
-  const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
-  const checkoutRef = getTemplateCheckoutRef(checkoutDir);
-  const runScript = path.join(templateDir, 'run-kaseki.sh');
-  const missingFiles = REQUIRED_TEMPLATE_FILES.filter((file) => !fs.existsSync(path.join(templateDir, file)));
-
+function validateTemplateRunScript(
+  templateDir: string,
+  runScript: string,
+  templateRef: string | undefined,
+  checkoutDir: string
+): TemplateHealthStatus | null {
   if (!fs.existsSync(runScript)) {
     return {
       ok: false,
       templateDir,
       runScript,
       checkoutDir,
-      checkoutRef,
+      checkoutRef: templateRef,
       detail: `Missing template runner: ${runScript}`,
       remediation: TEMPLATE_REMEDIATION,
     };
   }
+  return null;
+}
 
+function validateTemplateFiles(
+  templateDir: string,
+  runScript: string,
+  templateRef: string | undefined,
+  checkoutDir: string
+): TemplateHealthStatus | null {
+  const missingFiles = REQUIRED_TEMPLATE_FILES.filter((file) => !fs.existsSync(path.join(templateDir, file)));
   if (missingFiles.length > 0) {
     return {
       ok: false,
       templateDir,
       runScript,
       checkoutDir,
-      checkoutRef,
+      checkoutRef: templateRef,
       detail: `Template is incomplete at ${templateDir}; missing ${missingFiles.join(', ')}.`,
       remediation: 'Run scripts/kaseki-activate.sh --controller bootstrap, or scripts/kaseki-setup-host.sh --fix before starting the API.',
     };
   }
+  return null;
+}
 
+function runTemplateDoctor(runScript: string, checkoutDir: string) {
   const activateScript = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
   const doctorArgs = fs.existsSync(activateScript)
     ? [activateScript, '--json', 'doctor']
     : [runScript, '--doctor'];
-  const doctorCommand = doctorArgs.join(' ');
-  const doctorResult = spawnSync(doctorArgs[0], doctorArgs.slice(1), {
+
+  return spawnSync(doctorArgs[0], doctorArgs.slice(1), {
     cwd: fs.existsSync(checkoutDir) ? checkoutDir : undefined,
     encoding: 'utf-8',
     timeout: getTemplateDoctorTimeoutMs(),
     maxBuffer: 128 * 1024,
   });
+}
+
+function validateTemplateDoctor(
+  doctorResult: ReturnType<typeof spawnSync>,
+  templateDir: string,
+  runScript: string,
+  templateRef: string | undefined,
+  checkoutDir: string
+): TemplateHealthStatus | null {
   const stderr = `${doctorResult.stderr || ''}${doctorResult.error ? `\n${doctorResult.error.message}` : ''}`;
   const doctorStderrTail = tailTextByLines(stderr, TEMPLATE_DOCTOR_STDERR_TAIL_LINES);
+  const doctorArgs = fs.existsSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'))
+    ? `${path.join(checkoutDir, 'scripts', 'kaseki-activate.sh')} --json doctor`
+    : `${runScript} --doctor`;
 
   if (doctorResult.error || doctorResult.status !== 0) {
     const timedOut = doctorResult.error?.message.toLowerCase().includes('timeout') || doctorResult.signal === 'SIGTERM';
@@ -137,17 +161,42 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
       templateDir,
       runScript,
       checkoutDir,
-      checkoutRef,
-      doctorCommand,
+      checkoutRef: templateRef,
+      doctorCommand: doctorArgs,
       doctorExitCode: doctorResult.status,
       doctorSignal: doctorResult.signal,
       doctorStderrTail,
       detail: timedOut
-        ? `Template doctor timed out after ${getTemplateDoctorTimeoutMs()}ms: ${doctorCommand}`
-        : `Template doctor failed: ${doctorCommand} exited with ${doctorResult.status ?? 'unknown'}`,
+        ? `Template doctor timed out after ${getTemplateDoctorTimeoutMs()}ms: ${doctorArgs}`
+        : `Template doctor failed: ${doctorArgs} exited with ${doctorResult.status ?? 'unknown'}`,
       remediation: TEMPLATE_REMEDIATION,
     };
   }
+  return null;
+}
+
+function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateHealthStatus {
+  const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+  const checkoutRef = getTemplateCheckoutRef(checkoutDir);
+  const runScript = path.join(templateDir, 'run-kaseki.sh');
+
+  // Check 1: Validate run script exists
+  let validation = validateTemplateRunScript(templateDir, runScript, checkoutRef, checkoutDir);
+  if (validation) return validation;
+
+  // Check 2: Validate all required files exist
+  validation = validateTemplateFiles(templateDir, runScript, checkoutRef, checkoutDir);
+  if (validation) return validation;
+
+  // Check 3: Run doctor check
+  const doctorResult = runTemplateDoctor(runScript, checkoutDir);
+  validation = validateTemplateDoctor(doctorResult, templateDir, runScript, checkoutRef, checkoutDir);
+  if (validation) return validation;
+
+  // All checks passed
+  const doctorArgs = fs.existsSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'))
+    ? `${path.join(checkoutDir, 'scripts', 'kaseki-activate.sh')} --json doctor`
+    : `${runScript} --doctor`;
 
   return {
     ok: true,
@@ -155,10 +204,10 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
     runScript,
     checkoutDir,
     checkoutRef,
-    doctorCommand,
+    doctorCommand: doctorArgs,
     doctorExitCode: doctorResult.status,
     doctorSignal: doctorResult.signal,
-    doctorStderrTail,
+    doctorStderrTail: '',
     detail: `Template runner passed doctor check: ${runScript}`,
   };
 }

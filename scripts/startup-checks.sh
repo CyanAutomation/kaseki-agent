@@ -49,6 +49,98 @@ log_info() {
   echo -e "${BLUE}ℹ${NC} $*" >&2
 }
 
+# Check if we're running in a container managed by Docker (but not necessarily Docker Compose)
+is_in_container() {
+  [ -f /.dockerenv ] || [ -f /run/.containerenv ]
+}
+
+# Detect container management platform (Dockhand, Portainer, Kubernetes, etc.)
+detect_container_platform() {
+  if [ -S /var/run/docker.sock ] 2>/dev/null; then
+    # We have access to docker socket
+    if command -v docker &>/dev/null; then
+      # Check if running on Portainer (has specific env vars or config)
+      if [ -n "${PORTAINER_VERSION:-}" ] || [ -f /.portainer ]; then
+        echo "portainer"
+        return 0
+      fi
+      # Check for Dockhand patterns (typically running in restricted mode)
+      if grep -q "dockhand" /proc/self/cgroup 2>/dev/null || [ -n "${DOCKHAND_MODE:-}" ]; then
+        echo "dockhand"
+        return 0
+      fi
+    fi
+  fi
+  # Kubernetes detection
+  if [ -d /var/run/secrets/kubernetes.io ]; then
+    echo "kubernetes"
+    return 0
+  fi
+  echo "docker"
+  return 0
+}
+
+# Generate platform-specific remediation instructions
+suggest_platform_setup() {
+  local platform="${1:-docker}"
+  
+  case "$platform" in
+    portainer)
+      echo ""
+      echo "📦 Running on Portainer — Setup Instructions:"
+      echo ""
+      echo "  1. In Portainer UI, navigate to Stacks → kaseki-agent"
+      echo "  2. Edit the stack and modify the 'services' section:"
+      echo ""
+      echo "     Before docker-compose up, run on the HOST:"
+      echo "       sudo mkdir -p /agents"
+      echo "       sudo chown 10000:10000 /agents"
+      echo "       sudo chmod 755 /agents"
+      echo ""
+      echo "  3. Or, use an init container (already added in latest version)"
+      echo "     Wait 10 seconds after deploy for init container to complete"
+      echo ""
+      echo "  See: docs/DEPLOYMENT.md#container-management-platforms"
+      ;;
+    dockhand)
+      echo ""
+      echo "🔧 Running on Dockhand — Setup Instructions:"
+      echo ""
+      echo "  1. SSH into the Dockhand host"
+      echo "  2. Run the following commands:"
+      echo "       sudo mkdir -p /agents"
+      echo "       sudo chown 10000:10000 /agents"
+      echo "       sudo chmod 755 /agents"
+      echo ""
+      echo "  3. Restart the kaseki-api service in Dockhand UI"
+      echo ""
+      echo "  See: docs/DEPLOYMENT.md#container-management-platforms"
+      ;;
+    kubernetes)
+      echo ""
+      echo "☸️  Running on Kubernetes — Setup Instructions:"
+      echo ""
+      echo "  1. Ensure /agents PersistentVolume is properly mounted"
+      echo "  2. The PV must be writable by UID 10000"
+      echo ""
+      echo "  Example: kubectl patch pv agents-pv -p '{\"spec\":{\"owner\":\"10000:10000\"}}'"
+      echo ""
+      echo "  See: docs/DEPLOYMENT.md#kubernetes-deployment"
+      ;;
+    *)
+      echo ""
+      echo "💡 Setup Instructions:"
+      echo ""
+      echo "  Run on the host where /agents is mounted:"
+      echo "    sudo mkdir -p /agents"
+      echo "    sudo chown 10000:10000 /agents"
+      echo "    sudo chmod 755 /agents"
+      echo ""
+      echo "  Then restart the kaseki-api service."
+      ;;
+  esac
+}
+
 # Check if a directory is writable (even if it doesn't exist yet)
 is_writable_or_creatable() {
   local target_dir="$1"
@@ -102,6 +194,13 @@ check_kaseki_root() {
   if [ ! -w "$KASEKI_ROOT" ]; then
     log_error "$KASEKI_ROOT exists but is not writable by UID $CONTAINER_UID"
     log_error "Fix: Run on host: sudo chown $CONTAINER_UID:$CONTAINER_GID $KASEKI_ROOT"
+    
+    # Provide platform-specific instructions if in container
+    if is_in_container; then
+      local platform
+      platform=$(detect_container_platform)
+      suggest_platform_setup "$platform"
+    fi
     return 2
   fi
   

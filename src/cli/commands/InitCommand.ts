@@ -20,6 +20,7 @@ export class InitCommand extends BaseCommand {
       // Check for command-specific flags
       const dryRun = args.includes('--dry-run');
       const importLegacy = args.includes('--import-legacy');
+      const force = args.includes('--force');
 
       // Show help if requested
       if (args.includes('--help') || args.includes('-h')) {
@@ -32,6 +33,7 @@ export class InitCommand extends BaseCommand {
       const context = await wizard.run({
         dryRun,
         importLegacy,
+        force,
       });
 
       // Show path-specific guidance
@@ -62,6 +64,7 @@ USAGE
 OPTIONS
   --dry-run            Validate setup without saving configuration
   --import-legacy      Migrate configuration from old setup paths
+  --force              Skip permission validation and proceed (advanced users only)
   --help, -h           Show this help message
 
 DESCRIPTION

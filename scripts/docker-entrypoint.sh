@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# === Docker Entrypoint for Kaseki Agent ===
+# Responsible for:
+#   1. Running init container (if applicable) to fix /agents permissions
+#   2. Running early startup checks
+#   3. Dispatching to the appropriate command handler (api, agent, setup, etc.)
+
+# Phase 1: Check if init container already ran (for debugging)
+# The init container is a separate service in docker-compose and runs before this.
+# If you're seeing permission errors here, the init container either:
+#   - Failed to fix permissions (expected in restricted environments)
+#   - Hasn't run yet (check depends_on conditions)
+#   - Ran but the issue is fundamental to the environment
+
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
 if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
