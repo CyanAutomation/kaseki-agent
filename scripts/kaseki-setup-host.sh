@@ -127,6 +127,34 @@ normalize_secrets_dir() {
   done
 }
 
+write_host_state() {
+  local home_dir="$1"
+  local secrets_dir="$2"
+  local state_file="$home_dir/.kaseki-host-state.json"
+  
+  # Create state file with normalized secrets location
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  
+  # Use a temporary file for atomic writes
+  local temp_file="${state_file}.tmp"
+  
+  # Write JSON content to temp file
+  cat > "$temp_file" <<EOF
+{
+  "normalized_secrets_dir": "$secrets_dir",
+  "timestamp": "$timestamp",
+  "version": "1"
+}
+EOF
+  
+  # Make file readable (0644) and move it into place atomically
+  chmod 0644 "$temp_file"
+  mv "$temp_file" "$state_file"
+  
+  printf 'ok: state file written to %s\n' "$state_file"
+}
+
 has_deleted_kaseki_bind_mount() {
   if ! command -v docker >/dev/null 2>&1; then
     return 1
@@ -207,6 +235,7 @@ check_writable "$KASEKI_ROOT/kaseki-results" || status=1
 
 printf 'using host secrets directory: %s\n' "$KASEKI_HOST_SECRETS_DIR"
 normalize_secrets_dir "$KASEKI_HOST_SECRETS_DIR"
+write_host_state "$KASEKI_EFFECTIVE_HOST_HOME" "$KASEKI_HOST_SECRETS_DIR"
 print_recreate_hint_if_needed
 
 bootstrap_checkout_if_possible || status=$?

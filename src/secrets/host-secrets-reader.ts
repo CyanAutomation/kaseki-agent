@@ -1,9 +1,10 @@
 /**
  * Host-Based Secrets Reader
  *
- * Reads secrets from host filesystem with dual-path resolution:
- * 1. Primary path: $KASEKI_SECRETS_DIR/{secretName} or /agents/secrets/{secretName}
- * 2. Fallback path: ~/secrets/{secretName}
+ * Reads secrets from host filesystem with multi-path resolution:
+ * 1. Discovered path: From .kaseki-host-state.json (set by setup)
+ * 2. Primary path: $KASEKI_SECRETS_DIR/{secretName} or /agents/secrets/{secretName}
+ * 3. Fallback path: ~/secrets/{secretName}
  *
  * No fallback to environment variables (hard requirement).
  * Includes stat-based caching for performance.
@@ -12,6 +13,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createLogger } from '../logger';
+
+const logger = createLogger('host-secrets');
 
 interface CacheEntry {
   value: string;
@@ -53,7 +57,8 @@ export function readHostSecret(secretName: string): string | null {
     throw new Error(`Invalid secret name: ${secretName}`);
   }
 
-  const primaryPath = path.join(getPrimarySecretsDir(), secretName);
+  const primarySecretsDir = getPrimarySecretsDir();
+  const primaryPath = path.join(primarySecretsDir, secretName);
   const secondaryPath = path.join(getSecondarySecretsDir(), secretName);
 
   // Try primary location first
@@ -65,6 +70,14 @@ export function readHostSecret(secretName: string): string | null {
   // Fall back to secondary location
   const secondaryValue = readSecretFromPath(secondaryPath);
   if (secondaryValue !== null) {
+    // Warn if /agents/secrets exists but we're using a different path
+    const agentsSecretsPath = path.join('/agents/secrets', secretName);
+    if (primarySecretsDir !== '/agents/secrets' && fs.existsSync(agentsSecretsPath)) {
+      logger.warn(
+        `Secret found at ${secondaryPath} but /agents/secrets also exists. ` +
+        `If you intended to use /agents/secrets, run: sudo kaseki-agent host setup --fix`
+      );
+    }
     return secondaryValue;
   }
 

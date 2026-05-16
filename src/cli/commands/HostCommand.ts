@@ -10,7 +10,7 @@ import { existsSync } from 'fs';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
 import { readHostSecret, getSecretLocations } from '../../secrets/host-secrets-reader';
-import { configureHostSecretsDirForPreflight } from './host-secrets-path';
+import { configureHostSecretsDirForPreflight, getDiscoveredSecretsPath } from './host-secrets-path';
 
 const logger = createLogger('host-cmd');
 
@@ -147,13 +147,30 @@ EXAMPLES
       ? args[urlArgIndex + 1]
       : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/preflight';
     configureHostSecretsDirForPreflight();
+    
+    // Check for discovered path from setup
+    const discoveredPath = getDiscoveredSecretsPath();
+    if (discoveredPath) {
+      console.log(`Discovered secrets directory from setup: ${discoveredPath}`);
+    }
+    
     const token = readHostSecret('kaseki_api_keys')?.split(/\r?\n/).find((line) => line.trim())?.trim();
 
     if (!token) {
       const locations = getSecretLocations('kaseki_api_keys');
       console.error('Could not read kaseki_api_keys from host secrets.');
       console.error(`Checked: ${locations.primary} and ${locations.secondary}`);
-      console.error('If your secrets live somewhere else, set KASEKI_HOST_SECRETS_DIR=/path/to/secrets or KASEKI_SECRETS_DIR=/path/to/secrets.');
+      if (discoveredPath) {
+        console.error(`(Setup discovered: ${discoveredPath})`);
+      }
+      console.error('');
+      console.error('Troubleshooting:');
+      console.error('  1. Verify secret files exist and are readable:');
+      console.error(`     ls -la ${locations.primary.replace(/kaseki_api_keys$/, '')}`);
+      console.error('  2. If using a custom path, run setup again:');
+      console.error('     KASEKI_HOST_SECRETS_DIR=/your/path sudo kaseki-agent host setup --fix');
+      console.error('  3. Or set the env var before preflight:');
+      console.error('     KASEKI_SECRETS_DIR=/your/path sudo kaseki-agent host preflight');
       return 1;
     }
 

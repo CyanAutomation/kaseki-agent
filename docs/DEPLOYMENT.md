@@ -387,16 +387,45 @@ worker-container problems directly.
 
 Kaseki Agent reads all secrets from host-based files instead of environment variables. This improves security by separating secrets from configuration.
 
-### Dual-Path Secret Resolution
+### Multi-Path Secret Resolution
 
-Secrets are resolved from the host filesystem in this order:
+Secrets are resolved from the host filesystem in this priority order:
 
-1. **Primary path**: `/agents/secrets/{secret-name}`
-2. **Fallback path**: `~/secrets/{secret-name}` (user home directory)
+1. **Discovered path** (from `.kaseki-host-state.json`): When you run `kaseki-agent host setup`, it records where it normalized your secrets to a state file (`~/.kaseki-host-state.json`). Preflight commands discover and use this path automatically.
+2. **Explicit environment variable**: `$KASEKI_SECRETS_DIR` (highest priority override)
+3. **SUDO_USER home fallback**: `~/secrets/{secret-name}` (when running with sudo)
+4. **Container default**: `/agents/secrets/{secret-name}` (used only if no state file and not running with sudo)
 
-The system will check the primary location first and fall back to
-the user directory if not found. Use whichever path is convenient
-for your deployment.
+**Recommended workflow**:
+
+1. Run `sudo kaseki-agent host setup --fix` once during initial setup
+2. This normalizes secrets and creates `.kaseki-host-state.json`
+3. Subsequent `sudo kaseki-agent host preflight` calls automatically use the discovered path
+4. If you need to override, use `KASEKI_SECRETS_DIR=/custom/path` before any kaseki commands
+
+The system will check each location in order and use the first that contains the secret.
+
+### State File
+
+When you run `sudo kaseki-agent host setup --fix`, it creates:
+
+```
+~/.kaseki-host-state.json
+```
+
+This file (created with 0644 permissions) records where setup normalized your secrets:
+
+```json
+{
+  "normalized_secrets_dir": "/home/pi/secrets",
+  "timestamp": "2026-05-16T12:34:56Z",
+  "version": "1"
+}
+```
+
+**What it does**: Preflight commands read this file to find where setup put your secrets, eliminating guesswork about secret locations between setup and preflight runs.
+
+**Important**: Do not manually edit or delete this file unless you're resetting your setup. If you change where secrets are stored, rerun `sudo kaseki-agent host setup --fix` to update it.
 
 ### Required Secret Files
 
@@ -563,6 +592,51 @@ Should return:
   "ok": true,
   "detail": "OpenRouter API key is available from host secrets."
 }
+```
+
+### Troubleshooting Secrets Not Found
+
+**Symptom**: `kaseki-agent host preflight` fails with "Could not read kaseki_api_keys from host secrets"
+
+**Solution Steps**:
+
+1. **Check the state file** (created by setup):
+   ```bash
+   sudo cat ~/.kaseki-host-state.json
+   # Should show: { "normalized_secrets_dir": "/home/pi/secrets", ... }
+   ```
+
+2. **If state file doesn't exist**, re-run setup to create it:
+   ```bash
+   sudo kaseki-agent host setup --fix
+   # This creates ~/.kaseki-host-state.json and normalizes secrets
+   ```
+
+3. **Verify secrets exist** at the discovered location:
+   ```bash
+   # Replace /home/pi with your actual home from the state file
+   sudo ls -la /home/pi/secrets/
+   sudo test -f /home/pi/secrets/kaseki_api_keys && echo "✓ Found" || echo "✗ Missing"
+   ```
+
+4. **If using a custom secrets path**:
+   ```bash
+   # Re-run setup with the custom path
+   sudo KASEKI_HOST_SECRETS_DIR=/custom/path kaseki-agent host setup --fix
+   # Then preflight will find it via the updated state file
+   ```
+
+5. **If secrets are in `/agents/secrets` but preflight checks elsewhere**:
+   ```bash
+   # Force preflight to use the correct path
+   sudo KASEKI_SECRETS_DIR=/agents/secrets kaseki-agent host preflight
+   ```
+
+**Debug Mode**: Enable logging to see where preflight is checking:
+
+```bash
+sudo KASEKI_DEBUG=1 kaseki-agent host preflight
+# Will show: "Discovered secrets directory from setup: /home/pi/secrets"
 ```
 
 ---
