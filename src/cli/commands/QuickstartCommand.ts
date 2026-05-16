@@ -313,18 +313,6 @@ export class QuickstartCommand extends BaseCommand {
       }
     }
 
-    // Try without sudo first (if we already own /agents or have root)
-    for (const cmd of cmds) {
-      const result = spawnSync('sh', ['-c', cmd], { stdio: 'pipe' });
-      if (result.status !== 0) {
-        // Fall back to sudo
-        const sudoResult = spawnSync('sudo', ['sh', '-c', cmd], { stdio: 'inherit' });
-        if (sudoResult.status !== 0) {
-          return { ok: false, error: `Command failed: sudo sh -c "${cmd}"` };
-        }
-      }
-    }
-
     return { ok: true, message: '✓ /agents created with UID 10000 ownership' };
   }
 
