@@ -39,6 +39,9 @@ awk '
 ' "$PROJECT_ROOT/kaseki-agent.sh" |
   sed \
     -e "s#/results/github-health-check.log#$HEALTH_LOG#g" \
+    -e "s#/agents/secrets/github_app_id#$SECRETS_DIR/github_app_id#g" \
+    -e "s#/agents/secrets/github_app_client_id#$SECRETS_DIR/github_app_client_id#g" \
+    -e "s#/agents/secrets/github_app_private_key#$SECRETS_DIR/github_app_private_key#g" \
     -e "s#/run/secrets/github_app_id#$SECRETS_DIR/github_app_id#g" \
     -e "s#/run/secrets/github_app_client_id#$SECRETS_DIR/github_app_client_id#g" \
     -e "s#/run/secrets/github_app_private_key#$SECRETS_DIR/github_app_private_key#g" \
