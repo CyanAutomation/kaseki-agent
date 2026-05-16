@@ -43,7 +43,7 @@ KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-200000}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
-HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-/run/secrets/openrouter_api_key}"
+HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-${HOME}/.kaseki/secrets.json}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
@@ -1100,10 +1100,11 @@ docker_args=(
   -e TMPDIR="/workspace/tmp"
   -e NPM_CONFIG_CACHE="/cache/npm-cache"
   -e npm_config_cache="/cache/npm-cache"
+  -e OPENROUTER_API_KEY_FILE="/agents/secrets/openrouter_api_key"
   -v "$WORKSPACE:/workspace:rw"
   -v "$CACHE:/cache:rw"
   -v "$RESULT_DIR:/results:rw"
-  -v "$SECRET_FILE:/run/secrets/openrouter_api_key:ro"
+  -v "$SECRET_FILE:/agents/secrets/openrouter_api_key:ro"
 )
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(

@@ -1373,7 +1373,7 @@ to opt out of GitHub publishing for a specific API run.
 | Variable | Default | Notes |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | Required (or use file) |
-| `OPENROUTER_API_KEY_FILE` | `/run/secrets/openrouter_api_key` | Preferred; mounted read-only |
+| `OPENROUTER_API_KEY_FILE` | `~/.kaseki/secrets.json` | Preferred; set by setup wizard |
 | `REPO_URL` | CyanAutomation/crudmapper | Target repository |
 | `GIT_REF` | main | Branch/tag/commit |
 

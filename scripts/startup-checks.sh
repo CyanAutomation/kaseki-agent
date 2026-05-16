@@ -661,6 +661,12 @@ check_api_key() {
   if [ -n "$api_key_file" ] && [ -f "$api_key_file" ]; then
     if [ -r "$api_key_file" ]; then
       log_pass "OPENROUTER_API_KEY_FILE is readable ($api_key_file)"
+      # Warn if using legacy Docker secrets path
+      if [[ "$api_key_file" == "/run/secrets/"* ]]; then
+        log_warn "Using legacy Docker secrets path: $api_key_file"
+        log_info "  Migrate to ~/.kaseki/secrets.json for better portability"
+        log_info "  See docs/TROUBLESHOOTING.md#migrating-from-legacy-docker-secrets"
+      fi
       return 0
     else
       log_error "OPENROUTER_API_KEY_FILE exists but is not readable ($api_key_file)"

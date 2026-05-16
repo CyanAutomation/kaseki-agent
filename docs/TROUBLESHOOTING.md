@@ -150,14 +150,33 @@ kubectl patch pv <pv-name> -p '{"spec":{"accessModes":["ReadWriteOnce"]}}'
 # Then update the Pod to allow permission modifications
 ```
 
-### Secret Paths Checked
+### Secret Paths (Modern)
 
 Startup checks verify these paths (in order):
 
-1. `/agents/secrets` — Primary mount (Docker Compose volume)
-2. `/run/secrets/` — Docker secrets mount
-3. `$HOME/secrets/` — User home fallback
-4. `~/.kaseki/secrets.json` — Init wizard output
+1. `OPENROUTER_API_KEY` — Inline environment variable (preferred for security)
+2. `OPENROUTER_API_KEY_FILE` — Explicit file path (can be set to any location)
+3. `~/.kaseki/secrets.json` — Default file location (created by `kaseki-agent init`)
+4. `/agents/secrets/openrouter_api_key` — Container mount point (Docker Compose)
+
+### Migrating from Legacy Docker Secrets
+
+If you are using Docker's native `secrets:` feature with `/run/secrets/openrouter_api_key`:
+
+```bash
+# Option 1: Use the new init wizard
+kaseki-agent init
+
+# Option 2: Set OPENROUTER_API_KEY_FILE explicitly
+export OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key
+./run-kaseki.sh
+
+# Option 3: Migrate to file-based secrets
+cp /run/secrets/openrouter_api_key ~/.kaseki/secrets.json
+chmod 600 ~/.kaseki/secrets.json
+```
+
+The modern approach (file-based) is more portable and works across Docker Compose, Kubernetes, and local execution.
 
 ### Verification
 
