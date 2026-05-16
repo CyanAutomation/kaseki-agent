@@ -1,16 +1,18 @@
 /**
- * Example: OpenClaw integration with Kaseki API
- *
- * This example shows how OpenClaw would use the Kaseki API to:
- * 1. Submit a coding task to kaseki-agent
- * 2. Monitor progress
- * 3. Retrieve and analyze results
+
+* Example: OpenClaw integration with Kaseki API
+*
+* This example shows how OpenClaw would use the Kaseki API to:
+* 1. Submit a coding task to kaseki-agent
+* 1. Monitor progress
+* 1. Retrieve and analyze results
  */
 
 import { KasekiApiClient } from './kaseki-api-client';
 
 /**
- * Example: Request a bug fix from kaseki-agent
+
+* Example: Request a bug fix from kaseki-agent
  */
 export async function exampleBugFixWorkflow(): Promise<void> {
   // Initialize client
@@ -100,7 +102,8 @@ export async function exampleBugFixWorkflow(): Promise<void> {
 }
 
 /**
- * Example: Batch submit multiple tasks and wait for all to complete
+
+* Example: Batch submit multiple tasks and wait for all to complete
  */
 export async function exampleBatchWorkflow(): Promise<void> {
   const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
@@ -153,7 +156,8 @@ export async function exampleBatchWorkflow(): Promise<void> {
 }
 
 /**
- * Example: Stream logs in real-time (polling)
+
+* Example: Stream logs in real-time (polling)
  */
 export async function exampleStreamLogs(runId: string): Promise<void> {
   const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
@@ -186,7 +190,8 @@ export async function exampleStreamLogs(runId: string): Promise<void> {
 }
 
 /**
- * Example: Check queue status
+
+* Example: Check queue status
  */
 export async function exampleCheckQueue(): Promise<void> {
   const client = new KasekiApiClient('<http://kaseki-host:8080>', 'sk-your-api-key');
@@ -197,7 +202,7 @@ export async function exampleCheckQueue(): Promise<void> {
   if (health.status === 'healthy' || health.status === 'degraded') {
     const queue = health.errors;
     console.log(`Queue status:`);
-    console.log(`  Status: ${health.status}`);
+    console.log(`Status: ${health.status}`);
   }
 
   // List recent runs
@@ -207,7 +212,7 @@ export async function exampleCheckQueue(): Promise<void> {
     const duration = run.completedAt
       ? Math.round((new Date(run.completedAt).getTime() - new Date(run.createdAt).getTime()) / 1000)
       : '?';
-    console.log(`  ${run.id}: ${run.status} (${duration}s)`);
+    console.log(`${run.id}: ${run.status} (${duration}s)`);
   }
 }
 
