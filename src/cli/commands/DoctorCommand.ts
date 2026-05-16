@@ -3,7 +3,7 @@
  * Health checks and dependency validation
  */
 
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { existsSync, accessSync, readFileSync, constants as fsConstants } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -20,10 +20,13 @@ interface Check {
 }
 
 export class DoctorCommand extends BaseCommand {
+  private isJsonOutput = false;
+
   async execute(args: string[]): Promise<number> {
     try {
       const { flags } = this.parseArgs(args);
       const isJson = flags.has('json');
+      this.isJsonOutput = isJson;
       const _isFix = flags.has('fix');
       // Note: --verbose is parsed but not yet used in non-verbose output
 
@@ -83,6 +86,13 @@ export class DoctorCommand extends BaseCommand {
   }
 
   /**
+   * Child process stdio for commands that need stdout while keeping JSON stdout pure.
+   */
+  private getOutputStdio(): ['ignore', 'pipe', 'ignore' | 'pipe'] {
+    return ['ignore', 'pipe', this.isJsonOutput ? 'ignore' : 'pipe'];
+  }
+
+  /**
    * Check Docker installation and daemon
    */
   private async checkDocker(): Promise<Check> {
@@ -109,7 +119,10 @@ export class DoctorCommand extends BaseCommand {
    */
   private async checkNodejs(): Promise<Check> {
     try {
-      const version = execSync('node --version', { encoding: 'utf-8' }).trim();
+      const version = execSync('node --version', {
+        encoding: 'utf-8',
+        stdio: this.getOutputStdio(),
+      }).trim();
       const major = parseInt(version.replace('v', '').split('.')[0], 10);
       if (major >= 24) {
         return {
@@ -138,7 +151,10 @@ export class DoctorCommand extends BaseCommand {
    */
   private async checkNpm(): Promise<Check> {
     try {
-      const version = execSync('npm --version', { encoding: 'utf-8' }).trim();
+      const version = execSync('npm --version', {
+        encoding: 'utf-8',
+        stdio: this.getOutputStdio(),
+      }).trim();
       return {
         name: 'npm',
         status: 'pass',
@@ -158,7 +174,10 @@ export class DoctorCommand extends BaseCommand {
    */
   private async checkGit(): Promise<Check> {
     try {
-      const version = execSync('git --version', { encoding: 'utf-8' }).trim();
+      const version = execSync('git --version', {
+        encoding: 'utf-8',
+        stdio: this.getOutputStdio(),
+      }).trim();
       return {
         name: 'git',
         status: 'pass',
@@ -189,7 +208,10 @@ export class DoctorCommand extends BaseCommand {
     const home = os.homedir();
 
     const candidates: Array<{ filePath: string; source: string }> = [
-      { filePath: this.configManager.get(configKey, ''), source: `~/.kaseki/config.json (${configKey})` },
+      {
+        filePath: this.configManager.get(configKey, ''),
+        source: `~/.kaseki/config.json (${configKey.replace(/[^\w.-]/g, '_')})`,
+      },
       { filePath: process.env[envVar] ?? '', source: `$${envVar}` },
       { filePath: path.join(home, '.kaseki', 'secrets', filename), source: `~/.kaseki/secrets/${filename}` },
       { filePath: path.join(home, 'secrets', filename), source: `~/secrets/${filename}` },
@@ -378,7 +400,7 @@ export class DoctorCommand extends BaseCommand {
       // Check if image exists locally
       let imageExists = false;
       try {
-        execSync(`docker inspect ${image} > /dev/null 2>&1`, { stdio: 'ignore' });
+        execFileSync('docker', ['inspect', image], { stdio: 'ignore' });
         imageExists = true;
       } catch {
         return {
@@ -392,7 +414,15 @@ export class DoctorCommand extends BaseCommand {
       // If image exists, verify entrypoint script is accessible
       if (imageExists) {
         try {
-          execSync(`docker run --rm --entrypoint /bin/test ${image} -x /usr/local/bin/kaseki-entrypoint`, {
+          execFileSync('docker', [
+            'run',
+            '--rm',
+            '--entrypoint',
+            '/bin/test',
+            image,
+            '-x',
+            '/usr/local/bin/kaseki-entrypoint',
+          ], {
             stdio: 'ignore',
             timeout: 5000,
           });
@@ -437,12 +467,15 @@ export class DoctorCommand extends BaseCommand {
     const label = rootExists ? kasekiRoot : `/ (${kasekiRoot} not yet created)`;
 
     try {
-      const result = execSync(`df -B1 '${checkPath.replace(/'/g, "'\\''")}' | awk 'NR==2 {print $4}'`, {
+      const result = execFileSync('df', ['-B1', checkPath], {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
+      const lines = result.split(/\r?\n/).filter(line => line.trim());
+      const dataLine = lines.length > 1 ? lines[lines.length - 1] : '';
+      const availableColumn = dataLine.trim().split(/\s+/)[3] ?? '';
 
-      const availableBytes = parseInt(result, 10);
+      const availableBytes = parseInt(availableColumn, 10);
       if (isNaN(availableBytes)) {
         return {
           name: 'Disk Space',
@@ -515,7 +548,7 @@ export class DoctorCommand extends BaseCommand {
       try {
         console.log(`Pulling Docker image: ${this.configManager.get('docker.image')}...`);
         const image = this.configManager.get('docker.image', '');
-        execSync(`docker pull ${image}`, { stdio: 'inherit' });
+        execFileSync('docker', ['pull', image], { stdio: 'inherit' });
         console.log('✓ Image pulled successfully');
       } catch {
         console.log('❌ Failed to pull Docker image');
