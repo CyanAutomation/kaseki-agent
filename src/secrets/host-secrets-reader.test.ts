@@ -27,7 +27,22 @@ describe('host secrets reader', () => {
     );
   });
 
+  test('trims whitespace from secret files', () => {
+    fs.writeFileSync(path.join(secretsDir, 'test-key'), '  secret-value  \n\n', { mode: 0o600 });
+
+    expect(readHostSecret('test-key')).toBe('secret-value');
+  });
+
+  test('returns null if secret not found in any location', () => {
+    expect(readHostSecret('nonexistent-key')).toBeNull();
+  });
+
   test('rejects path traversal secret names', () => {
     expect(() => readHostSecret('../openrouter_api_key')).toThrow('Invalid secret name');
   });
+
+  test('rejects secret names with slashes', () => {
+    expect(() => readHostSecret('foo/bar')).toThrow('Invalid secret name');
+  });
 });
+
