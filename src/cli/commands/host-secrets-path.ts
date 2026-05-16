@@ -26,6 +26,10 @@ function getSudoUserHome(env: NodeJS.ProcessEnv): string | null {
   const getent = spawnSync('getent', ['passwd', sudoUser], {
     encoding: 'utf8',
   });
+  if (getent.error) {
+    // getent command not found or failed to execute
+    return `/home/${sudoUser}`;
+  }
   if (getent.status === 0 && getent.stdout) {
     const home = getent.stdout.trim().split(':')[5];
     if (home) {
