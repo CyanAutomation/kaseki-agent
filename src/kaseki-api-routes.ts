@@ -473,7 +473,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       '--cap-drop',
       'ALL',
       '-u',
-      `${process.getuid?.() ?? 10000}:${process.getgid?.() ?? 10000}`,
+      `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
       '-e',
       'OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key',
       '-v',
