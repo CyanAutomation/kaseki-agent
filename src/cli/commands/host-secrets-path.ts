@@ -19,7 +19,7 @@ export function configureHostSecretsDirForPreflight(env: NodeJS.ProcessEnv = pro
 
 function getSudoUserHome(env: NodeJS.ProcessEnv): string | null {
   const sudoUser = env.SUDO_USER;
-  if (!sudoUser || sudoUser === 'root') {
+  if (!sudoUser || sudoUser === 'root' || !/^[a-z_][a-z0-9_-]*\$?$/.test(sudoUser)) {
     return null;
   }
 
