@@ -331,7 +331,8 @@ On a fresh host, run the host setup helper before starting the API, or any time
 `/api/preflight` reports missing results/template directories:
 
 ```bash
-sudo kaseki-agent host setup --fix --recreate-api
+sudo npm install -g @cyanautomation/kaseki-agent@latest
+sudo kaseki-agent host setup --fix --recreate-api --wait-ready
 ```
 
 The API container runs as the `/agents` owner by default
@@ -362,9 +363,12 @@ After deployment, verify controller readiness with the
 authenticated preflight endpoint:
 
 ```bash
-curl -H "Authorization: Bearer $KASEKI_API_KEYS" \
-  http://localhost:8080/api/preflight
+sudo kaseki-agent host preflight
 ```
+
+Use `/ready` and authenticated `/api/preflight` for readiness. Docker health is
+useful, but preflight explains host path, secret, Docker socket, template, and
+worker-container problems directly.
 
 ## Secret File Setup
 
@@ -419,8 +423,8 @@ sk-api-key-3
 EOF
 chmod 600 /agents/secrets/kaseki_api_keys
 
-# Verify
-cat /agents/secrets/kaseki_api_keys
+# Verify without printing the secret value
+test -s /agents/secrets/kaseki_api_keys
 ```
 
 #### 3. GitHub App Credentials (Optional, for PR creation)

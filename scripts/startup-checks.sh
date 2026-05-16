@@ -18,7 +18,7 @@ KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
 KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"
 KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
-MODE="${1:-all}"  # all, permissions, bootstrap, quick, boot, or baseline-validation
+MODE="${1:-all}"  # all, permissions, bootstrap, quick, boot, baseline-validation, or worker
 
 # Current UID inside container (typically UID 10000 for non-root user)
 CONTAINER_UID="${CONTAINER_UID:-$(id -u)}"
@@ -231,6 +231,32 @@ check_subdirectories() {
   return "$exit_code"
 }
 
+check_worker_mounts() {
+  local -a worker_paths=(/workspace /results /cache)
+  local exit_code=0
+  local path
+
+  log_info "Checking worker container mounts..."
+
+  for path in "${worker_paths[@]}"; do
+    if [ ! -d "$path" ]; then
+      log_error "$path is not mounted"
+      exit_code=2
+      continue
+    fi
+
+    if [ ! -w "$path" ]; then
+      log_error "$path exists but is not writable by UID $CONTAINER_UID"
+      exit_code=2
+      continue
+    fi
+
+    log_pass "$path is writable"
+  done
+
+  return "$exit_code"
+}
+
 check_bootstrap_status() {
   log_info "Checking bootstrap status..."
   
@@ -344,6 +370,13 @@ main() {
       check_kaseki_root || overall_exit=$?
       ;;
 
+    worker)
+      # Ephemeral worker containers do not mount /agents. They receive scoped
+      # workspace, results, and cache mounts from run-kaseki.sh.
+      check_worker_mounts || overall_exit=$?
+      check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      ;;
+
     baseline-validation)
       # Startup smoke test mode used by API dry-runs before repository validation.
       check_kaseki_root || overall_exit=$?
@@ -353,7 +386,7 @@ main() {
     
     *)
       log_error "Unknown mode: $MODE"
-      echo "Usage: $0 [all|permissions|bootstrap|quick|boot|baseline-validation]"
+      echo "Usage: $0 [all|permissions|bootstrap|quick|boot|baseline-validation|worker]"
       return 1
       ;;
   esac

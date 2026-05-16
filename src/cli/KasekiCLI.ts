@@ -239,11 +239,13 @@ USAGE
       host: `host - prepare or recover a Docker Compose API host
 
 USAGE
-  kaseki-agent host setup [--fix] [--recreate-api]
+  kaseki-agent host setup [--fix] [--recreate-api] [--wait-ready]
+  kaseki-agent host preflight [--url URL]
 
 EXAMPLES
   kaseki-agent host setup
-  sudo kaseki-agent host setup --fix --recreate-api`,
+  sudo kaseki-agent host setup --fix --recreate-api --wait-ready
+  sudo kaseki-agent host preflight`,
       serve: `serve - start the local REST API service
 
 USAGE
