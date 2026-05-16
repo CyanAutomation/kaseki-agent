@@ -52,25 +52,26 @@ const getSecondarySecretsDir = (): string => {
  * @throws Error if file exists but cannot be read (permissions, etc.)
  */
 export function readHostSecret(secretName: string): string | null {
-  // Validate secret name to prevent path traversal
-  if (secretName.includes('/') || secretName.includes('..')) {
-    throw new Error(`Invalid secret name: ${secretName}`);
+  const secretPath = resolveHostSecretPath(secretName);
+  if (!secretPath) {
+    return null;
   }
+
+  return readSecretFromPath(secretPath);
+}
+
+export function resolveHostSecretPath(secretName: string): string | null {
+  validateSecretName(secretName);
 
   const primarySecretsDir = getPrimarySecretsDir();
   const primaryPath = path.join(primarySecretsDir, secretName);
   const secondaryPath = path.join(getSecondarySecretsDir(), secretName);
 
-  // Try primary location first
-  const primaryValue = readSecretFromPath(primaryPath);
-  if (primaryValue !== null) {
-    return primaryValue;
+  if (fs.existsSync(primaryPath)) {
+    return primaryPath;
   }
 
-  // Fall back to secondary location
-  const secondaryValue = readSecretFromPath(secondaryPath);
-  if (secondaryValue !== null) {
-    // Warn if /agents/secrets exists but we're using a different path
+  if (fs.existsSync(secondaryPath)) {
     const agentsSecretsPath = path.join('/agents/secrets', secretName);
     if (primarySecretsDir !== '/agents/secrets' && fs.existsSync(agentsSecretsPath)) {
       logger.warn(
@@ -78,10 +79,9 @@ export function readHostSecret(secretName: string): string | null {
         'If you intended to use /agents/secrets, run: sudo kaseki-agent host setup --fix'
       );
     }
-    return secondaryValue;
+    return secondaryPath;
   }
 
-  // Neither location has the secret
   return null;
 }
 
@@ -94,39 +94,61 @@ export function readHostSecret(secretName: string): string | null {
  * @throws Error if file exists but cannot be read
  */
 function readSecretFromPath(filePath: string): string | null {
-  // Check if file exists
   if (!fs.existsSync(filePath)) {
     return null;
   }
 
+  const stat = fs.statSync(filePath);
+  if (stat.isDirectory()) {
+    throw new Error(
+      `Secret path is a directory: ${describeSecretPath(filePath, stat)}. Replace it with a file containing the secret.`
+    );
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(
+      `Secret path is not a regular file: ${describeSecretPath(filePath, stat)}. Replace it with a regular secret file.`
+    );
+  }
+
   try {
-    // Get file stats for cache validation
-    const stat = fs.statSync(filePath);
+    fs.accessSync(filePath, fs.constants.R_OK);
+  } catch {
+    throw new Error(
+      `Secret file is not readable: ${describeSecretPath(filePath, stat)}. Fix ownership or permissions so the Kaseki process can read it.`
+    );
+  }
 
-    // Check if cached value is still valid
-    const cached = secretCache.get(filePath);
-    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-      return cached.value;
-    }
+  const cached = secretCache.get(filePath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return cached.value;
+  }
 
-    // Read file content
+  try {
     const value = fs.readFileSync(filePath, 'utf8').trim();
-
-    // Cache the value
     secretCache.set(filePath, {
       value,
       mtimeMs: stat.mtimeMs,
       size: stat.size,
     });
-
     return value;
   } catch (error) {
-    // File exists but cannot be read
     const errorMsg = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Failed to read secret from ${filePath}: ${errorMsg}`
+      `Failed to read secret from ${describeSecretPath(filePath, stat)}: ${errorMsg}`
     );
   }
+}
+
+function validateSecretName(secretName: string): void {
+  if (secretName.includes('/') || secretName.includes('..')) {
+    throw new Error('Invalid secret name: ' + secretName);
+  }
+}
+
+function describeSecretPath(filePath: string, stat: fs.Stats): string {
+  const mode = (stat.mode & 0o777).toString(8).padStart(3, '0');
+  return filePath + ' (mode ' + mode + ', uid:gid ' + stat.uid + ':' + stat.gid + ')';
 }
 
 /**

@@ -1,6 +1,7 @@
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
+  resolveHostSecretPath: jest.fn((name) => `/agents/secrets/${name}`),
   getSecretLocations: jest.fn((name) => ({
     primary: `/agents/secrets/${name}`,
     secondary: `/home/user/secrets/${name}`,

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { getSecretLocations, readHostSecret } from './host-secrets-reader';
+import { getSecretLocations, readHostSecret, resolveHostSecretPath } from './host-secrets-reader';
 
 describe('host secrets reader', () => {
   const originalEnv = process.env;
@@ -43,6 +43,19 @@ describe('host secrets reader', () => {
 
   test('rejects secret names with slashes', () => {
     expect(() => readHostSecret('foo/bar')).toThrow('Invalid secret name');
+  });
+
+  test('reports when a configured secret path is a directory', () => {
+    fs.mkdirSync(path.join(secretsDir, 'openrouter_api_key'));
+
+    expect(() => readHostSecret('openrouter_api_key')).toThrow(/Secret path is a directory: .*openrouter_api_key .*Replace it with a file/);
+  });
+
+  test('resolves the selected host secret path without reading the value', () => {
+    const secretPath = path.join(secretsDir, 'openrouter_api_key');
+    fs.writeFileSync(secretPath, 'test-key\n', { mode: 0o600 });
+
+    expect(resolveHostSecretPath('openrouter_api_key')).toBe(secretPath);
   });
 });
 
