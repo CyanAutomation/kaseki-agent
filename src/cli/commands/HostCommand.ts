@@ -10,6 +10,7 @@ import { existsSync } from 'fs';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
 import { readHostSecret, getSecretLocations } from '../../secrets/host-secrets-reader';
+import { configureHostSecretsDirForPreflight } from './host-secrets-path';
 
 const logger = createLogger('host-cmd');
 
@@ -145,13 +146,14 @@ EXAMPLES
     const url = urlArgIndex >= 0 && args[urlArgIndex + 1]
       ? args[urlArgIndex + 1]
       : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/preflight';
+    configureHostSecretsDirForPreflight();
     const token = readHostSecret('kaseki_api_keys')?.split(/\r?\n/).find((line) => line.trim())?.trim();
 
     if (!token) {
       const locations = getSecretLocations('kaseki_api_keys');
       console.error('Could not read kaseki_api_keys from host secrets.');
       console.error(`Checked: ${locations.primary} and ${locations.secondary}`);
-      console.error('If permissions were normalized for the API container, rerun this command with sudo or add your admin user to the container secret group.');
+      console.error('If your secrets live somewhere else, set KASEKI_HOST_SECRETS_DIR=/path/to/secrets or KASEKI_SECRETS_DIR=/path/to/secrets.');
       return 1;
     }
 
@@ -169,4 +171,5 @@ EXAMPLES
       return 1;
     }
   }
+
 }
