@@ -155,17 +155,17 @@ bootstrap_checkout_if_possible() {
     return 0
   fi
   if [ -x "$KASEKI_CHECKOUT_DIR/scripts/kaseki-activate.sh" ]; then
-    KASEKI_TEMPLATE_DIR="$KASEKI_TEMPLATE_DIR" \
-    KASEKI_CHECKOUT_DIR="$KASEKI_CHECKOUT_DIR" \
+    export KASEKI_TEMPLATE_DIR="$KASEKI_TEMPLATE_DIR"
+    export KASEKI_CHECKOUT_DIR="$KASEKI_CHECKOUT_DIR"
     "$KASEKI_CHECKOUT_DIR/scripts/kaseki-activate.sh" --controller --replace-stale bootstrap
     return $?
   fi
   if [ -x "$SCRIPT_DIR/kaseki-install.sh" ]; then
     printf 'bootstrapping checkout with %s/kaseki-install.sh\n' "$SCRIPT_DIR"
-    HOME="$KASEKI_EFFECTIVE_HOST_HOME" \
-    KASEKI_HOST_SECRETS_DIR="$KASEKI_HOST_SECRETS_DIR" \
-    KASEKI_CONTROLLER_MODE=1 \
-    KASEKI_REPLACE_STALE=1 \
+    export HOME="$KASEKI_EFFECTIVE_HOST_HOME"
+    export KASEKI_HOST_SECRETS_DIR="$KASEKI_HOST_SECRETS_DIR"
+    export KASEKI_CONTROLLER_MODE=1
+    export KASEKI_REPLACE_STALE=1
     "$SCRIPT_DIR/kaseki-install.sh"
     return $?
   fi

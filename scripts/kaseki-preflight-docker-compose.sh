@@ -13,8 +13,11 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Exit codes
+# shellcheck disable=SC2034
 EXIT_OK=0
+# shellcheck disable=SC2034
 EXIT_ERRORS=1
+# shellcheck disable=SC2034
 EXIT_WARNINGS=0  # Warnings are non-blocking
 
 # Counters
@@ -62,10 +65,10 @@ check_agents_directory() {
   log_pass "/agents directory exists"
   
   # Check ownership
-  local owner_uid=$(stat -c %U /agents 2>/dev/null || stat -f %Su /agents 2>/dev/null)
-  local owner_gid=$(stat -c %G /agents 2>/dev/null || stat -f %Sg /agents 2>/dev/null)
-  local numeric_uid=$(stat -c %u /agents 2>/dev/null || stat -f %u /agents 2>/dev/null)
-  local numeric_gid=$(stat -c %g /agents 2>/dev/null || stat -f %g /agents 2>/dev/null)
+  local owner_uid; owner_uid=$(stat -c %U /agents 2>/dev/null || stat -f %Su /agents 2>/dev/null)
+  local owner_gid; owner_gid=$(stat -c %G /agents 2>/dev/null || stat -f %Sg /agents 2>/dev/null)
+  local numeric_uid; numeric_uid=$(stat -c %u /agents 2>/dev/null || stat -f %u /agents 2>/dev/null)
+  local numeric_gid; numeric_gid=$(stat -c %g /agents 2>/dev/null || stat -f %g /agents 2>/dev/null)
   
   if [[ "$numeric_uid" != "10000" ]] || [[ "$numeric_gid" != "10000" ]]; then
     log_error "/agents is owned by $owner_uid:$owner_gid (UID:GID $numeric_uid:$numeric_gid), should be 10000:10000"
@@ -77,7 +80,7 @@ check_agents_directory() {
   log_pass "/agents is owned by UID:GID 10000:10000"
   
   # Check permissions (should be at least rwx for owner, rx for others)
-  local perms=$(stat -c %a /agents 2>/dev/null || stat -f %A /agents 2>/dev/null)
+  local perms; perms=$(stat -c %a /agents 2>/dev/null || stat -f %A /agents 2>/dev/null)
   if [[ "$perms" != "755" && "$perms" != "750" && "$perms" != "700" ]]; then
     log_warning "/agents has permissions $perms (expected 755, 750, or 700)"
     log_info "Suggestion: Run on host:"
@@ -136,7 +139,7 @@ check_docker_compose() {
 # ============================================================================
 check_compose_file() {
   log_header "Checking docker-compose.yml..."
-  
+  # shellcheck disable=SC2120
   local compose_file="${1:-docker-compose.yml}"
   
   if [[ ! -f "$compose_file" ]]; then
@@ -223,7 +226,7 @@ check_secrets_directory() {
 check_disk_space() {
   log_header "Checking disk space..."
   
-  local available_mb=$(df /agents 2>/dev/null | tail -1 | awk '{print $4}')
+  local available_mb; available_mb=$(df /agents 2>/dev/null | tail -1 | awk '{print $4}')
   
   if [[ -z "$available_mb" ]]; then
     log_warning "Could not determine disk space for /agents"
@@ -284,7 +287,7 @@ main() {
   check_agents_directory || true
   check_docker_daemon || true
   check_docker_compose || true
-  check_compose_file || true
+  check_compose_file "$@" || true
   check_environment_variables || true
   check_secrets_directory || true
   check_disk_space || true
