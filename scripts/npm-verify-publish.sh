@@ -108,7 +108,7 @@ while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
       echo "  ${PACKAGE_NAME}@${VERSION}"
       
       # Show tarball URL
-      TARBALL_URL=$(jq -r '.dist.tarball // empty' /tmp/npm-verify-${VERSION}.json 2>/dev/null || echo "")
+      TARBALL_URL=$(jq -r '.dist.tarball // empty' "/tmp/npm-verify-${VERSION}.json" 2>/dev/null || echo "")
       if [[ -n "${TARBALL_URL}" ]]; then
         echo "  Tarball: ${TARBALL_URL}"
       fi
