@@ -51,7 +51,7 @@ export class RunCommand extends BaseCommand {
         return 1;
       }
 
-      const runRequest = this.buildRunRequest(repoUrl, gitRef, taskPrompt);
+      const runRequest = this.buildRunRequest(repoUrl, gitRef, taskPrompt, flags);
       const apiClient = this.apiClientFactory(this.configManager);
 
       console.log('🚀 Kaseki Agent Runner\n');
@@ -79,7 +79,12 @@ export class RunCommand extends BaseCommand {
     }
   }
 
-  private buildRunRequest(repoUrl: string, gitRef: string, taskPrompt: string): RunRequest {
+  private buildRunRequest(
+    repoUrl: string,
+    gitRef: string,
+    taskPrompt: string,
+    flags: Map<string, string | boolean>
+  ): RunRequest {
     const request: Record<string, unknown> = {
       repoUrl,
       ref: gitRef,
@@ -115,6 +120,18 @@ export class RunCommand extends BaseCommand {
     const timeoutSeconds = this.configManager.get<number>('agent.timeout_seconds', 0);
     if (timeoutSeconds) {
       request.timeoutSeconds = timeoutSeconds;
+    }
+
+    if (
+      process.env.KASEKI_DRY_RUN === '1' ||
+      this.configManager.get<boolean>('debug.dry_run', false) ||
+      flags.has('dry-run') ||
+      flags.has('startup-check')
+    ) {
+      request.startupCheck = true;
+      request.startupCheckMode = flags.has('baseline-validation') ? 'baseline-validation' : 'boot';
+      request.taskMode = 'inspect';
+      request.publishMode = 'none';
     }
 
     return RunRequestSchema.parse(request);
