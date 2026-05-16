@@ -35,10 +35,9 @@ For a Docker Compose API host, prepare storage and secrets before starting the
 service:
 
 ```bash
-sudo kaseki-agent host setup --fix --recreate-api
-
-curl -H "Authorization: Bearer $(cat ~/secrets/kaseki_api_keys)" \
-  http://localhost:8080/api/preflight
+sudo npm install -g @cyanautomation/kaseki-agent@latest
+sudo kaseki-agent host setup --fix --recreate-api --wait-ready
+sudo kaseki-agent host preflight
 ```
 
 The host prep helper creates `/agents`, `/agents/kaseki-results`,
@@ -46,8 +45,11 @@ The host prep helper creates `/agents`, `/agents/kaseki-results`,
 then normalizes `~/secrets` to directory mode `0750` and file mode `0640` with
 group `10000`. It is sudo-aware and uses the original invoking user's
 `~/secrets` by default; set `KASEKI_HOST_SECRETS_DIR=/path/to/secrets` for a
-non-standard location. If preflight reports a deleted bind mount, rerun the
-same command with `--recreate-api`.
+non-standard location. The `host` command requires a current npm CLI
+(`1.29.1` or newer). If preflight reports a deleted bind mount, rerun the same
+command with `--recreate-api`. Prefer `/ready` and authenticated
+`/api/preflight` over `docker ps` alone; Docker health can lag or hide
+permission issues that readiness diagnostics explain directly.
 
 ### Without Global Install
 

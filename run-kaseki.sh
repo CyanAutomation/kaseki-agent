@@ -822,6 +822,30 @@ SUMMARY
   write_failure_json "$exit_code" "$failed_command" "$message"
 }
 
+write_worker_failure_artifacts_if_missing() {
+  local exit_code="$1"
+  local message stderr_tail stdout_tail
+
+  if [ "$exit_code" -eq 0 ]; then
+    return 0
+  fi
+  if [ -s "$RESULT_DIR/failure.json" ] || [ -s "$RESULT_DIR/metadata.json" ]; then
+    return 0
+  fi
+
+  stderr_tail="$(tail -20 "$RESULT_DIR/stderr.log" 2>/dev/null || true)"
+  stdout_tail="$(tail -20 "$RESULT_DIR/stdout.log" 2>/dev/null || true)"
+  if [ -n "$stderr_tail" ]; then
+    message="Worker container exited with code $exit_code. Stderr tail: $stderr_tail"
+  elif [ -n "$stdout_tail" ]; then
+    message="Worker container exited with code $exit_code. Stdout tail: $stdout_tail"
+  else
+    message="Worker container exited with code $exit_code before writing diagnostic artifacts."
+  fi
+
+  write_host_metadata_failure "$exit_code" "worker container startup" "$message"
+}
+
 record_host_stage_timing() {
   local stage="$1"
   local exit_code="$2"
@@ -1061,7 +1085,8 @@ docker_args=(
   -e KASEKI_RESTORE_DISALLOWED_CHANGES="$KASEKI_RESTORE_DISALLOWED_CHANGES"
   -e KASEKI_NPM_OMIT_DEV="$KASEKI_NPM_OMIT_DEV"
   -e KASEKI_DRY_RUN="$KASEKI_DRY_RUN"
-  -e KASEKI_STARTUP_CHECK_MODE="$KASEKI_STARTUP_CHECK_MODE"
+  -e KASEKI_STARTUP_CHECK_MODE="worker"
+  -e KASEKI_REQUESTED_STARTUP_CHECK_MODE="$KASEKI_STARTUP_CHECK_MODE"
   -e KASEKI_BASELINE_VALIDATION_DRY_RUN="$KASEKI_BASELINE_VALIDATION_DRY_RUN"
   -e KASEKI_LOG_DIR="/results"
   -e TASK_PROMPT="$TASK_PROMPT"
@@ -1135,7 +1160,7 @@ printf "[progress] startup check: completed\n"'
 fi
 
 set +e
-docker "${docker_args[@]}"
+docker "${docker_args[@]}" > >(tee -a "$RESULT_DIR/stdout.log") 2> >(tee -a "$RESULT_DIR/stderr.log" >&2)
 DOCKER_EXIT="$?"
 set -e
 
@@ -1143,6 +1168,7 @@ END_EPOCH="$(date +%s)"
 printf 'elapsed_seconds=%s\n' "$((END_EPOCH - START_EPOCH))" > "$RESULT_DIR/resource.time"
 printf '%s\n' "$DOCKER_EXIT" > "$RESULT_DIR/host_docker_exit_code"
 persist_host_status "$DOCKER_EXIT"
+write_worker_failure_artifacts_if_missing "$DOCKER_EXIT"
 
 write_cleanup_log
 promote_staging_dirs
