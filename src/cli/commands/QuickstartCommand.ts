@@ -284,7 +284,7 @@ export class QuickstartCommand extends BaseCommand {
 
     // Create directories individually with array-based arguments (prevents injection)
     const dirsToCreate = ['/agents', ...AGENTS_SUBDIRS.map((d) => `/agents/${d}`)];
-    
+
     for (const dir of dirsToCreate) {
       const mkdirResult = spawnSync('mkdir', ['-p', dir], { stdio: 'pipe' });
       if (mkdirResult.status !== 0) {
@@ -329,7 +329,7 @@ export class QuickstartCommand extends BaseCommand {
     // Get docker GID for socket access
     let dockerGid = '985';
     try {
-      const result = execSync("getent group docker | cut -d: -f3", { encoding: 'utf-8' }).trim();
+      const result = execSync('getent group docker | cut -d: -f3', { encoding: 'utf-8' }).trim();
       if (result) dockerGid = result;
     } catch { /* use default */ }
 
@@ -344,7 +344,7 @@ export class QuickstartCommand extends BaseCommand {
       '-e', 'KASEKI_API_LOG_LEVEL=info',
       '-e', 'KASEKI_API_MAX_CONCURRENT_RUNS=3',
       '-e', 'KASEKI_RESULTS_DIR=/agents/kaseki-results',
-      '-e', `KASEKI_SECRETS_DIR=/agents/secrets`,
+      '-e', 'KASEKI_SECRETS_DIR=/agents/secrets',
       '-e', `KASEKI_HOST_SECRETS_DIR=${secretsDir}`,
       '-e', `KASEKI_CONTAINER_USER=${CONTAINER_UID}:${CONTAINER_UID}`,
       '-e', `KASEKI_CONTAINER_UID=${CONTAINER_UID}`,
@@ -352,10 +352,10 @@ export class QuickstartCommand extends BaseCommand {
       '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=3600',
       '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
       '-e', `KASEKI_API_KEYS=${apiKey}`,
-      '-e', `OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key`,
-      '-e', `GITHUB_APP_ID_FILE=/agents/secrets/github_app_id`,
-      '-e', `GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id`,
-      '-e', `GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key`,
+      '-e', 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key',
+      '-e', 'GITHUB_APP_ID_FILE=/agents/secrets/github_app_id',
+      '-e', 'GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id',
+      '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key',
       '-v', '/agents:/agents:rw',
       '-v', `${secretsDir}:/agents/secrets:ro`,
       '-v', '/var/run/docker.sock:/var/run/docker.sock',
