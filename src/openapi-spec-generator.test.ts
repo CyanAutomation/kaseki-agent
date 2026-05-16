@@ -3,6 +3,10 @@
  */
 
 import { generateOpenAPISpec } from '../src/openapi-spec-generator';
+import {
+  forEachPathOperation,
+  assertAllPathsHaveOperations
+} from './__test-utils/openapi-assertions';
 
 describe('OpenAPI Spec Generator', () => {
   let spec: Record<string, unknown>;
@@ -81,11 +85,7 @@ describe('OpenAPI Spec Generator', () => {
 
     test('all paths have operations defined', () => {
       const paths = spec.paths as Record<string, Record<string, unknown>>;
-      Object.values(paths).forEach((pathItem) => {
-        const methods = ['get', 'post', 'put', 'delete', 'patch'];
-        const hasOperation = methods.some((method) => method in pathItem);
-        expect(hasOperation).toBe(true);
-      });
+      assertAllPathsHaveOperations(paths);
     });
 
     test('all endpoints have descriptions', () => {
@@ -101,12 +101,10 @@ describe('OpenAPI Spec Generator', () => {
 
     test('all endpoints have responses defined', () => {
       const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            expect((operation as Record<string, unknown>).responses).toBeDefined();
-          }
-        });
+      forEachPathOperation(paths, (_, method, operation) => {
+        if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+          expect((operation as Record<string, unknown>).responses).toBeDefined();
+        }
       });
     });
   });
@@ -205,18 +203,16 @@ describe('OpenAPI Spec Generator', () => {
     test('successful operations include 200 or 202 responses', () => {
       const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
 
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const responses = (operation as Record<string, unknown>).responses;
-            if (responses) {
-              const responseCodes = Object.keys(responses as Record<string, unknown>);
-              // Most operations should have at least one 2xx response
-              const has2xx = responseCodes.some((code) => code.startsWith('2'));
-              expect(has2xx || responseCodes.includes('default')).toBe(true);
-            }
+      forEachPathOperation(paths, (_, method, operation) => {
+        if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
+          const responses = (operation as Record<string, unknown>).responses;
+          if (responses) {
+            const responseCodes = Object.keys(responses as Record<string, unknown>);
+            // Most operations should have at least one 2xx response
+            const has2xx = responseCodes.some((code) => code.startsWith('2'));
+            expect(has2xx || responseCodes.includes('default')).toBe(true);
           }
-        });
+        }
       });
     });
 
@@ -227,7 +223,7 @@ describe('OpenAPI Spec Generator', () => {
       endpoints.forEach((endpoint) => {
         const pathItem = paths[endpoint];
         if (pathItem) {
-          Object.entries(pathItem).forEach(([method, operation]) => {
+          forEachPathOperation(pathItem, (_, method, operation) => {
             if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
               const responses = (operation as Record<string, unknown>).responses;
               if (responses) {
@@ -264,15 +260,13 @@ describe('OpenAPI Spec Generator', () => {
       const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
 
       const usedTags = new Set<string>();
-      Object.values(paths).forEach((pathItem) => {
-        Object.values(pathItem).forEach((operation) => {
-          if (typeof operation === 'object' && operation !== null && 'tags' in operation) {
-            const operationTags = (operation as Record<string, unknown>).tags;
-            if (Array.isArray(operationTags)) {
-              operationTags.forEach((tag) => usedTags.add(tag as string));
-            }
+      forEachPathOperation(paths, (_, __, operation) => {
+        if (typeof operation === 'object' && operation !== null && 'tags' in operation) {
+          const operationTags = (operation as Record<string, unknown>).tags;
+          if (Array.isArray(operationTags)) {
+            operationTags.forEach((tag) => usedTags.add(tag as string));
           }
-        });
+        }
       });
 
       usedTags.forEach((tag) => {
@@ -334,20 +328,17 @@ describe('OpenAPI Spec Generator', () => {
       const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
       const methodsWithBody = ['post', 'put'];
 
-      Object.entries(paths).forEach(([, pathItem]) => {
-        methodsWithBody.forEach((method) => {
-          if (method in pathItem) {
-            const operation = pathItem[method] as Record<string, unknown>;
-            // Methods that modify state should have a requestBody or be idempotent
-            if (method === 'post' && !('requestBody' in operation)) {
-              // Allow some POST endpoints without bodies (e.g., cancel)
-              const operationId = operation.operationId as string | undefined;
-              if (operationId && !operationId.includes('cancel') && !operationId.includes('shutdown')) {
-                expect(operation.requestBody).toBeDefined();
-              }
+      forEachPathOperation(paths, (_, method, operation) => {
+        if (methodsWithBody.includes(method)) {
+          // Methods that modify state should have a requestBody or be idempotent
+          if (method === 'post' && !('requestBody' in operation)) {
+            // Allow some POST endpoints without bodies (e.g., cancel)
+            const operationId = operation.operationId as string | undefined;
+            if (operationId && !operationId.includes('cancel') && !operationId.includes('shutdown')) {
+              expect(operation.requestBody).toBeDefined();
             }
           }
-        });
+        }
       });
     });
 

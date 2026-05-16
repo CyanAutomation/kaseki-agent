@@ -43,7 +43,6 @@ A major simplification initiative has been completed to reduce setup friction. *
 **Phase 1: Unified Setup Command** ✅
 
 - `src/setup/SetupWizard.ts` — Interactive wizard with environment detection
-- `src/setup/env-defaults.ts` — Variable registry (60+ vars, 5 zones)
 - `src/cli/commands/InitCommand.ts` — New primary setup entry point
 
 **Phase 2: Permission Validation** ✅
@@ -75,10 +74,9 @@ A major simplification initiative has been completed to reduce setup friction. *
 
 ### Files Created/Modified
 
-**New Files (10)**:
+**New Files (9)**:
 
 - `src/setup/SetupWizard.ts` — Interactive setup orchestrator
-- `src/setup/env-defaults.ts` — Variable registry with auto-detection
 - `src/cli/commands/InitCommand.ts` — New primary setup command
 - `.env.template` — Minimal Essential 8 configuration
 - `.env.advanced.template` — Complete variable reference
