@@ -9,6 +9,7 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
+import { readHostSecret, getSecretLocations } from '../../secrets/host-secrets-reader';
 
 const logger = createLogger('host-cmd');
 
@@ -21,8 +22,13 @@ export class HostCommand extends BaseCommand {
       return 0;
     }
 
-    if (subcommand !== 'setup' || (action && action !== '--fix' && action !== '--recreate-api' && action !== '--help')) {
-      console.error('Usage: kaseki-agent host setup [--fix] [--recreate-api]');
+    const validOptions = new Set(['--fix', '--recreate-api', '--wait-ready', '--help']);
+    if (subcommand === 'preflight') {
+      return this.runPreflight(action ? [action, ...rest] : rest);
+    }
+
+    if (subcommand !== 'setup' || [action, ...rest].filter(Boolean).some((arg) => !validOptions.has(arg))) {
+      console.error('Usage: kaseki-agent host setup [--fix] [--recreate-api] [--wait-ready]');
       return 1;
     }
 
@@ -43,7 +49,10 @@ export class HostCommand extends BaseCommand {
       console.log('Tip: if /agents needs root-owned changes, rerun with sudo or allow sudo when prompted.');
     }
 
-    const result = spawnSync(scriptPath, setupArgs, {
+    const waitReady = setupArgs.includes('--wait-ready');
+    const scriptArgs = setupArgs.filter((arg) => arg !== '--wait-ready');
+
+    const result = spawnSync(scriptPath, scriptArgs, {
       stdio: 'inherit',
       env: process.env,
     });
@@ -54,7 +63,12 @@ export class HostCommand extends BaseCommand {
       return 1;
     }
 
-    return result.status ?? 1;
+    const exitCode = result.status ?? 1;
+    if (exitCode !== 0 || !waitReady) {
+      return exitCode;
+    }
+
+    return this.waitForReady();
   }
 
   private findSetupScript(): string | null {
@@ -72,16 +86,87 @@ export class HostCommand extends BaseCommand {
     console.log(`host - prepare or recover a Docker Compose API host
 
 USAGE
-  kaseki-agent host setup [--fix] [--recreate-api]
+  kaseki-agent host setup [--fix] [--recreate-api] [--wait-ready]
+  kaseki-agent host preflight [--url URL]
 
 OPTIONS
   --fix           Create/fix /agents, normalize secrets, and bootstrap the template.
   --recreate-api  Recreate the kaseki-api container after host paths are fixed.
+  --wait-ready    Wait for http://127.0.0.1:8080/ready before returning.
+  --url URL       Preflight URL. Defaults to http://127.0.0.1:8080/api/preflight.
 
 EXAMPLES
   kaseki-agent host setup
-  sudo kaseki-agent host setup --fix --recreate-api
+  sudo kaseki-agent host setup --fix --recreate-api --wait-ready
+  sudo kaseki-agent host preflight
   sudo KASEKI_HOST_SECRETS_DIR=/home/pi/secrets kaseki-agent host setup --fix
 `);
+  }
+
+  private async waitForReady(): Promise<number> {
+    const url = process.env.KASEKI_READY_URL || 'http://127.0.0.1:8080/ready';
+    const timeoutMs = Number.parseInt(process.env.KASEKI_WAIT_READY_TIMEOUT_MS || '60000', 10);
+    const startedAt = Date.now();
+
+    console.log(`Waiting for Kaseki API readiness: ${url}`);
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          console.log('Kaseki API is ready.');
+          return 0;
+        }
+      } catch {
+        // Container may still be starting; retry until timeout.
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    console.error(`Kaseki API did not become ready within ${timeoutMs}ms. Check: docker logs kaseki-api`);
+    return 1;
+  }
+
+  private async runPreflight(args: string[]): Promise<number> {
+    if (args.includes('--help') || args.includes('-h')) {
+      this.printHelp();
+      return 0;
+    }
+    const allowedArgs = new Set(['--url']);
+    const unknownOption = args.find((arg, index) => arg.startsWith('-') && !(allowedArgs.has(arg) || args[index - 1] === '--url'));
+    if (unknownOption) {
+      console.error(`Unknown host preflight option: ${unknownOption}`);
+      console.error('Usage: kaseki-agent host preflight [--url URL]');
+      return 1;
+    }
+
+    const urlArgIndex = args.indexOf('--url');
+    const url = urlArgIndex >= 0 && args[urlArgIndex + 1]
+      ? args[urlArgIndex + 1]
+      : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/preflight';
+    const token = readHostSecret('kaseki_api_keys')?.split(/\r?\n/).find((line) => line.trim())?.trim();
+
+    if (!token) {
+      const locations = getSecretLocations('kaseki_api_keys');
+      console.error('Could not read kaseki_api_keys from host secrets.');
+      console.error(`Checked: ${locations.primary} and ${locations.secondary}`);
+      console.error('If permissions were normalized for the API container, rerun this command with sudo or add your admin user to the container secret group.');
+      return 1;
+    }
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const body = await response.text();
+      console.log(body);
+      return response.ok ? 0 : 1;
+    } catch (err) {
+      console.error(`Failed to call ${url}: ${(err as Error).message}`);
+      return 1;
+    }
   }
 }

@@ -73,8 +73,7 @@ docker-compose logs -f kaseki-api
 curl http://localhost:8080/ready
 
 # Check preflight status
-curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
-  http://localhost:8080/api/preflight | jq .
+sudo kaseki-agent host preflight | jq .
 ```
 
 **If you see permission errors:**
@@ -308,11 +307,11 @@ docker-compose logs -f kaseki-api
 curl http://localhost:8080/health
 
 # Readiness/preflight diagnostics
-curl -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
-  http://localhost:8080/api/preflight
+curl http://localhost:8080/ready
+sudo kaseki-agent host preflight
 
 # View current runs
-curl -H "Authorization: Bearer $(cat /home/pi/secrets/openrouter_api_key)" \
+curl -H "Authorization: Bearer $(sudo sed -n '1p' /home/pi/secrets/kaseki_api_keys)" \
   http://localhost:8080/api/runs
 ```
 
@@ -422,7 +421,9 @@ The host directory was removed after the container started. Recreate the host
 directories, then recreate the container:
 
 ```bash
-sudo kaseki-agent host setup --fix --recreate-api
+sudo npm install -g @cyanautomation/kaseki-agent@latest
+sudo kaseki-agent host setup --fix --recreate-api --wait-ready
+sudo kaseki-agent host preflight
 ```
 
 **Docker socket not accessible**  

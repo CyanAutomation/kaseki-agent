@@ -450,6 +450,76 @@ function checkGitHubAppCredentials(): PreflightCheck {
   };
 }
 
+function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
+  const secretFile = process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/kaseki/openrouter_api_key';
+  const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
+  const workspaceDir = path.join(smokeRoot, 'workspace');
+  const resultsDir = path.join(smokeRoot, 'results');
+  const cacheDir = path.join(smokeRoot, 'cache');
+
+  try {
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.mkdirSync(resultsDir, { recursive: true });
+    fs.mkdirSync(cacheDir, { recursive: true });
+
+    const result = execDockerCommand([
+      'run',
+      '--rm',
+      '--read-only',
+      '--tmpfs',
+      '/tmp:rw,nosuid,nodev,size=64m',
+      '--security-opt',
+      'no-new-privileges:true',
+      '--cap-drop',
+      'ALL',
+      '-u',
+      `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
+      '-e',
+      'OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key',
+      '-v',
+      `${workspaceDir}:/workspace:rw`,
+      '-v',
+      `${resultsDir}:/results:rw`,
+      '-v',
+      `${cacheDir}:/cache:rw`,
+      '-v',
+      `${secretFile}:/run/secrets/openrouter_api_key:ro`,
+      '--entrypoint',
+      '/scripts/startup-checks.sh',
+      image,
+      'worker',
+    ], 30000);
+
+    if (result.ok) {
+      return {
+        name: 'worker-smoke',
+        ok: true,
+        detail: 'Worker container can start with workspace, results, cache, and OpenRouter secret mounts.',
+      };
+    }
+
+    const classified = result.classification || {
+      detail: result.detail || 'Worker container smoke test failed.',
+      remediation: 'Check worker bind mounts, file ownership, Docker socket access, and the OpenRouter secret file.',
+    };
+    return {
+      name: 'worker-smoke',
+      ok: false,
+      detail: classified.detail,
+      remediation: classified.remediation,
+    };
+  } catch (err) {
+    return {
+      name: 'worker-smoke',
+      ok: false,
+      detail: `Worker smoke test could not prepare temporary directories: ${(err as Error).message}`,
+      remediation: 'Ensure KASEKI_RESULTS_DIR is writable by the API container user.',
+    };
+  } finally {
+    fs.rmSync(smokeRoot, { recursive: true, force: true });
+  }
+}
+
 function isGitHubAppReady(): boolean {
   const check = checkGitHubAppCredentials();
   return check.ok && check.name === 'github-app';
@@ -490,7 +560,9 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   }
 
   const imageInspect = execDockerCommand(['image', 'inspect', image]);
+  let imageReady = false;
   if (imageInspect.ok) {
+    imageReady = true;
     checks.push({ name: 'docker-image', ok: true, detail: `Image is present: ${image}` });
   } else {
     const classified = imageInspect.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
@@ -500,6 +572,18 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
       ok: false,
       detail: daemonFailed ? classified.detail : `Docker image is not present locally: ${image}`,
       remediation: daemonFailed ? classified.remediation : `Pull ${image} or set KASEKI_IMAGE to an available image.`,
+    });
+  }
+
+  const canRunWorkerSmoke = imageReady && checks.some((check) => check.name === 'docker-daemon' && check.ok);
+  if (canRunWorkerSmoke) {
+    checks.push(checkWorkerSmokeTest(config, image));
+  } else {
+    checks.push({
+      name: 'worker-smoke',
+      ok: false,
+      detail: 'Worker smoke test skipped because Docker daemon or image checks failed.',
+      remediation: 'Fix docker-daemon and docker-image preflight checks first.',
     });
   }
 
