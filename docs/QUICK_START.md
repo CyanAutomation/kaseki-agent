@@ -77,9 +77,10 @@ sudo kaseki-agent host preflight | jq .
 ```
 
 **If you see permission errors:**
-  - Check init container logs: `docker-compose logs kaseki-init`
-  - Follow the error message in logs (provides platform-specific fix)
-  - Or see [Dockhand/Portainer guide](#dockhandandportainer) in DEPLOYMENT.md
+
+- Check init container logs: `docker-compose logs kaseki-init`
+- Follow the error message in logs (provides platform-specific fix)
+- Or see [Dockhand/Portainer guide](#dockhandandportainer) in DEPLOYMENT.md
 
 ---
 

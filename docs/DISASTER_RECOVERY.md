@@ -2,7 +2,6 @@
 
 > **NPM CLI note:** `kaseki-agent run` is API-backed in the npm package. Start a local API service or set `KASEKI_API_URL` before running recovery examples that submit new work.
 
-
 This guide provides procedures for recovering from common failure scenarios and restoring service after incidents.
 
 ---

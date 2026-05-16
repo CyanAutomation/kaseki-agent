@@ -32,6 +32,7 @@ docker-compose logs -f kaseki-api
 ```
 
 **Why the `/agents` prerequisite?** The container runs as UID 10000 (non-root hardening). During startup, it validates that `/agents` is writable by this UID. Without correct ownership:
+
 - Startup checks will fail (exit code 2)
 - Container will exit and Docker Compose will restart it (restart loop)
 - You'll see: `✗ /agents exists but is not writable by UID 10000`
@@ -109,6 +110,7 @@ ls -ld /agents  # Should show: drwxr-xr-x 2 10000 10000 ...
 ### Symptom: Container repeatedly restarts with permission errors
 
 **Logs show:**
+
 ```
 ✗ /agents exists but is not writable by UID 10000
 ✗ Fix: Run on host: sudo chown 10000:10000 /agents
@@ -118,6 +120,7 @@ ls -ld /agents  # Should show: drwxr-xr-x 2 10000 10000 ...
 **Cause:** The host `/agents` directory is owned by root or another user, not UID 10000.
 
 **Fix:**
+
 ```bash
 # On the host (not in container):
 sudo chown 10000:10000 /agents
@@ -134,6 +137,7 @@ docker-compose logs -f kaseki-api
 ### Symptom: "Could not create /agents/kaseki-template"
 
 **Logs show:**
+
 ```
 ⚠ Could not create /agents/kaseki-template (will try later)
 ⚠ Bootstrap incomplete: run-kaseki.sh missing at /agents/kaseki-template/run-kaseki.sh
@@ -143,6 +147,7 @@ docker-compose logs -f kaseki-api
 **Cause:** This is **normal** on first startup. The API service will auto-initialize the template once it starts. If this warning persists after the API service finishes starting, check permissions.
 
 **Verify fix:** After API service finishes starting, confirm the template was initialized:
+
 ```bash
 ls -la /agents/kaseki-template/run-kaseki.sh  # Should exist
 docker-compose logs kaseki-api | grep "Template initialized"
@@ -151,6 +156,7 @@ docker-compose logs kaseki-api | grep "Template initialized"
 ### Symptom: Permission denied errors in validation logs
 
 **Logs show:**
+
 ```
 ✓ /agents is writable by UID 10000
 ⚠ Bootstrap incomplete
@@ -160,6 +166,7 @@ docker-compose logs kaseki-api | grep "Template initialized"
 **Cause:** Some subdirectories have incorrect ownership (inherited from root).
 
 **Fix:**
+
 ```bash
 # Recursively fix all subdirectories:
 sudo chown -R 10000:10000 /agents
@@ -186,12 +193,14 @@ Modern kaseki-agent versions include an init container that automatically attemp
 4. If init fails, check logs and proceed to Approach 2
 
 **To verify success:**
+
 ```bash
 docker-compose logs kaseki-init   # Init container logs
 docker-compose logs kaseki-api    # API service logs
 ```
 
 **If successful**, you'll see:
+
 ```
 kaseki-init | ✓ /agents is writable by container
 ```
@@ -205,6 +214,7 @@ If your environment is too restricted (read-only volumes, no permission escalati
 1. **SSH into the Dockhand/Portainer host** (the machine running Docker)
 
 2. **Create the directory with correct ownership:**
+
    ```bash
    sudo mkdir -p /agents
    sudo chown 10000:10000 /agents
@@ -219,6 +229,7 @@ If your environment is too restricted (read-only volumes, no permission escalati
    - The API service should now start without permission errors
 
 4. **Verify deployment:**
+
    ```bash
    # On the host, check that subdirectories were auto-created
    ls -la /agents/
@@ -232,6 +243,7 @@ If your environment is too restricted (read-only volumes, no permission escalati
 #### **Troubleshooting Init Container Failures**
 
 If you see init container logs like:
+
 ```
 ✗ /agents exists but is not writable by container
 ✗ Fix: Run on host: sudo chown 10000:10000 /agents
@@ -262,6 +274,7 @@ See [Kubernetes Deployment](#kubernetes-deployment) if using Kubernetes instead 
 ```
 
 This command:
+
 - Clones the kaseki-agent repository to `/agents/kaseki-agent`
 - Extracts the Docker image to `/agents/kaseki-template/`
 - Verifies all critical files are present
@@ -486,6 +499,7 @@ locations, reducing setup friction:
 **Examples:**
 
 Option 1 — Use standard paths (recommended):
+
 ```bash
 mkdir -p /agents/secrets
 echo "123456" > /agents/secrets/github_app_id
@@ -495,6 +509,7 @@ chmod 600 /agents/secrets/github_app_*
 ```
 
 Option 2 — Use SSH directory (convenient for development):
+
 ```bash
 mkdir -p ~/.ssh
 cat your-key.pem > ~/.ssh/github-app-private-key
@@ -505,6 +520,7 @@ export GITHUB_APP_CLIENT_ID="Iv1.abc..."
 ```
 
 Option 3 — Disable auto-detection (explicit control):
+
 ```bash
 export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
 ```
@@ -1395,6 +1411,7 @@ When the API service starts, `scripts/startup-checks.sh` now:
 3. **Generates helpful output** that guides users through remediation
 
 Example output for Portainer:
+
 ```
 ✗ /agents exists but is not writable by UID 10000
 
@@ -1545,6 +1562,7 @@ kubectl exec pod/kaseki-api-XXX -- ls -ld /agents
 **Issue: Permission denied in API service**
 
 Ensure the PVC is mounted with correct permissions:
+
 ```bash
 # Inside the pod
 kubectl exec pod/kaseki-api-XXX -- id  # Should show uid=10000
@@ -1554,6 +1572,7 @@ kubectl exec pod/kaseki-api-XXX -- test -w /agents && echo "writable" || echo "n
 **Issue: Init container keeps restarting**
 
 Check if PVC itself is read-only or doesn't support permission changes:
+
 ```bash
 # Test chmod capability
 kubectl exec pod/kaseki-api-XXX -c kaseki-init -- touch /agents/test && chmod 755 /agents/test

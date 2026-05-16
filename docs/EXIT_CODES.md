@@ -2,7 +2,6 @@
 
 > **NPM CLI note:** direct `kaseki-agent run` examples submit through the configured API service. Start `kaseki-agent serve` locally or set `KASEKI_API_URL`; use `KASEKI_API_KEY` when the service requires authentication.
 
-
 This document describes the exit codes returned by kaseki-agent commands and what they mean.
 
 ## Summary
