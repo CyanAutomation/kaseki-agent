@@ -437,7 +437,7 @@ export class DoctorCommand extends BaseCommand {
     const label = rootExists ? kasekiRoot : `/ (${kasekiRoot} not yet created)`;
 
     try {
-      const result = execSync(`df -B1 ${checkPath} | awk 'NR==2 {print $4}'`, {
+      const result = execSync(`df -B1 '${checkPath.replace(/'/g, "'\\''")}' | awk 'NR==2 {print $4}'`, {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
