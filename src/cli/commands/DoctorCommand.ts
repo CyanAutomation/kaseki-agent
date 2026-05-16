@@ -471,7 +471,9 @@ export class DoctorCommand extends BaseCommand {
         encoding: 'utf-8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      const availableColumn = result.split(/\r?\n/)[1]?.trim().split(/\s+/)[3] ?? '';
+      const lines = result.split(/\r?\n/).filter(line => line.trim());
+      const dataLine = lines.length > 1 ? lines[lines.length - 1] : '';
+      const availableColumn = dataLine.trim().split(/\s+/)[3] ?? '';
 
       const availableBytes = parseInt(availableColumn, 10);
       if (isNaN(availableBytes)) {
