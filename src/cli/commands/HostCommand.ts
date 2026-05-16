@@ -174,17 +174,27 @@ EXAMPLES
       return 1;
     }
 
+    const PREFLIGHT_TIMEOUT_MS = 15_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PREFLIGHT_TIMEOUT_MS);
+
     try {
       const response = await fetch(url, {
+        signal: controller.signal,
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+      clearTimeout(timer);
       const body = await response.text();
       console.log(body);
       return response.ok ? 0 : 1;
     } catch (err) {
-      console.error(`Failed to call ${url}: ${(err as Error).message}`);
+      clearTimeout(timer);
+      const msg = (err as Error).name === 'AbortError'
+        ? `Timed out after ${PREFLIGHT_TIMEOUT_MS / 1000}s — is the API running? Check: docker ps && curl http://localhost:8080/ready`
+        : (err as Error).message;
+      console.error(`Failed to call ${url}: ${msg}`);
       return 1;
     }
   }
