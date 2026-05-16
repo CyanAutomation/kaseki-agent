@@ -4,6 +4,12 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.31.0...v1.32.0) (2026-05-16)
+
+### Features
+
+* add checks for file readability and directory traversability by UID/GID on read-only mounts ([a062a2f](https://github.com/CyanAutomation/kaseki-agent/commit/a062a2f0f3ccd9b919c516c62f1a1b0eb6489dbd))
+
 ## [1.31.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.30.2...v1.31.0) (2026-05-16)
 
 ### Features
