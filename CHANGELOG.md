@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.29.1...v1.30.0) (2026-05-16)
+
+### Features
+
+* add lint output file for JavaScript linting results ([e2bd637](https://github.com/CyanAutomation/kaseki-agent/commit/e2bd637f1412cc029bea3d96979b5d637a39bc1f))
+* add npm verification script with exponential backoff for package publication ([3b8d078](https://github.com/CyanAutomation/kaseki-agent/commit/3b8d0781073a34892c3263980d7abaffaa74aee7))
+
+### Bug Fixes
+
+* improve variable export in setup script and enhance error handling in npm verification ([351255a](https://github.com/CyanAutomation/kaseki-agent/commit/351255aba1f1128bb69be5f6be34ab644c56d4f5))
+* update GitHub App secret file paths for improved readability and error handling ([7d740eb](https://github.com/CyanAutomation/kaseki-agent/commit/7d740eb8340af11942fe3db5c97a41ebadb2385d))
+* update secrets directory paths in docker-compose configuration ([11f10f0](https://github.com/CyanAutomation/kaseki-agent/commit/11f10f0ed19c80f978d5c8408c4219e5592dd9da))
+
 ## [1.29.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.29.0...v1.29.1) (2026-05-16)
 
 ### Bug Fixes
