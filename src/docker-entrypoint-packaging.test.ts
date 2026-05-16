@@ -30,8 +30,11 @@ describe('Docker runtime packaging', () => {
 
     expect(entrypoint).toContain('/scripts/startup-checks.sh');
     expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh');
+    expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh');
     expect(startupChecks).toContain('KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"');
     expect(startupChecks).toContain('KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"');
+    expect(startupChecks).toContain('quick|boot)');
+    expect(startupChecks).toContain('baseline-validation)');
     expect(compose).toContain('KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"');
     expect(compose).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
     expect(compose).toContain("fetch('http://127.0.0.1:8080/ready')");

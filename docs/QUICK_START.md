@@ -414,7 +414,7 @@ sudo chown 10000:10000 /agents
 sudo chmod 775 /agents
 ```
 
-Or run: `sudo ./scripts/kaseki-setup-host.sh --fix`
+Or run: `sudo kaseki-agent host setup --fix`
 
 **Preflight reports a deleted bind mount**
 
@@ -422,8 +422,7 @@ The host directory was removed after the container started. Recreate the host
 directories, then recreate the container:
 
 ```bash
-sudo ./scripts/kaseki-setup-host.sh --fix
-docker compose up -d --force-recreate
+sudo kaseki-agent host setup --fix --recreate-api
 ```
 
 **Docker socket not accessible**  

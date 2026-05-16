@@ -331,7 +331,7 @@ On a fresh host, run the host setup helper before starting the API, or any time
 `/api/preflight` reports missing results/template directories:
 
 ```bash
-/agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix
+sudo kaseki-agent host setup --fix --recreate-api
 ```
 
 The API container runs as the `/agents` owner by default
