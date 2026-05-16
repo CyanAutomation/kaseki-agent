@@ -503,7 +503,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       expect(mountCheck).toEqual(expect.objectContaining({
         ok: false,
         detail: expect.stringContaining('/agents//deleted'),
-        remediation: expect.stringContaining('recreate the kaseki-api container'),
+        remediation: expect.stringContaining('--recreate-api'),
       }));
     } finally {
       await cleanupTestApp(server, idempotencyStore);
