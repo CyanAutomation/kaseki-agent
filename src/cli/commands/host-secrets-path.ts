@@ -11,7 +11,10 @@ function discoverSecretsPathFromPreviousSetup(env: NodeJS.ProcessEnv): string | 
   const hostHomes = getCandidateHostHomes(env);
 
   for (const hostHome of hostHomes) {
-    const stateFilePath = path.join(hostHome, '.kaseki-host-state.json');
+    // Prefer the new location; fall back to old location for backwards compatibility
+    const newPath = path.join(hostHome, '.kaseki', 'host-state.json');
+    const legacyPath = path.join(hostHome, '.kaseki-host-state.json');
+    const stateFilePath = fs.existsSync(newPath) ? newPath : legacyPath;
     try {
       if (!fs.existsSync(stateFilePath)) {
         continue;

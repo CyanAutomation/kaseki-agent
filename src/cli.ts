@@ -96,6 +96,7 @@ COMMANDS
   doctor [--json] [--fix]   Diagnose host, dependencies, templates, and configuration
   config [--get|--set]      Manage configuration
   secrets                   Manage stored secrets (keyring/file)
+  host <setup|preflight>    Prepare or recover a Docker Compose API host
 
   Local API Service
   serve [--port N]          Start the local REST API service for async task execution
