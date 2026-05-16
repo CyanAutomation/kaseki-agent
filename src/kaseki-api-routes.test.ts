@@ -1876,6 +1876,7 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.writeFileSync(path.join(templateDir, 'lib', 'pi-event-filter.js'), 'export {};\n');
     fs.writeFileSync(path.join(templateDir, 'lib', 'pi-progress-stream.js'), 'export {};\n');
     fs.writeFileSync(path.join(templateDir, 'lib', 'kaseki-report.js'), 'export {};\n');
+    fs.writeFileSync(path.join(templateDir, 'lib', 'github-app-token.js'), 'export {};\n');
   }
 
   function writeTemplateMetadata(supportedPublishModes: string[]): void {
