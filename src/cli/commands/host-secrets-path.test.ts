@@ -31,4 +31,14 @@ describe('configureHostSecretsDirForPreflight', () => {
 
     expect(env.KASEKI_SECRETS_DIR).toBe('/home/kasekiuser/secrets');
   });
+
+  test('rejects invalid SUDO_USER values', () => {
+    const env: NodeJS.ProcessEnv = {
+      SUDO_USER: 'user; rm -rf /',
+    };
+
+    configureHostSecretsDirForPreflight(env);
+
+    expect(env.KASEKI_SECRETS_DIR).toBeUndefined();
+  });
 });
