@@ -1779,19 +1779,23 @@ check_github_operations_health() {
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
   
   # Check 1: GitHub App secrets are readable
-  if ! [ -r /run/secrets/github_app_id ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App ID from /run/secrets/github_app_id\n' | tee -a "$health_log" >&2
+  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
+  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
+  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  
+  if ! [ -r "$github_app_id_file" ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App ID from %s\n' "$github_app_id_file" | tee -a "$health_log" >&2
     return 1
   fi
-  if ! [ -r /run/secrets/github_app_client_id ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App client ID from /run/secrets/github_app_client_id\n' | tee -a "$health_log" >&2
+  if ! [ -r "$github_app_client_id_file" ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App client ID from %s\n' "$github_app_client_id_file" | tee -a "$health_log" >&2
     return 1
   fi
-  if ! [ -r /run/secrets/github_app_private_key ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App private key from /run/secrets/github_app_private_key\n' | tee -a "$health_log" >&2
+  if ! [ -r "$github_app_private_key_file" ]; then
+    printf '[health-check] ERROR: Cannot read GitHub App private key from %s\n' "$github_app_private_key_file" | tee -a "$health_log" >&2
     return 1
   fi
-  log_github_private_key_metadata /run/secrets/github_app_private_key "$health_log"
+  log_github_private_key_metadata "$github_app_private_key_file" "$health_log"
   printf '[health-check] ✓ GitHub App secrets are readable\n' | tee -a "$health_log"
   
   # Check 2: Verify git is available
@@ -1874,7 +1878,7 @@ check_github_operations_health() {
     if parse_github_repo_url "$REPO_URL"; then
       owner="$GITHUB_REPO_OWNER"
       repo="$GITHUB_REPO_NAME"
-      app_id="$(cat /run/secrets/github_app_id 2>/dev/null)" || app_id=""
+      app_id="$(cat "$github_app_id_file" 2>/dev/null)" || app_id=""
       if [ -z "$app_id" ]; then
         printf '[health-check] ERROR: Cannot read GitHub App ID for auth smoke test\n' | tee -a "$health_log" >&2
         return 1
@@ -1890,7 +1894,7 @@ check_github_operations_health() {
         return 1
       }
 
-      /usr/local/bin/github-app-token "$app_id" /run/secrets/github_app_private_key "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+      /usr/local/bin/github-app-token "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
       token_exit_code=$?
       token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
       token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
@@ -2532,9 +2536,12 @@ run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data git_push_exit
   
   # Load GitHub App credentials
-  app_id="$(cat /run/secrets/github_app_id)" || { printf 'Failed to read app ID\n' >&2; return 7; }
-  cat /run/secrets/github_app_client_id >/dev/null || { printf 'Failed to read client ID\n' >&2; return 7; }
-  private_key_file="/run/secrets/github_app_private_key"
+  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
+  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
+  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  app_id="$(cat "$github_app_id_file")" || { printf 'Failed to read app ID\n' >&2; return 7; }
+  cat "$github_app_client_id_file" >/dev/null || { printf 'Failed to read client ID\n' >&2; return 7; }
+  private_key_file="$github_app_private_key_file"
   
   # Parse repo URL to extract owner and repo
   if parse_github_repo_url "$REPO_URL"; then
@@ -2850,18 +2857,22 @@ openrouter_api_key_source=""
 if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   openrouter_api_key="$OPENROUTER_API_KEY"
   openrouter_api_key_source="env"
-elif [ -r /run/secrets/openrouter_api_key ]; then
-  secret_content="$(cat /run/secrets/openrouter_api_key)"
-  if [ -n "$secret_content" ]; then
-    openrouter_api_key="$secret_content"
-    openrouter_api_key_source="secret file"
+else
+  local openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
+  if [ -r "$openrouter_api_key_file" ]; then
+    secret_content="$(cat "$openrouter_api_key_file")"
+    if [ -n "$secret_content" ]; then
+      openrouter_api_key="$secret_content"
+      openrouter_api_key_source="secret file"
+    fi
   fi
 fi
 unset OPENROUTER_API_KEY secret_content
 
 if [ -z "$openrouter_api_key" ]; then
   set_current_stage "agent setup"
-  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide /run/secrets/openrouter_api_key.\n' | tee -a /results/pi-stderr.log >&2
+  local openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a /results/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
@@ -3418,7 +3429,10 @@ stage_start="$(date +%s)"
 : > /results/git-push.log
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
-  if [ -r /run/secrets/github_app_id ] && [ -r /run/secrets/github_app_client_id ] && [ -r /run/secrets/github_app_private_key ]; then
+  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
+  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
+  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  if [ -r "$github_app_id_file" ] && [ -r "$github_app_client_id_file" ] && [ -r "$github_app_private_key_file" ]; then
     run_github_operations
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
