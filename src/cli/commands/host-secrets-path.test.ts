@@ -67,7 +67,7 @@ describe('configureHostSecretsDirForPreflight', () => {
     configureHostSecretsDirForPreflight(env);
 
     expect(env.KASEKI_SECRETS_DIR).toBe('/home/pi/secrets');
-    expect(fs.existsSync).toHaveBeenCalledWith('/home/pi/.kaseki-host-state.json');
+    expect(fs.existsSync).toHaveBeenCalledWith('/home/pi/.kaseki/host-state.json');
   });
 
   test('skips state file if it does not exist, falls back to sudo home', () => {
