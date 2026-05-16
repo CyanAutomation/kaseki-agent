@@ -147,6 +147,59 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**" ./run-kaseki.sh --repo https://github.co
 
 ---
 
+## Understanding the Permission Model
+
+Kaseki Agent runs inside a container as a non-root user (UID 10000). To access secret files mounted from the host, the container must have:
+
+1. **Directory traversal permission** — Can enter the directory containing secrets
+2. **File read permission** — Can read the secret file contents
+
+### Automatic Permission Fixes
+
+On startup, `scripts/startup-checks.sh` automatically detects and fixes permission issues:
+
+**Detection:**
+- Checks if `/agents/secrets`, `~/.kaseki/secrets.json`, and other secret paths are accessible
+- Tests both directory traversability and file readability
+
+**Auto-Fix:**
+- Directories → `chmod 0750` (owner rwx, group rx, other none)
+- Files → `chmod 0640` (owner rw, group r, other none)
+- Logged as: `✓ Fixed permissions: /agents/secrets (0700 → 0750)`
+
+**When Auto-Fix Can't Proceed:**
+- If mounted read-only: Logged as `✗ Cannot auto-fix ... (possibly on read-only mount)`
+- Error message includes manual fix: `sudo chmod 0750 /agents/secrets`
+
+### Why These Permissions?
+
+| Target | Mode | Why |
+|--------|------|-----|
+| Directories | 0750 | Owner: full access (rwx); Group: traverse & read (rx); Others: no access. Fixes traversal without weakening security. |
+| Files | 0640 | Owner: read-write (rw); Group: read (r); Others: no access. Readable by group, not world. |
+
+### Manual Permission Fixes
+
+If the container can't auto-fix (e.g., read-only mount), fix on the host:
+
+```bash
+# Fix secret directory
+sudo chmod 0750 /agents/secrets
+sudo chmod 0750 ~/.kaseki/secrets
+
+# Fix secret files
+sudo chmod 0640 /agents/secrets/openrouter_api_key
+sudo chmod 0640 ~/.kaseki/secrets.json
+
+# Verify
+ls -ld /agents/secrets
+ls -l /agents/secrets/*
+```
+
+For detailed troubleshooting, see [TROUBLESHOOTING.md#permission-issues--secret-path-access](TROUBLESHOOTING.md#permission-issues--secret-path-access).
+
+---
+
 ## Local API Service
 
 **Best for**: Multiple tasks on one machine, interactive workflows, CLI tooling  

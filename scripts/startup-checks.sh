@@ -284,6 +284,223 @@ check_bootstrap_status() {
   return 0
 }
 
+# --- Secret Path Permission Checks & Auto-Fix ---
+
+is_path_on_readonly_mount() {
+  local target_path="$1"
+  
+  # Check if the path or any parent is mounted as read-only
+  if [ ! -e "$target_path" ]; then
+    target_path="$(dirname "$target_path")"
+  fi
+  
+  # Use `touch` test to determine if writable (works better than test operator)
+  if ! touch "$target_path/.write-test" 2>/dev/null; then
+    # If parent directory, check if it's the mount issue
+    return 0  # Assume read-only mount
+  fi
+  rm -f "$target_path/.write-test"
+  return 1  # Not read-only
+}
+
+get_current_permissions() {
+  local path="$1"
+  
+  if [ ! -e "$path" ]; then
+    echo "nonexistent"
+    return 0
+  fi
+  
+  # Use stat if available, otherwise fall back to ls
+  if command -v stat &>/dev/null; then
+    stat -c "%a" "$path" 2>/dev/null || echo "unknown"
+  else
+    ls -ld "$path" 2>/dev/null | awk '{print $1}' | sed 's/^.//g' || echo "unknown"
+  fi
+}
+
+can_auto_fix_permissions() {
+  local target_path="$1"
+  
+  # Don't try to fix if path doesn't exist (parent may be inaccessible)
+  if [ ! -e "$target_path" ]; then
+    return 1
+  fi
+  
+  # Don't try to fix if on read-only mount
+  if is_path_on_readonly_mount "$target_path"; then
+    return 1
+  fi
+  
+  # Try to chmod it as a test
+  local current_perms
+  current_perms=$(get_current_permissions "$target_path")
+  
+  if [ "$current_perms" = "unknown" ] || [ "$current_perms" = "nonexistent" ]; then
+    return 1
+  fi
+  
+  return 0
+}
+
+auto_fix_directory_permissions() {
+  local dir_path="$1"
+  local target_mode="0750"
+  
+  if [ ! -d "$dir_path" ]; then
+    return 1
+  fi
+  
+  # Skip if on read-only mount
+  if is_path_on_readonly_mount "$dir_path"; then
+    return 1
+  fi
+  
+  local current_mode
+  current_mode=$(get_current_permissions "$dir_path")
+  
+  if [ "$current_mode" != "$target_mode" ] && [ "$current_mode" != "755" ] && [ "$current_mode" != "750" ]; then
+    if chmod "$target_mode" "$dir_path" 2>/dev/null; then
+      log_pass "Fixed permissions: $dir_path ($current_mode → $target_mode)"
+      return 0
+    else
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+auto_fix_file_permissions() {
+  local file_path="$1"
+  local target_mode="0640"
+  
+  if [ ! -f "$file_path" ]; then
+    return 1
+  fi
+  
+  # Skip if on read-only mount
+  if is_path_on_readonly_mount "$file_path"; then
+    return 1
+  fi
+  
+  local current_mode
+  current_mode=$(get_current_permissions "$file_path")
+  
+  if [ "$current_mode" != "$target_mode" ] && [ "$current_mode" != "644" ] && [ "$current_mode" != "640" ] && [ "$current_mode" != "600" ]; then
+    if chmod "$target_mode" "$file_path" 2>/dev/null; then
+      log_pass "Fixed permissions: $file_path ($current_mode → $target_mode)"
+      return 0
+    else
+      return 1
+    fi
+  fi
+  
+  return 0
+}
+
+check_directory_traversable() {
+  local dir_path="$1"
+  local dir_name="$2"
+  
+  if [ ! -d "$dir_path" ]; then
+    return 0  # Directory doesn't exist, not a traversal issue
+  fi
+  
+  # Test if directory is traversable by the current user
+  if [ ! -x "$dir_path" ]; then
+    log_error "$dir_name is not traversable by UID $CONTAINER_UID"
+    
+    if can_auto_fix_permissions "$dir_path"; then
+      if auto_fix_directory_permissions "$dir_path"; then
+        log_pass "$dir_name is now traversable"
+        return 0
+      else
+        log_error "Failed to fix $dir_name permissions"
+        return 2
+      fi
+    else
+      log_error "Cannot auto-fix $dir_name (possibly on read-only mount)"
+      log_error "Fix on host: sudo chmod 0750 $dir_path"
+      return 2
+    fi
+  fi
+  
+  return 0
+}
+
+check_file_readable() {
+  local file_path="$1"
+  local file_name="$2"
+  
+  if [ ! -f "$file_path" ]; then
+    return 0  # File doesn't exist, not a readability issue
+  fi
+  
+  # Test if file is readable by the current user
+  if [ ! -r "$file_path" ]; then
+    log_error "$file_name is not readable by UID $CONTAINER_UID"
+    
+    if can_auto_fix_permissions "$file_path"; then
+      if auto_fix_file_permissions "$file_path"; then
+        log_pass "$file_name is now readable"
+        return 0
+      else
+        log_error "Failed to fix $file_name permissions"
+        return 2
+      fi
+    else
+      log_error "Cannot auto-fix $file_name (possibly on read-only mount)"
+      local dir_path
+      dir_path=$(dirname "$file_path")
+      log_error "Fix on host: sudo chmod 0640 $file_path"
+      return 2
+    fi
+  fi
+  
+  return 0
+}
+
+check_secret_paths() {
+  log_info "Checking secret path permissions..."
+  
+  local exit_code=0
+  local secrets_dir="${KASEKI_SECRETS_DIR:-/agents/secrets}"
+  local home_secrets="${HOME:-/root}/secrets"
+  local kaseki_secrets="${HOME:-/root}/.kaseki/secrets.json"
+  
+  # Check /agents/secrets directory (primary mount point)
+  if [ -d "$secrets_dir" ]; then
+    check_directory_traversable "$secrets_dir" "/agents/secrets" || exit_code=$?
+    
+    # Check any secret files in the directory
+    if [ -d "$secrets_dir" ] && [ -x "$secrets_dir" ]; then
+      # openrouter_api_key is the primary one
+      if [ -f "$secrets_dir/openrouter_api_key" ]; then
+        check_file_readable "$secrets_dir/openrouter_api_key" "openrouter_api_key" || exit_code=$?
+      fi
+    fi
+  fi
+  
+  # Check $HOME/secrets fallback
+  if [ -d "$home_secrets" ]; then
+    check_directory_traversable "$home_secrets" "\$HOME/secrets" || exit_code=$?
+    
+    if [ -d "$home_secrets" ] && [ -x "$home_secrets" ]; then
+      if [ -f "$home_secrets/openrouter_api_key" ]; then
+        check_file_readable "$home_secrets/openrouter_api_key" "\$HOME/secrets/openrouter_api_key" || exit_code=$?
+      fi
+    fi
+  fi
+  
+  # Check ~/.kaseki/secrets.json
+  if [ -f "$kaseki_secrets" ]; then
+    check_file_readable "$kaseki_secrets" "~/.kaseki/secrets.json" || exit_code=$?
+  fi
+  
+  return "$exit_code"
+}
+
 # --- API Key validation ---
 
 check_api_key() {
@@ -353,6 +570,7 @@ main() {
       check_kaseki_root || overall_exit=$?
       check_subdirectories || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     
@@ -374,6 +592,7 @@ main() {
       # Ephemeral worker containers do not mount /agents. They receive scoped
       # workspace, results, and cache mounts from run-kaseki.sh.
       check_worker_mounts || overall_exit=$?
+      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
 
@@ -382,6 +601,7 @@ main() {
       check_kaseki_root || overall_exit=$?
       check_subdirectories || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     
     *)

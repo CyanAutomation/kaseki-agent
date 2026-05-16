@@ -54,6 +54,126 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 
 ---
 
+## Permission Issues & Secret Path Access
+
+### Problem: Secret Files Are Inaccessible (Permission Denied)
+
+**Symptoms:**
+- Container startup shows: `✗ /agents/secrets is not traversable by UID 10000`
+- API key fails to load silently
+- API service binds only to loopback (127.0.0.1) instead of 0.0.0.0
+- Preflight checks fail with "Cannot read secret file"
+
+**Root Cause:**
+
+The `/agents/secrets` directory (or other secret paths) has restrictive permissions that prevent the container (running as UID 10000) from traversing the directory, even if the UID matches the group owner.
+
+**Example:**
+```bash
+# Host filesystem:
+ls -ld /home/pi/secrets
+drwx------  pi  10000  /home/pi/secrets  # Mode 0700 (only owner can access)
+
+# Inside container (UID 10000):
+ls /home/pi/secrets
+Permission denied  # Cannot traverse 0700 dir, even as group 10000
+```
+
+### Automatic Fix (Enabled by Default)
+
+On startup, `scripts/startup-checks.sh` automatically detects and fixes common permission issues:
+
+1. **Detection:** Checks if secret directories/files are traversable and readable by UID 10000
+2. **Auto-fix:** Attempts to chmod directories to `0750` (owner rwx, group rx) and files to `0640` (owner rw, group r)
+3. **Logging:** Shows status in startup output:
+   - `✓ Fixed permissions: /agents/secrets (0700 → 0750)` — success
+   - `✗ Cannot auto-fix ... (possibly on read-only mount)` — requires manual intervention
+
+**Permission Targets:**
+- **Directories: 0750** — allows group traversal without world access
+- **Files: 0640** — allows group read without world read or group write
+
+### Manual Fix (If Auto-Fix Not Possible)
+
+**Scenario: Read-Only Mount or No Auto-Fix Permission**
+
+If the container logs:
+```
+✗ Cannot auto-fix /agents/secrets (possibly on read-only mount)
+Fix on host: sudo chmod 0750 /agents/secrets
+```
+
+Fix permissions **on the host**:
+
+```bash
+# Fix /agents/secrets directory
+sudo chmod 0750 /agents/secrets
+
+# Fix secret files (if present)
+sudo chmod 0640 /agents/secrets/openrouter_api_key
+sudo chmod 0640 /agents/secrets/github_app_*
+
+# Fix fallback paths
+sudo chmod 0750 ~/.kaseki/secrets
+sudo chmod 0640 ~/.kaseki/secrets.json
+```
+
+**For Docker Compose:**
+
+If using Docker Compose and containers don't have permission to modify mounts:
+
+```bash
+# On host, before starting container:
+docker-compose down
+
+# Fix permissions
+sudo chmod 0750 /home/pi/secrets
+sudo chmod 0750 ~/.kaseki/secrets
+
+# Restart
+docker-compose up -d
+```
+
+**For Kubernetes:**
+
+If running in Kubernetes with PersistentVolumes:
+
+```bash
+# Check PV owner/permissions
+kubectl exec -it <pod> -- ls -ld /agents/secrets
+
+# If owned by root:
+kubectl exec -it <pod> -- sudo chmod 0750 /agents/secrets
+
+# If PV is mounted read-only, update the PersistentVolume:
+kubectl patch pv <pv-name> -p '{"spec":{"accessModes":["ReadWriteOnce"]}}'
+# Then update the Pod to allow permission modifications
+```
+
+### Secret Paths Checked
+
+Startup checks verify these paths (in order):
+
+1. `/agents/secrets` — Primary mount (Docker Compose volume)
+2. `/run/secrets/` — Docker secrets mount
+3. `$HOME/secrets/` — User home fallback
+4. `~/.kaseki/secrets.json` — Init wizard output
+
+### Verification
+
+After fixing permissions, verify the startup checks pass:
+
+```bash
+# Inside container
+/scripts/startup-checks.sh all
+# Expected: ✓ All checks passed
+
+# Or restart the service
+docker-compose restart kaseki-api
+```
+
+---
+
 ## Generic Failure Diagnosis (Exit Code 1)
 
 ### Step 1: Check Stage Where Failure Occurred
