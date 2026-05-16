@@ -2858,7 +2858,7 @@ if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   openrouter_api_key="$OPENROUTER_API_KEY"
   openrouter_api_key_source="env"
 else
-  local openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
+  openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
   if [ -r "$openrouter_api_key_file" ]; then
     secret_content="$(cat "$openrouter_api_key_file")"
     if [ -n "$secret_content" ]; then
@@ -2871,7 +2871,7 @@ unset OPENROUTER_API_KEY secret_content
 
 if [ -z "$openrouter_api_key" ]; then
   set_current_stage "agent setup"
-  local openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
+  openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
   printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a /results/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
@@ -3429,9 +3429,9 @@ stage_start="$(date +%s)"
 : > /results/git-push.log
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
-  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
-  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
+  github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
+  github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
   if [ -r "$github_app_id_file" ] && [ -r "$github_app_client_id_file" ] && [ -r "$github_app_private_key_file" ]; then
     run_github_operations
   else
