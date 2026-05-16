@@ -147,13 +147,13 @@ EXAMPLES
       ? args[urlArgIndex + 1]
       : process.env.KASEKI_PREFLIGHT_URL || 'http://127.0.0.1:8080/api/preflight';
     configureHostSecretsDirForPreflight();
-    
+
     // Check for discovered path from setup
     const discoveredPath = getDiscoveredSecretsPath();
     if (discoveredPath) {
       console.log(`Discovered secrets directory from setup: ${discoveredPath}`);
     }
-    
+
     const token = readHostSecret('kaseki_api_keys')?.split(/\r?\n/).find((line) => line.trim())?.trim();
 
     if (!token) {

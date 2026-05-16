@@ -75,7 +75,7 @@ export function readHostSecret(secretName: string): string | null {
     if (primarySecretsDir !== '/agents/secrets' && fs.existsSync(agentsSecretsPath)) {
       logger.warn(
         `Secret found at ${secondaryPath} but /agents/secrets also exists. ` +
-        `If you intended to use /agents/secrets, run: sudo kaseki-agent host setup --fix`
+        'If you intended to use /agents/secrets, run: sudo kaseki-agent host setup --fix'
       );
     }
     return secondaryValue;
