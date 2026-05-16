@@ -5,6 +5,8 @@
 
 import { execSync } from 'child_process';
 import { existsSync, accessSync, readFileSync, constants as fsConstants } from 'fs';
+import os from 'os';
+import path from 'path';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
 
@@ -25,7 +27,12 @@ export class DoctorCommand extends BaseCommand {
       const _isFix = flags.has('fix');
       // Note: --verbose is parsed but not yet used in non-verbose output
 
-      console.log('🏥 Kaseki Agent Health Check\n');
+      // Banner goes to stderr when --json is set so stdout contains only valid JSON
+      if (isJson) {
+        process.stderr.write('🏥 Kaseki Agent Health Check\n\n');
+      } else {
+        console.log('🏥 Kaseki Agent Health Check\n');
+      }
 
       // Load configuration
       await this.configManager.load();
@@ -167,53 +174,82 @@ export class DoctorCommand extends BaseCommand {
   }
 
   /**
+   * Resolve an auth file path using a priority-ordered discovery chain:
+   * 1. config.json auth.* field
+   * 2. environment variable
+   * 3. ~/.kaseki/secrets/<filename>
+   * 4. ~/secrets/<filename>
+   * Returns the resolved path and which source matched, or null if none found.
+   */
+  private resolveAuthFilePath(
+    configKey: string,
+    envVar: string,
+    filename: string
+  ): { filePath: string; source: string } | null {
+    const home = os.homedir();
+
+    const candidates: Array<{ filePath: string; source: string }> = [
+      { filePath: this.configManager.get(configKey, ''), source: `~/.kaseki/config.json (${configKey})` },
+      { filePath: process.env[envVar] ?? '', source: `$${envVar}` },
+      { filePath: path.join(home, '.kaseki', 'secrets', filename), source: `~/.kaseki/secrets/${filename}` },
+      { filePath: path.join(home, 'secrets', filename), source: `~/secrets/${filename}` },
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate.filePath && existsSync(candidate.filePath)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Check all required authentication files
    */
   private async checkAuthFiles(): Promise<Check> {
     const requiredAuthFiles = [
-      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File', envVar: 'OPENROUTER_API_KEY_FILE' },
-      { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE' },
-      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE' },
-      { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE' },
+      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File', envVar: 'OPENROUTER_API_KEY_FILE', filename: 'openrouter_api_key' },
+      { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
+      { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
+      { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE', filename: 'github_app_private_key' },
     ];
 
-    const missingFiles: Array<{ name: string; envVar: string; path: string | null }> = [];
+    const missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }> = [];
     const unreadableFiles: Array<{ name: string; path: string; reason: string }> = [];
+    const home = os.homedir();
 
     for (const authFile of requiredAuthFiles) {
       try {
-        const filePath = this.configManager.get(authFile.key, '');
+        const resolved = this.resolveAuthFilePath(authFile.key, authFile.envVar, authFile.filename);
 
-        if (!filePath) {
-          missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null });
-          continue;
-        }
-
-        // Check if file exists
-        if (!existsSync(filePath)) {
-          missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: filePath });
+        if (!resolved) {
+          const checkedPaths = [
+            path.join(home, '.kaseki', 'secrets', authFile.filename),
+            path.join(home, 'secrets', authFile.filename),
+          ];
+          missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null, checkedPaths });
           continue;
         }
 
         // Check if file is readable
         try {
-          accessSync(filePath, fsConstants.R_OK);
+          accessSync(resolved.filePath, fsConstants.R_OK);
         } catch {
-          unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'permission denied' });
+          unreadableFiles.push({ name: authFile.name, path: resolved.filePath, reason: 'permission denied' });
           continue;
         }
 
         // Check if file is not empty
         try {
-          const content = readFileSync(filePath, 'utf-8').trim();
+          const content = readFileSync(resolved.filePath, 'utf-8').trim();
           if (!content) {
-            unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'file is empty' });
+            unreadableFiles.push({ name: authFile.name, path: resolved.filePath, reason: 'file is empty' });
           }
         } catch {
-          unreadableFiles.push({ name: authFile.name, path: filePath, reason: 'could not read content' });
+          unreadableFiles.push({ name: authFile.name, path: resolved.filePath, reason: 'could not read content' });
         }
       } catch {
-        missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null });
+        missingFiles.push({ name: authFile.name, envVar: authFile.envVar, path: null, checkedPaths: [] });
       }
     }
 
@@ -244,7 +280,7 @@ export class DoctorCommand extends BaseCommand {
    * Build comprehensive auth error message with guidance
    */
   private buildAuthErrorMessage(
-    missingFiles: Array<{ name: string; envVar: string; path: string | null }>,
+    missingFiles: Array<{ name: string; envVar: string; path: string | null; checkedPaths: string[] }>,
     unreadableFiles: Array<{ name: string; path: string; reason: string }>
   ): string {
     const lines: string[] = ['❌ Authentication validation failed:'];
@@ -255,23 +291,19 @@ export class DoctorCommand extends BaseCommand {
       lines.push('Missing or unconfigured:');
       for (const file of missingFiles) {
         if (file.path) {
-          // Check for common path naming mistakes
           if (file.path.includes('github_client_id') && !file.path.includes('github_app_client_id')) {
             const replacement = file.path.replace(/github_client_id/g, 'github_app_client_id');
-            lines.push(
-              `  • ${file.name}: not found at ${file.path}`
-            );
-            lines.push(
-              `    ⚠️  Hint: Did you mean '${replacement}'?`
-            );
-            lines.push(
-              '    The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".'
-            );
+            lines.push(`  • ${file.name}: not found at ${file.path}`);
+            lines.push(`    ⚠️  Hint: Did you mean '${replacement}'?`);
+            lines.push('    The filename should be "github_app_client_id" (with "app_" prefix), not just "github_client_id".');
           } else {
             lines.push(`  • ${file.name}: not found at ${file.path}`);
           }
         } else {
           lines.push(`  • ${file.name} (set ${file.envVar})`);
+          if (file.checkedPaths.length > 0) {
+            lines.push(`    Looked in: ${file.checkedPaths.join(', ')}`);
+          }
         }
       }
       lines.push('');
@@ -289,36 +321,33 @@ export class DoctorCommand extends BaseCommand {
     lines.push('💡 To fix, choose one of these approaches:');
     lines.push('');
 
-    lines.push('1️⃣  Environment variables (CLI usage):');
-    if (this.isSudo()) {
-      lines.push('   Since you\'re running with sudo, preserve environment:');
-      lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
-      lines.push('');
-      lines.push('   Or set env vars before sudo:');
-      lines.push('   $ export GITHUB_APP_ID_FILE=~/.../id');
-      lines.push('   $ sudo -E kaseki-agent run ...');
-    } else {
-      lines.push('   $ export GITHUB_APP_ID_FILE=~/.../id');
-      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/.../github_app_client_id');
-      lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/.../private_key');
-      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/.../openrouter_key');
-      lines.push('   $ kaseki-agent run <repo> <branch> <task>');
-    }
-    lines.push('');
-
-    lines.push('2️⃣  Config file (persistent, recommended):');
+    lines.push('1️⃣  Config file (persistent, recommended):');
     lines.push('   $ mkdir -p ~/.kaseki');
     lines.push('   $ cat > ~/.kaseki/config.json << EOF');
     lines.push('   {');
     lines.push('     "auth": {');
-    lines.push('       "openrouter_api_key_file": "/path/to/openrouter_key",');
-    lines.push('       "github_app_id_file": "/path/to/github_app_id",');
-    lines.push('       "github_app_client_id_file": "/path/to/github_app_client_id",');
-    lines.push('       "github_app_private_key_file": "/path/to/github_private_key"');
+    lines.push('       "openrouter_api_key_file": "~/secrets/openrouter_api_key",');
+    lines.push('       "github_app_id_file": "~/secrets/github_app_id",');
+    lines.push('       "github_app_client_id_file": "~/secrets/github_app_client_id",');
+    lines.push('       "github_app_private_key_file": "~/secrets/github_app_private_key"');
     lines.push('     }');
     lines.push('   }');
     lines.push('   EOF');
     lines.push('   $ kaseki-agent run <repo> <branch> <task>');
+    lines.push('');
+
+    lines.push('2️⃣  Environment variables (one-off runs):');
+    if (this.isSudo()) {
+      lines.push('   Since you\'re running with sudo, preserve environment:');
+      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
+      lines.push('   $ sudo -E kaseki-agent run <repo> <branch> <task>');
+    } else {
+      lines.push('   $ export OPENROUTER_API_KEY_FILE=~/secrets/openrouter_api_key');
+      lines.push('   $ export GITHUB_APP_ID_FILE=~/secrets/github_app_id');
+      lines.push('   $ export GITHUB_APP_CLIENT_ID_FILE=~/secrets/github_app_client_id');
+      lines.push('   $ export GITHUB_APP_PRIVATE_KEY_FILE=~/secrets/github_app_private_key');
+      lines.push('   $ kaseki-agent run <repo> <branch> <task>');
+    }
     lines.push('');
 
     lines.push('3️⃣  Docker Compose (recommended for services):');
@@ -326,7 +355,7 @@ export class DoctorCommand extends BaseCommand {
     lines.push('   See docs/DEPLOYMENT.md for setup instructions');
     lines.push('');
 
-    lines.push('📖 Learn more: kaseki-agent setup');
+    lines.push('📖 Run the unified setup wizard: kaseki-agent init');
 
     return lines.join('\n');
   }
@@ -400,39 +429,55 @@ export class DoctorCommand extends BaseCommand {
    * Check disk space
    */
   private async checkDiskSpace(): Promise<Check> {
+    const kasekiRoot = this.configManager.get('directories.root', '/agents');
+    const rootExists = existsSync(kasekiRoot);
+
+    // Fall back to the filesystem root when kasekiRoot hasn't been created yet
+    const checkPath = rootExists ? kasekiRoot : '/';
+    const label = rootExists ? kasekiRoot : `/ (${kasekiRoot} not yet created)`;
+
     try {
-      const kasekiRoot = this.configManager.get('directories.root', '/agents');
-      const result = execSync(`df -B1 ${kasekiRoot} | awk 'NR==2 {print $4}'`, {
+      const result = execSync(`df -B1 ${checkPath} | awk 'NR==2 {print $4}'`, {
         encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
 
       const availableBytes = parseInt(result, 10);
+      if (isNaN(availableBytes)) {
+        return {
+          name: 'Disk Space',
+          status: 'warn',
+          message: `⚠️  Could not parse disk space for ${label}`,
+        };
+      }
+
       const availableGB = availableBytes / (1024 ** 3);
+      const suffix = rootExists ? '' : ` (checking ${label})`;
 
       if (availableGB > 10) {
         return {
           name: 'Disk Space',
           status: 'pass',
-          message: `✓ Sufficient disk space available (${availableGB.toFixed(1)} GB)`,
+          message: `✓ Sufficient disk space available (${availableGB.toFixed(1)} GB${suffix})`,
         };
       } else if (availableGB > 1) {
         return {
           name: 'Disk Space',
           status: 'warn',
-          message: `⚠️  Limited disk space: ${availableGB.toFixed(1)} GB available`,
+          message: `⚠️  Limited disk space: ${availableGB.toFixed(1)} GB available${suffix}`,
         };
       } else {
         return {
           name: 'Disk Space',
           status: 'fail',
-          message: `❌ Insufficient disk space: ${availableGB.toFixed(2)} GB available`,
+          message: `❌ Insufficient disk space: ${availableGB.toFixed(2)} GB available${suffix}`,
         };
       }
     } catch {
       return {
         name: 'Disk Space',
         status: 'warn',
-        message: '⚠️  Could not determine disk space',
+        message: `⚠️  Could not determine disk space for ${label}`,
       };
     }
   }
