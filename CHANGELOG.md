@@ -4,6 +4,24 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.30.2...v1.31.0) (2026-05-16)
+
+### Features
+
+* kaseki-agent quickstart — one-command production setup ([e2e7cda](https://github.com/CyanAutomation/kaseki-agent/commit/e2e7cda311ad8a1ba06f864f9facd2764e120ea6))
+* kaseki-agent quickstart (one-command setup) ([#317](https://github.com/CyanAutomation/kaseki-agent/issues/317)) ([bd638f7](https://github.com/CyanAutomation/kaseki-agent/commit/bd638f7967489e852a3c79ddcdbe9957701ba12b))
+
+### Bug Fixes
+
+* correct path for host state file in preflight configuration test ([601b8a2](https://github.com/CyanAutomation/kaseki-agent/commit/601b8a2f51f32eca7916355a46a3f27404965c3d))
+* doctor correctness — JSON purity, NaN disk space, secret discovery, deprecated command ref ([986d5ee](https://github.com/CyanAutomation/kaseki-agent/commit/986d5ee70bb6a48f0a4ad6ef2014d027433cae86))
+* doctor correctness (NaN, JSON purity, secret discovery) ([#315](https://github.com/CyanAutomation/kaseki-agent/issues/315)) ([f149c37](https://github.com/CyanAutomation/kaseki-agent/commit/f149c378f50fd5090c130691d0034643ac8fd41a))
+* harden doctor checks (JSON purity, command-injection hardening, auth label sanitization) ([#319](https://github.com/CyanAutomation/kaseki-agent/issues/319)) ([a9d4d42](https://github.com/CyanAutomation/kaseki-agent/commit/a9d4d42982399c231ab6611194bcb976fa28c632))
+* harden doctor child processes ([b76a16a](https://github.com/CyanAutomation/kaseki-agent/commit/b76a16ab6be170205f3f3923beaacc0d3936d604))
+* healthcheck validates /ready response body not just HTTP status ([12df4e3](https://github.com/CyanAutomation/kaseki-agent/commit/12df4e378f33c8a2c8b4708534e809fa766dc4bf))
+* host preflight hang + visibility + config pollution ([#316](https://github.com/CyanAutomation/kaseki-agent/issues/316)) ([3018f2b](https://github.com/CyanAutomation/kaseki-agent/commit/3018f2b75d6744899d267238e9df0f64b77015f5))
+* host preflight timeout, host visible in --help, init writes to ~/.kaseki/ ([6ffda50](https://github.com/CyanAutomation/kaseki-agent/commit/6ffda507af5ad47e5abff3ca13bb3dcb66c60c8f))
+
 ## [1.30.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.30.1...v1.30.2) (2026-05-16)
 
 ### Bug Fixes
