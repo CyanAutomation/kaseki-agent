@@ -253,9 +253,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 * **GitHub App Operations Now Enabled by Default**: `GITHUB_APP_ENABLED` defaults to `1` (enabled) instead of `0` when credentials are available. GitHub operations (PR creation, branch push) are now attempted by default, improving user experience.
 * **GitHub App Credential Auto-Detection**: Credentials are automatically discovered from multiple locations in priority order:
-  - Environment variables (`GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`)
-  - Standard secret paths (`/agents/secrets/github_app_*`, `~/.secrets/github_app_*`)
-  - Convenience auto-detect paths (`~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key`)
+  * Environment variables (`GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_PRIVATE_KEY`)
+  * Standard secret paths (`/agents/secrets/github_app_*`, `~/.secrets/github_app_*`)
+  * Convenience auto-detect paths (`~/.ssh/github-app-private-key`, `$PWD/.github-app-secrets/private-key`, `/etc/kaseki-secrets/github_app_private_key`)
 * **Graceful Credential Degradation**: When `KASEKI_PUBLISH_MODE=auto` (default), missing credentials no longer fail the run—GitHub operations are simply skipped. Strict modes (`branch`, `draft_pr`) still require credentials and fail with exit code 7.
 
 ### Documentation
