@@ -33,6 +33,17 @@ export class KasekiCLI {
     // Commands will be loaded dynamically to avoid circular dependencies
     // and reduce startup time
 
+    // NEW: One-command production setup
+    this.commands.set('quickstart', {
+      name: 'quickstart',
+      description: 'One-command setup: detect, bootstrap /agents, start API, smoke-test',
+      execute: async (args) => {
+        const { QuickstartCommand } = await import('./commands/QuickstartCommand.js');
+        const cmd = new QuickstartCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
+
     // NEW: Unified setup wizard (preferred)
     this.commands.set('init', {
       name: 'init',
