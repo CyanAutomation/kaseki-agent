@@ -4,18 +4,23 @@
 
 ---
 
+## For First-Time Users → Start Here
+
+**[GETTING_STARTED.md](GETTING_STARTED.md)** — install, run `quickstart`, submit your first task.
+
+Everything else in this index is for deeper reading after you have a working setup.
+
+---
+
 ## Quick Navigation
 
 ### 🚀 Getting Started
 
-Start here if you're new to kaseki-agent.
-
 | Document | Purpose |
 |---------|---------|
-| [SETUP_GUIDE.md](SETUP_GUIDE.md) | Choose your deployment path (npm, Docker, or script-based) |
-| [NPM_SETUP.md](NPM_SETUP.md) | Install kaseki-agent as an npm package |
-| [DOCKER_SETUP.md](DOCKER_SETUP.md) | Deploy via Docker or docker-compose |
-| [AUTH_SETUP.md](AUTH_SETUP.md) | Configure credentials (API keys, GitHub tokens) |
+| [GETTING_STARTED.md](GETTING_STARTED.md) | **Single canonical entry point** — install, quickstart, first task |
+| [AUTH_SETUP.md](AUTH_SETUP.md) | Detailed GitHub App credential setup |
+| [SETUP_GUIDE.md](SETUP_GUIDE.md) | Legacy path selector (npm / Docker / script) |
 
 ### 📚 Core Concepts
 
@@ -259,14 +264,13 @@ Diagnose and fix issues.
 ### First Time Users
 
 ```
-1. SETUP_GUIDE.md           (5 min)   — Understand your options
-2. NPM_SETUP.md or DOCKER_SETUP.md  (15 min)  — Install
-3. EXAMPLES.md              (15 min)  — See what it does
-4. AUTH_SETUP.md            (10 min)  — Set up credentials
-5. QUALITY_GATES.md         (10 min)  — Understand safety features
+1. GETTING_STARTED.md       (10 min)  — Install, quickstart, first task
+2. EXAMPLES.md              (15 min)  — See what it does
+3. AUTH_SETUP.md            (10 min)  — Set up GitHub App credentials (optional)
+4. QUALITY_GATES.md         (10 min)  — Understand safety features
 ```
 
-**Estimated total: 1 hour** to get started
+**Estimated total: 45 minutes** to get started
 
 ### Production Deployment
 
@@ -299,7 +303,8 @@ Diagnose and fix issues.
 
 **Looking for...** → **Start here**
 
-- How to get started → [SETUP_GUIDE.md](SETUP_GUIDE.md)
+- How to get started → [GETTING_STARTED.md](GETTING_STARTED.md)
+- Old setup guide → [SETUP_GUIDE.md](SETUP_GUIDE.md)
 - How to deploy to production → [DEPLOYMENT.md](DEPLOYMENT.md)
 - How to fix a failed run → [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - How to reduce costs → [COST_ESTIMATION.md](COST_ESTIMATION.md)
@@ -358,3 +363,21 @@ May 2026
 | [README.md](../README.md) | Project overview |
 | [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
 | [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |
+
+
+---
+
+## Internal / Developer Documentation
+
+These documents are for contributors and maintainers. They are not needed for using kaseki-agent.
+
+| Document | Purpose |
+|---------|---------|
+| [internal/DEVELOPMENT.md](internal/DEVELOPMENT.md) | Architecture, coding conventions |
+| [internal/BUILD_STRATEGY.md](internal/BUILD_STRATEGY.md) | Build pipeline and CI/CD |
+| [internal/BACKLOG.md](internal/BACKLOG.md) | Planned improvements |
+| [internal/IMPLEMENTATION_SUMMARY.md](internal/IMPLEMENTATION_SUMMARY.md) | Phase completion notes |
+| [internal/DUPLICATION_AUDIT.md](internal/DUPLICATION_AUDIT.md) | Code quality audits |
+| [internal/PHASE1_COMPLETION.md](internal/PHASE1_COMPLETION.md) | Phase 1 implementation notes |
+| [internal/PHASE2_COMPLETION.md](internal/PHASE2_COMPLETION.md) | Phase 2 implementation notes |
+| [internal/PHASE6_MIGRATION.md](internal/PHASE6_MIGRATION.md) | Phase 6 migration notes |

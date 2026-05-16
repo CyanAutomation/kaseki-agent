@@ -10,52 +10,39 @@ Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run is a number
 # Global install (recommended)
 npm install -g @cyanautomation/kaseki-agent
 
-# First-time admin workflows
+# One-command setup: detects Docker/Node, discovers secrets, creates /agents,
+# starts the API container, and smoke-tests your bearer token
+kaseki-agent quickstart
+```
+
+`quickstart` does everything in one pass. Use `--dry-run` to preview without making changes:
+
+```bash
+kaseki-agent quickstart --dry-run
+```
+
+After setup, verify and submit your first task:
+
+```bash
 kaseki-agent doctor
-kaseki-agent setup
-kaseki-agent config show
-kaseki-agent secrets list
+export KASEKI_API_KEY=<your-bearer-token>
+kaseki-agent run https://github.com/CyanAutomation/crudmapper main "Add input validation to all POST endpoints"
+kaseki-agent list
+kaseki-agent status kaseki-1
+kaseki-agent report kaseki-1
 ```
 
-The npm CLI is primarily an admin/helper toolbox (`doctor`, `setup`, `config`, and `secrets`) plus an API client for task workflows. Task commands such as `run`, `list`, `report`, `status`, and `stop`/`cancel` require a running local API service or a configured `KASEKI_API_URL`.
+For a step-by-step interactive wizard instead of `quickstart`:
 
 ```bash
-# Start a local API service in one terminal
-KASEKI_API_KEYS=sk-dev kaseki-agent serve --port 8080
-
-# Submit and inspect work through that API in another terminal
-KASEKI_API_KEY=sk-dev kaseki-agent run https://github.com/CyanAutomation/crudmapper main
-KASEKI_API_KEY=sk-dev kaseki-agent list
-KASEKI_API_KEY=sk-dev kaseki-agent report kaseki-1
+kaseki-agent init
 ```
-
-### First-Run API Host Setup
-
-For a Docker Compose API host, prepare storage and secrets before starting the
-service:
-
-```bash
-sudo npm install -g @cyanautomation/kaseki-agent@latest
-sudo kaseki-agent host setup --fix --recreate-api --wait-ready
-sudo kaseki-agent host preflight
-```
-
-The host prep helper creates `/agents`, `/agents/kaseki-results`,
-`/agents/kaseki-runs`, and `/agents/kaseki-cache` for UID/GID `10000:10000`,
-then normalizes `~/secrets` to directory mode `0750` and file mode `0640` with
-group `10000`. It is sudo-aware and uses the original invoking user's
-`~/secrets` by default; set `KASEKI_HOST_SECRETS_DIR=/path/to/secrets` for a
-non-standard location. The `host` command requires a current npm CLI
-(`1.29.1` or newer). If preflight reports a deleted bind mount, rerun the same
-command with `--recreate-api`. Prefer `/ready` and authenticated
-`/api/preflight` over `docker ps` alone; Docker health can lag or hide
-permission issues that readiness diagnostics explain directly.
 
 ### Without Global Install
 
 ```bash
 npm install @cyanautomation/kaseki-agent
-npx kaseki-agent setup
+npx kaseki-agent quickstart
 KASEKI_API_URL=http://localhost:8080/api npx kaseki-agent run https://github.com/CyanAutomation/crudmapper main
 ```
 
