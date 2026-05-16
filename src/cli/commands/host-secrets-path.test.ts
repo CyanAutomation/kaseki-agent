@@ -50,6 +50,26 @@ describe('configureHostSecretsDirForPreflight', () => {
     expect(env.KASEKI_SECRETS_DIR).toBe('/home/pi/secrets');
   });
 
+  test('discovers path from state file for normal user preflight', () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(true);
+    (fs.readFileSync as jest.Mock).mockReturnValue(
+      JSON.stringify({
+        normalized_secrets_dir: '/home/pi/secrets',
+        timestamp: '2026-05-16T12:00:00Z',
+        version: '1',
+      })
+    );
+
+    const env: NodeJS.ProcessEnv = {
+      HOME: '/home/pi',
+    };
+
+    configureHostSecretsDirForPreflight(env);
+
+    expect(env.KASEKI_SECRETS_DIR).toBe('/home/pi/secrets');
+    expect(fs.existsSync).toHaveBeenCalledWith('/home/pi/.kaseki-host-state.json');
+  });
+
   test('skips state file if it does not exist, falls back to sudo home', () => {
     (fs.existsSync as jest.Mock).mockReturnValue(false);
 

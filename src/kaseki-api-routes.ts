@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readHostSecret, getSecretLocations } from './secrets/host-secrets-reader';
+import { readHostSecret, getSecretLocations, resolveHostSecretPath } from './secrets/host-secrets-reader';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
@@ -452,9 +452,9 @@ function checkGitHubAppCredentials(): PreflightCheck {
 }
 
 function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
-  const secretFile = process.env.KASEKI_HOST_SECRETS_DIR
-    ? path.join(process.env.KASEKI_HOST_SECRETS_DIR, 'openrouter_api_key')
-    : process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/kaseki/openrouter_api_key';
+  const secretFile = resolveHostSecretPath('openrouter_api_key')
+    || process.env.OPENROUTER_API_KEY_FILE
+    || '/run/secrets/kaseki/openrouter_api_key';
   const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
   const workspaceDir = path.join(smokeRoot, 'workspace');
   const resultsDir = path.join(smokeRoot, 'results');

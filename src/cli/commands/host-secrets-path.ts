@@ -8,29 +8,27 @@ import * as path from 'path';
  * Returns null if state file doesn't exist or is invalid.
  */
 function discoverSecretsPathFromPreviousSetup(env: NodeJS.ProcessEnv): string | null {
-  const sudoHome = getSudoUserHome(env);
-  if (!sudoHome) {
-    return null;
-  }
+  const hostHomes = getCandidateHostHomes(env);
 
-  const stateFilePath = path.join(sudoHome, '.kaseki-host-state.json');
-
-  try {
-    if (!fs.existsSync(stateFilePath)) {
-      return null;
-    }
-
-    const content = fs.readFileSync(stateFilePath, 'utf8');
-    const state = JSON.parse(content);
-
-    if (typeof state.normalized_secrets_dir === 'string') {
-      // Verify the directory exists and is accessible
-      if (fs.existsSync(state.normalized_secrets_dir)) {
-        return state.normalized_secrets_dir;
+  for (const hostHome of hostHomes) {
+    const stateFilePath = path.join(hostHome, '.kaseki-host-state.json');
+    try {
+      if (!fs.existsSync(stateFilePath)) {
+        continue;
       }
+
+      const content = fs.readFileSync(stateFilePath, 'utf8');
+      const state = JSON.parse(content);
+
+      if (typeof state.normalized_secrets_dir === 'string') {
+        // Verify the directory exists and is accessible
+        if (fs.existsSync(state.normalized_secrets_dir)) {
+          return state.normalized_secrets_dir;
+        }
+      }
+    } catch {
+      // State file doesn't exist, is malformed, or path is inaccessible
     }
-  } catch {
-    // State file doesn't exist, is malformed, or path is inaccessible
   }
 
   return null;
@@ -87,4 +85,20 @@ function getSudoUserHome(env: NodeJS.ProcessEnv): string | null {
   }
 
   return `/home/${sudoUser}`;
+}
+
+function getCandidateHostHomes(env: NodeJS.ProcessEnv): string[] {
+  const homes: string[] = [];
+  const addHome = (home: string | null | undefined): void => {
+    if (!home || !path.isAbsolute(home) || homes.includes(home)) {
+      return;
+    }
+    homes.push(home);
+  };
+
+  addHome(env.KASEKI_HOST_HOME);
+  addHome(getSudoUserHome(env));
+  addHome(env.HOME);
+
+  return homes;
 }
