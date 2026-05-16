@@ -602,9 +602,12 @@ ${essential8.kasekiApiKeys ? `# API Service\nKASEKI_API_KEYS=${essential8.kaseki
 # KASEKI_KEEP_WORKSPACE=false
 `;
 
-    const dotEnvPath = path.join(process.cwd(), '.env');
+    // Write to ~/.kaseki/.env so setup never pollutes $CWD or $HOME
+    const kasekiDir = path.join(os.homedir(), '.kaseki');
+    const dotEnvPath = path.join(kasekiDir, '.env');
 
     if (!dryRun) {
+      await fs.mkdir(kasekiDir, { recursive: true, mode: 0o700 });
       await fs.writeFile(dotEnvPath, dotEnvContent, { mode: 0o644 });
       logger.debug(`Created .env file: ${dotEnvPath}`);
     }

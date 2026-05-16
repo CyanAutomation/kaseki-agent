@@ -130,12 +130,16 @@ normalize_secrets_dir() {
 write_host_state() {
   local home_dir="$1"
   local secrets_dir="$2"
-  local state_file="$home_dir/.kaseki-host-state.json"
-  
+  local kaseki_dir="$home_dir/.kaseki"
+  local state_file="$kaseki_dir/host-state.json"
+
+  mkdir -p "$kaseki_dir"
+  chmod 0700 "$kaseki_dir"
+
   # Create state file with normalized secrets location
   local timestamp
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  
+
   # Use a temporary file for atomic writes
   local temp_file="${state_file}.tmp"
   
