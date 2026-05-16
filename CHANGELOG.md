@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.30.0...v1.30.1) (2026-05-16)
+
+### Bug Fixes
+
+* remove local keyword for secret file variables in kaseki-agent.sh for consistency ([b8cb243](https://github.com/CyanAutomation/kaseki-agent/commit/b8cb243f3b47a90061b3ba1c62da034d193da63b))
+* update KASEKI_SECRETS_DIR path in docker-compose configuration for consistency ([d20f48f](https://github.com/CyanAutomation/kaseki-agent/commit/d20f48fc9778d7139ad3c19be2ba70b4ce9207b0))
+
 ## [1.30.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.29.1...v1.30.0) (2026-05-16)
 
 ### Features
