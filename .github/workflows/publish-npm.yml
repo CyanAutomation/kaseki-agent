@@ -148,27 +148,17 @@ jobs:
 
       - name: Verify on npm registry
         shell: bash
+        env:
+          KASEKI_VERIFY_DEBUG: "0"
         run: |
           set -euo pipefail
 
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           VERSION="${{ steps.version.outputs.version }}"
 
-          echo "Waiting for npm registry to index package..."
-          sleep 10
-
-          npm view "${PACKAGE_NAME}@${VERSION}" --json > /tmp/npm-view.json
-
-          PUBLISHED_VERSION=$(jq -r '.version' /tmp/npm-view.json)
-
-          if [[ "${PUBLISHED_VERSION}" == "${VERSION}" ]]; then
-            echo "✅ Package successfully published: ${PACKAGE_NAME}@${VERSION}"
-            jq '.version, .dist.tarball' /tmp/npm-view.json
-          else
-            echo "❌ Failed to verify package on npm registry"
-            cat /tmp/npm-view.json
-            exit 1
-          fi
+          # Use exponential backoff polling to verify package on npm registry
+          # Retries with delays: 1s, 2s, 4s, 8s, 16s, 32s (6 attempts, ~63 seconds total)
+          ./scripts/npm-verify-publish.sh "${PACKAGE_NAME}" "${VERSION}" 6
 
       - name: Upload publish metadata
         if: always()
