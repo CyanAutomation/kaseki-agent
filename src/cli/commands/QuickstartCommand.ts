@@ -282,12 +282,36 @@ export class QuickstartCommand extends BaseCommand {
       return { ok: true, message: '[dry-run] would create /agents with UID 10000 ownership' };
     }
 
-    const subdirArgs = AGENTS_SUBDIRS.map((d) => `/agents/${d}`).join(' ');
-    const cmds = [
-      `mkdir -p ${subdirArgs}`,
-      `chown -R ${CONTAINER_UID}:${CONTAINER_UID} /agents`,
-      `chmod 755 /agents`,
-    ];
+    // Create directories individually with array-based arguments (prevents injection)
+    const dirsToCreate = ['/agents', ...AGENTS_SUBDIRS.map((d) => `/agents/${d}`)];
+    
+    for (const dir of dirsToCreate) {
+      const mkdirResult = spawnSync('mkdir', ['-p', dir], { stdio: 'pipe' });
+      if (mkdirResult.status !== 0) {
+        const sudoResult = spawnSync('sudo', ['mkdir', '-p', dir], { stdio: 'inherit' });
+        if (sudoResult.status !== 0) {
+          return { ok: false, error: `Failed to create directory: ${dir}` };
+        }
+      }
+    }
+
+    // Set ownership
+    const chownResult = spawnSync('chown', ['-R', `${CONTAINER_UID}:${CONTAINER_UID}`, '/agents'], { stdio: 'pipe' });
+    if (chownResult.status !== 0) {
+      const sudoResult = spawnSync('sudo', ['chown', '-R', `${CONTAINER_UID}:${CONTAINER_UID}`, '/agents'], { stdio: 'inherit' });
+      if (sudoResult.status !== 0) {
+        return { ok: false, error: 'Failed to set ownership on /agents' };
+      }
+    }
+
+    // Set permissions
+    const chmodResult = spawnSync('chmod', ['755', '/agents'], { stdio: 'pipe' });
+    if (chmodResult.status !== 0) {
+      const sudoResult = spawnSync('sudo', ['chmod', '755', '/agents'], { stdio: 'inherit' });
+      if (sudoResult.status !== 0) {
+        return { ok: false, error: 'Failed to set permissions on /agents' };
+      }
+    }
 
     // Try without sudo first (if we already own /agents or have root)
     for (const cmd of cmds) {
