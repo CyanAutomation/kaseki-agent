@@ -5,6 +5,17 @@ import { createEventLogger } from '../logger';
 
 const logger = createEventLogger('setup-orchestrator');
 
+const TEMPLATE_FALLBACK_ENTRIES = [
+  'run-kaseki.sh',
+  'kaseki-agent.sh',
+  'scripts/kaseki-activate.sh',
+  'scripts/kaseki-preflight.sh',
+  'lib/pi-event-filter.js',
+  'lib/pi-progress-stream.js',
+  'lib/kaseki-report.js',
+  'lib/github-app-token.js',
+] as const;
+
 /**
  * Context returned after successful setup initialization
  */
@@ -55,15 +66,19 @@ export function assertSupportedNodeVersion(
  */
 export async function ensureTemplateInitialized(templateDir: string): Promise<void> {
   const runScript = path.join(templateDir, 'run-kaseki.sh');
+  const missingFallbackEntries = TEMPLATE_FALLBACK_ENTRIES.filter((entry) => !fs.existsSync(path.join(templateDir, entry)));
 
   // Check if bootstrap is already complete
-  if (fs.existsSync(runScript)) {
+  if (missingFallbackEntries.length === 0) {
     logger.info('Template directory is initialized', { templateDir, runScript });
     return;
   }
 
   // Template is missing - try to initialize it
-  logger.info('Template directory missing; attempting auto-initialization...', { templateDir });
+  logger.info('Template directory incomplete; attempting auto-initialization...', {
+    templateDir,
+    missing: missingFallbackEntries,
+  });
 
   try {
     // Ensure parent directory exists
@@ -88,13 +103,24 @@ export async function ensureTemplateInitialized(templateDir: string): Promise<vo
       }
     }
 
-    // Try strategy 2: Create symlink to /app (if we're in Docker)
-    if (fs.existsSync('/app/run-kaseki.sh')) {
+    // Try strategy 2: Create symlinks to /app (if we're in Docker)
+    const imageAppDir = process.env.KASEKI_IMAGE_APP_DIR || '/app';
+    if (fs.existsSync(path.join(imageAppDir, 'run-kaseki.sh'))) {
       try {
-        // Create template directory and symlink key files
         fs.mkdirSync(templateDir, { recursive: true, mode: 0o755 });
-        fs.symlinkSync('/app/run-kaseki.sh', runScript, 'file');
-        logger.info('Template initialized via symlink to /app', { templateDir });
+        for (const entry of TEMPLATE_FALLBACK_ENTRIES) {
+          const source = path.join(imageAppDir, entry);
+          const target = path.join(templateDir, entry);
+          if (!fs.existsSync(source) || fs.existsSync(target)) {
+            continue;
+          }
+          fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
+          fs.symlinkSync(source, target, 'file');
+        }
+        logger.info('Template initialized via symlinks to image app directory', {
+          templateDir,
+          imageAppDir,
+        });
         return;
       } catch (err) {
         logger.warn('Failed to create symlink; trying alternate strategy', {

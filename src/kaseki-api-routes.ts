@@ -43,6 +43,7 @@ const REQUIRED_TEMPLATE_FILES = [
   'lib/pi-event-filter.js',
   'lib/pi-progress-stream.js',
   'lib/kaseki-report.js',
+  'lib/github-app-token.js',
 ] as const;
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
@@ -451,7 +452,9 @@ function checkGitHubAppCredentials(): PreflightCheck {
 }
 
 function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
-  const secretFile = process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/kaseki/openrouter_api_key';
+  const secretFile = process.env.KASEKI_HOST_SECRETS_DIR
+    ? path.join(process.env.KASEKI_HOST_SECRETS_DIR, 'openrouter_api_key')
+    : process.env.OPENROUTER_API_KEY_FILE || '/run/secrets/kaseki/openrouter_api_key';
   const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
   const workspaceDir = path.join(smokeRoot, 'workspace');
   const resultsDir = path.join(smokeRoot, 'results');
