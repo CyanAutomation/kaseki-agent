@@ -303,6 +303,101 @@ is_path_on_readonly_mount() {
   return 1  # Not read-only
 }
 
+# Check if a file is readable by UID 10000 OR GID 10000 (group-based access)
+# This is important for read-only mounts where we can't change permissions
+is_file_readable_by_uid_or_gid() {
+  local file_path="$1"
+  local uid="${2:-$CONTAINER_UID}"
+  local gid="${3:-$CONTAINER_GID}"
+  
+  if [ ! -f "$file_path" ]; then
+    return 1
+  fi
+  
+  # Test direct readability
+  if [ -r "$file_path" ]; then
+    return 0
+  fi
+  
+  # Check if file is readable by our group
+  local mode
+  mode=$(get_current_permissions "$file_path")
+  
+  if [ "$mode" = "unknown" ] || [ "$mode" = "nonexistent" ]; then
+    return 1
+  fi
+  
+  # Extract group read permission (second digit in octal mode)
+  # For mode like 0640: group digit is 4 (read permission)
+  local group_digit
+  group_digit=$(echo "$mode" | cut -c2)
+  
+  # Check if group has read permission (4 = read)
+  if [ "$group_digit" -ge 4 ] && [ "$group_digit" -le 7 ]; then
+    # Group has read permission - verify our GID matches
+    local file_gid
+    if command -v stat &>/dev/null; then
+      file_gid=$(stat -c "%g" "$file_path" 2>/dev/null || echo "unknown")
+    else
+      file_gid=$(ls -ld "$file_path" 2>/dev/null | awk '{print $4}' || echo "unknown")
+    fi
+    
+    # If file GID matches our GID, we can read it via group membership
+    if [ "$file_gid" = "$gid" ]; then
+      return 0
+    fi
+  fi
+  
+  return 1
+}
+
+# Check if a directory is traversable by UID or GID (for group-based access)
+is_directory_traversable_by_uid_or_gid() {
+  local dir_path="$1"
+  local uid="${2:-$CONTAINER_UID}"
+  local gid="${3:-$CONTAINER_GID}"
+  
+  if [ ! -d "$dir_path" ]; then
+    return 1
+  fi
+  
+  # Test direct traversability
+  if [ -x "$dir_path" ]; then
+    return 0
+  fi
+  
+  # Check if directory is traversable by our group
+  local mode
+  mode=$(get_current_permissions "$dir_path")
+  
+  if [ "$mode" = "unknown" ] || [ "$mode" = "nonexistent" ]; then
+    return 1
+  fi
+  
+  # Extract group execute permission (second digit in octal mode)
+  # For mode like 0750: group digit is 5 (read+execute permission)
+  local group_digit
+  group_digit=$(echo "$mode" | cut -c2)
+  
+  # Check if group has execute permission (1, 3, 5, 7)
+  # The last bit (1) means execute, so odd numbers have execute
+  if [ "$((group_digit % 2))" -eq 1 ]; then
+    # Group has execute permission - verify our GID matches
+    local dir_gid
+    if command -v stat &>/dev/null; then
+      dir_gid=$(stat -c "%g" "$dir_path" 2>/dev/null || echo "unknown")
+    else
+      dir_gid=$(ls -ld "$dir_path" 2>/dev/null | awk '{print $4}' || echo "unknown")
+    fi
+    
+    if [ "$dir_gid" = "$gid" ]; then
+      return 0
+    fi
+  fi
+  
+  return 1
+}
+
 get_current_permissions() {
   local path="$1"
   
@@ -420,9 +515,28 @@ check_directory_traversable() {
         return 2
       fi
     else
-      log_error "Cannot auto-fix $dir_name (possibly on read-only mount)"
-      log_error "Fix on host: sudo chmod 0750 $dir_path"
-      return 2
+      # Check if this is a read-only mount
+      if is_path_on_readonly_mount "$dir_path"; then
+        # Check if directory is traversable by group
+        if is_directory_traversable_by_uid_or_gid "$dir_path"; then
+          log_warn "$dir_name is on a read-only mount but is traversable by GID $CONTAINER_GID"
+          log_warn "Note: Some operations may fail if they require write access"
+          return 3  # Warning: accessible but on read-only mount
+        fi
+        
+        # Not traversable even by group
+        log_error "$dir_name is on a read-only mount and not traversable"
+        log_error ""
+        log_error "To fix on HOST (before docker-compose up or container start):"
+        log_error "  sudo chmod 0750 $dir_path"
+        log_error ""
+        return 2
+      else
+        # Writable mount but still can't fix permissions
+        log_error "Cannot auto-fix $dir_name permissions"
+        log_error "  sudo chmod 0750 $dir_path"
+        return 2
+      fi
     fi
   fi
   
@@ -450,11 +564,40 @@ check_file_readable() {
         return 2
       fi
     else
-      log_error "Cannot auto-fix $file_name (possibly on read-only mount)"
-      local dir_path
-      dir_path=$(dirname "$file_path")
-      log_error "Fix on host: sudo chmod 0640 $file_path"
-      return 2
+      # Check if this is a read-only mount
+      if is_path_on_readonly_mount "$file_path"; then
+        # Check if file is readable by group
+        if is_file_readable_by_uid_or_gid "$file_path"; then
+          log_warn "$file_name is on a read-only mount but is readable by GID $CONTAINER_GID"
+          log_warn "Note: Using group-based access from UID $CONTAINER_UID"
+          return 3  # Warning: accessible but on read-only mount
+        fi
+        
+        # Not readable even by group - must fix on host
+        log_error "$file_name is on a read-only mount and not readable"
+        log_error ""
+        log_error "To fix on HOST (before docker-compose up or container start):"
+        local dir_path
+        dir_path=$(dirname "$file_path")
+        # Get current mode for helpful feedback
+        local current_mode
+        current_mode=$(get_current_permissions "$file_path")
+        log_error "  Current mode: $current_mode"
+        log_error "  Fix: sudo chmod 0640 $file_path"
+        log_error "  Or:  sudo chmod 0644 $file_path (world-readable)"
+        log_error ""
+        log_error "Make sure parent directory is traversable:"
+        log_error "  sudo chmod 0750 $dir_path"
+        log_error ""
+        return 2
+      else
+        # Writable mount but still can't fix permissions
+        log_error "Cannot auto-fix $file_name permissions"
+        local dir_path
+        dir_path=$(dirname "$file_path")
+        log_error "  sudo chmod 0640 $file_path"
+        return 2
+      fi
     fi
   fi
   
