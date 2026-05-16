@@ -96,8 +96,41 @@ describe('SetupOrchestrator', () => {
     });
 
     it('should handle template initialization with symlink fallback', async () => {
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
-      expect(result.nodeVersionValid).toBe(true);
+      const imageAppDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-image-app-'));
+      const previousImageAppDir = process.env.KASEKI_IMAGE_APP_DIR;
+      const entries = [
+        'run-kaseki.sh',
+        'kaseki-agent.sh',
+        'scripts/kaseki-activate.sh',
+        'scripts/kaseki-preflight.sh',
+        'lib/pi-event-filter.js',
+        'lib/pi-progress-stream.js',
+        'lib/kaseki-report.js',
+        'lib/github-app-token.js',
+      ];
+
+      for (const entry of entries) {
+        const sourcePath = path.join(imageAppDir, entry);
+        fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+        fs.writeFileSync(sourcePath, '#!/bin/sh\n');
+      }
+
+      try {
+        process.env.KASEKI_IMAGE_APP_DIR = imageAppDir;
+        const result = await setupOrchestrator.initializeSetup(testTemplateDir, skipNodeVersionCheck());
+
+        expect(result.nodeVersionValid).toBe(true);
+        for (const entry of entries) {
+          expect(fs.existsSync(path.join(testTemplateDir, entry))).toBe(true);
+        }
+      } finally {
+        if (previousImageAppDir === undefined) {
+          delete process.env.KASEKI_IMAGE_APP_DIR;
+        } else {
+          process.env.KASEKI_IMAGE_APP_DIR = previousImageAppDir;
+        }
+        fs.rmSync(imageAppDir, { recursive: true, force: true });
+      }
     });
 
     it('should handle template init errors gracefully and continue', async () => {
