@@ -91,7 +91,8 @@ USAGE
 
 COMMANDS
   Setup & Configuration
-  init [--dry-run]          Unified setup wizard (recommended for first-time setup)
+  quickstart [--dry-run]    One-command setup: detect, bootstrap, start API, verify
+  init [--dry-run]          Guided wizard (step-by-step path selection)
   setup                     (DEPRECATED) Interactive setup wizard (use 'init' instead)
   doctor [--json] [--fix]   Diagnose host, dependencies, templates, and configuration
   config [--get|--set]      Manage configuration
@@ -117,11 +118,14 @@ COMMON OPTIONS
   --json                    JSON output format
 
 QUICK START
-  # First-time setup (unified wizard)
+  # First-time setup (single command — recommended)
+  kaseki-agent quickstart
+
+  # Or use the step-by-step wizard
   kaseki-agent init
 
   # Verify environment
-  kaseki-agent doctor --verbose
+  kaseki-agent doctor
 
   # Start the local API service
   kaseki-agent serve --port 8080
