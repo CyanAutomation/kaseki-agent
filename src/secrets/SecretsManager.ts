@@ -1,80 +1,184 @@
 /**
- * Secrets Manager
+ * Secrets Manager (Simplified)
  *
- * Secure credential storage with keyring integration
- * - Primary: Linux keyring (pass)
- * - Fallback: File-based storage (~/.kaseki/secrets/) with 0600 permissions
+ * Secure credential storage - filesystem only
+ * - Primary: /home/pi/secrets/{secretName} (Docker Compose)
+ * - Fallback: ~/.kaseki/secrets/{secretName} (Single-run / local dev)
  *
- * Note: macOS Keychain and Windows Credential Manager support can be added
+ * No keyring, no env vars. Explicit paths only.
+ * See scripts/setup-secrets.sh for automatic permission setup.
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
 import { createLogger } from '../logger';
 
 const logger = createLogger('secrets');
 
-interface SecretsStore {
-  store(key: string, value: string): Promise<void>;
-  retrieve(key: string): Promise<string | null>;
-  delete(key: string): Promise<void>;
-  list(): Promise<string[]>;
+/**
+ * Schema validators for different secret types
+ */
+interface SecretSchema {
+  name: string;
+  pattern: RegExp | null;
+  validate(value: string): { valid: boolean; error?: string };
+}
+
+const schemas: Record<string, SecretSchema> = {
+  openrouter_api_key: {
+    name: 'OpenRouter API Key',
+    pattern: /^sk-or-[a-zA-Z0-9]+$/,
+    validate(value: string) {
+      if (!/^sk-or-/.test(value)) {
+        return { valid: false, error: 'Must start with "sk-or-"' };
+      }
+      if (value.length < 20) {
+        return { valid: false, error: 'Looks incomplete (too short)' };
+      }
+      return { valid: true };
+    },
+  },
+  github_app_private_key: {
+    name: 'GitHub App Private Key',
+    pattern: null,
+    validate(value: string) {
+      if (!value.includes('BEGIN RSA PRIVATE KEY')) {
+        return { valid: false, error: 'Not a valid RSA private key (missing header)' };
+      }
+      if (!value.includes('END RSA PRIVATE KEY')) {
+        return { valid: false, error: 'Not a valid RSA private key (missing footer)' };
+      }
+      return { valid: true };
+    },
+  },
+  kaseki_api_keys: {
+    name: 'Kaseki API Keys',
+    pattern: /^[a-f0-9\-:;]+$/,
+    validate(value: string) {
+      // Comma or semicolon-separated UUIDs
+      const keys = value.split(/[,;]/).map((k) => k.trim());
+      for (const key of keys) {
+        if (!/^[a-f0-9\-]+$/.test(key)) {
+          return { valid: false, error: 'Contains invalid UUID format' };
+        }
+      }
+      return { valid: true };
+    },
+  },
+};
+
+/**
+ * Validate secret format and return detailed error if invalid
+ */
+export function validateSecretFormat(secretName: string, value: string): { valid: boolean; error?: string } {
+  const schema = schemas[secretName];
+  if (!schema) {
+    // Unknown secret type; assume valid
+    return { valid: true };
+  }
+
+  if (!value || value.trim().length === 0) {
+    return { valid: false, error: `${schema.name} cannot be empty` };
+  }
+
+  return schema.validate(value);
 }
 
 /**
- * File-based secrets store (fallback, headless systems)
+ * Simplified Secrets Manager - filesystem-only implementation
+ * 
+ * Two fallback paths:
+ * 1. Primary: /home/pi/secrets/{secretName} (Docker Compose)
+ * 2. Fallback: ~/.kaseki/secrets/{secretName} (Single-run, local dev)
  */
-class FileSecretsStore implements SecretsStore {
-  private baseDir: string;
-
-  constructor(baseDir?: string) {
-    this.baseDir = baseDir || path.join(os.homedir(), '.kaseki', 'secrets');
+export class SecretsManager {
+  /**
+   * Get the primary secrets directory (Docker Compose)
+   */
+  private getPrimarySecretsDir(): string {
+    // For Docker deployments, try /home/pi/secrets first
+    return '/home/pi/secrets';
   }
 
-  async store(key: string, value: string): Promise<void> {
-    try {
-      await fs.mkdir(this.baseDir, { recursive: true, mode: 0o700 });
-      const filePath = path.join(this.baseDir, key);
+  /**
+   * Get the fallback secrets directory (local dev)
+   */
+  private getFallbackSecretsDir(): string {
+    return path.join(os.homedir(), '.kaseki', 'secrets');
+  }
 
-      // Write with restrictive permissions (0600 - owner read/write only)
+  /**
+   * Store a secret in the fallback location (~/.kaseki/secrets)
+   * Used for local development and single-run execution
+   */
+  async store(key: string, value: string): Promise<void> {
+    const baseDir = this.getFallbackSecretsDir();
+
+    try {
+      // Create directory with restrictive permissions (700 - owner only)
+      await fs.mkdir(baseDir, { recursive: true, mode: 0o700 });
+      const filePath = path.join(baseDir, key);
+
+      // Write with restrictive permissions (600 - owner read/write only)
       await fs.writeFile(filePath, value, {
         mode: 0o600,
         flag: 'w',
       });
 
-      logger.debug(`Secret stored: ${key} -> ${filePath}`);
+      logger.info(`✓ Stored ${key} at ${filePath}`);
     } catch (error) {
-      throw new Error(`Failed to store secret: ${error}`);
+      throw new Error(`Failed to store secret in ${baseDir}: ${error}`);
     }
   }
 
+  /**
+   * Retrieve a secret from either location (primary or fallback)
+   * Logs which path was used for transparency
+   */
   async retrieve(key: string): Promise<string | null> {
+    const primaryDir = this.getPrimarySecretsDir();
+    const fallbackDir = this.getFallbackSecretsDir();
+    const primaryPath = path.join(primaryDir, key);
+    const fallbackPath = path.join(fallbackDir, key);
+
+    // Try primary location first
     try {
-      const filePath = path.join(this.baseDir, key);
-      const stat = await fs.stat(filePath);
-
-      // Security check: verify file permissions are restrictive
-      if ((stat.mode & 0o077) !== 0) {
-        logger.warn(`Secret file has overly permissive permissions: ${filePath}`);
+      const stat = await fs.stat(primaryPath);
+      if (stat.isFile()) {
+        const value = await fs.readFile(primaryPath, 'utf-8');
+        logger.info(`✓ Loaded ${key} from ${primaryPath}`);
+        return value.trim();
       }
-
-      const value = await fs.readFile(filePath, 'utf-8');
-      return value.trim();
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return null;
-      }
-      throw new Error(`Failed to retrieve secret: ${error}`);
+    } catch {
+      // File not found at primary location, try fallback
     }
+
+    // Try fallback location
+    try {
+      const stat = await fs.stat(fallbackPath);
+      if (stat.isFile()) {
+        const value = await fs.readFile(fallbackPath, 'utf-8');
+        logger.info(`⚠ Fallback: Loading ${key} from ${fallbackPath} (primary ${primaryDir} not found)`);
+        return value.trim();
+      }
+    } catch {
+      // File not found at fallback location either
+    }
+
+    logger.debug(`Secret not found: ${key} (tried ${primaryPath} and ${fallbackPath})`);
+    return null;
   }
 
+  /**
+   * Delete a secret from the fallback location
+   */
   async delete(key: string): Promise<void> {
+    const filePath = path.join(this.getFallbackSecretsDir(), key);
+
     try {
-      const filePath = path.join(this.baseDir, key);
       await fs.unlink(filePath);
-      logger.debug(`Secret deleted: ${key}`);
+      logger.info(`✓ Deleted ${key}`);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(`Failed to delete secret: ${error}`);
@@ -82,253 +186,34 @@ class FileSecretsStore implements SecretsStore {
     }
   }
 
-  async list(): Promise<string[]> {
-    try {
-      const files = await fs.readdir(this.baseDir);
-      return files;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return [];
-      }
-      throw error;
-    }
-  }
-}
-
-/**
- * Linux pass (password-store) backed secrets
- * Requires: pass package installed and initialized
- */
-class PassSecretsStore implements SecretsStore {
-  private prefix: string;
-
-  constructor(prefix: string = 'kaseki-agent') {
-    this.prefix = prefix;
-  }
-
-  private getPassKey(key: string): string {
-    return `${this.prefix}/${key}`;
-  }
-
-  private isPassAvailable(): boolean {
-    try {
-      execSync('command -v pass', { shell: '/bin/bash', stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private isPassInitialized(): boolean {
-    try {
-      execSync('pass ls > /dev/null 2>&1', { shell: '/bin/bash', stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async store(key: string, value: string): Promise<void> {
-    if (!this.isPassAvailable()) {
-      throw new Error('pass (password-store) not installed. Install with: sudo apt install pass');
-    }
-
-    if (!this.isPassInitialized()) {
-      throw new Error('pass (password-store) not initialized. Run: pass init');
-    }
-
-    try {
-      // Use echo + pass insert to avoid interactive prompt
-      const passKey = this.getPassKey(key);
-      execSync(`echo "${value.replace(/"/g, '\\"')}" | pass insert -f "${passKey}"`, {
-        shell: '/bin/bash',
-      });
-
-      logger.debug(`Secret stored in pass: ${passKey}`);
-    } catch (error) {
-      throw new Error(`Failed to store secret in pass: ${error}`);
-    }
-  }
-
-  async retrieve(key: string): Promise<string | null> {
-    if (!this.isPassAvailable()) {
-      logger.debug('pass not available, skipping keyring retrieval');
-      return null;
-    }
-
-    try {
-      const passKey = this.getPassKey(key);
-      const result = execSync(`pass show "${passKey}" 2>/dev/null || echo ""`, {
-        shell: '/bin/bash',
-        encoding: 'utf-8',
-      });
-
-      return result.trim() || null;
-    } catch (error) {
-      logger.debug(`Failed to retrieve secret from pass: ${error}`);
-      return null;
-    }
-  }
-
-  async delete(key: string): Promise<void> {
-    if (!this.isPassAvailable()) {
-      return;
-    }
-
-    try {
-      const passKey = this.getPassKey(key);
-      execSync(`pass rm -f "${passKey}"`, { shell: '/bin/bash' });
-      logger.debug(`Secret deleted from pass: ${passKey}`);
-    } catch (error) {
-      throw new Error(`Failed to delete secret from pass: ${error}`);
-    }
-  }
-
-  async list(): Promise<string[]> {
-    if (!this.isPassAvailable()) {
-      return [];
-    }
-
-    try {
-      const result = execSync(`pass ls 2>/dev/null | grep "^${this.prefix}/" || echo ""`, {
-        shell: '/bin/bash',
-        encoding: 'utf-8',
-      });
-
-      return result
-        .split('\n')
-        .filter((line) => line.trim())
-        .map((line) => line.replace(`${this.prefix}/`, ''));
-    } catch (error) {
-      logger.debug(`Failed to list secrets from pass: ${error}`);
-      return [];
-    }
-  }
-}
-
-/**
- * Secrets Manager - Main interface
- * Tries keyring first, falls back to file storage
- */
-export class SecretsManager {
-  private fileStore: FileSecretsStore;
-  private passStore: PassSecretsStore;
-  private usePassIfAvailable: boolean;
-
-  constructor(usePassIfAvailable: boolean = true) {
-    this.fileStore = new FileSecretsStore();
-    this.passStore = new PassSecretsStore();
-    this.usePassIfAvailable = usePassIfAvailable;
-  }
-
   /**
-   * Store a secret with automatic fallback
-   */
-  async store(key: string, value: string): Promise<void> {
-    if (this.usePassIfAvailable && this.isPassAvailable()) {
-      try {
-        await this.passStore.store(key, value);
-        return;
-      } catch (error) {
-        logger.warn(`Keyring storage failed, falling back to file storage: ${error}`);
-      }
-    }
-
-    await this.fileStore.store(key, value);
-  }
-
-  /**
-   * Retrieve a secret (tries keyring first, then file)
-   */
-  async retrieve(key: string): Promise<string | null> {
-    // Try file-based first (where users might have stored it)
-    const fileValue = await this.fileStore.retrieve(key);
-    if (fileValue) {
-      return fileValue;
-    }
-
-    // Try keyring if available
-    if (this.usePassIfAvailable && this.isPassAvailable()) {
-      const passValue = await this.passStore.retrieve(key);
-      if (passValue) {
-        return passValue;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Delete a secret from both stores
-   */
-  async delete(key: string): Promise<void> {
-    try {
-      await this.fileStore.delete(key);
-    } catch (error) {
-      logger.debug(`Failed to delete from file store: ${error}`);
-    }
-
-    if (this.usePassIfAvailable && this.isPassAvailable()) {
-      try {
-        await this.passStore.delete(key);
-      } catch (error) {
-        logger.debug(`Failed to delete from keyring: ${error}`);
-      }
-    }
-  }
-
-  /**
-   * List all stored secrets
+   * List all stored secrets from both locations
    */
   async list(): Promise<Map<string, string>> {
     const secrets = new Map<string, string>();
+    const primaryDir = this.getPrimarySecretsDir();
+    const fallbackDir = this.getFallbackSecretsDir();
 
-    // List from file store
-    const fileKeys = await this.fileStore.list();
-    for (const key of fileKeys) {
-      const value = await this.fileStore.retrieve(key);
-      if (value) {
-        secrets.set(key, `file:${path.join(os.homedir(), '.kaseki', 'secrets', key)}`);
+    // List from fallback
+    try {
+      const files = await fs.readdir(fallbackDir);
+      for (const key of files) {
+        secrets.set(key, fallbackDir);
       }
+    } catch {
+      // Directory doesn't exist
     }
 
-    // List from keyring
-    if (this.usePassIfAvailable && this.isPassAvailable()) {
-      const passKeys = await this.passStore.list();
-      for (const key of passKeys) {
-        secrets.set(key, `keyring:${key}`);
+    // List from primary (overrides fallback if exists)
+    try {
+      const files = await fs.readdir(primaryDir);
+      for (const key of files) {
+        secrets.set(key, primaryDir);
       }
+    } catch {
+      // Directory doesn't exist
     }
 
     return secrets;
   }
-
-  /**
-   * Check if pass is available
-   */
-  private isPassAvailable(): boolean {
-    try {
-      execSync('command -v pass', { shell: '/bin/bash', stdio: 'ignore' });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Initialize/setup keyring (interactive)
-   */
-  async initializeKeyring(): Promise<void> {
-    if (!this.isPassAvailable()) {
-      throw new Error('pass (password-store) not installed');
-    }
-
-    try {
-      execSync('pass init 2>&1', { shell: '/bin/bash', stdio: 'inherit' });
-      logger.info('Keyring initialized successfully');
-    } catch (error) {
-      throw new Error(`Failed to initialize keyring: ${error}`);
-    }
-  }
-
 }

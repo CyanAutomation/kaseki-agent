@@ -103,30 +103,54 @@ check_bootstrap_status() {
 check_secret_paths() {
   log_info "Checking secret paths..."
 
-  local secrets_dir="${KASEKI_SECRETS_DIR:-/agents/secrets}"
+  # Check both primary (Docker) and fallback (local) paths
+  local primary_secrets_dir="/home/pi/secrets"
+  local fallback_secrets_dir="$HOME/.kaseki/secrets"
+  local secrets_dir_found=false
   local exit_code=0
 
-  if [ ! -d "$secrets_dir" ]; then
-    log_warn "Secrets directory not mounted: $secrets_dir"
-    log_info "  Ensure the host secrets directory is mounted at $secrets_dir"
-    log_info "  See docs/QUICK_START.md for setup instructions"
+  # Try primary location first
+  if [ -d "$primary_secrets_dir" ]; then
+    log_pass "Docker secrets directory found: $primary_secrets_dir"
+
+    # Check permissions
+    local mode
+    mode=$(stat -c '%a' "$primary_secrets_dir" 2>/dev/null || stat -f '%OLp' "$primary_secrets_dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/')
+
+    # Mode should be at least 750 (owner rwx, group rx, others nothing)
+    if [[ ! "$mode" =~ ^[7][5-7][0-7]$ ]]; then
+      log_error "Docker secrets directory has incorrect permissions: $primary_secrets_dir (mode: $mode, expected: 750)"
+      log_info "  Fix with: ./scripts/setup-secrets.sh --fix"
+      exit_code=2
+    else
+      log_pass "Docker secrets permissions are correct: $primary_secrets_dir (mode: $mode)"
+    fi
+
+    secrets_dir_found=true
+  fi
+
+  # Try fallback location
+  if [ ! "$secrets_dir_found" = true ] && [ -d "$fallback_secrets_dir" ]; then
+    log_pass "Local secrets directory found: $fallback_secrets_dir (falling back from Docker)"
+
+    local mode
+    mode=$(stat -c '%a' "$fallback_secrets_dir" 2>/dev/null || stat -f '%OLp' "$fallback_secrets_dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/')
+
+    if [ "$mode" != "700" ]; then
+      log_error "Local secrets directory has incorrect permissions: $fallback_secrets_dir (mode: $mode, expected: 700)"
+      log_info "  Fix with: ./scripts/setup-secrets.sh --fix"
+      exit_code=2
+    else
+      log_pass "Local secrets permissions are correct: $fallback_secrets_dir (mode: $mode)"
+    fi
+
+    secrets_dir_found=true
+  fi
+
+  if [ ! "$secrets_dir_found" = true ]; then
+    log_warn "No secrets directory found ($primary_secrets_dir or $fallback_secrets_dir)"
+    log_info "  Create one with: ./scripts/setup-secrets.sh"
     return 3
-  fi
-
-  if [ ! -x "$secrets_dir" ]; then
-    log_error "Secrets directory is not traversable: $secrets_dir"
-    log_error "  Fix on host: sudo chmod 750 $secrets_dir"
-    return 2
-  fi
-
-  log_pass "Secrets directory is accessible: $secrets_dir"
-
-  # Check API key file readability if it's already present
-  local api_key_file="${OPENROUTER_API_KEY_FILE:-$secrets_dir/openrouter_api_key}"
-  if [ -f "$api_key_file" ] && [ ! -r "$api_key_file" ]; then
-    log_error "API key file exists but is not readable: $api_key_file"
-    log_error "  Fix on host: sudo chmod 640 $api_key_file"
-    exit_code=2
   fi
 
   return "$exit_code"
@@ -136,24 +160,41 @@ check_api_key() {
   log_info "Checking API key..."
 
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    log_pass "OPENROUTER_API_KEY is set"
+    log_pass "OPENROUTER_API_KEY is set (from environment)"
     return 0
   fi
 
-  local api_key_file="${OPENROUTER_API_KEY_FILE:-}"
-  if [ -n "$api_key_file" ] && [ -f "$api_key_file" ]; then
-    if [ -r "$api_key_file" ]; then
-      log_pass "API key file is readable: $api_key_file"
-      return 0
+  # Check file-based sources
+  local api_key_sources=(
+    "${OPENROUTER_API_KEY_FILE:-}"
+    "/home/pi/secrets/openrouter_api_key"
+    "$HOME/.kaseki/secrets/openrouter_api_key"
+  )
+
+  local api_key_found=false
+  for api_key_file in "${api_key_sources[@]}"; do
+    [ -z "$api_key_file" ] && continue
+
+    if [ -f "$api_key_file" ]; then
+      if [ -r "$api_key_file" ]; then
+        log_pass "API key file found and readable: $api_key_file"
+        api_key_found=true
+        break
+      else
+        log_error "API key file exists but is not readable: $api_key_file"
+        log_info "  Fix with: ./scripts/setup-secrets.sh --fix"
+        return 2
+      fi
     fi
-    log_error "API key file exists but is not readable: $api_key_file"
-    log_error "  Fix on host: sudo chmod 640 $api_key_file"
-    return 2
+  done
+
+  if [ ! "$api_key_found" = true ]; then
+    log_warn "No OpenRouter API key configured"
+    log_info "  Set up with: kaseki-agent init"
+    return 3
   fi
 
-  log_warn "No API key configured — agent runs will fail without one"
-  log_info "  Run: kaseki-agent init"
-  return 3
+  return 0
 }
 
 check_worker_mounts() {

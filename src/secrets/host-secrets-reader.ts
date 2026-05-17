@@ -1,15 +1,21 @@
 /**
- * Host-Based Secrets Reader
+ * Host-Based Secrets Reader (Simplified)
  *
- * Reads secrets from a single host filesystem location:
- *   $KASEKI_SECRETS_DIR/{secretName}  (default: /agents/secrets/{secretName})
+ * Reads secrets from two possible locations in order of preference:
+ * 1. Docker: /home/pi/secrets/{secretName} (host-mounted into container)
+ * 2. Local dev: ~/.kaseki/secrets/{secretName} (single-run, local development)
  *
- * No fallback to environment variables (hard requirement).
+ * Logs which path is actually being used for transparency.
+ * No environment variables, no fallbacks to env vars (hard requirement).
  * Includes stat-based caching for performance.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { createLogger } from '../logger';
+
+const logger = createLogger('secrets');
 
 interface CacheEntry {
   value: string;
@@ -20,42 +26,59 @@ interface CacheEntry {
 const secretCache = new Map<string, CacheEntry>();
 
 /**
- * Location for secrets on host
+ * Get the primary secrets directory (Docker Compose)
  */
 const getPrimarySecretsDir = (): string => {
-  return process.env.KASEKI_SECRETS_DIR || '/agents/secrets';
+  return '/home/pi/secrets';
 };
 
 /**
- * Read a secret value from host filesystem.
- *
- * @param secretName - Name of the secret (e.g., "openrouter_api_key")
- * @returns Secret value as string, or null if not found
- * @throws Error if file exists but cannot be read (permissions, etc.)
+ * Get the fallback secrets directory (single-run, local dev)
+ */
+const getFallbackSecretsDir = (): string => {
+  return path.join(os.homedir(), '.kaseki', 'secrets');
+};
+
+/**
+ * Read a secret from either Docker or local dev location
+ * Returns null if not found
  */
 export function readHostSecret(secretName: string): string | null {
-  const secretPath = resolveHostSecretPath(secretName);
-  if (!secretPath) {
+  const resolved = resolveHostSecretPath(secretName);
+  if (!resolved) {
     return null;
   }
-
-  return readSecretFromPath(secretPath);
+  return readSecretFromPath(resolved.path);
 }
 
-export function resolveHostSecretPath(secretName: string): string | null {
+/**
+ * Resolve secret path from either location, with logging
+ * Returns null if not found in either location
+ */
+export function resolveHostSecretPath(secretName: string): { path: string; source: 'docker' | 'local' } | null {
   validateSecretName(secretName);
 
   const primaryPath = path.join(getPrimarySecretsDir(), secretName);
+  const fallbackPath = path.join(getFallbackSecretsDir(), secretName);
 
+  // Try primary (Docker)
   if (fs.existsSync(primaryPath)) {
-    return primaryPath;
+    logger.info(`✓ Found ${secretName} at ${primaryPath} (Docker)`);
+    return { path: primaryPath, source: 'docker' };
   }
 
+  // Try fallback (local dev)
+  if (fs.existsSync(fallbackPath)) {
+    logger.info(`⚠ Found ${secretName} at ${fallbackPath} (local dev, primary ${primaryPath} not found)`);
+    return { path: fallbackPath, source: 'local' };
+  }
+
+  logger.debug(`✗ Secret not found: ${secretName} (tried ${primaryPath} and ${fallbackPath})`);
   return null;
 }
 
 /**
- * Read a secret from a specific path with caching.
+ * Read a secret from a specific path with caching and logging.
  * Returns null if file doesn't exist.
  *
  * @param filePath - Full path to secret file
@@ -121,21 +144,31 @@ function describeSecretPath(filePath: string, stat: fs.Stats): string {
 }
 
 /**
- * Get the expected secret file path for debugging/error messages.
- *
- * @param secretName - Name of the secret
- * @returns Object with primary path
+ * Get expected secret file locations for error messages and validation
+ * Returns both primary/secondary (legacy names) and docker/local (new names)
  */
 export function getSecretLocations(secretName: string): {
-  primary: string; secondary: string;
+  docker: string;
+  local: string;
+  primary: string;
+  secondary: string;
 } {
+  const docker = path.join(getPrimarySecretsDir(), secretName);
+  const local = path.join(getFallbackSecretsDir(), secretName);
   return {
-    primary: path.join(getPrimarySecretsDir(), secretName),
-    secondary: path.join('/etc/kaseki/secrets', secretName),
+    docker,
+    local,
+    primary: docker, // Legacy name for backward compatibility
+    secondary: local, // Legacy name for backward compatibility
   };
 }
 
+/**
+ * Get the resolved secret file path (where it actually was found)
+ * Falls back to primary location if not found
+ */
 export function getSecretFilePath(secretName: string): string {
   validateSecretName(secretName);
-  return resolveHostSecretPath(secretName) || path.join(getPrimarySecretsDir(), secretName);
+  const resolved = resolveHostSecretPath(secretName);
+  return resolved?.path || path.join(getPrimarySecretsDir(), secretName);
 }

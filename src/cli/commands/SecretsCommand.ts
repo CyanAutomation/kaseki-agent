@@ -8,6 +8,7 @@ import { SecretsManager } from '../../secrets/SecretsManager';
 import { createLogger } from '../../logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { spawnSync } from 'child_process';
 
 const logger = createLogger('secrets-cmd');
@@ -31,9 +32,24 @@ export class SecretsCommand extends BaseCommand {
 
       switch (subcommand) {
       case 'init': {
-        console.log('🔐 Initializing secrets store...\n');
-        await secretsManager.initializeKeyring();
-        console.log('✓ Secrets store initialized');
+        console.log('🔐 Initializing secrets directories...\n');
+        
+        // Create the fallback secrets directory (~/.kaseki/secrets)
+        try {
+          const secretsDir = path.join(process.env.HOME || os.homedir(), '.kaseki', 'secrets');
+          if (!fs.existsSync(secretsDir)) {
+            fs.mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
+            console.log(`✓ Created ${secretsDir}`);
+          } else {
+            console.log(`✓ Directory exists: ${secretsDir}`);
+          }
+        } catch (error) {
+          console.error(`✗ Failed to initialize secrets: ${error}`);
+          return 1;
+        }
+        
+        console.log('\nNext: Add your secrets with: kaseki-agent secrets set KEY VALUE');
+        console.log('Example: kaseki-agent secrets set openrouter_api_key sk-or-...');
         return 0;
       }
 

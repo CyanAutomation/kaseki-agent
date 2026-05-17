@@ -3,9 +3,33 @@ set -euo pipefail
 
 # === Docker Entrypoint for Kaseki Agent ===
 # Responsible for:
-#   1. Running init container (if applicable) to fix /agents permissions
-#   2. Running early startup checks
-#   3. Dispatching to the appropriate command handler (api, agent, setup, etc.)
+#   1. Auto-creating /agents/secrets if needed (for Docker Compose)
+#   2. Running init container (if applicable) to fix /agents permissions
+#   3. Running early startup checks
+#   4. Dispatching to the appropriate command handler (api, agent, setup, etc.)
+
+# Phase 0: Auto-create /agents/secrets directory if running as API service
+# This ensures secrets directory exists even if not pre-created by user
+if [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; then
+  KASEKI_SECRETS_DIR="${KASEKI_SECRETS_DIR:-/home/pi/secrets}"
+  AGENTS_SECRETS_DIR="/agents/secrets"
+
+  # Auto-copy secrets from host mount to /agents/secrets if it exists
+  # This handles the case where /home/pi/secrets is mounted at /agents/secrets
+  if [ -d "$KASEKI_SECRETS_DIR" ]; then
+    # Create /agents/secrets if it doesn't exist
+    if [ ! -d "$AGENTS_SECRETS_DIR" ]; then
+      mkdir -p "$AGENTS_SECRETS_DIR" 2>/dev/null || true
+      chmod 750 "$AGENTS_SECRETS_DIR" 2>/dev/null || true
+    fi
+
+    # Copy any secret files from the mounted location
+    if [ "$(ls -A "$KASEKI_SECRETS_DIR" 2>/dev/null)" ]; then
+      cp -p "$KASEKI_SECRETS_DIR"/* "$AGENTS_SECRETS_DIR/" 2>/dev/null || true
+      echo "✓ Copied secrets from $KASEKI_SECRETS_DIR to $AGENTS_SECRETS_DIR" >&2
+    fi
+  fi
+fi
 
 # Phase 1: Check if init container already ran (for debugging)
 # The init container is a separate service in docker-compose and runs before this.

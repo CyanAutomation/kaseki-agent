@@ -3,14 +3,18 @@
  * New unified setup wizard (replaces old setup command)
  *
  * Provides single entry point for all setup paths:
+ * - Docker Compose deployment
  * - Single-run execution
  * - Local API service
- * - Production REST API
+ *
+ * Auto-configures secrets and permissions before wizard runs.
  */
 
 import { SetupWizard } from '../../setup/SetupWizard';
 import { BaseCommand } from '../BaseCommand';
 import { createLogger } from '../../logger';
+import { execSync } from 'child_process';
+import path from 'path';
 
 const logger = createLogger('init-cmd');
 
@@ -21,6 +25,7 @@ export class InitCommand extends BaseCommand {
       const dryRun = args.includes('--dry-run');
       const importLegacy = args.includes('--import-legacy');
       const force = args.includes('--force');
+      const skipSecretsSetup = args.includes('--skip-secrets-setup');
 
       // Show help if requested
       if (args.includes('--help') || args.includes('-h')) {
@@ -28,7 +33,20 @@ export class InitCommand extends BaseCommand {
         return 0;
       }
 
-      // Run the unified setup wizard
+      // Step 1: Ensure secrets directories are properly configured
+      if (!skipSecretsSetup && !dryRun) {
+        console.log('\n📁 Setting up secrets directories...\n');
+        try {
+          this.runSecretsSetup();
+          console.log('✓ Secrets directories ready\n');
+        } catch (error) {
+          logger.warn(`Secrets setup warning: ${error}`);
+          console.log('⚠ Secrets setup had issues; continuing with wizard\n');
+          // Don't fail; user can fix manually
+        }
+      }
+
+      // Step 2: Run the unified setup wizard
       const wizard = new SetupWizard();
       const context = await wizard.run({
         dryRun,
@@ -52,6 +70,18 @@ export class InitCommand extends BaseCommand {
   }
 
   /**
+   * Run setup-secrets.sh to configure secrets directories with proper permissions
+   */
+  private runSecretsSetup(): void {
+    try {
+      const setupScript = path.join(__dirname, '../../..', 'scripts', 'setup-secrets.sh');
+      execSync(`bash "${setupScript}"`, { stdio: 'pipe' });
+    } catch (error) {
+      throw new Error(`Failed to run secrets setup: ${error}`);
+    }
+  }
+
+  /**
    * Print command help
    */
   private printHelp(): void {
@@ -62,37 +92,36 @@ USAGE
   kaseki-agent init [OPTIONS]
 
 OPTIONS
-  --dry-run            Validate setup without saving configuration
-  --import-legacy      Migrate configuration from old setup paths
-  --force              Skip permission validation and proceed (advanced users only)
-  --help, -h           Show this help message
+  --dry-run              Validate setup without saving configuration
+  --import-legacy        Migrate configuration from old setup paths
+  --skip-secrets-setup   Skip automatic secrets directory setup
+  --force                Skip permission validation (advanced users only)
+  --help, -h             Show this help message
 
 DESCRIPTION
-  Interactive wizard for first-time configuration. Guides you through:
+  Interactive wizard for first-time configuration. Automatically:
 
-  1. Environment detection (Docker, Node.js, permissions)
-  2. Execution path selection (single-run, local API, production API)
-  3. Essential 8 configuration (API key, validation, timeouts, etc)
-  4. Auto-generated defaults for advanced variables
-  5. Secure credential storage
+  1. ✓ Sets up secrets directories with proper permissions (/home/pi/secrets, ~/.kaseki/secrets)
+  2. Detects environment (Docker, Node.js)
+  3. Guides you through execution path selection (Docker Compose or single-run)
+  4. Collects essential credentials (OpenRouter API key, etc.)
+  5. Saves configuration securely
 
-  Configuration is saved to:
-  - ~/.kaseki/secrets.json (API keys, mode 0600)
-  - ~/.kaseki/config.json (configuration metadata)
-  - .env (current directory, for Docker/source control)
+  Configuration files created:
+  - ~/.kaseki/secrets/{secretName}  (API keys, mode 600/640)
+  - .env                             (environment variables, your repo)
 
 EXAMPLES
-  # Interactive setup
+  # Interactive setup (recommended)
   kaseki-agent init
 
-  # Dry-run (validate without saving)
+  # Dry-run validation
   kaseki-agent init --dry-run
 
-  # Migrate from old setup paths
+  # Migrate from old setup
   kaseki-agent init --import-legacy
 
 DOCUMENTATION
-  For more information:
   - Quick start: https://github.com/CyanAutomation/kaseki-agent/blob/main/docs/QUICK_START.md
   - Advanced config: https://github.com/CyanAutomation/kaseki-agent/blob/main/docs/ADVANCED_CONFIG.md
     `);
