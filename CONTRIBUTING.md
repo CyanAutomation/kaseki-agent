@@ -442,6 +442,7 @@ Key metrics to monitor:
 - **Maintainability** (currently 84.3, target 87+) — Overall health score
 
 **Action triggers:**
+
 - File churn >30 commits in 6 months → Candidate for modularization
 - Clone group >50 LOC × 3 files → Create shared utility (see [DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md))
 - Accelerating trend (▲) for 2+ consecutive runs → Design intervention before it compounds
