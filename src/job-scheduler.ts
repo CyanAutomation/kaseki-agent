@@ -11,7 +11,7 @@ import { metricsRegistry } from './metrics';
 import { execSubprocess } from './lib/subprocess-helpers';
 import { FailureArtifactWriter } from './utils/failure-artifact-writer';
 import { clearRunArtifactMetadataCache } from './run-artifact-metadata-cache';
-import { readHostSecret } from './secrets/host-secrets-reader';
+import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 
@@ -439,20 +439,21 @@ export class JobScheduler {
   }
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
-    // Read GitHub App credentials from host secrets
-    const githubAppId = readHostSecret('github_app_id');
-    if (githubAppId) {
-      env.GITHUB_APP_ID = githubAppId;
-    }
+    const githubAppSecretFiles = [
+      ['GITHUB_APP_ID_FILE', 'github_app_id'],
+      ['GITHUB_APP_CLIENT_ID_FILE', 'github_app_client_id'],
+      ['GITHUB_APP_PRIVATE_KEY_FILE', 'github_app_private_key'],
+    ] as const;
 
-    const githubClientId = readHostSecret('github_app_client_id');
-    if (githubClientId) {
-      env.GITHUB_APP_CLIENT_ID = githubClientId;
-    }
-
-    const githubPrivateKey = readHostSecret('github_app_private_key');
-    if (githubPrivateKey) {
-      env.GITHUB_APP_PRIVATE_KEY = githubPrivateKey;
+    for (const [envName, secretName] of githubAppSecretFiles) {
+      const configuredPath = env[envName];
+      if (configuredPath) {
+        continue;
+      }
+      const secretPath = getSecretFilePath(secretName);
+      if (fs.existsSync(secretPath)) {
+        env[envName] = secretPath;
+      }
     }
   }
 

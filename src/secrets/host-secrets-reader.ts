@@ -166,3 +166,8 @@ export function getSecretLocations(secretName: string): {
     secondary: path.join(getSecondarySecretsDir(), secretName),
   };
 }
+
+export function getSecretFilePath(secretName: string): string {
+  validateSecretName(secretName);
+  return resolveHostSecretPath(secretName) || path.join(getPrimarySecretsDir(), secretName);
+}
