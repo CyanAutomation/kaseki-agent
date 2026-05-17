@@ -54,12 +54,12 @@ const schemas: Record<string, SecretSchema> = {
   },
   kaseki_api_keys: {
     name: 'Kaseki API Keys',
-    pattern: /^[a-f0-9\-:;]+$/,
+    pattern: /^[a-f0-9:;-]+$/,
     validate(value: string) {
       // Comma or semicolon-separated UUIDs
       const keys = value.split(/[,;]/).map((k) => k.trim());
       for (const key of keys) {
-        if (!/^[a-f0-9\-]+$/.test(key)) {
+        if (!/^[a-f0-9-]+$/.test(key)) {
           return { valid: false, error: 'Contains invalid UUID format' };
         }
       }
@@ -87,7 +87,7 @@ export function validateSecretFormat(secretName: string, value: string): { valid
 
 /**
  * Simplified Secrets Manager - filesystem-only implementation
- * 
+ *
  * Two fallback paths:
  * 1. Primary: /home/pi/secrets/{secretName} (Docker Compose)
  * 2. Fallback: ~/.kaseki/secrets/{secretName} (Single-run, local dev)

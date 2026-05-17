@@ -43,6 +43,7 @@ set -euo pipefail
 # Configuration
 DOCKER_SECRETS_DIR="/home/pi/secrets"
 LOCAL_SECRETS_DIR="$HOME/.kaseki/secrets"
+# shellcheck disable=SC2034
 KASEKI_UID=10000
 KASEKI_GID=10000
 KASEKI_GROUP="kaseki"
@@ -90,6 +91,7 @@ print_help() {
 # Validation Functions
 ###############################################################################
 
+# shellcheck disable=SC2317
 check_permissions() {
   local path=$1
   local expected_mode=$2
@@ -160,7 +162,8 @@ setup_docker_secrets() {
   log_debug "Setting up Docker secrets directory: $DOCKER_SECRETS_DIR"
 
   # Check if we can write to /home/pi
-  local parent_dir=$(dirname "$DOCKER_SECRETS_DIR")
+  local parent_dir
+  parent_dir=$(dirname "$DOCKER_SECRETS_DIR")
   if [ ! -d "$parent_dir" ]; then
     log_error "Parent directory does not exist: $parent_dir"
     log_error "Please create it first: sudo mkdir -p $parent_dir"
