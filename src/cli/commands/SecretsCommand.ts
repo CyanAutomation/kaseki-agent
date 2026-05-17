@@ -33,7 +33,6 @@ export class SecretsCommand extends BaseCommand {
       switch (subcommand) {
       case 'init': {
         console.log('🔐 Initializing secrets directories...\n');
-        
         // Create the fallback secrets directory (~/.kaseki/secrets)
         try {
           const secretsDir = path.join(process.env.HOME || os.homedir(), '.kaseki', 'secrets');
@@ -47,7 +46,7 @@ export class SecretsCommand extends BaseCommand {
           console.error(`✗ Failed to initialize secrets: ${error}`);
           return 1;
         }
-        
+
         console.log('\nNext: Add your secrets with: kaseki-agent secrets set KEY VALUE');
         console.log('Example: kaseki-agent secrets set openrouter_api_key sk-or-...');
         return 0;

@@ -1,0 +1,686 @@
+
+> @cyanautomation/kaseki-agent@1.32.0 pretest
+> npm run build
+
+
+> @cyanautomation/kaseki-agent@1.32.0 build
+> tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
+
+✓ Added .js extensions to imports in dist/
+
+> @cyanautomation/kaseki-agent@1.32.0 generate:openapi
+> node scripts/generate-openapi-spec.js
+
+Generating OpenAPI 3.1 specification...
+✓ OpenAPI spec generated successfully
+  Output: /workspaces/kaseki-agent/kaseki-openapi.json
+  Size: 64.25 KB
+  Endpoints: 14
+  Schemas: 6
+
+> @cyanautomation/kaseki-agent@1.32.0 check:dist-dynamic-imports
+> node dist/check-dist-dynamic-imports.js
+
+✓ No extensionless relative dynamic imports found in dist/
+
+> @cyanautomation/kaseki-agent@1.32.0 test
+> npm run test:unit --reporters=default --no-colors
+
+npm warn Unknown cli config "--reporters". This will stop working in the next major version of npm.
+npm warn Unknown cli config "--colors". This will stop working in the next major version of npm.
+
+> @cyanautomation/kaseki-agent@1.32.0 test:unit
+> jest --passWithNoTests
+
+FAIL src/docker-entrypoint-packaging.test.ts
+  ● Docker runtime packaging › final image exposes startup checks at the path used by the entrypoint
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh"
+    Received string:    "# Bump the pinned Node base image monthly with a security review.
+    # Node v24 base image: Updated May 2026 for improved performance and security.
+    # Using ARG for DRY principle - base image used in both stages
+    ARG NODE_IMAGE=node:24-bookworm-slim·
+    FROM ${NODE_IMAGE} AS deps·
+    # Phase 1: System dependencies + user setup (consolidated)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates git procps \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Phase 2: Workspace cache seed for Layer 3 runtime fallback
+    WORKDIR /opt/kaseki/workspace-cache-seed
+    COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
+    RUN npm ci --no-audit --prefer-offline --ignore-scripts \\
+        && mkdir -p node_modules·
+    # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
+    # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
+    RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.74.0 undici··
+    FROM ${NODE_IMAGE} AS runtime·
+    # System dependencies + user setup (consolidated)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Copy Pi CLI and workspace cache seed from deps stage
+    COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+    COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules·
+    # Create a wrapper script for the Pi CLI that properly resolves node modules
+    RUN mkdir -p /usr/local/bin && printf '#!/bin/sh\\nexec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \"$@\"\\n' > /usr/local/bin/pi && chmod +x /usr/local/bin/pi·
+    # Build kaseki application (cache-optimal: dependencies first, then source code)
+    WORKDIR /app
+    COPY package.json package-lock.json tsconfig.json ./
+    COPY src ./src
+    COPY scripts ./scripts
+    RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
+    RUN test -f /app/dist/kaseki-api-service.js·
+    # Copy all application files (after build, so layer invalidation is minimal)
+    COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
+    COPY kaseki run-kaseki.sh kaseki-agent.sh ./
+    COPY docs ./docs
+    COPY ops ./ops
+    COPY docker ./docker
+    COPY test ./test·
+    # Copy entrypoints to /usr/local/bin
+    COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
+    COPY scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint·
+    # Setup and install binaries (consolidated: container scripts, lib copies, permissions, and global installs)
+    RUN chmod +x \\
+          /app/scripts/kaseki-container-setup.sh \\
+          /app/scripts/kaseki-container-setup-remote.sh \\
+          /app/scripts/kaseki-container-entrypoint-wrapper.sh \\
+          /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \\
+        && mkdir -p /scripts \\
+        && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \\
+        && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \\
+        && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \\
+        && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \\
+        && mkdir -p /app/lib/lib \\
+        && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \\
+        && cp dist/ansi-colors.js /app/lib/ansi-colors.js \\
+        && cp dist/event-aggregator.js /app/lib/event-aggregator.js \\
+        && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \\
+        && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \\
+        && cp dist/pi-progress-summarizer.js /app/lib/pi-progress-summarizer.js \\
+        && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \\
+        && cp dist/kaseki-report.js /app/lib/kaseki-report.js \\
+        && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \\
+        && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \\
+        && cp dist/validation-output-filter.js /app/lib/validation-output-filter.js \\
+        && cp dist/kaseki-cli.js /app/kaseki-cli.js \\
+        && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \\
+        && cp dist/github-app-token.js /app/lib/github-app-token.js \\
+        && cp dist/github-app-private-key.js /app/lib/github-app-private-key.js \\
+        && cp -r dist/lib/* /app/lib/lib/ \\
+        && chmod 0755 /app/dist/*.js \\
+        && mkdir -p /usr/local/bin/lib \\
+        && cp -r /app/lib/lib/* /usr/local/bin/lib/ \\
+        && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \\
+        && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \\
+        && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \\
+        && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \\
+        && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \\
+        && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \\
+        && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \\
+        && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \\
+        && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \\
+        && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \\
+        && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \\
+        && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \\
+        && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \\
+        && ln -sf github-app-token /usr/local/bin/github-app-token.js \\
+        && chmod 0755 \\
+          /usr/local/bin/kaseki-entrypoint \\
+          /usr/local/bin/kaseki-pi-event-filter \\
+          /usr/local/bin/kaseki-pi-progress-stream \\
+          /usr/local/bin/kaseki-report \\
+          /usr/local/bin/github-app-token \\
+          /usr/local/bin/github-app-token.js \\
+          /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \\
+          /app/scripts/*.sh·
+    WORKDIR /workspace
+    USER kaseki
+    ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/usr/local/bin/kaseki-entrypoint\"]
+    CMD [\"agent\"]·
+    # The runner initializes these logs before long-running work starts.
+    HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+      CMD test -f /results/stdout.log && test -f /results/stderr.log··
+    # ===== FINAL STAGE: Artifact-Stripped Production Image =====
+    # This stage removes build-time artifacts (test/, docs/, src/) and devDependencies,
+    # reducing image size by ~80-150 MB while preserving all runtime functionality.
+    # Trade-off: Cannot rebuild code in container (not needed—build happens in CI before image creation).
+    #
+    # Impact:
+    #   - Size: 15–25% reduction (80 MB prune + 50 MB docs/test/src)
+    #   - Build time: negligible (final stage only copies needed files)
+    #   - Runtime: unaffected (all runtime binaries, scripts, and dependencies included)
+    #
+    FROM ${NODE_IMAGE} AS final·
+    # Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Copy runtime essentials from runtime stage (skip test/, docs/, src/)
+    COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+    COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
+    COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules·
+    # Copy application files (excluding build artifacts)
+    WORKDIR /app
+    COPY --from=runtime /app/package.json /app/package-lock.json /app/
+    COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md /app/STYLE.md ./
+    COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
+    COPY --from=runtime /app/ops ./ops
+    COPY --from=runtime /app/scripts ./scripts
+    COPY --from=runtime /app/docker ./docker
+    COPY --from=runtime /app/dist ./dist
+    COPY --from=runtime /app/lib ./lib
+    COPY --from=runtime /app/node_modules ./node_modules·
+    # Keep devDependencies in final image (required for validation: npm run check, npm run test, npm run build)
+    # These tools (typescript, eslint, jest, etc.) are essential for kaseki's validation pipeline.
+    # Image size trade-off (~50-80 MB) is acceptable given validation is core functionality.·
+    # Install global binaries and set up scripts (from runtime stage)
+    RUN mkdir -p /scripts \\
+        && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \\
+        && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \\
+        && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \\
+        && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \\
+        && mkdir -p /usr/local/bin/lib \\
+        && cp -r /app/lib/lib/* /usr/local/bin/lib/ \\
+        && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \\
+        && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \\
+        && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \\
+        && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \\
+        && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \\
+        && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \\
+        && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \\
+        && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \\
+        && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \\
+        && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \\
+        && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \\
+        && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \\
+        && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \\
+        && ln -sf github-app-token /usr/local/bin/github-app-token.js \\
+        && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \\
+        && install -m 0755 /app/scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint \\
+        && chmod 0755 \\
+          /usr/local/bin/kaseki-entrypoint \\
+          /usr/local/bin/kaseki-pi-event-filter \\
+          /usr/local/bin/kaseki-pi-progress-stream \\
+          /usr/local/bin/kaseki-report \\
+          /usr/local/bin/github-app-token \\
+          /usr/local/bin/github-app-token.js \\
+          /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \\
+          /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \\
+          /app/scripts/*.sh·
+    WORKDIR /workspace
+    USER kaseki
+    ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/usr/local/bin/kaseki-entrypoint\"]
+    CMD [\"agent\"]·
+    # The runner initializes these logs before long-running work starts.
+    HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+      CMD test -f /results/stdout.log && test -f /results/stderr.log
+    "
+
+      31 |     expect(entrypoint).toContain('/scripts/startup-checks.sh');
+      32 |     expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh');
+    > 33 |     expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh');
+         |                        ^
+      34 |     expect(startupChecks).toContain('KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"');
+      35 |     expect(startupChecks).toContain('KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"');
+      36 |     expect(startupChecks).toContain('quick|boot)');
+
+      at Object.<anonymous> (src/docker-entrypoint-packaging.test.ts:33:24)
+
+FAIL src/secrets/host-secrets-reader.test.ts
+  ● host secrets reader › reads secrets from configured secrets directory
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "test-key"
+    Received: null
+
+      22 |     fs.writeFileSync(path.join(secretsDir, 'openrouter_api_key'), 'test-key\n', { mode: 0o600 });
+      23 |
+    > 24 |     expect(readHostSecret('openrouter_api_key')).toBe('test-key');
+         |                                                  ^
+      25 |     expect(getSecretLocations('openrouter_api_key').primary).toBe(
+      26 |       path.join(secretsDir, 'openrouter_api_key'),
+      27 |     );
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:24:50)
+
+  ● host secrets reader › trims whitespace from secret files
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "secret-value"
+    Received: null
+
+      31 |     fs.writeFileSync(path.join(secretsDir, 'test-key'), '  secret-value  \n\n', { mode: 0o600 });
+      32 |
+    > 33 |     expect(readHostSecret('test-key')).toBe('secret-value');
+         |                                        ^
+      34 |   });
+      35 |
+      36 |   test('returns null if secret not found in any location', () => {
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:33:40)
+
+  ● host secrets reader › reports when a configured secret path is a directory
+
+    expect(received).toThrow(expected)
+
+    Expected pattern: /Secret path is a directory: .*openrouter_api_key .*Replace it with a file/
+
+    Received function did not throw
+
+      49 |     fs.mkdirSync(path.join(secretsDir, 'openrouter_api_key'));
+      50 |
+    > 51 |     expect(() => readHostSecret('openrouter_api_key')).toThrow(/Secret path is a directory: .*openrouter_api_key .*Replace it with a file/);
+         |                                                        ^
+      52 |   });
+      53 |
+      54 |   test('resolves the selected host secret path without reading the value', () => {
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:51:56)
+
+  ● host secrets reader › resolves the selected host secret path without reading the value
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "/tmp/kaseki-secrets-test-IPGPNn/openrouter_api_key"
+    Received: null
+
+      56 |     fs.writeFileSync(secretPath, 'test-key\n', { mode: 0o600 });
+      57 |
+    > 58 |     expect(resolveHostSecretPath('openrouter_api_key')).toBe(secretPath);
+         |                                                         ^
+      59 |   });
+      60 | });
+      61 |
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:58:57)
+
+PASS src/pre-flight-validator.test.ts
+PASS src/kaseki-api-routes.test.ts
+PASS src/pi-event-filter.test.ts
+PASS src/kaseki-api-service.test.ts
+PASS src/kaseki-cli-lib.test.ts
+PASS src/idempotency-store.test.ts
+PASS src/instance-state-derivation.test.ts
+PASS src/utils/file-helpers.test.ts
+PASS src/kaseki-api/service-bootstrapper.test.ts
+PASS src/job-scheduler.test.ts
+PASS src/cli/commands/host-secrets-path.test.ts
+PASS src/github-app-private-key.test.ts
+PASS src/event-aggregator.test.ts
+PASS src/openapi-spec-generator.test.ts
+PASS src/validation-output-filter.test.ts
+PASS src/kaseki-api-service-integration.test.ts
+PASS src/pi-progress-summarizer.test.ts
+PASS src/kaseki-api/setup-orchestrator.test.ts
+PASS src/kaseki-api-config.test.ts
+PASS src/middleware/job-lookup.test.ts
+PASS src/openapi-spec-generators/paths.test.ts
+PASS src/docker/DockerManager.test.ts
+PASS src/lib/event-timestamp-helpers.test.ts
+PASS src/cli/commands/RunCommand.test.ts
+PASS src/openapi-spec-generators/schemas.test.ts
+PASS src/job-persistence-manager.test.ts
+PASS src/config/ConfigManager.test.ts
+PASS src/utils/http-client-factory.test.ts
+PASS src/webhook-manager.test.ts
+PASS src/timestamp-tracker.test.ts
+PASS src/result-cache.test.ts
+PASS src/instance-metadata-reader.test.ts
+PASS src/utils/progress-normalizer.test.ts
+PASS src/utils/webhook-event-builder.test.ts
+PASS src/secret-value-cache.test.ts
+PASS src/cli/commands/DoctorCommand.test.ts
+PASS src/kaseki-report.test.ts
+PASS src/openapi-spec-generators/components.test.ts
+PASS src/pi-progress-stream.test.ts
+
+[kaseki-report.test] runtime_ms=13.17
+PASS src/run-artifact-metadata-cache.test.ts
+PASS src/utils/response-helpers.test.ts
+PASS src/progress-stream-utils.test.ts
+
+Summary of all failing tests
+FAIL src/docker-entrypoint-packaging.test.ts
+  ● Docker runtime packaging › final image exposes startup checks at the path used by the entrypoint
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh"
+    Received string:    "# Bump the pinned Node base image monthly with a security review.
+    # Node v24 base image: Updated May 2026 for improved performance and security.
+    # Using ARG for DRY principle - base image used in both stages
+    ARG NODE_IMAGE=node:24-bookworm-slim·
+    FROM ${NODE_IMAGE} AS deps·
+    # Phase 1: System dependencies + user setup (consolidated)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates git procps \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Phase 2: Workspace cache seed for Layer 3 runtime fallback
+    WORKDIR /opt/kaseki/workspace-cache-seed
+    COPY docker/workspace-cache/package.json docker/workspace-cache/package-lock.json ./
+    RUN npm ci --no-audit --prefer-offline --ignore-scripts \\
+        && mkdir -p node_modules·
+    # Phase 3: Global Pi CLI installation (Layer 3 fallback for image seed cache)
+    # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
+    RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.74.0 undici··
+    FROM ${NODE_IMAGE} AS runtime·
+    # System dependencies + user setup (consolidated)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Copy Pi CLI and workspace cache seed from deps stage
+    COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+    COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules·
+    # Create a wrapper script for the Pi CLI that properly resolves node modules
+    RUN mkdir -p /usr/local/bin && printf '#!/bin/sh\\nexec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \"$@\"\\n' > /usr/local/bin/pi && chmod +x /usr/local/bin/pi·
+    # Build kaseki application (cache-optimal: dependencies first, then source code)
+    WORKDIR /app
+    COPY package.json package-lock.json tsconfig.json ./
+    COPY src ./src
+    COPY scripts ./scripts
+    RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
+    RUN test -f /app/dist/kaseki-api-service.js·
+    # Copy all application files (after build, so layer invalidation is minimal)
+    COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
+    COPY kaseki run-kaseki.sh kaseki-agent.sh ./
+    COPY docs ./docs
+    COPY ops ./ops
+    COPY docker ./docker
+    COPY test ./test·
+    # Copy entrypoints to /usr/local/bin
+    COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
+    COPY scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint·
+    # Setup and install binaries (consolidated: container scripts, lib copies, permissions, and global installs)
+    RUN chmod +x \\
+          /app/scripts/kaseki-container-setup.sh \\
+          /app/scripts/kaseki-container-setup-remote.sh \\
+          /app/scripts/kaseki-container-entrypoint-wrapper.sh \\
+          /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \\
+        && mkdir -p /scripts \\
+        && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \\
+        && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \\
+        && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \\
+        && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \\
+        && mkdir -p /app/lib/lib \\
+        && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \\
+        && cp dist/ansi-colors.js /app/lib/ansi-colors.js \\
+        && cp dist/event-aggregator.js /app/lib/event-aggregator.js \\
+        && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \\
+        && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \\
+        && cp dist/pi-progress-summarizer.js /app/lib/pi-progress-summarizer.js \\
+        && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \\
+        && cp dist/kaseki-report.js /app/lib/kaseki-report.js \\
+        && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \\
+        && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \\
+        && cp dist/validation-output-filter.js /app/lib/validation-output-filter.js \\
+        && cp dist/kaseki-cli.js /app/kaseki-cli.js \\
+        && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \\
+        && cp dist/github-app-token.js /app/lib/github-app-token.js \\
+        && cp dist/github-app-private-key.js /app/lib/github-app-private-key.js \\
+        && cp -r dist/lib/* /app/lib/lib/ \\
+        && chmod 0755 /app/dist/*.js \\
+        && mkdir -p /usr/local/bin/lib \\
+        && cp -r /app/lib/lib/* /usr/local/bin/lib/ \\
+        && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \\
+        && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \\
+        && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \\
+        && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \\
+        && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \\
+        && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \\
+        && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \\
+        && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \\
+        && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \\
+        && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \\
+        && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \\
+        && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \\
+        && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \\
+        && ln -sf github-app-token /usr/local/bin/github-app-token.js \\
+        && chmod 0755 \\
+          /usr/local/bin/kaseki-entrypoint \\
+          /usr/local/bin/kaseki-pi-event-filter \\
+          /usr/local/bin/kaseki-pi-progress-stream \\
+          /usr/local/bin/kaseki-report \\
+          /usr/local/bin/github-app-token \\
+          /usr/local/bin/github-app-token.js \\
+          /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \\
+          /app/scripts/*.sh·
+    WORKDIR /workspace
+    USER kaseki
+    ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/usr/local/bin/kaseki-entrypoint\"]
+    CMD [\"agent\"]·
+    # The runner initializes these logs before long-running work starts.
+    HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+      CMD test -f /results/stdout.log && test -f /results/stderr.log··
+    # ===== FINAL STAGE: Artifact-Stripped Production Image =====
+    # This stage removes build-time artifacts (test/, docs/, src/) and devDependencies,
+    # reducing image size by ~80-150 MB while preserving all runtime functionality.
+    # Trade-off: Cannot rebuild code in container (not needed—build happens in CI before image creation).
+    #
+    # Impact:
+    #   - Size: 15–25% reduction (80 MB prune + 50 MB docs/test/src)
+    #   - Build time: negligible (final stage only copies needed files)
+    #   - Runtime: unaffected (all runtime binaries, scripts, and dependencies included)
+    #
+    FROM ${NODE_IMAGE} AS final·
+    # Minimal setup: only runtime requirements (no build tools or package managers beyond npm for app startup check)
+    RUN apt-get update \\
+        && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \\
+        && rm -rf /var/lib/apt/lists/* \\
+        && groupadd --system --gid 10000 kaseki \\
+        && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \\
+        && mkdir -p /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki/workspace-cache/default \\
+        && chown -R kaseki:kaseki /workspace /results /tmp/kaseki-home /tmp/npm-cache /tmp/pi-agent /opt/kaseki·
+    ENV HOME=/tmp/kaseki-home \\
+        NPM_CONFIG_CACHE=/tmp/npm-cache \\
+        npm_config_cache=/tmp/npm-cache \\
+        PI_CODING_AGENT_DIR=/tmp/pi-agent \\
+        PI_TELEMETRY=0 \\
+        PI_SKIP_VERSION_CHECK=1 \\
+        CI=true·
+    # Copy runtime essentials from runtime stage (skip test/, docs/, src/)
+    COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+    COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
+    COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules·
+    # Copy application files (excluding build artifacts)
+    WORKDIR /app
+    COPY --from=runtime /app/package.json /app/package-lock.json /app/
+    COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md /app/STYLE.md ./
+    COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
+    COPY --from=runtime /app/ops ./ops
+    COPY --from=runtime /app/scripts ./scripts
+    COPY --from=runtime /app/docker ./docker
+    COPY --from=runtime /app/dist ./dist
+    COPY --from=runtime /app/lib ./lib
+    COPY --from=runtime /app/node_modules ./node_modules·
+    # Keep devDependencies in final image (required for validation: npm run check, npm run test, npm run build)
+    # These tools (typescript, eslint, jest, etc.) are essential for kaseki's validation pipeline.
+    # Image size trade-off (~50-80 MB) is acceptable given validation is core functionality.·
+    # Install global binaries and set up scripts (from runtime stage)
+    RUN mkdir -p /scripts \\
+        && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \\
+        && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \\
+        && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \\
+        && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \\
+        && mkdir -p /usr/local/bin/lib \\
+        && cp -r /app/lib/lib/* /usr/local/bin/lib/ \\
+        && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \\
+        && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \\
+        && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \\
+        && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \\
+        && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \\
+        && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \\
+        && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \\
+        && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \\
+        && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \\
+        && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \\
+        && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \\
+        && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \\
+        && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \\
+        && ln -sf github-app-token /usr/local/bin/github-app-token.js \\
+        && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \\
+        && install -m 0755 /app/scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint \\
+        && chmod 0755 \\
+          /usr/local/bin/kaseki-entrypoint \\
+          /usr/local/bin/kaseki-pi-event-filter \\
+          /usr/local/bin/kaseki-pi-progress-stream \\
+          /usr/local/bin/kaseki-report \\
+          /usr/local/bin/github-app-token \\
+          /usr/local/bin/github-app-token.js \\
+          /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \\
+          /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \\
+          /app/scripts/*.sh·
+    WORKDIR /workspace
+    USER kaseki
+    ENTRYPOINT [\"/usr/bin/tini\", \"--\", \"/usr/local/bin/kaseki-entrypoint\"]
+    CMD [\"agent\"]·
+    # The runner initializes these logs before long-running work starts.
+    HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+      CMD test -f /results/stdout.log && test -f /results/stderr.log
+    "
+
+      31 |     expect(entrypoint).toContain('/scripts/startup-checks.sh');
+      32 |     expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh');
+    > 33 |     expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh');
+         |                        ^
+      34 |     expect(startupChecks).toContain('KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"');
+      35 |     expect(startupChecks).toContain('KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"');
+      36 |     expect(startupChecks).toContain('quick|boot)');
+
+      at Object.<anonymous> (src/docker-entrypoint-packaging.test.ts:33:24)
+
+FAIL src/secrets/host-secrets-reader.test.ts
+  ● host secrets reader › reads secrets from configured secrets directory
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "test-key"
+    Received: null
+
+      22 |     fs.writeFileSync(path.join(secretsDir, 'openrouter_api_key'), 'test-key\n', { mode: 0o600 });
+      23 |
+    > 24 |     expect(readHostSecret('openrouter_api_key')).toBe('test-key');
+         |                                                  ^
+      25 |     expect(getSecretLocations('openrouter_api_key').primary).toBe(
+      26 |       path.join(secretsDir, 'openrouter_api_key'),
+      27 |     );
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:24:50)
+
+  ● host secrets reader › trims whitespace from secret files
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "secret-value"
+    Received: null
+
+      31 |     fs.writeFileSync(path.join(secretsDir, 'test-key'), '  secret-value  \n\n', { mode: 0o600 });
+      32 |
+    > 33 |     expect(readHostSecret('test-key')).toBe('secret-value');
+         |                                        ^
+      34 |   });
+      35 |
+      36 |   test('returns null if secret not found in any location', () => {
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:33:40)
+
+  ● host secrets reader › reports when a configured secret path is a directory
+
+    expect(received).toThrow(expected)
+
+    Expected pattern: /Secret path is a directory: .*openrouter_api_key .*Replace it with a file/
+
+    Received function did not throw
+
+      49 |     fs.mkdirSync(path.join(secretsDir, 'openrouter_api_key'));
+      50 |
+    > 51 |     expect(() => readHostSecret('openrouter_api_key')).toThrow(/Secret path is a directory: .*openrouter_api_key .*Replace it with a file/);
+         |                                                        ^
+      52 |   });
+      53 |
+      54 |   test('resolves the selected host secret path without reading the value', () => {
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:51:56)
+
+  ● host secrets reader › resolves the selected host secret path without reading the value
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "/tmp/kaseki-secrets-test-IPGPNn/openrouter_api_key"
+    Received: null
+
+      56 |     fs.writeFileSync(secretPath, 'test-key\n', { mode: 0o600 });
+      57 |
+    > 58 |     expect(resolveHostSecretPath('openrouter_api_key')).toBe(secretPath);
+         |                                                         ^
+      59 |   });
+      60 | });
+      61 |
+
+      at Object.<anonymous> (src/secrets/host-secrets-reader.test.ts:58:57)
+
+
+Test Suites: 2 failed, 42 passed, 44 total
+Tests:       5 failed, 785 passed, 790 total
+Snapshots:   5 passed, 5 total
+Time:        13.635 s, estimated 14 s
+Ran all test suites.

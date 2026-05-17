@@ -26,10 +26,10 @@ interface CacheEntry {
 const secretCache = new Map<string, CacheEntry>();
 
 /**
- * Get the primary secrets directory (Docker Compose)
+ * Get the primary secrets directory (Docker Compose or KASEKI_SECRETS_DIR)
  */
 const getPrimarySecretsDir = (): string => {
-  return '/home/pi/secrets';
+  return process.env.KASEKI_SECRETS_DIR || '/home/pi/secrets';
 };
 
 /**
@@ -48,29 +48,29 @@ export function readHostSecret(secretName: string): string | null {
   if (!resolved) {
     return null;
   }
-  return readSecretFromPath(resolved.path);
+  return readSecretFromPath(resolved);
 }
 
 /**
  * Resolve secret path from either location, with logging
- * Returns null if not found in either location
+ * Returns the path string if found, null if not found in either location
  */
-export function resolveHostSecretPath(secretName: string): { path: string; source: 'docker' | 'local' } | null {
+export function resolveHostSecretPath(secretName: string): string | null {
   validateSecretName(secretName);
 
   const primaryPath = path.join(getPrimarySecretsDir(), secretName);
   const fallbackPath = path.join(getFallbackSecretsDir(), secretName);
 
-  // Try primary (Docker)
+  // Try primary (Docker or KASEKI_SECRETS_DIR)
   if (fs.existsSync(primaryPath)) {
     logger.info(`✓ Found ${secretName} at ${primaryPath} (Docker)`);
-    return { path: primaryPath, source: 'docker' };
+    return primaryPath;
   }
 
   // Try fallback (local dev)
   if (fs.existsSync(fallbackPath)) {
     logger.info(`⚠ Found ${secretName} at ${fallbackPath} (local dev, primary ${primaryPath} not found)`);
-    return { path: fallbackPath, source: 'local' };
+    return fallbackPath;
   }
 
   logger.debug(`✗ Secret not found: ${secretName} (tried ${primaryPath} and ${fallbackPath})`);
@@ -170,5 +170,5 @@ export function getSecretLocations(secretName: string): {
 export function getSecretFilePath(secretName: string): string {
   validateSecretName(secretName);
   const resolved = resolveHostSecretPath(secretName);
-  return resolved?.path || path.join(getPrimarySecretsDir(), secretName);
+  return resolved || path.join(getPrimarySecretsDir(), secretName);
 }
