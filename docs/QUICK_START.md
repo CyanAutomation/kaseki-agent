@@ -12,7 +12,7 @@ Welcome! This guide will help you set up and use kaseki-agent in **5 minutes or 
 
 - [**Docker Compose**](#docker-compose-deployment) — Standard single-server deployment (recommended)
   - Perfect for: Dockhand, Portainer, systemd+docker
-  - Includes init container that auto-fixes permissions
+  - Requires a one-time host setup (< 2 minutes)
   - Setup time: 3-5 minutes
 
 - [**Single-Run Execution**](#single-run-execution) — One-off tasks without persistence
@@ -39,15 +39,21 @@ Welcome! This guide will help you set up and use kaseki-agent in **5 minutes or 
 2. Go to **Settings** → **API Keys** and create a new key
 3. Copy the key (starts with `sk-or-`)
 
-#### Step 2: Prepare `/agents` Directory
+#### Step 2: One-time Host Setup
 
-The init container will attempt to fix permissions automatically, but you may need to pre-create the directory:
+Run these commands once on the host before first deploy:
 
 ```bash
-# On the host running Docker:
+# Create and permission the /agents directory
 sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
 sudo chmod 755 /agents
-# (Init container will set UID 10000 ownership if it can)
+
+# Create secrets directory and set group-based permissions (GID 10000)
+sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
+mkdir -p /home/pi/secrets
+sudo chgrp -R kaseki-secrets /home/pi/secrets
+sudo chmod 750 /home/pi/secrets
 ```
 
 #### Step 3: Deploy the API Service
@@ -55,11 +61,10 @@ sudo chmod 755 /agents
 ```bash
 # In the kaseki-agent repository directory
 export OPENROUTER_API_KEY=sk-or-your-key-here
-mkdir -p /home/pi/secrets
 echo "$OPENROUTER_API_KEY" > /home/pi/secrets/openrouter_api_key
-chmod 600 /home/pi/secrets/openrouter_api_key
+sudo chmod 640 /home/pi/secrets/openrouter_api_key
 
-# Start the service (includes init container)
+# Start the service
 docker-compose up -d
 
 # Monitor startup
@@ -78,9 +83,10 @@ sudo kaseki-agent host preflight | jq .
 
 **If you see permission errors:**
 
-- Check init container logs: `docker-compose logs kaseki-init`
-- Follow the error message in logs (provides platform-specific fix)
-- Or see [Dockhand/Portainer guide](#dockhandandportainer) in DEPLOYMENT.md
+- Check API logs: `docker-compose logs kaseki-api`
+- Verify `/agents` is owned by UID 10000: `ls -la /agents`
+- Verify secrets directory permissions: `ls -la /home/pi/secrets`
+- See [docs/AUTH_SETUP.md](AUTH_SETUP.md) for the full permissions guide
 
 ---
 
@@ -159,15 +165,18 @@ Kaseki Agent runs inside a container as a non-root user (UID 10000). To access s
 On startup, `scripts/startup-checks.sh` automatically detects and fixes permission issues:
 
 **Detection:**
+
 - Checks if `/agents/secrets`, `~/.kaseki/secrets.json`, and other secret paths are accessible
 - Tests both directory traversability and file readability
 
 **Auto-Fix:**
+
 - Directories → `chmod 0750` (owner rwx, group rx, other none)
 - Files → `chmod 0640` (owner rw, group r, other none)
 - Logged as: `✓ Fixed permissions: /agents/secrets (0700 → 0750)`
 
 **When Auto-Fix Can't Proceed:**
+
 - If mounted read-only: Logged as `✗ Cannot auto-fix ... (possibly on read-only mount)`
 - Error message includes manual fix: `sudo chmod 0750 /agents/secrets`
 

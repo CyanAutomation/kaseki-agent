@@ -198,21 +198,13 @@ Modern kaseki-agent versions include an init container that automatically attemp
 **Steps:**
 
 1. In Portainer/Dockhand UI, deploy the docker-compose stack as-is
-2. The init container runs first, attempts to fix permissions automatically
-3. API service starts immediately after (even if init failed)
-4. If init fails, check logs and proceed to Approach 2
+2. API service starts and runs startup-checks to validate `/agents` and secrets
+3. If checks fail, the logs will show a clear error with the fix command
 
 **To verify success:**
 
 ```bash
-docker-compose logs kaseki-init   # Init container logs
 docker-compose logs kaseki-api    # API service logs
-```
-
-**If successful**, you'll see:
-
-```
-kaseki-init | ✓ /agents is writable by container
 ```
 
 #### **Approach 2: Manual Host Setup (If Init Container Fails)**
@@ -1506,87 +1498,37 @@ The service startup precheck logs detected Node version and exits with a clear e
 
 ---
 
-## Init Container Architecture
+## Host Setup Requirements
 
-The kaseki-agent docker-compose configuration includes an **init container** (`kaseki-init`) that runs before the main API service and attempts to automatically fix `/agents` directory permissions.
+Before deploying, run these commands once on the Docker host:
 
-### How It Works
+```bash
+# Create and permission the /agents directory
+sudo mkdir -p /agents
+sudo chown 10000:10000 /agents
+sudo chmod 755 /agents
 
-```
-docker-compose up -d
-    ↓
-kaseki-init container starts first
-    ├─→ Checks if /agents exists and is writable
-    ├─→ Attempts: chmod 755 /agents
-    ├─→ Exits with code 0 (success) or 1 (failed, manual fix needed)
-    ↓
-kaseki-api service starts (regardless of init result)
-    ├─→ Runs startup-checks.sh (comprehensive permission validation)
-    ├─→ If init succeeded: startups checks pass, API service runs normally
-    ├─→ If init failed: startup checks detect issue, provide actionable error
-    ├─→ Error messages include platform-specific remediation (Dockhand, Portainer, etc.)
-    ↓
-API service ready or awaiting manual intervention
+# Set group-based read access on the secrets directory (GID 10000)
+sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
+sudo chgrp -R kaseki-secrets /home/pi/secrets
+sudo chmod 750 /home/pi/secrets
+sudo chmod 640 /home/pi/secrets/*
 ```
 
-### Init Container Failure Scenarios
+The API service startup checks (`scripts/startup-checks.sh`) validate these at startup and report clear errors with fix commands if anything is misconfigured. It does not attempt to auto-fix permissions.
 
-The init container **will fail gracefully** in these scenarios:
-
-| Scenario | What Init Sees | Remediation |
-|----------|---|---|
-| `/agents` on read-only volume | `chmod` fails; can't escalate | Use Approach 2 (manual host setup) |
-| `/agents` owned by root | Can't change ownership without `sudo` | Host admin must run: `sudo chown 10000:10000 /agents` |
-| Filesystem doesn't support perms | NFS with `no_root_squash` disabled | Configure NFS or use local volume |
-| Container no privilege escalation | Platform disallows `sudo` / capability escalation | Use Approach 2 (manual setup) |
-
-**In all cases:** The main API service still starts and provides clear error messages directing users to the correct remediation step.
-
-### Startup Checks Enhancements
-
-When the API service starts, `scripts/startup-checks.sh` now:
-
-1. **Detects container platform** (Docker, Dockhand, Portainer, Kubernetes)
-2. **Provides platform-specific error messages** with exact commands to run
-3. **Generates helpful output** that guides users through remediation
-
-Example output for Portainer:
-
-```
-✗ /agents exists but is not writable by UID 10000
-
-📦 Running on Portainer — Setup Instructions:
-
-  1. In Portainer UI, navigate to Stacks → kaseki-agent
-  2. Edit the stack and modify the 'services' section
-  3. On the HOST, run:
-     sudo mkdir -p /agents
-     sudo chown 10000:10000 /agents
-     sudo chmod 755 /agents
-  4. Restart the kaseki-api service
-```
-
-### When Init Container Is Skipped
-
-Init container is **skipped** (not run) if:
-
-- You're running `run-kaseki.sh` directly (not using Docker Compose)
-- You're using a custom docker-compose override that doesn't include the init service
-- You explicitly set `depends_on: kaseki-init: condition: service_completed_successfully` to `false`
-
-In these cases, ensure `/agents` is already writable before invoking the API service, or startup checks will fail with exit code 2.
+See [docs/QUICK_START.md](QUICK_START.md) for the full setup walkthrough.
 
 ---
 
 ## Kubernetes Deployment
 
-For Kubernetes deployments, the init container approach is supported but requires **custom volume setup**:
+For Kubernetes deployments, requires **custom volume setup**:
 
 ### Prerequisites for Kubernetes
 
 1. **PersistentVolume (PV)** for `/agents` (must be writable by UID 10000)
 2. **PersistentVolumeClaim (PVC)** mounting the PV to `/agents`
-3. **Init Container** defined in the Pod spec (see YAML example below)
 
 ### Example Kubernetes Manifests
 
@@ -1629,11 +1571,11 @@ spec:
       labels:
         app: kaseki
     spec:
-      # Init container: Fix /agents permissions before API starts
+      # Init container: Verify /agents permissions before API starts
       initContainers:
       - name: kaseki-init
         image: "docker.io/cyanautomation/kaseki-agent:latest"
-        command: ["/scripts/kaseki-init-container.sh"]
+        command: ["/scripts/startup-checks.sh", "permissions"]
         volumeMounts:
         - name: agents
           mountPath: /agents

@@ -806,25 +806,46 @@ Future versions will use `/api/v2/`, `/api/v3/`, etc., allowing peaceful transit
 
 ---
 
-## TypeScript Client (Coming Soon)
+## TypeScript Client
 
-OpenClaw and other tools can use the auto-generated TypeScript client:
+OpenClaw and other tools can use the KasekiApiClient library:
 
 ```typescript
 import { KasekiApiClient } from '@kaseki-agent/api-client';
 
 const client = new KasekiApiClient('http://localhost:8080', 'sk-api-key');
 
-const run = await client.submit({
+// Validate request before submission
+const validation = await client.validate({
   repoUrl: 'https://github.com/org/repo',
-  taskPrompt: 'Fix the bug'
+  taskPrompt: 'Fix the bug',
+  validationCommands: ['npm test']
 });
 
+if (!validation.isValid) {
+  console.error('Validation failed:', validation.errors);
+  process.exit(1);
+}
+
+// Submit via direct HTTP call (client.submit() is deprecated)
+const response = await fetch('http://localhost:8080/api/runs', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer sk-api-key'
+  },
+  body: JSON.stringify({
+    repoUrl: 'https://github.com/org/repo',
+    taskPrompt: 'Fix the bug'
+  })
+});
+
+const run = await response.json();
 console.log(`Run started: ${run.id}`);
 
-// Monitor
+// Monitor progress
 const status = await client.getStatus(run.id);
 console.log(`Status: ${status.status}, elapsed: ${status.elapsedSeconds}s`);
 ```
 
-(Client implementation coming in Phase 8)
+**Note:** As of v2.0.0, several convenience methods have been removed from `KasekiApiClient`. Use direct HTTP calls via the endpoints documented above, or implement polling logic with `getStatus()` for monitoring.
