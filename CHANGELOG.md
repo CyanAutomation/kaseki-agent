@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.33.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.32.0...v1.33.0) (2026-05-17)
+
+
+### Bug Fixes
+
+* update regex patterns for UUID validation and improve secret path resolution ([b1e1d57](https://github.com/CyanAutomation/kaseki-agent/commit/b1e1d570a00b4018adcab1326ac08a90694a449c))
+* update release presets to use Angular style and remove unused dependencies ([4d1968e](https://github.com/CyanAutomation/kaseki-agent/commit/4d1968eb715a21913bf185fd688a95df5e7aea19))
+
+
+### Features
+
+* Implement unified secrets setup and management ([1f01043](https://github.com/CyanAutomation/kaseki-agent/commit/1f01043e370b7ede009fd2953ad7859d06978f54))
+
 ## [2.0.0](https://github.com/CyanAutomation/kaseki-agent/releases/tag/v2.0.0) (2026-05-17)
 
 ### ⚠️ BREAKING CHANGES
