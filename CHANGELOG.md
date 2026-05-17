@@ -24,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 * Implement unified secrets setup and management ([1f01043](https://github.com/CyanAutomation/kaseki-agent/commit/1f01043e370b7ede009fd2953ad7859d06978f54))
 
-## [2.0.0](https://github.com/CyanAutomation/kaseki-agent/releases/tag/v2.0.0) (2026-05-17)
+## [1.32.5](https://github.com/CyanAutomation/kaseki-agent/releases/tag/v1.32.5) (2026-05-17)
 
 ### ⚠️ BREAKING CHANGES
 
