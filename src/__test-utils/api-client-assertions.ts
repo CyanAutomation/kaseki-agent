@@ -1,7 +1,7 @@
 /**
- * Shared OpenAPI test assertion helpers
- * Reduces complexity of openapi-spec-generator.test.ts by extracting common patterns
- * @jest-environment node
+ * Consolidated OpenAPI and API client test assertion helpers
+ * Extracted from openapi-assertions.ts + duplication patterns in test files
+ * Reduces boilerplate and improves test maintainability
  */
 
 // Jest globals are available in test contexts; expect is injected by Jest
@@ -138,5 +138,35 @@ export function assertAllPathsHaveOperations(paths: Record<string, Record<string
   Object.entries(paths).forEach(([, pathItem]) => {
     const hasOperation = httpMethods.some((method) => method in pathItem);
     expect(hasOperation).toBe(true);
+  });
+}
+
+/**
+ * Assert that an HTTP response has expected status code and content type
+ * Common pattern from kaseki-api-routes.test.ts
+ */
+export function assertResponseStatus(
+  response: Record<string, any>,
+  expectedStatus: number,
+  expectedContentType?: string
+): void {
+  expect(response.status).toBe(expectedStatus);
+  if (expectedContentType) {
+    const contentType = response.headers?.['content-type'] || response.get?.('content-type') || '';
+    expect(contentType).toContain(expectedContentType);
+  }
+}
+
+/**
+ * Assert that a JSON response body contains expected keys
+ * Reduces nested expect chains for object property checks
+ */
+export function assertJsonResponse(
+  response: Record<string, unknown>,
+  expectedKeys: string[]
+): void {
+  const body = response.body ?? response.data ?? response;
+  expectedKeys.forEach((key) => {
+    expect(body).toHaveProperty(key);
   });
 }

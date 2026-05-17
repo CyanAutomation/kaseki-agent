@@ -6,7 +6,7 @@ import { generateOpenAPISpec } from '../src/openapi-spec-generator';
 import {
   forEachPathOperation,
   assertAllPathsHaveOperations
-} from './__test-utils/openapi-assertions';
+} from './__test-utils/api-client-assertions';
 
 describe('OpenAPI Spec Generator', () => {
   let spec: Record<string, unknown>;
