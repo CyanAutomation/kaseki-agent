@@ -57,6 +57,11 @@ export function configureHostSecretsDirForPreflight(env: NodeJS.ProcessEnv = pro
   const sudoHome = getSudoUserHome(env);
   if (sudoHome) {
     env.KASEKI_SECRETS_DIR = resolve(sudoHome, 'secrets');
+    return;
+  }
+
+  if (env.HOME) {
+    env.KASEKI_SECRETS_DIR = resolve(env.HOME, 'secrets');
   }
 }
 
