@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.33.0...v1.33.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* correct symlink creation for kaseki-init-container.sh in Dockerfile ([52bf8b7](https://github.com/CyanAutomation/kaseki-agent/commit/52bf8b7cf4e093e1c9623fee987a70ab115d954d))
+
 # [1.33.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.32.0...v1.33.0) (2026-05-17)
 
 
