@@ -1,30 +1,22 @@
 ---
 # Kaseki Agent Docker Compose Configuration
 #
-# One-time host setup (run once before first deploy):
+# Setup (First Time):
 # ═══════════════════════════════════════════════════════════════════════════════════
 #
-# 1. Create and permission the /agents directory:
+# Run this ONE command to configure everything:
 #
-#    sudo mkdir -p /agents
-#    sudo chown 10000:10000 /agents
-#    sudo chmod 755 /agents
+#    kaseki-agent init
 #
-# 2. Place secrets in your secrets directory (default: /home/pi/secrets)
-#    and set group-based read access for the container (GID 10000):
+# That's it! The wizard will:
+# - Auto-configure secrets directories with correct permissions
+# - Ask for your OpenRouter API key
+# - Create necessary files and directories
+# - Show you how to deploy
 #
-#    sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
-#    mkdir -p /home/pi/secrets
-#    echo "sk-or-..." > /home/pi/secrets/openrouter_api_key
-#    sudo chgrp -R kaseki-secrets /home/pi/secrets
-#    sudo chmod 750 /home/pi/secrets
-#    sudo chmod 640 /home/pi/secrets/*
+# Then start the service:
 #
-# 3. (Optional) Override the secrets directory path:
-#      export KASEKI_HOST_SECRETS_DIR=/custom/path/to/secrets
-#
-# 4. (Optional) Validate setup before deploying:
-#      ./scripts/kaseki-preflight-docker-compose.sh
+#    docker-compose up -d
 #
 # See docs/QUICK_START.md for full instructions.
 # ═══════════════════════════════════════════════════════════════════════════════════
