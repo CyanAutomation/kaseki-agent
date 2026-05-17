@@ -1,71 +1,40 @@
 ---
 # Kaseki Agent Docker Compose Configuration
 #
-# IMPORTANT: Host Setup Prerequisites (mostly automated via init container now)
+# One-time host setup (run once before first deploy):
 # ═══════════════════════════════════════════════════════════════════════════════════
 #
-# The init container runs first and attempts to fix /agents permissions automatically.
-# If your environment is restricted (read-only volumes, no permission escalation),
-# you may need to pre-create the directory on the host:
+# 1. Create and permission the /agents directory:
 #
 #    sudo mkdir -p /agents
 #    sudo chown 10000:10000 /agents
 #    sudo chmod 755 /agents
 #
-# For Dockhand/Portainer users: See docs/DEPLOYMENT.md#dockhand-portainer for
-# step-by-step screenshot-based setup instructions.
+# 2. Place secrets in your secrets directory (default: /home/pi/secrets)
+#    and set group-based read access for the container (GID 10000):
 #
-# Validate setup before deploying (optional):
+#    sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
+#    mkdir -p /home/pi/secrets
+#    echo "sk-or-..." > /home/pi/secrets/openrouter_api_key
+#    sudo chgrp -R kaseki-secrets /home/pi/secrets
+#    sudo chmod 750 /home/pi/secrets
+#    sudo chmod 640 /home/pi/secrets/*
 #
-#    ./scripts/kaseki-preflight-docker-compose.sh
+# 3. (Optional) Override the secrets directory path:
+#      export KASEKI_HOST_SECRETS_DIR=/custom/path/to/secrets
 #
-# Provide OpenRouter API credentials:
+# 4. (Optional) Validate setup before deploying:
+#      ./scripts/kaseki-preflight-docker-compose.sh
 #
-#    Option A: File-based (recommended)
-#      sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
-#      mkdir -p /home/pi/secrets
-#      echo "sk-or-..." > /home/pi/secrets/openrouter_api_key
-#      sudo chgrp -R kaseki-secrets /home/pi/secrets
-#      chmod 750 /home/pi/secrets
-#      chmod 640 /home/pi/secrets/*
-#
-#    Option B: Environment variable
-#      export OPENROUTER_API_KEY_FILE=/path/to/api/key
-#
+# See docs/QUICK_START.md for full instructions.
 # ═══════════════════════════════════════════════════════════════════════════════════
 
 services:
-  
-  kaseki-init:
-    image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
-    container_name: kaseki-init
-    user: "${KASEKI_API_USER:-10000:10000}"
-    command: ["/scripts/kaseki-init-container.sh"]
-    volumes:
-      # /agents: Shared workspace - init container attempts to fix permissions
-      - /agents:/agents:rw
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/tmp
-    # Run once at startup and exit (don't restart)
-    restart: "no"
-    # Give init container 10 seconds to complete before api service starts
-    # (depends_on is handled via wait logic in api service health check)
+
   kaseki-api:
     image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
     container_name: kaseki-api
     user: "${KASEKI_API_USER:-10000:10000}"
-    depends_on:
-      # Init container runs first, attempts to fix /agents permissions
-      # If it fails (exit code 1), api service still starts but logs
-      # will show actionable error messages for manual remediation
-      kaseki-init:
-        condition: service_completed_successfully
     group_add:
       - "${DOCKER_GID:-985}"
     command: ["api"]
@@ -90,14 +59,14 @@ services:
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache
-      #   - Init container attempts to fix permissions automatically
-      #   - If init fails, must be writable by UID 10000 (see Prerequisites above)
+      #   - Must be writable by UID 10000 (see one-time setup above)
       #   - run-kaseki.sh and ephemeral worker containers use /agents/kaseki-runs/{instance}
       #   - API service stores persistent results in /agents/kaseki-results/{instance}
       #   - Auto-initializes /agents/kaseki-template on first startup
       - /agents:/agents:rw
       # Secrets: read-only mount of the host secrets directory
-      - /home/pi/secrets:/agents/secrets:ro
+      #   Override path with: export KASEKI_HOST_SECRETS_DIR=/custom/path
+      - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/agents/secrets:ro
       # Logs: Persistent API service logs with rotation
       - kaseki-logs:/var/log/kaseki-api
       # Docker socket: Allows API service to spawn worker containers

@@ -1,10 +1,8 @@
 /**
  * Host-Based Secrets Reader
  *
- * Reads secrets from host filesystem with multi-path resolution:
- * 1. Discovered path: From .kaseki-host-state.json (set by setup)
- * 2. Primary path: $KASEKI_SECRETS_DIR/{secretName} or /agents/secrets/{secretName}
- * 3. Fallback path: ~/secrets/{secretName}
+ * Reads secrets from a single host filesystem location:
+ *   $KASEKI_SECRETS_DIR/{secretName}  (default: /agents/secrets/{secretName})
  *
  * No fallback to environment variables (hard requirement).
  * Includes stat-based caching for performance.
@@ -12,10 +10,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { createLogger } from '../logger';
-
-const logger = createLogger('host-secrets');
 
 interface CacheEntry {
   value: string;
@@ -23,32 +17,20 @@ interface CacheEntry {
   size: number;
 }
 
-/**
- * Cache for secret file reads with stat-based invalidation
- */
 const secretCache = new Map<string, CacheEntry>();
 
 /**
- * Primary location for secrets on host
+ * Location for secrets on host
  */
 const getPrimarySecretsDir = (): string => {
   return process.env.KASEKI_SECRETS_DIR || '/agents/secrets';
 };
 
 /**
- * Fallback location for secrets (user home directory)
- */
-const getSecondarySecretsDir = (): string => {
-  const homeDir = os.homedir();
-  return path.join(homeDir, 'secrets');
-};
-
-/**
  * Read a secret value from host filesystem.
- * Tries primary location first, then fallback.
  *
  * @param secretName - Name of the secret (e.g., "openrouter_api_key")
- * @returns Secret value as string, or null if not found at either location
+ * @returns Secret value as string, or null if not found
  * @throws Error if file exists but cannot be read (permissions, etc.)
  */
 export function readHostSecret(secretName: string): string | null {
@@ -63,23 +45,10 @@ export function readHostSecret(secretName: string): string | null {
 export function resolveHostSecretPath(secretName: string): string | null {
   validateSecretName(secretName);
 
-  const primarySecretsDir = getPrimarySecretsDir();
-  const primaryPath = path.join(primarySecretsDir, secretName);
-  const secondaryPath = path.join(getSecondarySecretsDir(), secretName);
+  const primaryPath = path.join(getPrimarySecretsDir(), secretName);
 
   if (fs.existsSync(primaryPath)) {
     return primaryPath;
-  }
-
-  if (fs.existsSync(secondaryPath)) {
-    const agentsSecretsPath = path.join('/agents/secrets', secretName);
-    if (primarySecretsDir !== '/agents/secrets' && fs.existsSync(agentsSecretsPath)) {
-      logger.warn(
-        `Secret found at ${secondaryPath} but /agents/secrets also exists. ` +
-        'If you intended to use /agents/secrets, run: sudo kaseki-agent host setup --fix'
-      );
-    }
-    return secondaryPath;
   }
 
   return null;
@@ -152,18 +121,17 @@ function describeSecretPath(filePath: string, stat: fs.Stats): string {
 }
 
 /**
- * Get secret locations for debugging/error messages.
+ * Get the expected secret file path for debugging/error messages.
  *
  * @param secretName - Name of the secret
- * @returns Object with primary and secondary paths
+ * @returns Object with primary path
  */
 export function getSecretLocations(secretName: string): {
-  primary: string;
-  secondary: string;
+  primary: string; secondary: string;
 } {
   return {
     primary: path.join(getPrimarySecretsDir(), secretName),
-    secondary: path.join(getSecondarySecretsDir(), secretName),
+    secondary: path.join("/etc/kaseki/secrets", secretName),
   };
 }
 

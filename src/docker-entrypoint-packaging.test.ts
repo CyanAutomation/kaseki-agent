@@ -36,7 +36,7 @@ describe('Docker runtime packaging', () => {
     expect(startupChecks).toContain('quick|boot)');
     expect(startupChecks).toContain('baseline-validation)');
     expect(compose).toContain('KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/agents/secrets}"');
-    expect(compose).toContain('/home/pi/secrets:/agents/secrets:ro');
+    expect(compose).toContain(':/agents/secrets:ro'); // Supports both hardcoded and variable-substituted paths
     expect(compose).toContain("fetch('http://127.0.0.1:8080/ready')");
   });
 
