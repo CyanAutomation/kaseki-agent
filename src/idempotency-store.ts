@@ -360,12 +360,7 @@ export class IdempotencyStore {
     }
   }
 
-  /**
-   * Get current cache size.
-   */
-  getSize(): number {
-    return this.cache.size;
-  }
+
 
   /**
    * Gracefully shutdown the store.
