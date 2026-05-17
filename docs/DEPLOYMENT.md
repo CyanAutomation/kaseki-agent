@@ -19,10 +19,20 @@ sudo chmod 755 /agents
 # 2. (Optional) Validate setup with pre-flight checks
 ./scripts/kaseki-preflight-docker-compose.sh
 
-# 3. Create secrets directory (if using file-based credentials)
-mkdir -p /home/pi/secrets
-echo "sk-or-YOUR-API-KEY-HERE" > /home/pi/secrets/openrouter_api_key
-chmod 600 /home/pi/secrets/openrouter_api_key
+# 3. Create secrets directory with correct ownership for UID 10000
+sudo mkdir -p /agents/secrets
+
+sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
+REPLACE_WITH_YOUR_OPENROUTER_API_KEY
+EOF
+
+sudo tee /agents/secrets/kaseki_api_keys >/dev/null <<'EOF'
+REPLACE_WITH_YOUR_KASEKI_API_KEY
+EOF
+
+sudo chown -R 10000:10000 /agents/secrets
+sudo chmod 700 /agents/secrets
+sudo chmod 600 /agents/secrets/*
 
 # 4. Deploy the API service
 docker-compose up -d
@@ -387,14 +397,16 @@ worker-container problems directly.
 
 Kaseki Agent reads all secrets from host-based files instead of environment variables. This improves security by separating secrets from configuration.
 
+> **Docker deployments:** Always use `/agents/secrets` as the canonical secret directory. The Docker Compose configuration mounts `/agents:/agents:rw`, so `/agents/secrets` is accessible inside the container. The `~/secrets` path is supported only for non-Docker (host Node.js) deployments and is **not** reliably mounted into containers.
+
 ### Multi-Path Secret Resolution
 
 Secrets are resolved from the host filesystem in this priority order:
 
 1. **Discovered path** (from `.kaseki-host-state.json`): When you run `kaseki-agent host setup`, it records where it normalized your secrets to a state file (`~/.kaseki-host-state.json`). Preflight commands discover and use this path automatically.
 2. **Explicit environment variable**: `$KASEKI_SECRETS_DIR` (highest priority override)
-3. **SUDO_USER home fallback**: `~/secrets/{secret-name}` (when running with sudo)
-4. **Container default**: `/agents/secrets/{secret-name}` (used only if no state file and not running with sudo)
+3. **SUDO_USER home fallback**: `~/secrets/{secret-name}` (non-Docker only; when running with sudo)
+4. **Container default**: `/agents/secrets/{secret-name}` (canonical Docker path; used when no state file exists)
 
 **Recommended workflow**:
 
@@ -412,6 +424,8 @@ When you run `sudo kaseki-agent host setup --fix`, it creates:
 ```
 ~/.kaseki-host-state.json
 ```
+
+> **Note on `sudo` and home directory:** When you run a command with `sudo`, the shell's `~` expands to the **effective user's** home directory. Depending on your `sudo` configuration and shell settings, `~` may resolve to `/root` (if `sudo` drops to root) or `/home/pi` (if `sudo -E` preserves the environment). If you are unsure, check `echo ~` before and after `sudo` to confirm where the state file is written. Docker deployments should use `/agents/secrets` directly to avoid this ambiguity.
 
 This file (created with 0644 permissions) records where setup normalized your secrets:
 
@@ -433,72 +447,82 @@ Create these files on your host machine:
 
 #### 1. OpenRouter API Key (Required)
 
-File: `/agents/secrets/openrouter_api_key` or
-`~/secrets/openrouter_api_key`
+File: `/agents/secrets/openrouter_api_key`
+
+> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
 
 ```bash
 # Get your API key from: https://openrouter.ai/keys
 
-mkdir -p /agents/secrets
-echo "sk-or-your-actual-key" > /agents/secrets/openrouter_api_key
-chmod 600 /agents/secrets/openrouter_api_key
+sudo mkdir -p /agents/secrets
 
-# Verify
-cat /agents/secrets/openrouter_api_key
+sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
+sk-or-your-actual-key
+EOF
+
+sudo chown -R 10000:10000 /agents/secrets
+sudo chmod 700 /agents/secrets
+sudo chmod 600 /agents/secrets/openrouter_api_key
+
+# Verify (without exposing the key in terminal history)
+sudo test -s /agents/secrets/openrouter_api_key && echo "OpenRouter key exists"
 ```
 
 #### 2. Kaseki API Keys (Required)
 
-File: `/agents/secrets/kaseki_api_keys` or
-`~/secrets/kaseki_api_keys`
+File: `/agents/secrets/kaseki_api_keys`
+
+> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
 
 Format: One API key per line (newline-separated). Comment lines
 starting with `#` are ignored.
 
 ```bash
-mkdir -p /agents/secrets
-cat > /agents/secrets/kaseki_api_keys << 'EOF'
+sudo mkdir -p /agents/secrets
+
+sudo tee /agents/secrets/kaseki_api_keys >/dev/null <<'EOF'
 # Kaseki API Keys
 sk-api-key-1
 sk-api-key-2
 sk-api-key-3
 EOF
-chmod 600 /agents/secrets/kaseki_api_keys
 
-# Verify without printing the secret value
-test -s /agents/secrets/kaseki_api_keys
+sudo chown -R 10000:10000 /agents/secrets
+sudo chmod 700 /agents/secrets
+sudo chmod 600 /agents/secrets/kaseki_api_keys
+
+# Verify (without exposing keys in terminal history)
+sudo test -s /agents/secrets/kaseki_api_keys && echo "Kaseki API keys exist"
 ```
 
 #### 3. GitHub App Credentials (Optional, for PR creation)
 
 If you want to enable GitHub App authentication for PR creation,
-create these files:
+create these files in `/agents/secrets`:
 
-File: `/agents/secrets/github_app_id` or
-`~/secrets/github_app_id`
-Content: Numeric GitHub App ID
+> **Docker deployments:** Use `/agents/secrets` (mounted via `/agents:/agents:rw`). The `~/secrets` path is for non-Docker (host Node.js) deployments only.
 
 ```bash
-echo "123456" > /agents/secrets/github_app_id
-chmod 600 /agents/secrets/github_app_id
-```
+sudo mkdir -p /agents/secrets
 
-File: `/agents/secrets/github_app_client_id` or
-`~/secrets/github_app_client_id`
-Content: OAuth Client ID (Iv1.abc...)
+# GitHub App ID (numeric)
+sudo tee /agents/secrets/github_app_id >/dev/null <<'EOF'
+123456
+EOF
 
-```bash
-echo "Iv1.abcdef..." > /agents/secrets/github_app_client_id
-chmod 600 /agents/secrets/github_app_client_id
-```
+# OAuth Client ID
+sudo tee /agents/secrets/github_app_client_id >/dev/null <<'EOF'
+Iv1.abcdef...
+EOF
 
-File: `/agents/secrets/github_app_private_key` or
-`~/secrets/github_app_private_key`
-Content: PEM-format private key
+# PEM private key
+sudo cp your-private-key.pem /agents/secrets/github_app_private_key
 
-```bash
-cat your-private-key.pem > /agents/secrets/github_app_private_key
-chmod 600 /agents/secrets/github_app_private_key
+sudo chown -R 10000:10000 /agents/secrets
+sudo chmod 700 /agents/secrets
+sudo chmod 600 /agents/secrets/github_app_id \
+               /agents/secrets/github_app_client_id \
+               /agents/secrets/github_app_private_key
 ```
 
 ### GitHub App Credential Auto-Detection
@@ -530,11 +554,19 @@ locations, reducing setup friction:
 Option 1 — Use standard paths (recommended):
 
 ```bash
-mkdir -p /agents/secrets
-echo "123456" > /agents/secrets/github_app_id
-echo "Iv1.abc..." > /agents/secrets/github_app_client_id
-cat your-key.pem > /agents/secrets/github_app_private_key
-chmod 600 /agents/secrets/github_app_*
+sudo mkdir -p /agents/secrets
+
+sudo tee /agents/secrets/github_app_id >/dev/null <<'EOF'
+123456
+EOF
+
+sudo tee /agents/secrets/github_app_client_id >/dev/null <<'EOF'
+Iv1.abc...
+EOF
+
+sudo cp your-key.pem /agents/secrets/github_app_private_key
+sudo chown -R 10000:10000 /agents/secrets
+sudo chmod 600 /agents/secrets/github_app_*
 ```
 
 Option 2 — Use SSH directory (convenient for development):
@@ -565,18 +597,48 @@ export GITHUB_APP_ENABLED=0  # Skips GitHub operations entirely
 
 ### Verification
 
-Check that the secrets are readable:
+**Step 1: Verify host-side permissions**
 
 ```bash
-# Test reading secrets (all should return non-empty values)
-test -s /agents/secrets/openrouter_api_key && \
+# Check ownership and permissions
+sudo ls -la /agents/secrets/
+# Expected: drwx------ 10000 10000 /agents/secrets
+# Expected: -rw------- 10000 10000 /agents/secrets/openrouter_api_key
+# Expected: -rw------- 10000 10000 /agents/secrets/kaseki_api_keys
+
+# Confirm files are non-empty (without exposing secret values)
+sudo test -s /agents/secrets/openrouter_api_key && \
   echo "✓ OpenRouter key found" || echo "✗ OpenRouter key missing"
-test -s /agents/secrets/kaseki_api_keys && \
+sudo test -s /agents/secrets/kaseki_api_keys && \
   echo "✓ API keys found" || echo "✗ API keys missing"
 ```
 
-After starting the API container, verify with the preflight
-endpoint:
+**Step 2: Verify container readability**
+
+After secrets are in place, confirm that the container (running as UID 10000) can read the files:
+
+```bash
+docker compose run --rm --entrypoint sh kaseki-api -lc '
+  id
+  ls -la /agents/secrets
+  test -s /agents/secrets/openrouter_api_key && echo "OpenRouter key readable"
+  test -s /agents/secrets/kaseki_api_keys && echo "API keys readable"
+'
+# Expected output:
+#   uid=10000(kaseki) gid=10000(kaseki) groups=10000(kaseki),...
+#   total ...
+#   drwx------  ... 10000 10000 ...  .
+#   -rw-------  ... 10000 10000 ...  kaseki_api_keys
+#   -rw-------  ... 10000 10000 ...  openrouter_api_key
+#   OpenRouter key readable
+#   API keys readable
+```
+
+This immediately catches UID mismatches, missing mounts, incorrect permissions, and missing files.
+
+**Step 3: Verify via API preflight**
+
+After starting the API container, verify with the preflight endpoint:
 
 ```bash
 curl -H "Authorization: Bearer sk-api-key-1" \
@@ -670,7 +732,7 @@ KASEKI_RESULTS_DIR=/agents/kaseki-results
 KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
-**Note on secrets:** Kaseki API keys are read from the fixed host-secret locations (`/agents/secrets/kaseki_api_keys` or `~/secrets/kaseki_api_keys`). Other supported secret file variables are optional if their files are in the default locations (`/agents/secrets/` or `~/secrets/`); set them only for non-standard locations.
+**Note on secrets:** Kaseki API keys are read from the fixed host-secret locations. For Docker deployments, the canonical path is `/agents/secrets/kaseki_api_keys`; the `~/secrets/kaseki_api_keys` fallback is for non-Docker (host Node.js) deployments only. Other supported secret file variables are optional if their files are in `/agents/secrets/`; set them only for non-standard locations.
 
 ---
 
