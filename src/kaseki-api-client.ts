@@ -91,10 +91,6 @@ export class KasekiApiClient {
     }
   }
 
-
-
-
-
   /**
    * Validate a job request before submission.
    */
@@ -120,8 +116,6 @@ export class KasekiApiClient {
     return ValidationResponseSchema.parse(data);
   }
 
-
-
   /**
    * Get the status of a run.
    */
@@ -142,18 +136,5 @@ export class KasekiApiClient {
     const data = await res.json();
     return StatusResponseSchema.parse(data);
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 }

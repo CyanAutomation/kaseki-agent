@@ -131,7 +131,7 @@ export function getSecretLocations(secretName: string): {
 } {
   return {
     primary: path.join(getPrimarySecretsDir(), secretName),
-    secondary: path.join("/etc/kaseki/secrets", secretName),
+    secondary: path.join('/etc/kaseki/secrets', secretName),
   };
 }
 

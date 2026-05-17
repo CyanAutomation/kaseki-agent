@@ -313,5 +313,4 @@ REQUIRES
     console.log(help[commandName] || `${commandName} - no detailed help available`);
   }
 
-
 }
