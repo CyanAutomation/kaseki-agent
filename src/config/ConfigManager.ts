@@ -189,7 +189,6 @@ const DEFAULT_CONFIG: Config = {
 
 export class ConfigManager {
   private config: Config = { ...DEFAULT_CONFIG };
-  private configFilePath: string | null = null;
   private loaded = false;
 
   /**
@@ -210,7 +209,6 @@ export class ConfigManager {
       const projectConfig = await this.tryLoadConfigFile(projectConfigPath);
       if (projectConfig) {
         this.config = this.deepMerge(this.config, projectConfig);
-        this.configFilePath = projectConfigPath;
         logger.debug(`Loaded project config: ${projectConfigPath}`);
       }
 
@@ -219,10 +217,6 @@ export class ConfigManager {
       const userConfig = await this.tryLoadConfigFile(userConfigPath);
       if (userConfig) {
         this.config = this.deepMerge(this.config, userConfig);
-        // Only set configFilePath to user config if project config wasn't found
-        if (!projectConfig) {
-          this.configFilePath = userConfigPath;
-        }
         logger.debug(`Loaded user config: ${userConfigPath}`);
       }
 
@@ -231,7 +225,6 @@ export class ConfigManager {
         const overrideConfig = await this.tryLoadConfigFile(overrideConfigPath);
         if (overrideConfig) {
           this.config = this.deepMerge(this.config, overrideConfig);
-          this.configFilePath = overrideConfigPath;
           logger.debug(`Loaded override config: ${overrideConfigPath}`);
         }
       }
@@ -410,15 +403,7 @@ export class ConfigManager {
     return result;
   }
 
-  /**
-   * Get entire configuration
-   */
-  getConfig(): Readonly<Config> {
-    if (!this.loaded) {
-      throw new Error('Configuration not loaded. Call load() first.');
-    }
-    return this.config;
-  }
+
 
   /**
    * Get specific config value by dot-notation path
@@ -467,40 +452,11 @@ export class ConfigManager {
     current[lastPart] = value;
   }
 
-  /**
-   * Save configuration to file
-   */
-  async save(filePath?: string): Promise<void> {
-    const targetPath = filePath || this.configFilePath;
-    if (!targetPath) {
-      throw new Error('No config file path specified for saving');
-    }
 
-    try {
-      const dir = path.dirname(targetPath);
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(targetPath, JSON.stringify(this.config, null, 2), 'utf-8');
-      logger.debug(`Configuration saved to: ${targetPath}`);
-    } catch (error) {
-      throw new Error(`Failed to save configuration: ${error}`);
-    }
-  }
 
-  /**
-   * Get config file path (for reference/logging)
-   */
-  getConfigFilePath(): string | null {
-    return this.configFilePath;
-  }
 
-  /**
-   * Reset to defaults
-   */
-  reset(): void {
-    this.config = { ...DEFAULT_CONFIG };
-    this.configFilePath = null;
-    this.loaded = false;
-  }
+
+
 
   /**
    * Validate authentication file paths and detect common mistakes

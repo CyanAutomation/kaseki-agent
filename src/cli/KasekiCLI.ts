@@ -313,10 +313,5 @@ REQUIRES
     console.log(help[commandName] || `${commandName} - no detailed help available`);
   }
 
-  /**
-   * Get list of available commands
-   */
-  getCommands(): CLICommand[] {
-    return Array.from(this.commands.values());
-  }
+
 }

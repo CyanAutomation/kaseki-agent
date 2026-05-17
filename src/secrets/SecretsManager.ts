@@ -331,13 +331,5 @@ export class SecretsManager {
     }
   }
 
-  /**
-   * Get recommended storage method for system
-   */
-  getRecommendedStore(): string {
-    if (this.isPassAvailable()) {
-      return 'keyring (pass)';
-    }
-    return 'file (~/.kaseki/secrets/)';
-  }
+
 }
