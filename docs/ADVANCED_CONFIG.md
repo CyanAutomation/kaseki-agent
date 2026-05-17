@@ -222,19 +222,24 @@ Variables controlling what code the agent operates on.
 ### `KASEKI_PUBLISH_MODE`
 
 - **Type**: `string` (enum)
-- **Default**: `off`
-- **Paths**: Local API, Production API only
-- **Description**: How to publish agent results
+- **Default**: `pr` (normal pull request)
+- **Paths**: Single-run, Local API, Production API
+- **Description**: How to publish agent results to GitHub
 - **Options**:
-  - `off` — Don't publish, keep results local
-  - `branch` — Push changes to new branch (requires GitHub App)
-  - `pr` — Create pull request with changes (requires GitHub App)
-  - `draft_pr` — Create draft PR for review before merge (requires GitHub App)
-- **Note**: Requires GitHub App credentials in `GITHUB_APP_*` variables
+  - `pr` — Create a normal pull request (default)
+  - `draft_pr` — Create a draft PR for review before merge
+  - `branch` — Push changes to new branch without creating a PR
+  - `auto` — Create PR if credentials found, otherwise skip (legacy)
+  - `none` — Don't publish, keep results local
+- **Note**: Requires GitHub App credentials in `GITHUB_APP_*` variables to function
 - **Example**:
 
   ```bash
+  # Create normal PR (default)
   KASEKI_PUBLISH_MODE=pr
+
+  # Create draft PR instead
+  KASEKI_PUBLISH_MODE=draft_pr
   ```
 
 ---

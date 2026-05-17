@@ -41,7 +41,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
 | `GITHUB_APP_ENABLED` | `1` (if credentials available) | boolean | Enable/disable GitHub operations (PR creation, branch push) |
-| `KASEKI_PUBLISH_MODE` | `auto` | string | Worker/CLI GitHub operations mode: `auto` (enabled if credentials found), `none` (always skip), `branch` (require credentials), `pr` (require credentials, creates normal PR), `draft_pr` (require credentials, creates draft PR). Controller API runs pass `pr` when request `publishMode` is omitted, or pass explicit `auto` through to the worker for graceful auto publishing. |
+| `KASEKI_PUBLISH_MODE` | `pr` | string | GitHub operations mode: `pr` (creates normal PR, default), `draft_pr` (creates draft PR), `branch` (push without PR), `auto` (creates PR if credentials found, legacy), `none` (always skip). All modes require GitHub App credentials to function. |
 | `KASEKI_GITHUB_PR_RETRIES` | `3` | integer | Retry attempts for GitHub PR creation (exponential backoff: 2s, 4s, 8s) |
 
 **GitHub App Credential Auto-Detection:**

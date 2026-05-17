@@ -1385,7 +1385,7 @@ to opt out of GitHub publishing for a specific API run.
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
-| `KASEKI_PUBLISH_MODE` | auto | `auto`, `none`, `branch`, `pr`, or `draft_pr`; controller API requests with omitted `publishMode` default to `pr`, while explicit API `publishMode: "auto"` passes graceful auto publishing to workers; direct worker/CLI execution defaults to `auto` if unchanged |
+| `KASEKI_PUBLISH_MODE` | pr | `pr` (normal PR), `draft_pr` (draft PR), `branch` (branch only), `auto` (legacy: PR if credentials found), or `none` (skip); controller API requests with omitted `publishMode` default to `pr`; direct worker/CLI execution defaults to `pr` if unchanged |
 | `KASEKI_STARTUP_CHECK_MODE` | boot | Dry-run startup check depth: `boot` or `baseline-validation` |
 
 ### Validation and Quality Gates
