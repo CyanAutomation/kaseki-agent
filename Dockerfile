@@ -201,7 +201,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
-    && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \\
+    && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \
     && mkdir -p /usr/local/bin/lib \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
