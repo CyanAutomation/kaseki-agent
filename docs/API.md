@@ -36,7 +36,7 @@ KASEKI_API_PORT=9000 KASEKI_API_KEYS=sk-test-abc123 npm run kaseki-api
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | 5700 | Timeout for agent (95 min) |
 | `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_TASK_MODE` | patch | Default task mode: patch or inspect |
-| `KASEKI_PUBLISH_MODE` | auto | Publish behavior for workers/CLI/API: `pr` creates a normal PR, `draft_pr` creates a draft PR, `branch` pushes without PR creation, `auto` publishes only when credentials are available, and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`; explicit API `publishMode: "auto"` uses graceful worker auto publishing. |
+| `KASEKI_PUBLISH_MODE` | pr | Publish behavior for workers/CLI/API: `pr` (normal PR, default) creates a normal PR, `draft_pr` creates a draft PR, `branch` pushes without PR creation, `auto` publishes only when credentials are available (legacy), and `none` skips publishing. Controller API runs with omitted `publishMode` default to `pr`. |
 | `KASEKI_REPO_MEMORY_MODE` | off | Opt-in repository prompt memory: `off` or `summary` |
 | `KASEKI_REPO_MEMORY_TTL_DAYS` | 30 | Maximum age of repository memory summaries |
 | `KASEKI_REPO_MEMORY_MAX_BYTES` | 8000 | Maximum bytes read/written for repository memory summaries |
