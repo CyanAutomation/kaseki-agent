@@ -11,8 +11,8 @@ jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
   getSecretLocations: jest.fn((name) => ({
     primary: `/agents/secrets/${name}`,
-    secondary: `/home/user/secrets/${name}`,
   })),
+  getSecretFilePath: jest.fn((name) => `/agents/secrets/${name}`),
   clearSecretCache: jest.fn(),
 }));
 
@@ -78,6 +78,9 @@ describe('JobScheduler timeout lifecycle', () => {
   afterEach(() => {
     secretValueCache.clear();
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.GITHUB_APP_ID_FILE;
+    delete process.env.GITHUB_APP_CLIENT_ID_FILE;
+    delete process.env.GITHUB_APP_PRIVATE_KEY_FILE;
     jest.useRealTimers();
     cleanupResultsDirs();
   });
@@ -165,18 +168,19 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
-  test('hydrates GitHub App ID values from configured secret files for controller runs', async () => {
-    const { readHostSecret } = jest.mocked(hostSecretsReader);
-    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
-      if (name === 'github_app_id') return '12345';
-      if (name === 'github_app_client_id') return 'Iv123client';
-      return null;
-    });
+  test('passes GitHub App secret file paths for controller runs', async () => {
+    const secretsDir = fs.mkdtempSync('/tmp/kaseki-job-secrets-test-');
+    tempDirs.push(secretsDir);
+    const { getSecretFilePath } = jest.mocked(hostSecretsReader);
+    (getSecretFilePath as jest.Mock).mockImplementation((name: string) => path.join(secretsDir, name));
 
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
+    fs.writeFileSync(path.join(secretsDir, 'github_app_id'), '12345');
+    fs.writeFileSync(path.join(secretsDir, 'github_app_client_id'), 'Iv123client');
+    fs.writeFileSync(path.join(secretsDir, 'github_app_private_key'), 'private-key');
 
     try {
       const scheduler = new JobScheduler(
@@ -203,8 +207,9 @@ describe('JobScheduler timeout lifecycle', () => {
         expect.any(Array),
         expect.objectContaining({
           env: expect.objectContaining({
-            GITHUB_APP_ID: '12345',
-            GITHUB_APP_CLIENT_ID: 'Iv123client',
+            GITHUB_APP_ID_FILE: path.join(secretsDir, 'github_app_id'),
+            GITHUB_APP_CLIENT_ID_FILE: path.join(secretsDir, 'github_app_client_id'),
+            GITHUB_APP_PRIVATE_KEY_FILE: path.join(secretsDir, 'github_app_private_key'),
           }),
         }),
       );
@@ -213,13 +218,10 @@ describe('JobScheduler timeout lifecycle', () => {
     }
   });
 
-  test('reads GitHub App ID values from host secrets for controller runs', async () => {
-    const { readHostSecret } = jest.mocked(hostSecretsReader);
-    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
-      if (name === 'github_app_id') return '67890';
-      if (name === 'github_app_client_id') return 'IvInlineClient';
-      return null;
-    });
+  test('preserves explicitly configured GitHub App secret file paths for controller runs', async () => {
+    process.env.GITHUB_APP_ID_FILE = '/configured/github_app_id';
+    process.env.GITHUB_APP_CLIENT_ID_FILE = '/configured/github_app_client_id';
+    process.env.GITHUB_APP_PRIVATE_KEY_FILE = '/configured/github_app_private_key';
 
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -251,8 +253,9 @@ describe('JobScheduler timeout lifecycle', () => {
         expect.any(Array),
         expect.objectContaining({
           env: expect.objectContaining({
-            GITHUB_APP_ID: '67890',
-            GITHUB_APP_CLIENT_ID: 'IvInlineClient',
+            GITHUB_APP_ID_FILE: '/configured/github_app_id',
+            GITHUB_APP_CLIENT_ID_FILE: '/configured/github_app_client_id',
+            GITHUB_APP_PRIVATE_KEY_FILE: '/configured/github_app_private_key',
           }),
         }),
       );

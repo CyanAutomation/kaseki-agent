@@ -1127,7 +1127,10 @@ if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$KASEKI_STARTUP_CHECK_MODE" != "baseline-va
 printf "[progress] startup check: container booted\n"
 node --version
 git --version
-pi --version >/dev/null
+pi_version="$(pi --version 2>&1)" || {
+  printf "pi version check failed: %s\n" "$pi_version" >&2
+  exit 1
+}
 test -r /run/secrets/openrouter_api_key
 test -w /workspace
 test -w /results
@@ -1143,7 +1146,7 @@ cat > /results/metadata.json <<META
   "current_stage": "startup check",
   "node_version": "$(node --version)",
   "git_version": "$(git --version)",
-  "pi_version": "$(pi --version 2>/dev/null || true)"
+  "pi_version": "$pi_version"
 }
 META
 cat > /results/result-summary.md <<SUMMARY
