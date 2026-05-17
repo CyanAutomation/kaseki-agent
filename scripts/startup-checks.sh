@@ -307,8 +307,7 @@ is_path_on_readonly_mount() {
 # This is important for read-only mounts where we can't change permissions
 is_file_readable_by_uid_or_gid() {
   local file_path="$1"
-  local uid="${2:-$CONTAINER_UID}"
-  local gid="${3:-$CONTAINER_GID}"
+  local gid="${2:-$CONTAINER_GID}"
   
   if [ ! -f "$file_path" ]; then
     return 1
@@ -339,7 +338,7 @@ is_file_readable_by_uid_or_gid() {
     if command -v stat &>/dev/null; then
       file_gid=$(stat -c "%g" "$file_path" 2>/dev/null || echo "unknown")
     else
-      file_gid=$(ls -ld "$file_path" 2>/dev/null | awk '{print $4}' || echo "unknown")
+      file_gid=$(find "$file_path" -maxdepth 0 -ls 2>/dev/null | awk '{print $3}' || echo "unknown")
     fi
     
     # If file GID matches our GID, we can read it via group membership
@@ -354,8 +353,7 @@ is_file_readable_by_uid_or_gid() {
 # Check if a directory is traversable by UID or GID (for group-based access)
 is_directory_traversable_by_uid_or_gid() {
   local dir_path="$1"
-  local uid="${2:-$CONTAINER_UID}"
-  local gid="${3:-$CONTAINER_GID}"
+  local gid="${2:-$CONTAINER_GID}"
   
   if [ ! -d "$dir_path" ]; then
     return 1
@@ -387,7 +385,7 @@ is_directory_traversable_by_uid_or_gid() {
     if command -v stat &>/dev/null; then
       dir_gid=$(stat -c "%g" "$dir_path" 2>/dev/null || echo "unknown")
     else
-      dir_gid=$(ls -ld "$dir_path" 2>/dev/null | awk '{print $4}' || echo "unknown")
+      dir_gid=$(find "$dir_path" -maxdepth 0 -ls 2>/dev/null | awk '{print $3}' || echo "unknown")
     fi
     
     if [ "$dir_gid" = "$gid" ]; then
@@ -406,11 +404,11 @@ get_current_permissions() {
     return 0
   fi
   
-  # Use stat if available, otherwise fall back to ls
+  # Use stat if available, otherwise fall back to find
   if command -v stat &>/dev/null; then
     stat -c "%a" "$path" 2>/dev/null || echo "unknown"
   else
-    ls -ld "$path" 2>/dev/null | awk '{print $1}' | sed 's/^.//g' || echo "unknown"
+    find "$path" -maxdepth 0 -ls 2>/dev/null | awk '{print $3}' | sed 's/^.//g' || echo "unknown"
   fi
 }
 
@@ -636,9 +634,9 @@ check_secret_paths() {
     fi
   fi
   
-  # Check ~/.kaseki/secrets.json
+  # Check $HOME/.kaseki/secrets.json
   if [ -f "$kaseki_secrets" ]; then
-    check_file_readable "$kaseki_secrets" "~/.kaseki/secrets.json" || exit_code=$?
+    check_file_readable "$kaseki_secrets" "$HOME/.kaseki/secrets.json" || exit_code=$?
   fi
   
   return "$exit_code"
