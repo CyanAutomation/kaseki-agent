@@ -144,8 +144,6 @@ export class LocalKasekiApiClient {
     return new LocalKasekiApiClient({ baseUrl, apiKey });
   }
 
-
-
   getRunStatusUrl(runId: string): string {
     return `${this.baseUrl}/runs/${encodeURIComponent(runId)}/status`;
   }
@@ -199,9 +197,6 @@ export class LocalKasekiApiClient {
     const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/logs/${encodeURIComponent(logType)}`, 'Failed to fetch run log from local Kaseki API');
     return LogResponseSchema.parse(data);
   }
-
-
-
 
   async cancelRun(runId: string): Promise<StatusResponse> {
     const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/cancel`, 'Failed to cancel run through local Kaseki API', {

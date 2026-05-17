@@ -360,8 +360,6 @@ export class IdempotencyStore {
     }
   }
 
-
-
   /**
    * Gracefully shutdown the store.
    */

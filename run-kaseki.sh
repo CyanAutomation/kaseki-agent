@@ -1121,6 +1121,7 @@ docker_args+=(
   "$IMAGE"
 )
 if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$KASEKI_STARTUP_CHECK_MODE" != "baseline-validation" ]; then
+  # shellcheck disable=SC2016  # single quotes intentional: variables expand inside container shell
   docker_args+=(
     -lc
     'set -euo pipefail

@@ -403,8 +403,6 @@ export class ConfigManager {
     return result;
   }
 
-
-
   /**
    * Get specific config value by dot-notation path
    */
@@ -451,12 +449,6 @@ export class ConfigManager {
 
     current[lastPart] = value;
   }
-
-
-
-
-
-
 
   /**
    * Validate authentication file paths and detect common mistakes
