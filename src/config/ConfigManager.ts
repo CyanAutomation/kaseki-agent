@@ -282,7 +282,7 @@ export class ConfigManager {
       if (process.env[secretVar]) {
         throw new Error(
           `Inline secret variable ${secretVar} is not allowed. ` +
-          'Secrets must be stored in host files (/agents/secrets/ or ~/secrets/). ' +
+          'Secrets must be stored in host files (/run/secrets/kaseki/ or ~/.kaseki/secrets/). ' +
           'Use the corresponding *_FILE environment variable instead.'
         );
       }

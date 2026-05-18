@@ -2,7 +2,7 @@
  * Host-Based Secrets Reader (Simplified)
  *
  * Reads secrets from two possible locations in order of preference:
- * 1. Docker: /home/pi/secrets/{secretName} (host-mounted into container)
+ * 1. Docker: /run/secrets/kaseki/{secretName} (host-mounted into container)
  * 2. Local dev: ~/.kaseki/secrets/{secretName} (single-run, local development)
  *
  * Logs which path is actually being used for transparency.
@@ -29,7 +29,7 @@ const secretCache = new Map<string, CacheEntry>();
  * Get the primary secrets directory (Docker Compose or KASEKI_SECRETS_DIR)
  */
 const getPrimarySecretsDir = (): string => {
-  return process.env.KASEKI_SECRETS_DIR || '/home/pi/secrets';
+  return process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki';
 };
 
 /**

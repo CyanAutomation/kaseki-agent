@@ -365,6 +365,25 @@ function checkDeletedBindMounts(paths: string[]): PreflightCheck {
   };
 }
 
+function checkWritableDirectory(name: string, dirPath: string, remediation: string): PreflightCheck {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+    fs.accessSync(dirPath, fs.constants.R_OK | fs.constants.W_OK);
+    return {
+      name,
+      ok: true,
+      detail: `${dirPath} is readable and writable.`,
+    };
+  } catch (err) {
+    return {
+      name,
+      ok: false,
+      detail: `${dirPath} is not readable and writable: ${(err as Error).message}`,
+      remediation,
+    };
+  }
+}
+
 function checkOpenRouterKey(): PreflightCheck {
   const keyValue = readHostSecret('openrouter_api_key');
   if (keyValue) {
@@ -396,10 +415,19 @@ function checkGitHubAppCredentials(): PreflightCheck {
   const privateKey = readHostSecretValue('github_app_private_key');
 
   if (!appId && !clientId && !privateKey) {
+    const idLocations = getSecretLocations('github_app_id');
+    const clientLocations = getSecretLocations('github_app_client_id');
+    const keyLocations = getSecretLocations('github_app_private_key');
     return {
       name: 'github-app',
       ok: false,
-      detail: 'GitHub App credentials are not configured; PR creation will be disabled.',
+      detail: 'GitHub App credentials are not configured; default PR creation cannot run.',
+      remediation: [
+        'Create one secret file per GitHub App credential:',
+        `  github_app_id: ${idLocations.primary} or ${idLocations.secondary}`,
+        `  github_app_client_id: ${clientLocations.primary} or ${clientLocations.secondary}`,
+        `  github_app_private_key: ${keyLocations.primary} or ${keyLocations.secondary}`,
+      ].join('\n'),
     };
   }
 
@@ -423,7 +451,7 @@ function checkGitHubAppCredentials(): PreflightCheck {
       name: 'github-app',
       ok: false,
       detail: `GitHub App credentials are incomplete: missing ${missing.join(', ')}.`,
-      remediation: `Create the missing secret files:\\n${secretLocations}`,
+      remediation: `Create the missing secret files:\n${secretLocations}`,
     };
   }
   if (!/^\d+$/.test(appId as string)) {
@@ -455,6 +483,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
   const secretFile = resolveHostSecretPath('openrouter_api_key')
     || process.env.OPENROUTER_API_KEY_FILE
     || '/run/secrets/kaseki/openrouter_api_key';
+  const secretDir = path.dirname(secretFile);
   const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
   const workspaceDir = path.join(smokeRoot, 'workspace');
   const resultsDir = path.join(smokeRoot, 'results');
@@ -478,7 +507,9 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       '-u',
       `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
       '-e',
-      'OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key',
+      'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+      '-e',
+      'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
       '-v',
       `${workspaceDir}:/workspace:rw`,
       '-v',
@@ -486,7 +517,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       '-v',
       `${cacheDir}:/cache:rw`,
       '-v',
-      `${secretFile}:/run/secrets/openrouter_api_key:ro`,
+      `${secretDir}:/run/secrets/kaseki:ro`,
       '--entrypoint',
       '/scripts/startup-checks.sh',
       image,
@@ -530,7 +561,7 @@ function isGitHubAppReady(): boolean {
 
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-  const secretsDir = process.env.KASEKI_SECRETS_DIR || '/agents/secrets';
+  const secretsDir = process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki';
   const image = readKasekiImage(templateDir);
   const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
@@ -539,17 +570,11 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
 
   checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
 
-  try {
-    fs.accessSync(config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
-    checks.push({ name: 'results-dir', ok: true, detail: `${config.resultsDir} is readable and writable.` });
-  } catch (err) {
-    checks.push({
-      name: 'results-dir',
-      ok: false,
-      detail: `${config.resultsDir} is not readable and writable: ${(err as Error).message}`,
-      remediation: 'Create the results directory and make it writable by the API container user.',
-    });
-  }
+  checks.push(checkWritableDirectory(
+    'results-dir',
+    config.resultsDir,
+    'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.'
+  ));
 
   checks.push(checkOpenRouterKey());
   checks.push(checkGitHubAppCredentials());

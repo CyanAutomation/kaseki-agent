@@ -226,7 +226,7 @@ export function loadConfig(): KasekiApiConfig {
 
 /**
  * Load API keys from KASEKI_API_KEYS or host-based secret files.
- * Host secrets are read from /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys.
+ * Host secrets are read from /run/secrets/kaseki/kaseki_api_keys or ~/.kaseki/secrets/kaseki_api_keys.
  * Returns an empty list for trusted unauthenticated local mode.
  */
 function parseApiKeys(keysValue: string): string[] {
