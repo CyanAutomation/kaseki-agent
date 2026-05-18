@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 * **deps**: upgrade Jest to v30, ts-jest to v29.4.9, and add npm overrides to eliminate deprecated glob@7 and inflight@1.0.6 warnings from Docker build logs
 * **deps**: upgrade glob to v13.0.6 via npm overrides to resolve glob@10.5.0 deprecation warning in development builds
 
-# [1.34.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.33.1...v1.34.0) (2026-05-18)
+## [1.34.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.33.1...v1.34.0) (2026-05-18)
 
 
 ### Bug Fixes
