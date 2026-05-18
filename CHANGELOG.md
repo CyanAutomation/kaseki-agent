@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.34.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.33.1...v1.34.0) (2026-05-18)
+
+
+### Bug Fixes
+
+* streamline OpenAPI test assertion helpers and remove unused functions ([dc8ccec](https://github.com/CyanAutomation/kaseki-agent/commit/dc8ccec967ac0cc4bc1befdb70d8950a879ed022))
+
+
+### Features
+
+* implement AgentsBootstrapper, ContainerLauncher, SecretResolver, and EnvironmentValidator for improved setup and management ([571b6ba](https://github.com/CyanAutomation/kaseki-agent/commit/571b6ba2884e099c773f666fa6413d6f8ad7c096))
+
 ## [1.33.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.33.0...v1.33.1) (2026-05-17)
 
 
