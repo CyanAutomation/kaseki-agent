@@ -109,6 +109,7 @@
     "typescript": "^5.7.3"
   },
   "overrides": {
-    "babel-plugin-istanbul": "^8.0.2"
+    "babel-plugin-istanbul": "^8.0.2",
+    "glob": "^13.0.6"
   }
 }
