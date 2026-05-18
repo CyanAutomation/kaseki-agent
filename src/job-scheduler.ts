@@ -774,6 +774,7 @@ export class JobScheduler {
   getReadiness(): { ready: boolean; reasons: string[] } {
     const reasons: string[] = [];
     try {
+      fs.mkdirSync(this.config.resultsDir, { recursive: true });
       fs.accessSync(this.config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
     } catch (error) {
       reasons.push(`results_dir_unwritable:${(error as Error).message}`);

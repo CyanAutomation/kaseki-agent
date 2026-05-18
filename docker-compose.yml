@@ -37,7 +37,7 @@ services:
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
-      KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/agents/secrets}"
+      KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
       KASEKI_HOST_SECRETS_DIR: "${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}"
       KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-10000:10000}"
       KASEKI_CONTAINER_UID: "10000"
@@ -45,10 +45,10 @@ services:
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-3600}"
       KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS: "${KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS:-15000}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-400000}"
-      OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
-      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+      OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/run/secrets/kaseki/openrouter_api_key}"
+      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
+      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
+      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache
       #   - Must be writable by UID 10000 (see one-time setup above)
@@ -56,9 +56,9 @@ services:
       #   - API service stores persistent results in /agents/kaseki-results/{instance}
       #   - Auto-initializes /agents/kaseki-template on first startup
       - /agents:/agents:rw
-      # Secrets: read-only mount of the host secrets directory
-      #   Override path with: export KASEKI_HOST_SECRETS_DIR=/custom/path
-      - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/agents/secrets:ro
+      # Secrets: read-only mount outside /agents so workspace cleanup cannot hide credentials.
+      #   Override host path with: export KASEKI_HOST_SECRETS_DIR=/custom/path
+      - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
       # Logs: Persistent API service logs with rotation
       - kaseki-logs:/var/log/kaseki-api
       # Docker socket: Allows API service to spawn worker containers

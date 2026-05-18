@@ -75,6 +75,20 @@ export class QuickstartCommand extends BaseCommand {
         console.error('   set OPENROUTER_API_KEY_FILE in your environment.');
         return 1;
       }
+      const missingGithubSecrets = [
+        ['GitHub App ID', secrets.githubAppIdFile, 'github_app_id', 'GITHUB_APP_ID_FILE'],
+        ['GitHub App Client ID', secrets.githubAppClientIdFile, 'github_app_client_id', 'GITHUB_APP_CLIENT_ID_FILE'],
+        ['GitHub App private key', secrets.githubAppPrivateKeyFile, 'github_app_private_key', 'GITHUB_APP_PRIVATE_KEY_FILE'],
+      ].filter(([, location]) => !location);
+
+      if (missingGithubSecrets.length > 0) {
+        console.error('\n❌ GitHub App credentials are incomplete.');
+        console.error('   Default Kaseki runs create GitHub PRs, so these secrets are required:');
+        for (const [label, , filename, envVar] of missingGithubSecrets) {
+          console.error(`   - ${label}: place it at ~/secrets/${filename} OR set ${envVar}`);
+        }
+        return 1;
+      }
 
       // Step 3: Write config
       console.log('\nStep 3/7: Writing ~/.kaseki/config.json...');
@@ -344,7 +358,7 @@ export class QuickstartCommand extends BaseCommand {
       '-e', 'KASEKI_API_LOG_LEVEL=info',
       '-e', 'KASEKI_API_MAX_CONCURRENT_RUNS=3',
       '-e', 'KASEKI_RESULTS_DIR=/agents/kaseki-results',
-      '-e', 'KASEKI_SECRETS_DIR=/agents/secrets',
+      '-e', 'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
       '-e', `KASEKI_HOST_SECRETS_DIR=${secretsDir}`,
       '-e', `KASEKI_CONTAINER_USER=${CONTAINER_UID}:${CONTAINER_UID}`,
       '-e', `KASEKI_CONTAINER_UID=${CONTAINER_UID}`,
@@ -352,12 +366,12 @@ export class QuickstartCommand extends BaseCommand {
       '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=3600',
       '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
       '-e', `KASEKI_API_KEYS=${apiKey}`,
-      '-e', 'OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key',
-      '-e', 'GITHUB_APP_ID_FILE=/agents/secrets/github_app_id',
-      '-e', 'GITHUB_APP_CLIENT_ID_FILE=/agents/secrets/github_app_client_id',
-      '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/agents/secrets/github_app_private_key',
+      '-e', 'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+      '-e', 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id',
+      '-e', 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id',
+      '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key',
       '-v', '/agents:/agents:rw',
-      '-v', `${secretsDir}:/agents/secrets:ro`,
+      '-v', `${secretsDir}:/run/secrets/kaseki:ro`,
       '-v', '/var/run/docker.sock:/var/run/docker.sock',
       '--cap-drop', 'ALL',
       '--security-opt', 'no-new-privileges:true',
