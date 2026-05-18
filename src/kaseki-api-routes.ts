@@ -479,11 +479,19 @@ function checkGitHubAppCredentials(): PreflightCheck {
   };
 }
 
-function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
+function resolveWorkerHostSecretsDir(): string {
+  if (process.env.KASEKI_HOST_SECRETS_DIR) {
+    return process.env.KASEKI_HOST_SECRETS_DIR;
+  }
+
   const secretFile = resolveHostSecretPath('openrouter_api_key')
     || process.env.OPENROUTER_API_KEY_FILE
     || '/run/secrets/kaseki/openrouter_api_key';
-  const secretDir = path.dirname(secretFile);
+  return path.dirname(secretFile);
+}
+
+function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
+  const hostSecretsDir = resolveWorkerHostSecretsDir();
   const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
   const workspaceDir = path.join(smokeRoot, 'workspace');
   const resultsDir = path.join(smokeRoot, 'results');
@@ -517,7 +525,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       '-v',
       `${cacheDir}:/cache:rw`,
       '-v',
-      `${secretDir}:/run/secrets/kaseki:ro`,
+      `${hostSecretsDir}:/run/secrets/kaseki:ro`,
       '--entrypoint',
       '/scripts/startup-checks.sh',
       image,
