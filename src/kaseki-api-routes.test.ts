@@ -517,6 +517,43 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight recreates a missing results directory when parent is writable', async () => {
+    const tempRoot = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-repair-'));
+    const resultsDir = path.join(tempRoot, 'kaseki-results');
+    const mountInfoPath = path.join(tempRoot, 'mountinfo');
+    const originalMountInfoPath = process.env.KASEKI_MOUNTINFO_PATH;
+    process.env.KASEKI_MOUNTINFO_PATH = mountInfoPath;
+    fs.writeFileSync(mountInfoPath, '');
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+      expect(fs.existsSync(resultsDir)).toBe(false);
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const resultsCheck = body.checks.find((check: any) => check.name === 'results-dir');
+      expect(resultsCheck).toEqual(expect.objectContaining({
+        ok: true,
+        detail: `${resultsDir} is readable and writable.`,
+      }));
+      expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalMountInfoPath === undefined) {
+        delete process.env.KASEKI_MOUNTINFO_PATH;
+      } else {
+        process.env.KASEKI_MOUNTINFO_PATH = originalMountInfoPath;
+      }
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports readable GitHub App file credentials', async () => {
     const { readHostSecret } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
@@ -659,7 +696,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       const githubCheck = body.checks.find((check: any) => check.name === 'github-app');
       expect(githubCheck).toEqual(expect.objectContaining({
         ok: false,
-        detail: expect.stringContaining('GitHub App credentials are not configured'),
+        detail: expect.stringContaining('default PR creation cannot run'),
+        remediation: expect.stringContaining('github_app_private_key'),
       }));
     } finally {
       await cleanupTestApp(server, idempotencyStore);

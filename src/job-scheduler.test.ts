@@ -1268,3 +1268,38 @@ describe('JobScheduler artifact cache invalidation', () => {
     expect(artifactCache.clearForJob).toHaveBeenCalledWith(job.id);
   });
 });
+
+describe('JobScheduler readiness repair', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    secretValueCache.clear();
+  });
+
+  afterEach(() => {
+    secretValueCache.clear();
+    cleanupResultsDirs();
+  });
+
+  test('recreates a missing results directory during readiness checks', () => {
+    const parent = createResultsDir();
+    const resultsDir = path.join(parent, 'nested-results');
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+
+    expect(scheduler.getReadiness()).toEqual({ ready: true, reasons: [] });
+    expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+  });
+});

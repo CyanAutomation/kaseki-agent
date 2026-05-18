@@ -17,6 +17,7 @@ KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
 KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"
 KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
+KASEKI_SECRETS_DIR="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
 MODE="${1:-all}"
 
 CONTAINER_UID="${CONTAINER_UID:-$(id -u)}"
@@ -103,27 +104,24 @@ check_bootstrap_status() {
 check_secret_paths() {
   log_info "Checking secret paths..."
 
-  # Check both primary (Docker) and fallback (local) paths
-  local primary_secrets_dir="/home/pi/secrets"
+  # Check the configured container path first, then the local-dev fallback.
+  local primary_secrets_dir="$KASEKI_SECRETS_DIR"
   local fallback_secrets_dir="$HOME/.kaseki/secrets"
   local secrets_dir_found=false
   local exit_code=0
 
-  # Try primary location first
   if [ -d "$primary_secrets_dir" ]; then
-    log_pass "Docker secrets directory found: $primary_secrets_dir"
+    log_pass "Secrets directory found: $primary_secrets_dir"
 
-    # Check permissions
     local mode
     mode=$(stat -c '%a' "$primary_secrets_dir" 2>/dev/null || stat -f '%OLp' "$primary_secrets_dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/')
 
-    # Mode should be at least 750 (owner rwx, group rx, others nothing)
-    if [[ ! "$mode" =~ ^[7][5-7][0-7]$ ]]; then
-      log_error "Docker secrets directory has incorrect permissions: $primary_secrets_dir (mode: $mode, expected: 750)"
-      log_info "  Fix with: ./scripts/setup-secrets.sh --fix"
+    if [ ! -r "$primary_secrets_dir" ] || [ ! -x "$primary_secrets_dir" ]; then
+      log_error "Secrets directory is not readable/traversable: $primary_secrets_dir (mode: $mode)"
+      log_info "  Fix host permissions so UID/GID $CONTAINER_UID:$CONTAINER_GID can read it, or set KASEKI_SECRETS_DIR to the mounted path"
       exit_code=2
     else
-      log_pass "Docker secrets permissions are correct: $primary_secrets_dir (mode: $mode)"
+      log_pass "Secrets directory is readable: $primary_secrets_dir (mode: $mode)"
     fi
 
     secrets_dir_found=true
@@ -149,52 +147,99 @@ check_secret_paths() {
 
   if [ ! "$secrets_dir_found" = true ]; then
     log_warn "No secrets directory found ($primary_secrets_dir or $fallback_secrets_dir)"
-    log_info "  Create one with: ./scripts/setup-secrets.sh"
+    log_info "  Mount the host secrets directory to $primary_secrets_dir or run: kaseki-agent init"
     return 3
   fi
 
   return "$exit_code"
 }
 
-check_api_key() {
-  log_info "Checking API key..."
+check_secret_file_sources() {
+  local label="$1"
+  shift
+  local secret_found=false
+  local secret_file
 
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    log_pass "OPENROUTER_API_KEY is set (from environment)"
-    return 0
-  fi
+  for secret_file in "$@"; do
+    [ -z "$secret_file" ] && continue
 
-  # Check file-based sources
-  local api_key_sources=(
-    "${OPENROUTER_API_KEY_FILE:-}"
-    "/home/pi/secrets/openrouter_api_key"
-    "$HOME/.kaseki/secrets/openrouter_api_key"
-  )
-
-  local api_key_found=false
-  for api_key_file in "${api_key_sources[@]}"; do
-    [ -z "$api_key_file" ] && continue
-
-    if [ -f "$api_key_file" ]; then
-      if [ -r "$api_key_file" ]; then
-        log_pass "API key file found and readable: $api_key_file"
-        api_key_found=true
+    if [ -f "$secret_file" ]; then
+      if [ -r "$secret_file" ]; then
+        log_pass "$label found and readable: $secret_file"
+        secret_found=true
         break
       else
-        log_error "API key file exists but is not readable: $api_key_file"
+        log_error "$label exists but is not readable: $secret_file"
         log_info "  Fix with: ./scripts/setup-secrets.sh --fix"
         return 2
       fi
     fi
   done
 
-  if [ ! "$api_key_found" = true ]; then
-    log_warn "No OpenRouter API key configured"
-    log_info "  Set up with: kaseki-agent init"
-    return 3
+  if [ "$secret_found" = true ]; then
+    return 0
+  fi
+  return 3
+}
+
+check_api_key() {
+  log_info "Checking OpenRouter API key..."
+
+  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    log_pass "OPENROUTER_API_KEY is set (from environment)"
+    return 0
   fi
 
-  return 0
+  if check_secret_file_sources \
+    "OpenRouter API key" \
+    "${OPENROUTER_API_KEY_FILE:-}" \
+    "$KASEKI_SECRETS_DIR/openrouter_api_key" \
+    "$HOME/.kaseki/secrets/openrouter_api_key"; then
+    return 0
+  fi
+  local exit_code=$?
+  if [ "$exit_code" -eq 2 ]; then
+    return 2
+  fi
+
+  log_warn "No OpenRouter API key configured"
+  log_info "  Create: $KASEKI_SECRETS_DIR/openrouter_api_key or run: kaseki-agent init"
+  return 3
+}
+
+check_github_app_secrets() {
+  log_info "Checking GitHub App credentials..."
+
+  local exit_code=0
+
+  check_secret_file_sources \
+    "GitHub App ID" \
+    "${GITHUB_APP_ID_FILE:-}" \
+    "$KASEKI_SECRETS_DIR/github_app_id" \
+    "$HOME/.kaseki/secrets/github_app_id" || exit_code=$((exit_code > $? ? exit_code : $?))
+
+  check_secret_file_sources \
+    "GitHub App Client ID" \
+    "${GITHUB_APP_CLIENT_ID_FILE:-}" \
+    "$KASEKI_SECRETS_DIR/github_app_client_id" \
+    "$HOME/.kaseki/secrets/github_app_client_id" || exit_code=$((exit_code > $? ? exit_code : $?))
+
+  check_secret_file_sources \
+    "GitHub App private key" \
+    "${GITHUB_APP_PRIVATE_KEY_FILE:-}" \
+    "$KASEKI_SECRETS_DIR/github_app_private_key" \
+    "$HOME/.kaseki/secrets/github_app_private_key" || exit_code=$((exit_code > $? ? exit_code : $?))
+
+  if [ "$exit_code" -eq 0 ]; then
+    return 0
+  fi
+  if [ "$exit_code" -eq 2 ]; then
+    return 2
+  fi
+
+  log_warn "GitHub App credentials are incomplete; default PR creation will not work"
+  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in $KASEKI_SECRETS_DIR or run: kaseki-agent init"
+  return 3
 }
 
 check_worker_mounts() {
@@ -235,6 +280,7 @@ main() {
       check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     permissions)
       check_kaseki_root || overall_exit=$?
@@ -250,6 +296,7 @@ main() {
       check_worker_mounts || overall_exit=$?
       check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     baseline-validation)
       check_kaseki_root || overall_exit=$?
@@ -278,4 +325,3 @@ main() {
 }
 
 main "$@"
-

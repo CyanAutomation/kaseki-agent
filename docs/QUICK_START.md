@@ -64,7 +64,7 @@ curl http://localhost:8080/ready
 
 The setup wizard created:
 
-- **`/home/pi/secrets/`** (Docker) or **`~/.kaseki/secrets/`** (local)
+- **`/home/pi/secrets/`** on the host, mounted read-only at **`/run/secrets/kaseki/`** in Docker, or **`~/.kaseki/secrets/`** for local runs
   - Your API keys and credentials
   - Permissions automatically secured (not world-readable)
 
@@ -87,16 +87,20 @@ docker-compose restart kaseki-api
 
 Check where they're stored:
 ```bash
-ls -la /home/pi/secrets/          # Docker
-ls -la ~/.kaseki/secrets/         # Local
+ls -la /home/pi/secrets/                    # Host Docker source
+docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
+ls -la ~/.kaseki/secrets/                   # Local
 ```
 
 ### API Key Not Working?
 
 Verify the file is readable:
 ```bash
-cat /home/pi/secrets/openrouter_api_key  # Docker
-cat ~/.kaseki/secrets/openrouter_api_key # Local
+docker exec kaseki-api test -r /run/secrets/kaseki/openrouter_api_key
+docker exec kaseki-api test -r /run/secrets/kaseki/github_app_id
+docker exec kaseki-api test -r /run/secrets/kaseki/github_app_client_id
+docker exec kaseki-api test -r /run/secrets/kaseki/github_app_private_key
+cat ~/.kaseki/secrets/openrouter_api_key # Local only
 ```
 
 If it looks correct, try running the API service again:
