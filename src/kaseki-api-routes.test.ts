@@ -1,3 +1,12 @@
+// Mock Docker subprocess helpers so preflight route tests can assert generated Docker args deterministically.
+jest.mock('./lib/subprocess-helpers', () => {
+  const actual = jest.requireActual('./lib/subprocess-helpers');
+  return {
+    ...actual,
+    execDockerCommand: jest.fn(),
+  };
+});
+
 // Mock the host-secrets-reader module
 jest.mock('./secrets/host-secrets-reader', () => ({
   readHostSecret: jest.fn(),
@@ -15,6 +24,7 @@ import * as crypto from 'crypto';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
+import * as subprocessHelpers from './lib/subprocess-helpers';
 import { classifyDockerFailure, decodeUtf8TailSafely, tailLogByLines } from './kaseki-api-routes';
 import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
@@ -30,6 +40,14 @@ import {
 
 const { privateKey: defaultGithubPrivateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const defaultGithubPrivateKeyPem = defaultGithubPrivateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+const execDockerCommandMock = jest.mocked(subprocessHelpers.execDockerCommand);
+
+function mockSuccessfulDockerCommands(): void {
+  execDockerCommandMock.mockImplementation((args: string[]) => ({
+    ok: true,
+    stdout: args[0] === 'version' ? '24.0.0 -> 24.0.0' : undefined,
+  }));
+}
 
 function mockReadableGithubAppCredentials(): void {
   const { readHostSecret } = jest.mocked(hostSecretsReader);
@@ -43,6 +61,7 @@ function mockReadableGithubAppCredentials(): void {
 
 beforeEach(() => {
   process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
+  mockSuccessfulDockerCommands();
   mockReadableGithubAppCredentials();
 });
 
@@ -476,6 +495,100 @@ describe('kaseki-api-routes preflight diagnostics', () => {
 
     expect(result.detail).toMatch(/unreachable/);
     expect(result.remediation).toMatch(/daemon/);
+  });
+
+  function getWorkerSmokeDockerRunArgs(): string[] {
+    const runCall = execDockerCommandMock.mock.calls.find(([args]) => args[0] === 'run');
+    if (!runCall) {
+      throw new Error('Expected worker smoke docker run command to be executed');
+    }
+    return runCall[0];
+  }
+
+  test('GET /api/preflight binds KASEKI_HOST_SECRETS_DIR for nested worker smoke Docker runs', async () => {
+    const originalHostSecretsDir = process.env.KASEKI_HOST_SECRETS_DIR;
+    const originalOpenRouterKeyFile = process.env.OPENROUTER_API_KEY_FILE;
+    process.env.KASEKI_HOST_SECRETS_DIR = '/home/pi/secrets';
+    delete process.env.OPENROUTER_API_KEY_FILE;
+    const { resolveHostSecretPath } = jest.mocked(hostSecretsReader);
+    (resolveHostSecretPath as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'openrouter_api_key') return '/run/secrets/kaseki/openrouter_api_key';
+      return `/run/secrets/kaseki/${name}`;
+    });
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-host-secrets-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+
+      const runArgs = getWorkerSmokeDockerRunArgs();
+      expect(runArgs).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
+      expect(runArgs).not.toContain('/run/secrets/kaseki:/run/secrets/kaseki:ro');
+      expect(runArgs).toEqual(expect.arrayContaining([
+        'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+        'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
+      ]));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalHostSecretsDir === undefined) {
+        delete process.env.KASEKI_HOST_SECRETS_DIR;
+      } else {
+        process.env.KASEKI_HOST_SECRETS_DIR = originalHostSecretsDir;
+      }
+      if (originalOpenRouterKeyFile === undefined) {
+        delete process.env.OPENROUTER_API_KEY_FILE;
+      } else {
+        process.env.OPENROUTER_API_KEY_FILE = originalOpenRouterKeyFile;
+      }
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/preflight falls back to the resolved host secret directory for local worker smoke runs', async () => {
+    const originalHostSecretsDir = process.env.KASEKI_HOST_SECRETS_DIR;
+    const originalOpenRouterKeyFile = process.env.OPENROUTER_API_KEY_FILE;
+    delete process.env.KASEKI_HOST_SECRETS_DIR;
+    delete process.env.OPENROUTER_API_KEY_FILE;
+    const { resolveHostSecretPath } = jest.mocked(hostSecretsReader);
+    (resolveHostSecretPath as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'openrouter_api_key') return '/tmp/kaseki-local-secrets/openrouter_api_key';
+      return `/tmp/kaseki-local-secrets/${name}`;
+    });
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-local-secrets-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+
+      const runArgs = getWorkerSmokeDockerRunArgs();
+      expect(runArgs).toContain('/tmp/kaseki-local-secrets:/run/secrets/kaseki:ro');
+      expect(runArgs).not.toContain('/run/secrets/kaseki:/run/secrets/kaseki:ro');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalHostSecretsDir === undefined) {
+        delete process.env.KASEKI_HOST_SECRETS_DIR;
+      } else {
+        process.env.KASEKI_HOST_SECRETS_DIR = originalHostSecretsDir;
+      }
+      if (originalOpenRouterKeyFile === undefined) {
+        delete process.env.OPENROUTER_API_KEY_FILE;
+      } else {
+        process.env.OPENROUTER_API_KEY_FILE = originalOpenRouterKeyFile;
+      }
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
   });
 
   test('GET /api/preflight reports deleted bind mounts for Kaseki paths', async () => {
