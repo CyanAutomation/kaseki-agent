@@ -89,7 +89,7 @@ export function validateSecretFormat(secretName: string, value: string): { valid
  * Simplified Secrets Manager - filesystem-only implementation
  *
  * Two fallback paths:
- * 1. Primary: /home/pi/secrets/{secretName} (Docker Compose)
+ * 1. Primary: /run/secrets/kaseki/{secretName} (Docker Compose)
  * 2. Fallback: ~/.kaseki/secrets/{secretName} (Single-run, local dev)
  */
 export class SecretsManager {
@@ -97,8 +97,7 @@ export class SecretsManager {
    * Get the primary secrets directory (Docker Compose)
    */
   private getPrimarySecretsDir(): string {
-    // For Docker deployments, try /home/pi/secrets first
-    return '/home/pi/secrets';
+    return process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki';
   }
 
   /**
