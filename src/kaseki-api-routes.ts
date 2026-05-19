@@ -490,6 +490,25 @@ function resolveWorkerHostSecretsDir(): string {
   return path.dirname(secretFile);
 }
 
+function workerSmokeStartupSecretsRemediation(detail: string | undefined): string | undefined {
+  if (!detail) {
+    return undefined;
+  }
+
+  const normalized = detail.toLowerCase();
+  const includesStartupSecretsWarning = [
+    'no openrouter api key configured',
+    'github app credentials are incomplete',
+    'create: /run/secrets/kaseki/openrouter_api_key',
+  ].some((warning) => normalized.includes(warning));
+
+  if (!includesStartupSecretsWarning) {
+    return undefined;
+  }
+
+  return 'Ensure the worker smoke test mounts the host secrets directory. Set KASEKI_HOST_SECRETS_DIR to the host path containing openrouter_api_key, github_app_id, github_app_client_id, and github_app_private_key, then recreate the API container. If the worker smoke mount fix is already deployed, this usually indicates a stale API container or custom deployment that still mounts container-internal secret paths instead of the host secrets directory.';
+}
+
 function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
   const hostSecretsDir = resolveWorkerHostSecretsDir();
   const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
@@ -540,6 +559,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       };
     }
 
+    const startupSecretsRemediation = workerSmokeStartupSecretsRemediation(result.detail);
     const classified = result.classification || {
       detail: result.detail || 'Worker container smoke test failed.',
       remediation: 'Check worker bind mounts, file ownership, Docker socket access, and the OpenRouter secret file.',
@@ -548,7 +568,7 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       name: 'worker-smoke',
       ok: false,
       detail: classified.detail,
-      remediation: classified.remediation,
+      remediation: startupSecretsRemediation || classified.remediation,
     };
   } catch (err) {
     return {
