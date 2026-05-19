@@ -4,17 +4,21 @@ import * as path from 'path';
 import { getSecretLocations, readHostSecret, resolveHostSecretPath } from './host-secrets-reader';
 
 describe('host secrets reader', () => {
-  const originalEnv = process.env;
   let secretsDir: string;
+  let originalKasekiSecretsDir: string | undefined;
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
     secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-secrets-test-'));
+    originalKasekiSecretsDir = process.env.KASEKI_SECRETS_DIR;
     process.env.KASEKI_SECRETS_DIR = secretsDir;
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    if (originalKasekiSecretsDir !== undefined) {
+      process.env.KASEKI_SECRETS_DIR = originalKasekiSecretsDir;
+    } else {
+      delete process.env.KASEKI_SECRETS_DIR;
+    }
     fs.rmSync(secretsDir, { recursive: true, force: true });
   });
 
