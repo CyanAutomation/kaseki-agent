@@ -62,7 +62,7 @@ if ! grep -Fq '[health-check] ✓ GitHub App secrets are readable' "$HEALTH_LOG"
 fi
 
 # Case 2: missing files should point to KASEKI_SECRETS_DIR path, not /agents/secrets.
-KASEKI_SECRETS_DIR="$SECRETS_MISSING"
+export KASEKI_SECRETS_DIR="$SECRETS_MISSING"
 if check_github_operations_health >"$TMP_DIR/case2.stdout" 2>"$TMP_DIR/case2.stderr"; then
   printf '✗ health check unexpectedly passed with missing secrets\n'
   cat "$HEALTH_LOG"
