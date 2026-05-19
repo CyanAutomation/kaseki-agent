@@ -49,114 +49,13 @@ export class QuickstartCommand extends BaseCommand {
     try {
       await this.configManager.load();
 
-      // Step 1: Detect environment
-      console.log('Step 1/7: Detecting environment...');
-      const env = this.environmentValidator.check();
-      this.environmentValidator.printSummary(env);
-
-      if (!env.hasDocker) {
-        console.error('\n❌ Docker is required. Install from https://docs.docker.com/install/');
-        return 1;
-      }
-
-      // Step 2: Discover secrets
-      console.log('\nStep 2/7: Discovering secrets...');
-      const secrets = this.secretResolver.discover();
-      this.secretResolver.printSummary(secrets);
-
-      if (!secrets.openrouterKeyFile) {
-        console.error('\n❌ OpenRouter API key not found.');
-        console.error('   Place it at ~/secrets/openrouter_api_key  OR');
-        console.error('   set OPENROUTER_API_KEY_FILE in your environment.');
-        return 1;
-      }
-
-      const missingGithubSecrets = [
-        ['GitHub App ID', secrets.githubAppIdFile, 'github_app_id', 'GITHUB_APP_ID_FILE'],
-        ['GitHub App Client ID', secrets.githubAppClientIdFile, 'github_app_client_id', 'GITHUB_APP_CLIENT_ID_FILE'],
-        ['GitHub App private key', secrets.githubAppPrivateKeyFile, 'github_app_private_key', 'GITHUB_APP_PRIVATE_KEY_FILE'],
-      ].filter(([, location]) => !location);
-
-      if (missingGithubSecrets.length > 0) {
-        console.error('\n❌ GitHub App credentials are incomplete.');
-        console.error('   Default Kaseki runs create GitHub PRs, so these secrets are required:');
-        for (const [label, , filename, envVar] of missingGithubSecrets) {
-          console.error(`   - ${label}: place it at ~/secrets/${filename} OR set ${envVar}`);
-        }
-        return 1;
-      }
-
-      // Step 3: Write config
-      console.log('\nStep 3/7: Writing ~/.kaseki/config.json...');
-      if (!dryRun) {
-        await this.agentsBootstrapper.writeConfig(secrets);
-        console.log('  ✓ Config written to ~/.kaseki/config.json');
-      } else {
-        console.log('  [dry-run] would write ~/.kaseki/config.json');
-      }
-
-      // Step 4: Bootstrap /agents
-      console.log('\nStep 4/7: Bootstrapping /agents directory...');
-      const bootstrapResult = await this.agentsBootstrapper.bootstrap(dryRun);
-      if (!bootstrapResult.ok) {
-        console.error(`\n❌ Could not create /agents: ${bootstrapResult.error}`);
-        console.error('\nRun manually:');
-        console.error('  sudo mkdir -p /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache');
-        console.error('  sudo chown -R 10000:10000 /agents');
-        console.error('  sudo chmod 755 /agents');
-        console.error('\nThen re-run: kaseki-agent quickstart');
-        return 1;
-      }
-      if (bootstrapResult.message) {
-        console.log(`  ${bootstrapResult.message}`);
-      }
-
-      // Step 5: Start container
-      console.log('\nStep 5/7: Starting kaseki-api container...');
-      if (!dryRun) {
-        const apiKey = this.secretResolver.readApiKey(secrets) ?? 'changeme';
-        const startResult = this.containerLauncher.launch(apiKey);
-        if (!startResult.ok) {
-          console.error(`\n❌ Failed to start container: ${startResult.error}`);
-          return 1;
-        }
-        console.log('  ✓ Container started');
-      } else {
-        console.log('  [dry-run] would start kaseki-api container');
-      }
-
-      // Step 6: Wait for /ready
-      console.log('\nStep 6/7: Waiting for API to become ready...');
-      if (!dryRun) {
-        const readyResult = await this.containerLauncher.waitForReadiness();
-        if (!readyResult.ok) {
-          console.error('\n❌ API did not become ready within 60s.');
-          console.error('   Check: docker logs kaseki-api');
-          console.error('   Verify: /agents is writable by UID 10000 (ls -la /agents)');
-          return 1;
-        }
-        console.log('  ✓ API is ready at http://localhost:8080');
-      } else {
-        console.log('  [dry-run] would wait for http://localhost:8080/ready');
-      }
-
-      // Step 7: Smoke test
-      console.log('\nStep 7/7: Verifying authenticated access...');
-      if (!dryRun) {
-        const apiKey = this.secretResolver.readApiKey(secrets);
-        if (apiKey) {
-          const smokeResult = await this.containerLauncher.smokeTest(apiKey);
-          if (smokeResult.ok) {
-            console.log('  ✓ Authenticated access confirmed (GET /api/runs succeeded)');
-          } else {
-            console.warn('  ⚠️  Auth smoke test failed — check KASEKI_API_KEYS in your container env');
-          }
-        } else {
-          console.warn('  ⚠️  No API key found to test with; skipping auth check');
-        }
-      } else {
-        console.log('  [dry-run] would POST to /api/runs to confirm auth');
-      }
+      await this.validateEnvironment();
+      const secrets = await this.resolveSecrets();
+      await this.writeConfig(secrets, dryRun);
+      await this.bootstrapAgentsDir(dryRun);
+      await this.launchContainer(secrets, dryRun);
+      await this.waitForReady(dryRun);
+      await this.runSmokeTest(secrets, dryRun);
 
       this.printSuccess(secrets, dryRun);
       return 0;
@@ -167,6 +66,131 @@ export class QuickstartCommand extends BaseCommand {
         console.error(error);
       }
       return 1;
+    }
+  }
+
+  private async validateEnvironment(): Promise<void> {
+    // Step 1: Detect environment
+    console.log('Step 1/7: Detecting environment...');
+    const env = this.environmentValidator.check();
+    this.environmentValidator.printSummary(env);
+
+    if (!env.hasDocker) {
+      console.error('\n❌ Docker is required. Install from https://docs.docker.com/install/');
+      throw new Error('Docker is required');
+    }
+  }
+
+  private async resolveSecrets(): Promise<DiscoveredSecrets> {
+    // Step 2: Discover secrets
+    console.log('\nStep 2/7: Discovering secrets...');
+    const secrets = this.secretResolver.discover();
+    this.secretResolver.printSummary(secrets);
+
+    if (!secrets.openrouterKeyFile) {
+      console.error('\n❌ OpenRouter API key not found.');
+      console.error('   Place it at ~/secrets/openrouter_api_key  OR');
+      console.error('   set OPENROUTER_API_KEY_FILE in your environment.');
+      throw new Error('OpenRouter API key not found');
+    }
+
+    const missingGithubSecrets = [
+      ['GitHub App ID', secrets.githubAppIdFile, 'github_app_id', 'GITHUB_APP_ID_FILE'],
+      ['GitHub App Client ID', secrets.githubAppClientIdFile, 'github_app_client_id', 'GITHUB_APP_CLIENT_ID_FILE'],
+      ['GitHub App private key', secrets.githubAppPrivateKeyFile, 'github_app_private_key', 'GITHUB_APP_PRIVATE_KEY_FILE'],
+    ].filter(([, location]) => !location);
+
+    if (missingGithubSecrets.length > 0) {
+      console.error('\n❌ GitHub App credentials are incomplete.');
+      console.error('   Default Kaseki runs create GitHub PRs, so these secrets are required:');
+      for (const [label, , filename, envVar] of missingGithubSecrets) {
+        console.error(`   - ${label}: place it at ~/secrets/${filename} OR set ${envVar}`);
+      }
+      throw new Error('GitHub App credentials incomplete');
+    }
+
+    return secrets;
+  }
+
+  private async writeConfig(secrets: DiscoveredSecrets, dryRun: boolean): Promise<void> {
+    // Step 3: Write config
+    console.log('\nStep 3/7: Writing ~/.kaseki/config.json...');
+    if (!dryRun) {
+      await this.agentsBootstrapper.writeConfig(secrets);
+      console.log('  ✓ Config written to ~/.kaseki/config.json');
+    } else {
+      console.log('  [dry-run] would write ~/.kaseki/config.json');
+    }
+  }
+
+  private async bootstrapAgentsDir(dryRun: boolean): Promise<void> {
+    // Step 4: Bootstrap /agents
+    console.log('\nStep 4/7: Bootstrapping /agents directory...');
+    const bootstrapResult = await this.agentsBootstrapper.bootstrap(dryRun);
+    if (!bootstrapResult.ok) {
+      console.error(`\n❌ Could not create /agents: ${bootstrapResult.error}`);
+      console.error('\nRun manually:');
+      console.error('  sudo mkdir -p /agents/kaseki-results /agents/kaseki-runs /agents/kaseki-cache');
+      console.error('  sudo chown -R 10000:10000 /agents');
+      console.error('  sudo chmod 755 /agents');
+      console.error('\nThen re-run: kaseki-agent quickstart');
+      throw new Error(`Could not bootstrap /agents: ${bootstrapResult.error}`);
+    }
+    if (bootstrapResult.message) {
+      console.log(`  ${bootstrapResult.message}`);
+    }
+  }
+
+  private async launchContainer(secrets: DiscoveredSecrets, dryRun: boolean): Promise<void> {
+    // Step 5: Start container
+    console.log('\nStep 5/7: Starting kaseki-api container...');
+    if (!dryRun) {
+      const apiKey = this.secretResolver.readApiKey(secrets) ?? 'changeme';
+      const startResult = this.containerLauncher.launch(apiKey);
+      if (!startResult.ok) {
+        console.error(`\n❌ Failed to start container: ${startResult.error}`);
+        throw new Error(`Failed to start container: ${startResult.error}`);
+      }
+      console.log('  ✓ Container started');
+    } else {
+      console.log('  [dry-run] would start kaseki-api container');
+    }
+  }
+
+  private async waitForReady(dryRun: boolean): Promise<void> {
+    // Step 6: Wait for /ready
+    console.log('\nStep 6/7: Waiting for API to become ready...');
+    if (!dryRun) {
+      const readyResult = await this.containerLauncher.waitForReadiness();
+      if (!readyResult.ok) {
+        console.error('\n❌ API did not become ready within 60s.');
+        console.error('   Check: docker logs kaseki-api');
+        console.error('   Verify: /agents is writable by UID 10000 (ls -la /agents)');
+        throw new Error('API did not become ready within 60s');
+      }
+      console.log('  ✓ API is ready at http://localhost:8080');
+    } else {
+      console.log('  [dry-run] would wait for http://localhost:8080/ready');
+    }
+  }
+
+  private async runSmokeTest(secrets: DiscoveredSecrets, dryRun: boolean): Promise<void> {
+    // Step 7: Smoke test
+    console.log('\nStep 7/7: Verifying authenticated access...');
+    if (!dryRun) {
+      const apiKey = this.secretResolver.readApiKey(secrets);
+      if (apiKey) {
+        const smokeResult = await this.containerLauncher.smokeTest(apiKey);
+        if (smokeResult.ok) {
+          console.log('  ✓ Authenticated access confirmed (GET /api/runs succeeded)');
+        } else {
+          console.warn('  ⚠️  Auth smoke test failed — check KASEKI_API_KEYS in your container env');
+        }
+      } else {
+        console.warn('  ⚠️  No API key found to test with; skipping auth check');
+      }
+    } else {
+      console.log('  [dry-run] would POST to /api/runs to confirm auth');
     }
   }
 

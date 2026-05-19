@@ -23,19 +23,6 @@ export interface ArtifactMetadataDefinition {
 }
 
 /**
- * Runtime artifact file information.
- */
-export interface ArtifactFileInfo {
-  name: string;
-  size: number;
-  contentType: string;
-  available: boolean;
-  description: string;
-  availability: ArtifactAvailability;
-  triageOrder?: number;
-}
-
-/**
  * Webhook event types.
  */
 export enum WebhookEventType {
