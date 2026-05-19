@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.2...v1.34.3) (2026-05-19)
+
+
+### Bug Fixes
+
+* Update API router middleware to skip auth for health check endpoints only ([f4a84d3](https://github.com/CyanAutomation/kaseki-agent/commit/f4a84d3c7a3c5575bc92bcd8a90aa28a0cc81e97))
+
 ## [1.34.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.1...v1.34.2) (2026-05-19)
 
 
