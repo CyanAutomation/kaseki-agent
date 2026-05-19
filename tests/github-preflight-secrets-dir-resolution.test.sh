@@ -43,11 +43,11 @@ awk '
 . "$FUNCTIONS_FILE"
 
 # Case 1: with only KASEKI_SECRETS_DIR defaults, preflight should pass.
-KASEKI_SECRETS_DIR="$SECRETS_OK"
-KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
-KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK=0
+export KASEKI_SECRETS_DIR="$SECRETS_OK"
+export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+export KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK=0
 unset GITHUB_APP_ID_FILE GITHUB_APP_CLIENT_ID_FILE GITHUB_APP_PRIVATE_KEY_FILE
-REPO_URL="https://github.com/acme/widgets"
+export REPO_URL=""
 
 if ! check_github_operations_health >"$TMP_DIR/case1.stdout" 2>"$TMP_DIR/case1.stderr"; then
   printf '✗ health check failed when secrets were present in KASEKI_SECRETS_DIR\n'
