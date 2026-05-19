@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.34.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.1...v1.34.2) (2026-05-19)
+
+
+### Bug Fixes
+
+* Improve environment variable handling in host secrets tests ([ace1c80](https://github.com/CyanAutomation/kaseki-agent/commit/ace1c80aa7d0573c6a06baada44be1e4acbf36ea))
+* QuickstartCommand for improved structure and error handling; update .fallowrc.json entries and remove unused ArtifactFileInfo interface ([ae10369](https://github.com/CyanAutomation/kaseki-agent/commit/ae1036927d4eb60eb658a42fc12e06034fc19035))
+
 ## [1.34.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.0...v1.34.1) (2026-05-18)
 
 
