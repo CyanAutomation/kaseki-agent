@@ -1779,9 +1779,10 @@ check_github_operations_health() {
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
   
   # Check 1: GitHub App secrets are readable
-  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
-  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  local secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
+  local github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
+  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
+  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
   
   if ! [ -r "$github_app_id_file" ]; then
     printf '[health-check] ERROR: Cannot read GitHub App ID from %s\n' "$github_app_id_file" | tee -a "$health_log" >&2
@@ -2534,11 +2535,12 @@ EOF
 
 run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data git_push_exit
+  local secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
   
   # Load GitHub App credentials
-  local github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
-  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  local github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
+  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
+  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
   app_id="$(cat "$github_app_id_file")" || { printf 'Failed to read app ID\n' >&2; return 7; }
   cat "$github_app_client_id_file" >/dev/null || { printf 'Failed to read client ID\n' >&2; return 7; }
   private_key_file="$github_app_private_key_file"
@@ -3429,9 +3431,10 @@ stage_start="$(date +%s)"
 : > /results/git-push.log
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
-  github_app_id_file="${GITHUB_APP_ID_FILE:-/agents/secrets/github_app_id}"
-  github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-/agents/secrets/github_app_client_id}"
-  github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-/agents/secrets/github_app_private_key}"
+  secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
+  github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
+  github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
+  github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
   if [ -r "$github_app_id_file" ] && [ -r "$github_app_client_id_file" ] && [ -r "$github_app_private_key_file" ]; then
     run_github_operations
   else
