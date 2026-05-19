@@ -19,6 +19,7 @@ KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"
 KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
 KASEKI_SECRETS_DIR="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
 MODE="${1:-all}"
+KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK="${KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK:-0}"
 
 CONTAINER_UID="${CONTAINER_UID:-$(id -u)}"
 CONTAINER_GID="${CONTAINER_GID:-$(id -g)}"
@@ -211,24 +212,22 @@ check_github_app_secrets() {
   log_info "Checking GitHub App credentials..."
 
   local exit_code=0
+  local github_app_id_file github_app_client_id_file github_app_private_key_file
+  github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
+  github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
+  github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
 
   check_secret_file_sources \
     "GitHub App ID" \
-    "${GITHUB_APP_ID_FILE:-}" \
-    "$KASEKI_SECRETS_DIR/github_app_id" \
-    "$HOME/.kaseki/secrets/github_app_id" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_id_file" || exit_code=$((exit_code > $? ? exit_code : $?))
 
   check_secret_file_sources \
     "GitHub App Client ID" \
-    "${GITHUB_APP_CLIENT_ID_FILE:-}" \
-    "$KASEKI_SECRETS_DIR/github_app_client_id" \
-    "$HOME/.kaseki/secrets/github_app_client_id" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_client_id_file" || exit_code=$((exit_code > $? ? exit_code : $?))
 
   check_secret_file_sources \
     "GitHub App private key" \
-    "${GITHUB_APP_PRIVATE_KEY_FILE:-}" \
-    "$KASEKI_SECRETS_DIR/github_app_private_key" \
-    "$HOME/.kaseki/secrets/github_app_private_key" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_private_key_file" || exit_code=$((exit_code > $? ? exit_code : $?))
 
   if [ "$exit_code" -eq 0 ]; then
     return 0
@@ -238,8 +237,33 @@ check_github_app_secrets() {
   fi
 
   log_warn "GitHub App credentials are incomplete; default PR creation will not work"
-  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in $KASEKI_SECRETS_DIR or run: kaseki-agent init"
+  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in /run/secrets/kaseki (or KASEKI_SECRETS_DIR) or run: kaseki-agent init"
   return 3
+}
+
+# must match host preflight/API secret resolution contract.
+resolve_github_secret_file() {
+  local env_name="$1"
+  local default_name="$2"
+  local explicit_value canonical_path local_dev_path
+  explicit_value="${!env_name:-}"
+  if [ -n "$explicit_value" ]; then
+    printf '%s' "$explicit_value"
+    return 0
+  fi
+  canonical_path="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/$default_name"
+  if [ -r "$canonical_path" ]; then
+    printf '%s' "$canonical_path"
+    return 0
+  fi
+  if [ "$KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK" = "1" ]; then
+    local_dev_path="$HOME/.kaseki/secrets/$default_name"
+    if [ -r "$local_dev_path" ]; then
+      printf '%s' "$local_dev_path"
+      return 0
+    fi
+  fi
+  printf '%s' "$canonical_path"
 }
 
 check_worker_mounts() {
