@@ -35,6 +35,7 @@ KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
 KASEKI_STRICT_SCRIPT_CHECK="${KASEKI_STRICT_SCRIPT_CHECK:-0}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
+KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK="${KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK:-0}"
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 KASEKI_GITHUB_PR_RETRIES="${KASEKI_GITHUB_PR_RETRIES:-3}"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK="${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}"
@@ -1778,11 +1779,11 @@ check_github_operations_health() {
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
   
-  # Check 1: GitHub App secrets are readable
-  local secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
-  local github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
-  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
-  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
+  # must match host preflight/API secret resolution contract.
+  local github_app_id_file github_app_client_id_file github_app_private_key_file
+  github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
+  github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
+  github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   
   if ! [ -r "$github_app_id_file" ]; then
     printf '[health-check] ERROR: Cannot read GitHub App ID from %s\n' "$github_app_id_file" | tee -a "$health_log" >&2
@@ -1927,6 +1928,31 @@ check_github_operations_health() {
   
   printf '[preflight] github operations health check PASSED\n' | tee -a "$health_log"
   return 0
+}
+
+# must match host preflight/API secret resolution contract.
+resolve_github_secret_file() {
+  local env_name="$1"
+  local default_name="$2"
+  local explicit_value="" canonical_path local_dev_path
+  explicit_value="${!env_name:-}"
+  if [ -n "$explicit_value" ]; then
+    printf '%s' "$explicit_value"
+    return 0
+  fi
+  canonical_path="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/$default_name"
+  if [ -r "$canonical_path" ]; then
+    printf '%s' "$canonical_path"
+    return 0
+  fi
+  if [ "$KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK" = "1" ]; then
+    local_dev_path="$HOME/.kaseki/secrets/$default_name"
+    if [ -r "$local_dev_path" ]; then
+      printf '%s' "$local_dev_path"
+      return 0
+    fi
+  fi
+  printf '%s' "$canonical_path"
 }
 
 validate_github_api_response() {
@@ -2535,12 +2561,12 @@ EOF
 
 run_github_operations() {
   local app_id private_key_file owner repo feature_branch token token_data git_push_exit
-  local secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
   
   # Load GitHub App credentials
-  local github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
-  local github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
-  local github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
+  local github_app_id_file github_app_client_id_file github_app_private_key_file
+  github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
+  github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
+  github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   app_id="$(cat "$github_app_id_file")" || { printf 'Failed to read app ID\n' >&2; return 7; }
   cat "$github_app_client_id_file" >/dev/null || { printf 'Failed to read client ID\n' >&2; return 7; }
   private_key_file="$github_app_private_key_file"
@@ -3431,10 +3457,9 @@ stage_start="$(date +%s)"
 : > /results/git-push.log
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
-  secrets_dir="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
-  github_app_id_file="${GITHUB_APP_ID_FILE:-$secrets_dir/github_app_id}"
-  github_app_client_id_file="${GITHUB_APP_CLIENT_ID_FILE:-$secrets_dir/github_app_client_id}"
-  github_app_private_key_file="${GITHUB_APP_PRIVATE_KEY_FILE:-$secrets_dir/github_app_private_key}"
+  github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
+  github_app_client_id_file="$(resolve_github_secret_file "GITHUB_APP_CLIENT_ID_FILE" "github_app_client_id")"
+  github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   if [ -r "$github_app_id_file" ] && [ -r "$github_app_client_id_file" ] && [ -r "$github_app_private_key_file" ]; then
     run_github_operations
   else
