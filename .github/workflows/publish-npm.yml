@@ -90,7 +90,7 @@ jobs:
             # Ensure we have the latest remote refs (especially important for workflow_run trigger)
             git fetch origin main --quiet
             
-            if grep -q "## \[${VERSION}\]" CHANGELOG.md; then
+            if grep -q "^# \[${VERSION}\]" CHANGELOG.md; then
               changelog_found=true
               break
             fi
