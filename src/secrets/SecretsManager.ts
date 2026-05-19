@@ -7,6 +7,9 @@
  *
  * No keyring, no env vars. Explicit paths only.
  * See scripts/setup-secrets.sh for automatic permission setup.
+ *
+ * Note: Secret format validation is in secrets-schema.ts (setup-time only).
+ * Runtime retrieval does not validate; only stores/retrieves from secure filesystem paths.
  */
 
 import fs from 'fs/promises';
@@ -15,75 +18,6 @@ import os from 'os';
 import { createLogger } from '../logger';
 
 const logger = createLogger('secrets');
-
-/**
- * Schema validators for different secret types
- */
-interface SecretSchema {
-  name: string;
-  pattern: RegExp | null;
-  validate(value: string): { valid: boolean; error?: string };
-}
-
-const schemas: Record<string, SecretSchema> = {
-  openrouter_api_key: {
-    name: 'OpenRouter API Key',
-    pattern: /^sk-or-[a-zA-Z0-9]+$/,
-    validate(value: string) {
-      if (!/^sk-or-/.test(value)) {
-        return { valid: false, error: 'Must start with "sk-or-"' };
-      }
-      if (value.length < 20) {
-        return { valid: false, error: 'Looks incomplete (too short)' };
-      }
-      return { valid: true };
-    },
-  },
-  github_app_private_key: {
-    name: 'GitHub App Private Key',
-    pattern: null,
-    validate(value: string) {
-      if (!value.includes('BEGIN RSA PRIVATE KEY')) {
-        return { valid: false, error: 'Not a valid RSA private key (missing header)' };
-      }
-      if (!value.includes('END RSA PRIVATE KEY')) {
-        return { valid: false, error: 'Not a valid RSA private key (missing footer)' };
-      }
-      return { valid: true };
-    },
-  },
-  kaseki_api_keys: {
-    name: 'Kaseki API Keys',
-    pattern: /^[a-f0-9:;-]+$/,
-    validate(value: string) {
-      // Comma or semicolon-separated UUIDs
-      const keys = value.split(/[,;]/).map((k) => k.trim());
-      for (const key of keys) {
-        if (!/^[a-f0-9-]+$/.test(key)) {
-          return { valid: false, error: 'Contains invalid UUID format' };
-        }
-      }
-      return { valid: true };
-    },
-  },
-};
-
-/**
- * Validate secret format and return detailed error if invalid
- */
-export function validateSecretFormat(secretName: string, value: string): { valid: boolean; error?: string } {
-  const schema = schemas[secretName];
-  if (!schema) {
-    // Unknown secret type; assume valid
-    return { valid: true };
-  }
-
-  if (!value || value.trim().length === 0) {
-    return { valid: false, error: `${schema.name} cannot be empty` };
-  }
-
-  return schema.validate(value);
-}
 
 /**
  * Simplified Secrets Manager - filesystem-only implementation
