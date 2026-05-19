@@ -1931,26 +1931,63 @@ check_github_operations_health() {
 }
 
 # must match host preflight/API secret resolution contract.
+# Resolves GitHub App secret paths with debug logging (when KASEKI_DEBUG_SECRETS=1)
 resolve_github_secret_file() {
   local env_name="$1"
   local default_name="$2"
-  local explicit_value="" canonical_path local_dev_path
+  local explicit_value="" canonical_path local_dev_path debug_mode
+  
+  debug_mode="${KASEKI_DEBUG_SECRETS:-0}"
+  
+  # Check if explicit path is set via environment variable
   explicit_value="${!env_name:-}"
   if [ -n "$explicit_value" ]; then
+    if [ "$debug_mode" = "1" ]; then
+      printf '[debug-secrets] %s: Using explicit env var path: %s\n' "$env_name" "$explicit_value" >&2
+    fi
     printf '%s' "$explicit_value"
     return 0
   fi
+  
+  # Try canonical path (root level for GitHub secrets due to Phase 2 fix)
   canonical_path="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/$default_name"
+  if [ "$debug_mode" = "1" ]; then
+    printf '[debug-secrets] %s: No explicit env var, checking canonical path: %s\n' "$env_name" "$canonical_path" >&2
+  fi
+  
   if [ -r "$canonical_path" ]; then
+    if [ "$debug_mode" = "1" ]; then
+      printf '[debug-secrets] %s: ✓ Found at canonical path: %s\n' "$env_name" "$canonical_path" >&2
+    fi
     printf '%s' "$canonical_path"
     return 0
   fi
+  
+  if [ "$debug_mode" = "1" ]; then
+    printf '[debug-secrets] %s: ✗ Canonical path not found or not readable: %s\n' "$env_name" "$canonical_path" >&2
+  fi
+  
+  # Try local dev fallback if allowed
   if [ "$KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK" = "1" ]; then
     local_dev_path="$HOME/.kaseki/secrets/$default_name"
+    if [ "$debug_mode" = "1" ]; then
+      printf '[debug-secrets] %s: Checking local dev fallback: %s\n' "$env_name" "$local_dev_path" >&2
+    fi
     if [ -r "$local_dev_path" ]; then
+      if [ "$debug_mode" = "1" ]; then
+        printf '[debug-secrets] %s: ✓ Found at local dev fallback: %s\n' "$env_name" "$local_dev_path" >&2
+      fi
       printf '%s' "$local_dev_path"
       return 0
     fi
+    if [ "$debug_mode" = "1" ]; then
+      printf '[debug-secrets] %s: ✗ Local dev fallback not found or not readable: %s\n' "$env_name" "$local_dev_path" >&2
+    fi
+  fi
+  
+  # Return canonical path even if not found (for error reporting in health check)
+  if [ "$debug_mode" = "1" ]; then
+    printf '[debug-secrets] %s: Returning canonical path (file may not exist): %s\n' "$env_name" "$canonical_path" >&2
   fi
   printf '%s' "$canonical_path"
 }
