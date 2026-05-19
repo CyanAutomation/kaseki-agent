@@ -747,8 +747,8 @@ export function createApiRouter(
    * Middleware: API key validation.
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
-    // Skip auth for health checks and metrics
-    if (req.path === '/health' || req.path === '/ready' || req.path === '/metrics') {
+    // Skip auth for health check endpoints only
+    if (req.path === '/health' || req.path === '/ready') {
       return next();
     }
 
