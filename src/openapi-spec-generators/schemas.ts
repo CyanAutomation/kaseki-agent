@@ -317,5 +317,3 @@ export function buildAllSchemas(): Record<string, Record<string, unknown>> {
     RequestTracing: buildRequestTracingSchema(),
   };
 }
-
-export default buildAllSchemas;
