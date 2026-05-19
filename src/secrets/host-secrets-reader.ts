@@ -1,9 +1,14 @@
 /**
  * Host-Based Secrets Reader (Simplified)
  *
- * Reads secrets from two possible locations in order of preference:
- * 1. Docker: /run/secrets/kaseki/{secretName} (host-mounted into container)
- * 2. Local dev: ~/.kaseki/secrets/{secretName} (single-run, local development)
+ * Reads secrets from possible locations in order of preference:
+ * 1. GitHub App secrets: /run/secrets/{secretName} (root level, matches run-kaseki.sh mounts)
+ * 2. Other secrets: /run/secrets/kaseki/{secretName} (host-mounted into container)
+ * 3. Local dev: ~/.kaseki/secrets/{secretName} (single-run, local development)
+ *
+ * GitHub App secrets (github_app_id, github_app_client_id, github_app_private_key) are
+ * mounted at root level /run/secrets/ to align with run-kaseki.sh controller mounts.
+ * This ensures the job scheduler passes correct paths to worker containers.
  *
  * Logs which path is actually being used for transparency.
  * No environment variables, no fallbacks to env vars (hard requirement).
@@ -52,29 +57,71 @@ export function readHostSecret(secretName: string): string | null {
 }
 
 /**
- * Resolve secret path from either location, with logging
- * Returns the path string if found, null if not found in either location
+ * Check if a secret is a GitHub App secret (mounted at root level)
+ */
+function isGitHubAppSecret(secretName: string): boolean {
+  return ['github_app_id', 'github_app_client_id', 'github_app_private_key'].includes(secretName);
+}
+
+/**
+ * Resolve secret path from locations in priority order, with logging
+ * Returns the path string if found, null if not found in any location
+ *
+ * For GitHub App secrets: tries /run/secrets/{name} first (root level, matches run-kaseki.sh)
+ * For other secrets: tries /run/secrets/kaseki/{name} first (API service mount)
+ * Falls back to local dev directory for both types
  */
 export function resolveHostSecretPath(secretName: string): string | null {
   validateSecretName(secretName);
 
-  const primaryPath = path.join(getPrimarySecretsDir(), secretName);
-  const fallbackPath = path.join(getFallbackSecretsDir(), secretName);
+  const isGitHub = isGitHubAppSecret(secretName);
+  
+  if (isGitHub) {
+    // GitHub App secrets: check root level first (matches run-kaseki.sh controller mounts)
+    const rootPath = path.join('/run/secrets', secretName);
+    const kasekiSubdirPath = path.join(getPrimarySecretsDir(), secretName);
+    const fallbackPath = path.join(getFallbackSecretsDir(), secretName);
 
-  // Try primary (Docker or KASEKI_SECRETS_DIR)
-  if (fs.existsSync(primaryPath)) {
-    logger.info(`✓ Found ${secretName} at ${primaryPath} (Docker)`);
-    return primaryPath;
+    // Try root level first (where run-kaseki.sh mounts them)
+    if (fs.existsSync(rootPath)) {
+      logger.info(`✓ Found ${secretName} at ${rootPath} (root level)`);
+      return rootPath;
+    }
+
+    // Try kaseki subdirectory (legacy API service path for compatibility)
+    if (fs.existsSync(kasekiSubdirPath)) {
+      logger.info(`⚠ Found ${secretName} at ${kasekiSubdirPath} (kaseki subdir, root level ${rootPath} not found)`);
+      return kasekiSubdirPath;
+    }
+
+    // Try fallback (local dev)
+    if (fs.existsSync(fallbackPath)) {
+      logger.info(`⚠ Found ${secretName} at ${fallbackPath} (local dev)`);
+      return fallbackPath;
+    }
+
+    logger.debug(`✗ Secret not found: ${secretName} (tried ${rootPath}, ${kasekiSubdirPath}, and ${fallbackPath})`);
+    return null;
+  } else {
+    // Other secrets: check kaseki subdir first
+    const primaryPath = path.join(getPrimarySecretsDir(), secretName);
+    const fallbackPath = path.join(getFallbackSecretsDir(), secretName);
+
+    // Try primary (Docker or KASEKI_SECRETS_DIR)
+    if (fs.existsSync(primaryPath)) {
+      logger.info(`✓ Found ${secretName} at ${primaryPath} (Docker)`);
+      return primaryPath;
+    }
+
+    // Try fallback (local dev)
+    if (fs.existsSync(fallbackPath)) {
+      logger.info(`⚠ Found ${secretName} at ${fallbackPath} (local dev, primary ${primaryPath} not found)`);
+      return fallbackPath;
+    }
+
+    logger.debug(`✗ Secret not found: ${secretName} (tried ${primaryPath} and ${fallbackPath})`);
+    return null;
   }
-
-  // Try fallback (local dev)
-  if (fs.existsSync(fallbackPath)) {
-    logger.info(`⚠ Found ${secretName} at ${fallbackPath} (local dev, primary ${primaryPath} not found)`);
-    return fallbackPath;
-  }
-
-  logger.debug(`✗ Secret not found: ${secretName} (tried ${primaryPath} and ${fallbackPath})`);
-  return null;
 }
 
 /**

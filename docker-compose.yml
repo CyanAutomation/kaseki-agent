@@ -46,9 +46,10 @@ services:
       KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS: "${KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS:-15000}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-400000}"
       OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/run/secrets/kaseki/openrouter_api_key}"
-      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
-      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
-      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
+      # GitHub App secrets: mounted at root level to match run-kaseki.sh controller mounts
+      GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/github_app_id}"
+      GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/github_app_client_id}"
+      GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/github_app_private_key}"
     volumes:
       # /agents: Shared workspace for template, runs, results, and cache
       #   - Must be writable by UID 10000 (see one-time setup above)
@@ -56,9 +57,18 @@ services:
       #   - API service stores persistent results in /agents/kaseki-results/{instance}
       #   - Auto-initializes /agents/kaseki-template on first startup
       - /agents:/agents:rw
-      # Secrets: read-only mount outside /agents so workspace cleanup cannot hide credentials.
-      #   Override host path with: export KASEKI_HOST_SECRETS_DIR=/custom/path
+      # Secrets: read-only mounts outside /agents so workspace cleanup cannot hide credentials.
+      #   These mount paths must align with run-kaseki.sh (the controller) to ensure
+      #   the job scheduler passes correct paths to worker containers.
+      #
+      # OpenRouter secret (under /run/secrets/kaseki/ subdirectory)
       - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
+      # GitHub App secrets (at root level to match run-kaseki.sh mounts):
+      #   - Individual file mounts from host into /run/secrets/ root directory
+      #   - Override by setting KASEKI_HOST_GITHUB_APP_{ID,CLIENT_ID,PRIVATE_KEY} env vars
+      - ${KASEKI_HOST_GITHUB_APP_ID:-/home/pi/secrets/github_app_id}:/run/secrets/github_app_id:ro
+      - ${KASEKI_HOST_GITHUB_APP_CLIENT_ID:-/home/pi/secrets/github_app_client_id}:/run/secrets/github_app_client_id:ro
+      - ${KASEKI_HOST_GITHUB_APP_PRIVATE_KEY:-/home/pi/secrets/github_app_private_key}:/run/secrets/github_app_private_key:ro
       # Logs: Persistent API service logs with rotation
       - kaseki-logs:/var/log/kaseki-api
       # Docker socket: Allows API service to spawn worker containers

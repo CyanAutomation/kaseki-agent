@@ -446,10 +446,15 @@ export class JobScheduler {
     ] as const;
 
     for (const [envName, secretName] of githubAppSecretFiles) {
+      // If already configured via environment, skip
       const configuredPath = env[envName];
       if (configuredPath) {
         continue;
       }
+      
+      // GitHub App secrets are now resolved by host-secrets-reader.ts to prefer
+      // root-level mounts (/run/secrets/{name}) which align with run-kaseki.sh.
+      // This ensures the job scheduler passes correct paths to worker containers.
       const secretPath = getSecretFilePath(secretName);
       if (fs.existsSync(secretPath)) {
         env[envName] = secretPath;
