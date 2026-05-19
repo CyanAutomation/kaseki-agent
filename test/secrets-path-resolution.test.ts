@@ -16,7 +16,7 @@ import * as os from 'os';
 
 describe('Secrets Path Resolution (Phase 2)', () => {
   const tempDir = path.join(os.tmpdir(), 'kaseki-test-secrets');
-  
+
   beforeAll(() => {
     // Create temporary directory for test secrets
     if (!fs.existsSync(tempDir)) {
@@ -36,19 +36,19 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // Setup: Create both paths
       const rootPath = path.join(tempDir, 'github_app_id_root');
       const kasekiPath = path.join(tempDir, 'github_app_id_kaseki');
-      
+
       fs.writeFileSync(rootPath, 'root-level-secret');
       fs.writeFileSync(kasekiPath, 'kaseki-subdir-secret');
 
       // Mock environment for root-level path
       process.env.KASEKI_SECRETS_DIR = tempDir;
-      
+
       // Mock the actual path check to simulate container environment
       // In real scenario, resolveHostSecretPath would be called with the container paths
       // Here we verify the logic by checking the file we created
       expect(fs.existsSync(rootPath)).toBe(true);
       expect(fs.existsSync(kasekiPath)).toBe(true);
-      
+
       // The resolved path should be at root level (this is what host-secrets-reader.ts does)
       // When both exist, root level wins
       const content = fs.readFileSync(rootPath, 'utf8');
@@ -58,7 +58,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
     it('should resolve GitHub App Client ID correctly', () => {
       const secretPath = path.join(tempDir, 'github_app_client_id');
       fs.writeFileSync(secretPath, 'client-id-secret');
-      
+
       expect(fs.existsSync(secretPath)).toBe(true);
       const content = fs.readFileSync(secretPath, 'utf8');
       expect(content).toBe('client-id-secret');
@@ -67,7 +67,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
     it('should resolve GitHub App Private Key correctly', () => {
       const secretPath = path.join(tempDir, 'github_app_private_key');
       fs.writeFileSync(secretPath, '-----BEGIN RSA PRIVATE KEY-----\nMIGfMA0GCSq\n-----END RSA PRIVATE KEY-----');
-      
+
       expect(fs.existsSync(secretPath)).toBe(true);
       const content = fs.readFileSync(secretPath, 'utf8');
       expect(content).toContain('BEGIN RSA PRIVATE KEY');
@@ -78,7 +78,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
     it('should handle OpenRouter API key from kaseki subdir', () => {
       const kasekiPath = path.join(tempDir, 'openrouter_api_key');
       fs.writeFileSync(kasekiPath, 'sk-or-test-key-12345');
-      
+
       expect(fs.existsSync(kasekiPath)).toBe(true);
       const content = fs.readFileSync(kasekiPath, 'utf8');
       expect(content).toContain('sk-or-');
@@ -91,24 +91,24 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       const apiGitHubIdPath = '/run/secrets/github_app_id';
       const apiGitHubClientPath = '/run/secrets/github_app_client_id';
       const apiGitHubPrivateKeyPath = '/run/secrets/github_app_private_key';
-      
+
       // Controller (run-kaseki.sh):
       // Mounts at same paths via -v flag
       // Expected: docker_args+=(-v "$GITHUB_APP_ID_FILE:/run/secrets/github_app_id:ro")
-      
+
       // Worker (kaseki-agent.sh):
       // Resolves via host-secrets-reader.ts which checks root level first
       // Expected: /run/secrets/github_app_id (matches both API and Controller)
-      
+
       expect(apiGitHubIdPath).toBe('/run/secrets/github_app_id');
       expect(apiGitHubClientPath).toBe('/run/secrets/github_app_client_id');
       expect(apiGitHubPrivateKeyPath).toBe('/run/secrets/github_app_private_key');
-      
+
       // Verify consistency: all three layers use same paths
       const dockerComposePath = '/run/secrets/github_app_id';
       const controllerMount = '/run/secrets/github_app_id';
       const workerResolvedPath = '/run/secrets/github_app_id';
-      
+
       expect(dockerComposePath).toBe(controllerMount);
       expect(controllerMount).toBe(workerResolvedPath);
     });
@@ -118,15 +118,15 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // - API Service had: GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id
       // - Worker looked for: /run/secrets/kaseki/github_app_id
       // - But Controller mounted at: /run/secrets/github_app_id (mismatch!)
-      
+
       // After Phase 2 fix:
       // - API Service has: GITHUB_APP_ID_FILE=/run/secrets/github_app_id
       // - host-secrets-reader prefers: /run/secrets/github_app_id (root level)
       // - Controller mounts at: /run/secrets/github_app_id (aligned!)
-      
+
       const legacyPath = '/run/secrets/kaseki/github_app_id';
       const correctPath = '/run/secrets/github_app_id';
-      
+
       // Correct path should be used
       expect(correctPath).not.toBe(legacyPath);
       expect(correctPath).toBe('/run/secrets/github_app_id');
@@ -141,7 +141,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // 2. Check /run/secrets/{name} (root level)
       // 3. Check /run/secrets/kaseki/{name} (legacy, for compatibility)
       // 4. Check ~/.kaseki/secrets/{name} (local dev)
-      
+
       const githubSecrets = ['github_app_id', 'github_app_client_id', 'github_app_private_key'];
       for (const secret of githubSecrets) {
         expect(['github_app_id', 'github_app_client_id', 'github_app_private_key'].includes(secret)).toBe(true);
@@ -153,7 +153,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // 1. Check env var
       // 2. Check /run/secrets/kaseki/{name} (API service mount)
       // 3. Check ~/.kaseki/secrets/{name} (local dev)
-      
+
       const otherSecrets = ['openrouter_api_key', 'kaseki_api_keys'];
       for (const secret of otherSecrets) {
         expect(['github_app_id', 'github_app_client_id', 'github_app_private_key'].includes(secret)).toBe(false);
@@ -167,14 +167,14 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // 1. Get path from getSecretFilePath() which calls host-secrets-reader
       // 2. Set env var: GITHUB_APP_ID_FILE=/run/secrets/github_app_id
       // 3. Pass to worker via docker run -e
-      
+
       const envVarName = 'GITHUB_APP_ID_FILE';
       const expectedPath = '/run/secrets/github_app_id';
-      
+
       // Simulate what job-scheduler does
       const env: NodeJS.ProcessEnv = {};
       env[envVarName] = expectedPath;
-      
+
       expect(env[envVarName]).toBe(expectedPath);
       expect(env[envVarName]).not.toBe('/run/secrets/kaseki/github_app_id');
     });
@@ -184,7 +184,7 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       const env: NodeJS.ProcessEnv = {
         GITHUB_APP_ID_FILE: '/custom/path/to/github_app_id'
       };
-      
+
       // Simulate job scheduler logic
       const configuredPath = env.GITHUB_APP_ID_FILE;
       if (configuredPath) {
@@ -203,11 +203,11 @@ describe('Secrets Path Resolution (Phase 2)', () => {
       // 1. /run/secrets/github_app_id (Phase 2 preferred)
       // 2. /run/secrets/kaseki/github_app_id (legacy, for compatibility)
       // 3. ~/.kaseki/secrets/github_app_id (local dev)
-      
+
       // If step 1 fails, should try step 2
       const rootLevelExists = false;
       const kasekiSubdirExists = true;
-      
+
       if (rootLevelExists) {
         expect(true).toBe(false); // Should not use root level
       } else if (kasekiSubdirExists) {
@@ -219,10 +219,10 @@ describe('Secrets Path Resolution (Phase 2)', () => {
     it('should preserve behavior for non-GitHub secrets', () => {
       // OpenRouter and other secrets should continue to use kaseki subdir
       // as their primary location (no change from Phase 1)
-      
+
       const openrouterPath = '/run/secrets/kaseki/openrouter_api_key';
       const isOpenrouter = !['github_app_id', 'github_app_client_id', 'github_app_private_key'].includes('openrouter_api_key');
-      
+
       if (isOpenrouter) {
         // Should use kaseki subdir as primary (no change)
         expect(openrouterPath).toContain('/run/secrets/kaseki/');

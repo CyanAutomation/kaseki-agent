@@ -75,7 +75,7 @@ export function resolveHostSecretPath(secretName: string): string | null {
   validateSecretName(secretName);
 
   const isGitHub = isGitHubAppSecret(secretName);
-  
+
   if (isGitHub) {
     // GitHub App secrets: check root level first (matches run-kaseki.sh controller mounts)
     const rootPath = path.join('/run/secrets', secretName);
