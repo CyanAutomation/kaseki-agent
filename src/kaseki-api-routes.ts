@@ -25,7 +25,7 @@ import { createStatusRoutes } from './routes/status-routes';
 import { createLogRoutes } from './routes/log-routes';
 import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
-import { metricsRegistry } from './metrics';
+import { createHealthRoutes } from './routes/health-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 
@@ -747,8 +747,8 @@ export function createApiRouter(
    * Middleware: API key validation.
    */
   router.use((req: Request, res: Response, next: NextFunction) => {
-    // Skip auth for health check
-    if (req.path === '/health' || req.path === '/ready') {
+    // Skip auth for health checks and metrics
+    if (req.path === '/health' || req.path === '/ready' || req.path === '/metrics') {
       return next();
     }
 
@@ -792,65 +792,9 @@ export function createApiRouter(
   });
 
   /**
-   * Health check endpoint.
+   * Mount health-check routes (/health, /ready, /metrics)
    */
-  router.get('/health', (_req: Request, res: Response) => {
-    const queueStatus = scheduler.getQueueStatus();
-    const errors: string[] = [];
-
-    // Check if results directory is accessible
-    if (!fs.existsSync(config.resultsDir)) {
-      errors.push(`Results directory not accessible: ${config.resultsDir}`);
-    }
-
-    const status = errors.length === 0 ? 'healthy' : 'degraded';
-
-    res.json({
-      status,
-      timestamp: new Date().toISOString(),
-      queue: queueStatus,
-      errors: errors.length > 0 ? errors : undefined,
-    });
-  });
-
-  router.get('/ready', (_req: Request, res: Response) => {
-    const readiness = scheduler.getReadiness();
-    if (readiness.ready) {
-      return res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
-    }
-    return res.status(503).json({
-      status: 'not_ready',
-      timestamp: new Date().toISOString(),
-      reasons: readiness.reasons,
-    });
-  });
-
-  router.get('/metrics', (_req: Request, res: Response) => {
-    const cacheStats = artifactCache.getStats();
-    const artifactCacheMetrics = [
-      '# HELP kaseki_artifact_cache_entries Number of artifact content cache entries currently held in memory.',
-      '# TYPE kaseki_artifact_cache_entries gauge',
-      `kaseki_artifact_cache_entries ${cacheStats.entries}`,
-      '# HELP kaseki_artifact_cache_bytes Bytes of artifact content currently held in memory.',
-      '# TYPE kaseki_artifact_cache_bytes gauge',
-      `kaseki_artifact_cache_bytes ${cacheStats.bytes}`,
-      '# HELP kaseki_artifact_cache_hits_total Total artifact content cache hits.',
-      '# TYPE kaseki_artifact_cache_hits_total counter',
-      `kaseki_artifact_cache_hits_total ${cacheStats.hits}`,
-      '# HELP kaseki_artifact_cache_misses_total Total artifact content cache misses.',
-      '# TYPE kaseki_artifact_cache_misses_total counter',
-      `kaseki_artifact_cache_misses_total ${cacheStats.misses}`,
-      '# HELP kaseki_artifact_cache_max_entries Configured maximum artifact content cache entries.',
-      '# TYPE kaseki_artifact_cache_max_entries gauge',
-      `kaseki_artifact_cache_max_entries ${cacheStats.maxEntries}`,
-      '# HELP kaseki_artifact_cache_max_file_bytes Configured maximum file size eligible for artifact content caching.',
-      '# TYPE kaseki_artifact_cache_max_file_bytes gauge',
-      `kaseki_artifact_cache_max_file_bytes ${cacheStats.maxFileBytes}`,
-    ].join('\n');
-
-    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.status(200).send(`${metricsRegistry.renderPrometheus()}${artifactCacheMetrics}\n`);
-  });
+  router.use(createHealthRoutes(scheduler, config, artifactCache));
 
   /**
    * GET /api/preflight - Controller-oriented readiness diagnostics.
