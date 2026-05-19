@@ -94,12 +94,12 @@ ls -la ~/.kaseki/secrets/                   # Local
 
 ### API Key Not Working?
 
-Verify the file is readable:
+Verify the files are readable:
 ```bash
 docker exec kaseki-api test -r /run/secrets/kaseki/openrouter_api_key
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_id
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_client_id
-docker exec kaseki-api test -r /run/secrets/kaseki/github_app_private_key
+docker exec kaseki-api test -r /run/secrets/github_app_id
+docker exec kaseki-api test -r /run/secrets/github_app_client_id
+docker exec kaseki-api test -r /run/secrets/github_app_private_key
 cat ~/.kaseki/secrets/openrouter_api_key # Local only
 ```
 

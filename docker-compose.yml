@@ -38,7 +38,6 @@ services:
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
       KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
-      KASEKI_HOST_SECRETS_DIR: "${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}"
       KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-10000:10000}"
       KASEKI_CONTAINER_UID: "10000"
       KASEKI_CONTAINER_GID: "10000"
@@ -61,11 +60,12 @@ services:
       #   These mount paths must align with run-kaseki.sh (the controller) to ensure
       #   the job scheduler passes correct paths to worker containers.
       #
-      # OpenRouter secret (under /run/secrets/kaseki/ subdirectory)
-      - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
-      # GitHub App secrets (at root level to match run-kaseki.sh mounts):
-      #   - Individual file mounts from host into /run/secrets/ root directory
-      #   - Override by setting KASEKI_HOST_GITHUB_APP_{ID,CLIENT_ID,PRIVATE_KEY} env vars
+      # OpenRouter secret (individual file mount to /run/secrets/kaseki/ subdirectory).
+      #   Override by setting KASEKI_HOST_OPENROUTER_API_KEY env var
+      - ${KASEKI_HOST_OPENROUTER_API_KEY:-/home/pi/secrets/openrouter_api_key}:/run/secrets/kaseki/openrouter_api_key:ro
+      # GitHub App secrets (Phase 2: at root level to match run-kaseki.sh mounts).
+      #   Individual file mounts from host into /run/secrets/ root directory.
+      #   Override by setting KASEKI_HOST_GITHUB_APP_{ID,CLIENT_ID,PRIVATE_KEY} env vars
       - ${KASEKI_HOST_GITHUB_APP_ID:-/home/pi/secrets/github_app_id}:/run/secrets/github_app_id:ro
       - ${KASEKI_HOST_GITHUB_APP_CLIENT_ID:-/home/pi/secrets/github_app_client_id}:/run/secrets/github_app_client_id:ro
       - ${KASEKI_HOST_GITHUB_APP_PRIVATE_KEY:-/home/pi/secrets/github_app_private_key}:/run/secrets/github_app_private_key:ro
