@@ -35,7 +35,6 @@ services:
     environment:
       KASEKI_API_PORT: "8080"
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-info}"
-      KASEKI_API_KEYS: "${KASEKI_API_KEYS}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
       KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
@@ -61,6 +60,9 @@ services:
       #   These mount paths must align with run-kaseki.sh (the controller) to ensure
       #   the job scheduler passes correct paths to worker containers.
       #
+      # API keys secret (individual file mount to /run/secrets/kaseki/ subdirectory).
+      #   Override by setting KASEKI_HOST_API_KEYS env var
+      - ${KASEKI_HOST_API_KEYS:-/home/pi/secrets/kaseki_api_keys}:/run/secrets/kaseki/kaseki_api_keys:ro
       # OpenRouter secret (individual file mount to /run/secrets/kaseki/ subdirectory).
       #   Override by setting KASEKI_HOST_OPENROUTER_API_KEY env var
       - ${KASEKI_HOST_OPENROUTER_API_KEY:-/home/pi/secrets/openrouter_api_key}:/run/secrets/kaseki/openrouter_api_key:ro
