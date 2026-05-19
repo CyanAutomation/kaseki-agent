@@ -550,6 +550,51 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight reports host secrets remediation for worker startup-check missing secrets', async () => {
+    execDockerCommandMock.mockImplementation((args: string[]) => {
+      if (args[0] === 'run') {
+        return {
+          ok: false,
+          status: 3,
+          detail: [
+            'No OpenRouter API key configured',
+            'GitHub App credentials are incomplete',
+            'Create: /run/secrets/kaseki/openrouter_api_key',
+          ].join('\n'),
+        };
+      }
+
+      return {
+        ok: true,
+        stdout: args[0] === 'version' ? '24.0.0 -> 24.0.0' : undefined,
+      };
+    });
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-missing-secrets-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const workerSmokeCheck = body.checks.find((check: any) => check.name === 'worker-smoke');
+
+      expect(workerSmokeCheck).toEqual(expect.objectContaining({
+        ok: false,
+        detail: expect.stringContaining('No OpenRouter API key configured'),
+        remediation: expect.stringMatching(/KASEKI_HOST_SECRETS_DIR|host secrets (directory|mount)/),
+      }));
+      expect(workerSmokeCheck.remediation).not.toMatch(/Docker daemon|Docker socket|docker\.sock/i);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight falls back to the resolved host secret directory for local worker smoke runs', async () => {
     const originalHostSecretsDir = process.env.KASEKI_HOST_SECRETS_DIR;
     const originalOpenRouterKeyFile = process.env.OPENROUTER_API_KEY_FILE;
