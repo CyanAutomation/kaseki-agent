@@ -121,7 +121,7 @@ export class SecretsCommand extends BaseCommand {
       case 'help': {
         console.log('🔐 Secrets Management\n');
         console.log('Usage:');
-        console.log('  kaseki-agent secrets init                    Initialize keyring');
+        console.log('  kaseki-agent secrets init                    Initialize local secrets directory');
         console.log('  kaseki-agent secrets set <KEY> <VALUE>       Store a secret');
         console.log('  kaseki-agent secrets get <KEY> [--show]      Retrieve a secret');
         console.log('  kaseki-agent secrets delete <KEY>            Delete a secret');
@@ -134,8 +134,9 @@ export class SecretsCommand extends BaseCommand {
         console.log('  github-app-client-id  GitHub App Client ID');
         console.log('  github-app-private-key GitHub App Private Key\n');
         console.log('Storage:');
-        console.log('  - Uses Linux pass (password-store) by default');
-        console.log('  - Falls back to ~/.kaseki/secrets/ with 0600 permissions');
+        console.log('  - Uses filesystem secret files only');
+        console.log('  - Docker hosts use KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets');
+        console.log('  - Local runs use ~/.kaseki/secrets/ with 0600 file permissions');
         console.log('  - Keys are never exposed via environment variables');
         return 0;
       }
