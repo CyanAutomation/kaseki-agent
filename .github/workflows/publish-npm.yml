@@ -85,12 +85,14 @@ jobs:
           # When triggered by workflow_run (after Release completes), git refs may not
           # have fully propagated from the release push. Retry with backoff to ensure
           # the latest remote changes are available.
+          # Note: Match both "# [VERSION]" and "## [VERSION]" formats to handle inconsistent
+          # changelog heading levels (single vs double hash depending on release version).
           changelog_found=false
           for attempt in {1..3}; do
             # Ensure we have the latest remote refs (especially important for workflow_run trigger)
             git fetch origin main --quiet
             
-            if grep -q "^# \[${VERSION}\]" CHANGELOG.md; then
+            if grep -qE "^#{1,2} \[${VERSION}\]" CHANGELOG.md; then
               changelog_found=true
               break
             fi
