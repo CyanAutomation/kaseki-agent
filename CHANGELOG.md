@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.35.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.3...v1.35.0) (2026-05-19)
+
+
+### Bug Fixes
+
+* Clean up whitespace in job scheduler and secrets reader files for consistency ([9f380af](https://github.com/CyanAutomation/kaseki-agent/commit/9f380af030d917808df9ef878bcbb53d1d35f593))
+
+
+### Features
+
+* Update GitHub App secret handling and paths for improved compatibility ([f6150f8](https://github.com/CyanAutomation/kaseki-agent/commit/f6150f81a2366bd56716f67179db9b88d208fb9f))
+* Update GitHub App secret handling and paths for improved compatibility ([442097f](https://github.com/CyanAutomation/kaseki-agent/commit/442097ff957df2a4c2880fce7589c866815914f6))
+
 ## [1.34.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.34.2...v1.34.3) (2026-05-19)
 
 
