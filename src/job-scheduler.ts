@@ -451,7 +451,7 @@ export class JobScheduler {
       if (configuredPath) {
         continue;
       }
-      
+
       // GitHub App secrets are now resolved by host-secrets-reader.ts to prefer
       // root-level mounts (/run/secrets/{name}) which align with run-kaseki.sh.
       // This ensures the job scheduler passes correct paths to worker containers.
