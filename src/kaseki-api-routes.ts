@@ -82,16 +82,46 @@ interface FreshnessStatus {
   remediation?: string;
 }
 
+interface GitRefResolution {
+  ref?: string;
+  command: string;
+  errorKind?: 'git-missing' | 'permission-denied' | 'not-a-repo' | 'unknown';
+  stderrTail?: string;
+}
+
 function getTemplateCheckoutRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
   return fs.existsSync(path.join(checkoutDir, '.git'))
     ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
     : undefined;
 }
 
-function getTemplateCheckoutFullRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
-  return fs.existsSync(path.join(checkoutDir, '.git'))
-    ? commandOutput('git', ['rev-parse', 'HEAD'], checkoutDir)
-    : undefined;
+function classifyGitRevParseFailure(stderr: string): GitRefResolution['errorKind'] {
+  const normalized = stderr.toLowerCase();
+  if (normalized.includes('permission denied') || normalized.includes('operation not permitted')) return 'permission-denied';
+  if (normalized.includes('not a git repository') || normalized.includes('no such file or directory')) return 'not-a-repo';
+  if (normalized.includes('command not found') || normalized.includes('not recognized as an internal or external command')) return 'git-missing';
+  return 'unknown';
+}
+
+function sanitizeStderrTail(stderr?: string, lineCount = 6): string | undefined {
+  const tail = tailTextByLines(String(stderr || ''), lineCount);
+  return tail.length > 0 ? tail.replace(/[\r\n\t]+/g, ' ').trim() : undefined;
+}
+
+function getTemplateCheckoutFullRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): GitRefResolution {
+  const command = 'git rev-parse HEAD';
+  const result = runGit(['rev-parse', 'HEAD'], checkoutDir);
+  if (result.status === 0) {
+    const ref = String(result.stdout || '').trim();
+    return { ref: ref || undefined, command };
+  }
+
+  const stderrTail = sanitizeStderrTail(String(result.stderr || ''));
+  return {
+    command,
+    errorKind: classifyGitRevParseFailure(String(result.stderr || '')),
+    stderrTail,
+  };
 }
 
 function runGit(args: string[], cwd?: string): ReturnType<typeof spawnSync> {
@@ -118,7 +148,8 @@ function resolveCheckoutFreshness(
   ref = process.env.KASEKI_REF || 'main',
   templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
 ): FreshnessStatus {
-  const localRef = getTemplateCheckoutFullRef(checkoutDir);
+  const localRefResolution = getTemplateCheckoutFullRef(checkoutDir);
+  const localRef = localRefResolution.ref;
   const metadata = readTemplateVersionMetadata(templateDir);
   const metadataRef = metadata?.gitRef;
 
@@ -132,12 +163,33 @@ function resolveCheckoutFreshness(
   }
 
   if (!localRef) {
+    const metadataFallbackAvailable = Boolean(metadataRef && /^[0-9a-f]{7,40}$/i.test(metadataRef));
+    const reason = localRefResolution.errorKind === 'permission-denied'
+      ? `permission denied while reading ${path.join(checkoutDir, '.git')}`
+      : localRefResolution.errorKind === 'git-missing'
+        ? 'git executable is unavailable'
+        : localRefResolution.errorKind === 'not-a-repo'
+          ? `${checkoutDir} does not contain readable git metadata`
+          : 'git metadata could not be read';
+    const diag = `Failed to resolve controller checkout revision via "${localRefResolution.command}" (${reason})${localRefResolution.stderrTail ? `; stderr tail: ${localRefResolution.stderrTail}` : ''}.`;
+
+    if (metadataFallbackAvailable && metadataRef) {
+      return {
+        ok: true,
+        stale: false,
+        checkoutDir,
+        localRef: metadataRef,
+        detail: `${diag} Using template metadata ref ${metadataRef.substring(0, 12)} as an informational fallback only.`,
+        remediation: 'Fix ownership/permissions on the controller checkout (.git) so freshness can be enforced against origin.',
+      };
+    }
+
     return {
       ok: false,
       stale: true,
       checkoutDir,
-      detail: `Could not determine controller checkout revision at ${checkoutDir}.`,
-      remediation: TEMPLATE_REMEDIATION,
+      detail: diag,
+      remediation: 'Fix ownership/permissions on the controller checkout and rerun scripts/kaseki-activate.sh --controller bootstrap.',
     };
   }
 
