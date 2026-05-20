@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.4...v1.36.5) (2026-05-20)
+
+
+### Bug Fixes
+
+* add backward compatibility for legacy secret file path in resolve_github_secret_file ([fe06498](https://github.com/CyanAutomation/kaseki-agent/commit/fe06498cc2ae2cd0719d004a9633bb5176a9f539))
+
 ## [1.36.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.3...v1.36.4) (2026-05-20)
 
 
