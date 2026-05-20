@@ -70,7 +70,7 @@ describe('OpenAPI Schema Builders', () => {
       expect(timeoutSchema.type).toBe('integer');
 
       expect(schema.required).not.toContain('taskPrompt');
-      expect(schema.required).not.toContain('taskPrompt');
+      expect(schema.required).not.toContain('taskMode');
       expect(schema.required).not.toContain('taskMode');
       expect(schema.required).not.toContain('publishMode');
     });
