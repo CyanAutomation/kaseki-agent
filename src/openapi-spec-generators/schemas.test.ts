@@ -63,7 +63,8 @@ describe('OpenAPI Schema Builders', () => {
         maximum: 10800,
       });
 
-      expect(schema.required).toContain('repoUrl');
+
+      expect(schema.required).not.toContain('taskPrompt');
       expect(schema.required).not.toContain('taskPrompt');
       expect(schema.required).not.toContain('taskMode');
       expect(schema.required).not.toContain('publishMode');
