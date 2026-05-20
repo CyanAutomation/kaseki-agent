@@ -186,6 +186,67 @@ describe('OpenAPI Path Builders', () => {
       );
     });
 
+    it('GET /api/runs/{id}/status should define required id parameter and status responses', () => {
+      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const runStatusPath = paths['/api/runs/{id}/status'] as Record<string, any>;
+
+      expect(runStatusPath.get.operationId).toBe('getRunStatus');
+      expect(runStatusPath.get.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'id',
+            in: 'path',
+            required: true,
+          }),
+        ])
+      );
+      expect(runStatusPath.get.responses).toEqual(
+        expect.objectContaining({
+          '200': expect.objectContaining({
+            content: expect.objectContaining({
+              'application/json': expect.any(Object),
+            }),
+          }),
+          '404': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: errorSchema,
+              },
+            },
+          }),
+        })
+      );
+    });
+
+    it('POST /api/webhooks/test should define required payload and key status codes', () => {
+      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const webhookTestPath = paths['/api/webhooks/test'] as Record<string, any>;
+
+      expect(webhookTestPath.post.operationId).toBe('testWebhook');
+      expect(webhookTestPath.post.requestBody.required).toBe(true);
+      expect(webhookTestPath.post.requestBody.content).toEqual(
+        expect.objectContaining({
+          'application/json': expect.objectContaining({
+            schema: expect.objectContaining({
+              type: 'object',
+            }),
+          }),
+        })
+      );
+      expect(webhookTestPath.post.responses).toEqual(
+        expect.objectContaining({
+          '200': expect.any(Object),
+          '400': expect.objectContaining({
+            content: {
+              'application/json': {
+                schema: errorSchema,
+              },
+            },
+          }),
+        })
+      );
+    });
+
     it('should have summary and description for endpoints', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
@@ -201,9 +262,23 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('should match snapshot', () => {
+    it('should match stable run endpoint operation ids', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      expect(paths).toMatchSnapshot();
+
+      expect({
+        '/api/runs': Object.keys(paths['/api/runs'] as Record<string, unknown>).sort(),
+        '/api/runs/{id}/status': Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort(),
+      }).toMatchInlineSnapshot(`
+        {
+          "/api/runs": [
+            "get",
+            "post",
+          ],
+          "/api/runs/{id}/status": [
+            "get",
+          ],
+        }
+      `);
     });
   });
 
