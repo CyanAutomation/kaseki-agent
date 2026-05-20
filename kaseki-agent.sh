@@ -1967,6 +1967,23 @@ resolve_github_secret_file() {
     printf '[debug-secrets] %s: ✗ Canonical path not found or not readable: %s\n' "$env_name" "$canonical_path" >&2
   fi
   
+  # Try legacy path (backward compatibility with run-kaseki.sh mounts)
+  local_legacy_path="/run/secrets/$default_name"
+  if [ "$debug_mode" = "1" ]; then
+    printf '[debug-secrets] %s: Checking legacy root path: %s\n' "$env_name" "$local_legacy_path" >&2
+  fi
+  if [ -r "$local_legacy_path" ]; then
+    if [ "$debug_mode" = "1" ]; then
+      printf '[debug-secrets] %s: ✓ Found at legacy path: %s\n' "$env_name" "$local_legacy_path" >&2
+    fi
+    printf '%s' "$local_legacy_path"
+    return 0
+  fi
+  
+  if [ "$debug_mode" = "1" ]; then
+    printf '[debug-secrets] %s: ✗ Legacy path not found or not readable: %s\n' "$env_name" "$local_legacy_path" >&2
+  fi
+  
   # Try local dev fallback if allowed
   if [ "$KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK" = "1" ]; then
     local_dev_path="$HOME/.kaseki/secrets/$default_name"
