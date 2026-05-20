@@ -3349,6 +3349,9 @@ emit_progress "collect agent diff" "started"
 stage_start="$(date +%s)"
 collect_git_artifacts
 restore_disallowed_changes
+# Restoration can turn a previously non-empty diff into a no-op. Refresh the
+# artifacts before quality checks and publishing decisions use them.
+collect_git_artifacts
 record_stage_timing "collect agent diff" 0 "$(($(date +%s) - stage_start))" "diff_nonempty=$DIFF_NONEMPTY"
 emit_progress "collect agent diff" "finished"
 

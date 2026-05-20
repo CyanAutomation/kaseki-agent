@@ -71,10 +71,143 @@ interface TemplateHealthStatus {
   remediation?: string;
 }
 
+interface FreshnessStatus {
+  ok: boolean;
+  stale: boolean;
+  checkoutDir: string;
+  localRef?: string;
+  remoteRef?: string;
+  remoteUrl?: string;
+  detail: string;
+  remediation?: string;
+}
+
 function getTemplateCheckoutRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
   return fs.existsSync(path.join(checkoutDir, '.git'))
     ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
     : undefined;
+}
+
+function getTemplateCheckoutFullRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
+  return fs.existsSync(path.join(checkoutDir, '.git'))
+    ? commandOutput('git', ['rev-parse', 'HEAD'], checkoutDir)
+    : undefined;
+}
+
+function runGit(args: string[], cwd?: string): ReturnType<typeof spawnSync> {
+  return spawnSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    timeout: 5000,
+    maxBuffer: 128 * 1024,
+  });
+}
+
+function firstLsRemoteSha(output?: string | Buffer): string | undefined {
+  const line = String(output || '').split(/\r?\n/).find((value) => value.trim().length > 0);
+  return line?.trim().split(/\s+/)[0];
+}
+
+function refsMatch(left?: string, right?: string): boolean {
+  if (!left || !right) return false;
+  return left === right || left.startsWith(right) || right.startsWith(left);
+}
+
+function resolveCheckoutFreshness(
+  checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent',
+  ref = process.env.KASEKI_REF || 'main',
+  templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
+): FreshnessStatus {
+  const localRef = getTemplateCheckoutFullRef(checkoutDir);
+  const metadata = readTemplateVersionMetadata(templateDir);
+  const metadataRef = metadata?.gitRef;
+
+  if (!fs.existsSync(path.join(checkoutDir, '.git'))) {
+    return {
+      ok: true,
+      stale: false,
+      checkoutDir,
+      detail: `Checkout freshness skipped because ${checkoutDir} is not a git checkout.`,
+    };
+  }
+
+  if (!localRef) {
+    return {
+      ok: false,
+      stale: true,
+      checkoutDir,
+      detail: `Could not determine controller checkout revision at ${checkoutDir}.`,
+      remediation: TEMPLATE_REMEDIATION,
+    };
+  }
+
+  if (metadataRef && !refsMatch(localRef, metadataRef)) {
+    return {
+      ok: false,
+      stale: true,
+      checkoutDir,
+      localRef,
+      detail: `Template was deployed from ${metadataRef}, but controller checkout is ${localRef}.`,
+      remediation: TEMPLATE_REMEDIATION,
+    };
+  }
+
+  const remoteUrl = commandOutput('git', ['config', '--get', 'remote.origin.url'], checkoutDir);
+  if (!remoteUrl) {
+    return {
+      ok: true,
+      stale: false,
+      checkoutDir,
+      localRef,
+      detail: 'Checkout freshness skipped because no origin remote is configured.',
+    };
+  }
+
+  const remoteResult = runGit(['ls-remote', remoteUrl, `refs/heads/${ref}`, ref]);
+  const remoteRef = firstLsRemoteSha(remoteResult.stdout);
+  if (remoteResult.status !== 0 || !remoteRef) {
+    return {
+      ok: true,
+      stale: false,
+      checkoutDir,
+      localRef,
+      remoteUrl,
+      detail: `Checkout freshness could not resolve origin/${ref}; continuing with local checkout ${localRef.substring(0, 12)}.`,
+      remediation: 'Check network access to the origin remote if freshness warnings persist.',
+    };
+  }
+
+  if (refsMatch(localRef, remoteRef)) {
+    return {
+      ok: true,
+      stale: false,
+      checkoutDir,
+      localRef,
+      remoteRef,
+      remoteUrl,
+      detail: `Controller checkout is fresh for origin/${ref} at ${localRef.substring(0, 12)}.`,
+    };
+  }
+
+  const ancestor = runGit(['merge-base', '--is-ancestor', localRef, remoteRef], checkoutDir);
+  const relation = ancestor.status === 0 ? 'behind' : 'different from';
+  return {
+    ok: false,
+    stale: true,
+    checkoutDir,
+    localRef,
+    remoteRef,
+    remoteUrl,
+    detail: `Controller checkout is ${relation} origin/${ref}: local ${localRef.substring(0, 12)}, remote ${remoteRef.substring(0, 12)}.`,
+    remediation: TEMPLATE_REMEDIATION,
+  };
+}
+
+function shouldBlockForFreshness(publishMode: string): boolean {
+  if (process.env.KASEKI_ENFORCE_FRESHNESS === '0') {
+    return false;
+  }
+  return publishMode === 'pr' || publishMode === 'draft_pr' || publishMode === 'branch' || publishMode === 'auto';
 }
 
 function getTemplateDoctorTimeoutMs(): number {
@@ -684,6 +817,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   }
 
   const templateHealth = buildTemplateHealthStatus(templateDir);
+  const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
   checks.push({
     name: 'template',
     ok: templateHealth.ok,
@@ -693,6 +827,17 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     checkoutRef: templateHealth.checkoutRef,
     doctorCommand: templateHealth.doctorCommand,
     doctorStderrTail: templateHealth.doctorStderrTail,
+  });
+  checks.push({
+    name: 'checkout-freshness',
+    ok: freshness.ok,
+    detail: freshness.detail,
+    remediation: freshness.remediation,
+    templatePath: templateDir,
+    checkoutRef: freshness.localRef?.substring(0, 12),
+    localRef: freshness.localRef,
+    remoteRef: freshness.remoteRef,
+    remoteUrl: freshness.remoteUrl,
   });
 
   const status = checks.every((check) => check.ok)
@@ -709,7 +854,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     templateImage: image,
     templateImageDigest,
     templateDir,
-    templateRef,
+    templateRef: freshness.localRef || templateRef,
     resultsDir: config.resultsDir,
     runtime: {
       nodeVersion: process.version,
@@ -873,6 +1018,23 @@ export function createApiRouter(
           'Bad Request',
           `publishMode=${effectivePublishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
         );
+      }
+
+      const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+      const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+      const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
+      if (shouldBlockForFreshness(effectivePublishMode) && freshness.stale) {
+        return res.status(409).json({
+          type: 'https://api.kaseki.local/errors#checkout-stale',
+          title: 'Conflict',
+          status: 409,
+          detail: freshness.detail,
+          checkoutDir: freshness.checkoutDir,
+          localRef: freshness.localRef,
+          remoteRef: freshness.remoteRef,
+          remoteUrl: freshness.remoteUrl,
+          remediation: freshness.remediation || TEMPLATE_REMEDIATION,
+        });
       }
 
       if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
