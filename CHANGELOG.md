@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.2...v1.36.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* add KASEKI_API_KEYS environment variable to docker-compose ([0f0d8fa](https://github.com/CyanAutomation/kaseki-agent/commit/0f0d8fae57f3c5591fa6d3d8dc51314eb660b937))
+* add KASEKI_API_KEYS environment variable to docker-compose ([710bf21](https://github.com/CyanAutomation/kaseki-agent/commit/710bf21bd95102ad5b88acbce5d73880edbee0bc))
+* add KASEKI_API_KEYS environment variable to docker-compose ([b4966de](https://github.com/CyanAutomation/kaseki-agent/commit/b4966de517db4fa381222a645d36c31ec01901fb))
+* simplify host secret mounts ([3e2870d](https://github.com/CyanAutomation/kaseki-agent/commit/3e2870d98a8e58bbe9ea7721957e85bd1a9f9278))
+* update secrets configuration in docker-compose and QUICK_START documentation ([b9f6421](https://github.com/CyanAutomation/kaseki-agent/commit/b9f6421d1030c6cea94beb145df1d8d6c0baf20c))
+
 ## [1.36.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.1...v1.36.2) (2026-05-19)
 
 
