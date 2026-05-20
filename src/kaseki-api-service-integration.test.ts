@@ -67,6 +67,8 @@ describe('KasekiApiService Integration', () => {
       services.scheduler.shutdown();
       await services.webhookManager.shutdown();
       services.idempotencyStore.shutdown();
+
+      fs.rmSync(resultsDir, { recursive: true, force: true });
     });
 
     it('should have non-circular dependencies', async () => {
