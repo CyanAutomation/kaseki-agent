@@ -7,7 +7,6 @@ KASEKI_CHECKOUT_DIR="${KASEKI_CHECKOUT_DIR:-$KASEKI_ROOT/kaseki-agent}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_CONTAINER_UID="${KASEKI_CONTAINER_UID:-10000}"
 KASEKI_CONTAINER_GID="${KASEKI_CONTAINER_GID:-10000}"
-KASEKI_SECRETS_GROUP="${KASEKI_SECRETS_GROUP:-kaseki-secrets}"
 KASEKI_FIX="${KASEKI_FIX:-0}"
 KASEKI_RECREATE_API="${KASEKI_RECREATE_API:-0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,16 +74,6 @@ run_privileged() {
   "$@"
 }
 
-ensure_secrets_group() {
-  if ! command -v getent >/dev/null 2>&1 || getent group "$KASEKI_SECRETS_GROUP" >/dev/null 2>&1; then
-    return 0
-  fi
-  if [ "$KASEKI_FIX" = "1" ]; then
-    run_privileged groupadd --gid "$KASEKI_CONTAINER_GID" "$KASEKI_SECRETS_GROUP" 2>/dev/null || \
-      run_privileged groupadd "$KASEKI_SECRETS_GROUP" 2>/dev/null || true
-  fi
-}
-
 ensure_dir() {
   local dir="$1"
   local mode="$2"
@@ -119,12 +108,11 @@ normalize_secrets_dir() {
   fi
 
   if [ "$KASEKI_FIX" = "1" ]; then
-    ensure_secrets_group
-    run_privileged chgrp "$KASEKI_SECRETS_GROUP" "$secrets_dir" 2>/dev/null || run_privileged chgrp "$KASEKI_CONTAINER_GID" "$secrets_dir" 2>/dev/null || true
+    run_privileged chgrp "$KASEKI_CONTAINER_GID" "$secrets_dir" 2>/dev/null || true
     run_privileged chmod 0750 "$secrets_dir" 2>/dev/null || true
     find "$secrets_dir" -maxdepth 1 -type f -print0 2>/dev/null |
       while IFS= read -r -d '' file; do
-        run_privileged chgrp "$KASEKI_SECRETS_GROUP" "$file" 2>/dev/null || run_privileged chgrp "$KASEKI_CONTAINER_GID" "$file" 2>/dev/null || true
+        run_privileged chgrp "$KASEKI_CONTAINER_GID" "$file" 2>/dev/null || true
         run_privileged chmod 0640 "$file" 2>/dev/null || true
       done
   fi

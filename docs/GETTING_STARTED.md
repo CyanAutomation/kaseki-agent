@@ -77,7 +77,9 @@ Kaseki needs an OpenRouter API key and (optionally) GitHub App credentials for a
 ```
 
 ```bash
-chmod 600 ~/secrets/*
+sudo chgrp -R 10000 ~/secrets
+chmod 0750 ~/secrets
+chmod 0640 ~/secrets/*
 ```
 
 ### Discovery order
