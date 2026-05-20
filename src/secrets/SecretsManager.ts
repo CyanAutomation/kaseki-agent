@@ -8,7 +8,6 @@
  * No keyring, no env vars. Explicit paths only.
  * See scripts/setup-secrets.sh for automatic permission setup.
  *
- * Note: Secret format validation is in secrets-schema.ts (setup-time only).
  * Runtime retrieval does not validate; only stores/retrieves from secure filesystem paths.
  */
 
