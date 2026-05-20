@@ -2241,6 +2241,110 @@ describe('kaseki-api-routes template bootstrap health', () => {
     }
   });
 
+
+
+  test('returns specific checkout diagnostics for git rev-parse permission failures when enforcement applies', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    git(['init', '--initial-branch=main'], checkoutDir);
+    git(['config', 'user.email', 'test@example.com'], checkoutDir);
+    git(['config', 'user.name', 'Test User'], checkoutDir);
+    fs.writeFileSync(path.join(checkoutDir, 'README.md'), 'x\n');
+    git(['add', 'README.md'], checkoutDir);
+    git(['commit', '-m', 'init'], checkoutDir);
+    fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o000);
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('git rev-parse HEAD');
+      expect(body.detail).toContain('permission denied');
+      expect(body.detail).toContain('stderr tail');
+    } finally {
+      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('skips freshness when checkout is missing .git metadata', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({ id: 'job-missing-git', status: 'queued', createdAt: new Date(), resultDir: path.join(resultsDir, 'job-missing-git'), requestId: runRequest.requestId, correlationId: runRequest.correlationId, request: runRequest }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const preflight = await fetch(`http://127.0.0.1:${port}/api/preflight`, { headers: { Authorization: 'Bearer test-key' } });
+      const body = (await preflight.json()) as any;
+      const freshnessCheck = body.checks.find((check: any) => check.name === 'checkout-freshness');
+      expect(freshnessCheck.detail).toContain('is not a git checkout');
+      expect(freshnessCheck.ok).toBe(true);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('uses template metadata gitRef as informational fallback when rev-parse fails', async () => {
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    writeRunKasekiDoctor(0, 'doctor ok');
+    git(['init', '--initial-branch=main'], checkoutDir);
+    git(['config', 'user.email', 'test@example.com'], checkoutDir);
+    git(['config', 'user.name', 'Test User'], checkoutDir);
+    fs.writeFileSync(path.join(checkoutDir, 'README.md'), 'x\n');
+    git(['add', 'README.md'], checkoutDir);
+    git(['commit', '-m', 'init'], checkoutDir);
+    fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o000);
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({ id: 'job-fallback', status: 'queued', createdAt: new Date(), resultDir: path.join(resultsDir, 'job-fallback'), requestId: runRequest.requestId, correlationId: runRequest.correlationId, request: runRequest }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalled();
+    } finally {
+      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('degrades freshness to warning when enforcement does not apply', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    git(['init', '--initial-branch=main'], checkoutDir);
+    git(['config', 'user.email', 'test@example.com'], checkoutDir);
+    git(['config', 'user.name', 'Test User'], checkoutDir);
+    fs.writeFileSync(path.join(checkoutDir, 'README.md'), 'x\n');
+    git(['add', 'README.md'], checkoutDir);
+    git(['commit', '-m', 'init'], checkoutDir);
+    fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o000);
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({ id: 'job-non-enforced', status: 'queued', createdAt: new Date(), resultDir: path.join(resultsDir, 'job-non-enforced'), requestId: runRequest.requestId, correlationId: runRequest.correlationId, request: runRequest }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'none' }),
+      });
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalled();
+    } finally {
+      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('rejects PR run submission before startup when template metadata lacks pr', async () => {
     writeTemplateMetadata(['auto', 'none', 'branch']);
     writeRunKasekiDoctor(0, 'doctor ok');
