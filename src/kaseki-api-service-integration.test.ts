@@ -25,6 +25,7 @@ describe('KasekiApiService Integration', () => {
     });
   });
 
+  describe('Service Integration', () => {
     it('should bootstrap services with callable contracts and cache behavior', async () => {
       const os = await import('os');
       const fs = await import('fs');
