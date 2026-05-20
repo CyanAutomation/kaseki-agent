@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.3...v1.36.4) (2026-05-20)
+
+
+### Bug Fixes
+
+* add Service Integration description for service bootstrapping ([8fe6108](https://github.com/CyanAutomation/kaseki-agent/commit/8fe6108405089269aca7e5c47aaa79f9c263a2f1))
+* enable external code search ingestion for GitHub Copilot ([b2c0d5d](https://github.com/CyanAutomation/kaseki-agent/commit/b2c0d5d652aa7ef5092df45590883796433d6adf))
+* remove redundant line in OpenAPI Schema Builders tests ([55ddba5](https://github.com/CyanAutomation/kaseki-agent/commit/55ddba52483d6cf7b423c9dcc57ff42044d25f78))
+
 ## [1.36.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.2...v1.36.3) (2026-05-20)
 
 
