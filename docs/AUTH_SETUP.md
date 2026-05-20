@@ -140,19 +140,23 @@ Your auth files should contain just the credential value, one per file:
 ```bash
 # Create secret files with appropriate permissions
 mkdir -p ~/secrets
-chmod 700 ~/secrets
+sudo chgrp 10000 ~/secrets
+chmod 0750 ~/secrets
 
 # OpenRouter API Key (get from https://openrouter.ai/keys)
 echo "sk-or-..." > ~/secrets/openrouter_api_key
-chmod 600 ~/secrets/openrouter_api_key
+sudo chgrp 10000 ~/secrets/openrouter_api_key
+chmod 0640 ~/secrets/openrouter_api_key
 
 # GitHub App ID
 echo "123456" > ~/secrets/github_app_id
-chmod 600 ~/secrets/github_app_id
+sudo chgrp 10000 ~/secrets/github_app_id
+chmod 0640 ~/secrets/github_app_id
 
 # GitHub App Client ID
 echo "Iv1.abcd1234..." > ~/secrets/github_app_client_id
-chmod 600 ~/secrets/github_app_client_id
+sudo chgrp 10000 ~/secrets/github_app_client_id
+chmod 0640 ~/secrets/github_app_client_id
 
 # GitHub App Private Key (PEM format, usually multi-line)
 cat > ~/secrets/github_app_private_key << 'EOF'
@@ -161,7 +165,8 @@ MIIEpAIBAAKCAQEA...
 ...
 -----END RSA PRIVATE KEY-----
 EOF
-chmod 600 ~/secrets/github_app_private_key
+sudo chgrp 10000 ~/secrets/github_app_private_key
+chmod 0640 ~/secrets/github_app_private_key
 ```
 
 ### Single-line/text PEM private keys
@@ -268,12 +273,10 @@ sudo kaseki-agent run ...
 Ensure files are readable by the kaseki-agent user:
 
 ```bash
-# Make files readable
-chmod 644 ~/secrets/github_app_id
-chmod 644 ~/secrets/openrouter_api_key
-
-# Or for stricter security (if owned by current user):
-chmod 600 ~/secrets/*
+# Normalize all Docker host secrets at once
+sudo chgrp -R 10000 ~/secrets
+chmod 0750 ~/secrets
+chmod 0640 ~/secrets/*
 ```
 
 ### Config file not being loaded
@@ -310,7 +313,9 @@ This takes precedence over `~/.kaseki/config.json`.
 1. **Restrict file permissions:**
 
    ```bash
-   chmod 600 ~/secrets/*
+   sudo chgrp -R 10000 ~/secrets
+   chmod 0750 ~/secrets
+   chmod 0640 ~/secrets/*
    ```
 
 2. **Use separate credential files** — don't mix secrets in one file

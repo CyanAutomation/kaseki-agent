@@ -487,7 +487,47 @@ function resolveWorkerHostSecretsDir(): string {
   const secretFile = resolveHostSecretPath('openrouter_api_key')
     || process.env.OPENROUTER_API_KEY_FILE
     || '/run/secrets/kaseki/openrouter_api_key';
-  return path.dirname(secretFile);
+  const secretsDir = path.dirname(secretFile);
+  return resolveDockerBindSource(secretsDir) || secretsDir;
+}
+
+function resolveDockerBindSource(containerPath: string): string | null {
+  const containerCandidates = [
+    process.env.HOSTNAME,
+    readFirstLine('/etc/hostname'),
+    process.env.KASEKI_API_CONTAINER_NAME,
+    'kaseki-api',
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const containerName of [...new Set(containerCandidates)]) {
+    const result = execDockerCommand([
+      'inspect',
+      '--format',
+      '{{json .Mounts}}',
+      containerName,
+    ], 5000);
+
+    if (!result.ok || !result.stdout) {
+      continue;
+    }
+
+    try {
+      const mounts = JSON.parse(result.stdout) as Array<{ Destination?: string; Source?: string; Type?: string }>;
+      const match = mounts.find((mount) =>
+        mount.Type === 'bind' &&
+        mount.Destination === containerPath &&
+        typeof mount.Source === 'string' &&
+        mount.Source.length > 0
+      );
+      if (match?.Source) {
+        return match.Source;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 function workerSmokeStartupSecretsRemediation(detail: string | undefined): string | undefined {
@@ -506,7 +546,7 @@ function workerSmokeStartupSecretsRemediation(detail: string | undefined): strin
     return undefined;
   }
 
-  return 'Ensure the worker smoke test mounts the host secrets directory. Set KASEKI_HOST_SECRETS_DIR to the host path containing openrouter_api_key, github_app_id, github_app_client_id, and github_app_private_key, then recreate the API container. If the worker smoke mount fix is already deployed, this usually indicates a stale API container or custom deployment that still mounts container-internal secret paths instead of the host secrets directory.';
+  return 'The API can read host secrets, but the nested worker smoke test did not receive the same files. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.';
 }
 
 function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
