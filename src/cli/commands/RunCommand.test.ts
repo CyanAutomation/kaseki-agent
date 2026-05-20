@@ -64,10 +64,10 @@ describe('RunCommand', () => {
       taskPrompt: 'Implement the requested API refactor',
       changedFilesAllowlist: ['src/lib/parser.ts', 'tests/parser.validation.ts'],
       validationCommands: ['npm run check', 'npm run test', 'npm run build'],
-      maxDiffBytes: 200000,
+      maxDiffBytes: 400000,
       taskMode: 'patch',
       publishMode: 'auto',
-      timeoutSeconds: 1200,
+      timeoutSeconds: 10800,
     }));
     expect(consoleLog).toHaveBeenCalledWith('Job ID: kaseki-123');
     expect(consoleLog).toHaveBeenCalledWith('Status URL: http://localhost:8080/api/runs/kaseki-123/status');

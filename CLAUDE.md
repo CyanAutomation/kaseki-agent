@@ -228,12 +228,12 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for comprehensive deployment guidan
 | `REPO_URL` | CyanAutomation/crudmapper | Target repo |
 | `GIT_REF` | main | Branch/tag/commit |
 | `KASEKI_MODEL` | openrouter/free | Pi model string |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Pi invocation timeout |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Pi invocation timeout (3 hours) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instruction |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated; missing npm scripts are skipped (non-fatal) |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns (agent phase) |
 | `KASEKI_VALIDATION_ALLOWLIST` | — | Space-separated patterns (validation phase; optional) |
-| `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
+| `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
 | `KASEKI_DEBUG_RAW_EVENTS` | 0 | Keep raw Pi JSONL |
 | `KASEKI_KEEP_WORKSPACE` | 0 | Remove per-run workspace after each run |
 | `KASEKI_STREAM_PROGRESS` | 1 | Stream sanitized progress lines |

@@ -1066,8 +1066,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1120,8 +1120,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1189,8 +1189,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1263,8 +1263,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       resultsDir: fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-notfound-test-')),
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1328,8 +1328,8 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1386,8 +1386,8 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1447,8 +1447,8 @@ describe('kaseki-api-routes controller replay and events', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1508,8 +1508,8 @@ describe('kaseki-api-routes controller replay and events', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1555,8 +1555,8 @@ describe('kaseki-api-routes controller replay and events', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1620,8 +1620,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1675,8 +1675,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1724,8 +1724,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -1815,8 +1815,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
     const idempotencyStore = new IdempotencyStore(resultsDir, 24);
@@ -1868,8 +1868,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
     const idempotencyStore = new IdempotencyStore(resultsDir, 24);
@@ -1914,8 +1914,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
     const idempotencyStore = new IdempotencyStore(resultsDir, 24);
@@ -1965,8 +1965,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -2014,8 +2014,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -2062,8 +2062,8 @@ describe('kaseki-api-routes status artifact hints', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -2327,8 +2327,8 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 
@@ -2388,8 +2388,8 @@ describe('kaseki-api-routes idempotency concurrency', () => {
       resultsDir,
       maxConcurrentRuns: 1,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 400000,
-      agentTimeoutSeconds: 10800,
+      maxDiffBytes: 200000,
+      agentTimeoutSeconds: 1200,
       logLevel: 'info' as const,
     };
 

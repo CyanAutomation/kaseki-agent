@@ -109,7 +109,7 @@ These are the minimum variables needed for any setup path. All other variables h
 ### `KASEKI_AGENT_TIMEOUT_SECONDS`
 
 - **Type**: `number` (integer, positive)
-- **Default**: `10800` (3 hours)
+- **Default**: `1200` (20 minutes)
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
 - **Description**: Maximum time agent can run before being forcibly stopped
@@ -118,7 +118,7 @@ These are the minimum variables needed for any setup path. All other variables h
   - Exit code: `124` (timeout error)
   - Partially completed work is kept, validation doesn't run
 - **Recommendations**:
-  - Small/simple repos: `10800` (3 hours)
+  - Small/simple repos: `1200` (20 min)
   - Medium repos: `2400` (40 min)
   - Large/complex repos: `3600` (1 hour)
   - Very large or complex tasks: `5400` (90 min)
@@ -131,7 +131,7 @@ These are the minimum variables needed for any setup path. All other variables h
 ### `KASEKI_MAX_DIFF_BYTES`
 
 - **Type**: `number` (integer, positive)
-- **Default**: `400000` (400 KB)
+- **Default**: `200000` (200 KB)
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
 - **Description**: Maximum allowed diff size (quality gate)
@@ -140,7 +140,7 @@ These are the minimum variables needed for any setup path. All other variables h
   - Prevents runaway agents from making too many changes
   - Check `quality.log` to see actual diff size
 - **Recommendations**:
-  - Normal changes: `400000` (400 KB)
+  - Normal changes: `200000` (200 KB)
   - Large refactors: `400000` (400 KB)
   - Very large refactors: `1000000` (1 MB)
 - **Example**:

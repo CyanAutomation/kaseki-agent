@@ -48,7 +48,7 @@ describe('kaseki-cli-lib', () => {
       repo: 'CyanAutomation/crudmapper',
       ref: 'main',
       model: 'openrouter/claude-3.5-sonnet',
-      agentTimeoutSeconds: 1200,
+      agentTimeoutSeconds: 10800,
       ...(overrides.hostStart || {}),
     };
     fs.writeFileSync(

@@ -438,11 +438,11 @@ Configuration is loaded from (in order of precedence):
 {
   "agent": {
     "model": "openrouter/free",
-    "timeout_seconds": 10800
+    "timeout_seconds": 1200
   },
   "validation": {
     "allowlist": ["src/lib/", "tests/"],
-    "max_diff_bytes": 400000
+    "max_diff_bytes": 200000
   },
   "docker": {
     "auto_pull": true
@@ -463,7 +463,7 @@ KASEKI_API_KEY=sk-your-kaseki-api-key     # Bearer token for authenticated APIs
 # Optional worker/service settings
 KASEKI_ROOT=/agents                    # Base directory
 KASEKI_MODEL=openrouter/free           # AI model
-KASEKI_AGENT_TIMEOUT_SECONDS=10800      # Timeout
+KASEKI_AGENT_TIMEOUT_SECONDS=1200      # Timeout
 KASEKI_PRE_AGENT_VALIDATION=1          # Validate baseline before Pi
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check;npm run test;npm run build"
 KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run build" # Validate final diff after Pi
@@ -1384,7 +1384,7 @@ to opt out of GitHub publishing for a specific API run.
 | Variable | Default | Notes |
 |---|---|---|
 | `KASEKI_MODEL` | openrouter/free | Pi model string |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | 10800 | Agent timeout (3 hours) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | 1200 | Agent timeout (20 min) |
 | `TASK_PROMPT` | *(code fix task)* | Agent instructions |
 | `KASEKI_TASK_MODE` | patch | `patch` (require diff) or `inspect` (no diff) |
 | `KASEKI_PUBLISH_MODE` | pr | `pr` (normal PR), `draft_pr` (draft PR), `branch` (branch only), `auto` (legacy: PR if credentials found), or `none` (skip); controller API requests with omitted `publishMode` default to `pr`; direct worker/CLI execution defaults to `pr` if unchanged |
@@ -1400,7 +1400,7 @@ to opt out of GitHub publishing for a specific API run.
 | `KASEKI_STARTUP_CHECK_MODE` | `boot` | For `KASEKI_DRY_RUN=1`, `boot` performs a container smoke test through `/bin/bash`; `baseline-validation` runs `/usr/local/bin/kaseki-agent` to clone, install dependencies, run pre-agent validation, and skip Pi. |
 | `KASEKI_BASELINE_VALIDATION_DRY_RUN` | `0` | Internal/API switch set with `baseline-validation` so pre-agent validation runs even though Pi remains disabled. |
 | `KASEKI_CHANGED_FILES_ALLOWLIST` | `src/lib/parser.ts tests/parser.validation.ts` | Space-separated patterns |
-| `KASEKI_MAX_DIFF_BYTES` | 400000 | Max diff size (400 KB) |
+| `KASEKI_MAX_DIFF_BYTES` | 200000 | Max diff size (200 KB) |
 | `KASEKI_ALLOW_EMPTY_DIFF` | 0 | Set to `1` to allow empty diff with `KASEKI_TASK_MODE=patch` |
 | `KASEKI_AGENT_GUARDRAILS` | 1 | Prepend safety instructions that reserve commit/push/PR actions for Kaseki |
 | `KASEKI_RESTORE_DISALLOWED_CHANGES` | 1 | Restore changes outside `KASEKI_CHANGED_FILES_ALLOWLIST` before validation and GitHub publishing |

@@ -132,7 +132,7 @@ cat /agents/kaseki-results/kaseki-N/quality.log
 
 **Environment Variable**:
 ```bash
-KASEKI_MAX_DIFF_BYTES=200000  # 200 KB default
+KASEKI_MAX_DIFF_BYTES=400000  # 200 KB default
 ```
 
 **Format**: Bytes (integer)
@@ -171,7 +171,7 @@ wc -c < /agents/kaseki-results/kaseki-N/git.diff
 
 # Check the limit that was set
 cat /agents/kaseki-results/kaseki-N/quality.log
-# Output: Diff size 250000 exceeds KASEKI_MAX_DIFF_BYTES (200000)
+# Output: Diff size 250000 exceeds KASEKI_MAX_DIFF_BYTES (400000)
 
 # See what changed
 head -100 /agents/kaseki-results/kaseki-N/git.diff

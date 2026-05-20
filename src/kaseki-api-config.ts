@@ -191,8 +191,8 @@ export function loadConfig(): KasekiApiConfig {
   const port = validatePort('KASEKI_API_PORT', 8080);
   const host = validateApiHost(apiKeys);
   const maxConcurrentRuns = validatePositiveInt('KASEKI_API_MAX_CONCURRENT_RUNS', 3, 1, 'KASEKI_API_MAX_CONCURRENT_RUNS');
-  const agentTimeoutSeconds = validatePositiveInt('KASEKI_AGENT_TIMEOUT_SECONDS', 5700, 1, 'KASEKI_AGENT_TIMEOUT_SECONDS');
-  const maxDiffBytes = validatePositiveInt('KASEKI_MAX_DIFF_BYTES', 200000, 1, 'KASEKI_MAX_DIFF_BYTES');
+  const agentTimeoutSeconds = validatePositiveInt('KASEKI_AGENT_TIMEOUT_SECONDS', 10800, 1, 'KASEKI_AGENT_TIMEOUT_SECONDS');
+  const maxDiffBytes = validatePositiveInt('KASEKI_MAX_DIFF_BYTES', 400000, 1, 'KASEKI_MAX_DIFF_BYTES');
   const jobIndexMaxEntries = validatePositiveInt(
     'KASEKI_API_JOB_INDEX_MAX_ENTRIES',
     DEFAULT_JOB_INDEX_MAX_ENTRIES,

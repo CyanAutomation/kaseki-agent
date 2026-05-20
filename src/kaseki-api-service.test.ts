@@ -312,8 +312,8 @@ describe('Job Scheduler', () => {
       resultsDir,
       maxConcurrentRuns: 2,
       defaultTaskMode: 'patch' as const,
-      maxDiffBytes: 200000,
-      agentTimeoutSeconds: 1200,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 10800,
       logLevel: 'info' as const,
     };
 

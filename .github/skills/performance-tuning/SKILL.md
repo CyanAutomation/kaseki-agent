@@ -48,7 +48,7 @@ This skill guides optimization of kaseki-agent execution speed, cost, and resour
 2. **Increase timeout** (counterintuitive)
    ```bash
    # Default (tight timeout): agent rushes, tries dead ends
-   KASEKI_AGENT_TIMEOUT_SECONDS=1200  # 20 min
+   KASEKI_AGENT_TIMEOUT_SECONDS=10800  # 3 hours
    
    # Optimized (longer timeout): agent plans, explores methodically
    KASEKI_AGENT_TIMEOUT_SECONDS=2400  # 40 min
