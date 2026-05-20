@@ -61,5 +61,12 @@ describe('host secrets reader', () => {
 
     expect(resolveHostSecretPath('openrouter_api_key')).toBe(secretPath);
   });
-});
 
+  test('prefers the configured secrets directory for GitHub App secrets', () => {
+    const secretPath = path.join(secretsDir, 'github_app_id');
+    fs.writeFileSync(secretPath, '12345\n', { mode: 0o600 });
+
+    expect(resolveHostSecretPath('github_app_id')).toBe(secretPath);
+    expect(readHostSecret('github_app_id')).toBe('12345');
+  });
+});

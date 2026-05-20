@@ -237,50 +237,44 @@ check_github_app_secrets() {
   fi
 
   log_warn "GitHub App credentials are incomplete; default PR creation will not work"
-  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in /run/secrets (root level, not /run/secrets/kaseki) or run: kaseki-agent init"
+  log_info "  Create: github_app_id, github_app_client_id, and github_app_private_key in $KASEKI_SECRETS_DIR or run: kaseki-agent init"
   return 3
 }
 
-# Verify GitHub App secrets are mounted at correct paths (Phase 2 fix validation)
-# GitHub App secrets must be at /run/secrets/{name}, not /run/secrets/kaseki/{name}
 check_github_app_secret_paths() {
-  log_info "Checking GitHub App secret mount paths (Phase 2 consistency)..."
+  log_info "Checking GitHub App secret mount paths..."
 
   local exit_code=0
-  local root_level_id root_level_client_id root_level_key kaseki_subdir_id kaseki_subdir_client_id kaseki_subdir_key
+  local root_level_id root_level_client_id root_level_key primary_id primary_client_id primary_key
 
   root_level_id="/run/secrets/github_app_id"
   root_level_client_id="/run/secrets/github_app_client_id"
   root_level_key="/run/secrets/github_app_private_key"
-  kaseki_subdir_id="/run/secrets/kaseki/github_app_id"
-  kaseki_subdir_client_id="/run/secrets/kaseki/github_app_client_id"
-  kaseki_subdir_key="/run/secrets/kaseki/github_app_private_key"
+  primary_id="$KASEKI_SECRETS_DIR/github_app_id"
+  primary_client_id="$KASEKI_SECRETS_DIR/github_app_client_id"
+  primary_key="$KASEKI_SECRETS_DIR/github_app_private_key"
 
-  # Check GitHub App ID
-  if [ -r "$root_level_id" ]; then
-    log_pass "GitHub App ID mounted at correct path (root level): $root_level_id"
-  elif [ -r "$kaseki_subdir_id" ]; then
-    log_warn "GitHub App ID found at legacy kaseki subdir path: $kaseki_subdir_id"
-    log_info "  Phase 2 fix: GitHub App secrets should be at root level (/run/secrets/github_app_id, not /run/secrets/kaseki/github_app_id)"
-    log_info "  Update docker-compose.yml volume mounts or run: kaseki-agent init"
+  if [ -r "$primary_id" ]; then
+    log_pass "GitHub App ID mounted in primary secrets directory: $primary_id"
+  elif [ -r "$root_level_id" ]; then
+    log_warn "GitHub App ID found at legacy root path: $root_level_id"
+    log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
     exit_code=3
   fi
 
-  # Check GitHub App Client ID
-  if [ -r "$root_level_client_id" ]; then
-    log_pass "GitHub App Client ID mounted at correct path (root level): $root_level_client_id"
-  elif [ -r "$kaseki_subdir_client_id" ]; then
-    log_warn "GitHub App Client ID found at legacy kaseki subdir path: $kaseki_subdir_client_id"
-    log_info "  Phase 2 fix: GitHub App secrets should be at root level"
+  if [ -r "$primary_client_id" ]; then
+    log_pass "GitHub App Client ID mounted in primary secrets directory: $primary_client_id"
+  elif [ -r "$root_level_client_id" ]; then
+    log_warn "GitHub App Client ID found at legacy root path: $root_level_client_id"
+    log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
     exit_code=3
   fi
 
-  # Check GitHub App Private Key
-  if [ -r "$root_level_key" ]; then
-    log_pass "GitHub App Private Key mounted at correct path (root level): $root_level_key"
-  elif [ -r "$kaseki_subdir_key" ]; then
-    log_warn "GitHub App Private Key found at legacy kaseki subdir path: $kaseki_subdir_key"
-    log_info "  Phase 2 fix: GitHub App secrets should be at root level"
+  if [ -r "$primary_key" ]; then
+    log_pass "GitHub App Private Key mounted in primary secrets directory: $primary_key"
+  elif [ -r "$root_level_key" ]; then
+    log_warn "GitHub App Private Key found at legacy root path: $root_level_key"
+    log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
     exit_code=3
   fi
 
@@ -291,7 +285,7 @@ check_github_app_secret_paths() {
 resolve_github_secret_file() {
   local env_name="$1"
   local default_name="$2"
-  local explicit_value canonical_path local_dev_path
+  local explicit_value canonical_path legacy_root_path local_dev_path
   explicit_value="${!env_name:-}"
   if [ -n "$explicit_value" ]; then
     printf '%s' "$explicit_value"
@@ -300,6 +294,11 @@ resolve_github_secret_file() {
   canonical_path="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/$default_name"
   if [ -r "$canonical_path" ]; then
     printf '%s' "$canonical_path"
+    return 0
+  fi
+  legacy_root_path="/run/secrets/$default_name"
+  if [ -r "$legacy_root_path" ]; then
+    printf '%s' "$legacy_root_path"
     return 0
   fi
   if [ "$KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK" = "1" ]; then
