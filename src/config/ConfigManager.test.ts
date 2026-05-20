@@ -1,26 +1,18 @@
 import { ConfigManager } from './ConfigManager';
+import {
+  clearEnv,
+  INLINE_SECRET_ENV_VARS,
+  restoreEnv,
+  snapshotEnv,
+} from '../__test-utils/env';
 
 describe('ConfigManager', () => {
   let configManager: ConfigManager;
-  const inlineSecretEnvVars = [
-    'OPENROUTER_API_KEY',
-    'GITHUB_APP_ID',
-    'GITHUB_APP_CLIENT_ID',
-    'GITHUB_APP_PRIVATE_KEY',
-  ] as const;
-  let originalInlineSecretEnv: Partial<Record<typeof inlineSecretEnvVars[number], string | undefined>>;
+  let originalInlineSecretEnv: Record<string, string | undefined>;
 
   beforeEach(async () => {
-    originalInlineSecretEnv = {
-      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-      GITHUB_APP_ID: process.env.GITHUB_APP_ID,
-      GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID,
-      GITHUB_APP_PRIVATE_KEY: process.env.GITHUB_APP_PRIVATE_KEY,
-    };
-
-    for (const envVar of inlineSecretEnvVars) {
-      delete process.env[envVar];
-    }
+    originalInlineSecretEnv = snapshotEnv(INLINE_SECRET_ENV_VARS);
+    clearEnv(INLINE_SECRET_ENV_VARS);
 
     configManager = new ConfigManager();
     // Load to initialize config with defaults
@@ -28,14 +20,7 @@ describe('ConfigManager', () => {
   });
 
   afterEach(() => {
-    for (const envVar of inlineSecretEnvVars) {
-      const originalValue = originalInlineSecretEnv[envVar];
-      if (originalValue === undefined) {
-        delete process.env[envVar];
-      } else {
-        process.env[envVar] = originalValue;
-      }
-    }
+    restoreEnv(originalInlineSecretEnv);
   });
 
   test('should reject inline OPENROUTER_API_KEY secret variable', async () => {
