@@ -7,5 +7,6 @@
   "typescript.tsserver.experimental.enableProjectDiagnostics": true,
   "typescript.tsserver.plugins": [],
   "javascript.preferences.quotePreference": "single",
-  "typescript.preferences.quotePreference": "single"
+  "typescript.preferences.quotePreference": "single",
+  "github.copilot.chat.workspace.codeSearchExternalIngest.enabled": true
 }
