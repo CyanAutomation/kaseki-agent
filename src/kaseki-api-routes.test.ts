@@ -21,6 +21,7 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { execFileSync } from 'child_process';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
@@ -2138,15 +2139,45 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.writeFileSync(path.join(templateDir, 'lib', 'github-app-token.js'), 'export {};\n');
   }
 
-  function writeTemplateMetadata(supportedPublishModes: string[]): void {
+  function writeTemplateMetadata(supportedPublishModes: string[], gitRef = 'test-ref'): void {
     fs.writeFileSync(
       path.join(templateDir, '.kaseki-template-version'),
       JSON.stringify({
-        gitRef: 'test-ref',
+        gitRef,
         supportedPublishModes,
         imageDigest: 'docker.io/cyanautomation/kaseki-agent@sha256:test',
       }),
     );
+  }
+
+  function git(args: string[], cwd: string): string {
+    return execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim();
+  }
+
+  function createStaleCheckout(): { remoteDir: string; localSha: string; remoteSha: string } {
+    const remoteDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-remote-'));
+    const sourceDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-routes-source-'));
+    fs.rmSync(checkoutDir, { recursive: true, force: true });
+    try {
+      git(['init', '--bare', '--initial-branch=main'], remoteDir);
+      git(['init', '--initial-branch=main'], sourceDir);
+      git(['config', 'user.email', 'test@example.com'], sourceDir);
+      git(['config', 'user.name', 'Test User'], sourceDir);
+      fs.writeFileSync(path.join(sourceDir, 'README.md'), 'first\n');
+      git(['add', 'README.md'], sourceDir);
+      git(['commit', '-m', 'first'], sourceDir);
+      git(['remote', 'add', 'origin', remoteDir], sourceDir);
+      git(['push', 'origin', 'main'], sourceDir);
+      git(['clone', remoteDir, checkoutDir], '/tmp');
+      const localSha = git(['rev-parse', 'HEAD'], checkoutDir);
+      fs.writeFileSync(path.join(sourceDir, 'README.md'), 'second\n');
+      git(['commit', '-am', 'second'], sourceDir);
+      git(['push', 'origin', 'main'], sourceDir);
+      const remoteSha = git(['rev-parse', 'HEAD'], sourceDir);
+      return { remoteDir, localSha, remoteSha };
+    } finally {
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    }
   }
 
   test('allows PR run submission when template metadata supports pr', async () => {
@@ -2178,6 +2209,34 @@ describe('kaseki-api-routes template bootstrap health', () => {
         publishMode: 'pr',
       }));
     } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rejects publishable run submission when controller checkout is behind origin', async () => {
+    const stale = createStaleCheckout();
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], stale.localSha);
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+
+      expect(response.status).toBe(409);
+      const body = (await response.json()) as any;
+      expect(body.detail).toContain('Controller checkout is different from origin/main');
+      expect(body.localRef).toBe(stale.localSha);
+      expect(body.remoteRef).toBe(stale.remoteSha);
+      expect(body.remediation).toBe('Run scripts/kaseki-activate.sh --controller bootstrap.');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      fs.rmSync(stale.remoteDir, { recursive: true, force: true });
       await cleanupTestApp(server, idempotencyStore);
     }
   });
