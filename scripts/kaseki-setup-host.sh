@@ -199,6 +199,13 @@ write_host_state() {
   local temp_file="${state_file}.tmp"
   
   # Write JSON content to temp file
+  # Ensure jq is available before attempting JSON generation
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'error: jq is required but not installed. Install it with: sudo apt install jq\n' >&2
+    return 1
+  fi
+
+  # Write JSON content to temp file
   jq -n \
     --arg normalized_secrets_dir "$secrets_dir" \
     --arg timestamp "$timestamp" \
