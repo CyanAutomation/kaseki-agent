@@ -79,8 +79,8 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.apiKeys).toEqual(['default-key']);
     expect(config.port).toBe(8080); // default
     expect(config.maxConcurrentRuns).toBe(3); // default
-    expect(config.agentTimeoutSeconds).toBe(5700); // default
-    expect(config.maxDiffBytes).toBe(200000); // default
+    expect(config.agentTimeoutSeconds).toBe(10800); // default
+    expect(config.maxDiffBytes).toBe(400000); // default
     expect(config.defaultTaskMode).toBe('patch'); // default
     expect(config.logLevel).toBe('info'); // default
     expect(config.jobIndexMaxEntries).toBe(1000); // default
@@ -280,8 +280,8 @@ describe('kaseki-api-config validate API key', () => {
     resultsDir: '/tmp',
     maxConcurrentRuns: 3,
     defaultTaskMode: 'patch' as const,
-    maxDiffBytes: 200000,
-    agentTimeoutSeconds: 1200,
+    maxDiffBytes: 400000,
+    agentTimeoutSeconds: 10800,
     logLevel: 'info' as const,
   };
 

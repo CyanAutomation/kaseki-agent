@@ -79,7 +79,7 @@ No changes were made to the repository. The agent may have attempted modificatio
 
 ### 4 — Diff Too Large
 
-The git diff exceeded the configured maximum size (`KASEKI_MAX_DIFF_BYTES`, default: 200KB).
+The git diff exceeded the configured maximum size (`KASEKI_MAX_DIFF_BYTES`, default: 400KB).
 
 **Common causes:**
 

@@ -47,7 +47,7 @@ When a kaseki run completes, artifacts are written to `/agents/kaseki-results/ka
     "overall": 0
   },
   "model": "openrouter/free",
-  "timeout_seconds": 1200
+  "timeout_seconds": 10800
 }
 ```
 
@@ -145,12 +145,12 @@ cat /agents/kaseki-results/kaseki-N/git.status
 
 ### Pattern 2: Agent Timeout (Exit Code 124)
 
-**Symptom**: Agent runs for `KASEKI_AGENT_TIMEOUT_SECONDS` (default 1200s = 20m) then stops.
+**Symptom**: Agent runs for `KASEKI_AGENT_TIMEOUT_SECONDS` (default 10800s = 3h) then stops.
 
 **Quick Diagnosis**:
 ```bash
 cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.duration_seconds'
-# Output: 1200 (or close to timeout value)
+# Output: 10800 (or close to timeout value)
 
 cat /agents/kaseki-results/kaseki-N/pi-summary.json | jq '.status'
 # Output: "timeout" or incomplete
@@ -218,7 +218,7 @@ wc -c < /agents/kaseki-results/kaseki-N/git.diff
 # Output: 250000 (exceeds default 200000 = 200 KB)
 
 cat /agents/kaseki-results/kaseki-N/quality.log
-# Output: Diff size 250000 bytes exceeds KASEKI_MAX_DIFF_BYTES (200000)
+# Output: Diff size 250000 bytes exceeds KASEKI_MAX_DIFF_BYTES (400000)
 ```
 
 **Root Causes**:

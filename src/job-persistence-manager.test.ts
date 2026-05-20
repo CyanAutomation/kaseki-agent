@@ -20,7 +20,7 @@ describe('JobPersistenceManager', () => {
       maxConcurrentRuns: 2,
       defaultTaskMode: 'patch',
       maxDiffBytes: 100000,
-      agentTimeoutSeconds: 1200,
+      agentTimeoutSeconds: 10800,
       logLevel: 'info',
       artifactCacheMaxEntries: 10,
       artifactCacheTtlMs: 60000,

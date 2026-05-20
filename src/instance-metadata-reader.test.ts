@@ -26,7 +26,7 @@ describe('instance-metadata-reader', () => {
       model: 'claude-3-opus',
       repo_url: 'https://github.com/example/repo',
       git_ref: 'main',
-      agentTimeoutSeconds: 1200,
+      agentTimeoutSeconds: 10800,
     };
 
     fs.writeFileSync(path.join(tempDir, 'metadata.json'), JSON.stringify(metadata));

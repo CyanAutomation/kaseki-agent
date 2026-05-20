@@ -152,7 +152,7 @@ export class ContainerLauncher {
       '-e', `KASEKI_CONTAINER_USER=${CONTAINER_UID}:${CONTAINER_UID}`,
       '-e', `KASEKI_CONTAINER_UID=${CONTAINER_UID}`,
       '-e', `KASEKI_CONTAINER_GID=${CONTAINER_UID}`,
-      '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=3600',
+      '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=10800',
       '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
       '-e', `KASEKI_API_KEYS=${apiKey}`,
       '-e', 'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',

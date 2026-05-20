@@ -42,7 +42,7 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 | `GIT_REF` | `main` | Git branch/tag/commit | Branch name, tag, or commit SHA |
 | `TASK_PROMPT` | (code fix) | Agent instruction | Natural language prompt |
 | `KASEKI_MODEL` | `openrouter/free` | LLM model to use | Model identifier or `openrouter/free` |
-| `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | Agent execution timeout | Seconds (typical: 1200–2400) |
+| `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent execution timeout | Seconds (typical: 10800–14400) |
 
 ---
 
@@ -70,7 +70,7 @@ KASEKI_CHANGED_FILES_ALLOWLIST="src/**/*.ts tests/**/*.test.ts"
 
 | Variable | Default | Purpose | Format |
 |---|---|---|---|
-| `KASEKI_MAX_DIFF_BYTES` | `200000` | Max diff size | Bytes (integer) |
+| `KASEKI_MAX_DIFF_BYTES` | `400000` | Max diff size | Bytes (integer) |
 | `KASEKI_VALIDATION_ALLOWLIST` | (none) | Limit validation file changes | Space-separated glob patterns |
 
 ### Validation Commands
@@ -257,7 +257,7 @@ KASEKI_CACHE_ENABLED=1  # Faster validation
 # Focus on speed and throughput
 
 KASEKI_API_MAX_CONCURRENT_RUNS=8
-KASEKI_AGENT_TIMEOUT_SECONDS=1200
+KASEKI_AGENT_TIMEOUT_SECONDS=10800
 KASEKI_CACHE_ENABLED=1
 KASEKI_STREAM_PROGRESS=1
 KASEKI_VALIDATION_COMMANDS="npm run test"  # Skip lint/build for speed

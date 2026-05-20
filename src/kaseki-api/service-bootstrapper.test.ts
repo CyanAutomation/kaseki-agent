@@ -13,7 +13,7 @@ const createMockConfig = (): KasekiApiConfig => ({
   apiKeys: [],
   maxConcurrentRuns: 5,
   maxDiffBytes: 200000,
-  agentTimeoutSeconds: 1200,
+  agentTimeoutSeconds: 10800,
   artifactCacheMaxEntries: 100,
   artifactCacheTtlMs: 3600000,
   artifactCacheMaxFileBytes: 10485760,
