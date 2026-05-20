@@ -26,14 +26,47 @@ describe('KasekiApiService Integration', () => {
   });
 
   describe('Orchestration flow', () => {
-    it('should import all required dependencies', async () => {
-      const setupOrch = await import('./kaseki-api/setup-orchestrator');
-      const serviceBoots = await import('./kaseki-api/service-bootstrapper');
-      const apiService = await import('./kaseki-api-service');
+    it('should bootstrap services with callable contracts and cache behavior', async () => {
+      const os = await import('os');
+      const fs = await import('fs');
+      const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
 
-      expect(setupOrch).toBeDefined();
-      expect(serviceBoots).toBeDefined();
-      expect(apiService).toBeDefined();
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-integration-'));
+      const artifactPath = path.join(resultsDir, 'artifact.log');
+      fs.writeFileSync(artifactPath, 'payload-1', 'utf-8');
+
+      const services = await bootstrapServices({
+        port: 3000,
+        host: 'localhost',
+        resultsDir,
+        logLevel: 'info',
+        apiKeys: [],
+        maxConcurrentRuns: 2,
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 600,
+        artifactCacheMaxEntries: 5,
+        artifactCacheTtlMs: 60000,
+        artifactCacheMaxFileBytes: 1024 * 1024,
+        defaultTaskMode: 'patch',
+      });
+
+      expect(typeof services.scheduler.shutdown).toBe('function');
+      expect(typeof services.webhookManager.shutdown).toBe('function');
+      expect(typeof services.idempotencyStore.shutdown).toBe('function');
+      expect(typeof services.preFlightValidator.validate).toBe('function');
+
+      const first = services.artifactCache.getOrLoad(artifactPath);
+      const second = services.artifactCache.getOrLoad(artifactPath);
+      const stats = services.artifactCache.getStats();
+
+      expect(first).toBe('payload-1');
+      expect(second).toBe('payload-1');
+      expect(stats.misses).toBe(1);
+      expect(stats.hits).toBe(1);
+
+      services.scheduler.shutdown();
+      await services.webhookManager.shutdown();
+      services.idempotencyStore.shutdown();
     });
 
     it('should have non-circular dependencies', async () => {
