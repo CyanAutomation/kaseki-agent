@@ -136,6 +136,7 @@ export class SecretsCommand extends BaseCommand {
         console.log('Storage:');
         console.log('  - Uses filesystem secret files only');
         console.log('  - Docker hosts use KASEKI_HOST_SECRETS_DIR, usually /home/pi/secrets');
+        console.log('  - Docker host permissions: directory 0750, files 0640, group id KASEKI_CONTAINER_GID');
         console.log('  - Local runs use ~/.kaseki/secrets/ with 0600 file permissions');
         console.log('  - Keys are never exposed via environment variables');
         return 0;
@@ -155,12 +156,7 @@ export class SecretsCommand extends BaseCommand {
   private runPermissionsDoctor(fix: boolean): number {
     const secretsDir = process.env.KASEKI_HOST_SECRETS_DIR || process.env.KASEKI_SECRETS_DIR || path.join(process.env.HOME || '.', 'secrets');
     const containerGid = Number.parseInt(process.env.KASEKI_CONTAINER_GID || '10000', 10);
-    const groupName = process.env.KASEKI_SECRETS_GROUP || 'kaseki-secrets';
     let status = 0;
-
-    if (fix) {
-      this.ensureSecretsGroup(groupName, containerGid);
-    }
 
     if (!fs.existsSync(secretsDir)) {
       console.error(`missing: ${secretsDir}`);
@@ -169,7 +165,7 @@ export class SecretsCommand extends BaseCommand {
     }
 
     if (fix) {
-      this.tryChgrp(secretsDir, groupName, containerGid);
+      this.tryChgrp(secretsDir, containerGid);
       this.tryChmod(secretsDir, 0o750);
     }
 
@@ -177,7 +173,6 @@ export class SecretsCommand extends BaseCommand {
       type: 'directory',
       expectedMode: 0o750,
       expectedGid: containerGid,
-      groupName,
       containerGid,
       fix,
     }) || status;
@@ -190,7 +185,7 @@ export class SecretsCommand extends BaseCommand {
       }
 
       if (fix) {
-        this.tryChgrp(secretPath, groupName, containerGid);
+        this.tryChgrp(secretPath, containerGid);
         this.tryChmod(secretPath, 0o640);
       }
 
@@ -198,7 +193,6 @@ export class SecretsCommand extends BaseCommand {
         type: 'file',
         expectedMode: 0o640,
         expectedGid: containerGid,
-        groupName,
         containerGid,
         fix,
       }) || status;
@@ -217,7 +211,6 @@ export class SecretsCommand extends BaseCommand {
     type: 'directory' | 'file';
     expectedMode: number;
     expectedGid: number;
-    groupName: string;
     containerGid: number;
     fix: boolean;
   }): number {
@@ -235,28 +228,14 @@ export class SecretsCommand extends BaseCommand {
     const problems = [];
     if (!typeOk) problems.push(`expected ${options.type}`);
     if (!modeOk) problems.push(`mode ${mode.toString(8)} blocks the standard container contract; expected ${options.expectedMode.toString(8)}`);
-    if (!gidOk) problems.push(`gid ${stat.gid} does not match ${options.groupName}/${options.containerGid}`);
+    if (!gidOk) problems.push(`gid ${stat.gid} does not match container gid ${options.containerGid}`);
 
     console.error(`problem: ${filePath}: ${problems.join('; ')}`);
     return 1;
   }
 
-  private ensureSecretsGroup(groupName: string, gid: number): void {
-    if (spawnSync('getent', ['group', groupName], { stdio: 'ignore' }).status === 0) {
-      return;
-    }
-
-    const result = spawnSync('groupadd', ['--gid', String(gid), groupName], { stdio: 'ignore' });
-    if (result.status !== 0) {
-      spawnSync('groupadd', [groupName], { stdio: 'ignore' });
-    }
-  }
-
-  private tryChgrp(filePath: string, groupName: string, gid: number): void {
-    let result = spawnSync('chgrp', [groupName, filePath], { stdio: 'ignore' });
-    if (result.status !== 0) {
-      result = spawnSync('chgrp', [String(gid), filePath], { stdio: 'ignore' });
-    }
+  private tryChgrp(filePath: string, gid: number): void {
+    spawnSync('chgrp', [String(gid), filePath], { stdio: 'ignore' });
   }
 
   private tryChmod(filePath: string, mode: number): void {

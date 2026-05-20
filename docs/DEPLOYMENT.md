@@ -1508,14 +1508,13 @@ sudo mkdir -p /agents
 sudo chown 10000:10000 /agents
 sudo chmod 755 /agents
 
-# Set group-based read access on the secrets directory (GID 10000)
-sudo groupadd --gid 10000 kaseki-secrets 2>/dev/null || true
-sudo chgrp -R kaseki-secrets /home/pi/secrets
-sudo chmod 750 /home/pi/secrets
-sudo chmod 640 /home/pi/secrets/*
+# Set group-based read access for the container GID (default: 10000)
+sudo chgrp -R 10000 /home/pi/secrets
+sudo chmod 0750 /home/pi/secrets
+sudo chmod 0640 /home/pi/secrets/*
 ```
 
-The API service startup checks (`scripts/startup-checks.sh`) validate these at startup and report clear errors with fix commands if anything is misconfigured. It does not attempt to auto-fix permissions.
+The host secret contract is intentionally small: the mounted directory is `0750`, each secret file is `0640`, and both are group-owned by the container GID. `kaseki-agent host setup --fix` and `kaseki-agent secrets fix-permissions` apply that same contract.
 
 See [docs/QUICK_START.md](QUICK_START.md) for the full setup walkthrough.
 
