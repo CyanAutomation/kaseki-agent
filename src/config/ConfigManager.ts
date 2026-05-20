@@ -128,7 +128,7 @@ const DEFAULT_CONFIG: Config = {
   agent: {
     model: 'openrouter/free',
     provider: 'openrouter',
-    timeout_seconds: 1200,
+    timeout_seconds: 10800,
     guardrails: true,
   },
   repo: {
@@ -143,7 +143,7 @@ const DEFAULT_CONFIG: Config = {
     validate_after_agent_failure: false,
     allowlist: ['src/lib/parser.ts', 'tests/parser.validation.ts'],
     restore_disallowed_changes: true,
-    max_diff_bytes: 200000,
+    max_diff_bytes: 400000,
     allow_empty_diff: false,
   },
   caching: {
