@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.8...v1.36.9) (2026-05-20)
+
+
+### Bug Fixes
+
+* add semantic checks for timeoutSeconds and enum constraints in schema tests ([9e5f997](https://github.com/CyanAutomation/kaseki-agent/commit/9e5f997e2201a15a28bfdacda04beef4b1e8da73))
+* block stale controller checkouts before publishing ([8c47566](https://github.com/CyanAutomation/kaseki-agent/commit/8c47566af227fa8120067501f9f7dabc00f79a15))
+* block stale controller checkouts before publishing ([#338](https://github.com/CyanAutomation/kaseki-agent/issues/338)) ([b916f7f](https://github.com/CyanAutomation/kaseki-agent/commit/b916f7fa668cc04eef39dcc93be61115e9684f2c))
+
 ## [1.36.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.7...v1.36.8) (2026-05-20)
 
 
