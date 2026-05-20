@@ -152,6 +152,10 @@ run_checkout_freshness_probe() {
 
   local stderr_file
   stderr_file="$(mktemp)"
+  
+  # Ensure cleanup on exit
+  trap 'rm -f "$stderr_file"' EXIT INT TERM
+  
   local probe_command=(git -C "$checkout_dir" rev-parse HEAD)
 
   if [ "$(id -u)" -eq "$KASEKI_CONTAINER_UID" ] && [ "$(id -g)" -eq "$KASEKI_CONTAINER_GID" ]; then
