@@ -454,13 +454,13 @@ export class SetupWizard {
         type: 'number',
         name: 'kasekiMaxDiffBytes',
         message: '📏 Maximum diff size in bytes',
-        initial: 200000,
+        initial: 400000,
       },
       {
         type: 'number',
         name: 'kasekiAgentTimeoutSeconds',
         message: '⏱️  Agent timeout in seconds',
-        initial: 1200,
+        initial: 10800,
       },
     ]) as any;
 
