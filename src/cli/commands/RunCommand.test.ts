@@ -1,40 +1,30 @@
 import { RunCommand, type RunApiClient } from './RunCommand';
 import { ConfigManager } from '../../config/ConfigManager';
 import type { RunRequest, RunResponse } from '../../kaseki-api-types';
+import {
+  clearEnv,
+  INLINE_SECRET_ENV_VARS,
+  restoreEnv,
+  snapshotEnv,
+} from '../../__test-utils/env';
 
 describe('RunCommand', () => {
   let configManager: ConfigManager;
   let consoleLog: jest.SpyInstance;
   let consoleError: jest.SpyInstance;
-  const restoreEnvVar = (key: string, originalValue: string | undefined): void => {
-    if (originalValue === undefined) {
-      delete process.env[key];
-      return;
-    }
-
-    process.env[key] = originalValue;
-  };
-
-  const originalApiKey = process.env.KASEKI_API_KEY;
-  const originalApiKeys = process.env.KASEKI_API_KEYS;
-  const originalApiBaseUrl = process.env.KASEKI_API_BASE_URL;
-  const originalApiUrl = process.env.KASEKI_API_URL;
-  const originalDryRun = process.env.KASEKI_DRY_RUN;
-  const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-  const originalGitHubAppId = process.env.GITHUB_APP_ID;
-  const originalGitHubAppClientId = process.env.GITHUB_APP_CLIENT_ID;
-  const originalGitHubAppPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+  const runCommandEnvVars = [
+    'KASEKI_API_KEY',
+    'KASEKI_API_KEYS',
+    'KASEKI_API_BASE_URL',
+    'KASEKI_API_URL',
+    'KASEKI_DRY_RUN',
+    ...INLINE_SECRET_ENV_VARS,
+  ] as const;
+  let originalEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
-    delete process.env.KASEKI_API_KEY;
-    delete process.env.KASEKI_API_KEYS;
-    delete process.env.KASEKI_API_BASE_URL;
-    delete process.env.KASEKI_API_URL;
-    delete process.env.KASEKI_DRY_RUN;
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_CLIENT_ID;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    originalEnv = snapshotEnv(runCommandEnvVars);
+    clearEnv(runCommandEnvVars);
 
     configManager = new ConfigManager();
     consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -44,15 +34,7 @@ describe('RunCommand', () => {
   afterEach(() => {
     consoleLog.mockRestore();
     consoleError.mockRestore();
-    restoreEnvVar('KASEKI_API_KEY', originalApiKey);
-    restoreEnvVar('KASEKI_API_KEYS', originalApiKeys);
-    restoreEnvVar('KASEKI_API_BASE_URL', originalApiBaseUrl);
-    restoreEnvVar('KASEKI_API_URL', originalApiUrl);
-    restoreEnvVar('KASEKI_DRY_RUN', originalDryRun);
-    restoreEnvVar('OPENROUTER_API_KEY', originalOpenRouterApiKey);
-    restoreEnvVar('GITHUB_APP_ID', originalGitHubAppId);
-    restoreEnvVar('GITHUB_APP_CLIENT_ID', originalGitHubAppClientId);
-    restoreEnvVar('GITHUB_APP_PRIVATE_KEY', originalGitHubAppPrivateKey);
+    restoreEnv(originalEnv);
     jest.restoreAllMocks();
   });
 
