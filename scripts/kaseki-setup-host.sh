@@ -127,9 +127,68 @@ normalize_secrets_dir() {
   done
 }
 
+
+run_checkout_freshness_probe() {
+  local checkout_dir="$1"
+  local probe_status="skipped"
+  local probe_detail="Checkout freshness probe skipped because setup did not run bootstrap."
+  local probe_remediation=""
+
+  if [ ! -d "$checkout_dir" ]; then
+    probe_status="failed"
+    probe_detail="Checkout freshness probe failed: expected checkout path ${checkout_dir} does not exist."
+    probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
+    printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
+    return 0
+  fi
+
+  if [ ! -d "$checkout_dir/.git" ]; then
+    probe_status="failed"
+    probe_detail="Checkout freshness probe failed: ${checkout_dir}/.git is missing or inaccessible."
+    probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
+    printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
+    return 0
+  fi
+
+  local stderr_file
+  stderr_file="$(mktemp)"
+  
+  # Ensure cleanup on exit
+  trap 'rm -f "$stderr_file"' EXIT INT TERM
+  
+  local probe_command=(git -C "$checkout_dir" rev-parse HEAD)
+
+  if [ "$(id -u)" -eq "$KASEKI_CONTAINER_UID" ] && [ "$(id -g)" -eq "$KASEKI_CONTAINER_GID" ]; then
+    "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  elif command -v runuser >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+    runuser -u "#${KASEKI_CONTAINER_UID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  else
+    "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  fi
+
+  if [ -s "$stderr_file" ]; then
+    probe_status="failed"
+    local stderr_tail
+    stderr_tail="$(tail -n 1 "$stderr_file" | tr -d '\r')"
+    probe_detail="Checkout freshness probe failed when running git metadata access as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}: ${stderr_tail}"
+    probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
+  else
+    probe_status="ok"
+    probe_detail="Checkout freshness probe passed for ${checkout_dir} as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
+  fi
+  rm -f "$stderr_file"
+
+  printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
+}
+
 write_host_state() {
   local home_dir="$1"
   local secrets_dir="$2"
+  local checkout_probe_status="$3"
+  local checkout_probe_detail="$4"
+  local checkout_probe_remediation="$5"
   local kaseki_dir="$home_dir/.kaseki"
   local state_file="$kaseki_dir/host-state.json"
 
@@ -144,13 +203,36 @@ write_host_state() {
   local temp_file="${state_file}.tmp"
   
   # Write JSON content to temp file
-  cat > "$temp_file" <<EOF
-{
-  "normalized_secrets_dir": "$secrets_dir",
-  "timestamp": "$timestamp",
-  "version": "1"
-}
-EOF
+  # Ensure jq is available before attempting JSON generation
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'error: jq is required but not installed. Install it with: sudo apt install jq\n' >&2
+    return 1
+  fi
+
+  # Write JSON content to temp file
+  jq -n \
+    --arg normalized_secrets_dir "$secrets_dir" \
+    --arg timestamp "$timestamp" \
+    --arg version "2" \
+    --arg checkout_probe_status "$checkout_probe_status" \
+    --arg checkout_probe_detail "$checkout_probe_detail" \
+    --arg checkout_probe_remediation "$checkout_probe_remediation" \
+    --arg checkout_dir "$KASEKI_CHECKOUT_DIR" \
+    --arg uid "$KASEKI_CONTAINER_UID" \
+    --arg gid "$KASEKI_CONTAINER_GID" \
+    '{
+      normalized_secrets_dir: $normalized_secrets_dir,
+      timestamp: $timestamp,
+      version: $version,
+      checkout_freshness_probe: {
+        status: $checkout_probe_status,
+        detail: $checkout_probe_detail,
+        remediation: $checkout_probe_remediation,
+        checkout_dir: $checkout_dir,
+        uid: $uid,
+        gid: $gid
+      }
+    }' > "$temp_file"
   
   # Make file readable (0644) and move it into place atomically
   chmod 0644 "$temp_file"
@@ -239,10 +321,20 @@ check_writable "$KASEKI_ROOT/kaseki-results" || status=1
 
 printf 'using host secrets directory: %s\n' "$KASEKI_HOST_SECRETS_DIR"
 normalize_secrets_dir "$KASEKI_HOST_SECRETS_DIR"
-write_host_state "$KASEKI_EFFECTIVE_HOST_HOME" "$KASEKI_HOST_SECRETS_DIR"
-print_recreate_hint_if_needed
 
 bootstrap_checkout_if_possible || status=$?
+
+probe_payload="$(run_checkout_freshness_probe "$KASEKI_CHECKOUT_DIR")"
+IFS="|" read -r checkout_probe_status checkout_probe_detail checkout_probe_remediation <<< "$probe_payload"
+printf "checkout-freshness-probe: %s\n" "$checkout_probe_status"
+printf "%s\n" "$checkout_probe_detail"
+if [ "$checkout_probe_status" != "ok" ] && [ -n "$checkout_probe_remediation" ]; then
+  printf "remediation: %s\n" "$checkout_probe_remediation"
+  status=1
+fi
+
+write_host_state "$KASEKI_EFFECTIVE_HOST_HOME" "$KASEKI_HOST_SECRETS_DIR" "$checkout_probe_status" "$checkout_probe_detail" "$checkout_probe_remediation"
+print_recreate_hint_if_needed
 
 if [ ! -x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
   printf 'missing: template runner at %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
