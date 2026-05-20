@@ -395,7 +395,7 @@ Kaseki Agent reads all secrets from host-based files instead of environment vari
 
 Secrets are resolved from the host filesystem in this priority order:
 
-1. **Discovered path** (from `.kaseki-host-state.json`): When you run `kaseki-agent host setup`, it records where it normalized your secrets to a state file (`~/.kaseki-host-state.json`). Preflight commands discover and use this path automatically.
+1. **Discovered path** (from `.kaseki/host-state.json`): When you run `kaseki-agent host setup`, it records where it normalized your secrets to a state file (`~/.kaseki/host-state.json`). Preflight commands discover and use this path automatically.
 2. **Explicit environment variable**: `$KASEKI_SECRETS_DIR` (highest priority override)
 3. **SUDO_USER home fallback**: `~/secrets/{secret-name}` (non-Docker only; when running with sudo)
 4. **Container default**: `/agents/secrets/{secret-name}` (canonical Docker path; used when no state file exists)
@@ -403,7 +403,7 @@ Secrets are resolved from the host filesystem in this priority order:
 **Recommended workflow**:
 
 1. Run `sudo kaseki-agent host setup --fix` once during initial setup
-2. This normalizes secrets and creates `.kaseki-host-state.json`
+2. This normalizes secrets and creates `.kaseki/host-state.json`
 3. Subsequent `sudo kaseki-agent host preflight` calls automatically use the discovered path
 4. If you need to override, use `KASEKI_SECRETS_DIR=/custom/path` before any kaseki commands
 
@@ -414,7 +414,7 @@ The system will check each location in order and use the first that contains the
 When you run `sudo kaseki-agent host setup --fix`, it creates:
 
 ```
-~/.kaseki-host-state.json
+~/.kaseki/host-state.json
 ```
 
 > **Note on `sudo` and home directory:** When you run a command with `sudo`, the shell's `~` expands to the **effective user's** home directory. Depending on your `sudo` configuration and shell settings, `~` may resolve to `/root` (if `sudo` drops to root) or `/home/pi` (if `sudo -E` preserves the environment). If you are unsure, check `echo ~` before and after `sudo` to confirm where the state file is written. Docker deployments should use `/agents/secrets` directly to avoid this ambiguity.
@@ -425,11 +425,21 @@ This file (created with 0644 permissions) records where setup normalized your se
 {
   "normalized_secrets_dir": "/home/pi/secrets",
   "timestamp": "2026-05-16T12:34:56Z",
-  "version": "1"
+  "version": "2",
+  "checkout_freshness_probe": {
+    "status": "ok",
+    "detail": "Checkout freshness probe passed for /agents/kaseki-agent as UID:GID 10000:10000.",
+    "remediation": "",
+    "checkout_dir": "/agents/kaseki-agent",
+    "uid": "10000",
+    "gid": "10000"
+  }
 }
 ```
 
 **What it does**: Preflight commands read this file to find where setup put your secrets, eliminating guesswork about secret locations between setup and preflight runs.
+
+**Checkout freshness note**: A successful `host setup --fix` is necessary but not sufficient for freshness enforcement. Runtime preflight still needs read access to `/agents/kaseki-agent/.git` as the service UID/GID (default `10000:10000`). If ownership or permissions drift after setup, preflight will report the contextualized failure recorded in host state and suggest remediation.
 
 **Important**: Do not manually edit or delete this file unless you're resetting your setup. If you change where secrets are stored, rerun `sudo kaseki-agent host setup --fix` to update it.
 
@@ -660,14 +670,14 @@ Should return:
 
 1. **Check the state file** (created by setup):
    ```bash
-   sudo cat ~/.kaseki-host-state.json
+   sudo cat ~/.kaseki/host-state.json
    # Should show: { "normalized_secrets_dir": "/home/pi/secrets", ... }
    ```
 
 2. **If state file doesn't exist**, re-run setup to create it:
    ```bash
    sudo kaseki-agent host setup --fix
-   # This creates ~/.kaseki-host-state.json and normalizes secrets
+   # This creates ~/.kaseki/host-state.json and normalizes secrets
    ```
 
 3. **Verify secrets exist** at the discovered location:

@@ -597,7 +597,7 @@ HTTP-triggered runs.
 
 If the host has never run Kaseki before, run the host setup helper first. It
 creates the expected `/agents` directories, verifies writable results storage,
-and bootstraps the template when the checkout is present:
+and bootstraps the template when the checkout is present. It also runs a checkout-freshness probe using the same runtime UID/GID as API preflight, so setup can fail early if `/agents/kaseki-agent/.git` is not readable:
 
 ```bash
 ssh pi@192.168.1.100 'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/CyanAutomation/kaseki-agent/main/scripts/kaseki-install.sh -o "$tmp" && KASEKI_CONTROLLER_MODE=1 sh "$tmp"'
