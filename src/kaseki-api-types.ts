@@ -325,6 +325,9 @@ export interface PreflightCheck {
   remediation?: string;
   templatePath?: string;
   checkoutRef?: string;
+  localRef?: string;
+  remoteRef?: string;
+  remoteUrl?: string;
   doctorCommand?: string;
   doctorStderrTail?: string;
 }
