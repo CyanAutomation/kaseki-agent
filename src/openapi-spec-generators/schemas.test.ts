@@ -62,7 +62,7 @@ describe('OpenAPI Schema Builders', () => {
         minimum: 60,
         maximum: 10800,
       });
-      
+
       // Additional semantic checks for timeoutSeconds constraints
       const timeoutSchema = properties.timeoutSeconds as JsonSchemaObject;
       expect(timeoutSchema.minimum).toBe(60);
@@ -139,14 +139,14 @@ describe('OpenAPI Schema Builders', () => {
       expect(runRequest.required).toEqual(['repoUrl']);
       expect(runRequest.properties?.taskMode?.enum).toEqual(['patch', 'inspect']);
       expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
-      
+
       // Additional semantic checks for exact enum values and constraints
       const taskModeSchema = runRequest.properties?.taskMode as JsonSchemaObject;
       expect(taskModeSchema.type).toBe('string');
       expect(taskModeSchema.enum).toHaveLength(2);
       expect(taskModeSchema.enum).toContain('patch');
       expect(taskModeSchema.enum).toContain('inspect');
-      
+
       const publishModeSchema = runRequest.properties?.publishMode as JsonSchemaObject;
       expect(publishModeSchema.type).toBe('string');
       expect(publishModeSchema.enum).toHaveLength(5);
@@ -163,7 +163,7 @@ describe('OpenAPI Schema Builders', () => {
 
       expect(runResponse.required).toEqual(['id', 'status', 'createdAt']);
       expect(runResponse.properties?.status?.enum).toEqual(['queued', 'running', 'completed', 'failed']);
-      
+
       // Additional semantic checks for status field constraints
       expect(runResponse.properties?.status).toHaveProperty('type', 'string');
       expect(runResponse.properties?.createdAt).toMatchObject({ type: 'string', format: 'date-time' });
