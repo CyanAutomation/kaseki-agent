@@ -1296,12 +1296,14 @@ file-based secrets; use `GITHUB_APP_PRIVATE_KEY_FILE` for those flows.
 
 ```bash
 mkdir -p ~/secrets
-chmod 0700 ~/secrets
+sudo chgrp 10000 ~/secrets
+chmod 0750 ~/secrets
 
 echo "YOUR_APP_ID" > ~/secrets/github_app_id
 echo "YOUR_CLIENT_ID" > ~/secrets/github_app_client_id
 cp ~/path/to/private-key.pem ~/secrets/github_app_private_key
-chmod 0600 ~/secrets/github_app_*
+sudo chgrp 10000 ~/secrets/github_app_*
+chmod 0640 ~/secrets/github_app_*
 ```
 
 ### Usage
