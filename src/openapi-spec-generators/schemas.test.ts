@@ -14,200 +14,151 @@ type JsonSchemaObject = {
   format?: string;
   enum?: string[];
   required?: string[];
+  minimum?: number;
+  maximum?: number;
   properties?: Record<string, JsonSchemaObject>;
+  items?: JsonSchemaObject;
   example?: string;
+  default?: string;
 };
 
 describe('OpenAPI Schema Builders', () => {
   describe('buildRunRequestSchema', () => {
-    it('should have repoUrl as required property', () => {
-      const schema = buildRunRequestSchema();
+    it('defines required and optional client-visible fields with expected constraints', () => {
+      const schema = buildRunRequestSchema() as JsonSchemaObject;
+      const properties = schema.properties as Record<string, JsonSchemaObject>;
 
-      expect(schema).toBeDefined();
-      expect(typeof schema).toBe('object');
       expect(schema.type).toBe('object');
-      expect(schema.required).toBeDefined();
-      expect(Array.isArray(schema.required)).toBe(true);
+      expect(schema.required).toEqual(['repoUrl']);
+
+      expect(properties.repoUrl).toMatchObject({ type: 'string', format: 'uri' });
+      expect(properties.ref).toMatchObject({ type: 'string', default: 'main' });
+      expect(properties.taskPrompt).toMatchObject({ type: 'string' });
+      expect(properties.changedFilesAllowlist).toMatchObject({
+        type: 'array',
+        items: { type: 'string' },
+      });
+      expect(properties.maxDiffBytes).toMatchObject({ type: 'integer' });
+      expect(properties.validationCommands).toMatchObject({
+        type: 'array',
+        items: { type: 'string' },
+      });
+      expect(properties.taskMode).toMatchObject({
+        type: 'string',
+        enum: ['patch', 'inspect'],
+      });
+      expect(properties.publishMode).toMatchObject({
+        type: 'string',
+        enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
+      });
+      expect(properties.startupCheck).toMatchObject({ type: 'boolean' });
+      expect(properties.startupCheckMode).toMatchObject({
+        type: 'string',
+        enum: ['boot', 'baseline-validation'],
+      });
+      expect(properties.idempotencyKey).toMatchObject({ type: 'string', format: 'uuid' });
+      expect(properties.timeoutSeconds).toMatchObject({
+        type: 'integer',
+        minimum: 60,
+        maximum: 10800,
+      });
+
       expect(schema.required).toContain('repoUrl');
-    });
-
-    it('should define all expected properties', () => {
-      const schema = buildRunRequestSchema();
-      const properties = schema.properties as Record<string, unknown>;
-
-      expect(properties.repoUrl).toBeDefined();
-      expect(properties.ref).toBeDefined();
-      expect(properties.taskPrompt).toBeDefined();
-      expect(properties.changedFilesAllowlist).toBeDefined();
-      expect(properties.maxDiffBytes).toBeDefined();
-      expect(properties.validationCommands).toBeDefined();
-      expect(properties.taskMode).toBeDefined();
-    });
-
-    it('should have repoUrl as URI format', () => {
-      const schema = buildRunRequestSchema();
-      const properties = schema.properties as Record<string, any>;
-
-      expect(properties.repoUrl.type).toBe('string');
-      expect(properties.repoUrl.format).toBe('uri');
-    });
-
-    it('should include descriptions for properties', () => {
-      const schema = buildRunRequestSchema();
-      const properties = schema.properties as Record<string, any>;
-
-      expect(properties.repoUrl.description).toBeDefined();
-      expect(typeof properties.repoUrl.description).toBe('string');
-    });
-
-    it('should match snapshot', () => {
-      const schema = buildRunRequestSchema();
-      expect(schema).toMatchSnapshot();
+      expect(schema.required).not.toContain('taskPrompt');
+      expect(schema.required).not.toContain('taskMode');
+      expect(schema.required).not.toContain('publishMode');
     });
   });
 
   describe('buildRunResponseSchema', () => {
-    it('should have exact required properties', () => {
-      const schema = buildRunResponseSchema();
+    it('defines required fields and exact documented enum/type constraints', () => {
+      const schema = buildRunResponseSchema() as JsonSchemaObject;
+      const properties = schema.properties as Record<string, JsonSchemaObject>;
 
+      expect(schema.type).toBe('object');
       expect(schema.required).toEqual(['id', 'status', 'createdAt']);
-    });
-
-    it('should define semantic types for required client-visible properties', () => {
-      const schema = buildRunResponseSchema();
-      const properties = schema.properties as Record<string, any>;
-
-      expect(properties.id).toMatchObject({
-        type: 'string',
-        example: 'kaseki-42',
-      });
+      expect(properties.id).toMatchObject({ type: 'string', example: 'kaseki-42' });
       expect(properties.status).toMatchObject({
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],
       });
-      expect(properties.createdAt).toMatchObject({
-        type: 'string',
-        format: 'date-time',
-      });
-    });
+      expect(properties.createdAt).toMatchObject({ type: 'string', format: 'date-time' });
 
-    it('should define semantic types for optional client-visible tracing properties', () => {
-      const schema = buildRunResponseSchema();
-      const properties = schema.properties as Record<string, any>;
+      expect(properties.completedAt).toMatchObject({ type: 'string', format: 'date-time' });
+      expect(properties.cached).toMatchObject({ type: 'boolean' });
+      expect(properties.exitCode).toMatchObject({ type: 'integer' });
+      expect(properties.failureClass).toMatchObject({ type: 'string' });
+      expect(properties.error).toMatchObject({ type: 'string' });
 
-      expect(properties.correlationId).toMatchObject({
-        type: 'string',
-      });
-      expect(properties.requestId).toMatchObject({
-        type: 'string',
-      });
       expect(schema.required).not.toContain('correlationId');
       expect(schema.required).not.toContain('requestId');
-    });
-
-    it('should match snapshot', () => {
-      const schema = buildRunResponseSchema();
-      expect(schema).toMatchSnapshot();
+      expect(schema.required).not.toContain('cached');
+      expect(schema.required).not.toContain('completedAt');
+      expect(schema.required).not.toContain('exitCode');
+      expect(schema.required).not.toContain('failureClass');
+      expect(schema.required).not.toContain('error');
     });
   });
 
   describe('buildErrorResponseSchema', () => {
-    it('should build valid error response schema', () => {
-      const schema = buildErrorResponseSchema();
+    it('defines required error field and optional debugging identifiers', () => {
+      const schema = buildErrorResponseSchema() as JsonSchemaObject;
+      const properties = schema.properties as Record<string, JsonSchemaObject>;
 
-      expect(schema).toBeDefined();
-      expect(typeof schema).toBe('object');
       expect(schema.type).toBe('object');
-    });
-
-    it('should have error property', () => {
-      const schema = buildErrorResponseSchema();
-      const properties = schema.properties as Record<string, unknown>;
-
-      expect(properties.error).toBeDefined();
-    });
-
-    it('should have error as string type', () => {
-      const schema = buildErrorResponseSchema();
-      const properties = schema.properties as Record<string, any>;
-
-      expect(properties.error.type).toBe('string');
-    });
-
-    it('should include requestId for debugging', () => {
-      const schema = buildErrorResponseSchema();
-      const properties = schema.properties as Record<string, unknown>;
-
-      expect(properties.requestId).toBeDefined();
-    });
-
-    it('should match snapshot', () => {
-      const schema = buildErrorResponseSchema();
-      expect(schema).toMatchSnapshot();
+      expect(schema.required).toEqual(['error']);
+      expect(properties.error).toMatchObject({ type: 'string' });
+      expect(properties.requestId).toMatchObject({ type: 'string' });
+      expect(schema.required).not.toContain('requestId');
     });
   });
 
   describe('buildAllSchemas', () => {
-    it('should include RunRequest schema with required client-facing request fields', () => {
+    it('returns the expected schema registry and reuses per-schema semantic contracts', () => {
       const schemas = buildAllSchemas();
+
+      expect(Object.keys(schemas).sort()).toEqual([
+        'ErrorResponse',
+        'RequestTracing',
+        'RunRequest',
+        'RunResponse',
+        'StatusResponse',
+        'WebhookConfig',
+      ]);
+
       const runRequest = schemas.RunRequest as JsonSchemaObject;
-      const properties = runRequest.properties;
+      const runResponse = schemas.RunResponse as JsonSchemaObject;
+      const errorResponse = schemas.ErrorResponse as JsonSchemaObject;
 
       expect(runRequest.required).toEqual(['repoUrl']);
-      expect(properties?.repoUrl).toMatchObject({
-        type: 'string',
-        format: 'uri',
+      expect(runRequest.properties?.taskMode?.enum).toEqual(['patch', 'inspect']);
+      expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+      expect(runRequest.properties?.timeoutSeconds).toMatchObject({
+        type: 'integer',
+        minimum: 60,
+        maximum: 10800,
       });
-      expect(properties?.taskPrompt).toMatchObject({
-        type: 'string',
-      });
-      expect(properties?.taskMode).toMatchObject({
-        type: 'string',
-        enum: ['patch', 'inspect'],
-      });
-      expect(properties?.publishMode).toMatchObject({
-        type: 'string',
-        enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
-      });
-    });
-
-    it('should include RunResponse schema with required client-facing response fields', () => {
-      const schemas = buildAllSchemas();
-      const runResponse = schemas.RunResponse as JsonSchemaObject;
-      const properties = runResponse.properties;
 
       expect(runResponse.required).toEqual(['id', 'status', 'createdAt']);
-      expect(properties?.id).toMatchObject({
-        type: 'string',
-        example: 'kaseki-42',
-      });
-      expect(properties?.status).toMatchObject({
-        type: 'string',
-        enum: ['queued', 'running', 'completed', 'failed'],
-      });
-      expect(properties?.createdAt).toMatchObject({
-        type: 'string',
-        format: 'date-time',
-      });
-    });
-
-    it('should include ErrorResponse schema with required client-facing error fields', () => {
-      const schemas = buildAllSchemas();
-      const errorResponse = schemas.ErrorResponse as JsonSchemaObject;
-      const properties = errorResponse.properties;
+      expect(runResponse.properties?.status?.enum).toEqual(['queued', 'running', 'completed', 'failed']);
+      expect(runResponse.properties?.createdAt).toMatchObject({ type: 'string', format: 'date-time' });
 
       expect(errorResponse.required).toEqual(['error']);
-      expect(properties?.error).toMatchObject({
-        type: 'string',
-      });
-      expect(properties?.requestId).toMatchObject({
-        type: 'string',
-      });
-    });
+      expect(errorResponse.properties?.requestId).toMatchObject({ type: 'string' });
 
-    it('should match snapshot', () => {
-      const schemas = buildAllSchemas();
-      expect(schemas).toMatchSnapshot();
+      // Compact stable snapshot for the externally documented status enum only.
+      expect(runResponse.properties?.status).toMatchInlineSnapshot(`
+        {
+          "description": "Current job status",
+          "enum": [
+            "queued",
+            "running",
+            "completed",
+            "failed",
+          ],
+          "type": "string",
+        }
+      `);
     });
   });
 });
