@@ -1132,7 +1132,7 @@ pi_version="$(pi --version 2>&1)" || {
   printf "pi version check failed: %s\n" "$pi_version" >&2
   exit 1
 }
-test -r /run/secrets/openrouter_api_key
+test -r "${OPENROUTER_API_KEY_FILE:?OPENROUTER_API_KEY_FILE is required}"
 test -w /workspace
 test -w /results
 test -w /cache
