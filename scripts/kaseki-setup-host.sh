@@ -324,6 +324,34 @@ bootstrap_checkout_if_possible() {
   return 1
 }
 
+ensure_git_safe_directory() {
+  if ! command -v git >/dev/null 2>&1; then
+    printf 'warning: git is unavailable; skipping safe.directory preflight for %s\n' "$KASEKI_CHECKOUT_DIR"
+    return 0
+  fi
+
+  if [ ! -d "$KASEKI_CHECKOUT_DIR/.git" ]; then
+    printf 'warning: %s/.git is missing; skipping safe.directory preflight\n' "$KASEKI_CHECKOUT_DIR"
+    return 0
+  fi
+
+  local existing_safe_dirs
+  existing_safe_dirs="$(git config --global --get-all safe.directory 2>/dev/null || true)"
+  if printf '%s\n' "$existing_safe_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
+    printf 'ok: git safe.directory already present for %s\n' "$KASEKI_CHECKOUT_DIR"
+    return 0
+  fi
+
+  if git config --global --add safe.directory "$KASEKI_CHECKOUT_DIR" >/dev/null 2>&1; then
+    printf 'ok: configured git safe.directory for %s\n' "$KASEKI_CHECKOUT_DIR"
+    return 0
+  fi
+
+  printf 'warning: failed to configure git safe.directory for %s\n' "$KASEKI_CHECKOUT_DIR"
+  printf 'remediation: run `git config --global --add safe.directory "%s"` in the same user context used for bootstrap.\n' "$KASEKI_CHECKOUT_DIR"
+  return 0
+}
+
 recreate_api_if_requested() {
   if [ "$KASEKI_RECREATE_API" != "1" ]; then
     return 0
@@ -358,6 +386,7 @@ check_writable "$KASEKI_ROOT/kaseki-results" || status=1
 printf 'using host secrets directory: %s\n' "$KASEKI_HOST_SECRETS_DIR"
 normalize_secrets_dir "$KASEKI_HOST_SECRETS_DIR"
 
+ensure_git_safe_directory
 bootstrap_checkout_if_possible || status=$?
 
 probe_payload="$(run_checkout_freshness_probe "$KASEKI_CHECKOUT_DIR")"
@@ -384,6 +413,7 @@ recreate_api_if_requested || status=$?
 
 if [ "$status" -ne 0 ]; then
   printf 'kaseki host setup incomplete. Re-run with --fix to create directories and bootstrap when possible.\n' >&2
+  printf 'If bootstrap fails with "detected dubious ownership", configure git safe.directory for %s and retry.\n' "$KASEKI_CHECKOUT_DIR" >&2
 fi
 
 exit "$status"
