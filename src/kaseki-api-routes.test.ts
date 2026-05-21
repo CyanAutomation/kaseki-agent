@@ -2265,7 +2265,8 @@ describe('kaseki-api-routes template bootstrap health', () => {
       expect(response.status).toBe(409);
       const body = (await response.json()) as any;
       expect(body.detail).toContain('git rev-parse HEAD');
-      expect(body.detail).toContain('permission denied');
+      // When .git/HEAD is unreadable, git returns "not a git repository" rather than "permission denied"
+      expect(body.detail).toMatch(/permission denied|not a git repository/);
       expect(body.detail).toContain('stderr tail');
     } finally {
       fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
