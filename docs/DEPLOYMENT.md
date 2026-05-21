@@ -441,6 +441,10 @@ This file (created with 0644 permissions) records where setup normalized your se
 
 **Checkout freshness note**: A successful `host setup --fix` is necessary but not sufficient for freshness enforcement. Runtime preflight still needs read access to `/agents/kaseki-agent/.git` as the service UID/GID (default `10000:10000`). If ownership or permissions drift after setup, preflight will report the contextualized failure recorded in host state and suggest remediation.
 
+**Checkout freshness troubleshooting**:
+- If the probe fails with git metadata/readability signals (for example `permission denied`, `not a git repository`, or inaccessible `.git`), remediation remains ownership/permission focused.
+- If the probe fails with identity-switch/tooling signals (for example unknown user/group or `sudo`/`runuser` invocation errors), remediation will explicitly indicate that the host could not impersonate UID:GID `10000:10000` and instruct you to configure a valid impersonation method (or passwd/group mapping) before rerunning setup.
+
 **Important**: Do not manually edit or delete this file unless you're resetting your setup. If you change where secrets are stored, rerun `sudo kaseki-agent host setup --fix` to update it.
 
 ### Required Secret Files

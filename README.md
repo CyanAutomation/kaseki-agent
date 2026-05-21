@@ -604,6 +604,14 @@ ssh pi@192.168.1.100 'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.
 ssh pi@192.168.1.100 '/agents/kaseki-agent/scripts/kaseki-setup-host.sh --fix'
 ```
 
+If checkout freshness fails, remediation is now specific to the failure mode:
+
+- `.git` access failures (for example: `permission denied`, `not a git repository`,
+  or inaccessible `.git`) keep permission-focused remediation.
+- UID/GID impersonation failures (for example: unknown user/group or `sudo`/`runuser`
+  invocation errors) return remediation that asks you to configure a valid way to
+  execute as UID:GID `10000:10000` (or provide passwd/group mappings), then rerun setup.
+
 #### Local Activation (No SSH)
 
 ```bash
