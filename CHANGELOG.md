@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.37.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.11...v1.37.0) (2026-05-21)
+
+
+### Features
+
+* Add functions to manage git safe.directory and fix checkout permissions ([fa61072](https://github.com/CyanAutomation/kaseki-agent/commit/fa6107226a7bf383f7575f3baecb17c9a17f8471))
+
 ## [1.36.11](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.10...v1.36.11) (2026-05-21)
 
 
