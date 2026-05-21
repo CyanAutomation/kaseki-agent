@@ -186,7 +186,7 @@ run_checkout_freshness_probe() {
   elif [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
     setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ]; then
-    runuser -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif command -v sudo >/dev/null 2>&1; then
     if [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
       sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
