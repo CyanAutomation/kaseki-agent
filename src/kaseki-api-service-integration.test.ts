@@ -75,16 +75,8 @@ describe('KasekiApiService Integration', () => {
       }
     });
 
-    it('should have non-circular dependencies', async () => {
-      // If there were circular dependencies, these imports would hang or fail
-      const result1 = await import('./kaseki-api/setup-orchestrator');
-      const result2 = await import('./kaseki-api/service-bootstrapper');
-      const result3 = await import('./kaseki-api-service');
-
-      expect(result1).toBeDefined();
-      expect(result2).toBeDefined();
-      expect(result3).toBeDefined();
-    });
+    // Circular dependency prevention belongs in static CI checks (dependency graph/lint rules),
+    // not runtime import tests. Successful imports do not prove absence of cycles.
   });
 
   describe('Type safety', () => {
