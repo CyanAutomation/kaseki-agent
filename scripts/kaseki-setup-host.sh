@@ -106,7 +106,7 @@ resolve_uid_to_name() {
     printf '\n'
     return 0
   fi
-  getent passwd "$uid" | awk -F: 'NR==1 {print $1}'
+  getent passwd "$uid" 2>/dev/null | awk -F: 'NR==1 && NF>=6 {print $1}'
 }
 
 resolve_gid_to_name() {
