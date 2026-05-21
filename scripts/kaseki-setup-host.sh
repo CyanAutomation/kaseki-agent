@@ -115,7 +115,7 @@ resolve_gid_to_name() {
     printf '\n'
     return 0
   fi
-  getent group "$gid" | awk -F: 'NR==1 {print $1}'
+  getent group "$gid" 2>/dev/null | awk -F: 'NR==1 && NF>=4 {print $1}'
 }
 
 normalize_secrets_dir() {
