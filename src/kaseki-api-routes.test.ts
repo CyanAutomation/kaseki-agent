@@ -2241,8 +2241,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
     }
   });
 
-
-
   test('returns specific checkout diagnostics for git rev-parse permission failures when enforcement applies', async () => {
     writeRunKasekiDoctor(0, 'doctor ok');
     git(['init', '--initial-branch=main'], checkoutDir);
