@@ -100,6 +100,24 @@ check_writable() {
   fi
 }
 
+resolve_uid_to_name() {
+  local uid="$1"
+  if ! command -v getent >/dev/null 2>&1; then
+    printf '\n'
+    return 0
+  fi
+  getent passwd "$uid" 2>/dev/null | awk -F: 'NR==1 && NF>=6 {print $1}'
+}
+
+resolve_gid_to_name() {
+  local gid="$1"
+  if ! command -v getent >/dev/null 2>&1; then
+    printf '\n'
+    return 0
+  fi
+  getent group "$gid" 2>/dev/null | awk -F: 'NR==1 && NF>=4 {print $1}'
+}
+
 normalize_secrets_dir() {
   local secrets_dir="$1"
   if [ ! -d "$secrets_dir" ]; then
@@ -158,12 +176,25 @@ run_checkout_freshness_probe() {
   
   local probe_command=(git -C "$checkout_dir" rev-parse HEAD)
 
+  local resolved_user_name=""
+  local resolved_group_name=""
+  resolved_user_name="$(resolve_uid_to_name "$KASEKI_CONTAINER_UID")"
+  resolved_group_name="$(resolve_gid_to_name "$KASEKI_CONTAINER_GID")"
+
   if [ "$(id -u)" -eq "$KASEKI_CONTAINER_UID" ] && [ "$(id -g)" -eq "$KASEKI_CONTAINER_GID" ]; then
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  elif [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
+    setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+  elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ]; then
+    runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif command -v sudo >/dev/null 2>&1; then
-    sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
-  elif command -v runuser >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
-    runuser -u "#${KASEKI_CONTAINER_UID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    if [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
+      sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    elif [ -n "$resolved_user_name" ]; then
+      sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    else
+      sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    fi
   else
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   fi
