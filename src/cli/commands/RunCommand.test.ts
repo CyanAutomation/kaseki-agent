@@ -18,6 +18,7 @@ describe('RunCommand', () => {
     'KASEKI_API_BASE_URL',
     'KASEKI_API_URL',
     'KASEKI_DRY_RUN',
+    'KASEKI_AGENT_TIMEOUT_SECONDS',
     ...INLINE_SECRET_ENV_VARS,
   ] as const;
   let originalEnv: Record<string, string | undefined>;
@@ -39,6 +40,7 @@ describe('RunCommand', () => {
   });
 
   test('translates CLI args into a RunRequest and submits it to the local API client', async () => {
+    process.env.KASEKI_AGENT_TIMEOUT_SECONDS = '10800';
     const createRun = jest.fn<Promise<RunResponse>, [RunRequest]>().mockResolvedValue({
       id: 'kaseki-123',
       status: 'queued',
