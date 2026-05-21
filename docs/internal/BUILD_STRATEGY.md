@@ -17,7 +17,7 @@ The Dockerfile uses a **two-stage build** pattern to optimize image size and bui
 - **Base**: `node:24-bookworm-slim`
 - **Purpose**: Build Pi CLI agent and prepare workspace cache seed
 - **Artifacts**:
-  - Global Pi CLI installation (`@earendil-works/pi-coding-agent@0.74.0`)
+  - Global Pi CLI installation (`@earendil-works/pi-coding-agent@0.75.3`)
   - Pre-built Node modules cache seed
 - **Why separate**: Enables aggressive caching; these dependencies rarely change
 
