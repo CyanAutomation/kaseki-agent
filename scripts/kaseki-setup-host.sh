@@ -103,7 +103,7 @@ check_writable() {
 resolve_uid_to_name() {
   local uid="$1"
   if ! command -v getent >/dev/null 2>&1; then
-    printf '\n'
+    printf ''
     return 0
   fi
   getent passwd "$uid" 2>/dev/null | awk -F: 'NR==1 && NF>=6 {print $1}'
@@ -112,7 +112,7 @@ resolve_uid_to_name() {
 resolve_gid_to_name() {
   local gid="$1"
   if ! command -v getent >/dev/null 2>&1; then
-    printf '\n'
+    printf ''
     return 0
   fi
   getent group "$gid" 2>/dev/null | awk -F: 'NR==1 && NF>=4 {print $1}'
@@ -185,9 +185,9 @@ run_checkout_freshness_probe() {
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
     setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
-  elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ]; then
+  elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
     runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
-  elif command -v sudo >/dev/null 2>&1; then
+  elif [ "$(id -u)" -eq 0 ] && command -v sudo >/dev/null 2>&1; then
     if [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
       sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
     elif [ -n "$resolved_user_name" ]; then
