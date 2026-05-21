@@ -316,8 +316,8 @@ function validateTemplateFiles(
 function runTemplateDoctor(runScript: string, checkoutDir: string) {
   const activateScript = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
   const doctorArgs = fs.existsSync(activateScript)
-    ? [activateScript, '--json', 'doctor']
-    : [runScript, '--doctor'];
+    ? ['bash', activateScript, '--json', 'doctor']
+    : ['bash', runScript, '--doctor'];
 
   return spawnSync(doctorArgs[0], doctorArgs.slice(1), {
     cwd: fs.existsSync(checkoutDir) ? checkoutDir : undefined,
