@@ -151,12 +151,20 @@ run_checkout_freshness_probe() {
   local probe_status="skipped"
   local probe_detail="Checkout freshness probe skipped because setup did not run bootstrap."
   local probe_remediation=""
+  local stderr_file=""
+
+  cleanup_probe_stderr_file() {
+    if [ -n "$stderr_file" ]; then
+      rm -f "$stderr_file"
+    fi
+  }
 
   if [ ! -d "$checkout_dir" ]; then
     probe_status="failed"
     probe_detail="Checkout freshness probe failed: expected checkout path ${checkout_dir} does not exist."
     probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
     printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
+    cleanup_probe_stderr_file
     return 0
   fi
 
@@ -165,10 +173,10 @@ run_checkout_freshness_probe() {
     probe_detail="Checkout freshness probe failed: ${checkout_dir}/.git is missing or inaccessible."
     probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
     printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
+    cleanup_probe_stderr_file
     return 0
   fi
 
-  local stderr_file
   stderr_file="$(mktemp)"
 
   local probe_command=(git -C "$checkout_dir" rev-parse HEAD)
@@ -211,7 +219,7 @@ run_checkout_freshness_probe() {
     probe_status="ok"
     probe_detail="Checkout freshness probe passed for ${checkout_dir} as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
   fi
-  rm -f "$stderr_file"
+  cleanup_probe_stderr_file
 
   printf '%s|%s|%s\n' "$probe_status" "$probe_detail" "$probe_remediation"
 }
