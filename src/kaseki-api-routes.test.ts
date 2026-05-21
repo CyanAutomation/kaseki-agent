@@ -2129,7 +2129,7 @@ describe('kaseki-api-routes template bootstrap health', () => {
       scriptPath,
       `#!/usr/bin/env bash\nif [[ "$1" == "--doctor" ]]; then\n  echo ${JSON.stringify(stderr)} >&2\n  exit ${exitCode}\nfi\nexit 0\n`,
     );
-    fs.chmodSync(scriptPath, 0o755);
+    fs.chmodSync(scriptPath, 0o644);
     fs.writeFileSync(path.join(templateDir, 'kaseki-agent.sh'), '#!/usr/bin/env bash\n');
     fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-activate.sh'), '#!/usr/bin/env bash\n');
     fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-preflight.sh'), '#!/usr/bin/env bash\n');
@@ -2137,6 +2137,17 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.writeFileSync(path.join(templateDir, 'lib', 'pi-progress-stream.js'), 'export {};\n');
     fs.writeFileSync(path.join(templateDir, 'lib', 'kaseki-report.js'), 'export {};\n');
     fs.writeFileSync(path.join(templateDir, 'lib', 'github-app-token.js'), 'export {};\n');
+  }
+
+  function writeCheckoutActivateDoctor(exitCode: number, stderr: string): string {
+    const activatePath = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
+    fs.mkdirSync(path.dirname(activatePath), { recursive: true });
+    fs.writeFileSync(
+      activatePath,
+      `#!/usr/bin/env bash\nif [[ "$1" == "--json" && "$2" == "doctor" ]]; then\n  echo ${JSON.stringify(stderr)} >&2\n  exit ${exitCode}\nfi\nexit 0\n`,
+    );
+    fs.chmodSync(activatePath, 0o644);
+    return activatePath;
   }
 
   function writeTemplateMetadata(supportedPublishModes: string[], gitRef = 'test-ref'): void {
@@ -2444,6 +2455,55 @@ describe('kaseki-api-routes template bootstrap health', () => {
         repoUrl: 'https://github.com/org/repo',
         publishMode: 'auto',
       }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('runs template doctor via bash even when run-kaseki.sh is not executable', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation((runRequest: any) => ({
+      id: 'job-template-healthy-nonexec',
+      status: 'queued',
+      createdAt: new Date(),
+      resultDir: path.join(resultsDir, 'job-template-healthy-nonexec'),
+      requestId: runRequest.requestId,
+      correlationId: runRequest.correlationId,
+      request: runRequest,
+    }));
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' }),
+      });
+      expect(response.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('runs checkout activate doctor via bash and keeps doctorCommand diagnostics stable', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const activatePath = writeCheckoutActivateDoctor(13, 'checkout activate doctor failed');
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' }),
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.doctorCommand).toBe(`${activatePath} --json doctor`);
+      expect(body.doctorStderrTail).toContain('checkout activate doctor failed');
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
