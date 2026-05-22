@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.40.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.39.0...v1.40.0) (2026-05-22)
+
+
+### Bug Fixes
+
+* Adjust router mounting order to resolve precedence conflicts ([6dfe950](https://github.com/CyanAutomation/kaseki-agent/commit/6dfe9500f379cfa64dc5a79fb8f1c2cd1c98f8a6))
+
+
+### Features
+
+* Add Traefik configuration for dynamic routing and automatic HTTPS management ([63fb107](https://github.com/CyanAutomation/kaseki-agent/commit/63fb1071f51da25150a433a4db4974ced4f42ebf))
+
 # [1.39.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.38.0...v1.39.0) (2026-05-22)
 
 
