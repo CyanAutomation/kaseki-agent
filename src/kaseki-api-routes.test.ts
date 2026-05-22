@@ -2253,14 +2253,11 @@ describe('kaseki-api-routes template bootstrap health', () => {
   });
 
   test('returns specific checkout diagnostics for git rev-parse permission failures when enforcement applies', async () => {
+    writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr']);
     writeRunKasekiDoctor(0, 'doctor ok');
-    git(['init', '--initial-branch=main'], checkoutDir);
-    git(['config', 'user.email', 'test@example.com'], checkoutDir);
-    git(['config', 'user.name', 'Test User'], checkoutDir);
-    fs.writeFileSync(path.join(checkoutDir, 'README.md'), 'x\n');
-    git(['add', 'README.md'], checkoutDir);
-    git(['commit', '-m', 'init'], checkoutDir);
-    fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o000);
+    // Create intentionally invalid git metadata so rev-parse fails consistently,
+    // including in privileged environments where chmod(000) may still be readable.
+    fs.mkdirSync(path.join(checkoutDir, '.git'), { recursive: true });
 
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
@@ -2278,7 +2275,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
       expect(body.detail).toMatch(/permission denied|not a git repository/);
       expect(body.detail).toContain('stderr tail');
     } finally {
-      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
       await cleanupTestApp(server, idempotencyStore);
     }
   });
@@ -2303,13 +2299,9 @@ describe('kaseki-api-routes template bootstrap health', () => {
   test('uses template metadata gitRef as informational fallback when rev-parse fails', async () => {
     writeTemplateMetadata(['auto', 'none', 'branch', 'pr', 'draft_pr'], 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     writeRunKasekiDoctor(0, 'doctor ok');
-    git(['init', '--initial-branch=main'], checkoutDir);
-    git(['config', 'user.email', 'test@example.com'], checkoutDir);
-    git(['config', 'user.name', 'Test User'], checkoutDir);
-    fs.writeFileSync(path.join(checkoutDir, 'README.md'), 'x\n');
-    git(['add', 'README.md'], checkoutDir);
-    git(['commit', '-m', 'init'], checkoutDir);
-    fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o000);
+    // Create intentionally invalid git metadata so rev-parse fails consistently,
+    // including in privileged environments where chmod(000) may still be readable.
+    fs.mkdirSync(path.join(checkoutDir, '.git'), { recursive: true });
     const scheduler = createMockScheduler();
     scheduler.submitJob.mockImplementation((runRequest: any) => ({ id: 'job-fallback', status: 'queued', createdAt: new Date(), resultDir: path.join(resultsDir, 'job-fallback'), requestId: runRequest.requestId, correlationId: runRequest.correlationId, request: runRequest }));
     const config = createTestConfig(resultsDir);
@@ -2323,7 +2315,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
       expect(response.status).toBe(202);
       expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
-      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
       await cleanupTestApp(server, idempotencyStore);
     }
   });
@@ -2350,7 +2341,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
       expect(response.status).toBe(202);
       expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
-      fs.chmodSync(path.join(checkoutDir, '.git', 'HEAD'), 0o644);
       await cleanupTestApp(server, idempotencyStore);
     }
   });
