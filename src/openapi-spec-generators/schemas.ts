@@ -44,6 +44,20 @@ export function buildRunRequestSchema(): Record<string, unknown> {
         items: { type: 'string' },
         description: 'Validation commands to run',
       },
+      scouting: {
+        type: 'object',
+        description: 'Pre-coding Pi scouting controls',
+        properties: {
+          enabled: { type: 'boolean', description: 'Enable the pre-coding Pi scouting phase' },
+          model: { type: 'string', description: 'Optional Pi model override for scouting' },
+          timeoutSeconds: {
+            type: 'integer',
+            minimum: 60,
+            maximum: 10800,
+            description: 'Optional scouting timeout in seconds',
+          },
+        },
+      },
       taskMode: {
         type: 'string',
         enum: ['patch', 'inspect'],

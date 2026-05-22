@@ -527,9 +527,10 @@ docker run docker.io/cyanautomation/kaseki-agent:latest run <repo> <ref>
 
 1. Clone the target repo/ref and install dependencies.
 2. Run **pre-agent validation** when `KASEKI_PRE_AGENT_VALIDATION=1` (default). These commands default to `KASEKI_VALIDATION_COMMANDS` through `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` and execute before Pi so Kaseki can detect an already-failing baseline. Inspect `/agents/kaseki-results/kaseki-N/pre-validation.log`, `/agents/kaseki-results/kaseki-N/pre-validation-raw.log`, `/agents/kaseki-results/kaseki-N/pre-validation-env.log`, and `/agents/kaseki-results/kaseki-N/pre-validation-timings.tsv`.
-3. Invoke Pi only if the baseline validation succeeds (or pre-agent validation is disabled).
-4. Restore disallowed changes, run quality gates, then run **post-agent validation** with `KASEKI_VALIDATION_COMMANDS` against the final diff. Inspect `/agents/kaseki-results/kaseki-N/validation.log`, `/agents/kaseki-results/kaseki-N/validation-raw.log`, `/agents/kaseki-results/kaseki-N/validation-env.log`, and `/agents/kaseki-results/kaseki-N/validation-timings.tsv`.
-5. Record phase exit codes and failure reasons in `/agents/kaseki-results/kaseki-N/metadata.json`; `stage-timings.tsv` shows whether the failing phase was `pre-agent validation` or `validation`.
+3. Run Pi in a **scouting** role after baseline validation. It inspects the task and repository without keeping workspace edits, then writes `/agents/kaseki-results/kaseki-N/scouting.json` for the coding agent to read. Set `KASEKI_SCOUTING=0` to skip this phase.
+4. Invoke Pi in the coding role only if baseline validation and scouting succeed.
+5. Restore disallowed changes, run quality gates, then run **post-agent validation** with `KASEKI_VALIDATION_COMMANDS` against the final diff. Inspect `/agents/kaseki-results/kaseki-N/validation.log`, `/agents/kaseki-results/kaseki-N/validation-raw.log`, `/agents/kaseki-results/kaseki-N/validation-env.log`, and `/agents/kaseki-results/kaseki-N/validation-timings.tsv`.
+6. Record phase exit codes and failure reasons in `/agents/kaseki-results/kaseki-N/metadata.json`; `stage-timings.tsv` shows whether the failing phase was `pre-agent validation`, `pi scouting agent`, or `validation`.
 
 > **Important:** `kaseki-agent.sh` runs from the Docker image (`/usr/local/bin/kaseki-agent`) and is **not** host-mounted during runs.
 > For Direct CLI mode, the host needs `run-kaseki.sh` (plus `scripts/kaseki-preflight.sh`) and Docker access; the agent script itself stays inside the image.
@@ -709,6 +710,7 @@ curl -X POST http://localhost:8080/api/runs \
     "taskPrompt": "Fix the parser bug",
     "changedFilesAllowlist": ["src/lib/parser.ts"],
     "allowlist": { "include": ["src/lib/parser.ts"] },
+    "scouting": { "enabled": true, "model": "openrouter/free", "timeoutSeconds": 900 },
     "validationCommands": ["npm run test", "npm run build"],
     "validation": { "commands": ["npm run test", "npm run build"] }
   }'
@@ -1404,6 +1406,9 @@ to opt out of GitHub publishing for a specific API run.
 |---|---|---|
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | Run validation before Pi to detect a failing baseline repo/ref. Set to `0` only when you intentionally want to skip baseline validation. |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | Semicolon-separated pre-agent validation commands. Logs: `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, `pre-validation-timings.tsv`. |
+| `KASEKI_SCOUTING` | `1` | Run a read-only Pi scouting phase after pre-agent validation and before coding. Its schema-validated JSON handoff is stored as `scouting.json`; use `scouting-summary.json`, `scouting-events.jsonl`, and `scouting-stderr.log` for model/token output and diagnostics. |
+| `KASEKI_SCOUTING_MODEL` | same as `KASEKI_MODEL` | Optional Pi model override for scouting. API runs may set this with `scouting.model`. |
+| `KASEKI_SCOUTING_TIMEOUT_SECONDS` | same as `KASEKI_AGENT_TIMEOUT_SECONDS` | Optional scouting timeout. API runs may set this with `scouting.timeoutSeconds`. |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated post-agent validation commands for the final diff; set to `none` or empty to skip post-agent validation. Missing npm scripts are skipped with a warning (non-fatal). Logs: `validation.log`, `validation-raw.log`, `validation-env.log`, `validation-timings.tsv`. |
 | `KASEKI_STARTUP_CHECK_MODE` | `boot` | For `KASEKI_DRY_RUN=1`, `boot` performs a container smoke test through `/bin/bash`; `baseline-validation` runs `/usr/local/bin/kaseki-agent` to clone, install dependencies, run pre-agent validation, and skip Pi. |
 | `KASEKI_BASELINE_VALIDATION_DRY_RUN` | `0` | Internal/API switch set with `baseline-validation` so pre-agent validation runs even though Pi remains disabled. |

@@ -20,6 +20,9 @@ KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
+KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
+KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
+KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -48,6 +51,9 @@ PI_VERSION=""
 STATUS=0
 FAILED_COMMAND=""
 PI_EXIT=0
+SCOUTING_EXIT=0
+SCOUTING_DURATION_SECONDS=0
+SCOUTING_ACTUAL_MODEL="unknown"
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -83,6 +89,9 @@ PRE_VALIDATION_TIMINGS_FILE="/results/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
+SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
+SCOUTING_ARTIFACT="/results/scouting.json"
+SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-copy}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
@@ -165,6 +174,8 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/stderr.log
 : > /results/pi-events.jsonl
 : > /results/pi-summary.json
+: > /results/scouting-events.jsonl
+: > /results/scouting-summary.json
 : > /results/validation.log
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
@@ -353,6 +364,7 @@ write_metadata() {
   "git_ref": $(printf '%s' "$GIT_REF" | json_encode),
   "provider": $(printf '%s' "$KASEKI_PROVIDER" | json_encode),
   "model": $(printf '%s' "$KASEKI_MODEL" | json_encode),
+  "scouting_model": $(printf '%s' "$KASEKI_SCOUTING_MODEL" | json_encode),
   "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
   "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
@@ -361,6 +373,7 @@ write_metadata() {
   "duration_seconds": $duration,
   "total_duration_seconds": $duration,
   "pi_duration_seconds": $PI_DURATION_SECONDS,
+  "scouting_duration_seconds": $SCOUTING_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
@@ -369,6 +382,7 @@ write_metadata() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "pi_exit_code": $PI_EXIT,
+  "scouting_exit_code": $SCOUTING_EXIT,
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
@@ -383,6 +397,7 @@ write_metadata() {
   "github_operation_phase": $(printf '%s' "$GITHUB_OPERATION_PHASE" | json_encode),
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
+  "scouting_actual_model": $(printf '%s' "$SCOUTING_ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
   "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
@@ -1578,11 +1593,19 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section
+  local memory_section scouting_section
   memory_section="$(read_repo_memory_section)"
+  scouting_section=""
+  if [ -s "$SCOUTING_ARTIFACT" ]; then
+    scouting_section="
+Scouting artifact:
+- A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
+- Read that artifact before coding. Treat it as planning input, then verify important details against the current repository."
+  fi
   if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
     printf '%s' "$TASK_PROMPT"
     printf '%s' "$memory_section"
+    printf '%s' "$scouting_section"
     return 0
   fi
 
@@ -1598,7 +1621,93 @@ Operational guardrails:
 Task:
 $TASK_PROMPT
 $memory_section
+$scouting_section
 EOF
+}
+
+build_scouting_prompt() {
+  cat <<EOF
+You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Research the task before a separate coding agent starts:
+- Inspect the repository and relevant files needed to understand the task.
+- Do not edit source files, tests, lockfiles, or git state.
+- Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
+- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+- The repository tree is read-only during scouting. Write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT.
+
+The JSON object must be concise and useful to the coding agent. Use this shape:
+{
+  "task": "brief task interpretation",
+  "requirements": ["important requirements and constraints"],
+  "relevant_files": [{"path": "repo-relative path", "reason": "why it matters"}],
+  "observations": ["facts learned from repository inspection"],
+  "plan": ["ordered coding steps"],
+  "validation": ["focused commands or checks to run"],
+  "risks": ["uncertainties, edge cases, or assumptions"]
+}
+
+Raw task prompt:
+$TASK_PROMPT
+EOF
+}
+
+run_scouting_agent() {
+  local scouting_prompt scouting_start scout_dirty_before scout_dirty_after
+
+  printf '\n==> pi scouting agent\n'
+  set_current_stage "pi scouting agent"
+  if [ "$KASEKI_SCOUTING" = "0" ]; then
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a /results/scouting-stderr.log
+    record_stage_timing "pi scouting agent" 0 0 "skipped_by_config"
+    return 0
+  fi
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a /results/scouting-stderr.log
+    record_stage_timing "pi scouting agent" 0 0 "dry_run=true"
+    return 0
+  fi
+
+  scouting_prompt="$(build_scouting_prompt)"
+  scouting_start="$(date +%s)"
+  scout_dirty_before="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
+  chmod -R a-w /workspace/repo 2>> /results/scouting-stderr.log || true
+  set +e
+  OPENROUTER_API_KEY="$openrouter_api_key" \
+    timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
+    2> >(tee -a /results/scouting-stderr.log >&2) \
+    | tee "$SCOUTING_RAW_EVENTS" \
+    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+  SCOUTING_EXIT="${PIPESTATUS[0]}"
+  SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
+  unset scouting_prompt
+  set +e
+  chmod -R u+w /workspace/repo 2>> /results/scouting-stderr.log || true
+
+  if [ "$SCOUTING_EXIT" -eq 0 ] && ! node -e 'const fs=require("node:fs"); const input=process.argv[1]; const output=process.argv[2]; const artifact=JSON.parse(fs.readFileSync(input,"utf8")); const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"]; const invalid=[]; if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root"); if (typeof artifact.task !== "string" || !artifact.task.trim()) invalid.push("task"); for (const key of arrayKeys) if (!Array.isArray(artifact[key])) invalid.push(key); if (Array.isArray(artifact.relevant_files) && artifact.relevant_files.some((item) => !item || typeof item.path !== "string" || typeof item.reason !== "string")) invalid.push("relevant_files entries"); if (invalid.length) throw new Error("invalid scouting fields: " + invalid.join(", ")); fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");' "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>> /results/scouting-stderr.log; then
+    SCOUTING_EXIT=86
+    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting did not write a schema-valid JSON handoff to $SCOUTING_CANDIDATE_ARTIFACT" "exit"
+  fi
+  scout_dirty_after="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
+    SCOUTING_EXIT=86
+    emit_error_event "pi_scouting_workspace_modified" "Read-only scouting changed repository state before coding" "exit"
+  fi
+  rm -f "$SCOUTING_CANDIDATE_ARTIFACT"
+  git reset --hard -q HEAD 2>> /results/scouting-stderr.log || true
+  git clean -fd -q 2>> /results/scouting-stderr.log || true
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" /results/scouting-events.jsonl /results/scouting-summary.json 2>> /results/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" /results/scouting-events.raw.jsonl 2>/dev/null || true
+  SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "artifact=$SCOUTING_ARTIFACT timeout_seconds=$KASEKI_SCOUTING_TIMEOUT_SECONDS"
+  if [ "$SCOUTING_EXIT" -ne 0 ]; then
+    STATUS="$SCOUTING_EXIT"
+    FAILED_COMMAND="pi scouting agent"
+    emit_error_event "pi_scouting_failed" "Scouting agent exited before the coding agent: $SCOUTING_EXIT" "exit"
+    return 1
+  fi
+  emit_progress "pi scouting agent" "wrote scouting artifact"
+  return 0
 }
 
 
@@ -3189,6 +3298,9 @@ fi
 
 PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 printf 'Pi version: %s\n' "$PI_VERSION"
+if ! run_scouting_agent; then
+  exit 0
+fi
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
