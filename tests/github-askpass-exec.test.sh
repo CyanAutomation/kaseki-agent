@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317
 # Verifies GitHub askpass helpers fail fast when the helper cannot be made executable or run.
 
 set -euo pipefail

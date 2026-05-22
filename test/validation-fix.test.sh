@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2034
 # Test for validation shell fix (non-login shell + directory checkpoint)
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2317
 # tests/github-operations-failures.test.sh
 # Test suite for github operations failure scenarios
 # Tests various failure modes to ensure proper error handling and exit codes
@@ -18,7 +19,6 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Helper functions
-# shellcheck disable=SC2317
 test_case() {
   local test_name="$1"
   printf '\n%b[TEST]%b %s\n' "$YELLOW" "$NC" "$test_name"

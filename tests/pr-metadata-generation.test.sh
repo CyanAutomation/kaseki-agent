@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 # Tests for deterministic, sanitized GitHub PR metadata generation.
 
 set -euo pipefail
