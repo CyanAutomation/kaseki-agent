@@ -234,7 +234,7 @@ sudo chown 10000:10000 /agents
 
 - **Quick start**: [QUICK_START.md](docs/QUICK_START.md) — Decision tree for all paths
 - **Configuration reference**: [ADVANCED_CONFIG.md](docs/ADVANCED_CONFIG.md) — All 60+ variables documented
-- **Troubleshooting**: [TROUBLESHOOTING_FLOW.md](docs/TROUBLESHOOTING_FLOW.md) — Error diagnosis
+- **Troubleshooting**: [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — Error diagnosis
 - **Check environment**: `kaseki-agent doctor` or `docker exec kaseki-api /scripts/startup-checks.sh`
 
 ---
