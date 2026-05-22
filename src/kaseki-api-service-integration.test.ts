@@ -113,7 +113,7 @@ describe('KasekiApiService Integration', () => {
   });
 
   describe('Graceful shutdown behavior', () => {
-    it('should exit 0 on success in the expected shutdown order and exit 1 on webhook error', async () => {
+    it('should exit 0 on success in the expected shutdown order', async () => {
       const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
 
       const successCallOrder: string[] = [];
@@ -152,6 +152,10 @@ describe('KasekiApiService Integration', () => {
         'webhookManager.shutdown',
         'idempotencyStore.shutdown',
       ]);
+    });
+
+    it('should exit 1 and stop before idempotency shutdown when webhook shutdown fails', async () => {
+      const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
 
       const errorCallOrder: string[] = [];
       const errorExitCodes: number[] = [];
@@ -189,6 +193,42 @@ describe('KasekiApiService Integration', () => {
         'scheduler.shutdown',
         'webhookManager.shutdown',
       ]);
+    });
+
+    it('should exit 1 when server.close callback receives an error', async () => {
+      const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
+
+      const serverErrorCallOrder: string[] = [];
+      const serverErrorExitCodes: number[] = [];
+      const serverErrorDeps: ShutdownDeps = {
+        server: {
+          close: (callback: (err?: Error) => void) => {
+            serverErrorCallOrder.push('server.close');
+            callback(new Error('server error'));
+            return undefined as never;
+          },
+        } as unknown as Server,
+        scheduler: {
+          shutdown: () => serverErrorCallOrder.push('scheduler.shutdown'),
+        },
+        webhookManager: {
+          shutdown: async () => {
+            serverErrorCallOrder.push('webhookManager.shutdown');
+          },
+        },
+        idempotencyStore: {
+          shutdown: () => serverErrorCallOrder.push('idempotencyStore.shutdown'),
+        },
+        forceExitAfterMs: 100,
+        exit: ((code: number) => {
+          serverErrorExitCodes.push(code);
+          return undefined as never;
+        }) as (code: number) => never,
+      };
+
+      await expect(gracefulShutdown(serverErrorDeps)).resolves.toBeUndefined();
+      expect(serverErrorExitCodes).toEqual([1]);
+      expect(serverErrorCallOrder).toEqual(['server.close']);
     });
   });
 
