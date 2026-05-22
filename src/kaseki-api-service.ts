@@ -114,13 +114,14 @@ async function main(): Promise<void> {
     res.json(openApiSpec);
   });
 
-  // Mount API routes first to avoid route precedence conflicts
+  // Mount web router first so it serves /ui before the API router's catch-all
+  // Serve a same-origin task console for operators using the REST API directly.
+  app.use(createWebRouter());
+
+  // Mount API routes (mount /api first, then / for backward compatibility)
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
   app.use('/api', apiRouter);
   app.use('/', apiRouter);
-
-  // Serve a same-origin task console for operators using the REST API directly.
-  app.use(createWebRouter());
 
   // Start server
   const onListening = () => {
