@@ -59,6 +59,7 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 ### Problem: Secret Files Are Inaccessible (Permission Denied)
 
 **Symptoms:**
+
 - Container startup shows: `✗ /agents/secrets is not traversable by UID 10000`
 - API key fails to load silently
 - API service binds only to loopback (127.0.0.1) instead of 0.0.0.0
@@ -69,6 +70,7 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
 The `/agents/secrets` directory (or other secret paths) has restrictive permissions that prevent the container (running as UID 10000) from traversing the directory, even if the UID matches the group owner.
 
 **Example:**
+
 ```bash
 # Host filesystem:
 ls -ld /home/pi/secrets
@@ -90,6 +92,7 @@ On startup, `scripts/startup-checks.sh` automatically detects and fixes common p
    - `✗ Cannot auto-fix ... (possibly on read-only mount)` — requires manual intervention
 
 **Permission Targets:**
+
 - **Directories: 0750** — allows group traversal without world access
 - **Files: 0640** — allows group read without world read or group write
 
@@ -98,6 +101,7 @@ On startup, `scripts/startup-checks.sh` automatically detects and fixes common p
 **Scenario: Read-Only Mount or No Auto-Fix Permission**
 
 If the container logs:
+
 ```
 ✗ Cannot auto-fix /agents/secrets (possibly on read-only mount)
 Fix on host: sudo chmod 0750 /agents/secrets
@@ -283,7 +287,7 @@ cat /agents/kaseki-results/kaseki-N/metadata.json |
 
 ### Problem: Validation Commands Fail
 
-Validation commands are executed sequentially (default: `npm run check;npm run test;npm run build`). Kaseki runs them in two phases:
+Validation commands are executed sequentially (default: `npm run check;npm run test`). Kaseki runs them in two phases:
 
 - **Pre-agent validation** runs before Pi. If this phase fails, the baseline repo/ref was already failing and Pi was not invoked. Use `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, and `pre-validation-timings.tsv`.
 - **Post-agent validation** runs after Pi, allowlist restoration, and quality gates. If this phase fails, the final agent output failed validation. Use `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
