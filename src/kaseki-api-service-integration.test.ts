@@ -17,23 +17,6 @@ const shutdownDepsTypeCheck: IsAssignable<
 void shutdownDepsTypeCheck;
 
 describe('KasekiApiService Integration', () => {
-  describe('Module imports and exports', () => {
-    it('should export initializeSetup from setup-orchestrator', async () => {
-      const { initializeSetup } = await import('./kaseki-api/setup-orchestrator');
-      expect(typeof initializeSetup).toBe('function');
-    });
-
-    it('should export bootstrapServices from service-bootstrapper', async () => {
-      const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
-      expect(typeof bootstrapServices).toBe('function');
-    });
-
-    it('should export gracefulShutdown from service-bootstrapper', async () => {
-      const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
-      expect(typeof gracefulShutdown).toBe('function');
-    });
-  });
-
   describe('Service Integration', () => {
     it('should bootstrap services with callable contracts and cache behavior', async () => {
       const os = await import('os');
@@ -162,11 +145,94 @@ describe('KasekiApiService Integration', () => {
       expect('gracefulShutdown' in apiService).toBe(false);
     });
 
-    it('should have barrel file for public API', async () => {
+    it('barrel file exposes stable contracts and callable exports', async () => {
+      const os = await import('os');
+      const fs = await import('fs');
       const barrel = await import('./kaseki-api');
-      expect(barrel.initializeSetup).toBeDefined();
-      expect(barrel.bootstrapServices).toBeDefined();
-      expect(barrel.gracefulShutdown).toBeDefined();
+
+      expect(barrel).toEqual(
+        expect.objectContaining({
+          initializeSetup: expect.any(Function),
+          bootstrapServices: expect.any(Function),
+          gracefulShutdown: expect.any(Function),
+        }),
+      );
+
+      const assertNodeVersion = jest.fn();
+      const ensureTemplate = jest.fn(async () => undefined);
+      await expect(
+        barrel.initializeSetup('/tmp/barrel-template-dir', {
+          assertNodeVersion,
+          ensureTemplate,
+        }),
+      ).resolves.toEqual({
+        nodeVersionValid: true,
+        templateInitialized: true,
+        templateDir: '/tmp/barrel-template-dir',
+      });
+
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-barrel-'));
+      const services = await barrel.bootstrapServices({
+        port: 3000,
+        host: 'localhost',
+        resultsDir,
+        logLevel: 'info',
+        apiKeys: [],
+        maxConcurrentRuns: 2,
+        maxDiffBytes: 200000,
+        agentTimeoutSeconds: 600,
+        artifactCacheMaxEntries: 5,
+        artifactCacheTtlMs: 60000,
+        artifactCacheMaxFileBytes: 1024 * 1024,
+        defaultTaskMode: 'patch',
+      });
+
+      try {
+        expect(typeof services.scheduler.shutdown).toBe('function');
+      } finally {
+        services.scheduler.shutdown();
+        await services.webhookManager.shutdown();
+        services.idempotencyStore.shutdown();
+        fs.rmSync(resultsDir, { recursive: true, force: true });
+      }
+
+      const shutdownOrder: string[] = [];
+      const exitCodes: number[] = [];
+      await expect(
+        barrel.gracefulShutdown({
+          server: {
+            close: (callback: (err?: Error) => void) => {
+              shutdownOrder.push('server.close');
+              callback();
+              return undefined as never;
+            },
+          } as unknown as Server,
+          scheduler: {
+            shutdown: () => shutdownOrder.push('scheduler.shutdown'),
+          },
+          webhookManager: {
+            shutdown: async () => {
+              shutdownOrder.push('webhookManager.shutdown');
+            },
+          },
+          idempotencyStore: {
+            shutdown: () => shutdownOrder.push('idempotencyStore.shutdown'),
+          },
+          forceExitAfterMs: 100,
+          exit: ((code: number) => {
+            exitCodes.push(code);
+            return undefined as never;
+          }) as (code: number) => never,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(exitCodes).toEqual([0]);
+      expect(shutdownOrder).toEqual([
+        'server.close',
+        'scheduler.shutdown',
+        'webhookManager.shutdown',
+        'idempotencyStore.shutdown',
+      ]);
     });
   });
 
