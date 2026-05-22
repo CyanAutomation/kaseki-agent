@@ -1,0 +1,110 @@
+
+> @cyanautomation/kaseki-agent@1.39.0 test:ci
+> npm run build && npm run type-check && jest --passWithNoTests && bash run-kaseki-json.test.sh && bash tests/allowlist-glob.test.sh && bash tests/restore-disallowed-changes.test.sh && bash tests/dependency-cache-key.test.sh && bash tests/dependency-restore-mode.test.sh && bash tests/doctor-template-parity.test.sh && bash tests/npm-install-flags.test.sh && bash tests/repo-memory.test.sh && bash tests/pre-agent-validation-order.test.sh && bash tests/scouting-order.test.sh && bash scripts/test-github-app.sh && bash tests/github-app-token-install-layout.test.sh && bash tests/github-preflight-helper-load.test.sh
+
+
+> @cyanautomation/kaseki-agent@1.39.0 build
+> tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
+
+✓ Added .js extensions to imports in dist/
+
+> @cyanautomation/kaseki-agent@1.39.0 generate:openapi
+> node scripts/generate-openapi-spec.js
+
+Generating OpenAPI 3.1 specification...
+✓ OpenAPI spec generated successfully
+  Output: /workspaces/kaseki-agent/kaseki-openapi.json
+  Size: 66.59 KB
+  Endpoints: 14
+  Schemas: 6
+
+> @cyanautomation/kaseki-agent@1.39.0 check:dist-dynamic-imports
+> node dist/check-dist-dynamic-imports.js
+
+✓ No extensionless relative dynamic imports found in dist/
+
+> @cyanautomation/kaseki-agent@1.39.0 type-check
+> tsc --noEmit
+
+To /tmp/kaseki-routes-remote-XxGcUa
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-NxnjOw'...
+done.
+To /tmp/kaseki-routes-remote-XxGcUa
+   aa9c2a5..364909b  main -> main
+PASS src/kaseki-api-routes.test.ts
+PASS src/pre-flight-validator.test.ts
+PASS src/pi-event-filter.test.ts
+PASS src/job-scheduler.test.ts
+PASS src/openapi-spec-generator.test.ts
+PASS src/kaseki-api-service.test.ts
+PASS src/kaseki-cli-lib.test.ts
+PASS src/cli/commands/RunCommand.test.ts
+PASS src/validation-output-filter.test.ts
+PASS src/job-persistence-manager.test.ts
+PASS src/idempotency-store.test.ts
+PASS src/kaseki-api/service-bootstrapper.test.ts
+PASS src/pi-progress-summarizer.test.ts
+PASS src/cli/commands/host-secrets-path.test.ts
+PASS src/github-app-private-key.test.ts
+PASS src/middleware/job-lookup.test.ts
+PASS src/kaseki-api-config.test.ts
+PASS src/webhook-manager.test.ts
+PASS src/utils/file-helpers.test.ts
+PASS src/cli/commands/DoctorCommand.test.ts
+PASS src/kaseki-api-service-integration.test.ts
+PASS src/openapi-spec-generators/schemas.test.ts
+PASS src/event-aggregator.test.ts
+PASS src/docker/DockerManager.test.ts
+PASS src/kaseki-report.test.ts
+PASS src/kaseki-api/setup-orchestrator.test.ts
+
+[kaseki-report.test] runtime_ms=5.85
+PASS src/config/ConfigManager.test.ts
+PASS src/instance-state-derivation.test.ts
+PASS src/docker-entrypoint-packaging.test.ts
+PASS src/openapi-spec-generators/paths.test.ts
+PASS src/utils/progress-normalizer.test.ts
+PASS src/utils/http-client-factory.test.ts
+PASS src/utils/webhook-event-builder.test.ts
+PASS src/openapi-spec-generators/components.test.ts
+PASS src/kaseki-api-web.test.ts
+PASS src/lib/event-timestamp-helpers.test.ts
+PASS src/instance-metadata-reader.test.ts
+PASS src/result-cache.test.ts
+PASS src/pi-progress-stream.test.ts
+PASS src/progress-stream-utils.test.ts
+PASS src/secrets/host-secrets-reader.test.ts
+PASS src/run-artifact-metadata-cache.test.ts
+PASS src/timestamp-tracker.test.ts
+PASS src/secret-value-cache.test.ts
+PASS src/utils/response-helpers.test.ts
+
+Test Suites: 45 passed, 45 total
+Tests:       803 passed, 803 total
+Snapshots:   1 passed, 1 total
+Time:        14.007 s, estimated 33 s
+Ran all test suites.
+
+[allowlist summary] Restored: 0 files; Kept: 1 files (coverage: 100%)
+✓ restore_disallowed_changes summarizes 0 restored / 1 kept with coverage under set -u
+✓ restore_disallowed_changes emits completion event with computed coverage
+✓ Docker image installs /usr/local/bin/kaseki-agent directly from repository kaseki-agent.sh
+
+✅ restore_disallowed_changes tests passed
+Dependency cache status: hardlink restore failed; falling back to copy.
+✓ hardlink restore falls back to copy when cp -al fails
+✓ cache publication materializes a real directory from symlinked node_modules
+✓ no optional install flags
+✓ one optional install flag (omit dev)
+✓ one optional install flag (ignore scripts)
+✓ both optional install flags
+✓ PASS: pre-agent validation order
+PASS: scouting order
+Test 1: helper arg validation + structured failures
+Test 1b: helper private-key normalization + validation failures
+Test 2: helper token-generation flow with stubbed GitHub API
+Test 3/4: run-kaseki metadata + credential artifact handling
+All behavior-focused GitHub App tests passed
+✓ github-app-token reports structured private-key errors from installed layout
+✓ health check fails when github-app-token cannot resolve runtime imports
