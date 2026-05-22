@@ -31,6 +31,7 @@ REPO_MEMORY_KEY=""
 REPO_MEMORY_DIR=""
 REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
+SCOUTING_ARTIFACT="/results/scouting.json"
 
 init_repo_memory_paths
 trap 'rm -rf "$TMP_DIR" "$REPO_MEMORY_DIR"' EXIT
