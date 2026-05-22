@@ -191,6 +191,19 @@ const controllerPage = String.raw`<!doctype html>
       const runIdInput = document.querySelector('#run-id');
       tokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
 
+      function sanitizeOutput(value) {
+        if (typeof value === 'string') return value;
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch {
+          return String(value);
+        }
+      }
+
+      function isLikelyBearerToken(token) {
+        return /^[A-Za-z0-9._~+\/-]{8,512}$/.test(token);
+      }
+
       function setState(message, kind) {
         state.textContent = message;
         state.className = kind || '';
@@ -221,6 +234,9 @@ const controllerPage = String.raw`<!doctype html>
         const token = tokenInput.value.trim();
         const needsAuth = options && options.auth;
         if (needsAuth && !token) throw new Error('Enter the API bearer token first.');
+        if (needsAuth && token && !isLikelyBearerToken(token)) {
+          throw new Error('Token format looks invalid. Use a plain bearer token without spaces.');
+        }
         const response = await fetch(path, {
           method: options && options.method || 'GET',
           headers: {
@@ -248,7 +264,7 @@ const controllerPage = String.raw`<!doctype html>
         try {
           await apiRequest(path, options);
         } catch (error) {
-          output.textContent = error instanceof Error ? error.message : String(error);
+          output.textContent = sanitizeOutput(error instanceof Error ? error.message : String(error));
           setState('Request could not be sent.', 'bad');
         } finally {
           button.disabled = false;
@@ -284,7 +300,7 @@ const controllerPage = String.raw`<!doctype html>
             if (response.ok && payload && typeof payload.id === 'string') runIdInput.value = payload.id;
           })
           .catch((error) => {
-            output.textContent = error instanceof Error ? error.message : String(error);
+            output.textContent = sanitizeOutput(error instanceof Error ? error.message : String(error));
             setState('Request could not be sent.', 'bad');
           })
           .finally(() => {
@@ -299,6 +315,8 @@ const controllerPage = String.raw`<!doctype html>
 export function createWebRouter(): Router {
   const router = Router();
   router.get(['/', '/ui'], (_req, res) => {
+    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'unsafe-inline'");
+    res.set('Referrer-Policy', 'no-referrer');
     res.type('html').send(controllerPage);
   });
   return router;
