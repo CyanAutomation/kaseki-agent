@@ -9,6 +9,7 @@ import {
   buildServers,
   buildComponents,
 } from './components';
+import * as fs from 'fs';
 
 describe('OpenAPI Component Builders', () => {
   describe('buildSecuritySchemes', () => {
@@ -83,9 +84,10 @@ describe('OpenAPI Component Builders', () => {
 
     it('should have correct title and version', () => {
       const info = buildInfo();
+      const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
 
       expect(info.title).toBe('Kaseki Agent API');
-      expect(info.version).toBe('1.13.0');
+      expect(info.version).toBe(packageJson.version);
     });
 
     it('should include descriptive text', () => {
