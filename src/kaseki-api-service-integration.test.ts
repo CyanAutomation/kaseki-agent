@@ -89,19 +89,77 @@ describe('KasekiApiService Integration', () => {
   });
 
   describe('Module organization', () => {
-    it('should have separation of concerns', async () => {
-      // Setup orchestrator should be independent
+    it('setup orchestrator handles setup responsibilities only', async () => {
       const setupOrch = await import('./kaseki-api/setup-orchestrator');
-      expect(setupOrch.initializeSetup).toBeDefined();
+      const assertNodeVersion = jest.fn();
+      const ensureTemplate = jest.fn(async () => undefined);
 
-      // Service bootstrapper should be independent
-      const serviceBoots = await import('./kaseki-api/service-bootstrapper');
-      expect(serviceBoots.bootstrapServices).toBeDefined();
-      expect(serviceBoots.gracefulShutdown).toBeDefined();
+      const context = await setupOrch.initializeSetup('/tmp/template-dir', {
+        assertNodeVersion,
+        ensureTemplate,
+      });
 
-      // Main service should orchestrate both
+      expect(context).toEqual({
+        nodeVersionValid: true,
+        templateInitialized: true,
+        templateDir: '/tmp/template-dir',
+      });
+      expect(assertNodeVersion).toHaveBeenCalledTimes(1);
+      expect(ensureTemplate).toHaveBeenCalledTimes(1);
+      expect(ensureTemplate).toHaveBeenCalledWith('/tmp/template-dir');
+      expect('bootstrapServices' in setupOrch).toBe(false);
+      expect('gracefulShutdown' in setupOrch).toBe(false);
+    });
+
+    it('service bootstrapper constructs dependencies', async () => {
+      const os = await import('os');
+      const fs = await import('fs');
+      const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
+
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-bootstrapper-'));
+
+      let services;
+      try {
+        services = await bootstrapServices({
+          port: 3000,
+          host: 'localhost',
+          resultsDir,
+          logLevel: 'info',
+          apiKeys: [],
+          maxConcurrentRuns: 2,
+          maxDiffBytes: 200000,
+          agentTimeoutSeconds: 600,
+          artifactCacheMaxEntries: 5,
+          artifactCacheTtlMs: 60000,
+          artifactCacheMaxFileBytes: 1024 * 1024,
+          defaultTaskMode: 'patch',
+        });
+
+        expect(typeof services.artifactCache.getOrLoad).toBe('function');
+        expect(typeof services.webhookManager.shutdown).toBe('function');
+        expect(typeof services.idempotencyStore.shutdown).toBe('function');
+        expect(typeof services.preFlightValidator.validate).toBe('function');
+        expect(typeof services.scheduler.shutdown).toBe('function');
+      } finally {
+        if (services) {
+          services.scheduler.shutdown();
+          await services.webhookManager.shutdown();
+          services.idempotencyStore.shutdown();
+        }
+        fs.rmSync(resultsDir, { recursive: true, force: true });
+      }
+    });
+
+    it('top-level service composes orchestrator and bootstrapper without leaking internals', async () => {
       const apiService = await import('./kaseki-api-service');
-      expect(apiService).toBeDefined();
+
+      expect(typeof apiService.assertSupportedNodeVersion).toBe('function');
+      expect(typeof apiService.ensureTemplateInitialized).toBe('function');
+      expect(typeof apiService.createGracefulShutdown).toBe('function');
+      expect(typeof apiService.ensureResultsDir).toBe('function');
+      expect('initializeSetup' in apiService).toBe(false);
+      expect('bootstrapServices' in apiService).toBe(false);
+      expect('gracefulShutdown' in apiService).toBe(false);
     });
 
     it('should have barrel file for public API', async () => {
