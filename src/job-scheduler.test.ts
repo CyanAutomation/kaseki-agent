@@ -528,6 +528,44 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('passes scouting request controls to the worker environment', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      scouting: { enabled: false, model: 'scout-model', timeoutSeconds: 120 },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_SCOUTING: '0',
+          KASEKI_SCOUTING_MODEL: 'scout-model',
+          KASEKI_SCOUTING_TIMEOUT_SECONDS: '120',
+        }),
+      }),
+    );
+  });
+
   test('startup validation checks can be requested by providing validation commands', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

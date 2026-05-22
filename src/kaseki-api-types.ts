@@ -99,6 +99,14 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Controller-friendly validation alias'),
+  scouting: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable the pre-coding Pi scouting phase'),
+      model: z.string().min(1).optional().describe('Optional Pi model override for scouting'),
+      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional scouting timeout in seconds'),
+    })
+    .optional()
+    .describe('Pre-coding Pi scouting controls'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
   publishMode: z.enum(['auto', 'none', 'branch', 'pr', 'draft_pr']).optional().describe('Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
@@ -125,6 +133,7 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['changed_files_allowlist', 'changedFilesAllowlist'],
     ['max_diff_bytes', 'maxDiffBytes'],
     ['validation_commands', 'validationCommands'],
+    ['scouting_config', 'scouting'],
     ['task_mode', 'taskMode'],
     ['publish_mode', 'publishMode'],
     ['startup_check', 'startupCheck'],

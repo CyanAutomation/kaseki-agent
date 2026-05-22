@@ -43,6 +43,14 @@ describe('OpenAPI Schema Builders', () => {
         type: 'array',
         items: { type: 'string' },
       });
+      expect(properties.scouting).toMatchObject({
+        type: 'object',
+        properties: {
+          enabled: { type: 'boolean' },
+          model: { type: 'string' },
+          timeoutSeconds: { type: 'integer', minimum: 60, maximum: 10800 },
+        },
+      });
       expect(properties.taskMode).toMatchObject({
         type: 'string',
         enum: ['patch', 'inspect'],

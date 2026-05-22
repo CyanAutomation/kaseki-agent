@@ -68,6 +68,47 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'scouting.json': {
+    name: 'scouting.json',
+    contentType: 'application/json',
+    description: 'Read-only Pi scouting handoff: requirements, observations, plan, and validation hints',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 7,
+    sizeHint: 'small',
+  },
+
+  'scouting-summary.json': {
+    name: 'scouting-summary.json',
+    contentType: 'application/json',
+    description: 'Pi scouting event statistics including model and token metadata when available',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
+  'scouting-events.jsonl': {
+    name: 'scouting-events.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Sanitized Pi events from the scouting phase',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'large',
+  },
+
+  'scouting-events.raw.jsonl': {
+    name: 'scouting-events.raw.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Raw Pi scouting events kept only when scouting event export fails',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'large',
+  },
+
+  'scouting-stderr.log': {
+    name: 'scouting-stderr.log',
+    contentType: 'text/plain',
+    description: 'Scouting Pi stderr and artifact validation diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'medium',
+  },
+
   // Progress & stage tracking
   'progress.log': {
     name: 'progress.log',
