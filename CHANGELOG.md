@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.39.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.38.0...v1.39.0) (2026-05-22)
+
+
+### Features
+
+* add pi scouting phase ([de57586](https://github.com/CyanAutomation/kaseki-agent/commit/de575864211ab795e0ae3f8cfec6e54106ce035d))
+* add scouting artifact path to repo memory test script ([ccfd206](https://github.com/CyanAutomation/kaseki-agent/commit/ccfd206324267c8e2350851e8273ba9e4fdd3e3a))
+
 # [1.38.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.37.1...v1.38.0) (2026-05-22)
 
 
