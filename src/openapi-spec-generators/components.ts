@@ -78,15 +78,23 @@ function getPackageVersion(): string {
     '/app/package.json',
   ];
 
+  const versionFallbackWarnings: string[] = [];
+
   for (const packageJsonPath of candidates) {
     try {
       const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
       if (typeof packageJson.version === 'string') {
         return packageJson.version;
       }
-    } catch {
-      // Try the next common runtime layout.
+    } catch (error) {
+      versionFallbackWarnings.push(`${packageJsonPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  if (versionFallbackWarnings.length > 0) {
+    console.warn('Unable to derive API version from package.json candidates; defaulting to 0.0.0', {
+      candidatesTried: versionFallbackWarnings,
+    });
   }
 
   return '0.0.0';
