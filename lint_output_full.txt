@@ -1,0 +1,12 @@
+
+> @cyanautomation/kaseki-agent@1.39.0 lint
+> npm run lint:js && npm run lint:sh || true
+
+
+> @cyanautomation/kaseki-agent@1.39.0 lint:js
+> eslint . src/ --ignore-pattern dist/
+
+
+> @cyanautomation/kaseki-agent@1.39.0 lint:sh
+> shellcheck -x kaseki-agent.sh scripts/docker-entrypoint.sh run-kaseki-json.test.sh
+
