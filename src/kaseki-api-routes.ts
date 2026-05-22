@@ -1089,6 +1089,19 @@ export function createApiRouter(
         });
       }
 
+      const templateCompatibility = checkTemplatePublishModeCompatibility(effectivePublishMode);
+      if (!templateCompatibility.ok) {
+        return res.status(400).json({
+          type: 'https://api.kaseki.local/errors#template-incompatible',
+          title: 'Bad Request',
+          status: 400,
+          detail: templateCompatibility.detail,
+          templateMetadataPath: templateCompatibility.metadataPath,
+          supportedPublishModes: templateCompatibility.supportedPublishModes,
+          remediation: templateCompatibility.remediation,
+        });
+      }
+
       if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
         const templateHealth = buildTemplateHealthStatus();
         if (!templateHealth.ok) {
@@ -1104,19 +1117,6 @@ export function createApiRouter(
             remediation: TEMPLATE_REMEDIATION,
           });
         }
-      }
-
-      const templateCompatibility = checkTemplatePublishModeCompatibility(effectivePublishMode);
-      if (!templateCompatibility.ok) {
-        return res.status(400).json({
-          type: 'https://api.kaseki.local/errors#template-incompatible',
-          title: 'Bad Request',
-          status: 400,
-          detail: templateCompatibility.detail,
-          templateMetadataPath: templateCompatibility.metadataPath,
-          supportedPublishModes: templateCompatibility.supportedPublishModes,
-          remediation: templateCompatibility.remediation,
-        });
       }
 
       // Auto-generate idempotency key if not provided
