@@ -114,12 +114,13 @@ async function main(): Promise<void> {
     res.json(openApiSpec);
   });
 
-  // Serve a same-origin task console for operators using the REST API directly.
-  app.use(createWebRouter());
-
-  // Mount API routes
+  // Mount API routes first to avoid route precedence conflicts
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
   app.use('/api', apiRouter);
+  app.use('/', apiRouter);
+
+  // Serve a same-origin task console for operators using the REST API directly.
+  app.use(createWebRouter());
   app.use('/', apiRouter);
 
   // Start server
