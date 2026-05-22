@@ -208,7 +208,12 @@ const controllerPage = String.raw`<!doctype html>
         };
         if (data.get('scouting')) body.scouting = { enabled: true };
         if (data.get('startupCheck')) body.startupCheck = true;
-        if (timeoutSeconds) body.timeoutSeconds = Number(timeoutSeconds);
+        if (timeoutSeconds) {
+          const parsed = Number(timeoutSeconds);
+          if (!isNaN(parsed)) {
+            body.timeoutSeconds = parsed;
+          }
+        }
         return body;
       }
 
