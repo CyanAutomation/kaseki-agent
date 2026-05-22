@@ -297,6 +297,16 @@ export class JobScheduler {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     }
 
+    if (job.request.scouting?.enabled !== undefined) {
+      env.KASEKI_SCOUTING = job.request.scouting.enabled ? '1' : '0';
+    }
+    if (job.request.scouting?.model) {
+      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
+    }
+    if (job.request.scouting?.timeoutSeconds) {
+      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(job.request.scouting.timeoutSeconds);
+    }
+
     if (job.request.taskPrompt) {
       env.TASK_PROMPT = job.request.taskPrompt;
     }
