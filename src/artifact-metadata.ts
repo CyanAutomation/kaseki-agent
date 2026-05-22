@@ -73,7 +73,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     contentType: 'application/json',
     description: 'Read-only Pi scouting handoff: requirements, observations, plan, and validation hints',
     availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 6,
+    triageOrder: 7,
     sizeHint: 'small',
   },
 
