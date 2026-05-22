@@ -61,7 +61,7 @@ These are the minimum variables needed for any setup path. All other variables h
 ### `KASEKI_VALIDATION_COMMANDS`
 
 - **Type**: `string` (semicolon-separated command list)
-- **Default**: `npm run check;npm run test;npm run build`
+- **Default**: `npm run check;npm run test`
 - **Required**: Yes
 - **Paths**: Single-run, Local API, Production API
 - **Description**: Commands to run after agent completes to validate changes
@@ -73,7 +73,7 @@ These are the minimum variables needed for any setup path. All other variables h
 
   ```bash
   # Node.js/npm projects
-  KASEKI_VALIDATION_COMMANDS=npm run check;npm run test;npm run build
+  KASEKI_VALIDATION_COMMANDS=npm run check;npm run test
 
   # Python projects
   KASEKI_VALIDATION_COMMANDS=pytest;mypy .

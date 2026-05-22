@@ -234,16 +234,16 @@ export KASEKI_CACHE_ENABLED=1
 **Impact:** 5-15% time savings (if validation is slow)
 
 ```bash
-# ❌ Full validation
-export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run lint;npm run build"
-# Time: 120 seconds
+# ✓ Default validation (recommended)
+export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test"
+# Time: 60-90 seconds
 
-# ✓ Minimal validation
+# ❌ Minimal validation (no type checking or linting)
 export KASEKI_VALIDATION_COMMANDS="npm run test"
-# Time: 45 seconds
-# Savings: ~62%
+# Time: 30-45 seconds
+# Savings: ~40%
 
-# Trade-off: Less quality assurance
+# Trade-off: Less quality assurance (no linting/type checks)
 ```
 
 **Best for:** When you have other verification (manual review, CI)

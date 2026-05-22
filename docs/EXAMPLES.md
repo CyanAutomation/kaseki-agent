@@ -2,7 +2,6 @@
 
 > **NPM CLI note:** `kaseki-agent run`, `list`, `report`, `status`, and `stop`/`cancel` are API-backed commands. Start `kaseki-agent serve` locally or set `KASEKI_API_URL` (and `KASEKI_API_KEY` for authenticated services) before running these examples.
 
-
 This document provides concrete examples for common kaseki-agent use cases and integration patterns. Each example is executable and can be adapted to your workflow.
 
 ---
@@ -596,8 +595,8 @@ Always validate after agent changes:
 # Generous timeout for agent to think
 KASEKI_AGENT_TIMEOUT_SECONDS=3600
 
-# Then validate with strict tests
-KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run lint;npm run build"
+# Then validate with comprehensive tests (note: default is check+test; this adds lint)
+KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run lint"
 ```
 
 ### Pattern: Incremental Workflows

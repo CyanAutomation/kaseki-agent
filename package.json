@@ -47,7 +47,6 @@
     "generate:openapi": "node scripts/generate-openapi-spec.js",
     "build": "tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
     "prepublishOnly": "npm run build",
-    "pretest": "npm run build",
     "type-check": "tsc --noEmit",
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",
