@@ -121,7 +121,6 @@ async function main(): Promise<void> {
 
   // Serve a same-origin task console for operators using the REST API directly.
   app.use(createWebRouter());
-  app.use('/', apiRouter);
 
   // Start server
   const onListening = () => {
