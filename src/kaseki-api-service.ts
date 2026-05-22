@@ -3,6 +3,7 @@ import swaggerUi from 'swagger-ui-express';
 import * as fs from 'fs';
 import { loadConfig } from './kaseki-api-config';
 import { createApiRouter } from './kaseki-api-routes';
+import { createWebRouter } from './kaseki-api-web';
 import { createEventLogger } from './logger';
 import { generateOpenAPISpec } from './openapi-spec-generator';
 import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
@@ -113,9 +114,13 @@ async function main(): Promise<void> {
     res.json(openApiSpec);
   });
 
-  // Mount API routes
+  // Mount API routes first to avoid route precedence conflicts
   const apiRouter = createApiRouter(scheduler, config, idempotencyStore, preFlightValidator, artifactCache);
   app.use('/api', apiRouter);
+  app.use('/', apiRouter);
+
+  // Serve a same-origin task console for operators using the REST API directly.
+  app.use(createWebRouter());
   app.use('/', apiRouter);
 
   // Start server

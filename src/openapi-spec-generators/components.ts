@@ -9,6 +9,9 @@
  * - Server definitions
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 /**
  * Build security scheme definitions.
  * Currently defines Bearer token authentication for API key validation.
@@ -66,10 +69,33 @@ export function buildTags(): Array<Record<string, unknown>> {
  * Build API info metadata.
  * Includes title, version, description, contact info, and license.
  */
+function getPackageVersion(): string {
+  const executableDir = path.dirname(process.argv[1] || process.cwd());
+  const candidates = [
+    path.join(process.cwd(), 'package.json'),
+    path.join(executableDir, '..', 'package.json'),
+    path.join(executableDir, '..', '..', 'package.json'),
+    '/app/package.json',
+  ];
+
+  for (const packageJsonPath of candidates) {
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
+      if (typeof packageJson.version === 'string') {
+        return packageJson.version;
+      }
+    } catch {
+      // Try the next common runtime layout.
+    }
+  }
+
+  return '0.0.0';
+}
+
 export function buildInfo(): Record<string, unknown> {
   return {
     title: 'Kaseki Agent API',
-    version: '1.13.0',
+    version: getPackageVersion(),
     description:
       'Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment',
     contact: {
