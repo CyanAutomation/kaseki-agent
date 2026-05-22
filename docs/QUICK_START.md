@@ -238,7 +238,7 @@ Variables are organized by zone:
 
 - [Architecture Overview](../docs/IMPLEMENTATION_SUMMARY.md) — How kaseki-agent works
 - [Advanced Configuration](../docs/ADVANCED_CONFIG.md) — All 60+ variables explained
-- [Troubleshooting](../docs/TROUBLESHOOTING_FLOW.md) — Error decision tree
+- [Troubleshooting](../docs/TROUBLESHOOTING.md) — Error decision tree
 
 ### For Integration
 
@@ -261,7 +261,7 @@ Variables are organized by zone:
 
 **Configuration issue?**  
 → Run: `kaseki-agent doctor --verbose`  
-→ Check: [docs/TROUBLESHOOTING_FLOW.md](../docs/TROUBLESHOOTING_FLOW.md)
+→ Check: [docs/TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md)
 
 **Found a bug?**  
 → Open an issue: <https://github.com/CyanAutomation/kaseki-agent/issues>
