@@ -2380,6 +2380,34 @@ describe('kaseki-api-routes template bootstrap health', () => {
     }
   });
 
+
+  test('rejects PR run submission with compatibility error before doctor when template metadata lacks pr', async () => {
+    writeTemplateMetadata(['auto', 'none', 'branch']);
+    writeRunKasekiDoctor(42, 'doctor failed because template dependency is missing');
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as any;
+      expect(body.type).toBe('https://api.kaseki.local/errors#template-incompatible');
+      expect(body.detail).toBe('Template does not support publish mode `pr`; redeploy kaseki-agent.');
+      expect(body.templateMetadataPath).toBe(path.join(templateDir, '.kaseki-template-version'));
+      expect(body.supportedPublishModes).toEqual(['auto', 'none', 'branch']);
+      expect(body.doctorCommand).toBeUndefined();
+      expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('rejects run submission when run-kaseki.sh is missing', async () => {
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
