@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.37.0...v1.37.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* Stabilize checkout freshness rev-parse failure tests ([#352](https://github.com/CyanAutomation/kaseki-agent/issues/352)) ([af61d8c](https://github.com/CyanAutomation/kaseki-agent/commit/af61d8c6121519df4baf174c8cf9be6b2e6bd037))
+
 # [1.37.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.36.11...v1.37.0) (2026-05-21)
 
 
