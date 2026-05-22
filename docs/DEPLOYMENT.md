@@ -927,6 +927,146 @@ docker run --rm \
      }
      ```
 
+   - Or use **Traefik** for dynamic routing and automatic certificate management:
+
+     **docker-compose.yml with Traefik:**
+
+     ```yaml
+     version: "3.8"
+
+     services:
+       traefik:
+         image: traefik:v3.0
+         container_name: traefik
+         command:
+           - "--api.insecure=false"
+           - "--providers.docker=true"
+           - "--providers.docker.exposedbydefault=false"
+           - "--entrypoints.web.address=:80"
+           - "--entrypoints.websecure.address=:443"
+           - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+           - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+           - "--certificatesresolvers.letsencrypt.acme.email=your-email@example.com"
+           - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+         ports:
+           - "80:80"
+           - "443:443"
+         volumes:
+           - /var/run/docker.sock:/var/run/docker.sock:ro
+           - traefik-letsencrypt:/letsencrypt
+         networks:
+           - kaseki-network
+
+       kaseki-api:
+         image: "${KASEKI_API_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
+         container_name: kaseki-api
+         user: "${KASEKI_API_USER:-10000:10000}"
+         group_add:
+           - "${DOCKER_GID:-985}"
+         command: ["api"]
+         environment:
+           KASEKI_API_PORT: "8080"
+           KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-warn}"
+           KASEKI_STREAM_PROGRESS: "${KASEKI_STREAM_PROGRESS:-1}"
+           KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
+           KASEKI_RESULTS_DIR: /agents/kaseki-results
+           KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
+           KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
+           KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-400000}"
+           OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/run/secrets/kaseki/openrouter_api_key}"
+           GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
+           GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
+           GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"
+         volumes:
+           - /agents:/agents:rw
+           - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
+           - kaseki-logs:/var/log/kaseki-api
+           - /var/run/docker.sock:/var/run/docker.sock
+         restart: unless-stopped
+         cap_drop:
+           - ALL
+         security_opt:
+           - no-new-privileges:true
+         read_only: true
+         tmpfs:
+           - /tmp
+           - /var/tmp
+           - /run
+           - /results
+         labels:
+           - "traefik.enable=true"
+           - "traefik.http.routers.kaseki.rule=Host(`kaseki-api.example.com`)"
+           - "traefik.http.routers.kaseki.entrypoints=websecure"
+           - "traefik.http.routers.kaseki.tls.certresolver=letsencrypt"
+           - "traefik.http.services.kaseki.loadbalancer.server.port=8080"
+           - "traefik.http.routers.kaseki-http.rule=Host(`kaseki-api.example.com`)"
+           - "traefik.http.routers.kaseki-http.entrypoints=web"
+           - "traefik.http.routers.kaseki-http.middlewares=kaseki-redirect"
+           - "traefik.http.middlewares.kaseki-redirect.redirectscheme.scheme=https"
+           - "traefik.http.middlewares.kaseki-redirect.redirectscheme.permanent=true"
+         networks:
+           - kaseki-network
+         healthcheck:
+           test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/ready').then(r=>r.json()).then(d=>process.exit(d.status==='ready'?0:1)).catch(()=>process.exit(1))"]
+           interval: 30s
+           timeout: 10s
+           retries: 3
+           start_period: 40s
+
+     volumes:
+       kaseki-logs:
+         driver: local
+       traefik-letsencrypt:
+         driver: local
+
+     networks:
+       kaseki-network:
+         driver: bridge
+     ```
+
+     **Environment Setup (.env):**
+
+     ```bash
+     # Traefik + Kaseki Configuration
+     KASEKI_API_IMAGE=docker.io/cyanautomation/kaseki-agent:latest
+     KASEKI_API_LOG_LEVEL=warn
+     KASEKI_API_MAX_CONCURRENT_RUNS=3
+     KASEKI_AGENT_TIMEOUT_SECONDS=10800
+     KASEKI_MAX_DIFF_BYTES=400000
+     KASEKI_STREAM_PROGRESS=1
+
+     # Secrets directory (host path)
+     KASEKI_HOST_SECRETS_DIR=/home/pi/secrets
+
+     # Docker group ID (for socket access)
+     DOCKER_GID=985
+     ```
+
+     **Deployment Steps:**
+
+     1. Update the docker-compose.yml with your domain (`kaseki-api.example.com` → your domain)
+     2. Update Traefik ACME email in the `--certificatesresolvers.letsencrypt.acme.email` flag
+     3. Create/verify secrets directory:
+        ```bash
+        sudo mkdir -p /home/pi/secrets
+        sudo chown 10000:10000 /home/pi/secrets
+        sudo chmod 700 /home/pi/secrets
+        ```
+     4. Start services:
+        ```bash
+        docker-compose up -d
+        docker-compose logs -f traefik kaseki-api
+        ```
+     5. Access the Task Console at `https://kaseki-api.example.com/ui`
+
+     **Key Features:**
+
+     - **Automatic HTTPS**: Let's Encrypt certificate auto-renewal
+     - **HTTP → HTTPS redirect**: All traffic is encrypted
+     - **Service discovery**: Traefik auto-detects kaseki-api via Docker labels
+     - **Easy domain management**: Change domain in one label
+     - **Persistent certificates**: Stored in `traefik-letsencrypt` volume
+
 ---
 
 ## Health Checks
