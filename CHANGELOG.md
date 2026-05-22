@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.38.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.37.1...v1.38.0) (2026-05-22)
+
+
+### Bug Fixes
+
+* add shellcheck directives and improve error handling in test scripts ([6df31c9](https://github.com/CyanAutomation/kaseki-agent/commit/6df31c9e9609f311c7188e633d6327e2f7530dd5))
+* set default KASEKI_STREAM_PROGRESS to 1 in docker-compose.yml ([41af905](https://github.com/CyanAutomation/kaseki-agent/commit/41af9055a2e2f7759e6ff18184e982a141c70a4a))
+* update KASEKI_API_LOG_LEVEL to warn in docker-compose.yml ([365ca0e](https://github.com/CyanAutomation/kaseki-agent/commit/365ca0ea444947a5f05add49628fda683e236d73))
+* update KASEKI_VALIDATION_COMMANDS to remove build step in documentation and scripts ([ed30e19](https://github.com/CyanAutomation/kaseki-agent/commit/ed30e1943af6a542e71e8a892a9002debe8ce148))
+
+
+### Features
+
+* add KASEKI_STREAM_PROGRESS environment variable to docker-compose.yml ([862d02d](https://github.com/CyanAutomation/kaseki-agent/commit/862d02d2ea6bf14b340e41b9d3f208c242bfb016))
+
 ## [1.37.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.37.0...v1.37.1) (2026-05-22)
 
 
