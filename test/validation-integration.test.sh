@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 # Integration test: Verify validation with non-login shell works
 # This simulates the matmetrics scenario where validation commands need to run
 set -euo pipefail

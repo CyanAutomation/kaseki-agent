@@ -1,5 +1,5 @@
 #!/bin/bash
-cd /workspaces/kaseki-agent
+cd /workspaces/kaseki-agent || exit
 echo "Building..."
 npm run build > /tmp/build.log 2>&1
 BUILD_EXIT=$?

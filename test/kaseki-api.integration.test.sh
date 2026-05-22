@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015
 set -euo pipefail
 
 TEST_NAME="kaseki-api.integration.test"

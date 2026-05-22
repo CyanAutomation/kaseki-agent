@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015,SC2016
 # Integration tests for github operations printf safety
 # Tests that github operations skip logging doesn't break with variable substitution
 

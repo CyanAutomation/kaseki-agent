@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2034
 # Tests for allowlist restoration behavior in kaseki-agent.sh.
 
 set -euo pipefail

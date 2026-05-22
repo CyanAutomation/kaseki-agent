@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090
 # Focused test: Verify the printf safety fix prevents "invalid option" error
 
 set -uo pipefail

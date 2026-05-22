@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034,SC2016
 # tests/github-preflight-auth.test.sh
 # Verifies GitHub preflight auth smoke test reports structured helper failures.
 

@@ -2370,7 +2370,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
     }
   });
 
-
   test('rejects PR run submission with compatibility error before doctor when template metadata lacks pr', async () => {
     writeTemplateMetadata(['auto', 'none', 'branch']);
     writeRunKasekiDoctor(42, 'doctor failed because template dependency is missing');

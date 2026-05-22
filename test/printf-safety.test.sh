@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090,SC2034
 # Test suite for printf safety and restoration report generation fixes
 # Tests edge cases that could cause the "printf: - : invalid option" error
 
@@ -23,7 +24,7 @@ TESTS_FAILED=0
 setup() {
   mkdir -p "$TEST_RESULTS_DIR"
   mkdir -p "$TEST_RESULTS_DIR/results"
-  cd "$TEST_RESULTS_DIR"
+  cd "$TEST_RESULTS_DIR" || exit
 }
 
 teardown() {
@@ -39,11 +40,11 @@ run_test() {
   printf '[%3d] %-60s ' "$TESTS_RUN" "$test_name"
   
   if "$test_func" 2>/dev/null; then
-    printf "${GREEN}PASS${NC}\n"
+    printf "%bPASS%b\n" "${GREEN}" "${NC}"
     TESTS_PASSED=$((TESTS_PASSED + 1))
     return 0
   else
-    printf "${RED}FAIL${NC}\n"
+    printf "%bFAIL%b\n" "${RED}" "${NC}"
     TESTS_FAILED=$((TESTS_FAILED + 1))
     return 1
   fi
@@ -220,7 +221,8 @@ test_grep_count_fallback_missing() {
 # Test: json_encode function availability
 test_json_encode_exists() {
   source <(sed -n '/^json_encode()/,/^}/p' "$KASEKI_SCRIPT")
-  local output=$(printf 'test' | json_encode)
+  local output
+  output=$(printf 'test' | json_encode)
   [ "$output" = '"test"' ]
 }
 
@@ -232,7 +234,8 @@ test_json_encode_fallback() {
   local old_path="$PATH"
   export PATH="/usr/bin:/bin"  # Minimal PATH without node
   
-  local output=$(printf 'test' | json_encode 2>/dev/null || true)
+  local output
+  output=$(printf 'test' | json_encode 2>/dev/null || true)
   # Should return empty JSON string "" or handle gracefully
   export PATH="$old_path"
   
@@ -287,11 +290,11 @@ main() {
   printf 'Test Results: %d/%d passed, %d failed\n' "$TESTS_PASSED" "$TESTS_RUN" "$TESTS_FAILED"
   
   if [ "$TESTS_FAILED" -eq 0 ]; then
-    printf "${GREEN}✓ All tests passed!${NC}\n"
+    printf "%b✓ All tests passed!%b\n" "${GREEN}" "${NC}"
     teardown
     return 0
   else
-    printf "${RED}✗ Some tests failed${NC}\n"
+    printf "%b✗ Some tests failed%b\n" "${RED}" "${NC}"
     printf 'Results directory: %s\n' "$TEST_RESULTS_DIR"
     return 1
   fi

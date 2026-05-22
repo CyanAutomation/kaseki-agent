@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 TEST_NAME="actual-model-metadata.test"
@@ -90,6 +91,7 @@ GIT
   if [[ "$expect_warning" == "1" ]]; then
     grep -q 'model_attribution_missing' /results/progress.jsonl
   else
+    # shellcheck disable=SC2251
     ! grep -q 'model_attribution_missing' /results/progress.jsonl
   fi
 

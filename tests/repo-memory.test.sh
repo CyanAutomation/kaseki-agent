@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,7 +16,7 @@ eval "$(awk '
 emit_event() { :; }
 emit_error_event() { :; }
 
-# shellcheck disable=SC2034 # All variables below are used by sourced functions or in subshells
+# All variables below are used by sourced functions or in subshells
 REPO_URL="https://example.com/acme/widgets.git"
 GIT_REF="main"
 TASK_PROMPT="Fix the widget parser."
@@ -83,12 +84,10 @@ cat > "$KASEKI_RESULTS_DIR/validation-timings.tsv" <<'TIMINGS'
 npm test	0	3
 TIMINGS
 
-# shellcheck disable=SC2034
 STATUS=0
 PI_EXIT=0
 SECRET_SCAN_EXIT=0
-# shellcheck disable=SC2209 # 'patch' is a string value, not a command
-KASEKI_TASK_MODE=patch
+KASEKI_TASK_MODE="patch"
 START_ISO="2026-05-06T12:00:00Z"
 VALIDATION_EXIT=0
 QUALITY_EXIT=0

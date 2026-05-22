@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 # tests/github-private-key-metadata.test.sh
 # Verifies host-side GitHub App private key metadata is redacted and non-secret.
 
