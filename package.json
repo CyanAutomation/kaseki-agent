@@ -75,7 +75,8 @@
     "release:dry": "semantic-release --dry-run",
     "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js",
     "validate-module-imports": "node scripts/validate-module-imports.js",
-    "test:pack-artifact": "bash scripts/check-packed-artifact.sh"
+    "test:pack-artifact": "bash scripts/check-packed-artifact.sh",
+    "type-check:type-tests": "tsc -p tsconfig.type-tests.json"
   },
   "dependencies": {
     "enquirer": "^2.4.1",
