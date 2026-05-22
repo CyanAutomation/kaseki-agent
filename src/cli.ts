@@ -144,7 +144,7 @@ DOCUMENTATION
   For more information:
   - Unified quick start: docs/QUICK_START.md
   - Advanced configuration: docs/ADVANCED_CONFIG.md
-  - Troubleshooting: docs/TROUBLESHOOTING_FLOW.md
+  - Troubleshooting: docs/TROUBLESHOOTING.md
   - API reference: docs/API.md
 
 ENVIRONMENT
