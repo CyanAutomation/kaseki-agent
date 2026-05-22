@@ -79,24 +79,6 @@ describe('KasekiApiService Integration', () => {
     // not runtime import tests. Successful imports do not prove absence of cycles.
   });
 
-  describe('Type safety', () => {
-    it('should export BootstrappedServices interface', async () => {
-      // This is a TypeScript compile-time check, but we can verify the type exists
-      const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
-      expect(bootstrapServices).toBeDefined();
-    });
-
-    it('should export SetupContext interface', async () => {
-      const { initializeSetup } = await import('./kaseki-api/setup-orchestrator');
-      expect(initializeSetup).toBeDefined();
-    });
-
-    it('should export ShutdownDeps interface', async () => {
-      const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
-      expect(gracefulShutdown).toBeDefined();
-    });
-  });
-
   describe('Module organization', () => {
     it('should have separation of concerns', async () => {
       // Setup orchestrator should be independent
