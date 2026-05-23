@@ -136,13 +136,15 @@ describe('JobPersistenceManager', () => {
       fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
       fs.mkdirSync(lockPath, { recursive: true });
 
-      const releaseProc = require('child_process').spawn(process.execPath, [
-        '-e',
-        `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
-      ]);
+const releaseProc = require('child_process').spawn(process.execPath, [
+  '-e',
+  `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
+]);
 
-      const result = manager.loadPersistedJobs();
-      expect(releaseProc.pid).toBeGreaterThan(0);
+const result = manager.loadPersistedJobs();
+releaseProc.on('exit', () => {});
+releaseProc.unref();
+expect(releaseProc.pid).toBeGreaterThan(0);
       expect(result.status).toBe('loaded');
       expect(result.jobs).toHaveLength(1);
     });
