@@ -114,6 +114,40 @@ describe('JobPersistenceManager', () => {
       expect(result.queuedJobs).toHaveLength(1);
       expect(result.queuedJobs[0].id).toBe('kaseki-1');
     });
+
+
+    it('retries sync lock acquisition during initial contention and eventually loads jobs', () => {
+      const job: PersistedJob = {
+        id: 'kaseki-1',
+        status: 'completed',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+        },
+        createdAt: '2026-05-11T12:00:00Z',
+        resultDir: manager.getResultDir('kaseki-1'),
+        finalized: true,
+        correlationId: 'corr-1',
+        requestId: 'req-1',
+      };
+
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      const lockPath = path.join(tempDir, '.kaseki-api-jobs.lock');
+      fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
+      fs.mkdirSync(lockPath, { recursive: true });
+
+const releaseProc = require('child_process').spawn(process.execPath, [
+  '-e',
+  `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
+]);
+
+const result = manager.loadPersistedJobs();
+releaseProc.on('exit', () => {});
+releaseProc.unref();
+expect(releaseProc.pid).toBeGreaterThan(0);
+      expect(result.status).toBe('loaded');
+      expect(result.jobs).toHaveLength(1);
+    });
   });
 
   describe('persistJobs', () => {

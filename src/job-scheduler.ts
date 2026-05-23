@@ -780,12 +780,25 @@ export class JobScheduler {
   }
 
   private loadPersistedJobs(): void {
-    const { jobs, queuedJobs } = this.persistenceManager.loadPersistedJobs();
+    const { jobs, queuedJobs, status } = this.persistenceManager.loadPersistedJobs();
     for (const job of jobs) {
       this.jobs.set(job.id, job);
     }
     for (const job of queuedJobs) {
       this.queue.push(job);
+    }
+
+    if (status === 'lock_contention') {
+      this.logger.event('persisted_jobs_load_skipped_lock_contention', {
+        resultsDir: this.config.resultsDir,
+      });
+      return;
+    }
+
+    if (status === 'read_error') {
+      this.logger.event('persisted_jobs_load_read_error', {
+        resultsDir: this.config.resultsDir,
+      });
     }
   }
 
