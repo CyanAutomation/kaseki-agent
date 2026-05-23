@@ -878,17 +878,13 @@ export class JobScheduler {
 
     const now = new Date();
     for (const queuedJob of this.queue) {
-      if (queuedJob.finalized) {
-        continue;
-      }
-      queuedJob.status = 'failed';
-      queuedJob.failureClass = 'shutdown_aborted';
-      queuedJob.error = 'Job dropped during scheduler shutdown before execution';
-      queuedJob.exitCode = 143;
-      queuedJob.completedAt = now;
-      queuedJob.finalized = true;
-      this.jobs.set(queuedJob.id, queuedJob);
-      this.clearLiveProgressCache(queuedJob.id);
+      this.finalizeJobIfNeeded(queuedJob, {
+        status: 'failed',
+        exitCode: 143,
+        failureClass: 'shutdown_aborted',
+        error: 'Job dropped during scheduler shutdown before execution',
+        completedAt: now,
+      });
     }
 
     this.queue = [];
