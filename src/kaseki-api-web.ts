@@ -412,6 +412,10 @@ const controllerPage = String.raw`<!doctype html>
             <a data-run-link="stdout" href="#">Stdout</a>
             <a data-run-link="artifacts" href="#">Artifacts</a>
           </div>
+          <div class="recommended-artifacts" id="recommended-artifacts" hidden>
+            <span class="summary-label">Recommended artifacts</span>
+            <div class="link-grid" id="recommended-artifact-links"></div>
+          </div>
         </div>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
@@ -427,6 +431,8 @@ const controllerPage = String.raw`<!doctype html>
       const tokenInput = document.querySelector('#token');
       const runIdInput = document.querySelector('#run-id');
       const runLinks = document.querySelector('#run-links');
+      const recommendedArtifacts = document.querySelector('#recommended-artifacts');
+      const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       let pollTimer = null;
       tokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
 
@@ -450,6 +456,14 @@ const controllerPage = String.raw`<!doctype html>
 
       function setOutputMetadata(status, runId) {
         outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
+      }
+
+      function responseStatusLabel(response, payload) {
+        if (!response.ok) return 'failed';
+        if (payload && typeof payload === 'object' && typeof payload.status === 'string') {
+          return payload.status;
+        }
+        return 'request ok';
       }
 
       function setOutputBody(text) {
@@ -481,6 +495,41 @@ const controllerPage = String.raw`<!doctype html>
           if (link) link.href = href;
         });
         runLinks.hidden = false;
+      }
+
+      function artifactUrl(runId, fileName) {
+        return '/api/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(fileName);
+      }
+
+      function showRecommendedArtifacts(runId, artifactsResponse) {
+        if (!recommendedArtifacts || !recommendedArtifactLinks || !runId) return;
+        const recommended = artifactsResponse && Array.isArray(artifactsResponse.recommended)
+          ? artifactsResponse.recommended
+          : [];
+        recommendedArtifactLinks.replaceChildren();
+        if (recommended.length === 0) {
+          recommendedArtifacts.hidden = true;
+          return;
+        }
+        recommended.forEach((fileName) => {
+          const link = document.createElement('a');
+          link.href = artifactUrl(runId, fileName);
+          link.textContent = fileName;
+          recommendedArtifactLinks.appendChild(link);
+        });
+        recommendedArtifacts.hidden = false;
+      }
+
+      async function loadRecommendedArtifacts(runId) {
+        if (!runId) return;
+        try {
+          const result = await apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true });
+          if (result.response.ok) {
+            showRecommendedArtifacts(runId, result.payload);
+          }
+        } catch {
+          if (recommendedArtifacts) recommendedArtifacts.hidden = true;
+        }
       }
 
       function isTerminalStatus(status) {
@@ -558,18 +607,24 @@ const controllerPage = String.raw`<!doctype html>
         const runId = payload && typeof payload.id === 'string'
           ? payload.id
           : String(runIdInput.value || '').trim();
-        setOutputMetadata(response.ok ? 'completed' : 'failed', runId || undefined);
-        setOutputBody(JSON.stringify({
-          method: options && options.method || 'GET',
-          path,
-          status: response.status,
-          response: payload,
-        }, null, 2));
-        setState(response.ok ? 'Request completed.' : 'Request failed.', response.ok ? 'ok' : 'bad');
+        const statusLabel = responseStatusLabel(response, payload);
+        if (!(options && options.preserveOutput)) {
+          setOutputMetadata(statusLabel, runId || undefined);
+          setOutputBody(JSON.stringify({
+            method: options && options.method || 'GET',
+            path,
+            status: response.status,
+            response: payload,
+          }, null, 2));
+          setState(response.ok ? (runId ? 'Run status updated.' : 'Request completed.') : 'Request failed.', response.ok ? 'ok' : 'bad');
+        }
         if (response.ok && payload && typeof payload === 'object') {
           summarizeHealth(path, payload);
           summarizeRun(payload);
           if (runId) showRunLinks(runId);
+          if (runId && payload.status && isTerminalStatus(payload.status)) {
+            loadRecommendedArtifacts(runId);
+          }
         }
         return { payload, response };
       }

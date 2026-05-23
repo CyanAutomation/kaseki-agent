@@ -1226,6 +1226,21 @@ record_skipped_validation_command() {
   printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
 }
 
+append_validation_failure_tail() {
+  local raw_log="$1"
+  local visible_log="$2"
+  local quality_log="${3:-/results/quality.log}"
+
+  if ! [ -s "$raw_log" ]; then
+    return 0
+  fi
+
+  {
+    printf '\n[DIAGNOSTICS] Raw validation output tail (last 80 lines):\n'
+    tail -80 "$raw_log" 2>/dev/null || printf '<failed to read raw validation log>\n'
+  } | tee -a "$visible_log" "$quality_log" >/dev/null
+}
+
 run_validation_commands() {
   local stage_label="$1"
   local commands="$2"
@@ -1409,6 +1424,7 @@ run_validation_commands() {
           validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
           # shellcheck disable=SC2034 # Reference variable assigned for external use via nameref
           validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
+          append_validation_failure_tail "$raw_log" "$log_file"
           # Enhanced diagnostics for getcwd-type errors.
           if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
             {
