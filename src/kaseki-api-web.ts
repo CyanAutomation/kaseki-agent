@@ -91,7 +91,8 @@ const controllerPage = String.raw`<!doctype html>
       .check input { height: 20px; margin: 0; width: 20px; }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
-      .action-row.run-actions > .run { order: 2; }
+      .action-row { align-items: end; }
+      .action-row > button, .run-status > button { width: 100%; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
       button {
         background: var(--ink);
