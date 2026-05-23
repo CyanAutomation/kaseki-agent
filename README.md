@@ -711,6 +711,7 @@ curl -X POST http://localhost:8080/api/runs \
     "changedFilesAllowlist": ["src/lib/parser.ts"],
     "allowlist": { "include": ["src/lib/parser.ts"] },
     "scouting": { "enabled": true, "model": "openrouter/free", "timeoutSeconds": 900 },
+    // Omit "scouting" to use the default enabled behavior; set enabled=false to disable explicitly.
     "validationCommands": ["npm run test", "npm run build"],
     "validation": { "commands": ["npm run test", "npm run build"] }
   }'
@@ -1406,7 +1407,7 @@ to opt out of GitHub publishing for a specific API run.
 |---|---|---|
 | `KASEKI_PRE_AGENT_VALIDATION` | `1` | Run validation before Pi to detect a failing baseline repo/ref. Set to `0` only when you intentionally want to skip baseline validation. |
 | `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` | same as `KASEKI_VALIDATION_COMMANDS` | Semicolon-separated pre-agent validation commands. Logs: `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, `pre-validation-timings.tsv`. |
-| `KASEKI_SCOUTING` | `1` | Run a read-only Pi scouting phase after pre-agent validation and before coding. Its schema-validated JSON handoff is stored as `scouting.json`; use `scouting-summary.json`, `scouting-events.jsonl`, and `scouting-stderr.log` for model/token output and diagnostics. |
+| `KASEKI_SCOUTING` | `1` | Run a read-only Pi scouting phase after pre-agent validation and before coding (enabled by default). Its schema-validated JSON handoff is stored as `scouting.json`; use `scouting-summary.json`, `scouting-events.jsonl`, and `scouting-stderr.log` for model/token output and diagnostics. Disable explicitly with `KASEKI_SCOUTING=0` (CLI/env) or `scouting.enabled=false` in API requests. |
 | `KASEKI_SCOUTING_MODEL` | same as `KASEKI_MODEL` | Optional Pi model override for scouting. API runs may set this with `scouting.model`. |
 | `KASEKI_SCOUTING_TIMEOUT_SECONDS` | same as `KASEKI_AGENT_TIMEOUT_SECONDS` | Optional scouting timeout. API runs may set this with `scouting.timeoutSeconds`. |
 | `KASEKI_VALIDATION_COMMANDS` | `npm run check;npm run test;npm run build` | Semicolon-separated post-agent validation commands for the final diff; set to `none` or empty to skip post-agent validation. Missing npm scripts are skipped with a warning (non-fatal). Logs: `validation.log`, `validation-raw.log`, `validation-env.log`, `validation-timings.tsv`. |
