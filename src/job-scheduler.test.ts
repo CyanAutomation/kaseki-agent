@@ -993,20 +993,14 @@ describe('JobScheduler instance allocation and live progress', () => {
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
   });
 
-  test('clears live docker progress cache when running jobs are cancelled', async () => {
+  test('returns no live progress events immediately after transition to terminal state', async () => {
     mockSpawnSync.mockReset();
     process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS = '2000';
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockImplementation((command: string, args: string[]) => {
       if (command === 'docker' && args[0] === 'logs') {
-        return {
-          stdout: mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs').length === 1
-            ? '[progress] clone repository info: started\n'
-            : '[progress] pi coding agent: after cancel\n',
-          stderr: '',
-          status: 0,
-        };
+        return { stdout: '[progress] clone repository info: started\n', stderr: '', status: 0 };
       }
       return { stdout: '', stderr: '', status: 0 };
     });
@@ -1035,14 +1029,59 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     scheduler.cancelJob(job.id);
 
-    const liveEvents = scheduler.getLiveProgressEvents(job.id, 25);
-    expect(liveEvents.length).toBeGreaterThan(0);
-    expect(liveEvents[liveEvents.length - 1]).toEqual(
-      expect.objectContaining({
-        stage: 'pi coding agent',
-        message: 'after cancel',
-      })
+    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([]);
+    expect(mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')).toHaveLength(1);
+    delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+  });
+
+  test('invalidates live progress cache at job start', async () => {
+    mockSpawnSync.mockReset();
+    process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS = '2000';
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'docker' && args[0] === 'logs') {
+        return {
+          stdout: mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs').length === 1
+            ? '[progress] queued job: cached-before-start\n'
+            : '[progress] running job: fresh-after-start\n',
+          stderr: '',
+          status: 0,
+        };
+      }
+      return { stdout: '', stderr: '', status: 0 };
+    });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
     );
+
+    const id = 'kaseki-1';
+    expect(scheduler.getLiveProgressEvents(id, 25)).toEqual([
+      expect.objectContaining({
+        stage: 'queued job',
+        message: 'cached-before-start',
+      }),
+    ]);
+
+    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    expect(scheduler.getLiveProgressEvents(id, 25)).toEqual([
+      expect.objectContaining({
+        stage: 'running job',
+        message: 'fresh-after-start',
+      }),
+    ]);
     expect(mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')).toHaveLength(2);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
   });
