@@ -39,52 +39,53 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       const maxNoChangeAttempts = 10; // Stop after 10 checks with no change
 
       const sendProgressUpdate = () => {
+        const currentJob = scheduler.getJob(job.id);
         const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
-        if (!fs.existsSync(progressFile)) {
+
+        let hasNewEvents = false;
+        if (fs.existsSync(progressFile)) {
+          try {
+            const content = fs.readFileSync(progressFile, 'utf-8');
+            const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
+
+            if (lines.length > lastEventCount) {
+              // Send new events
+              const newLines = lines.slice(lastEventCount);
+              for (const line of newLines) {
+                try {
+                  const event = normalizeProgressEvent(JSON.parse(line));
+                  res.write(`data: ${JSON.stringify(event)}\n\n`);
+                } catch {
+                  // Skip invalid JSON lines
+                }
+              }
+              lastEventCount = lines.length;
+              noChangeCount = 0;
+              hasNewEvents = true;
+            }
+          } catch {
+            // Ignore file read errors
+          }
+        }
+
+        if (currentJob && (currentJob.status === 'completed' || currentJob.status === 'failed')) {
+          res.write(
+            `data: ${JSON.stringify({
+              type: 'status',
+              status: currentJob.status,
+              elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
+            })}\n\n`
+          );
+          res.end();
           return;
         }
 
-        try {
-          const content = fs.readFileSync(progressFile, 'utf-8');
-          const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
-
-          if (lines.length > lastEventCount) {
-            // Send new events
-            const newLines = lines.slice(lastEventCount);
-            for (const line of newLines) {
-              try {
-                const event = normalizeProgressEvent(JSON.parse(line));
-                res.write(`data: ${JSON.stringify(event)}\n\n`);
-              } catch {
-                // Skip invalid JSON lines
-              }
-            }
-            lastEventCount = lines.length;
-            noChangeCount = 0;
-          } else if (job.status !== 'running') {
-            // Job is not running anymore, send final status
-            const currentJob = scheduler.getJob(job.id);
-            if (currentJob) {
-              res.write(
-                `data: ${JSON.stringify({
-                  type: 'status',
-                  status: currentJob.status,
-                  elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
-                })}\n\n`
-              );
-            }
-            res.end();
-            return;
-          } else {
-            noChangeCount++;
-            if (noChangeCount >= maxNoChangeAttempts) {
-              // No new events for a while, close connection
-              res.end();
-              return;
-            }
-          }
-        } catch {
-          // Ignore file read errors
+        if (!hasNewEvents) {
+          noChangeCount++;
+        }
+        if (noChangeCount >= maxNoChangeAttempts) {
+          // No new events for a while, close connection
+          res.end();
         }
       };
 

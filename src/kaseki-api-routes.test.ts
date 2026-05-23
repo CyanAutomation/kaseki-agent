@@ -3059,3 +3059,68 @@ describe('artifact content cache configuration in routes', () => {
     }
   });
 });
+
+describe('progress SSE terminal behavior', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-progress-sse-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('closes SSE with final status when progress.jsonl is missing and job becomes terminal', async () => {
+    const jobId = 'kaseki-sse-no-progress-terminal';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+
+    const jobs: Record<string, any> = {
+      [jobId]: {
+        id: jobId,
+        status: 'running',
+        createdAt: new Date(),
+        startedAt: new Date(),
+        resultDir: jobDir,
+      },
+    };
+    const scheduler = createMockScheduler(jobs);
+    scheduler.getJob.mockImplementation((id: string) => jobs[id]);
+
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/progress?stream=sse`, {
+        headers: { Authorization: 'Bearer test-key', Accept: 'text/event-stream' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toBeTruthy();
+
+      setTimeout(() => {
+        jobs[jobId] = {
+          ...jobs[jobId],
+          status: 'completed',
+        };
+      }, 300);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+
+      expect(text).toContain(`"type":"start","jobId":"${jobId}","status":"running"`);
+      expect(text).toContain('"type":"status","status":"completed"');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  }, 15000);
+});
