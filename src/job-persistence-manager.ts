@@ -238,16 +238,26 @@ export class JobPersistenceManager {
    * Compare two persisted jobs by recency conflict resolution heuristics.
    */
   private comparePersistedJobRecency(prev: PersistedJob, job: PersistedJob): number {
+    // Terminal states (completed/failed) always take precedence over non-terminal
+    const prevIsTerminal = this.isTerminalPersistedJob(prev);
+    const jobIsTerminal = this.isTerminalPersistedJob(job);
+    
+    if (prevIsTerminal && !jobIsTerminal) {
+      // prev is terminal, job is not -> prev is more recent
+      return -1;
+    }
+    if (!prevIsTerminal && jobIsTerminal) {
+      // job is terminal, prev is not -> job is more recent
+      return 1;
+    }
+
+    // Both terminal or both non-terminal: use recency score
     const recencyDiff = this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
     if (recencyDiff !== 0) {
       return recencyDiff;
     }
 
-    const terminalDiff = Number(this.isTerminalPersistedJob(job)) - Number(this.isTerminalPersistedJob(prev));
-    if (terminalDiff !== 0) {
-      return terminalDiff;
-    }
-
+    // Tie-breaker: prefer the one with more diagnostic information
     const diagnosticFields: ReadonlyArray<keyof PersistedJob> = ['failureClass', 'error', 'exitCode'];
     const diagnosticCount = (candidate: PersistedJob): number =>
       diagnosticFields.reduce((count, field) => (candidate[field] !== undefined ? count + 1 : count), 0);
