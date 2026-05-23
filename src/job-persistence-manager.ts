@@ -431,9 +431,11 @@ export class JobPersistenceManager {
     }
   }
 
-  private sleepSync(ms: number): void {
-    const buffer = new SharedArrayBuffer(4);
-    const waitArray = new Int32Array(buffer);
-    Atomics.wait(waitArray, 0, 0, ms);
+private sleepSync(ms: number): void {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    // Busy-wait loop - less ideal but doesn't block event loop completely
+    // For very short waits (25ms), this is acceptable
   }
+}
 }
