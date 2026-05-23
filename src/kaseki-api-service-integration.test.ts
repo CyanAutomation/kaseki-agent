@@ -356,42 +356,66 @@ describe('KasekiApiService Integration', () => {
     });
   });
 
-  describe('Code size metrics', () => {
-    it('should have refactored kaseki-api-service.ts to ~100 LOC', async () => {
-      // This is a rough check - actual line count may vary with formatting
-      const fs = await import('fs');
-      const content = fs.readFileSync(
-        path.join(__dirname, './kaseki-api-service.ts'),
-        'utf-8',
-      );
-      const lines = content.split('\n').filter(line => line.trim().length > 0);
+  describe('Top-level service behavior', () => {
+    it('createGracefulShutdown delegates to gracefulShutdown with provided dependencies', async () => {
+      const apiService = await import('./kaseki-api-service');
 
-      // Should be significantly smaller than original ~370 LOC
-      expect(lines.length).toBeLessThan(180); // Accounting for whitespace, comments, etc.
+      const callOrder: string[] = [];
+      const exitCodes: number[] = [];
+      const deps: ShutdownDeps = {
+        server: {
+          close: (callback: (err?: Error) => void) => {
+            callOrder.push('server.close');
+            callback();
+            return undefined as never;
+          },
+        } as unknown as Server,
+        scheduler: {
+          shutdown: () => callOrder.push('scheduler.shutdown'),
+        },
+        webhookManager: {
+          shutdown: async () => {
+            callOrder.push('webhookManager.shutdown');
+          },
+        },
+        idempotencyStore: {
+          shutdown: () => callOrder.push('idempotencyStore.shutdown'),
+        },
+        forceExitAfterMs: 100,
+        exit: ((code: number) => {
+          exitCodes.push(code);
+          return undefined as never;
+        }) as (code: number) => never,
+      };
+
+      const shutdown = apiService.createGracefulShutdown(deps);
+      await expect(shutdown()).resolves.toBeUndefined();
+      expect(exitCodes).toEqual([0]);
+      expect(callOrder).toEqual([
+        'server.close',
+        'scheduler.shutdown',
+        'webhookManager.shutdown',
+        'idempotencyStore.shutdown',
+      ]);
     });
 
-    it('should have setup-orchestrator.ts ~80-120 LOC', async () => {
+    it('ensureResultsDir creates missing directories and enforces writable/readable access', async () => {
+      const os = await import('os');
       const fs = await import('fs');
-      const content = fs.readFileSync(
-        path.join(__dirname, './kaseki-api/setup-orchestrator.ts'),
-        'utf-8',
-      );
-      const lines = content.split('\n').filter(line => line.trim().length > 0);
+      const apiService = await import('./kaseki-api-service');
 
-      expect(lines.length).toBeGreaterThan(50);
-      expect(lines.length).toBeLessThan(150);
-    });
+      const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-results-dir-'));
+      const resultsDir = path.join(rootDir, 'nested', 'results');
 
-    it('should have service-bootstrapper.ts ~100-150 LOC', async () => {
-      const fs = await import('fs');
-      const content = fs.readFileSync(
-        path.join(__dirname, './kaseki-api/service-bootstrapper.ts'),
-        'utf-8',
-      );
-      const lines = content.split('\n').filter(line => line.trim().length > 0);
+      try {
+        expect(fs.existsSync(resultsDir)).toBe(false);
+        apiService.ensureResultsDir(resultsDir);
+        expect(fs.existsSync(resultsDir)).toBe(true);
 
-      expect(lines.length).toBeGreaterThan(80);
-      expect(lines.length).toBeLessThan(180);
+        fs.accessSync(resultsDir, fs.constants.R_OK | fs.constants.W_OK);
+      } finally {
+        fs.rmSync(rootDir, { recursive: true, force: true });
+      }
     });
   });
 });
