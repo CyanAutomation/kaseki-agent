@@ -229,7 +229,7 @@ const controllerPage = String.raw`<!doctype html>
             <p class="field-helper" id="run-options-helper">These options change how the run executes.</p>
             <div class="checks">
               <label class="check">
-                <input name="scouting" type="checkbox">
+                <input name="scouting" type="checkbox" checked>
                 <span class="check-copy">
                   <span class="check-label">Enable scouting</span>
                   <span class="check-helper">Runs an additional scouting pass before the main task.</span>

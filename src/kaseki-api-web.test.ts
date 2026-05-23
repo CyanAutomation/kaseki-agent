@@ -38,4 +38,61 @@ describe('kaseki API web console', () => {
       });
     }
   });
+
+  test('scouting checkbox defaults on and only serializes when checked', async () => {
+    const app = express();
+    app.use(createWebRouter());
+    const { server, url } = await listen(app);
+
+    try {
+      const response = await fetch(`${url}/ui`);
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(body).toContain('<input name="scouting" type="checkbox" checked>');
+
+      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n      \}/);
+      expect(requestBodyMatch).toBeTruthy();
+      const requestBodySource = `function requestBody() {${requestBodyMatch?.[1] || ''}\n      }`;
+
+      class MockFormData {
+        private readonly values: Map<string, string>;
+
+        constructor(formValue: { values: Array<[string, string]> }) {
+          this.values = new Map(formValue.values);
+        }
+
+        get(key: string): string | null {
+          return this.values.has(key) ? this.values.get(key) ?? null : null;
+        }
+      }
+
+      const baseValues: Array<[string, string]> = [
+        ['repoUrl', 'https://github.com/org/repo'],
+        ['ref', 'main'],
+        ['taskPrompt', 'Test prompt body'],
+        ['publishMode', 'pr'],
+        ['taskMode', 'patch'],
+      ];
+
+      const buildRequestBody = (values: Array<[string, string]>) => {
+        const runner = new Function(
+          'FormData',
+          'form',
+          `${requestBodySource}; return requestBody();`,
+        );
+        return runner(MockFormData, { values }) as Record<string, unknown>;
+      };
+
+      const checkedBody = buildRequestBody([...baseValues, ['scouting', 'on']]);
+      expect(checkedBody.scouting).toEqual({ enabled: true });
+
+      const uncheckedBody = buildRequestBody(baseValues);
+      expect(uncheckedBody).not.toHaveProperty('scouting');
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+  });
 });
