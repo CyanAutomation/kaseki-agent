@@ -153,9 +153,88 @@ const controllerPage = String.raw`<!doctype html>
         .action-row.controller-actions { justify-content: start; }
         .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
       }
+      .tabs-nav {
+        display: flex;
+        gap: var(--space-2);
+        border-bottom: 2px solid var(--line);
+        margin-bottom: var(--space-3);
+      }
+      .tabs-nav button {
+        background: transparent;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        transition: color 0.2s, border-color 0.2s;
+      }
+      .tabs-nav button:hover { color: var(--ink); }
+      .tabs-nav button.active {
+        color: var(--focus);
+        border-bottom-color: var(--focus);
+      }
+      .tabs-nav button:focus {
+        outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
+        outline-offset: 2px;
+      }
+      .tab-content {
+        display: grid;
+        gap: var(--space-3);
+      }
+      .tab-content.hidden { display: none; }
+      .health-checks-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: var(--space-3);
+      }
+      .health-check-button {
+        background: var(--focus);
+        color: #fff;
+        padding: var(--space-3);
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        min-height: 100px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        transition: background 0.2s, opacity 0.2s;
+      }
+      .health-check-button:hover:not(:disabled) { background: #1a5d5f; }
+      .health-check-button:disabled { opacity: 0.65; cursor: wait; }
+      .health-check-button:focus {
+        outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
+        outline-offset: 1px;
+      }
+      .health-check-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+      }
+      .health-check-status.spinner::after {
+        content: '⟳';
+        display: inline-block;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .health-check-status.ok::before { content: '✓'; }
+      .health-check-status.bad::before { content: '✕'; }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
         .response-panel { min-height: 52vh; }
+        .health-checks-grid { grid-template-columns: repeat(2, 1fr); }
       }
     </style>
   </head>
@@ -164,19 +243,42 @@ const controllerPage = String.raw`<!doctype html>
       <section class="panel" aria-labelledby="page-title">
         <header>
           <h1 id="page-title">Kaseki Task Console</h1>
-          <p>Submit a repository task to this Kaseki API controller and inspect its checks before a run.</p>
+          <p>Check system health and submit repository tasks to the Kaseki API controller.</p>
         </header>
       </section>
-      <section class="panel stack" aria-labelledby="run-configuration-heading">
-        <div>
-          <h2 id="run-configuration-heading">Run configuration</h2>
+      <section class="panel stack" aria-labelledby="tabs-heading">
+        <div class="tabs-nav" role="tablist" aria-label="Console tabs">
+          <button class="tab-button active" data-tab="health" role="tab" aria-selected="true" aria-controls="health-tab">Health</button>
+          <button class="tab-button" data-tab="submit" role="tab" aria-selected="false" aria-controls="submit-tab">Submit Task</button>
         </div>
+        <div id="health-tab" class="tab-content" role="tabpanel" aria-labelledby="health-heading">
+          <div>
+            <h2 id="health-heading">Controller Health Checks</h2>
+            <p>Run diagnostics to verify the Kaseki API controller is operating correctly.</p>
+          </div>
+          <div class="health-checks-grid">
+            <button class="health-check-button" data-probe="/health" type="button">Health<span class="health-check-status" data-status="health"></span></button>
+            <button class="health-check-button" data-probe="/ready" type="button">Readiness<span class="health-check-status" data-status="readiness"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button">Preflight<span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" id="status-check" type="button">Check Status<span class="health-check-status" data-status="status"></span></button>
+          </div>
+          <div class="form-field">
+            <label for="run-id">Run ID (for Check Status)</label>
+            <input id="run-id" placeholder="Filled after a run is submitted">
+          </div>
+          <div id="state" role="status" aria-live="polite"></div>
+        </div>
+        <div id="submit-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="submit-heading">
+          <div>
+            <h2 id="submit-heading">Submit Repository Task</h2>
+            <p>Configure and submit a task for the ephemeral agent to execute.</p>
+          </div>
         <form id="run-form">
           <fieldset class="form-fields">
-            <legend>Task submission</legend>
+            <legend>Required information</legend>
             <div class="form-field">
               <label for="token">API bearer token</label>
-              <input id="token" name="token" type="password" autocomplete="off" placeholder="Required for preflight and task actions">
+              <input id="token" name="token" type="password" autocomplete="off" placeholder="Required to submit tasks">
               <p class="field-helper">Stored in this tab only after a successful request.</p>
               <p class="field-error" data-error-for="token" aria-live="polite"></p>
             </div>
@@ -185,64 +287,17 @@ const controllerPage = String.raw`<!doctype html>
               <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
               <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
             </div>
-            <div class="grid">
-              <div class="form-field">
-                <label for="ref">Git ref</label>
-                <input id="ref" name="ref" value="main" required>
-                <p class="field-error" data-error-for="ref" aria-live="polite"></p>
-              </div>
-              <div class="form-field">
-                <label for="publish-mode">Publish mode</label>
-                <select id="publish-mode" name="publishMode">
-                  <option value="pr">Pull request</option>
-                  <option value="draft_pr">Draft pull request</option>
-                  <option value="branch">Branch only</option>
-                  <option value="auto">Auto</option>
-                  <option value="none">Do not publish</option>
-                </select>
-                <p class="field-error" data-error-for="publishMode" aria-live="polite"></p>
-              </div>
-            </div>
-            <div class="grid">
-              <div class="form-field">
-                <label for="task-mode">Task mode</label>
-                <select id="task-mode" name="taskMode">
-                  <option value="patch">Patch</option>
-                  <option value="inspect">Inspect</option>
-                </select>
-                <p class="field-error" data-error-for="taskMode" aria-live="polite"></p>
-              </div>
-              <div class="form-field">
-                <label for="timeout-seconds">Timeout seconds</label>
-                <input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" placeholder="Controller default">
-                <p class="field-error" data-error-for="timeoutSeconds" aria-live="polite"></p>
-              </div>
-            </div>
             <div class="form-field">
               <label for="task-prompt">Task details</label>
               <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
-          </fieldset>
-          <fieldset aria-describedby="run-options-helper">
-            <legend>Run options</legend>
-            <p class="field-helper" id="run-options-helper">These options change how the run executes.</p>
-            <div class="checks">
-              <label class="check">
-                <input name="scouting" type="checkbox" checked>
-                <span class="check-copy">
-                  <span class="check-label">Enable scouting</span>
-                  <span class="check-helper">Runs an additional scouting pass before the main task.</span>
-                </span>
-              </label>
-              <label class="check">
-                <input name="startupCheck" type="checkbox">
-                <span class="check-copy">
-                  <span class="check-label">Startup check only</span>
-                  <span class="check-helper">Performs startup checks only and skips task execution.</span>
-                </span>
-              </label>
-            </div>
+            <!-- Hidden fields with defaults -->
+            <input id="ref" name="ref" type="hidden" value="main">
+            <input id="publish-mode" name="publishMode" type="hidden" value="auto">
+            <input id="task-mode" name="taskMode" type="hidden" value="patch">
+            <input id="timeout-seconds" name="timeoutSeconds" type="hidden" value="10800">
+            <input id="scouting" name="scouting" type="hidden" value="true">
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
@@ -252,29 +307,7 @@ const controllerPage = String.raw`<!doctype html>
             </div>
           </fieldset>
         </form>
-      </section>
-      <section class="panel stack" aria-labelledby="controller-checks-heading">
-        <div>
-          <h2 id="controller-checks-heading">Controller checks</h2>
-          <p>Health and readiness are public probes. Controller preflight uses the bearer token.</p>
         </div>
-        <fieldset>
-          <legend>Controller actions</legend>
-          <div class="action-row controller-actions">
-            <button class="secondary" data-probe="/health" type="button">Health</button>
-            <button class="secondary" data-probe="/ready" type="button">Readiness</button>
-            <button class="secondary" data-probe="/api/preflight" data-auth="true" type="button">Preflight</button>
-            <button class="secondary" id="status" type="button">Check status</button>
-          </div>
-          <div class="run-status">
-            <div class="form-field">
-              <label for="run-id">Run ID</label>
-              <input id="run-id" placeholder="Filled after a run is submitted">
-              <p class="field-error" data-error-for="runId" aria-live="polite"></p>
-            </div>
-          </div>
-        </fieldset>
-        <div id="state" role="status" aria-live="polite"></div>
       </section>
       <section class="panel stack" aria-labelledby="responses-heading">
         <div>
@@ -282,7 +315,7 @@ const controllerPage = String.raw`<!doctype html>
         </div>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
-          <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a controller action to see responses and events.</pre>
+          <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a health check or submit a task to see responses.</pre>
         </div>
       </section>
     </main>
@@ -324,21 +357,18 @@ const controllerPage = String.raw`<!doctype html>
 
       function requestBody() {
         const data = new FormData(form);
-        const timeoutSeconds = String(data.get('timeoutSeconds') || '').trim();
+        const timeoutSeconds = String(data.get('timeoutSeconds') || '10800').trim();
         const body = {
           repoUrl: String(data.get('repoUrl') || '').trim(),
           ref: String(data.get('ref') || 'main').trim(),
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
-          publishMode: String(data.get('publishMode') || 'pr'),
+          publishMode: String(data.get('publishMode') || 'auto'),
           taskMode: String(data.get('taskMode') || 'patch'),
+          scouting: { enabled: true },
         };
-        if (data.get('scouting')) body.scouting = { enabled: true };
-        if (data.get('startupCheck')) body.startupCheck = true;
-        if (timeoutSeconds) {
-          const parsed = Number(timeoutSeconds);
-          if (!isNaN(parsed)) {
-            body.timeoutSeconds = parsed;
-          }
+        const parsed = Number(timeoutSeconds);
+        if (!isNaN(parsed)) {
+          body.timeoutSeconds = parsed;
         }
         return body;
       }
@@ -390,16 +420,57 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
-      document.querySelectorAll('[data-probe]').forEach((button) => {
-        button.addEventListener('click', () => run(button, button.dataset.probe, {
-          auth: button.dataset.auth === 'true',
-        }));
+      // Tab switching
+      document.querySelectorAll('.tab-button').forEach((button) => {
+        button.addEventListener('click', () => {
+          const tabName = button.dataset.tab;
+          // Update tab buttons
+          document.querySelectorAll('.tab-button').forEach(b => {
+            b.classList.toggle('active', b.dataset.tab === tabName);
+            b.setAttribute('aria-selected', b.dataset.tab === tabName ? 'true' : 'false');
+          });
+          // Update tab content
+          document.querySelectorAll('.tab-content').forEach(content => {
+            const contentTabName = content.id.replace('-tab', '');
+            content.classList.toggle('hidden', contentTabName !== tabName);
+          });
+          // Store preference
+          sessionStorage.setItem('kasekiActiveTab', tabName);
+        });
       });
+      // Restore active tab on page load
+      const savedTab = sessionStorage.getItem('kasekiActiveTab') || 'health';
+      const savedTabButton = document.querySelector('[data-tab="' + savedTab + '"]');
+      if (savedTabButton) savedTabButton.click();
+
+      // Health check button handlers
+      document.querySelectorAll('[data-probe]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const statusKey = button.dataset.probe.replace(/\//g, '-').replace('-api-', '-');
+          const statusEl = document.querySelector('[data-status="' + statusKey + '"]');
+          if (statusEl) {
+            statusEl.className = 'health-check-status spinner';
+          }
+          run(button, button.dataset.probe, {
+            auth: button.dataset.auth === 'true',
+          }).then(() => {
+            if (statusEl) {
+              statusEl.className = 'health-check-status ok';
+            }
+          }).catch(() => {
+            if (statusEl) {
+              statusEl.className = 'health-check-status bad';
+            }
+          });
+        });
+      });
+
       document.querySelector('#validate').addEventListener('click', (event) => {
         if (!form.reportValidity()) return;
         run(event.currentTarget, '/api/validate', { method: 'POST', auth: true, body: requestBody() });
       });
-      document.querySelector('#status').addEventListener('click', (event) => {
+
+      document.querySelector('#status-check').addEventListener('click', (event) => {
         const runId = runIdInput.value.trim();
         if (!runId) {
           setOutputMetadata('idle');
@@ -409,6 +480,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         run(event.currentTarget, '/api/runs/' + encodeURIComponent(runId) + '/status', { auth: true });
       });
+
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         if (!form.reportValidity()) return;
