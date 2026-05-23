@@ -974,6 +974,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ failureClass: 'validation' }));
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr output');
     fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout output');
+    fs.writeFileSync(path.join(jobDir, 'pre-validation.log'), 'pre-validation output');
 
     const scheduler = createMockScheduler({
       [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir },
@@ -1001,6 +1002,12 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       const stdoutBody = (await stdoutRes.json()) as any;
       expect(stdoutBody.file).toBe('stdout.log');
       expect(stdoutBody.content).toBe('stdout output');
+
+      const preValidationRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/pre-validation.log`, { headers });
+      expect(preValidationRes.status).toBe(200);
+      const preValidationBody = (await preValidationRes.json()) as any;
+      expect(preValidationBody.file).toBe('pre-validation.log');
+      expect(preValidationBody.content).toBe('pre-validation output');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -1167,6 +1174,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'pi-summary.json'), '{}');
     fs.writeFileSync(path.join(jobDir, 'changed-files.txt'), 'src/file.ts');
     fs.writeFileSync(path.join(jobDir, 'git.diff'), 'diff content');
+    fs.writeFileSync(path.join(jobDir, 'pre-validation.log'), 'pre-validation results');
+    fs.writeFileSync(path.join(jobDir, 'pre-validation-timings.tsv'), 'command\tstart\tend');
     fs.writeFileSync(path.join(jobDir, 'validation.log'), 'validation results');
     fs.writeFileSync(path.join(jobDir, 'quality.log'), 'quality results');
     fs.writeFileSync(path.join(jobDir, 'progress.log'), 'progress');
@@ -1232,6 +1241,14 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
         available: true,
         contentType: 'text/plain',
         description: expect.stringContaining('filename'),
+        availability: 'conditional',
+      });
+
+      const preValidationLog = body.artifacts.find((a: any) => a.name === 'pre-validation.log');
+      expect(preValidationLog).toMatchObject({
+        available: true,
+        contentType: 'text/plain',
+        description: expect.stringContaining('Pre-agent validation'),
         availability: 'conditional',
       });
 
