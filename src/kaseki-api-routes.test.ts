@@ -24,6 +24,7 @@ import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
+import { TextDecoder } from 'util';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
 import * as subprocessHelpers from './lib/subprocess-helpers';
 import { classifyDockerFailure, decodeUtf8TailSafely, tailLogByLines } from './kaseki-api-routes';
