@@ -260,7 +260,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button">Health<span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button">Readiness<span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button">Preflight<span class="health-check-status" data-status="preflight"></span></button>
-            <button class="health-check-button" id="status-check" type="button">Check Status<span class="health-check-status" data-status="status"></span></button>
+            <button class="health-check-button" id="status-check" type="button">Check status<span class="health-check-status" data-status="status"></span></button>
           </div>
           <div class="form-field">
             <label for="run-id">Run ID (for Check Status)</label>
@@ -297,7 +297,18 @@ const controllerPage = String.raw`<!doctype html>
             <input id="publish-mode" name="publishMode" type="hidden" value="auto">
             <input id="task-mode" name="taskMode" type="hidden" value="patch">
             <input id="timeout-seconds" name="timeoutSeconds" type="hidden" value="10800">
-            <input id="scouting" name="scouting" type="hidden" value="true">
+          </fieldset>
+          <fieldset>
+            <legend>Options</legend>
+            <div class="form-field">
+              <div class="check">
+                <input name="scouting" type="checkbox" checked>
+                <div class="check-copy">
+                  <label class="check-label">Enable scouting mode</label>
+                  <div class="check-helper">Allow the agent to explore beyond the specified scope (experimental).</div>
+                </div>
+              </div>
+            </div>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
@@ -364,14 +375,26 @@ const controllerPage = String.raw`<!doctype html>
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
           publishMode: String(data.get('publishMode') || 'auto'),
           taskMode: String(data.get('taskMode') || 'patch'),
-          scouting: { enabled: true },
         };
+        if (data.get('scouting') === 'on') {
+          body.scouting = { enabled: true };
+        }
         const parsed = Number(timeoutSeconds);
         if (!isNaN(parsed)) {
           body.timeoutSeconds = parsed;
         }
         return body;
-      }
+
+
+
+
+
+}
+
+
+
+
+
 
       async function apiRequest(path, options) {
         const token = tokenInput.value.trim();
