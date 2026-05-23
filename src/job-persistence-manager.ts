@@ -217,12 +217,43 @@ export class JobPersistenceManager {
   }
 
   /**
+   * Build a monotonic recency score (completedAt → startedAt → createdAt).
+   */
+  private persistedJobRecencyScore(job: PersistedJob): number {
+    if (job.completedAt) {
+      return new Date(job.completedAt).getTime();
+    }
+    if (job.startedAt) {
+      return new Date(job.startedAt).getTime();
+    }
+    return new Date(job.createdAt).getTime();
+  }
+
+  /**
+   * Compare two persisted jobs by recency conflict resolution heuristics.
+   */
+  private comparePersistedJobRecency(prev: PersistedJob, job: PersistedJob): number {
+    const recencyDiff = this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
+    if (recencyDiff !== 0) {
+      return recencyDiff;
+    }
+
+    const terminalDiff = Number(this.isTerminalPersistedJob(job)) - Number(this.isTerminalPersistedJob(prev));
+    if (terminalDiff !== 0) {
+      return terminalDiff;
+    }
+
+    const diagnosticFields: ReadonlyArray<keyof PersistedJob> = ['failureClass', 'error', 'exitCode'];
+    const diagnosticCount = (candidate: PersistedJob): number =>
+      diagnosticFields.reduce((count, field) => (candidate[field] !== undefined ? count + 1 : count), 0);
+    return diagnosticCount(job) - diagnosticCount(prev);
+  }
+
+  /**
    * Decide which of two persisted job versions is more recent.
    */
   private selectMostRecentPersistedJob(prev: PersistedJob, job: PersistedJob): PersistedJob {
-    const prevCompleted = new Date(prev.completedAt || 0).getTime();
-    const jobCompleted = new Date(job.completedAt || 0).getTime();
-    return jobCompleted > prevCompleted ? job : prev;
+    return this.comparePersistedJobRecency(prev, job) > 0 ? job : prev;
   }
 
   /**

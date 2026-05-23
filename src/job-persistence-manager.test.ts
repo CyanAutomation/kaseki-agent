@@ -176,6 +176,112 @@ describe('JobPersistenceManager', () => {
     });
   });
 
+
+  describe('persistJobs conflict resolution', () => {
+    const baseRequest = { repoUrl: 'https://github.com/test/repo', ref: 'main' };
+
+    const readPersistedJob = (id: string): PersistedJob => {
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      const content = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as { jobs: PersistedJob[] };
+      const found = content.jobs.find((job) => job.id === id);
+      expect(found).toBeDefined();
+      return found as PersistedJob;
+    };
+
+    it('prefers newer startedAt for running jobs when completedAt is missing', () => {
+      const id = 'kaseki-conflict-running';
+      const oldRunning: PersistedJob = {
+        id,
+        status: 'running',
+        request: baseRequest,
+        createdAt: '2026-05-11T12:00:00Z',
+        startedAt: '2026-05-11T12:01:00Z',
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-old',
+        requestId: 'req-old',
+      };
+      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [oldRunning] }), 'utf-8');
+
+      const newerRunning: Job = {
+        id,
+        status: 'running',
+        request: baseRequest,
+        createdAt: new Date('2026-05-11T12:00:00Z'),
+        startedAt: new Date('2026-05-11T12:03:00Z'),
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-new',
+        requestId: 'req-new',
+      };
+
+      manager.persistJobs([newerRunning]);
+      const merged = readPersistedJob(id);
+      expect(merged.startedAt).toBe('2026-05-11T12:03:00.000Z');
+      expect(merged.requestId).toBe('req-new');
+    });
+
+    it('prefers running over queued for equal timestamp signals', () => {
+      const id = 'kaseki-conflict-queued-running';
+      const queued: PersistedJob = {
+        id,
+        status: 'queued',
+        request: baseRequest,
+        createdAt: '2026-05-11T12:00:00Z',
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-queued',
+        requestId: 'req-queued',
+      };
+      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [queued] }), 'utf-8');
+
+      const running: Job = {
+        id,
+        status: 'running',
+        request: baseRequest,
+        createdAt: new Date('2026-05-11T12:00:00Z'),
+        startedAt: new Date('2026-05-11T12:05:00Z'),
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-running',
+        requestId: 'req-running',
+      };
+
+      manager.persistJobs([running]);
+      const merged = readPersistedJob(id);
+      expect(merged.status).toBe('running');
+      expect(merged.requestId).toBe('req-running');
+    });
+
+    it('prefers terminal over non-terminal when recency signals tie', () => {
+      const id = 'kaseki-conflict-terminal';
+      const running: PersistedJob = {
+        id,
+        status: 'running',
+        request: baseRequest,
+        createdAt: '2026-05-11T12:00:00Z',
+        startedAt: '2026-05-11T12:05:00Z',
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-running',
+        requestId: 'req-running',
+      };
+      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [running] }), 'utf-8');
+
+      const failed: Job = {
+        id,
+        status: 'failed',
+        request: baseRequest,
+        createdAt: new Date('2026-05-11T12:00:00Z'),
+        startedAt: new Date('2026-05-11T12:05:00Z'),
+        resultDir: manager.getResultDir(id),
+        correlationId: 'corr-failed',
+        requestId: 'req-failed',
+        finalized: true,
+      };
+
+      manager.persistJobs([failed]);
+      const merged = readPersistedJob(id);
+      expect(merged.status).toBe('failed');
+      expect(merged.requestId).toBe('req-failed');
+    });
+  });
+
   describe('generateInstanceId', () => {
     it('should generate unique instance IDs', async () => {
       const id1 = await manager.generateInstanceId([]);
