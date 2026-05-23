@@ -593,15 +593,26 @@ const controllerPage = String.raw`<!doctype html>
       async function pollRun(runId) {
         stopPolling();
         if (!runId) return;
-        try {
-          const result = await apiRequest(runUrl(runId, '/status'), { auth: true });
-          summarizeRun(result.payload);
-          if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
-            pollTimer = setTimeout(() => pollRun(runId), 5000);
+        let retryCount = 0;
+        const maxRetries = 36;
+        async function poll() {
+          try {
+            const result = await apiRequest(runUrl(runId, '/status'), { auth: true });
+            summarizeRun(result.payload);
+            retryCount = 0;
+            if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
+              pollTimer = setTimeout(poll, 5000);
+            }
+          } catch {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              pollTimer = setTimeout(poll, 10000);
+            } else {
+              setState('Polling stopped after repeated failures.', 'bad');
+            }
           }
-        } catch {
-          pollTimer = setTimeout(() => pollRun(runId), 10000);
         }
+        poll();
       }
 
       // Tab switching
