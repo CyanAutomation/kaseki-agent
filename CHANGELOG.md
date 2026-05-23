@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.41.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.40.2...v1.41.0) (2026-05-23)
+
+
+### Bug Fixes
+
+* Correct regex pattern for requestBody function match in tests ([fa63ba4](https://github.com/CyanAutomation/kaseki-agent/commit/fa63ba4fec81cd205a404114ca64609bdd3873fd))
+
+
+### Features
+
+* Update Kaseki Agent API version to 1.40.2 and enhance web interface with health check tabs ([2c84961](https://github.com/CyanAutomation/kaseki-agent/commit/2c8496147dea618ffd0225eb49bf1ac63f07f186))
+
 ## [1.40.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.40.1...v1.40.2) (2026-05-23)
 
 
