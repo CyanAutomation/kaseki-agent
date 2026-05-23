@@ -176,7 +176,6 @@ describe('JobPersistenceManager', () => {
     });
   });
 
-
   describe('persistJobs conflict resolution', () => {
     const baseRequest = { repoUrl: 'https://github.com/test/repo', ref: 'main' };
 
