@@ -325,6 +325,7 @@ export class JobScheduler {
     });
     this.processes.set(job.id, proc);
     this.processExited.set(job.id, false);
+    this.clearLiveProgressCache(job.id);
     let stdoutTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
@@ -689,19 +690,24 @@ export class JobScheduler {
     if (!/^kaseki-\d+$/.test(id)) {
       return [];
     }
+    const job = this.jobs.get(id);
+    if (job && (job.status === 'completed' || job.status === 'failed')) {
+      return [];
+    }
 
-    const cachedEvents = this.getCachedLiveProgressEvents(id);
+    const cacheKey = this.getLiveProgressCacheKey(id);
+    const cachedEvents = this.getCachedLiveProgressEvents(cacheKey);
     if (cachedEvents) {
       return tail > 0 ? cachedEvents.slice(-tail) : [];
     }
 
     const output = this.getLiveDockerLogTail(id, Math.max(tail * 8, 80));
     if (!output) {
-      this.cacheLiveProgressEvents(id, []);
+      this.cacheLiveProgressEvents(cacheKey, []);
       return [];
     }
     const events = this.parseLiveProgressEvents(output);
-    this.cacheLiveProgressEvents(id, events);
+    this.cacheLiveProgressEvents(cacheKey, events);
     return tail > 0 ? events.slice(-tail) : [];
   }
 
@@ -721,27 +727,39 @@ export class JobScheduler {
     return events;
   }
 
-  private getCachedLiveProgressEvents(id: string): Array<Record<string, unknown>> | undefined {
-    const cached = this.liveProgressCache.get(id);
+  private getCachedLiveProgressEvents(cacheKey: string): Array<Record<string, unknown>> | undefined {
+    const cached = this.liveProgressCache.get(cacheKey);
     if (!cached) {
       return undefined;
     }
     if (Date.now() >= cached.expiresAt) {
-      this.liveProgressCache.delete(id);
+      this.liveProgressCache.delete(cacheKey);
       return undefined;
     }
     return cached.events;
   }
 
-  private cacheLiveProgressEvents(id: string, events: Array<Record<string, unknown>>): void {
-    this.liveProgressCache.set(id, {
+  private cacheLiveProgressEvents(cacheKey: string, events: Array<Record<string, unknown>>): void {
+    this.liveProgressCache.set(cacheKey, {
       events,
       expiresAt: Date.now() + this.getLiveProgressCacheTtlMs(),
     });
   }
 
   private clearLiveProgressCache(id: string): void {
-    this.liveProgressCache.delete(id);
+    const prefix = `${id}::`;
+    for (const key of this.liveProgressCache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.liveProgressCache.delete(key);
+      }
+    }
+  }
+
+  private getLiveProgressCacheKey(id: string): string {
+    const job = this.jobs.get(id);
+    const startedAt = job?.startedAt?.getTime() ?? 0;
+    const processId = job?.processId ?? 0;
+    return `${id}::${startedAt}::${processId}`;
   }
 
   private getLiveProgressCacheTtlMs(): number {
