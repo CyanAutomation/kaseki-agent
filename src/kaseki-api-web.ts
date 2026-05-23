@@ -18,6 +18,9 @@ const controllerPage = String.raw`<!doctype html>
         --accent: #b84b2d;
         --ok: #0c6951;
         --bad: #a6332a;
+        --control-gap: 10px;
+        --control-min-height: 42px;
+        --control-pad: 9px 13px;
       }
       * { box-sizing: border-box; letter-spacing: 0; }
       body {
@@ -71,7 +74,7 @@ const controllerPage = String.raw`<!doctype html>
         outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
         outline-offset: 1px;
       }
-      .grid, .checks, .actions, .probes, .run-status { display: grid; gap: 10px; }
+      .grid, .checks, .action-row, .run-status { display: grid; gap: var(--control-gap); }
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .check {
@@ -81,14 +84,21 @@ const controllerPage = String.raw`<!doctype html>
         font-weight: 500;
       }
       .check input { height: 18px; margin: 0; width: 18px; }
-      .actions, .probes { grid-template-columns: repeat(3, minmax(0, max-content)); }
-      .run-status { grid-template-columns: minmax(0, 1fr) max-content; }
+      .action-row {
+        align-items: end;
+        grid-template-columns: repeat(2, minmax(0, max-content));
+      }
+      .action-row.run-actions { justify-content: end; }
+      .action-row.controller-actions { justify-content: start; }
+      .action-row > button, .run-status > button { width: 100%; }
+      .action-row.run-actions > .run { order: 2; }
+      .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
       button {
         background: var(--ink);
         color: #fff;
         cursor: pointer;
-        min-height: 42px;
-        padding: 9px 13px;
+        min-height: var(--control-min-height);
+        padding: var(--control-pad);
       }
       button.secondary { background: #eef2ee; color: var(--ink); }
       button.run { background: var(--accent); }
@@ -110,7 +120,8 @@ const controllerPage = String.raw`<!doctype html>
       @media (max-width: 860px) {
         main { grid-template-columns: 1fr; padding: 18px; }
         .grid, .checks { grid-template-columns: 1fr; }
-        .actions, .probes { grid-template-columns: 1fr; }
+        .action-row, .run-status { grid-template-columns: 1fr; }
+        .action-row.run-actions > .run { order: 1; }
       }
     </style>
   </head>
@@ -187,8 +198,8 @@ const controllerPage = String.raw`<!doctype html>
             </div>
           </fieldset>
           <fieldset>
-            <legend>Actions</legend>
-            <div class="actions">
+            <legend>Run actions</legend>
+            <div class="action-row run-actions">
             <button class="secondary" id="validate" type="button">Validate task</button>
             <button class="run" id="submit" type="submit">Start run</button>
             </div>
@@ -201,22 +212,19 @@ const controllerPage = String.raw`<!doctype html>
           <p>Health and readiness are public probes. Controller preflight uses the bearer token.</p>
         </div>
         <fieldset>
-          <legend>Health and readiness</legend>
-          <div class="probes">
+          <legend>Controller actions</legend>
+          <div class="action-row controller-actions">
             <button class="secondary" data-probe="/health" type="button">Health</button>
             <button class="secondary" data-probe="/ready" type="button">Readiness</button>
             <button class="secondary" data-probe="/api/preflight" data-auth="true" type="button">Preflight</button>
+            <button class="secondary" id="status" type="button">Check status</button>
           </div>
-        </fieldset>
-        <fieldset>
-          <legend>Run ID status</legend>
           <div class="run-status">
             <div class="form-field">
               <label for="run-id">Run ID</label>
               <input id="run-id" placeholder="Filled after a run is submitted">
               <p class="field-error" data-error-for="runId" aria-live="polite"></p>
             </div>
-            <button class="secondary" id="status" type="button">Check status</button>
           </div>
         </fieldset>
         <div id="state" role="status" aria-live="polite"></div>
