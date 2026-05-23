@@ -98,7 +98,7 @@ const controllerPage = String.raw`<!doctype html>
       .check-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
-      .action-row { align-items: end; }
+      .action-row > button, .run-status > button { width: 100%; }
       .action-row > button, .run-status > button { width: 100%; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
       button {
