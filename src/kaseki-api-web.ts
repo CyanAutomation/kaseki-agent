@@ -32,10 +32,10 @@ const controllerPage = String.raw`<!doctype html>
       main {
         display: grid;
         gap: 20px;
-        grid-template-columns: minmax(320px, 560px) minmax(320px, 1fr);
+        grid-template-columns: minmax(0, 1fr);
         margin: 0 auto;
         max-width: 1260px;
-        padding: clamp(20px, 4vw, 48px);
+        padding: 18px;
       }
       h1, h2 { line-height: 1.1; margin: 0; }
       h1 { font-size: clamp(30px, 4vw, 50px); }
@@ -68,31 +68,32 @@ const controllerPage = String.raw`<!doctype html>
         color: inherit;
         font: inherit;
       }
-      input, textarea, select { background: #fff; padding: 10px 11px; width: 100%; }
+      input, textarea, select {
+        background: #fff;
+        min-height: var(--control-min-height);
+        padding: 10px 11px;
+        width: 100%;
+      }
       textarea { min-height: 140px; resize: vertical; }
       input:focus, textarea:focus, select:focus, button:focus {
         outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
         outline-offset: 1px;
       }
       .grid, .checks, .action-row, .run-status { display: grid; gap: var(--control-gap); }
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid, .checks, .action-row, .run-status { grid-template-columns: minmax(0, 1fr); }
       .check {
         align-items: center;
         display: flex;
         gap: 8px;
         font-weight: 500;
+        min-height: var(--control-min-height);
       }
-      .check input { height: 18px; margin: 0; width: 18px; }
-      .action-row {
-        align-items: end;
-        grid-template-columns: repeat(2, minmax(0, max-content));
-      }
-      .action-row.run-actions { justify-content: end; }
-      .action-row.controller-actions { justify-content: start; }
+      .check input { height: 20px; margin: 0; width: 20px; }
+      .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
-      .action-row.run-actions > .run { order: 2; }
-      .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
+      .action-row { align-items: end; }
+      .action-row > button, .run-status > button { width: 100%; }
+      .run-status { grid-template-columns: minmax(0, 1fr); }
       button {
         background: var(--ink);
         color: #fff;
@@ -117,10 +118,20 @@ const controllerPage = String.raw`<!doctype html>
       #state { color: var(--muted); min-height: 22px; }
       #state.ok { color: var(--ok); }
       #state.bad { color: var(--bad); }
-      @media (max-width: 860px) {
-        main { grid-template-columns: 1fr; padding: 18px; }
-        .grid, .checks { grid-template-columns: 1fr; }
-        .action-row, .run-status { grid-template-columns: 1fr; }
+      @media (min-width: 768px) {
+        main {
+          grid-template-columns: minmax(320px, 560px) minmax(320px, 1fr);
+          padding: clamp(20px, 4vw, 48px);
+        }
+        .grid, .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .action-row {
+          grid-template-columns: repeat(auto-fit, minmax(160px, max-content));
+        }
+        .action-row.run-actions { justify-content: end; }
+        .action-row.controller-actions { justify-content: start; }
+        .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
+      }
+      @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
       }
     </style>
