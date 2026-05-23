@@ -51,7 +51,7 @@ describe('kaseki API web console', () => {
       expect(response.status).toBe(200);
       expect(body).toContain('<input name="scouting" type="checkbox" checked>');
 
-      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n      \}/);
+      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n{6}\}/);
       expect(requestBodyMatch).toBeTruthy();
       const requestBodySource = `function requestBody() {${requestBodyMatch?.[1] || ''}\n      }`;
 
