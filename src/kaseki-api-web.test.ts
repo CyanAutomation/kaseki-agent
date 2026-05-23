@@ -25,12 +25,19 @@ describe('kaseki API web console', () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get('content-type')).toContain('text/html');
+      expect(response.headers.get('content-security-policy')).toContain("style-src 'unsafe-inline'");
       expect(body).toContain('Kaseki Task Console');
       expect(body).toContain('/api/preflight');
       expect(body).toContain('/api/validate');
       expect(body).toContain('/api/runs');
+      expect(body).toContain('name="publishMode"');
+      expect(body).toContain('name="taskMode"');
+      expect(body).toContain('name="timeoutSeconds"');
+      expect(body).toContain('data-run-link="artifacts"');
+      expect(body).toContain('hidden aria-hidden="true"');
       expect(body).toContain('Check status');
       expect(body).toContain('/status');
+      expect(body).toContain('/events?tail=50');
       expect(body).not.toContain('kasekiApiToken =');
     } finally {
       await new Promise<void>((resolve, reject) => {
@@ -51,7 +58,7 @@ describe('kaseki API web console', () => {
       expect(response.status).toBe(200);
       expect(body).toContain('<input name="scouting" type="checkbox" checked>');
 
-      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n{6}\}/);
+      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n      \}/);
       expect(requestBodyMatch).toBeTruthy();
       const requestBodySource = `function requestBody() {${requestBodyMatch?.[1] || ''}\n      }`;
 

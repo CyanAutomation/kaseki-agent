@@ -83,8 +83,8 @@ const controllerPage = String.raw`<!doctype html>
         outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
         outline-offset: 1px;
       }
-      .grid, .checks, .action-row, .run-status { display: grid; gap: var(--control-gap); }
-      .grid, .checks, .action-row, .run-status { grid-template-columns: minmax(0, 1fr); }
+      .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { display: grid; gap: var(--control-gap); }
+      .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { grid-template-columns: minmax(0, 1fr); }
       .check {
         align-items: center;
         display: flex;
@@ -98,9 +98,46 @@ const controllerPage = String.raw`<!doctype html>
       .check-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
-      .action-row > button, .run-status > button { width: 100%; }
-      .action-row > button, .run-status > button { width: 100%; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
+      .summary-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+      .summary-card {
+        background: #f7faf8;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: 4px;
+        min-height: 76px;
+        padding: var(--space-2);
+      }
+      .summary-label { color: var(--muted); font-size: 13px; font-weight: 650; }
+      .summary-value { color: var(--ink); font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .summary-value.ok { color: var(--ok); }
+      .summary-value.bad { color: var(--bad); }
+      .run-links {
+        background: #f7faf8;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        display: grid;
+        gap: var(--space-2);
+        padding: var(--space-3);
+      }
+      .run-links[hidden] { display: none; }
+      .link-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+      .link-grid a {
+        align-items: center;
+        background: #eef2ee;
+        border: 1px solid #99aaa5;
+        border-radius: 6px;
+        color: var(--ink);
+        display: inline-flex;
+        font-weight: 650;
+        justify-content: center;
+        min-height: var(--control-min-height);
+        padding: var(--control-pad);
+        text-decoration: none;
+      }
       button {
         background: var(--ink);
         color: #fff;
@@ -111,6 +148,7 @@ const controllerPage = String.raw`<!doctype html>
       button.secondary { background: #eef2ee; color: var(--ink); }
       button.run { background: var(--accent); }
       button:disabled { cursor: wait; opacity: .65; }
+      .toolbar-button { white-space: nowrap; }
       .response-panel {
         background: #172022;
         border: 1px solid #2e3a3d;
@@ -262,13 +300,31 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button">Preflight<span class="health-check-status" data-status="preflight"></span></button>
             <button class="health-check-button" id="status-check" type="button">Check status<span class="health-check-status" data-status="status"></span></button>
           </div>
+          <div class="summary-grid" id="health-summary" aria-live="polite">
+            <div class="summary-card">
+              <span class="summary-label">Controller</span>
+              <span class="summary-value" data-summary="controller">Not checked</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Queue</span>
+              <span class="summary-value" data-summary="queue">Not checked</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Preflight</span>
+              <span class="summary-value" data-summary="preflight">Not checked</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Run</span>
+              <span class="summary-value" data-summary="run">No run selected</span>
+            </div>
+          </div>
           <div class="form-field">
             <label for="run-id">Run ID (for Check Status)</label>
             <input id="run-id" placeholder="Filled after a run is submitted">
           </div>
           <div id="state" role="status" aria-live="polite"></div>
         </div>
-        <div id="submit-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="submit-heading">
+        <div id="submit-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="submit-heading" hidden aria-hidden="true">
           <div>
             <h2 id="submit-heading">Submit Repository Task</h2>
             <p>Configure and submit a task for the ephemeral agent to execute.</p>
@@ -292,11 +348,35 @@ const controllerPage = String.raw`<!doctype html>
               <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
-            <!-- Hidden fields with defaults -->
-            <input id="ref" name="ref" type="hidden" value="main">
-            <input id="publish-mode" name="publishMode" type="hidden" value="auto">
-            <input id="task-mode" name="taskMode" type="hidden" value="patch">
-            <input id="timeout-seconds" name="timeoutSeconds" type="hidden" value="10800">
+            <div class="grid">
+              <div class="form-field">
+                <label for="ref">Git ref</label>
+                <input id="ref" name="ref" value="main" placeholder="main">
+                <p class="field-helper">Branch, tag, or commit SHA to start from.</p>
+              </div>
+              <div class="form-field">
+                <label for="timeout-seconds">Timeout</label>
+                <input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" step="60" value="10800">
+                <p class="field-helper">Run timeout in seconds.</p>
+              </div>
+              <div class="form-field">
+                <label for="task-mode">Task mode</label>
+                <select id="task-mode" name="taskMode">
+                  <option value="patch" selected>Patch</option>
+                  <option value="inspect">Inspect</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="publish-mode">Publish mode</label>
+                <select id="publish-mode" name="publishMode">
+                  <option value="pr" selected>Pull request</option>
+                  <option value="draft_pr">Draft pull request</option>
+                  <option value="branch">Branch only</option>
+                  <option value="auto">Auto</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
           </fieldset>
           <fieldset>
             <legend>Options</legend>
@@ -324,6 +404,15 @@ const controllerPage = String.raw`<!doctype html>
         <div>
           <h2 id="responses-heading">Responses</h2>
         </div>
+        <div class="run-links" id="run-links" hidden>
+          <strong>Run follow-through</strong>
+          <div class="link-grid">
+            <a data-run-link="status" href="#">Status</a>
+            <a data-run-link="events" href="#">Events</a>
+            <a data-run-link="stdout" href="#">Stdout</a>
+            <a data-run-link="artifacts" href="#">Artifacts</a>
+          </div>
+        </div>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
           <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a health check or submit a task to see responses.</pre>
@@ -337,6 +426,8 @@ const controllerPage = String.raw`<!doctype html>
       const state = document.querySelector('#state');
       const tokenInput = document.querySelector('#token');
       const runIdInput = document.querySelector('#run-id');
+      const runLinks = document.querySelector('#run-links');
+      let pollTimer = null;
       tokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
 
       function sanitizeOutput(value) {
@@ -366,6 +457,66 @@ const controllerPage = String.raw`<!doctype html>
         output.classList.toggle('empty', !text);
       }
 
+      function setSummary(key, value, kind) {
+        const element = document.querySelector('[data-summary="' + key + '"]');
+        if (!element) return;
+        element.textContent = value;
+        element.className = 'summary-value' + (kind ? ' ' + kind : '');
+      }
+
+      function runUrl(runId, suffix) {
+        return '/api/runs/' + encodeURIComponent(runId) + suffix;
+      }
+
+      function showRunLinks(runId) {
+        if (!runId) return;
+        const links = {
+          status: runUrl(runId, '/status'),
+          events: runUrl(runId, '/events?tail=50'),
+          stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
+          artifacts: runUrl(runId, '/artifacts'),
+        };
+        Object.entries(links).forEach(([key, href]) => {
+          const link = document.querySelector('[data-run-link="' + key + '"]');
+          if (link) link.href = href;
+        });
+        runLinks.hidden = false;
+      }
+
+      function isTerminalStatus(status) {
+        return status === 'completed' || status === 'failed';
+      }
+
+      function stopPolling() {
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+
+      function summarizeHealth(path, payload) {
+        if (path === '/health') {
+          setSummary('controller', payload.status || 'Healthy', 'ok');
+          if (payload.queue) {
+            setSummary('queue', String(payload.queue.running || 0) + ' running, ' + String(payload.queue.pending || 0) + ' pending', 'ok');
+          }
+        }
+        if (path === '/ready') {
+          setSummary('controller', payload.status || 'Ready', 'ok');
+        }
+        if (path === '/api/preflight') {
+          const checks = Array.isArray(payload.checks) ? payload.checks : [];
+          const failed = checks.filter((check) => !check.ok);
+          setSummary('preflight', failed.length === 0 ? String(checks.length) + ' checks passed' : String(failed.length) + ' failed', failed.length === 0 ? 'ok' : 'bad');
+        }
+      }
+
+      function summarizeRun(payload) {
+        if (!payload || !payload.status) return;
+        const bits = [payload.status];
+        if (payload.progress && payload.progress.stage) bits.push(payload.progress.stage);
+        if (payload.progress && typeof payload.progress.percentComplete === 'number') bits.push(String(payload.progress.percentComplete) + '%');
+        setSummary('run', bits.join(' - '), payload.status === 'failed' ? 'bad' : 'ok');
+      }
+
       function requestBody() {
         const data = new FormData(form);
         const timeoutSeconds = String(data.get('timeoutSeconds') || '10800').trim();
@@ -384,17 +535,7 @@ const controllerPage = String.raw`<!doctype html>
           body.timeoutSeconds = parsed;
         }
         return body;
-
-
-
-
-
-}
-
-
-
-
-
+      }
 
       async function apiRequest(path, options) {
         const token = tokenInput.value.trim();
@@ -425,6 +566,11 @@ const controllerPage = String.raw`<!doctype html>
           response: payload,
         }, null, 2));
         setState(response.ok ? 'Request completed.' : 'Request failed.', response.ok ? 'ok' : 'bad');
+        if (response.ok && payload && typeof payload === 'object') {
+          summarizeHealth(path, payload);
+          summarizeRun(payload);
+          if (runId) showRunLinks(runId);
+        }
         return { payload, response };
       }
 
@@ -433,13 +579,28 @@ const controllerPage = String.raw`<!doctype html>
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         setState('Contacting the controller...');
         try {
-          await apiRequest(path, options);
+          return await apiRequest(path, options);
         } catch (error) {
           setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
           setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
           setState('Request could not be sent.', 'bad');
+          return { payload: null, response: { ok: false } };
         } finally {
           button.disabled = false;
+        }
+      }
+
+      async function pollRun(runId) {
+        stopPolling();
+        if (!runId) return;
+        try {
+          const result = await apiRequest(runUrl(runId, '/status'), { auth: true });
+          summarizeRun(result.payload);
+          if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
+            pollTimer = setTimeout(() => pollRun(runId), 5000);
+          }
+        } catch {
+          pollTimer = setTimeout(() => pollRun(runId), 10000);
         }
       }
 
@@ -447,17 +608,18 @@ const controllerPage = String.raw`<!doctype html>
       document.querySelectorAll('.tab-button').forEach((button) => {
         button.addEventListener('click', () => {
           const tabName = button.dataset.tab;
-          // Update tab buttons
           document.querySelectorAll('.tab-button').forEach(b => {
-            b.classList.toggle('active', b.dataset.tab === tabName);
-            b.setAttribute('aria-selected', b.dataset.tab === tabName ? 'true' : 'false');
+            const active = b.dataset.tab === tabName;
+            b.classList.toggle('active', active);
+            b.setAttribute('aria-selected', active ? 'true' : 'false');
           });
-          // Update tab content
           document.querySelectorAll('.tab-content').forEach(content => {
             const contentTabName = content.id.replace('-tab', '');
-            content.classList.toggle('hidden', contentTabName !== tabName);
+            const active = contentTabName === tabName;
+            content.classList.toggle('hidden', !active);
+            content.hidden = !active;
+            content.setAttribute('aria-hidden', active ? 'false' : 'true');
           });
-          // Store preference
           sessionStorage.setItem('kasekiActiveTab', tabName);
         });
       });
@@ -469,16 +631,15 @@ const controllerPage = String.raw`<!doctype html>
       // Health check button handlers
       document.querySelectorAll('[data-probe]').forEach((button) => {
         button.addEventListener('click', () => {
-          const statusKey = button.dataset.probe.replace(/\//g, '-').replace('-api-', '-');
-          const statusEl = document.querySelector('[data-status="' + statusKey + '"]');
+          const statusEl = button.querySelector('.health-check-status');
           if (statusEl) {
             statusEl.className = 'health-check-status spinner';
           }
           run(button, button.dataset.probe, {
             auth: button.dataset.auth === 'true',
-          }).then(() => {
+          }).then(({ response }) => {
             if (statusEl) {
-              statusEl.className = 'health-check-status ok';
+              statusEl.className = response.ok ? 'health-check-status ok' : 'health-check-status bad';
             }
           }).catch(() => {
             if (statusEl) {
@@ -501,7 +662,8 @@ const controllerPage = String.raw`<!doctype html>
           setState('Run status needs a run ID.', 'bad');
           return;
         }
-        run(event.currentTarget, '/api/runs/' + encodeURIComponent(runId) + '/status', { auth: true });
+        showRunLinks(runId);
+        run(event.currentTarget, runUrl(runId, '/status'), { auth: true });
       });
 
       form.addEventListener('submit', (event) => {
@@ -515,7 +677,9 @@ const controllerPage = String.raw`<!doctype html>
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
               runIdInput.value = payload.id;
-              setOutputMetadata('completed', payload.id);
+              showRunLinks(payload.id);
+              setOutputMetadata('queued', payload.id);
+              pollRun(payload.id);
             }
           })
           .catch((error) => {
@@ -535,7 +699,7 @@ const controllerPage = String.raw`<!doctype html>
 export function createWebRouter(): Router {
   const router = Router();
   router.get(['/', '/ui'], (_req, res) => {
-    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'unsafe-inline'");
+    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'");
     res.set('Referrer-Policy', 'no-referrer');
     res.type('html').send(controllerPage);
   });
