@@ -18,6 +18,8 @@ export type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' |
   completedAt?: string;
 };
 
+type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
+
 /**
  * Job persistence manager handles all file I/O and job index operations.
  * Manages unique instance ID allocation, job index persistence, and locking.
@@ -42,9 +44,10 @@ export class JobPersistenceManager {
    * Load persisted jobs from index file.
    * Returns array of loaded jobs and queued jobs that should be restarted.
    */
-  loadPersistedJobs(): { jobs: Job[]; queuedJobs: Job[] } {
+  loadPersistedJobs(): { jobs: Job[]; queuedJobs: Job[]; status: LoadPersistedJobsStatus } {
     const jobs: Job[] = [];
     const queuedJobs: Job[] = [];
+    let status: LoadPersistedJobsStatus = 'loaded';
 
     try {
       this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
@@ -73,13 +76,15 @@ export class JobPersistenceManager {
         } catch {
           // A corrupt index should not prevent the API from starting; existing
           // artifacts remain available on disk for direct inspection.
+          status = 'read_error';
         }
       });
-    } catch {
+    } catch (error) {
       // Lock contention during startup is best-effort; a future persist/load cycle will reconcile state.
+      status = (error as Error).message.includes('Failed to acquire') ? 'lock_contention' : 'read_error';
     }
 
-    return { jobs, queuedJobs };
+    return { jobs, queuedJobs, status };
   }
 
   /**
@@ -400,14 +405,23 @@ export class JobPersistenceManager {
    */
   private withSyncLock<T>(lockPath: string, lockName: string, callback: () => T): T {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
-    try {
-      fs.mkdirSync(lockPath, { mode: 0o700 });
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST') {
-        throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
+    let acquired = false;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        fs.mkdirSync(lockPath, { mode: 0o700 });
+        acquired = true;
+        break;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== 'EEXIST') {
+          throw err;
+        }
+        this.sleepSync(25);
       }
-      throw err;
+    }
+
+    if (!acquired) {
+      throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
     }
 
     try {
@@ -415,5 +429,11 @@ export class JobPersistenceManager {
     } finally {
       fs.rmSync(lockPath, { recursive: true, force: true });
     }
+  }
+
+  private sleepSync(ms: number): void {
+    const buffer = new SharedArrayBuffer(4);
+    const waitArray = new Int32Array(buffer);
+    Atomics.wait(waitArray, 0, 0, ms);
   }
 }
