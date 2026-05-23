@@ -241,7 +241,7 @@ export class JobPersistenceManager {
     // Terminal states (completed/failed) always take precedence over non-terminal
     const prevIsTerminal = this.isTerminalPersistedJob(prev);
     const jobIsTerminal = this.isTerminalPersistedJob(job);
-    
+
     if (prevIsTerminal && !jobIsTerminal) {
       // prev is terminal, job is not -> prev is more recent
       return -1;
@@ -441,11 +441,11 @@ export class JobPersistenceManager {
     }
   }
 
-private sleepSync(ms: number): void {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
+  private sleepSync(ms: number): void {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
     // Busy-wait loop - less ideal but doesn't block event loop completely
     // For very short waits (25ms), this is acceptable
+    }
   }
-}
 }

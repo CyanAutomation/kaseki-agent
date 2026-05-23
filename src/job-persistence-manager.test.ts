@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { Job } from './kaseki-api-types';
 import { JobPersistenceManager, PersistedJob } from './job-persistence-manager';
 import { KasekiApiConfig } from './kaseki-api-config';
@@ -115,7 +116,6 @@ describe('JobPersistenceManager', () => {
       expect(result.queuedJobs[0].id).toBe('kaseki-1');
     });
 
-
     it('retries sync lock acquisition during initial contention and eventually loads jobs', () => {
       const job: PersistedJob = {
         id: 'kaseki-1',
@@ -136,15 +136,15 @@ describe('JobPersistenceManager', () => {
       fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
       fs.mkdirSync(lockPath, { recursive: true });
 
-const releaseProc = require('child_process').spawn(process.execPath, [
-  '-e',
-  `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
-]);
+      const releaseProc = spawn(process.execPath, [
+        '-e',
+        `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
+      ]);
 
-const result = manager.loadPersistedJobs();
-releaseProc.on('exit', () => {});
-releaseProc.unref();
-expect(releaseProc.pid).toBeGreaterThan(0);
+      const result = manager.loadPersistedJobs();
+      releaseProc.on('exit', () => {});
+      releaseProc.unref();
+      expect(releaseProc.pid).toBeGreaterThan(0);
       expect(result.status).toBe('loaded');
       expect(result.jobs).toHaveLength(1);
     });
