@@ -18,50 +18,54 @@ const controllerPage = String.raw`<!doctype html>
         --accent: #b84b2d;
         --ok: #0c6951;
         --bad: #a6332a;
-        --control-gap: 10px;
+        --space-1: 8px;
+        --space-2: 12px;
+        --space-3: 16px;
+        --space-4: 24px;
+        --control-gap: var(--space-2);
         --control-min-height: 42px;
-        --control-pad: 9px 13px;
+        --control-pad: var(--space-2) var(--space-3);
       }
       * { box-sizing: border-box; letter-spacing: 0; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font: 15px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       main {
         display: grid;
-        gap: 20px;
+        gap: var(--space-4);
         grid-template-columns: minmax(0, 1fr);
         margin: 0 auto;
         max-width: 1260px;
-        padding: 18px;
+        padding: var(--space-3);
       }
-      h1, h2 { line-height: 1.1; margin: 0; }
-      h1 { font-size: clamp(30px, 4vw, 50px); }
-      h2 { font-size: 17px; }
-      p { color: var(--muted); margin: 8px 0 0; }
+      h1, h2 { margin: 0; }
+      h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.12; }
+      h2 { font-size: clamp(20px, 2.2vw, 24px); line-height: 1.2; }
+      p { color: var(--muted); font-size: 16px; line-height: 1.5; margin: var(--space-1) 0 0; }
       .panel {
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 20px;
+        padding: var(--space-4);
       }
-      header, form, .stack, fieldset { display: grid; gap: 16px; }
-      .stack { gap: 20px; }
-      section.panel { display: grid; gap: 16px; }
+      header, form, .stack, fieldset { display: grid; gap: var(--space-3); }
+      .stack { gap: var(--space-4); }
+      section.panel { display: grid; gap: var(--space-3); }
       fieldset {
         border: 1px solid var(--line);
         border-radius: 8px;
         margin: 0;
-        padding: 14px;
+        padding: var(--space-3);
       }
-      legend { font-weight: 650; padding: 0 6px; }
-      .form-fields { display: grid; gap: 14px; }
-      .form-field { display: grid; gap: 6px; }
-      .form-field > label { font-weight: 650; }
-      .field-helper { color: var(--muted); font-size: 13px; }
-      .field-error { color: var(--bad); font-size: 13px; min-height: 1em; }
+      legend { font-weight: 650; padding: 0 var(--space-1); }
+      .form-fields { display: grid; gap: var(--space-3); }
+      .form-field { display: grid; gap: var(--space-1); }
+      .form-field > label { font-size: 14px; font-weight: 650; line-height: 1.35; }
+      .field-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
+      .field-error { color: var(--bad); font-size: 14px; line-height: 1.4; min-height: 1em; }
       input, textarea, select, button {
         border: 1px solid #99aaa5;
         border-radius: 6px;
@@ -84,17 +88,17 @@ const controllerPage = String.raw`<!doctype html>
       .check {
         align-items: center;
         display: flex;
-        gap: 8px;
+        gap: var(--space-1);
         font-weight: 500;
         min-height: var(--control-min-height);
       }
       .check input { flex: 0 0 20px; height: 20px; margin: 0; width: 20px; }
       .check-copy { display: grid; gap: 2px; }
-      .check-label { color: var(--ink); font-weight: 550; line-height: 1.3; }
-      .check-helper { color: var(--muted); font-size: 13px; line-height: 1.35; }
+      .check-label { color: var(--ink); font-size: 14px; font-weight: 550; line-height: 1.35; }
+      .check-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
-      .action-row { align-items: end; }
+      .action-row > button, .run-status > button { width: 100%; }
       .action-row > button, .run-status > button { width: 100%; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
       button {
@@ -119,16 +123,16 @@ const controllerPage = String.raw`<!doctype html>
       .response-meta {
         border-bottom: 1px solid #2e3a3d;
         color: #b9c8c3;
-        font-size: 13px;
+        font-size: 14px;
         margin: 0;
-        padding: 10px 14px;
+        padding: var(--space-2) var(--space-3);
       }
       .response-log {
         color: #e4eee9;
         margin: 0;
         min-height: 0;
         overflow: auto;
-        padding: 16px;
+        padding: var(--space-3);
         white-space: pre-wrap;
         word-break: break-word;
       }
@@ -139,7 +143,7 @@ const controllerPage = String.raw`<!doctype html>
       @media (min-width: 768px) {
         main {
           grid-template-columns: minmax(320px, 560px) minmax(320px, 1fr);
-          padding: clamp(20px, 4vw, 48px);
+          padding: clamp(var(--space-3), 4vw, 48px);
         }
         .grid, .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .action-row {
