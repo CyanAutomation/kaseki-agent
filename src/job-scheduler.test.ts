@@ -1169,6 +1169,54 @@ describe('JobScheduler shutdown lifecycle', () => {
     expect(proc.kill).toHaveBeenCalledTimes(1);
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
   });
+
+  test('shutdown emits failed terminal webhook for queued jobs aborted before execution', async () => {
+    mockSpawn.mockReturnValue(new MockProcess());
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const webhookManager = createMockWebhookManager();
+    const enqueueWebhookSpy = jest.spyOn(webhookManager, 'enqueueWebhook');
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 0,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      webhookManager
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      webhookConfig: {
+        url: 'https://example.com/webhook',
+      },
+    });
+
+    expect(job.status).toBe('queued');
+    expect(scheduler.getQueueStatus().pending).toBe(1);
+    enqueueWebhookSpy.mockClear();
+
+    scheduler.shutdown();
+
+    expect(job.finalized).toBe(true);
+    expect(job.status).toBe('failed');
+    expect(job.failureClass).toBe('shutdown_aborted');
+    expect(scheduler.getQueueStatus().pending).toBe(0);
+    expect(enqueueWebhookSpy).toHaveBeenCalledTimes(1);
+    expect(enqueueWebhookSpy).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({
+        eventType: 'job.failed',
+      }),
+      job.webhookConfig
+    );
+  });
 });
 
 describe('JobScheduler persistence merge safety', () => {
