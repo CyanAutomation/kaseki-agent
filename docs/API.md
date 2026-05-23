@@ -254,6 +254,7 @@ curl -X POST http://localhost:8080/api/runs \
   taskMode?: "patch" | "inspect";    // "patch" (default) = require changes
   publishMode?: "auto" | "none" | "branch" | "pr" | "draft_pr"; // Optional; omitted API runs default to "pr"
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
+  scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted
   timeoutSeconds?: number;    // Optional per-run timeout (60-10800 seconds)
 }
 ```
@@ -267,6 +268,8 @@ without opening a PR, `auto` lets the worker publish when credentials are
 available and gracefully skip when they are not, and `none` skips GitHub
 publishing. Requests with effective publish mode `branch`, `pr`, or `draft_pr` fail before queueing unless
 GitHub App credentials are readable; call `GET /api/preflight` first to verify that readiness.
+
+For scouting controls, default behavior is enabled when `scouting` is omitted. Disable explicitly with `KASEKI_SCOUTING=0` (CLI/env) or `scouting.enabled=false` in the API request.
 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 
