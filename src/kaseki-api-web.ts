@@ -88,7 +88,10 @@ const controllerPage = String.raw`<!doctype html>
         font-weight: 500;
         min-height: var(--control-min-height);
       }
-      .check input { height: 20px; margin: 0; width: 20px; }
+      .check input { flex: 0 0 20px; height: 20px; margin: 0; width: 20px; }
+      .check-copy { display: grid; gap: 2px; }
+      .check-label { color: var(--ink); font-weight: 550; line-height: 1.3; }
+      .check-helper { color: var(--muted); font-size: 13px; line-height: 1.35; }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
       .action-row { align-items: end; }
@@ -201,11 +204,24 @@ const controllerPage = String.raw`<!doctype html>
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
           </fieldset>
-          <fieldset>
+          <fieldset aria-describedby="run-options-helper">
             <legend>Run options</legend>
+            <p class="field-helper" id="run-options-helper">These options change how the run executes.</p>
             <div class="checks">
-              <label class="check"><input name="scouting" type="checkbox">Enable scouting</label>
-              <label class="check"><input name="startupCheck" type="checkbox">Startup check only</label>
+              <label class="check">
+                <input name="scouting" type="checkbox">
+                <span class="check-copy">
+                  <span class="check-label">Enable scouting</span>
+                  <span class="check-helper">Runs an additional scouting pass before the main task.</span>
+                </span>
+              </label>
+              <label class="check">
+                <input name="startupCheck" type="checkbox">
+                <span class="check-copy">
+                  <span class="check-label">Startup check only</span>
+                  <span class="check-helper">Performs startup checks only and skips task execution.</span>
+                </span>
+              </label>
             </div>
           </fieldset>
           <fieldset>
