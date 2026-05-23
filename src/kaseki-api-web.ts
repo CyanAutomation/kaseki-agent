@@ -38,13 +38,22 @@ const controllerPage = String.raw`<!doctype html>
       h1 { font-size: clamp(30px, 4vw, 50px); }
       h2 { font-size: 17px; }
       p { color: var(--muted); margin: 8px 0 0; }
-      form, section {
+      .panel {
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 20px;
       }
-      header, form, .stack { display: grid; gap: 16px; }
+      header, form, .stack, fieldset { display: grid; gap: 16px; }
+      .stack { gap: 20px; }
+      section.panel { display: grid; gap: 16px; }
+      fieldset {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        margin: 0;
+        padding: 14px;
+      }
+      legend { font-weight: 650; padding: 0 6px; }
       .form-fields { display: grid; gap: 14px; }
       .form-field { display: grid; gap: 6px; }
       .form-field > label { font-weight: 650; }
@@ -107,13 +116,19 @@ const controllerPage = String.raw`<!doctype html>
   </head>
   <body>
     <main>
-      <div class="stack">
+      <section class="panel" aria-labelledby="page-title">
         <header>
-          <h1>Kaseki Task Console</h1>
+          <h1 id="page-title">Kaseki Task Console</h1>
           <p>Submit a repository task to this Kaseki API controller and inspect its checks before a run.</p>
         </header>
+      </section>
+      <section class="panel stack" aria-labelledby="run-configuration-heading">
+        <div>
+          <h2 id="run-configuration-heading">Run configuration</h2>
+        </div>
         <form id="run-form">
-          <div class="form-fields">
+          <fieldset class="form-fields">
+            <legend>Task submission</legend>
             <div class="form-field">
               <label for="token">API bearer token</label>
               <input id="token" name="token" type="password" autocomplete="off" placeholder="Required for preflight and task actions">
@@ -163,36 +178,53 @@ const controllerPage = String.raw`<!doctype html>
               <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
-          </div>
-          <div class="checks">
-            <label class="check"><input name="scouting" type="checkbox">Enable scouting</label>
-            <label class="check"><input name="startupCheck" type="checkbox">Startup check only</label>
-          </div>
-          <div class="actions">
+          </fieldset>
+          <fieldset>
+            <legend>Run options</legend>
+            <div class="checks">
+              <label class="check"><input name="scouting" type="checkbox">Enable scouting</label>
+              <label class="check"><input name="startupCheck" type="checkbox">Startup check only</label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Actions</legend>
+            <div class="actions">
             <button class="secondary" id="validate" type="button">Validate task</button>
             <button class="run" id="submit" type="submit">Start run</button>
-          </div>
+            </div>
+          </fieldset>
         </form>
-      </div>
-      <section class="stack">
+      </section>
+      <section class="panel stack" aria-labelledby="controller-checks-heading">
         <div>
-          <h2>Controller checks</h2>
+          <h2 id="controller-checks-heading">Controller checks</h2>
           <p>Health and readiness are public probes. Controller preflight uses the bearer token.</p>
         </div>
-        <div class="probes">
-          <button class="secondary" data-probe="/health" type="button">Health</button>
-          <button class="secondary" data-probe="/ready" type="button">Readiness</button>
-          <button class="secondary" data-probe="/api/preflight" data-auth="true" type="button">Preflight</button>
-        </div>
-        <div class="run-status">
-          <div class="form-field">
-            <label for="run-id">Run ID</label>
-            <input id="run-id" placeholder="Filled after a run is submitted">
-            <p class="field-error" data-error-for="runId" aria-live="polite"></p>
+        <fieldset>
+          <legend>Health and readiness</legend>
+          <div class="probes">
+            <button class="secondary" data-probe="/health" type="button">Health</button>
+            <button class="secondary" data-probe="/ready" type="button">Readiness</button>
+            <button class="secondary" data-probe="/api/preflight" data-auth="true" type="button">Preflight</button>
           </div>
-          <button class="secondary" id="status" type="button">Check status</button>
-        </div>
+        </fieldset>
+        <fieldset>
+          <legend>Run ID status</legend>
+          <div class="run-status">
+            <div class="form-field">
+              <label for="run-id">Run ID</label>
+              <input id="run-id" placeholder="Filled after a run is submitted">
+              <p class="field-error" data-error-for="runId" aria-live="polite"></p>
+            </div>
+            <button class="secondary" id="status" type="button">Check status</button>
+          </div>
+        </fieldset>
         <div id="state" role="status" aria-live="polite"></div>
+      </section>
+      <section class="panel stack" aria-labelledby="responses-heading">
+        <div>
+          <h2 id="responses-heading">Responses</h2>
+        </div>
         <pre id="output" aria-live="polite">Responses appear here.</pre>
       </section>
     </main>
