@@ -58,7 +58,7 @@ cat > "$FAKE_REPO/package.json" <<'JSON'
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "check": "exit 1",
+    "check": "echo 'BASELINE FAILURE: lint did not pass'; exit 1",
     "test": "exit 0"
   },
   "dependencies": {
@@ -149,6 +149,8 @@ fi
 
 assert_file_contains "$RESULTS_DIR/stage-timings.tsv" '^pre-agent validation[[:space:]]+1[[:space:]]+'
 assert_file_contains "$RESULTS_DIR/pre-validation-timings.tsv" '^npm run check[[:space:]]+1[[:space:]]+'
+assert_file_contains "$RESULTS_DIR/pre-validation.log" 'Raw validation output tail'
+assert_file_contains "$RESULTS_DIR/pre-validation.log" 'BASELINE FAILURE: lint did not pass'
 
 if [ -s "$PI_MARKER" ]; then
   fail "fake pi executable was invoked before baseline validation blocked the run"

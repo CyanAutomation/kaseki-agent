@@ -148,12 +148,30 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Validation & quality
+  'pre-validation.log': {
+    name: 'pre-validation.log',
+    contentType: 'text/plain',
+    description: 'Pre-agent validation command output and baseline failure diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 10,
+    sizeHint: 'medium',
+  },
+
+  'pre-validation-timings.tsv': {
+    name: 'pre-validation-timings.tsv',
+    contentType: 'text/tab-separated-values',
+    description: 'Per-command pre-agent validation timing: command, start, end, elapsed seconds',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 20,
+    sizeHint: 'small',
+  },
+
   'validation.log': {
     name: 'validation.log',
     contentType: 'text/plain',
     description: 'Validation command output and results',
     availability: ArtifactAvailability.ON_FAILURE,
-    triageOrder: 10,
+    triageOrder: 11,
     sizeHint: 'medium',
   },
 
@@ -162,7 +180,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     contentType: 'text/tab-separated-values',
     description: 'Per-command timing: command, start, end, elapsed seconds',
     availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 20,
+    triageOrder: 21,
     sizeHint: 'small',
   },
 
@@ -171,7 +189,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     contentType: 'text/plain',
     description: 'Quality gate evaluation: diff size, changed files, allowlist checks',
     availability: ArtifactAvailability.ON_FAILURE,
-    triageOrder: 11,
+    triageOrder: 12,
     sizeHint: 'small',
   },
 
@@ -180,7 +198,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     contentType: 'text/tab-separated-values',
     description: 'Per-stage timing: stage name, start, end, elapsed seconds',
     availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 21,
+    triageOrder: 22,
     sizeHint: 'small',
   },
 

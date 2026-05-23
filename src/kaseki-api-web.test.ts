@@ -34,10 +34,17 @@ describe('kaseki API web console', () => {
       expect(body).toContain('name="taskMode"');
       expect(body).toContain('name="timeoutSeconds"');
       expect(body).toContain('data-run-link="artifacts"');
+      expect(body).toContain('id="recommended-artifacts"');
+      expect(body).toContain('Recommended artifacts');
+      expect(body).toContain('function loadRecommendedArtifacts(runId)');
+      expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
       expect(body).toContain('hidden aria-hidden="true"');
       expect(body).toContain('Check status');
       expect(body).toContain('/status');
       expect(body).toContain('/events?tail=50');
+      expect(body).toContain('function responseStatusLabel(response, payload)');
+      expect(body).toContain("return payload.status;");
+      expect(body).toContain('Run status updated.');
       expect(body).not.toContain('kasekiApiToken =');
     } finally {
       await new Promise<void>((resolve, reject) => {
