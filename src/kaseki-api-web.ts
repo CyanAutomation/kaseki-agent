@@ -107,17 +107,32 @@ const controllerPage = String.raw`<!doctype html>
       button.secondary { background: #eef2ee; color: var(--ink); }
       button.run { background: var(--accent); }
       button:disabled { cursor: wait; opacity: .65; }
-      pre {
+      .response-panel {
         background: #172022;
+        border: 1px solid #2e3a3d;
         border-radius: 8px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 300px;
+        overflow: hidden;
+      }
+      .response-meta {
+        border-bottom: 1px solid #2e3a3d;
+        color: #b9c8c3;
+        font-size: 13px;
+        margin: 0;
+        padding: 10px 14px;
+      }
+      .response-log {
         color: #e4eee9;
         margin: 0;
-        min-height: 360px;
+        min-height: 0;
         overflow: auto;
         padding: 16px;
         white-space: pre-wrap;
         word-break: break-word;
       }
+      .response-log.empty { color: #9db0aa; }
       #state { color: var(--muted); min-height: 22px; }
       #state.ok { color: var(--ok); }
       #state.bad { color: var(--bad); }
@@ -136,6 +151,7 @@ const controllerPage = String.raw`<!doctype html>
       }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
+        .response-panel { min-height: 52vh; }
       }
     </style>
   </head>
@@ -260,12 +276,16 @@ const controllerPage = String.raw`<!doctype html>
         <div>
           <h2 id="responses-heading">Responses</h2>
         </div>
-        <pre id="output" aria-live="polite">Responses appear here.</pre>
+        <div class="response-panel">
+          <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
+          <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a controller action to see responses and events.</pre>
+        </div>
       </section>
     </main>
     <script>
       const form = document.querySelector('#run-form');
       const output = document.querySelector('#output');
+      const outputMeta = document.querySelector('#output-meta');
       const state = document.querySelector('#state');
       const tokenInput = document.querySelector('#token');
       const runIdInput = document.querySelector('#run-id');
@@ -287,6 +307,15 @@ const controllerPage = String.raw`<!doctype html>
       function setState(message, kind) {
         state.textContent = message;
         state.className = kind || '';
+      }
+
+      function setOutputMetadata(status, runId) {
+        outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
+      }
+
+      function setOutputBody(text) {
+        output.textContent = text;
+        output.classList.toggle('empty', !text);
       }
 
       function requestBody() {
@@ -328,23 +357,29 @@ const controllerPage = String.raw`<!doctype html>
         const contentType = response.headers.get('content-type') || '';
         const payload = contentType.includes('json') ? await response.json() : await response.text();
         if (needsAuth && response.ok) sessionStorage.setItem('kasekiApiToken', token);
-        output.textContent = JSON.stringify({
+        const runId = payload && typeof payload.id === 'string'
+          ? payload.id
+          : String(runIdInput.value || '').trim();
+        setOutputMetadata(response.ok ? 'completed' : 'failed', runId || undefined);
+        setOutputBody(JSON.stringify({
           method: options && options.method || 'GET',
           path,
           status: response.status,
           response: payload,
-        }, null, 2);
+        }, null, 2));
         setState(response.ok ? 'Request completed.' : 'Request failed.', response.ok ? 'ok' : 'bad');
         return { payload, response };
       }
 
       async function run(button, path, options) {
         button.disabled = true;
+        setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         setState('Contacting the controller...');
         try {
           await apiRequest(path, options);
         } catch (error) {
-          output.textContent = sanitizeOutput(error instanceof Error ? error.message : String(error));
+          setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
+          setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
           setState('Request could not be sent.', 'bad');
         } finally {
           button.disabled = false;
@@ -363,7 +398,8 @@ const controllerPage = String.raw`<!doctype html>
       document.querySelector('#status').addEventListener('click', (event) => {
         const runId = runIdInput.value.trim();
         if (!runId) {
-          output.textContent = 'Submit a run or enter a run ID first.';
+          setOutputMetadata('idle');
+          setOutputBody('Submit a run or enter a run ID first.');
           setState('Run status needs a run ID.', 'bad');
           return;
         }
@@ -374,13 +410,18 @@ const controllerPage = String.raw`<!doctype html>
         if (!form.reportValidity()) return;
         const button = document.querySelector('#submit');
         button.disabled = true;
+        setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         setState('Contacting the controller...');
         apiRequest('/api/runs', { method: 'POST', auth: true, body: requestBody() })
           .then(({ payload, response }) => {
-            if (response.ok && payload && typeof payload.id === 'string') runIdInput.value = payload.id;
+            if (response.ok && payload && typeof payload.id === 'string') {
+              runIdInput.value = payload.id;
+              setOutputMetadata('completed', payload.id);
+            }
           })
           .catch((error) => {
-            output.textContent = sanitizeOutput(error instanceof Error ? error.message : String(error));
+            setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
+            setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
             setState('Request could not be sent.', 'bad');
           })
           .finally(() => {
