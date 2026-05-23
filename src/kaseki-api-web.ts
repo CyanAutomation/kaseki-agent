@@ -45,8 +45,11 @@ const controllerPage = String.raw`<!doctype html>
         padding: 20px;
       }
       header, form, .stack { display: grid; gap: 16px; }
-      label { display: grid; gap: 6px; font-weight: 650; }
-      small { color: var(--muted); font-weight: 450; }
+      .form-fields { display: grid; gap: 14px; }
+      .form-field { display: grid; gap: 6px; }
+      .form-field > label { font-weight: 650; }
+      .field-helper { color: var(--muted); font-size: 13px; }
+      .field-error { color: var(--bad); font-size: 13px; min-height: 1em; }
       input, textarea, select, button {
         border: 1px solid #99aaa5;
         border-radius: 6px;
@@ -110,48 +113,57 @@ const controllerPage = String.raw`<!doctype html>
           <p>Submit a repository task to this Kaseki API controller and inspect its checks before a run.</p>
         </header>
         <form id="run-form">
-          <label>
-            API bearer token
-            <input id="token" name="token" type="password" autocomplete="off" placeholder="Required for preflight and task actions">
-            <small>Stored in this tab only after a successful request.</small>
-          </label>
-          <label>
-            Repository URL
-            <input name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
-          </label>
-          <div class="grid">
-            <label>
-              Git ref
-              <input name="ref" value="main" required>
-            </label>
-            <label>
-              Publish mode
-              <select name="publishMode">
-                <option value="pr">Pull request</option>
-                <option value="draft_pr">Draft pull request</option>
-                <option value="branch">Branch only</option>
-                <option value="auto">Auto</option>
-                <option value="none">Do not publish</option>
-              </select>
-            </label>
+          <div class="form-fields">
+            <div class="form-field">
+              <label for="token">API bearer token</label>
+              <input id="token" name="token" type="password" autocomplete="off" placeholder="Required for preflight and task actions">
+              <p class="field-helper">Stored in this tab only after a successful request.</p>
+              <p class="field-error" data-error-for="token" aria-live="polite"></p>
+            </div>
+            <div class="form-field">
+              <label for="repo-url">Repository URL</label>
+              <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
+              <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
+            </div>
+            <div class="grid">
+              <div class="form-field">
+                <label for="ref">Git ref</label>
+                <input id="ref" name="ref" value="main" required>
+                <p class="field-error" data-error-for="ref" aria-live="polite"></p>
+              </div>
+              <div class="form-field">
+                <label for="publish-mode">Publish mode</label>
+                <select id="publish-mode" name="publishMode">
+                  <option value="pr">Pull request</option>
+                  <option value="draft_pr">Draft pull request</option>
+                  <option value="branch">Branch only</option>
+                  <option value="auto">Auto</option>
+                  <option value="none">Do not publish</option>
+                </select>
+                <p class="field-error" data-error-for="publishMode" aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="grid">
+              <div class="form-field">
+                <label for="task-mode">Task mode</label>
+                <select id="task-mode" name="taskMode">
+                  <option value="patch">Patch</option>
+                  <option value="inspect">Inspect</option>
+                </select>
+                <p class="field-error" data-error-for="taskMode" aria-live="polite"></p>
+              </div>
+              <div class="form-field">
+                <label for="timeout-seconds">Timeout seconds</label>
+                <input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" placeholder="Controller default">
+                <p class="field-error" data-error-for="timeoutSeconds" aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="task-prompt">Task details</label>
+              <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
+              <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
+            </div>
           </div>
-          <div class="grid">
-            <label>
-              Task mode
-              <select name="taskMode">
-                <option value="patch">Patch</option>
-                <option value="inspect">Inspect</option>
-              </select>
-            </label>
-            <label>
-              Timeout seconds
-              <input name="timeoutSeconds" type="number" min="60" max="10800" placeholder="Controller default">
-            </label>
-          </div>
-          <label>
-            Task details
-            <textarea name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
-          </label>
           <div class="checks">
             <label class="check"><input name="scouting" type="checkbox">Enable scouting</label>
             <label class="check"><input name="startupCheck" type="checkbox">Startup check only</label>
@@ -173,10 +185,11 @@ const controllerPage = String.raw`<!doctype html>
           <button class="secondary" data-probe="/api/preflight" data-auth="true" type="button">Preflight</button>
         </div>
         <div class="run-status">
-          <label>
-            Run ID
+          <div class="form-field">
+            <label for="run-id">Run ID</label>
             <input id="run-id" placeholder="Filled after a run is submitted">
-          </label>
+            <p class="field-error" data-error-for="runId" aria-live="polite"></p>
+          </div>
           <button class="secondary" id="status" type="button">Check status</button>
         </div>
         <div id="state" role="status" aria-live="polite"></div>
