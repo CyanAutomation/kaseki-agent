@@ -19,6 +19,7 @@ describe('RunCommand', () => {
     'KASEKI_API_URL',
     'KASEKI_DRY_RUN',
     'KASEKI_AGENT_TIMEOUT_SECONDS',
+    'KASEKI_VALIDATION_COMMANDS',
     ...INLINE_SECRET_ENV_VARS,
   ] as const;
   let originalEnv: Record<string, string | undefined>;
