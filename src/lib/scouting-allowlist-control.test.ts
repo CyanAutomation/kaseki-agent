@@ -360,6 +360,20 @@ describe('Scouting Allowlist Control', () => {
       expect(finalPatterns).toContain('src/**');
       expect(finalPatterns).toContain('src/parser.ts');
     });
+
+    it('should handle validation patterns merge when user patterns are empty', () => {
+      // This is the scenario from the bug report: web UI submission with empty allowlist
+      // Scouting suggests patterns, user patterns are empty (from web UI)
+      const scoutingValidationPatterns = 'README.md docs/QUICK_START.md docs/API.md docs/CLI.md docs/DEPLOYMENT.md docs/ENV_VARS.md';
+      const userValidationPatterns = '';
+
+      // Should merge to use scouting patterns when user patterns are empty
+      const mergedValidationPatterns = userValidationPatterns ? `${scoutingValidationPatterns} ${userValidationPatterns}`.trim() : scoutingValidationPatterns;
+
+      expect(mergedValidationPatterns).toEqual(scoutingValidationPatterns);
+      expect(mergedValidationPatterns).toContain('README.md');
+      expect(mergedValidationPatterns).toContain('docs/QUICK_START.md');
+    });
   });
 
   describe('Error Cases', () => {

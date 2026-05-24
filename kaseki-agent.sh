@@ -632,7 +632,7 @@ validate_allowlist_patterns() {
 merge_allowlists() {
   local scouting_patterns user_patterns merged_patterns
   scouting_patterns="${1:?missing scouting patterns}"
-  user_patterns="${2:?missing user patterns}"
+  user_patterns="${2:-}"
   
   # Merge patterns: if both provided, union them; otherwise use whichever is non-empty
   if [ -n "$scouting_patterns" ] && [ -n "$user_patterns" ]; then
