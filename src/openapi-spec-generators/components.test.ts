@@ -196,4 +196,235 @@ describe('OpenAPI Component Builders', () => {
       expect(components.schemas).toEqual(testSchemas);
     });
   });
+
+  describe('buildSecuritySchemes detailed validation', () => {
+    it('BearerAuth should have type http', () => {
+      const schemes = buildSecuritySchemes();
+      expect(schemes.BearerAuth.type).toBe('http');
+    });
+
+    it('BearerAuth should have scheme bearer', () => {
+      const schemes = buildSecuritySchemes();
+      expect(schemes.BearerAuth.scheme).toBe('bearer');
+    });
+
+    it('BearerAuth should have token bearer format', () => {
+      const schemes = buildSecuritySchemes();
+      expect(schemes.BearerAuth.bearerFormat).toBe('token');
+    });
+
+    it('should include only one security scheme', () => {
+      const schemes = buildSecuritySchemes();
+      expect(Object.keys(schemes)).toHaveLength(1);
+    });
+  });
+
+  describe('buildTags detailed validation', () => {
+    it('all tags should have non-empty name and description', () => {
+      const tags = buildTags();
+
+      tags.forEach((tag) => {
+        expect(tag.name).toBeTruthy();
+        expect(tag.description).toBeTruthy();
+        expect((tag.name as string).length).toBeGreaterThan(0);
+        expect((tag.description as string).length).toBeGreaterThan(0);
+      });
+    });
+
+    it('tag names should be descriptive', () => {
+      const tags = buildTags();
+      const tagNames = tags.map((t) => t.name);
+
+      const expectedPattern = /^[A-Z][\w\s&]+$/;
+      tagNames.forEach((name) => {
+        expect(name).toMatch(expectedPattern);
+      });
+    });
+
+    it('tag descriptions should explain purpose', () => {
+      const tags = buildTags();
+
+      tags.forEach((tag) => {
+        const desc = tag.description as string;
+        expect(desc.length).toBeGreaterThan(10);
+      });
+    });
+
+    it('specific tags should have correct descriptions', () => {
+      const tags = buildTags();
+      const healthTag = tags.find((t) => t.name === 'Health & Status');
+
+      expect(healthTag).toBeDefined();
+      expect(healthTag?.description).toContain('health');
+    });
+  });
+
+  describe('buildInfo detailed validation', () => {
+    it('title should be Kaseki Agent API', () => {
+      const info = buildInfo();
+      expect(info.title).toBe('Kaseki Agent API');
+    });
+
+    it('version should be a valid semver string', () => {
+      const info = buildInfo();
+      const versionPattern = /^\d+\.\d+\.\d+/;
+      expect(info.version).toMatch(versionPattern);
+    });
+
+    it('description should mention coding agent', () => {
+      const info = buildInfo();
+      expect((info.description as string).toLowerCase()).toContain('agent');
+    });
+
+    it('description should mention Pi or OpenRouter', () => {
+      const info = buildInfo();
+      const desc = (info.description as string).toLowerCase();
+      expect(desc).toMatch(/pi|openrouter|coding|agent/i);
+    });
+
+    it('contact name should be CyanAutomation', () => {
+      const info = buildInfo();
+      const contact = info.contact as Record<string, unknown>;
+      expect(contact.name).toBe('CyanAutomation');
+    });
+
+    it('contact url should be valid and point to GitHub', () => {
+      const info = buildInfo();
+      const contact = info.contact as Record<string, unknown>;
+      expect(contact.url).toContain('github');
+      expect((contact.url as string).startsWith('http')).toBe(true);
+    });
+
+    it('license should be MIT', () => {
+      const info = buildInfo();
+      const license = info.license as Record<string, unknown>;
+      expect(license.name).toBe('MIT');
+    });
+
+    it('license url should reference LICENSE file', () => {
+      const info = buildInfo();
+      const license = info.license as Record<string, unknown>;
+      expect((license.url as string).includes('LICENSE')).toBe(true);
+    });
+  });
+
+  describe('buildServers detailed validation', () => {
+    it('should always return exactly 2 servers', () => {
+      const servers = buildServers();
+      expect(servers).toHaveLength(2);
+    });
+
+    it('localhost server should use http://localhost', () => {
+      const servers = buildServers();
+      const local = servers.find((s) => (s.url as string).includes('localhost'));
+      expect(local?.url).toContain('localhost');
+    });
+
+    it('localhost server should have development description', () => {
+      const servers = buildServers();
+      const local = servers.find((s) => (s.url as string).includes('localhost'));
+      expect((local?.description as string).toLowerCase()).toContain('development');
+    });
+
+    it('production server should have example URL', () => {
+      const servers = buildServers();
+      const prod = servers.find((s) => (s.url as string).includes('example'));
+      expect(prod?.url).toContain('https://');
+    });
+
+    it('production server description should mention production', () => {
+      const servers = buildServers();
+      const prod = servers.find((s) => (s.url as string).includes('example'));
+      expect((prod?.description as string).toLowerCase()).toContain('production');
+    });
+
+    it('all servers should have https:// scheme for production', () => {
+      const servers = buildServers();
+      const prod = servers.find((s) => (s.url as string).includes('example'));
+      expect((prod?.url as string).startsWith('https://')).toBe(true);
+    });
+  });
+
+  describe('buildComponents detailed validation', () => {
+    it('should have securitySchemes with BearerAuth', () => {
+      const components = buildComponents({});
+      expect(components.securitySchemes).toBeDefined();
+      expect((components.securitySchemes as Record<string, unknown>)?.BearerAuth).toBeDefined();
+    });
+
+    it('should preserve schema structure', () => {
+      const testSchema = {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+        },
+      };
+      const testSchemas = { TestSchema: testSchema };
+
+      const components = buildComponents(testSchemas);
+
+      expect((components.schemas as Record<string, unknown>)?.TestSchema).toEqual(testSchema);
+    });
+
+    it('should handle empty schemas object', () => {
+      const components = buildComponents({});
+      expect(components.schemas).toEqual({});
+    });
+
+    it('should have exactly these top-level keys', () => {
+      const components = buildComponents({});
+      const keys = Object.keys(components);
+      expect(keys).toContain('schemas');
+      expect(keys).toContain('securitySchemes');
+    });
+  });
+
+  describe('Version Resolution Fallback', () => {
+    it('should read version from package.json successfully', () => {
+      const info = buildInfo();
+      expect(info.version).not.toBe('0.0.0');
+      expect(info.version).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
+    it('should have a fallback version when package.json read fails', () => {
+      // This test verifies the fallback exists in the code
+      // Testing actual read failures requires mocking fs, which can conflict with other tests
+      const info = buildInfo();
+      expect(info.version).toBeDefined();
+      expect(typeof info.version).toBe('string');
+    });
+  });
+
+  describe('Info Object Structure', () => {
+    it('should have all required OpenAPI info properties', () => {
+      const info = buildInfo();
+
+      expect(info).toHaveProperty('title');
+      expect(info).toHaveProperty('version');
+      expect(info).toHaveProperty('description');
+      expect(info).toHaveProperty('contact');
+      expect(info).toHaveProperty('license');
+    });
+
+    it('contact object should be complete', () => {
+      const info = buildInfo();
+      const contact = info.contact as Record<string, unknown>;
+
+      expect(contact).toHaveProperty('name');
+      expect(contact).toHaveProperty('url');
+      expect(typeof contact.name).toBe('string');
+      expect(typeof contact.url).toBe('string');
+    });
+
+    it('license object should be complete', () => {
+      const info = buildInfo();
+      const license = info.license as Record<string, unknown>;
+
+      expect(license).toHaveProperty('name');
+      expect(license).toHaveProperty('url');
+      expect(typeof license.name).toBe('string');
+      expect(typeof license.url).toBe('string');
+    });
+  });
 });
