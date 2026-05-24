@@ -57,20 +57,19 @@ function extractReviewDetails(pr: GitHubPullRequest): {
     repoName: pr.base.repo.name,
   };
 }
-
 /**
  * Determine if an HTTP status code is retryable
  */
 function isRetryableStatus(status: number): boolean {
   switch (status) {
-    case 429: // Rate limited
-    case 500:
-    case 502:
-    case 503:
-    case 504: // Server errors
-      return true;
-    default:
-      return false;
+  case 429: // Rate limited
+  case 500:
+  case 502:
+  case 503:
+  case 504: // Server errors
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -164,7 +163,7 @@ export async function requestOwnerReview(
         return {
           success: true,
           status: 422,
-          message: `Owner already has review request pending or user cannot be requested`,
+          message: 'Owner already has review request pending or user cannot be requested',
           skipped: false,
         };
       }
