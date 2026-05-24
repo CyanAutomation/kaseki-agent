@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.48.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.47.0...v1.48.0) (2026-05-24)
+
+
+### Bug Fixes
+
+* Clean up formatting in isRetryableStatus function and update message string in requestOwnerReview ([ceedb94](https://github.com/CyanAutomation/kaseki-agent/commit/ceedb94bf3858451472ac9eefdcd48d28600fcf9))
+
+
+### Features
+
+* Add requestOwnerReview functionality with comprehensive tests ([479cb28](https://github.com/CyanAutomation/kaseki-agent/commit/479cb28ed507ccb7e52563e3d9bb2ec46bbe507f))
+
 # [1.47.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.46.0...v1.47.0) (2026-05-24)
 
 
