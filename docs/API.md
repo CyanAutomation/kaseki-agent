@@ -271,6 +271,36 @@ GitHub App credentials are readable; call `GET /api/preflight` first to verify t
 
 For scouting controls, default behavior is enabled when `scouting` is omitted. Disable explicitly with `KASEKI_SCOUTING=0` (CLI/env) or `scouting.enabled=false` in the API request.
 
+**Scouting & Automatic Allowlist Control**
+
+When scouting is enabled (`scouting.enabled: true` or `KASEKI_SCOUTING=1`), the following automatic behavior occurs:
+
+1. **Scouting Phase** (read-only research):
+   - Pi scouting agent inspects the repository and task
+   - Generates `scouting.json` with `suggested_allowlist.agent_patterns` and `suggested_allowlist.validation_patterns`
+   - Outputs coverage metrics: % of changed files matching suggested patterns
+
+2. **Allowlist Merge**:
+   - Suggested patterns from scouting are merged (union) with any user-provided `changedFilesAllowlist` and `validationCommands`
+   - If both scouting and user patterns are provided, main agent can modify files matching either set
+   - If only scouting patterns exist, main agent is scoped to those patterns
+
+3. **Main Agent Phase**:
+   - Runs with merged allowlist in effect; any modifications outside the allowlist are restored
+   - Coverage warnings are logged if patterns are too broad (>98%) or too narrow (<30%)
+
+4. **Result**:
+   - Main agent's scope is automatically narrowed to task-relevant files
+   - Validation commands respect the validation-phase allowlist
+   - Quality gates fail fast (exit code 86) if derived patterns are invalid
+
+**Example with scouting allowlist merge**:
+- Request: `{ changedFilesAllowlist: ["src/**"], scouting: { enabled: true } }`
+- Scouting suggests: `src/parser.ts` and `tests/parser.test.ts`
+- **Merged result**: Main agent can modify `src/**` OR `src/parser.ts` OR `tests/parser.test.ts` → effectively `src/**` (most permissive)
+
+See [docs/QUICK_START.md](QUICK_START.md#scouting-agent--allowlist-control) for usage examples and [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) for detailed allowlist configuration.
+
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 
 Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.

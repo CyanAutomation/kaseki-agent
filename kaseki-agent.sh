@@ -572,6 +572,151 @@ fi
 # shellcheck source=scripts/allowlist-helper.sh
 . "$ALLOWLIST_HELPER"
 
+derive_allowlist_from_scouting() {
+  local scouting_artifact agent_patterns validation_patterns
+  scouting_artifact="${1:?missing scouting artifact path}"
+  
+  if [ ! -f "$scouting_artifact" ]; then
+    printf 'derive_allowlist_from_scouting: scouting artifact not found: %s\n' "$scouting_artifact" >&2
+    return 1
+  fi
+  
+  # Extract patterns from scouting.json
+  agent_patterns="$(node -e "
+    try {
+      const fs = require('node:fs');
+      const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
+        console.log(artifact.suggested_allowlist.agent_patterns.join(' '));
+      }
+    } catch (e) {
+      console.error('Error parsing scouting artifact:', e.message);
+    }
+  " "$scouting_artifact" 2>/dev/null)"
+  
+  validation_patterns="$(node -e "
+    try {
+      const fs = require('node:fs');
+      const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
+        console.log(artifact.suggested_allowlist.validation_patterns.join(' '));
+      }
+    } catch (e) {
+      console.error('Error parsing scouting artifact:', e.message);
+    }
+  " "$scouting_artifact" 2>/dev/null)"
+  
+  printf '%s\n' "$agent_patterns"
+  printf '%s\n' "$validation_patterns"
+}
+
+validate_allowlist_patterns() {
+  local patterns_str test_regex
+  patterns_str="${1:?missing patterns string}"
+  
+  # Try to build a regex from the patterns - if it fails, return error
+  test_regex="$(build_allowlist_regex "$patterns_str" 2>&1)"
+  if [ -z "$test_regex" ]; then
+    # Empty patterns are valid (means no allowlist)
+    return 0
+  fi
+  
+  # Test that the regex is valid by using it with grep
+  if ! printf 'test' | grep -E "^(${test_regex})$" >/dev/null 2>&1; then
+    # grep with empty patterns is valid, so this is fine
+    :
+  fi
+  return 0
+}
+
+merge_allowlists() {
+  local scouting_patterns user_patterns merged_patterns
+  scouting_patterns="${1:?missing scouting patterns}"
+  user_patterns="${2:?missing user patterns}"
+  
+  # Merge patterns: if both provided, union them; otherwise use whichever is non-empty
+  if [ -n "$scouting_patterns" ] && [ -n "$user_patterns" ]; then
+    merged_patterns="$scouting_patterns $user_patterns"
+  elif [ -n "$scouting_patterns" ]; then
+    merged_patterns="$scouting_patterns"
+  elif [ -n "$user_patterns" ]; then
+    merged_patterns="$user_patterns"
+  else
+    merged_patterns=""
+  fi
+  
+  printf '%s' "$merged_patterns"
+}
+
+run_scouting_allowlist_coverage() {
+  local scouting_artifact agent_patterns validation_patterns coverage_json
+  scouting_artifact="${1:?missing scouting artifact path}"
+  
+  if [ ! -f "$scouting_artifact" ] || [ ! -f /results/changed-files.txt ]; then
+    return 0
+  fi
+  
+  agent_patterns="$(derive_allowlist_from_scouting "$scouting_artifact" | head -n 1)"
+  validation_patterns="$(derive_allowlist_from_scouting "$scouting_artifact" | tail -n 1)"
+  
+  # Calculate coverage metrics using dry-run script if available
+  local agent_coverage validation_coverage agent_warnings validation_warnings
+  agent_coverage="0"
+  validation_coverage="0"
+  agent_warnings=""
+  validation_warnings=""
+  
+  if [ -n "$agent_patterns" ] && command -v dry-run-allowlist.sh >/dev/null 2>&1; then
+    agent_coverage="$(dry-run-allowlist.sh --result-dir /results --allowlist "$agent_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+    [ -z "$agent_coverage" ] && agent_coverage="0"
+    
+    # Check for problematic coverage
+    if [ "$agent_coverage" -lt 30 ]; then
+      agent_warnings="patterns too narrow"
+    elif [ "$agent_coverage" -gt 98 ]; then
+      agent_warnings="patterns too broad"
+    fi
+  fi
+  
+  if [ -n "$validation_patterns" ] && command -v dry-run-allowlist.sh >/dev/null 2>&1; then
+    validation_coverage="$(dry-run-allowlist.sh --result-dir /results --allowlist "$validation_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+    [ -z "$validation_coverage" ] && validation_coverage="0"
+    
+    if [ "$validation_coverage" -lt 30 ]; then
+      validation_warnings="patterns too narrow"
+    elif [ "$validation_coverage" -gt 98 ]; then
+      validation_warnings="patterns too broad"
+    fi
+  fi
+  
+  # Update scouting.json with coverage metrics
+  coverage_json=$(node -e "
+    const fs = require('node:fs');
+    const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    artifact.coverage = {
+      agent_phase_percent: parseInt(process.argv[2]) || 0,
+      validation_phase_percent: parseInt(process.argv[3]) || 0,
+      warnings: process.argv[4] ? process.argv[4].split(',').filter(w => w) : []
+    };
+    fs.writeFileSync(process.argv[1], JSON.stringify(artifact, null, 2) + '\n');
+  " "$scouting_artifact" "$agent_coverage" "$validation_coverage" "$agent_warnings,$validation_warnings" 2>/dev/null)
+  
+  # Log coverage metrics
+  if [ "$agent_coverage" -ne 0 ] || [ "$validation_coverage" -ne 0 ]; then
+    {
+      printf '\n[scouting allowlist coverage]\n'
+      printf '  agent_phase: %s%% coverage\n' "$agent_coverage"
+      printf '  validation_phase: %s%% coverage\n' "$validation_coverage"
+      if [ -n "$agent_warnings" ]; then
+        printf '  ⚠ agent_phase warning: %s\n' "$agent_warnings"
+      fi
+      if [ -n "$validation_warnings" ]; then
+        printf '  ⚠ validation_phase warning: %s\n' "$validation_warnings"
+      fi
+    } | tee -a /results/scouting-report.md >> /results/quality.log
+  fi
+}
+
 restore_disallowed_changes() {
   if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
     return 0
@@ -1660,8 +1805,18 @@ The JSON object must be concise and useful to the coding agent. Use this shape:
   "observations": ["facts learned from repository inspection"],
   "plan": ["ordered coding steps"],
   "validation": ["focused commands or checks to run"],
-  "risks": ["uncertainties, edge cases, or assumptions"]
+  "risks": ["uncertainties, edge cases, or assumptions"],
+  "suggested_allowlist": {
+    "agent_patterns": ["glob patterns for files the coding agent should modify"],
+    "validation_patterns": ["glob patterns for files validation commands may touch"]
+  }
 }
+
+Guidelines for suggested_allowlist:
+- agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".
+- validation_patterns: Glob patterns for files that validation commands (npm test, npm run lint, etc.) may legitimately modify. Often identical to agent_patterns, but may differ (e.g., allow ".coverage" or "node_modules/" if generated during validation).
+- Both arrays can be empty if the task scope is unclear; the coding agent will work without allowlist constraints.
+- Prefer accurate scope over convenience: too-broad patterns defeat the purpose; too-narrow patterns will require restoration.
 
 Raw task prompt:
 $TASK_PROMPT
@@ -1701,7 +1856,37 @@ run_scouting_agent() {
   set +e
   chmod -R u+w /workspace/repo 2>> /results/scouting-stderr.log || true
 
-  if [ "$SCOUTING_EXIT" -eq 0 ] && ! node -e 'const fs=require("node:fs"); const input=process.argv[1]; const output=process.argv[2]; const artifact=JSON.parse(fs.readFileSync(input,"utf8")); const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"]; const invalid=[]; if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root"); if (typeof artifact.task !== "string" || !artifact.task.trim()) invalid.push("task"); for (const key of arrayKeys) if (!Array.isArray(artifact[key])) invalid.push(key); if (Array.isArray(artifact.relevant_files) && artifact.relevant_files.some((item) => !item || typeof item.path !== "string" || typeof item.reason !== "string")) invalid.push("relevant_files entries"); if (invalid.length) throw new Error("invalid scouting fields: " + invalid.join(", ")); fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");' "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>> /results/scouting-stderr.log; then
+  if [ "$SCOUTING_EXIT" -eq 0 ] && ! node -e '
+const fs=require("node:fs");
+const input=process.argv[1];
+const output=process.argv[2];
+const artifact=JSON.parse(fs.readFileSync(input,"utf8"));
+const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"];
+const invalid=[];
+
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
+if (typeof artifact.task !== "string" || !artifact.task.trim()) invalid.push("task");
+for (const key of arrayKeys) if (!Array.isArray(artifact[key])) invalid.push(key);
+if (Array.isArray(artifact.relevant_files) && artifact.relevant_files.some((item) => !item || typeof item.path !== "string" || typeof item.reason !== "string")) invalid.push("relevant_files entries");
+
+// Validate suggested_allowlist (optional but if present, must be valid)
+if (artifact.suggested_allowlist) {
+  if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
+    invalid.push("suggested_allowlist");
+  } else {
+    if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) invalid.push("suggested_allowlist.agent_patterns");
+    if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) invalid.push("suggested_allowlist.validation_patterns");
+    if (Array.isArray(artifact.suggested_allowlist.agent_patterns) && !artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.agent_patterns values");
+    if (Array.isArray(artifact.suggested_allowlist.validation_patterns) && !artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.validation_patterns values");
+  }
+} else {
+  // Initialize empty suggested_allowlist if not provided
+  artifact.suggested_allowlist = { agent_patterns: [], validation_patterns: [] };
+}
+
+if (invalid.length) throw new Error("invalid scouting fields: " + invalid.join(", "));
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
+' "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" 2>> /results/scouting-stderr.log; then
     SCOUTING_EXIT=86
     emit_error_event "pi_scouting_artifact_invalid" "Pi scouting did not write a schema-valid JSON handoff to $SCOUTING_CANDIDATE_ARTIFACT" "exit"
   fi
@@ -3317,6 +3502,74 @@ printf 'Pi version: %s\n' "$PI_VERSION"
 if ! run_scouting_agent; then
   exit 0
 fi
+
+# After scouting succeeds, derive and merge allowlists before main agent runs
+if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
+  printf '\n==> derive allowlist from scouting\n'
+  set_current_stage "derive allowlist from scouting"
+  emit_progress "derive allowlist from scouting" "started"
+  
+  scouting_agent_patterns=""
+  scouting_validation_patterns=""
+  allowlist_merge_status="skipped"
+  
+  if scouting_output="$(derive_allowlist_from_scouting "$SCOUTING_ARTIFACT" 2>&1)"; then
+    scouting_agent_patterns="$(printf '%s' "$scouting_output" | head -n 1)"
+    scouting_validation_patterns="$(printf '%s' "$scouting_output" | tail -n 1)"
+    
+    # Validate patterns parse correctly
+    if validate_allowlist_patterns "$scouting_agent_patterns" && validate_allowlist_patterns "$scouting_validation_patterns"; then
+      # Merge with user-provided allowlist
+      user_agent_patterns="${KASEKI_CHANGED_FILES_ALLOWLIST:-}"
+      user_validation_patterns="${KASEKI_VALIDATION_ALLOWLIST:-}"
+      
+      merged_agent_allowlist="$(merge_allowlists "$scouting_agent_patterns" "$user_agent_patterns")"
+      merged_validation_allowlist="$(merge_allowlists "$scouting_validation_patterns" "$user_validation_patterns")"
+      
+      # Export merged allowlists to environment
+      export KASEKI_CHANGED_FILES_ALLOWLIST="$merged_agent_allowlist"
+      export KASEKI_VALIDATION_ALLOWLIST="$merged_validation_allowlist"
+      
+      # Log merge decisions
+      {
+        printf '{\n'
+        printf '  "timestamp": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '  "event": "allowlist_merge",\n'
+        printf '  "scouting_agent_patterns": "%s",\n' "$(printf '%s' "$scouting_agent_patterns" | sed 's/"/\\"/g')"
+        printf '  "user_agent_patterns": "%s",\n' "$(printf '%s' "$user_agent_patterns" | sed 's/"/\\"/g')"
+        printf '  "merged_agent_allowlist": "%s",\n' "$(printf '%s' "$merged_agent_allowlist" | sed 's/"/\\"/g')"
+        printf '  "scouting_validation_patterns": "%s",\n' "$(printf '%s' "$scouting_validation_patterns" | sed 's/"/\\"/g')"
+        printf '  "user_validation_patterns": "%s",\n' "$(printf '%s' "$user_validation_patterns" | sed 's/"/\\"/g')"
+        printf '  "merged_validation_allowlist": "%s"\n' "$(printf '%s' "$merged_validation_allowlist" | sed 's/"/\\"/g')"
+        printf '}\n'
+      } | tee -a /results/metadata.jsonl
+      
+      allowlist_merge_status="merged"
+      
+      # Run coverage validation with dry-run
+      if [ -s /results/changed-files.txt ]; then
+        run_scouting_allowlist_coverage "$SCOUTING_ARTIFACT" 2>&1 | tee -a /results/quality.log
+      fi
+      
+      emit_progress "derive allowlist from scouting" "finished (status=$allowlist_merge_status)"
+    else
+      # Pattern validation failed - fail fast
+      printf 'ERROR: Derived allowlist patterns failed validation. Cannot proceed.\n' | tee -a /results/quality.log >&2
+      STATUS=86
+      FAILED_COMMAND="allowlist pattern validation"
+      emit_error_event "scouting_allowlist_invalid" "Derived allowlist patterns failed validation" "exit"
+      exit 0
+    fi
+  else
+    # Derivation failed - log and fail fast
+    printf 'ERROR: Failed to derive allowlist from scouting artifact: %s\n' "$scouting_output" | tee -a /results/quality.log >&2
+    STATUS=86
+    FAILED_COMMAND="allowlist derivation from scouting"
+    emit_error_event "scouting_allowlist_derivation_failed" "Failed to derive allowlist from scouting artifact" "exit"
+    exit 0
+  fi
+fi
+
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then

@@ -123,6 +123,89 @@ Check results: `ls -la /agents/kaseki-results/`
 
 ---
 
+## Scouting Agent & Allowlist Control
+
+**New in v2.6**: When you enable scouting, the agent automatically analyzes the task and generates allowlist patterns to narrow the scope of the main coding agent.
+
+### What's Scouting?
+
+1. **Research Phase**: Scouting agent (Pi) reads the repository and task prompt (read-only)
+   - Identifies relevant files, dependencies, and constraints
+   - Generates a task plan and validation strategy
+   - Outputs structured research to `scouting.json`
+
+2. **Allowlist Generation**: Scouting recommends which files the main coding agent should modify
+   - Generates glob patterns (e.g., `src/parser.ts`, `tests/**`, `src/lib/parser.ts`)
+   - Calculates coverage metrics (% of changed files matching patterns)
+   - Warns if patterns are too broad (>98%) or too narrow (<30%)
+
+3. **Merge & Apply**: Scouting patterns are merged with any user-provided allowlist, then applied to the main agent
+   - Both agent-phase and validation-phase allowlists are controlled
+   - Main agent runs with narrowed scope, reducing unwanted changes
+
+### Enable Scouting
+
+Via environment variable:
+```bash
+export KASEKI_SCOUTING=1
+export OPENROUTER_API_KEY=sk-or-your-key
+./run-kaseki.sh
+```
+
+Or via API request:
+```json
+{
+  "repoUrl": "https://github.com/user/repo",
+  "taskPrompt": "Fix the parser bug in src/parser.ts",
+  "scouting": {
+    "enabled": true,
+    "model": "openrouter/free",
+    "timeoutSeconds": 300
+  }
+}
+```
+
+### Combine with Manual Allowlist
+
+If you also provide a custom allowlist, both are **merged** (union):
+
+```bash
+export KASEKI_SCOUTING=1
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
+./run-kaseki.sh
+```
+
+In this case:
+- Scouting recommends: `src/parser.ts src/lexer.ts tests/parser.test.ts`
+- You provide: `src/** tests/**`
+- **Result**: Main agent can modify any files in `src/` or `tests/` (broadest of both)
+
+### Check Scouting Results
+
+After a run, inspect:
+- `/results/scouting.json` — Full research artifact with recommended patterns
+- `/results/scouting-report.md` — Coverage metrics and warnings
+- `/results/metadata.jsonl` — Log of allowlist merge decisions
+
+Example `scouting.json`:
+```json
+{
+  "task": "Fix parser bug when handling nested expressions",
+  "plan": ["Identify parse error", "Update parser logic", "Add test"],
+  "suggested_allowlist": {
+    "agent_patterns": ["src/lib/parser.ts", "tests/parser.validation.ts"],
+    "validation_patterns": ["src/lib/parser.ts", "tests/**"]
+  },
+  "coverage": {
+    "agent_phase_percent": 75,
+    "validation_phase_percent": 85,
+    "warnings": ["patterns too narrow"]
+  }
+}
+```
+
+---
+
 ## Advanced Configuration
 
 For more options (timeouts, validation commands, quality gates, etc.), see:
