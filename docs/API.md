@@ -274,6 +274,7 @@ GitHub App credentials are readable; call `GET /api/preflight` first to verify t
 When the GitHub App creates a pull request against a **personal repository** (owner type = `User`), the repository owner is automatically requested as a reviewer. This makes the PR immediately appear in the owner's "Review requested" filter on GitHub, improving discoverability.
 
 **Behavior:**
+
 - **Personal repos** (`owner.type === "User"`): The repo owner is automatically added as a requested reviewer
   - PR appears in owner's "Review requested" view
   - No additional configuration needed
@@ -282,6 +283,7 @@ When the GitHub App creates a pull request against a **personal repository** (ow
   - Organizations can configure branch protection rules to require reviews
 
 **Requirements:**
+
 - GitHub App must have **"Pull requests: write"** permission (already required for PR creation)
 - No additional configuration or feature flags needed
 - Automatic and always-on for personal repositories
@@ -315,6 +317,7 @@ When scouting is enabled (`scouting.enabled: true` or `KASEKI_SCOUTING=1`), the 
    - Quality gates fail fast (exit code 86) if derived patterns are invalid
 
 **Example with scouting allowlist merge**:
+
 - Request: `{ changedFilesAllowlist: ["src/**"], scouting: { enabled: true } }`
 - Scouting suggests: `src/parser.ts` and `tests/parser.test.ts`
 - **Merged result**: Main agent can modify `src/**` OR `src/parser.ts` OR `tests/parser.test.ts` → effectively `src/**` (most permissive)
