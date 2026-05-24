@@ -1,494 +1,348 @@
-# Kaseki API Service - Development Guide
+# Kaseki Agent - Development Guide
+
+This guide provides an overview of the Kaseki Agent architecture for developers working on the codebase.
 
 ## Architecture Overview
 
-The Kaseki API Service provides HTTP REST endpoints for remote control of kaseki-agent runs. It wraps existing kaseki-agent infrastructure and adds HTTP layer, job queue management, and result caching.
+Kaseki Agent is an ephemeral coding-agent runner that:
+1. Spins up a disposable Docker container
+2. Clones a target Git repository inside it
+3. Invokes the Pi CLI coding agent via OpenRouter
+4. Runs validation commands
+5. Collects artifacts and produces reports
 
 ```
-┌──────────────────────────┐
-│ External Client (e.g. OpenClaw)       │
-└────────────────┬─────────────────────┘
-                 │ HTTP REST + Bearer Auth
-     ┌───────────▼──────────────────┐
-     │ Express HTTP Server          │
-     │ (kaseki-api-service.ts)      │
-     └────────────┬─────────────────┘
-                  │
-        ┌─────────┴──────────┐
-        │                    │
-    ┌───▼────────┐   ┌──────▼──────────┐
-    │ Job Queue  │   │ Result Cache    │
-    │ Scheduler  │   │ (resultcache.ts)│
-    │ (job-      │   └─────────────────┘
-    │ scheduler) │
-    └───┬────────┘
-        │
-    ┌───▼──────────────────────────┐
-    │ kaseki-activate.sh           │
-    │ (spawn child process)        │
-    └───┬──────────────────────────┘
-        │
-    ┌───▼──────────────────────────┐
-    │ Docker Container             │
-    │ (kaseki-agent.sh runs)       │
-    └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ External Client (Web UI, CLI, CI/CD, etc.)                  │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ HTTP REST + Bearer Auth (API Service)
+            ┌─────────▼─────────────────────────────────────┐
+            │ Kaseki API Service                           │
+            │ └─ Job Queue Management                      │
+            │ └─ Result Caching                           │
+            │ └─ REST Endpoints                            │
+            └────────────┬───────────────────────────────────┘
+                        │
+            ┌────────────▼───────────────────────────────────┐
+            │ Agent Execution                               │
+            │ └─ kaseki-agent.sh (spawned in container)    │
+            │ └─ Docker Container (ephemeral)              │
+            │ └─ Pi CLI Invocation                         │
+            │ └─ Validation & Quality Gates                │
+            └─────────────────────────────────────────────────┘
 ```
 
-## Key Components
+## Core Components
 
-### 1. Types & Validation (`src/kaseki-api-types.ts`, ~150 lines)
+### 1. CLI Interface (`src/cli/`)
+**Entry point for all user interactions**
 
-Defines TypeScript interfaces and Zod validation schemas:
+- **`kaseki-agent init`** - Interactive setup wizard
+- **`kaseki-agent run`** - Execute single runs
+- **`kaseki-agent serve`** - Start API service
+- **`kaseki-agent status`** - Monitor running jobs
+- **`kaseki-agent doctor`** - Health checks
 
-- `RunRequest` — Request to trigger a job
-- `StatusResponse` — Job status with progress
-- `AnalysisResponse` — Comprehensive result summary
-- `Job` — Internal job state representation
+### 2. API Service (`src/kaseki-api-*.ts`)
+**HTTP REST API for remote control**
 
-Uses Zod for runtime validation of incoming requests.
+- **Endpoints**: `/api/runs`, `/api/runs/:id/status`, `/api/runs/:id/analysis`
+- **Authentication**: Bearer token validation
+- **Job Queue**: FIFO with concurrency control
+- **Result Cache**: Lazy-loading with TTL expiration
+- **Type Safety**: Zod validation + TypeScript interfaces
 
-### 2. Configuration (`src/kaseki-api-config.ts`, ~128 lines)
+### 3. Agent Runner (`kaseki-agent.sh`)
+**Containerized execution engine**
 
-Loads and validates environment variables:
+- **Environment Setup**: Node.js v24, Docker, dependencies
+- **Repository Management**: Clone, checkout, reset
+- **Pi CLI Integration**: Invoke coding agent with timeout
+- **Validation Pipeline**: Execute user-defined commands
+- **Artifact Collection**: Git diffs, logs, metadata, reports
 
-- API keys (from env or file)
-- Port, concurrency limits, timeouts
-- Directory paths
-- Log level
+### 4. Setup System (`src/setup/`)
+**Configuration and initialization**
 
-Provides `loadConfig()` and `validateApiKey()` functions.
+- **Environment Detection**: Auto-detect Docker, Node.js, permissions
+- **Setup Wizard**: Interactive configuration with validation
+- **Secret Management**: Secure credential storage (~/.kaseki/)
+- **Template System**: Auto-initialize workspace templates
 
-### 3. Job Scheduler (`src/job-scheduler.ts`, ~195 lines)
+### 5. Quality Gates (`src/quality/`)
+**Automated validation and filtering**
 
-Manages in-memory FIFO queue with concurrency control:
+- **Diff Size Limits**: Configurable maximum change size
+- **File Allowlists**: Pattern-based restoration of approved changes
+- **Secret Scanning**: Detect and handle credential leaks
+- **Validation Commands**: Execute user-defined checks
+- **Exit Codes**: Structured error reporting
 
-- `submitJob()` — Add to queue
-- `getJob()` / `listJobs()` — Query state
-- Spawns `kaseki-activate.sh` when job runs
-- Handles timeouts, failure parsing
-- Graceful shutdown via `shutdown()`
+### 6. Utilities (`src/utils/`, `scripts/`)
+**Supporting tools and scripts**
 
-Key features:
-
-- Auto-generates unique instance IDs (kaseki-1, kaseki-2, ...)
-- Respects max concurrent limit
-- Traps exit codes and categorizes failures
-
-### 4. Result Cache (`src/result-cache.ts`, ~65 lines)
-
-Lazy-loads and caches artifacts to reduce filesystem reads:
-
-- `getOrLoad(filePath)` — Load file or return cached
-- TTL-based expiration (default: 5 min)
-- Memory limit and LRU eviction
-- Per-job cleanup
-
-Configured: max 20 entries, 10 MB per file.
-
-### 5. API Routes (`src/kaseki-api-routes.ts`, ~370 lines)
-
-Express route handlers grouped by feature:
-
-**Core Endpoints:**
-
-- `POST /api/runs` — Submit job (202 Accepted)
-- `GET /api/runs` — List all recent runs
-- `GET /api/runs/:id/status` — Poll status + progress
-- `GET /api/runs/:id/analysis` — Comprehensive summary
-
-**Artifact Access:**
-
-- `GET /api/results/:id/:file` — Download diffs, metadata
-- `GET /api/runs/:id/logs/:logtype` — Access logs
-
-**Health:**
-
-- `GET /health` — No-auth health check
-
-**Middleware:**
-
-- Bearer token validation (skip for `/health`)
-- RFC 7807 error responses
-- Request validation via Zod
-
-### 6. Express Service (`src/kaseki-api-service.ts`, ~67 lines)
-
-Main entry point:
-
-- Loads config and validates
-- Creates Express app with JSON middleware
-- Initializes job scheduler and routes
-- Graceful shutdown on SIGTERM/SIGINT
-- Unhandled error trapping
-
-### 7. TypeScript Client (`src/kaseki-api-client.ts`, ~200 lines)
-
-High-level client library for integration:
-
-- `submit(request)` — Trigger job
-- `getStatus(runId)` — Poll status
-- `getAnalysis(runId)` — Full summary
-- `getLog(runId, type)` — Retrieve logs
-- `getArtifact(runId, file)` — Download artifacts
-- `waitForCompletion(runId)` — Poll until done
-- `createKasekiClient()` — Factory helper
+- **Progress Streaming**: Real-time Pi event filtering
+- **Report Generation**: Markdown summaries and structured data
+- **CLI Monitoring**: External agent integration
+- **Validation Helpers**: Test running, allowlist management
+- **Docker Integration**: Container lifecycle management
 
 ## Development Workflow
 
-### Build
+### Setup Development Environment
 
 ```bash
+# Clone and install dependencies
+git clone <repo>
+cd kaseki-agent
 npm install
-npm run build                    # TypeScript → dist/
-npm run type-check              # TypeScript validation
-npm run validate-module-imports # Verify Docker binary
-                                  # dependencies
+
+# Build TypeScript
+npm run build
+
+# Run type checking
+npm run type-check
+
+# Run tests
+npm run test:unit
+npm run test:ci  # Full CI validation
 ```
 
-**About Module Validation:**
-
-The `validate-module-imports` script ensures that all binaries compiled for Docker (e.g., `kaseki-pi-progress-stream`, `kaseki-pi-event-filter`, `kaseki-report`) have all their import dependencies available. Before adding a new utility module to the codebase that other binaries depend on:
-
-1. Add the utility TypeScript file to `src/` (e.g., `src/new-util.ts`)
-2. Build the project: `npm run build`
-3. Run validation: `npm run validate-module-imports`
-4. If validation fails, add a copy command to [Dockerfile](../Dockerfile) in the build stage:
-
-   ```dockerfile
-   && cp dist/new-util.js /app/lib/new-util.js \
-   ```
-
-5. Re-run validation to confirm
-
-This prevents runtime `ERR_MODULE_NOT_FOUND` errors when the Docker image runs.
-
-### Test
+### Key Development Commands
 
 ```bash
-npm run test:unit -- src/result-cache.test.ts      # Run a single
-                                                 # Jest test file
-npm run test:unit -- -t "caches successful result" # Run tests matching
-                                                 # a name pattern
-npm run test:ci                                     # Full CI-style
-                                                 # validation (build + type-check
-                                                 # + jest + bash tests)
-npm run test:watch                                  # Jest watch mode
-npm run test:coverage                               # Coverage report
+# Development server (watch mode)
+npm run dev
+
+# Lint and fix issues
+npm run lint:fix
+
+# Run specific test file
+npm run test:unit -- src/result-cache.test.ts
+
+# Validate module imports (Docker dependencies)
+npm run validate-module-imports
+
+# Build Docker image
+docker build -t kaseki-agent:latest .
+
+# Run smoke tests
+npm run test:smoke
 ```
 
-### Lint
+### Adding New Features
 
-```bash
-npm run lint       # Run all linters
-npm run lint:js    # ESLint only
-npm run lint:fix   # Auto-fix issues
-```
+#### 1. New CLI Command
+1. Add command class in `src/cli/commands/`
+2. Register in `src/cli/KasekiCLI.ts`
+3. Add tests and documentation
+4. Update help text
 
-### Local Development
-
-```bash
-# Terminal 1: Start API
-KASEKI_API_KEYS=sk-dev npm run kaseki-api
-
-# Terminal 2: Test endpoints
-curl -H "Authorization: Bearer sk-dev" \
-  http://localhost:8080/api/health
-
-# Terminal 3: Submit a run (requires actual
-# kaseki-agent setup)
-curl -X POST http://localhost:8080/api/runs \
-  -H "Authorization: Bearer sk-dev" \
-  -H "Content-Type: application/json" \
-  -d '{"repoUrl":"https://github.com/you/repo"}'
-```
-
-## Testing Strategy
-
-### Unit Tests (`src/*.test.ts`)
-
-- **Kaseki API Configuration:** Config loading, validation,
-  API key parsing
-- **Request Validation:** Zod schema validation, error cases
-- **Job Scheduler:** Queue operations, job submission, timeout
-  handling
-- **Result Cache:** Caching, TTL, eviction, cleanup
-
-### Integration Tests (`test/kaseki-api.integration.test.sh`)
-
-Currently placeholder (requires Docker + kaseki-agent setup).
-
-Example test flow:
-
-1. Start API service
-2. Verify health check
-3. Submit a real run
-4. Poll until completion
-5. Verify artifacts exist
-
-### End-to-End Tests
-
-Manual testing via TypeScript client:
-
-```typescript
-const client = new KasekiApiClient('http://localhost:8080', 
-  'sk-dev');
-const run = await client.submit({ repoUrl: '...' });
-const final = await client.waitForCompletion(run.id);
-console.log(final.status === 'completed' ? 'SUCCESS' : 'FAILED');
-```
-
-## Security Considerations
-
-1. **API Key Management**
-   - Keys stored in env (dev) or secure file (prod)
-   - Never logged or included in responses
-   - Bearer token validation on all protected endpoints
-   - Validateable against list of approved keys
-
-2. **Input Validation**
-   - All external inputs validated via Zod schemas
-   - URL format validation
-   - File path sanitization
-   - Enum validation for task modes
-
-3. **Output Sanitization**
-   - RFC 7807 error format (no internal details)
-   - Log files truncated if >100 KB
-   - Artifact size limits enforced
-
-4. **Concurrency Safety**
-   - In-memory queue (single process)
-   - No race conditions on job state
-   - Atomic timeout handling
-
-## Performance Tuning
-
-### Job Queue
-
-```typescript
-// In src/kaseki-api-config.ts
-KASEKI_API_MAX_CONCURRENT_RUNS = 3;  // Increase for more
-                                  # parallelism
-```
-
-Monitor via:
-
-```bash
-curl -H "Authorization: Bearer ..." \
-  http://localhost:8080/api/runs
-```
-
-### Result Cache
-
-```typescript
-// In src/kaseki-api-routes.ts
-const cache = new ResultCache(20, 5 * 60 * 1000);  // 20
-                                              # entries, 5 min TTL
-```
-
-Check stats:
-
-```typescript
-const stats = cache.getStats();
-console.log(`${stats.entries} cached, ${stats.bytes} bytes`);
-```
-
-### Database (Future)
-
-Current in-memory design sufficient for <100 recent runs.
-For persistence across restarts, add:
-
-- SQLite or JSON file-based run log
-- Cleanup job for old artifacts
-- Run history API endpoint
-
-## Common Development Tasks
-
-### Add a New Endpoint
-
-1. Define request/response types in `src/kaseki-api-types.ts`
-2. Add validation schema (if request body expected)
+#### 2. New API Endpoint
+1. Define types in `src/kaseki-api-types.ts`
+2. Add validation schema (if needed)
 3. Implement handler in `src/kaseki-api-routes.ts`
-4. Add tests to `src/kaseki-api-service.test.ts`
-5. Document in `docs/API.md`
+4. Add route registration
+5. Write unit tests
+6. Update API documentation
 
-Example:
+#### 3. New Quality Gate
+1. Implement logic in `src/quality/`
+2. Add configuration option
+3. Update exit code handling
+4. Add tests
+5. Document in QUALITY_GATES.md
 
-```typescript
-// 1. Types
-export interface MyResponse {
-  data: string;
-}
+#### 4. New Utility Module
+1. Add TypeScript file in `src/utils/`
+2. Build project: `npm run build`
+3. Validate dependencies: `npm run validate-module-imports`
+4. Add to Dockerfile if needed
+5. Write tests
 
-// 2. Route
-router.get('/my-endpoint', (req, res) => {
-  const response: MyResponse = { data: '...' };
-  res.json(response);
-});
+### Testing Strategy
 
-// 3. Test
-test('my-endpoint returns data', () => {
-  // ...
-});
-```
+#### Unit Tests
+- **Component Tests**: Isolated testing of individual modules
+- **Configuration Tests**: Environment variable parsing and validation
+- **Queue Tests**: Job scheduling and timeout handling
+- **Cache Tests**: Result caching and eviction logic
 
-### Add Configuration Option
+#### Integration Tests
+- **API Tests**: HTTP endpoint validation
+- **CLI Tests**: Command-line interface testing
+- **Docker Tests**: Container lifecycle and execution
+- **End-to-End Tests**: Full workflow validation
 
-1. Update `KasekiApiConfig` interface in `src/kaseki-api-config.ts`
-2. Add env var parsing in `loadConfig()`
-3. Add validation and defaults
-4. Update `docs/DEPLOYMENT.md`
-5. Add test case
-
-### Improve Error Handling
-
-Current pattern using `sendErrorResponse(res, status, title,
-  detail)` follows RFC 7807.
-
-To add new error type:
-
-```typescript
-// In route handler
-if (someCondition) {
-  return sendErrorResponse(res, 422, 'Unprocessable Entity',
-    'Helpful error message here');
-}
-```
-
-## Debugging
-
-### Enable Debug Logging
-
+#### Test Commands
 ```bash
+# Run all tests
+npm test
+
+# Watch mode for development
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+
+# CI-style validation
+npm run test:ci
+```
+
+### Configuration Management
+
+The system uses environment variables with sensible defaults:
+
+- **Development**: `.env` file with development settings
+- **Production**: Environment variables or secret files
+- **Docker**: Build args and runtime env vars
+
+Key configuration files:
+- `.env.template` - Essential 8 variables
+- `.env.advanced.template` - Complete variable reference
+- `src/kaseki-api-config.ts` - Configuration loading and validation
+
+### Code Style and Quality
+
+#### TypeScript
+- Strict mode enabled
+- Interface-heavy design
+- Type guards for runtime validation
+- Generic types for reusable components
+
+#### JavaScript
+- ES2024 features with Node.js v24 target
+- Async/await throughout
+- Error handling with try/catch
+- Logging with structured JSON
+
+#### Testing
+- Jest for unit tests
+- Mock external dependencies
+- Test environment isolation
+- Coverage thresholds enforced
+
+### Debugging
+
+#### Development Logging
+```bash
+# Enable debug logging
 KASEKI_API_LOG_LEVEL=debug npm run kaseki-api
+
+# Verbose CLI output
+kaseki-agent --verbose run ...
+
+# Docker container debugging
+docker logs kaseki-1
 ```
 
-### Inspect Job State
+#### Common Debug Scenarios
 
-Connect to running service and query:
-
+**Job Queue Issues**
 ```bash
+# Check job state via API
 curl -H "Authorization: Bearer sk-key" \
   http://localhost:8080/api/runs | jq .
+
+# Monitor job spawning
+ps aux | grep kaseki-agent
 ```
 
-### Test Job Spawning
+**Module Import Problems**
+```bash
+# Validate Docker dependencies
+npm run validate-module-imports
 
-Add test repo and try to trigger a run:
+# Check built files
+ls -la dist/
+```
+
+**Configuration Issues**
+```bash
+# Test configuration loading
+node -e "console.log(require('./src/kaseki-api-config').loadConfig())"
+
+# Check environment setup
+./scripts/startup-checks.sh
+```
+
+## Release Process
+
+Kaseki Agent uses semantic-release for automated versioning:
+
+1. **Conventional Commits**: Use `feat:`, `fix:`, `perf:` prefixes
+2. **Version Bumps**: Automatic based on commit types
+3. **Changelog**: Auto-generated and updated
+4. **GitHub Releases**: Automated creation with release notes
+5. **Docker Builds**: Multi-arch images triggered automatically
 
 ```bash
-# (Requires actual kaseki-agent, docker,
-# OpenRouter API key setup)
+# Dry-run release preview
+npm run release:dry
+
+# Create actual release
+npm run release
 ```
 
-### Memory Leaks
+## Deployment Architecture
 
-Monitor long-running service:
+### Development
+- Direct Node.js execution
+- Hot reload with `npm run dev`
+- Local Docker testing
 
-```bash
-# In another terminal
-watch -n1 'ps aux | grep node'
-```
+### Production
+- **Recommended**: Docker Compose with API service
+- **Alternative**: Systemd service with Node.js
+- **Scaling**: Multiple instances with load balancing
+- **Monitoring**: Health checks and metrics endpoints
 
-Check cache stats periodically:
+### Infrastructure
+- **Docker**: Multi-stage builds, security scanning
+- **CI/CD**: GitHub Actions with caching
+- **Security**: Trivy scanning, SBOM generation
+- **Monitoring**: Built-in health checks and metrics
 
-```typescript
-// In application
-setInterval(() => {
-  const stats = cache.getStats();
-  console.log('Cache:', stats);
-}, 60000);
-```
+## Contributing
 
-## Roadmap
+### Development Guidelines
+1. Follow TypeScript strict mode
+2. Write comprehensive tests
+3. Use conventional commits
+4. Update documentation for new features
+5. Test both CLI and API interfaces
+6. Validate Docker dependencies
 
-### Current (v1)
+### Quality Standards
+- **Code Coverage**: Minimum 80% test coverage
+- **Type Safety**: No `any` types, strict null checks
+- **Error Handling**: Proper error propagation and logging
+- **Documentation**: JSDoc for all public APIs
+- **Performance**: Monitor memory usage and execution time
 
-- [x] HTTP REST API with Bearer auth
-- [x] Job queue with concurrency control
-- [x] Result caching
-- [x] TypeScript client library
-- [x] Comprehensive tests
-- [x] Docker & systemd deployment
-
-### Future (v2+)
-
-- [ ] WebSocket for real-time progress updates
-- [ ] Persistent run history (SQLite)
-- [ ] Prometheus metrics endpoint
-- [ ] Rate limiting per API key
-- [ ] Multi-host load balancing
-- [ ] Run cancellation API
-- [ ] Webhook callbacks on completion
-- [ ] OpenAPI 3.0 spec auto-generation
-
-## Releases and Versioning
-
-Kaseki Agent uses **semantic-release** to automate versioning, changelog generation, and GitHub Release creation. Releases are triggered manually by running `npm run release`.
-
-### Version Strategy
-
-This project follows [Semantic Versioning](https://semver.org/):
-
-- **Major** (X.0.0): Breaking API changes, incompatible behavior
-- **Minor** (0.Y.0): New features, backward compatible
-- **Patch** (0.0.Z): Bug fixes, backward compatible
-
-### Automated Version Bumping
-
-Version bumps are determined from commit messages using the [conventional commits](../CONTRIBUTING.md#6-release-process-and-conventional-commits) standard:
-
-- `feat:` → **Minor** version bump
-- `fix:`, `perf:`, `revert:` → **Patch** version bump
-- `chore:`, `docs:`, `style:`, `refactor:`, `test:` → **No version bump** (included in changelog only)
-
-### Making a Release
-
-**Via GitHub Actions (Recommended):**
-
-1. Go to [Actions](https://github.com/CyanAutomation/kaseki-agent/actions) → **Release** workflow
-2. Click **Run workflow** (top right)
-3. Choose options:
-   - **Dry-run** (optional): Set to `true` to preview release without creating tags
-   - Leave blank to create actual release
-4. Click **Run workflow**
-5. The workflow will:
-   - Analyze commits since last release tag
-   - Automatically determine version (major/minor/patch)
-   - Update `package.json` with new version
-   - Update `CHANGELOG.md` with formatted release notes
-   - Create git tag (e.g., `v1.0.0`)
-   - Push tag and commits to GitHub
-   - Create GitHub Release with release notes
-   - Automatically trigger Docker build workflow for multi-arch image builds
-6. Monitor progress in Actions tab
-7. Verify in [Releases](https://github.com/CyanAutomation/kaseki-agent/releases)
-
-**Via Local Command (Alternative):**
-
-```bash
-npm run release:dry    # Preview release locally
-npm run release        # Create release (requires GITHUB_TOKEN)
-```
-
-**Note:** The workflow approach is recommended for team visibility and consistency. Local commands are useful for testing or emergency releases when GitHub Actions is unavailable.
-
-### Changelog Format
-
-The `CHANGELOG.md` is automatically updated with entries grouped by type:
-
-- **Features** — From `feat:` commits
-- **Bug Fixes** — From `fix:` commits
-- **Performance Improvements** — From `perf:` commits
-- **Documentation** — From `docs:` commits (hidden by default)
-
-Each entry includes the commit hash and links to the commit in GitHub.
-
-For manual additions or corrections, edit `CHANGELOG.md` directly before committing to main.
+### Common Issues to Avoid
+- Missing Docker dependency validation
+- Inadequate error handling in async operations
+- Hardcoded paths or environment assumptions
+- Missing configuration validation
+- Incomplete test coverage for edge cases
 
 ## Useful Resources
 
-- Express.js docs: <https://expressjs.com/>
-- Zod validation: <https://zod.dev/>
-- TypeScript handbook: <https://www.typescriptlang.org/docs/>
-- RFC 7807 (Problem Details): <https://tools.ietf.org/html/rfc7807>
+### Documentation
+- **[API.md](./API.md)** - Complete API reference
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Production deployment guide
+- **[QUALITY_GATES.md](./QUALITY_GATES.md)** - Quality validation system
+- **[CLI.md](./CLI.md)** - Command-line interface documentation
+
+### External Links
+- **Express.js**: <https://expressjs.com/>
+- **Zod**: <https://zod.dev/>
+- **TypeScript**: <https://www.typescriptlang.org/>
+- **Docker**: <https://docs.docker.com/>
+- **GitHub Actions**: <https://docs.github.com/actions>
+
+### Community
+- **Issues**: GitHub Issues for bug reports and feature requests
+- **Discussions**: GitHub Discussions for questions and ideas
+- **Contributing**: See CONTRIBUTING.md for guidelines
