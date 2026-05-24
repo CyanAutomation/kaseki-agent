@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.43.0...v1.43.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* Add KASEKI_VALIDATION_COMMANDS to environment variable list in RunCommand tests ([04a5911](https://github.com/CyanAutomation/kaseki-agent/commit/04a5911040ec5f97435686526eaecb8847ce7805))
+
 # [1.43.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.42.0...v1.43.0) (2026-05-23)
 
 
