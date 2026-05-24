@@ -107,8 +107,18 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Pre-coding Pi scouting controls'),
+  goalCheck: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable the post-validation goal-check Pi evaluator'),
+      maxRetries: z.number().int().min(0).max(5).optional().describe('Maximum coding-agent retries after goal-check misses'),
+      model: z.string().min(1).optional().describe('Optional Pi model override for goal checking'),
+      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional goal-check timeout in seconds'),
+    })
+    .optional()
+    .describe('Post-coding goal-check evaluator controls'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
   publishMode: z.enum(['auto', 'none', 'branch', 'pr', 'draft_pr']).optional().describe('Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing'),
+  skipPreAgentValidation: z.boolean().optional().describe('Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured.'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
   startupCheckMode: z
     .enum(['boot', 'baseline-validation'])
@@ -134,8 +144,10 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['max_diff_bytes', 'maxDiffBytes'],
     ['validation_commands', 'validationCommands'],
     ['scouting_config', 'scouting'],
+    ['goal_check', 'goalCheck'],
     ['task_mode', 'taskMode'],
     ['publish_mode', 'publishMode'],
+    ['skip_pre_agent_validation', 'skipPreAgentValidation'],
     ['startup_check', 'startupCheck'],
     ['startup_check_mode', 'startupCheckMode'],
     ['webhook_config', 'webhookConfig'],
@@ -191,6 +203,7 @@ export interface StatusResponse {
   progress?: StructuredProgress;
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
+  goalCheckFailureReason?: string;
   exitCode?: number;
   failureClass?: string;
   validationFailureReason?: string; // e.g., "validation_command_failed: npm run test (exit 1)"

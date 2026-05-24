@@ -300,6 +300,91 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('passes fast inspect and publish-none controls to worker environment', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      taskMode: 'inspect',
+      publishMode: 'none',
+      skipPreAgentValidation: true,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_TASK_MODE: 'inspect',
+          KASEKI_PUBLISH_MODE: 'none',
+          KASEKI_PRE_AGENT_VALIDATION: '0',
+          GITHUB_APP_ENABLED: '0',
+        }),
+      }),
+    );
+  });
+
+  test('passes goal check controls to worker environment', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      goalCheck: {
+        enabled: true,
+        maxRetries: 2,
+        model: 'openrouter/free',
+        timeoutSeconds: 300,
+      },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_GOAL_CHECK: '1',
+          KASEKI_GOAL_CHECK_MAX_RETRIES: '2',
+          KASEKI_GOAL_CHECK_MODEL: 'openrouter/free',
+          KASEKI_GOAL_CHECK_TIMEOUT_SECONDS: '300',
+        }),
+      }),
+    );
+  });
+
   test('uses explicit request timeoutSeconds when provided', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);

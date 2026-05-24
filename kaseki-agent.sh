@@ -23,6 +23,10 @@ KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KA
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
+KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
+KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
+KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
+KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
@@ -54,6 +58,13 @@ PI_EXIT=0
 SCOUTING_EXIT=0
 SCOUTING_DURATION_SECONDS=0
 SCOUTING_ACTUAL_MODEL="unknown"
+GOAL_CHECK_EXIT=0
+GOAL_CHECK_DURATION_SECONDS=0
+GOAL_CHECK_ATTEMPTS=0
+GOAL_CHECK_MET=false
+GOAL_CHECK_FAILURE_REASON=""
+GOAL_CHECK_RETRY_PROMPT=""
+GOAL_CHECK_ACTUAL_MODEL="unknown"
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -90,8 +101,10 @@ STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
+GOAL_CHECK_RAW_EVENTS="/tmp/pi-goal-check-events.raw.jsonl"
 SCOUTING_ARTIFACT="/results/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-copy}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
@@ -176,6 +189,11 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/pi-summary.json
 : > /results/scouting-events.jsonl
 : > /results/scouting-summary.json
+: > /results/goal-check-events.jsonl
+: > /results/goal-check-summary.json
+: > /results/goal-check-stderr.log
+: > /results/goal-check-attempts.jsonl
+: > /results/goal-check.json
 : > /results/validation.log
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
@@ -202,6 +220,16 @@ case "$KASEKI_GIT_CACHE_MODE" in
     GIT_CACHE_MODE_USED="off"
     ;;
 esac
+if ! [[ "$KASEKI_GOAL_CHECK_MAX_RETRIES" =~ ^[0-9]+$ ]]; then
+  printf 'Warning: unsupported KASEKI_GOAL_CHECK_MAX_RETRIES=%s; falling back to 1.\n' "$KASEKI_GOAL_CHECK_MAX_RETRIES" >&2
+  KASEKI_GOAL_CHECK_MAX_RETRIES="1"
+elif [ "$KASEKI_GOAL_CHECK_MAX_RETRIES" -gt 5 ]; then
+  printf 'Warning: KASEKI_GOAL_CHECK_MAX_RETRIES=%s exceeds the maximum of 5; using 5.\n' "$KASEKI_GOAL_CHECK_MAX_RETRIES" >&2
+  KASEKI_GOAL_CHECK_MAX_RETRIES="5"
+fi
+if [ "$KASEKI_DRY_RUN" = "1" ]; then
+  KASEKI_GOAL_CHECK="0"
+fi
 
 # Helper function to run Node.js subprocesses with comprehensive error logging
 # Usage: run_node_subprocess <output_var_name> "<node_code>" [<input_data>] [<error_log_file>]
@@ -365,6 +393,9 @@ write_metadata() {
   "provider": $(printf '%s' "$KASEKI_PROVIDER" | json_encode),
   "model": $(printf '%s' "$KASEKI_MODEL" | json_encode),
   "scouting_model": $(printf '%s' "$KASEKI_SCOUTING_MODEL" | json_encode),
+  "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
+  "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
+  "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
   "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
@@ -374,6 +405,7 @@ write_metadata() {
   "total_duration_seconds": $duration,
   "pi_duration_seconds": $PI_DURATION_SECONDS,
   "scouting_duration_seconds": $SCOUTING_DURATION_SECONDS,
+  "goal_check_duration_seconds": $GOAL_CHECK_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
@@ -381,8 +413,12 @@ write_metadata() {
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
+  "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
+  "goal_check_exit_code": $GOAL_CHECK_EXIT,
+  "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
+  "goal_check_met": $GOAL_CHECK_MET,
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
@@ -398,6 +434,7 @@ write_metadata() {
   "diff_nonempty": $DIFF_NONEMPTY,
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "scouting_actual_model": $(printf '%s' "$SCOUTING_ACTUAL_MODEL" | json_encode),
+  "goal_check_actual_model": $(printf '%s' "$GOAL_CHECK_ACTUAL_MODEL" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
   "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
@@ -477,6 +514,9 @@ write_result_summary() {
 - Requested model: $KASEKI_MODEL
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
+- Goal check: $(if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ]; then [ "$GOAL_CHECK_MET" = "true" ] && printf 'met' || printf 'unmet'; else printf 'disabled'; fi) ($GOAL_CHECK_EXIT)
+- Goal check attempts: $GOAL_CHECK_ATTEMPTS (max retries: $KASEKI_GOAL_CHECK_MAX_RETRIES)
+$(if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$GOAL_CHECK_FAILURE_REASON"; fi)
 - Pre-agent validation: $([ "$PRE_VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed') ($PRE_VALIDATION_EXIT)
 $(if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$PRE_VALIDATION_FAILURE_REASON"; fi)
 - Pre-agent validation failure detail: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-none}
@@ -497,6 +537,8 @@ Artifacts:
 - metadata.json
 - pi-summary.json
 - pi-events.jsonl
+- goal-check.json
+- goal-check-attempts.jsonl
 - pre-validation.log
 - pre-validation-timings.tsv
 - validation.log
@@ -532,6 +574,9 @@ write_failure_json() {
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
+  "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
+  "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
   "artifacts_dir": "/results",
@@ -1754,19 +1799,28 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section
+  local memory_section scouting_section retry_section
   memory_section="$(read_repo_memory_section)"
   scouting_section=""
+  retry_section=""
   if [ -s "$SCOUTING_ARTIFACT" ]; then
     scouting_section="
 Scouting artifact:
 - A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
 - Read that artifact before coding. Treat it as planning input, then verify important details against the current repository."
   fi
+  if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
+    retry_section="
+Goal-check retry guidance:
+- A post-validation goal-check Pi evaluator found the previous coding attempt did not fully realize the scouting objective.
+- Address this feedback while preserving valid existing work:
+$GOAL_CHECK_RETRY_PROMPT"
+  fi
   if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
     printf '%s' "$TASK_PROMPT"
     printf '%s' "$memory_section"
     printf '%s' "$scouting_section"
+    printf '%s' "$retry_section"
     return 0
   fi
 
@@ -1783,6 +1837,7 @@ Task:
 $TASK_PROMPT
 $memory_section
 $scouting_section
+$retry_section
 EOF
 }
 
@@ -1908,6 +1963,156 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
     return 1
   fi
   emit_progress "pi scouting agent" "wrote scouting artifact"
+  return 0
+}
+
+snapshot_attempt_artifacts() {
+  local attempt_dir
+  attempt_dir="/results/attempt-$1"
+  mkdir -p "$attempt_dir" 2>/dev/null || return 0
+  for artifact in \
+    pi-events.jsonl pi-summary.json pi-stderr.log git.diff git.status changed-files.txt \
+    quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json; do
+    if [ -e "/results/$artifact" ]; then
+      cp "/results/$artifact" "$attempt_dir/$artifact" 2>/dev/null || true
+    fi
+  done
+}
+
+build_goal_check_prompt() {
+  local validation_tail progress_tail
+  validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+  cat <<EOF
+You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Evaluate whether the coding agent's current repository changes realized the objective from the scouting report.
+
+Inputs you must inspect:
+- Original task prompt below.
+- Scouting report JSON: $SCOUTING_ARTIFACT
+- Current changed files: /results/changed-files.txt
+- Current diff: /results/git.diff
+- Current validation outcomes: /results/validation-timings.tsv and /results/validation.log
+- Current coding-agent events summary: /results/pi-summary.json and /results/pi-events.jsonl
+
+Rules:
+- Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
+- Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
+- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+- Decide whether the scouting requirements were realized, not whether the implementation is stylistically perfect.
+- If the goal is not met, write a concrete retry_prompt for the next coding attempt.
+
+Required JSON shape:
+{
+  "met": true,
+  "confidence": "high",
+  "summary": "brief verdict",
+  "evidence": ["specific evidence that supports the verdict"],
+  "missing": ["specific unmet requirements; empty when met"],
+  "retry_prompt": "specific repair instructions for the coding agent; empty when met",
+  "validation_notes": ["validation commands/results considered"]
+}
+
+Original task prompt:
+$TASK_PROMPT
+
+Validation log tail:
+$validation_tail
+
+Progress log tail:
+$progress_tail
+EOF
+}
+
+run_goal_check() {
+  local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence
+  attempt="$1"
+  GOAL_CHECK_ATTEMPTS="$attempt"
+  GOAL_CHECK_EXIT=0
+  GOAL_CHECK_MET=false
+  GOAL_CHECK_FAILURE_REASON=""
+
+  printf '\n==> goal check\n'
+  set_current_stage "goal check"
+  if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a /results/goal-check-stderr.log
+    record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
+    return 0
+  fi
+  if [ ! -s "$SCOUTING_ARTIFACT" ]; then
+    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a /results/goal-check-stderr.log
+    record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
+    return 0
+  fi
+
+  goal_prompt="$(build_goal_check_prompt)"
+  goal_start="$(date +%s)"
+  set +e
+  OPENROUTER_API_KEY="$openrouter_api_key" \
+    timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
+    2> >(tee -a /results/goal-check-stderr.log >&2) \
+    | tee "$GOAL_CHECK_RAW_EVENTS" \
+    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+  GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
+  unset goal_prompt
+  GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
+  set +e
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! node -e '
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const attempt = Number(process.argv[3]);
+const invalid = [];
+const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
+if (typeof artifact.met !== "boolean") invalid.push("met");
+if (!["low", "medium", "high"].includes(artifact.confidence)) invalid.push("confidence");
+for (const key of ["summary", "retry_prompt"]) {
+  if (typeof artifact[key] !== "string") invalid.push(key);
+}
+for (const key of ["evidence", "missing", "validation_notes"]) {
+  if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
+}
+if (!artifact.met && !artifact.retry_prompt.trim()) invalid.push("retry_prompt non-empty when unmet");
+if (invalid.length) throw new Error("invalid goal-check fields: " + invalid.join(", "));
+artifact.attempt = attempt;
+artifact.timestamp = new Date().toISOString();
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
+fs.appendFileSync("/results/goal-check-attempts.jsonl", JSON.stringify(artifact) + "\n");
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" /results/goal-check.json "$attempt" 2>> /results/goal-check-stderr.log; then
+    GOAL_CHECK_EXIT=86
+    GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
+    emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict" "continue"
+  fi
+  rm -f "$GOAL_CHECK_CANDIDATE_ARTIFACT"
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
+  GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
+    verdict_met="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.met ? "true" : "false")' 2>/dev/null || printf 'false')"
+    retry_prompt="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.retry_prompt || "")' 2>/dev/null || true)"
+    verdict_summary="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.summary || "")' 2>/dev/null || true)"
+    confidence="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.confidence || "unknown")' 2>/dev/null || true)"
+    if [ "$verdict_met" = "true" ]; then
+      GOAL_CHECK_MET=true
+      GOAL_CHECK_RETRY_PROMPT=""
+      GOAL_CHECK_FAILURE_REASON=""
+      emit_progress "goal check" "met on attempt $attempt (confidence=$confidence)"
+    else
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_RETRY_PROMPT="$retry_prompt"
+      GOAL_CHECK_FAILURE_REASON="${verdict_summary:-goal unmet}"
+      emit_progress "goal check" "unmet on attempt $attempt (confidence=$confidence)"
+    fi
+  else
+    GOAL_CHECK_MET=false
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_check_failed_exit_$GOAL_CHECK_EXIT"
+    GOAL_CHECK_RETRY_PROMPT="The goal-check evaluator failed to produce a valid passing verdict. Re-read $SCOUTING_ARTIFACT, inspect the current diff and validation logs, and repair any missing requirement before finishing."
+  fi
+  record_stage_timing "goal check" "$GOAL_CHECK_EXIT" "$(($(date +%s) - goal_start))" "attempt=$attempt met=$GOAL_CHECK_MET timeout_seconds=$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS"
   return 0
 }
 
@@ -3570,8 +3775,24 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
   fi
 fi
 
+coding_attempt=1
+max_coding_attempts=$((KASEKI_GOAL_CHECK_MAX_RETRIES + 1))
+while [ "$coding_attempt" -le "$max_coding_attempts" ]; do
+PI_EXIT=0
+PI_DURATION_SECONDS=0
+VALIDATION_EXIT=0
+VALIDATION_FAILED_COMMAND_DETAIL=""
+VALIDATION_FAILURE_REASON=""
+VALIDATION_STOPPED_EARLY=false
+VALIDATION_COMMANDS_ATTEMPTED=0
+QUALITY_EXIT=0
+QUALITY_FAILURE_REASON=""
+FILTER_EXIT=0
+FILTER_STDERR_TAIL=""
+
 printf '\n==> pi coding agent\n'
 set_current_stage "pi coding agent"
+emit_event "coding_attempt_started" "attempt=$coding_attempt" "max_attempts=$max_coding_attempts"
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
   printf '🔄 DRY-RUN MODE: Skipping Pi coding agent execution\n'
   PI_START_EPOCH="$(date +%s)"
@@ -3601,7 +3822,7 @@ else
   PI_EXIT="${PIPESTATUS[0]}"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
-  unset OPENROUTER_API_KEY openrouter_api_key openrouter_api_key_source
+  unset OPENROUTER_API_KEY
   set +e
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
@@ -3837,6 +4058,32 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   fi
 fi
 
+snapshot_attempt_artifacts "$coding_attempt"
+
+if [ "$STATUS" -ne 0 ] || [ "$PI_EXIT" -ne 0 ] || [ "$QUALITY_EXIT" -ne 0 ] || [ "$VALIDATION_EXIT" -ne 0 ]; then
+  break
+fi
+
+run_goal_check "$coding_attempt"
+snapshot_attempt_artifacts "$coding_attempt"
+
+if [ "$KASEKI_GOAL_CHECK" != "1" ] || [ ! -s "$SCOUTING_ARTIFACT" ] || [ "$GOAL_CHECK_MET" = "true" ]; then
+  break
+fi
+
+if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+  emit_progress "goal check" "retrying coding agent after unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
+  coding_attempt=$((coding_attempt + 1))
+  continue
+fi
+
+STATUS=8
+FAILED_COMMAND="goal check"
+[ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
+emit_error_event "goal_unmet" "Goal check did not pass after $GOAL_CHECK_ATTEMPTS attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+break
+done
+
 printf '\n==> secret scan\n'
 set_current_stage "secret scan"
 emit_progress "secret scan" "started"
@@ -3881,6 +4128,12 @@ build_github_skip_reasons() {
   fi
   if [ "$SECRET_SCAN_EXIT" -ne 0 ]; then
     GITHUB_SKIP_REASONS+=("secret_scan_failed")
+  fi
+  if [ "$GOAL_CHECK_EXIT" -ne 0 ] || { [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; }; then
+    GITHUB_SKIP_REASONS+=("goal_check_failed")
+  fi
+  if [ "$STATUS" -ne 0 ]; then
+    GITHUB_SKIP_REASONS+=("run_failed")
   fi
   if [ "$DIFF_NONEMPTY" != "true" ]; then
     GITHUB_SKIP_REASONS+=("empty_diff")
