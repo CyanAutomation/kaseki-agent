@@ -221,6 +221,7 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-2) var(--space-3);
       }
       .response-log {
+        align-self: start;
         color: #e4eee9;
         margin: 0;
         min-height: 0;
