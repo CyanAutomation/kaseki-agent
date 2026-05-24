@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.45.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.44.0...v1.45.0) (2026-05-24)
+
+
+### Bug Fixes
+
+* adjust regex in scouting API test to match requestBody function formatting ([072c496](https://github.com/CyanAutomation/kaseki-agent/commit/072c496c21a8ad4fd226bf74a9271caeba5f5c0a))
+
+
+### Features
+
+* add comprehensive tests for scouting agent allowlist control functionality ([1008048](https://github.com/CyanAutomation/kaseki-agent/commit/10080489bd66044d7db8f9d2aee45081eff8aea6))
+* add detailed validation tests for OpenAPI components and paths ([39ad021](https://github.com/CyanAutomation/kaseki-agent/commit/39ad0214ebb86123a90e09e14cd75f2dfe0d2bd7))
+* implement scouting agent and automatic allowlist control for enhanced file modification management ([9b8d484](https://github.com/CyanAutomation/kaseki-agent/commit/9b8d484212d0fd7e15cefa82f192f78ebc08bb2b))
+
 # [1.44.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.43.1...v1.44.0) (2026-05-24)
 
 
