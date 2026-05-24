@@ -649,7 +649,7 @@ merge_allowlists() {
 }
 
 run_scouting_allowlist_coverage() {
-  local scouting_artifact agent_patterns validation_patterns coverage_json
+  local scouting_artifact agent_patterns validation_patterns
   scouting_artifact="${1:?missing scouting artifact path}"
   
   if [ ! -f "$scouting_artifact" ] || [ ! -f /results/changed-files.txt ]; then
@@ -690,7 +690,7 @@ run_scouting_allowlist_coverage() {
   fi
   
   # Update scouting.json with coverage metrics
-  coverage_json=$(node -e "
+  node -e "
     const fs = require('node:fs');
     const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
     artifact.coverage = {
@@ -699,7 +699,7 @@ run_scouting_allowlist_coverage() {
       warnings: process.argv[4] ? process.argv[4].split(',').filter(w => w) : []
     };
     fs.writeFileSync(process.argv[1], JSON.stringify(artifact, null, 2) + '\n');
-  " "$scouting_artifact" "$agent_coverage" "$validation_coverage" "$agent_warnings,$validation_warnings" 2>/dev/null)
+  " "$scouting_artifact" "$agent_coverage" "$validation_coverage" "$agent_warnings,$validation_warnings" 2>/dev/null
   
   # Log coverage metrics
   if [ "$agent_coverage" -ne 0 ] || [ "$validation_coverage" -ne 0 ]; then
