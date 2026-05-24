@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.47.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.46.0...v1.47.0) (2026-05-24)
+
+
+### Features
+
+* add goal check pi agent loop ([20fa5e0](https://github.com/CyanAutomation/kaseki-agent/commit/20fa5e03c76f71ff437368ce935c9a4622833ecc))
+* Add goal check Pi agent loop ([#381](https://github.com/CyanAutomation/kaseki-agent/issues/381)) ([40412be](https://github.com/CyanAutomation/kaseki-agent/commit/40412beab645f806612841ea731f334fc897fd18))
+
 # [1.46.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.45.0...v1.46.0) (2026-05-24)
 
 
