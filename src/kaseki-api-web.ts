@@ -447,12 +447,22 @@ const controllerPage = String.raw`<!doctype html>
                 </div>
               </div>
             </div>
+            <div class="form-field">
+              <div class="check">
+                <input name="skipPreAgentValidation" type="checkbox">
+                <div class="check-copy">
+                  <label class="check-label">Fast inspect mode</label>
+                  <div class="check-helper">Skip pre-agent validation for quicker inspect-only runs.</div>
+                </div>
+              </div>
+            </div>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
             <div class="action-row run-actions">
             <button class="secondary" id="validate" type="button">Validate task</button>
             <button class="run" id="submit" type="submit">Start run</button>
+            <button class="secondary" id="cancel-run" type="button">Cancel run</button>
             </div>
           </fieldset>
         </form>
@@ -465,10 +475,10 @@ const controllerPage = String.raw`<!doctype html>
         <div class="run-links" id="run-links" hidden>
           <strong>Run follow-through</strong>
           <div class="link-grid">
-            <a data-run-link="status" href="#">Status</a>
-            <a data-run-link="events" href="#">Events</a>
-            <a data-run-link="stdout" href="#">Stdout</a>
-            <a data-run-link="artifacts" href="#">Artifacts</a>
+            <button class="secondary toolbar-button" data-run-action="status" type="button">Status</button>
+            <button class="secondary toolbar-button" data-run-action="events" type="button">Events</button>
+            <button class="secondary toolbar-button" data-run-action="stdout" type="button">Stdout</button>
+            <button class="secondary toolbar-button" data-run-action="artifacts" type="button">Artifacts</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Recommended artifacts</span>
@@ -535,6 +545,13 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
+      function stripControlSequences(value) {
+        return String(value || '')
+          .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+          .trim();
+      }
+
       function isLikelyBearerToken(token) {
         return /^[A-Za-z0-9._~+\/-]{8,512}$/.test(token);
       }
@@ -575,16 +592,6 @@ const controllerPage = String.raw`<!doctype html>
 
       function showRunLinks(runId) {
         if (!runId) return;
-        const links = {
-          status: runUrl(runId, '/status'),
-          events: runUrl(runId, '/events?tail=50'),
-          stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
-          artifacts: runUrl(runId, '/artifacts'),
-        };
-        Object.entries(links).forEach(([key, href]) => {
-          const link = document.querySelector('[data-run-link="' + key + '"]');
-          if (link) link.href = href;
-        });
         runLinks.hidden = false;
       }
 
@@ -603,10 +610,15 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         recommended.forEach((fileName) => {
-          const link = document.createElement('a');
-          link.href = artifactUrl(runId, fileName);
-          link.textContent = fileName;
-          recommendedArtifactLinks.appendChild(link);
+          const button = document.createElement('button');
+          button.className = 'secondary toolbar-button';
+          button.type = 'button';
+          button.dataset.artifactFile = fileName;
+          button.textContent = fileName;
+          button.addEventListener('click', (event) => {
+            run(event.currentTarget, artifactUrl(runId, fileName), { auth: true });
+          });
+          recommendedArtifactLinks.appendChild(button);
         });
         recommendedArtifacts.hidden = false;
       }
@@ -652,7 +664,8 @@ const controllerPage = String.raw`<!doctype html>
       function summarizeRun(payload) {
         if (!payload || !payload.status) return;
         const bits = [payload.status];
-        if (payload.progress && payload.progress.stage) bits.push(payload.progress.stage);
+        if (payload.progress && payload.progress.stage) bits.push(stripControlSequences(payload.progress.stage));
+        if (payload.progress && payload.progress.message) bits.push(stripControlSequences(payload.progress.message));
         if (payload.progress && typeof payload.progress.percentComplete === 'number') bits.push(String(payload.progress.percentComplete) + '%');
         setSummary('run', bits.join(' - '), payload.status === 'failed' ? 'bad' : 'ok');
       }
@@ -669,6 +682,9 @@ const controllerPage = String.raw`<!doctype html>
         };
         if (data.get('scouting') === 'on') {
           body.scouting = { enabled: true };
+        }
+        if (data.get('skipPreAgentValidation') === 'on') {
+          body.skipPreAgentValidation = true;
         }
         const parsed = Number(timeoutSeconds);
         if (!isNaN(parsed)) {
@@ -824,6 +840,38 @@ const controllerPage = String.raw`<!doctype html>
         }
         showRunLinks(runId);
         run(event.currentTarget, runUrl(runId, '/status'), { auth: true });
+      });
+
+      document.querySelectorAll('[data-run-action]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          const runId = runIdInput.value.trim();
+          if (!runId) {
+            setOutputMetadata('idle');
+            setOutputBody('Submit a run or enter a run ID first.');
+            setState('Run action needs a run ID.', 'bad');
+            return;
+          }
+          const action = event.currentTarget.dataset.runAction;
+          const paths = {
+            status: runUrl(runId, '/status'),
+            events: runUrl(runId, '/events?tail=50'),
+            stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
+            artifacts: runUrl(runId, '/artifacts'),
+          };
+          run(event.currentTarget, paths[action], { auth: true });
+        });
+      });
+
+      document.querySelector('#cancel-run').addEventListener('click', (event) => {
+        const runId = runIdInput.value.trim();
+        if (!runId) {
+          setOutputMetadata('idle');
+          setOutputBody('Submit a run or enter a run ID first.');
+          setState('Cancel needs a run ID.', 'bad');
+          return;
+        }
+        stopPolling();
+        run(event.currentTarget, runUrl(runId, '/cancel'), { method: 'POST', auth: true });
       });
 
       form.addEventListener('submit', (event) => {

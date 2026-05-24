@@ -8,6 +8,7 @@ import {
   classifyFailure,
   extractValidationFailureReason,
   extractQualityFailureReason,
+  extractGoalCheckFailureReason,
 } from './instance-state-derivation';
 
 describe('instance-state-derivation', () => {
@@ -143,6 +144,11 @@ describe('instance-state-derivation', () => {
       expect(classification).toBe('timeout');
     });
 
+    it('should classify goal check failures', () => {
+      expect(classifyFailure({}, 8)).toBe('goal-unmet');
+      expect(classifyFailure({ failed_command: 'goal check' }, 1)).toBe('goal-unmet');
+    });
+
     it('should classify empty diff failures', () => {
       const classification1 = classifyFailure({ failed_command: 'empty git diff' }, 3);
       const classification2 = classifyFailure({}, 3);
@@ -258,6 +264,18 @@ describe('instance-state-derivation', () => {
         quality_failure_reason: '',
       });
       expect(reason).toBeNull();
+    });
+  });
+
+  describe('extractGoalCheckFailureReason', () => {
+    it('should return null when goal_check_failure_reason is not set', () => {
+      expect(extractGoalCheckFailureReason({})).toBeNull();
+    });
+
+    it('should return a trimmed goal check failure reason', () => {
+      expect(extractGoalCheckFailureReason({
+        goal_check_failure_reason: '  goal_unmet_after_retries  ',
+      })).toBe('goal_unmet_after_retries');
     });
   });
 });

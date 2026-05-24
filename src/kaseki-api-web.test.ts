@@ -33,15 +33,19 @@ describe('kaseki API web console', () => {
       expect(body).toContain('name="publishMode"');
       expect(body).toContain('name="taskMode"');
       expect(body).toContain('name="timeoutSeconds"');
-      expect(body).toContain('data-run-link="artifacts"');
+      expect(body).toContain('name="skipPreAgentValidation"');
+      expect(body).toContain('id="cancel-run"');
+      expect(body).toContain('data-run-action="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
       expect(body).toContain('Recommended artifacts');
       expect(body).toContain('function loadRecommendedArtifacts(runId)');
       expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
+      expect(body).toContain('function stripControlSequences(value)');
       expect(body).toContain('hidden aria-hidden="true"');
       expect(body).toContain('Check status');
       expect(body).toContain('/status');
       expect(body).toContain('/events?tail=50');
+      expect(body).toContain("runUrl(runId, '/cancel')");
       expect(body).toContain('function responseStatusLabel(response, payload)');
       expect(body).toContain('return payload.status;');
       expect(body).toContain('Run status updated.');
@@ -103,6 +107,9 @@ describe('kaseki API web console', () => {
 
       const uncheckedBody = buildRequestBody(baseValues);
       expect(uncheckedBody).not.toHaveProperty('scouting');
+
+      const fastInspectBody = buildRequestBody([...baseValues, ['skipPreAgentValidation', 'on']]);
+      expect(fastInspectBody.skipPreAgentValidation).toBe(true);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => error ? reject(error) : resolve());

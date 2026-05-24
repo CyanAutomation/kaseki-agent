@@ -16,6 +16,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 | **5** | Quality Gate | Allowlist Violation | Changed files are outside the agent phase allowlist |
 | **6** | Security | Secret Detected | Secret scan detected potential credentials in diff/workspace |
 | **7** | Quality Gate | Validation Allowlist Violation | Files changed during validation are outside allowlist |
+| **8** | Goal Check | Goal Unmet | Goal-check evaluator determined the scouting objective was not met after retries |
 | **124** | Timeout | Agent Timeout | Agent invocation exceeded `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | **127** | Docker | Docker Init Failed | Docker container initialization failed (missing entrypoint script) |
 | **141** | Validation | SIGPIPE | Validation output filter crashed or exited unexpectedly (broken pipe) |

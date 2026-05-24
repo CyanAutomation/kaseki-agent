@@ -298,6 +298,34 @@ Or via API:
 - `/results/scouting-report.md` → Human-readable coverage summary
 - `/results/metadata.jsonl` → Log entry for allowlist merge decision
 
+### Goal Check Agent Loop
+
+When scouting is enabled, Kaseki also enables a post-validation goal-check Pi evaluator by default. The evaluator compares the original task, `/results/scouting.json`, the current diff, changed files, validation output, and coding-agent event summary. If it reports that the goal was not met, Kaseki retries only the coding phase in the same workspace, using the evaluator's `retry_prompt`.
+
+Configuration:
+
+```bash
+export KASEKI_GOAL_CHECK=1
+export KASEKI_GOAL_CHECK_MAX_RETRIES=1
+export KASEKI_GOAL_CHECK_MODEL="$KASEKI_SCOUTING_MODEL"
+export KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="$KASEKI_SCOUTING_TIMEOUT_SECONDS"
+```
+
+Or via API:
+
+```json
+{
+  "goalCheck": {
+    "enabled": true,
+    "maxRetries": 1,
+    "model": "openrouter/free",
+    "timeoutSeconds": 300
+  }
+}
+```
+
+The latest verdict is written to `/results/goal-check.json`, all verdicts are appended to `/results/goal-check-attempts.jsonl`, and exhausted retries fail the run with exit code `8`.
+
 ### `KASEKI_CHANGED_FILES_ALLOWLIST`
 
 - **Type**: `string` (space-separated glob patterns)

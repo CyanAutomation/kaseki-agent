@@ -202,6 +202,28 @@ describe('Kaseki API Request Validation', () => {
       expected: { repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'auto' },
     },
     {
+      name: 'accepts fast inspect validation skip',
+      request: { repoUrl: 'https://github.com/org/repo', taskMode: 'inspect', skipPreAgentValidation: true },
+      expected: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskMode: 'inspect',
+        skipPreAgentValidation: true,
+      },
+    },
+    {
+      name: 'accepts goal check controls',
+      request: {
+        repoUrl: 'https://github.com/org/repo',
+        goalCheck: { enabled: true, maxRetries: 2, model: 'openrouter/free', timeoutSeconds: 300 },
+      },
+      expected: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        goalCheck: { enabled: true, maxRetries: 2, model: 'openrouter/free', timeoutSeconds: 300 },
+      },
+    },
+    {
       name: 'accepts controller-style allowlist and validation aliases',
       request: {
         repoUrl: 'https://github.com/org/repo',
@@ -225,8 +247,10 @@ describe('Kaseki API Request Validation', () => {
         max_diff_bytes: 400000,
         validation_commands: ['npm test'],
         scouting_config: { enabled: false, model: 'openrouter/free', timeoutSeconds: 300 },
+        goal_check: { enabled: true, maxRetries: 1, model: 'openrouter/free', timeoutSeconds: 300 },
         task_mode: 'inspect',
         publish_mode: 'none',
+        skip_pre_agent_validation: true,
         startup_check: true,
         startup_check_mode: 'boot',
         timeout_seconds: 600,
@@ -239,8 +263,10 @@ describe('Kaseki API Request Validation', () => {
         maxDiffBytes: 400000,
         validationCommands: ['npm test'],
         scouting: { enabled: false, model: 'openrouter/free', timeoutSeconds: 300 },
+        goalCheck: { enabled: true, maxRetries: 1, model: 'openrouter/free', timeoutSeconds: 300 },
         taskMode: 'inspect',
         publishMode: 'none',
+        skipPreAgentValidation: true,
         startupCheck: true,
         startupCheckMode: 'boot',
         timeoutSeconds: 600,

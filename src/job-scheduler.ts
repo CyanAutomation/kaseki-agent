@@ -266,6 +266,12 @@ export class JobScheduler {
       KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
+    if (job.request.skipPreAgentValidation) {
+      env.KASEKI_PRE_AGENT_VALIDATION = '0';
+    }
+    if ((job.request.publishMode || 'pr') === 'none') {
+      env.GITHUB_APP_ENABLED = '0';
+    }
     this.populateGitHubAppEnv(env);
 
     const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
@@ -305,6 +311,18 @@ export class JobScheduler {
     }
     if (job.request.scouting?.timeoutSeconds) {
       env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(job.request.scouting.timeoutSeconds);
+    }
+    if (job.request.goalCheck?.enabled !== undefined) {
+      env.KASEKI_GOAL_CHECK = job.request.goalCheck.enabled ? '1' : '0';
+    }
+    if (job.request.goalCheck?.maxRetries !== undefined) {
+      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(job.request.goalCheck.maxRetries);
+    }
+    if (job.request.goalCheck?.model) {
+      env.KASEKI_GOAL_CHECK_MODEL = job.request.goalCheck.model;
+    }
+    if (job.request.goalCheck?.timeoutSeconds) {
+      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(job.request.goalCheck.timeoutSeconds);
     }
 
     if (job.request.taskPrompt) {

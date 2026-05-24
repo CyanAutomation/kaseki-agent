@@ -5,7 +5,7 @@ import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
-import { resolveInstanceExitCode, extractValidationFailureReason, extractQualityFailureReason } from '../instance-state-derivation';
+import { resolveInstanceExitCode, extractValidationFailureReason, extractQualityFailureReason, extractGoalCheckFailureReason } from '../instance-state-derivation';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 
@@ -30,6 +30,7 @@ export class StatusResponseBuilder {
     const metadata = this.readMetadata(runDir);
     const validationReason = extractValidationFailureReason(metadata);
     const qualityReason = extractQualityFailureReason(metadata);
+    const goalCheckReason = extractGoalCheckFailureReason(metadata);
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
@@ -37,6 +38,7 @@ export class StatusResponseBuilder {
       failureClass: job.failureClass,
       validationFailureReason: validationReason ?? undefined,
       qualityFailureReason: qualityReason ?? undefined,
+      goalCheckFailureReason: goalCheckReason ?? undefined,
       correlationId: job.correlationId,
       requestId: job.requestId,
       error: job.error,
