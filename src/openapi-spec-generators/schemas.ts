@@ -58,6 +58,26 @@ export function buildRunRequestSchema(): Record<string, unknown> {
           },
         },
       },
+      goalCheck: {
+        type: 'object',
+        description: 'Post-coding goal-check evaluator controls',
+        properties: {
+          enabled: { type: 'boolean', description: 'Enable the post-validation goal-check Pi evaluator' },
+          maxRetries: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 5,
+            description: 'Maximum coding-agent retries after goal-check misses',
+          },
+          model: { type: 'string', description: 'Optional Pi model override for goal checking' },
+          timeoutSeconds: {
+            type: 'integer',
+            minimum: 60,
+            maximum: 10800,
+            description: 'Optional goal-check timeout in seconds',
+          },
+        },
+      },
       taskMode: {
         type: 'string',
         enum: ['patch', 'inspect'],
@@ -68,6 +88,11 @@ export function buildRunRequestSchema(): Record<string, unknown> {
         enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'],
         description:
           'Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing',
+      },
+      skipPreAgentValidation: {
+        type: 'boolean',
+        description:
+          'Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured.',
       },
       startupCheck: {
         type: 'boolean',

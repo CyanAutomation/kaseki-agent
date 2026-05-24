@@ -15,6 +15,10 @@ Complete reference for all environment variables used by kaseki-agent.
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
 | `KASEKI_MODEL` | `openrouter/free` | string | Pi model identifier (see [OpenRouter catalog](https://openrouter.ai/models)) |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
+| `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
+| `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
+| `KASEKI_GOAL_CHECK_MODEL` | `KASEKI_SCOUTING_MODEL` | string | Pi model identifier for the goal-check evaluator |
+| `KASEKI_GOAL_CHECK_TIMEOUT_SECONDS` | `KASEKI_SCOUTING_TIMEOUT_SECONDS` | integer | Goal-check evaluator timeout in seconds |
 
 ### API Keys & Credentials
 

@@ -211,6 +211,11 @@ check_api_key() {
 check_github_app_secrets() {
   log_info "Checking GitHub App credentials..."
 
+  if [ "${GITHUB_APP_ENABLED:-1}" != "1" ]; then
+    log_info "GitHub App credential check skipped because GITHUB_APP_ENABLED=${GITHUB_APP_ENABLED:-0}."
+    return 0
+  fi
+
   local exit_code=0
   local github_app_id_file github_app_client_id_file github_app_private_key_file
   github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
@@ -243,6 +248,11 @@ check_github_app_secrets() {
 
 check_github_app_secret_paths() {
   log_info "Checking GitHub App secret mount paths..."
+
+  if [ "${GITHUB_APP_ENABLED:-1}" != "1" ]; then
+    log_info "GitHub App secret mount path check skipped because GITHUB_APP_ENABLED=${GITHUB_APP_ENABLED:-0}."
+    return 0
+  fi
 
   local exit_code=0
   local root_level_id root_level_client_id root_level_key primary_id primary_client_id primary_key

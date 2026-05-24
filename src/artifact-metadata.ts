@@ -109,6 +109,48 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'goal-check.json': {
+    name: 'goal-check.json',
+    contentType: 'application/json',
+    description: 'Latest post-validation Pi goal-check verdict',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 6,
+    sizeHint: 'small',
+  },
+
+  'goal-check-attempts.jsonl': {
+    name: 'goal-check-attempts.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Structured goal-check verdict history across coding attempts',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 7,
+    sizeHint: 'small',
+  },
+
+  'goal-check-events.jsonl': {
+    name: 'goal-check-events.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Sanitized Pi events from the goal-check evaluator phase',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'large',
+  },
+
+  'goal-check-summary.json': {
+    name: 'goal-check-summary.json',
+    contentType: 'application/json',
+    description: 'Pi goal-check event statistics including model metadata when available',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
+  'goal-check-stderr.log': {
+    name: 'goal-check-stderr.log',
+    contentType: 'text/plain',
+    description: 'Goal-check Pi stderr and artifact validation diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'medium',
+  },
+
   // Progress & stage tracking
   'progress.log': {
     name: 'progress.log',

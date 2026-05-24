@@ -121,6 +121,13 @@ export function extractQualityFailureReason(metadata: Metadata = {}): string | n
   return reason.length > 0 ? reason : null;
 }
 
+export function extractGoalCheckFailureReason(metadata: Metadata = {}): string | null {
+  const reason = typeof metadata.goal_check_failure_reason === 'string'
+    ? metadata.goal_check_failure_reason.trim()
+    : '';
+  return reason.length > 0 ? reason : null;
+}
+
 /**
  * Classify failure type from metadata and exit code.
  */
@@ -134,6 +141,7 @@ export function classifyFailure(
 
   if (normalizedExitCode === 0) return 'none';
   if (normalizedExitCode === 124) return 'timeout';
+  if (normalizedExitCode === 8 || failedCommand === 'goal check') return 'goal-unmet';
   if (failedCommand === 'empty git diff' || normalizedExitCode === 3) return 'empty-diff';
   if (failedCommand === 'validation') return 'validation';
   if (failedCommand === 'quality checks') return 'quality';
