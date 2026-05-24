@@ -33,6 +33,49 @@ const controllerPage = String.raw`<!doctype html>
         color: var(--ink);
         font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+      .header-bar {
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        padding: var(--space-3) var(--space-3);
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        justify-content: space-between;
+      }
+      .header-bar h1 {
+        margin: 0;
+        font-size: clamp(24px, 4vw, 32px);
+        line-height: 1.2;
+      }
+      .header-bar-title {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .status-indicator.running {
+        background: #e8b923;
+        animation: pulse 1s ease-in-out infinite;
+      }
+      .status-indicator.completed {
+        background: var(--ok);
+      }
+      .status-indicator.failed {
+        background: var(--bad);
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
       main {
         display: grid;
         gap: var(--space-4);
@@ -42,7 +85,6 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-3);
       }
       h1, h2 { margin: 0; }
-      h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.12; }
       h2 { font-size: clamp(20px, 2.2vw, 24px); line-height: 1.2; }
       p { color: var(--muted); font-size: 16px; line-height: 1.5; margin: var(--space-1) 0 0; }
       .panel {
@@ -179,6 +221,9 @@ const controllerPage = String.raw`<!doctype html>
       #state.ok { color: var(--ok); }
       #state.bad { color: var(--bad); }
       @media (min-width: 768px) {
+        .header-bar {
+          padding: clamp(var(--space-3), 2vw, 24px) clamp(var(--space-3), 4vw, 48px);
+        }
         main {
           grid-template-columns: minmax(320px, 560px) minmax(320px, 1fr);
           padding: clamp(var(--space-3), 4vw, 48px);
@@ -271,19 +316,22 @@ const controllerPage = String.raw`<!doctype html>
       .health-check-status.bad::before { content: '✕'; }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
-        .response-panel { min-height: 52vh; }
+        .response-panel { min-height: 40vh; }
         .health-checks-grid { grid-template-columns: repeat(2, 1fr); }
+        main {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
     </style>
   </head>
   <body>
+    <header class="header-bar">
+      <div class="header-bar-title">
+        <h1>Kaseki Task Console</h1>
+        <span class="status-indicator" id="header-status" data-status="idle"></span>
+      </div>
+    </header>
     <main>
-      <section class="panel" aria-labelledby="page-title">
-        <header>
-          <h1 id="page-title">Kaseki Task Console</h1>
-          <p>Check system health and submit repository tasks to the Kaseki API controller.</p>
-        </header>
-      </section>
       <section class="panel stack" aria-labelledby="tabs-heading">
         <div class="tabs-nav" role="tablist" aria-label="Console tabs">
           <button class="tab-button active" data-tab="health" role="tab" aria-selected="true" aria-controls="health-tab">Health</button>
@@ -433,8 +481,24 @@ const controllerPage = String.raw`<!doctype html>
       const runLinks = document.querySelector('#run-links');
       const recommendedArtifacts = document.querySelector('#recommended-artifacts');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
+      const headerStatus = document.querySelector('#header-status');
       let pollTimer = null;
       tokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
+
+      function updateHeaderStatus(status) {
+        if (!headerStatus) return;
+        const statusMap = {
+          'idle': 'idle',
+          'running': 'running',
+          'queued': 'running',
+          'completed': 'completed',
+          'failed': 'failed',
+          'request ok': 'idle',
+        };
+        const statusClass = statusMap[status] || 'idle';
+        headerStatus.className = 'status-indicator ' + statusClass;
+        headerStatus.setAttribute('data-status', statusClass);
+      }
 
       function sanitizeOutput(value) {
         if (typeof value === 'string') return value;
@@ -456,6 +520,7 @@ const controllerPage = String.raw`<!doctype html>
 
       function setOutputMetadata(status, runId) {
         outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
+        updateHeaderStatus(status);
       }
 
       function responseStatusLabel(response, payload) {
@@ -693,6 +758,9 @@ const controllerPage = String.raw`<!doctype html>
       const savedTab = sessionStorage.getItem('kasekiActiveTab') || 'health';
       const savedTabButton = document.querySelector('[data-tab="' + savedTab + '"]');
       if (savedTabButton) savedTabButton.click();
+      
+      // Initialize header status
+      updateHeaderStatus('idle');
 
       // Health check button handlers
       document.querySelectorAll('[data-probe]').forEach((button) => {

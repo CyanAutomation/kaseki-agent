@@ -43,7 +43,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain('/status');
       expect(body).toContain('/events?tail=50');
       expect(body).toContain('function responseStatusLabel(response, payload)');
-      expect(body).toContain("return payload.status;");
+      expect(body).toContain('return payload.status;');
       expect(body).toContain('Run status updated.');
       expect(body).not.toContain('kasekiApiToken =');
     } finally {
@@ -65,7 +65,7 @@ describe('kaseki API web console', () => {
       expect(response.status).toBe(200);
       expect(body).toContain('<input name="scouting" type="checkbox" checked>');
 
-      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n      \}/);
+      const requestBodyMatch = body.match(/function requestBody\(\) \{([\s\S]*?)\n{6}\}/);
       expect(requestBodyMatch).toBeTruthy();
       const requestBodySource = `function requestBody() {${requestBodyMatch?.[1] || ''}\n      }`;
 
