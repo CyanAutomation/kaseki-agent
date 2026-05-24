@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.46.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.45.0...v1.46.0) (2026-05-24)
+
+
+### Features
+
+* Add case for merging validation patterns with empty user patterns ([9e884ec](https://github.com/CyanAutomation/kaseki-agent/commit/9e884ec9f9c333f1ce4586bf39b97011e5f7407b))
+
 # [1.45.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.44.0...v1.45.0) (2026-05-24)
 
 
