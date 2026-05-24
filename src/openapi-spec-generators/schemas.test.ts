@@ -147,6 +147,8 @@ describe('OpenAPI Schema Builders', () => {
       expect(runRequest.required).toEqual(['repoUrl']);
       expect(runRequest.properties?.taskMode?.enum).toEqual(['patch', 'inspect']);
       expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
+      expect(runRequest.properties?.skipPreAgentValidation).toMatchObject({ type: 'boolean' });
+      expect(runRequest.properties?.goalCheck).toMatchObject({ type: 'object' });
 
       // Additional semantic checks for exact enum values and constraints
       const taskModeSchema = runRequest.properties?.taskMode as JsonSchemaObject;
@@ -249,9 +251,11 @@ describe('OpenAPI Schema Builders', () => {
       // Integer fields
       expect(properties.maxDiffBytes.type).toBe('integer');
       expect(properties.timeoutSeconds.type).toBe('integer');
+      expect(properties.skipPreAgentValidation.type).toBe('boolean');
 
       // Object fields
       expect(properties.scouting.type).toBe('object');
+      expect(properties.goalCheck.type).toBe('object');
       expect(properties.webhookConfig.type).toBe('object');
       expect(properties.tracing.type).toBe('object');
     });
@@ -448,6 +452,25 @@ describe('OpenAPI Schema Builders', () => {
       expect(scoutingProps.enabled).toMatchObject({ type: 'boolean' });
       expect(scoutingProps.model).toMatchObject({ type: 'string' });
       expect(scoutingProps.timeoutSeconds).toMatchObject({
+        type: 'integer',
+        minimum: 60,
+        maximum: 10800,
+      });
+    });
+
+    it('goalCheck object should have enabled, maxRetries, model, and timeoutSeconds properties', () => {
+      const schema = buildRunRequestSchema() as JsonSchemaObject;
+      const goalCheck = schema.properties?.goalCheck as JsonSchemaObject;
+      const goalCheckProps = goalCheck.properties as Record<string, JsonSchemaObject>;
+
+      expect(goalCheckProps.enabled).toMatchObject({ type: 'boolean' });
+      expect(goalCheckProps.maxRetries).toMatchObject({
+        type: 'integer',
+        minimum: 0,
+        maximum: 5,
+      });
+      expect(goalCheckProps.model).toMatchObject({ type: 'string' });
+      expect(goalCheckProps.timeoutSeconds).toMatchObject({
         type: 'integer',
         minimum: 60,
         maximum: 10800,

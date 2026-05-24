@@ -15,11 +15,75 @@ IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"
 SECRETS_DIR="${HOME}/.kaseki/secrets"
 RESULTS_DIR="${KASEKI_RESULTS_DIR:-.}/results"
 
-# Check Docker availability
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Error: Docker is required but not installed" >&2
-  exit 2
-fi
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Error: Docker is required for '$COMMAND' but is not installed" >&2
+    echo "Run './kaseki detect' to see which commands are available on this host." >&2
+    exit 2
+  fi
+}
+
+show_detect() {
+  local docker_status template_status agents_status secrets_status results_status recommendation
+
+  if command -v docker >/dev/null 2>&1; then
+    if docker info >/dev/null 2>&1; then
+      docker_status="available and running"
+    else
+      docker_status="installed but daemon is not reachable"
+    fi
+  else
+    docker_status="not installed"
+  fi
+
+  if [ -d "$ROOT" ]; then
+    agents_status="present: $ROOT"
+  else
+    agents_status="missing: $ROOT"
+  fi
+
+  if [ -d "$TEMPLATE_DIR" ]; then
+    template_status="present: $TEMPLATE_DIR"
+  else
+    template_status="missing: $TEMPLATE_DIR"
+  fi
+
+  if [ -d "$SECRETS_DIR" ]; then
+    secrets_status="present: $SECRETS_DIR"
+  else
+    secrets_status="missing: $SECRETS_DIR"
+  fi
+
+  if [ -d "$RESULTS_DIR" ]; then
+    results_status="present: $RESULTS_DIR"
+  else
+    results_status="will be created when needed: $RESULTS_DIR"
+  fi
+
+  recommendation="Run './kaseki setup' first."
+  if [ "$template_status" = "present: $TEMPLATE_DIR" ]; then
+    recommendation="Use CLI operations such as './kaseki list' or './kaseki watch <instance>' for existing /agents runs."
+  elif [ "$docker_status" = "available and running" ]; then
+    recommendation="Use container operations such as './kaseki setup' or './kaseki agent <repo> <ref>'."
+  fi
+
+  cat <<EOF
+Kaseki environment detection
+
+Docker:        $docker_status
+/agents:       $agents_status
+Template:      $template_status
+Secrets:       $secrets_status
+Results:       $results_status
+
+Recommended next step:
+  $recommendation
+
+Mode guide:
+  Container operations run through Docker and are best for setup and new tasks.
+  CLI operations inspect existing instances and require $TEMPLATE_DIR.
+EOF
+}
 
 # Help text
 show_help() {
@@ -27,6 +91,7 @@ show_help() {
 kaseki — Kaseki Agent Command-Line Interface
 
 CONTAINER OPERATIONS (new, easier interface):
+  ./kaseki detect                           Show local setup and recommended mode
   ./kaseki setup [--help]                   Interactive setup wizard
   ./kaseki doctor [--help]                  Health check
   ./kaseki agent <repo> <ref> [--help]      Run agent task
@@ -49,6 +114,7 @@ Environment Variables:
 
 Examples:
   # Container: one-time setup
+  ./kaseki detect
   ./kaseki setup
   
   # Container: run a task
@@ -73,6 +139,7 @@ COMMAND="${1:-help}"
 case "$COMMAND" in
   # Container operations
   setup|doctor|agent|run-mode|setup-remote)
+    require_docker
     shift || true
     
     case "$COMMAND" in
@@ -148,6 +215,7 @@ case "$COMMAND" in
   
   # CLI operations (existing kaseki-cli.js wrapper)
   list|status|errors|analysis|watch|follow|progress)
+    require_docker
     # Check if template directory exists (required for CLI)
     if [ ! -d "$TEMPLATE_DIR" ]; then
       echo "Error: Kaseki template directory not found: $TEMPLATE_DIR" >&2
@@ -168,6 +236,11 @@ case "$COMMAND" in
       /tools/kaseki-cli.js "$@"
     ;;
   
+  detect)
+    show_detect
+    exit 0
+    ;;
+
   --help|-h|help)
     show_help
     exit 0
@@ -180,4 +253,3 @@ case "$COMMAND" in
     exit 1
     ;;
 esac
-
