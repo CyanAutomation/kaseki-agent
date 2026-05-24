@@ -139,6 +139,7 @@ kaseki-agent serve --port 8080
 - **Error detection**: Identify failures and anomalies  
 - **Post-run analysis**: Detailed result summaries
 - **Log streaming**: Real-time log consumption
+- **Automatic review requests**: PRs on personal repositories automatically request the owner as a reviewer
 
 See [docs/API.md](docs/API.md) and [docs/CLI.md](docs/CLI.md) for complete API and CLI documentation.
 

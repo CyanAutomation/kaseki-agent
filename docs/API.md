@@ -269,6 +269,26 @@ available and gracefully skip when they are not, and `none` skips GitHub
 publishing. Requests with effective publish mode `branch`, `pr`, or `draft_pr` fail before queueing unless
 GitHub App credentials are readable; call `GET /api/preflight` first to verify that readiness.
 
+### Automatic Owner Review Requests (Personal Repositories)
+
+When the GitHub App creates a pull request against a **personal repository** (owner type = `User`), the repository owner is automatically requested as a reviewer. This makes the PR immediately appear in the owner's "Review requested" filter on GitHub, improving discoverability.
+
+**Behavior:**
+- **Personal repos** (`owner.type === "User"`): The repo owner is automatically added as a requested reviewer
+  - PR appears in owner's "Review requested" view
+  - No additional configuration needed
+- **Organization repos** (`owner.type === "Organization"`): Skipped silently (not an error)
+  - Org repos typically have team-based review workflows
+  - Organizations can configure branch protection rules to require reviews
+
+**Requirements:**
+- GitHub App must have **"Pull requests: write"** permission (already required for PR creation)
+- No additional configuration or feature flags needed
+- Automatic and always-on for personal repositories
+
+**Error Handling:**
+If the review request fails for any reason (permission denied, user not found, rate limit), the failure is logged but does not block PR creation. The PR is still successfully created and published. Review request failures are logged to `/results/owner-review-request.log`.
+
 For scouting controls, default behavior is enabled when `scouting` is omitted. Disable explicitly with `KASEKI_SCOUTING=0` (CLI/env) or `scouting.enabled=false` in the API request.
 
 **Scouting & Automatic Allowlist Control**
