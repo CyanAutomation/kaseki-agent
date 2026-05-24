@@ -2652,6 +2652,175 @@ apply_github_pr_labels() {
   esac
 }
 
+request_owner_review() {
+  local pr_response token log_file owner_login owner_type pr_number repo owner
+  pr_response="$1"
+  token="$2"
+  log_file="${3:-/results/git-push.log}"
+  
+  if [ -z "$pr_response" ] || [ -z "$token" ]; then
+    printf 'Warning: skipping owner review request because PR response or token is missing\n' | tee -a "$log_file" >&2
+    return 1
+  fi
+
+  # Extract repo owner login, owner type, PR number, and repo name from PR response
+  owner_login=$(printf '%s' "$pr_response" | node -e "
+    const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    if (data.base && data.base.repo && data.base.repo.owner) {
+      process.stdout.write(data.base.repo.owner.login || '');
+    }
+  " 2>/dev/null || true)
+  
+  owner_type=$(printf '%s' "$pr_response" | node -e "
+    const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    if (data.base && data.base.repo && data.base.repo.owner) {
+      process.stdout.write(data.base.repo.owner.type || '');
+    }
+  " 2>/dev/null || true)
+  
+  pr_number=$(printf '%s' "$pr_response" | node -e "
+    const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    process.stdout.write(String(data.number || ''));
+  " 2>/dev/null || true)
+  
+  owner=$(printf '%s' "$pr_response" | node -e "
+    const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    if (data.base && data.base.repo) {
+      process.stdout.write(data.base.repo.owner.login || '');
+    }
+  " 2>/dev/null || true)
+  
+  repo=$(printf '%s' "$pr_response" | node -e "
+    const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+    if (data.base && data.base.repo) {
+      process.stdout.write(data.base.repo.name || '');
+    }
+  " 2>/dev/null || true)
+  
+  # Validate extracted data
+  if [ -z "$owner_login" ] || [ -z "$owner_type" ] || [ -z "$pr_number" ] || [ -z "$owner" ] || [ -z "$repo" ]; then
+    printf 'Warning: failed to extract owner/PR data from PR response; skipping owner review request\n' | tee -a "$log_file" >&2
+    if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
+      printf 'Debug: owner_login=%s owner_type=%s pr_number=%s owner=%s repo=%s\n' "$owner_login" "$owner_type" "$pr_number" "$owner" "$repo" | tee -a "$log_file"
+    fi
+    return 1
+  fi
+  
+  # Skip if repo is owned by an organization (only request review on personal repos)
+  if [ "$owner_type" != "User" ]; then
+    printf 'Skipped owner review request: PR is on organization repo (owner_type=%s)\n' "$owner_type" | tee -a "$log_file"
+    return 0
+  fi
+  
+  # Build reviewer request payload
+  local reviewer_payload
+  if ! run_node_subprocess reviewer_payload "const payload = { reviewers: ['$owner_login'] }; process.stdout.write(JSON.stringify(payload));" "" "$log_file"; then
+    printf 'Warning: failed to JSON encode reviewer payload; skipping owner review request\n' | tee -a "$log_file" >&2
+    return 1
+  fi
+  
+  # Request owner review with retry logic
+  local retry_count=0 max_retries=2 request_success=0 backoff_delay=2
+  local review_request_log="/results/owner-review-request.log"
+  : > "$review_request_log"
+  
+  while [ $retry_count -le "$max_retries" ]; do
+    if [ $retry_count -gt 0 ]; then
+      printf 'Retrying owner review request (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a "$log_file" >&2
+      sleep "$backoff_delay"
+      # Exponential backoff: 2s → 4s
+      backoff_delay=$((backoff_delay * 2))
+      if [ $backoff_delay -gt 4 ]; then backoff_delay=4; fi
+    fi
+    
+    local review_status_file temp_response
+    review_status_file="$(mktemp /tmp/kaseki-review-status.XXXXXX)" || {
+      printf 'Warning: failed to create temp file for review request status\n' | tee -a "$log_file" >&2
+      return 1
+    }
+    
+    # Make the API request
+    local curl_exit review_http_status review_response
+    curl -s -w '%{http_code}' -X POST \
+      -H "Authorization: token $token" \
+      -H "Accept: application/vnd.github.v3+json" \
+      -H "Content-Type: application/json" \
+      "https://api.github.com/repos/$owner/$repo/pulls/$pr_number/requested_reviewers" \
+      -d "$reviewer_payload" > "$review_status_file" 2>&1
+    curl_exit=$?
+    
+    temp_response="$(cat "$review_status_file" 2>/dev/null || true)"
+    review_http_status="${temp_response: -3}"
+    review_response="${temp_response%???}"
+    rm -f "$review_status_file"
+    
+    if [ "$curl_exit" -ne 0 ]; then
+      printf 'Curl error requesting owner review (attempt %d): exit code %d\n' $((retry_count + 1)) "$curl_exit" | tee -a "$log_file" >&2
+      retry_count=$((retry_count + 1))
+      continue
+    fi
+    
+    case "$review_http_status" in
+      201)
+        # Success: review request created
+        printf '✓ Requested review from %s on PR #%s\n' "$owner_login" "$pr_number" | tee -a "$log_file" "$review_request_log"
+        request_success=1
+        break
+        ;;
+      422)
+        # Unprocessable Entity: usually means reviewer already requested or invalid data
+        printf 'ℹ Owner %s already has review request pending or user cannot be requested (HTTP 422)\n' "$owner_login" | tee -a "$log_file" "$review_request_log"
+        request_success=1
+        break
+        ;;
+      403)
+        # Forbidden: insufficient permissions
+        printf '✗ GitHub App lacks permission to request reviewers (HTTP 403)\n' | tee -a "$log_file" "$review_request_log" >&2
+        printf '  Hint: Verify GitHub App has "Pull requests: write" permission\n' | tee -a "$log_file" "$review_request_log" >&2
+        if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
+          printf 'Debug: Review API response:\n%s\n' "$review_response" | tee -a "$log_file"
+        fi
+        request_success=1  # Non-fatal; PR still created successfully
+        break
+        ;;
+      404)
+        # Not Found: user doesn't exist or repo not accessible
+        printf '✗ Could not find user %s or PR %d is not accessible (HTTP 404)\n' "$owner_login" "$pr_number" | tee -a "$log_file" "$review_request_log" >&2
+        request_success=1  # Non-fatal
+        break
+        ;;
+      429)
+        # Rate limited: retryable
+        printf 'Rate limited requesting owner review (attempt %d); retrying...\n' $((retry_count + 1)) | tee -a "$log_file" >&2
+        retry_count=$((retry_count + 1))
+        continue
+        ;;
+      500|502|503|504)
+        # Server errors: retryable
+        printf 'GitHub API server error %s requesting owner review (attempt %d); retrying...\n' "$review_http_status" $((retry_count + 1)) | tee -a "$log_file" >&2
+        retry_count=$((retry_count + 1))
+        continue
+        ;;
+      *)
+        # Unexpected status
+        printf '✗ Unexpected HTTP status %s requesting owner review\n' "$review_http_status" | tee -a "$log_file" "$review_request_log" >&2
+        if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
+          printf 'Debug: Review API response:\n%s\n' "$review_response" | tee -a "$log_file"
+        fi
+        request_success=1  # Non-fatal
+        break
+        ;;
+    esac
+  done
+  
+  if [ $request_success -eq 0 ]; then
+    printf '✗ Failed to request owner review after %d retries\n' "$max_retries" | tee -a "$log_file" "$review_request_log" >&2
+  fi
+  
+  # Always return 0: do not block PR creation if review request fails
+  return 0
+}
+
 is_github_pr_error_retryable() {
   local http_status error_type
   http_status="$1"
@@ -3381,6 +3550,8 @@ run_github_operations() {
         printf 'Pull request created: %s\n' "$pr_url" | tee -a /results/git-push.log
         if [ -n "$pr_number" ]; then
           apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /results/git-push.log || true
+          # Request repository owner as reviewer for personal repos
+          request_owner_review "$pr_response" "$token" /results/git-push.log || true
         else
           printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a /results/git-push.log >&2
         fi
