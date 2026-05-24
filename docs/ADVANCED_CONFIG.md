@@ -248,16 +248,68 @@ Variables controlling what code the agent operates on.
 
 Variables controlling validation and quality gates.
 
+### Scouting Agent & Allowlist Control (v2.6+)
+
+**Automatic allowlist management via scouting research phase**
+
+When `KASEKI_SCOUTING=1` or `scouting.enabled=true` in an API request:
+
+1. **Scouting Phase** generates `suggested_allowlist` with patterns:
+   - `agent_patterns`: Glob patterns for files the coding agent should modify
+   - `validation_patterns`: Glob patterns for files validation commands may touch
+
+2. **Allowlist Merge** (automatic):
+   - Scouting patterns are merged (union) with user-provided `KASEKI_CHANGED_FILES_ALLOWLIST` and `KASEKI_VALIDATION_ALLOWLIST`
+   - If both are provided, main agent can modify files matching either set
+
+3. **Coverage Metrics** logged in `/results/scouting-report.md`:
+   - Agent-phase coverage %: How many changed files match scouting patterns
+   - Validation-phase coverage %: How many validation changes match scouting patterns
+   - Warnings if patterns are too broad (>98%) or too narrow (<30%)
+
+**Example: Merge behavior**
+
+```bash
+export KASEKI_SCOUTING=1
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/**"
+./run-kaseki.sh
+```
+
+Scouting suggests: `src/parser.ts tests/parser.test.ts`
+User provides: `src/**`
+**Result**: Main agent can modify files in `src/**` (most permissive of both)
+
+**Fallback: No allowlist merging**
+
+To disable automatic scouting allowlist control:
+
+```bash
+export KASEKI_SCOUTING=0  # Scouting still runs, but allowlist not used
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/**"  # Manual allowlist only
+```
+
+Or via API:
+```json
+{ "scouting": { "enabled": false }, "changedFilesAllowlist": ["src/**"] }
+```
+
+**Artifacts generated**:
+- `/results/scouting.json` → Full research + suggested_allowlist + coverage metrics
+- `/results/scouting-report.md` → Human-readable coverage summary
+- `/results/metadata.jsonl` → Log entry for allowlist merge decision
+
 ### `KASEKI_CHANGED_FILES_ALLOWLIST`
 
 - **Type**: `string` (space-separated glob patterns)
-- **Default**: No restrictions (agent can change any files)
+- **Default**: No restrictions (agent can change any files, or scouting-derived if scouting enabled)
 - **Paths**: Single-run, Local API, Production API
 - **Description**: File patterns agent is allowed to modify
 - **Behavior**:
-  - If set, files outside patterns are restored before validation
+  - If set AND scouting enabled: merged (union) with scouting-derived patterns
+  - If set AND scouting disabled: used as-is (restrictive)
+  - If set: files outside patterns are restored before validation
   - Helps prevent unintended scope creep
-  - Check `restoration.log` to see what was restored
+  - Check `restoration.log` or `restoration-report.md` to see what was restored
 - **Glob pattern syntax**:
   - `src/**` — All files in src directory and subdirectories
   - `tests/**` — All files in tests directory
@@ -266,7 +318,7 @@ Variables controlling validation and quality gates.
 - **Examples**:
 
   ```bash
-  # Only src/ can be modified
+  # Only src/ can be modified (merged with scouting if enabled)
   KASEKI_CHANGED_FILES_ALLOWLIST=src/**
 
   # src/ and tests/ can be modified
@@ -274,6 +326,17 @@ Variables controlling validation and quality gates.
 
   # lib/ and root-level JSON files
   KASEKI_CHANGED_FILES_ALLOWLIST=lib/** *.json
+  ```
+
+- **With Scouting**:
+
+  ```bash
+  # Scouting suggests: src/parser.ts src/lexer.ts
+  # User provides: src/**
+  # Result: Agent can modify any src/** file (union of both)
+  export KASEKI_SCOUTING=1
+  export KASEKI_CHANGED_FILES_ALLOWLIST=src/**
+  ./run-kaseki.sh
   ```
 
 ### `KASEKI_VALIDATION_ALLOWLIST`
