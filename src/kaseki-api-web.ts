@@ -52,6 +52,19 @@ const controllerPage = String.raw`<!doctype html>
         align-items: center;
         gap: var(--space-2);
       }
+      .header-token-input {
+        min-width: 200px;
+        max-width: 300px;
+        width: auto;
+        padding: 10px 11px;
+        font-size: 14px;
+      }
+      @media (max-width: 767px) {
+        .header-token-input {
+          min-width: 160px;
+          max-width: 100%;
+        }
+      }
       .status-indicator {
         display: inline-flex;
         align-items: center;
@@ -330,6 +343,7 @@ const controllerPage = String.raw`<!doctype html>
         <h1>Kaseki Task Console</h1>
         <span class="status-indicator" id="header-status" data-status="idle"></span>
       </div>
+      <input id="header-api-token" class="header-token-input" type="password" autocomplete="off" placeholder="API bearer token (required)" aria-label="API bearer token">
     </header>
     <main>
       <section class="panel stack" aria-labelledby="tabs-heading">
@@ -381,12 +395,7 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset class="form-fields">
             <legend>Required information</legend>
             <div class="form-field">
-              <label for="token">API bearer token</label>
-              <input id="token" name="token" type="password" autocomplete="off" placeholder="Required to submit tasks">
-              <p class="field-helper">Stored in this tab only after a successful request.</p>
-              <p class="field-error" data-error-for="token" aria-live="polite"></p>
-            </div>
-            <div class="form-field">
+
               <label for="repo-url">Repository URL</label>
               <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
               <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
@@ -476,14 +485,30 @@ const controllerPage = String.raw`<!doctype html>
       const output = document.querySelector('#output');
       const outputMeta = document.querySelector('#output-meta');
       const state = document.querySelector('#state');
-      const tokenInput = document.querySelector('#token');
+      const headerTokenInput = document.querySelector('#header-api-token');
       const runIdInput = document.querySelector('#run-id');
       const runLinks = document.querySelector('#run-links');
       const recommendedArtifacts = document.querySelector('#recommended-artifacts');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       const headerStatus = document.querySelector('#header-status');
       let pollTimer = null;
-      tokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
+
+      function getApiToken() {
+        return headerTokenInput.value.trim();
+      }
+
+      // Restore token from session storage on page load
+      headerTokenInput.value = sessionStorage.getItem('kasekiApiToken') || '';
+
+      // Save token to session storage when it changes
+      headerTokenInput.addEventListener('change', () => {
+        const token = getApiToken();
+        if (token) {
+          sessionStorage.setItem('kasekiApiToken', token);
+        } else {
+          sessionStorage.removeItem('kasekiApiToken');
+        }
+      });
 
       function updateHeaderStatus(status) {
         if (!headerStatus) return;
@@ -652,9 +677,9 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function apiRequest(path, options) {
-        const token = tokenInput.value.trim();
+        const token = getApiToken();
         const needsAuth = options && options.auth;
-        if (needsAuth && !token) throw new Error('Enter the API bearer token first.');
+        if (needsAuth && !token) throw new Error('Enter the API bearer token in the header first.');
         if (needsAuth && token && !isLikelyBearerToken(token)) {
           throw new Error('Token format looks invalid. Use a plain bearer token without spaces.');
         }
