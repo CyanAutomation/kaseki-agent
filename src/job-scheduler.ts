@@ -905,6 +905,10 @@ export class JobScheduler {
 
     const now = new Date();
     for (const queuedJob of this.queue) {
+      if (queuedJob.finalized) {
+        continue;
+      }
+
       this.finalizeJobIfNeeded(queuedJob, {
         status: 'failed',
         exitCode: 143,
