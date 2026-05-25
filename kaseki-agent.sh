@@ -1312,16 +1312,33 @@ restore_node_modules_from_cache() {
       ;;
     hardlink)
       if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
-        if cp -al "$source_dir" "$target_dir"; then
+        local hardlink_stderr_file hardlink_reason hardlink_stderr_trimmed
+        hardlink_stderr_file="$(mktemp /tmp/kaseki-hardlink-stderr.XXXXXX)" || return 1
+        if cp -al "$source_dir" "$target_dir" 2>"$hardlink_stderr_file"; then
+          rm -f "$hardlink_stderr_file"
           DEPENDENCY_RESTORE_METHOD="hardlink"
           return 0
         fi
+        if rg -q "Invalid cross-device link|EXDEV" "$hardlink_stderr_file"; then
+          hardlink_reason="hardlink_cross_device"
+        else
+          hardlink_reason="hardlink_failed"
+        fi
         DEPENDENCY_RESTORE_METHOD="hardlink_fallback_copy"
-        printf 'Dependency cache status: hardlink restore failed; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        printf 'Dependency cache status: hardlink restore fallback to copy (reason=%s).\n' "$hardlink_reason" | tee -a "$DEPENDENCY_CACHE_LOG"
+        emit_event "dependency_cache_decision" "strategy=hardlink_restore_fallback" "restore_mode=hardlink" "restore_method=hardlink_fallback_copy" "reason=$hardlink_reason"
+        if [ "$hardlink_reason" != "hardlink_cross_device" ]; then
+          hardlink_stderr_trimmed="$(tr '\n' ' ' < "$hardlink_stderr_file" | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//' | cut -c1-300)"
+          if [ -n "$hardlink_stderr_trimmed" ]; then
+            printf 'Dependency cache debug: hardlink restore stderr=%s\n' "$hardlink_stderr_trimmed" >&2
+          fi
+        fi
+        rm -f "$hardlink_stderr_file"
         cp -a "$source_dir" "$target_dir"
       else
         DEPENDENCY_RESTORE_METHOD="hardlink_cross_fs_copy"
         printf 'Dependency cache status: hardlink restore skipped because cache and workspace are on different filesystems; falling back to copy.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+        emit_event "dependency_cache_decision" "strategy=hardlink_restore_fallback" "restore_mode=hardlink" "restore_method=hardlink_cross_fs_copy" "reason=hardlink_cross_fs"
         cp -a "$source_dir" "$target_dir"
       fi
       ;;
