@@ -238,15 +238,15 @@ export class JobPersistenceManager {
    * Compare two persisted jobs by recency conflict resolution heuristics.
    */
   private comparePersistedJobRecency(prev: PersistedJob, job: PersistedJob): number {
-    const recencyDiff = this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
-    if (recencyDiff !== 0) {
-      return recencyDiff;
-    }
-
     const prevIsTerminal = this.isTerminalPersistedJob(prev);
     const jobIsTerminal = this.isTerminalPersistedJob(job);
     if (prevIsTerminal !== jobIsTerminal) {
       return jobIsTerminal ? 1 : -1;
+    }
+
+    const recencyDiff = this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
+    if (recencyDiff !== 0) {
+      return recencyDiff;
     }
 
     const diagnosticFields: ReadonlyArray<keyof PersistedJob> = ['failureClass', 'error', 'exitCode'];
