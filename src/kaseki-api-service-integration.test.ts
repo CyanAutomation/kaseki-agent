@@ -126,7 +126,13 @@ describe('KasekiApiService Integration', () => {
     it('setup orchestrator handles setup responsibilities only', async () => {
       const setupOrch = await import('./kaseki-api/setup-orchestrator');
       const assertNodeVersion = jest.fn();
-      const ensureTemplate = jest.fn(async () => undefined);
+      const ensureTemplate = jest.fn<Promise<void>, [string]>(async () => undefined);
+      const callOrder: string[] = [];
+
+      assertNodeVersion.mockImplementation(() => callOrder.push('assertNodeVersion'));
+      ensureTemplate.mockImplementation(async (templateDir: string) => {
+        callOrder.push(`ensureTemplate:${templateDir}`);
+      });
 
       const context = await setupOrch.initializeSetup('/tmp/template-dir', {
         assertNodeVersion,
@@ -138,11 +144,12 @@ describe('KasekiApiService Integration', () => {
         templateInitialized: true,
         templateDir: '/tmp/template-dir',
       });
-      expect(assertNodeVersion).toHaveBeenCalledTimes(1);
-      expect(ensureTemplate).toHaveBeenCalledTimes(1);
-      expect(ensureTemplate).toHaveBeenCalledWith('/tmp/template-dir');
-      expect('bootstrapServices' in setupOrch).toBe(false);
-      expect('gracefulShutdown' in setupOrch).toBe(false);
+      expect(callOrder).toEqual(['assertNodeVersion', 'ensureTemplate:/tmp/template-dir']);
+      expect(Object.keys(setupOrch).sort()).toEqual([
+        'assertSupportedNodeVersion',
+        'ensureTemplateInitialized',
+        'initializeSetup',
+      ]);
     });
 
     it('service bootstrapper constructs dependencies', async () => {
@@ -151,6 +158,8 @@ describe('KasekiApiService Integration', () => {
       const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
 
       const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-bootstrapper-'));
+      const artifactPath = path.join(resultsDir, 'bootstrap-artifact.log');
+      fs.writeFileSync(artifactPath, 'bootstrap-payload', 'utf-8');
 
       let services;
       try {
@@ -169,11 +178,16 @@ describe('KasekiApiService Integration', () => {
           defaultTaskMode: 'patch',
         });
 
-        expect(typeof services.artifactCache.getOrLoad).toBe('function');
-        expect(typeof services.webhookManager.shutdown).toBe('function');
-        expect(typeof services.idempotencyStore.shutdown).toBe('function');
-        expect(typeof services.preFlightValidator.validate).toBe('function');
-        expect(typeof services.scheduler.shutdown).toBe('function');
+        expect(services.artifactCache.getOrLoad(artifactPath)).toBe('bootstrap-payload');
+        expect(services.artifactCache.getStats()).toEqual(
+          expect.objectContaining({
+            entries: 1,
+            hits: 0,
+            misses: 1,
+          }),
+        );
+        expect(fs.existsSync(path.join(resultsDir, 'webhook-queue.ndjson'))).toBe(false);
+        expect(fs.existsSync(path.join(resultsDir, 'idempotency-store.json'))).toBe(false);
       } finally {
         if (services) {
           services.scheduler.shutdown();
@@ -186,11 +200,39 @@ describe('KasekiApiService Integration', () => {
 
     it('top-level service composes orchestrator and bootstrapper without leaking internals', async () => {
       const apiService = await import('./kaseki-api-service');
+      const exitCodes: number[] = [];
+      const shutdownOrder: string[] = [];
+      const shutdown = apiService.createGracefulShutdown({
+        server: {
+          close: (callback: (err?: Error) => void) => {
+            shutdownOrder.push('server.close');
+            callback();
+            return undefined as never;
+          },
+        } as unknown as Server,
+        scheduler: { shutdown: () => shutdownOrder.push('scheduler.shutdown') },
+        webhookManager: {
+          shutdown: async () => {
+            shutdownOrder.push('webhookManager.shutdown');
+          },
+        },
+        idempotencyStore: { shutdown: () => shutdownOrder.push('idempotencyStore.shutdown') },
+        forceExitAfterMs: 100,
+        exit: ((code: number) => {
+          exitCodes.push(code);
+          return undefined as never;
+        }) as (code: number) => never,
+      });
 
-      expect(typeof apiService.assertSupportedNodeVersion).toBe('function');
-      expect(typeof apiService.ensureTemplateInitialized).toBe('function');
-      expect(typeof apiService.createGracefulShutdown).toBe('function');
-      expect(typeof apiService.ensureResultsDir).toBe('function');
+      await expect(shutdown()).resolves.toBeUndefined();
+      expect(exitCodes).toEqual([0]);
+      expect(shutdownOrder).toEqual([
+        'server.close',
+        'scheduler.shutdown',
+        'webhookManager.shutdown',
+        'idempotencyStore.shutdown',
+      ]);
+
       expect('initializeSetup' in apiService).toBe(false);
       expect('bootstrapServices' in apiService).toBe(false);
       expect('gracefulShutdown' in apiService).toBe(false);
