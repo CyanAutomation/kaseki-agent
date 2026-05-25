@@ -20,6 +20,13 @@ export type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' |
 
 type LoadPersistedJobsStatus = 'loaded' | 'lock_contention' | 'read_error';
 
+class LockAcquisitionError extends Error {
+  constructor(lockName: string, lockPath: string) {
+    super(`Failed to acquire ${lockName} lock: ${lockPath}`);
+    this.name = 'LockAcquisitionError';
+  }
+}
+
 /**
  * Job persistence manager handles all file I/O and job index operations.
  * Manages unique instance ID allocation, job index persistence, and locking.
@@ -81,7 +88,7 @@ export class JobPersistenceManager {
       });
     } catch (error) {
       // Lock contention during startup is best-effort; a future persist/load cycle will reconcile state.
-      status = (error as Error).message.includes('Failed to acquire') ? 'lock_contention' : 'read_error';
+      status = error instanceof LockAcquisitionError ? 'lock_contention' : 'read_error';
     }
 
     return { jobs, queuedJobs, status };
@@ -391,7 +398,7 @@ export class JobPersistenceManager {
     }
 
     if (!acquired) {
-      throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
+      throw new LockAcquisitionError(lockName, lockPath);
     }
 
     try {
@@ -422,7 +429,7 @@ export class JobPersistenceManager {
     }
 
     if (!acquired) {
-      throw new Error(`Failed to acquire ${lockName} lock: ${lockPath}`);
+      throw new LockAcquisitionError(lockName, lockPath);
     }
 
     try {
