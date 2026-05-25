@@ -3204,4 +3204,57 @@ describe('progress SSE terminal behavior', () => {
       await cleanupTestApp(server, idempotencyStore);
     }
   }, 15000);
+
+  test('closes SSE with failed status when progress.jsonl is missing and job fails', async () => {
+    const jobId = 'kaseki-sse-no-progress-failed';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+
+    const jobs: Record<string, any> = {
+      [jobId]: {
+        id: jobId,
+        status: 'running',
+        createdAt: new Date(),
+        startedAt: new Date(),
+        resultDir: jobDir,
+      },
+    };
+    const scheduler = createMockScheduler(jobs);
+    scheduler.getJob.mockImplementation((id: string) => jobs[id]);
+
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/progress?stream=sse`, {
+        headers: { Authorization: 'Bearer test-key', Accept: 'text/event-stream' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toBeTruthy();
+
+      setTimeout(() => {
+        jobs[jobId] = {
+          ...jobs[jobId],
+          status: 'failed',
+        };
+      }, 300);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+
+      expect(text).toContain(`"type":"start","jobId":"${jobId}","status":"running"`);
+      expect(text).toContain('"type":"status","status":"failed"');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  }, 15000);
 });
