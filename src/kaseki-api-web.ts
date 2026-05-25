@@ -209,7 +209,7 @@ const controllerPage = String.raw`<!doctype html>
         border: 1px solid #2e3a3d;
         border-radius: 8px;
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr);
         min-height: 300px;
         overflow: hidden;
       }
@@ -219,6 +219,30 @@ const controllerPage = String.raw`<!doctype html>
         font-size: 14px;
         margin: 0;
         padding: var(--space-2) var(--space-3);
+      }
+      .response-summary {
+        border-bottom: 1px solid #2e3a3d;
+        display: grid;
+        gap: var(--space-2);
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        padding: var(--space-2) var(--space-3);
+      }
+      .response-summary[hidden] { display: none; }
+      .response-summary-item {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .response-summary-label {
+        color: #9db0aa;
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .response-summary-value {
+        color: #eef7f2;
+        font-size: 14px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
       }
       .response-log {
         align-self: start;
@@ -466,6 +490,7 @@ const controllerPage = String.raw`<!doctype html>
         </div>
         <div class="response-panel">
           <p class="response-meta" id="output-meta" aria-live="polite">Status: idle</p>
+          <div class="response-summary" id="response-summary" hidden aria-live="polite"></div>
           <pre class="response-log empty" id="output" aria-live="polite">No output yet. Run a health check or submit a task to see responses.</pre>
         </div>
       </section>
@@ -474,6 +499,7 @@ const controllerPage = String.raw`<!doctype html>
       const form = document.querySelector('#run-form');
       const output = document.querySelector('#output');
       const outputMeta = document.querySelector('#output-meta');
+      const responseSummary = document.querySelector('#response-summary');
       const state = document.querySelector('#state');
       const headerTokenInput = document.querySelector('#header-api-token');
       const runIdInput = document.querySelector('#run-id');
@@ -545,6 +571,46 @@ const controllerPage = String.raw`<!doctype html>
       function setOutputMetadata(status, runId) {
         outputMeta.textContent = 'Status: ' + status + (runId ? ' | Run ID: ' + runId : '');
         updateHeaderStatus(status);
+      }
+
+      function formatElapsedSeconds(value) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+        const seconds = Math.max(0, Math.floor(value));
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        if (minutes === 0) return String(remainingSeconds) + 's';
+        return String(minutes) + 'm ' + String(remainingSeconds).padStart(2, '0') + 's';
+      }
+
+      function setResponseSummary(payload) {
+        if (!responseSummary) return;
+        responseSummary.replaceChildren();
+        const items = [];
+        if (payload && typeof payload === 'object') {
+          if (typeof payload.status === 'string') {
+            items.push(['Response status', stripControlSequences(payload.status)]);
+          }
+          const elapsed = formatElapsedSeconds(payload.elapsedSeconds);
+          if (elapsed) {
+            items.push(['Response elapsed time', elapsed]);
+          }
+          if (payload.progress && typeof payload.progress.stage === 'string') {
+            items.push(['Response progress stage', stripControlSequences(payload.progress.stage)]);
+          }
+        }
+        responseSummary.hidden = items.length === 0;
+        items.forEach(([label, value]) => {
+          const item = document.createElement('div');
+          item.className = 'response-summary-item';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'response-summary-label';
+          labelEl.textContent = label;
+          const valueEl = document.createElement('span');
+          valueEl.className = 'response-summary-value';
+          valueEl.textContent = value;
+          item.append(labelEl, valueEl);
+          responseSummary.appendChild(item);
+        });
       }
 
       function responseStatusLabel(response, payload) {
@@ -645,8 +711,12 @@ const controllerPage = String.raw`<!doctype html>
           if (result.response.ok) {
             renderRunsList(result.payload);
           }
-        } catch {
-          if (runsList) runsList.textContent = 'Runs could not be loaded.';
+        } catch (error) {
+          if (runsList) {
+            runsList.textContent = error instanceof Error && error.message.includes('API bearer token')
+              ? 'Enter the API bearer token to load recent runs.'
+              : 'Runs could not be loaded.';
+          }
         }
       }
 
@@ -720,6 +790,7 @@ const controllerPage = String.raw`<!doctype html>
         const statusLabel = responseStatusLabel(response, payload);
         if (!(options && options.preserveOutput)) {
           setOutputMetadata(statusLabel, runId || undefined);
+          setResponseSummary(payload);
           setOutputBody(JSON.stringify({
             method: options && options.method || 'GET',
             path,
@@ -747,6 +818,7 @@ const controllerPage = String.raw`<!doctype html>
           return await apiRequest(path, options);
         } catch (error) {
           setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
+          setResponseSummary(null);
           setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
           setState('Request could not be sent.', 'bad');
           return { payload: null, response: { ok: false } };
@@ -841,6 +913,7 @@ const controllerPage = String.raw`<!doctype html>
         const runId = runIdInput.value.trim();
         if (!runId) {
           setOutputMetadata('idle');
+          setResponseSummary(null);
           setOutputBody('Submit a run or enter a run ID first.');
           setState('Run status needs a run ID.', 'bad');
           return;
@@ -854,6 +927,7 @@ const controllerPage = String.raw`<!doctype html>
           const runId = runIdInput.value.trim();
           if (!runId) {
             setOutputMetadata('idle');
+            setResponseSummary(null);
             setOutputBody('Submit a run or enter a run ID first.');
             setState('Run action needs a run ID.', 'bad');
             return;
@@ -880,6 +954,7 @@ const controllerPage = String.raw`<!doctype html>
         const runId = runIdInput.value.trim();
         if (!runId) {
           setOutputMetadata('idle');
+          setResponseSummary(null);
           setOutputBody('Submit a run or enter a run ID first.');
           setState('Cancel needs a run ID.', 'bad');
           return;
@@ -901,13 +976,13 @@ const controllerPage = String.raw`<!doctype html>
               runIdInput.value = payload.id;
               showRunLinks(payload.id);
               activeRunView = 'status';
-              setOutputMetadata('queued', payload.id);
               loadRunsList({ preserveOutput: true });
               pollRun(payload.id);
             }
           })
           .catch((error) => {
             setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
+            setResponseSummary(null);
             setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
             setState('Request could not be sent.', 'bad');
           })
