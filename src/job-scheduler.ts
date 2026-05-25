@@ -386,7 +386,7 @@ export class JobScheduler {
       }
       hasTimedOut = true;
       this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.TIMED_OUT);
-      
+
       proc.kill('SIGTERM');
 
       // Grace period: attempt SIGKILL after 5 seconds if process still alive
@@ -632,7 +632,7 @@ export class JobScheduler {
    */
   private transitionState(jobId: string, fromState: JobExecutionState, toState: JobExecutionState): void {
     const currentState = this.executionState.get(jobId) || JobExecutionState.IDLE;
-    
+
     // Log state transitions for debugging
     if (currentState !== fromState) {
       this.logger.event('job_execution_state_mismatch', {
