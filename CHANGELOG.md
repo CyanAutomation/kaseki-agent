@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.49.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.48.0...v1.49.0) (2026-05-25)
+
+
+### Features
+
+* Improve Kaseki concurrency admission and UI ([#382](https://github.com/CyanAutomation/kaseki-agent/issues/382)) ([655d03e](https://github.com/CyanAutomation/kaseki-agent/commit/655d03e05ccfed5e1595ce7d5b63803e59232938))
+
 # [1.48.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.47.0...v1.48.0) (2026-05-24)
 
 
