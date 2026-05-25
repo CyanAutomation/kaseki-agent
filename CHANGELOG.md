@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.51.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.50.0...v1.51.0) (2026-05-25)
+
+
+### Features
+
+* Add task progress tracking and update status response structure ([848a584](https://github.com/CyanAutomation/kaseki-agent/commit/848a584169c3cf13af3e4ded62f506d21212b4c7))
+* Add test suite for Task Progress Percentage feature ([d58bd68](https://github.com/CyanAutomation/kaseki-agent/commit/d58bd685eca55a1c81a19d009d007651bde00da5))
+
 # [1.50.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.49.1...v1.50.0) (2026-05-25)
 
 
