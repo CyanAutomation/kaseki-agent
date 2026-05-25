@@ -1319,7 +1319,7 @@ restore_node_modules_from_cache() {
           DEPENDENCY_RESTORE_METHOD="hardlink"
           return 0
         fi
-        if rg -q "Invalid cross-device link|EXDEV" "$hardlink_stderr_file"; then
+        if grep -q "Invalid cross-device link\|EXDEV" "$hardlink_stderr_file"; then
           hardlink_reason="hardlink_cross_device"
         else
           hardlink_reason="hardlink_failed"
