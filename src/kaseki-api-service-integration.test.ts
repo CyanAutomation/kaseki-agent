@@ -3,18 +3,21 @@ import type { Server } from 'http';
 import type { ShutdownDeps } from './kaseki-api/service-bootstrapper';
 
 type IsAssignable<Actual, Expected> = Actual extends Expected ? true : false;
-const shutdownDepsTypeCheck: IsAssignable<
-  ShutdownDeps,
-  {
-    server: Server;
-    scheduler: { shutdown: () => void };
-    webhookManager: { shutdown: () => Promise<void> };
-    idempotencyStore: { shutdown: () => void };
-    forceExitAfterMs?: number;
-    exit?: (code: number) => never;
-  }
+type Assert<T extends true> = T;
+const shutdownDepsContract: Assert<
+  IsAssignable<
+    ShutdownDeps,
+    {
+      server: Server;
+      scheduler: { shutdown: () => void };
+      webhookManager: { shutdown: () => Promise<void> };
+      idempotencyStore: { shutdown: () => void };
+      forceExitAfterMs?: number;
+      exit?: (code: number) => never;
+    }
+  >
 > = true;
-void shutdownDepsTypeCheck;
+void shutdownDepsContract;
 
 describe('KasekiApiService Integration', () => {
   describe('Service Integration', () => {
@@ -286,85 +289,83 @@ describe('KasekiApiService Integration', () => {
   });
 
   describe('Graceful shutdown behavior', () => {
-    it('should exit 0 on success in the expected shutdown order', async () => {
+    it('should enforce explicit shutdown outcomes for success and error paths', async () => {
       const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
 
-      const successCallOrder: string[] = [];
-      const successExitCodes: number[] = [];
+      const callOrder: string[] = [];
+      const exitCodes: number[] = [];
+
       const successDeps: ShutdownDeps = {
         server: {
           close: (callback: (err?: Error) => void) => {
-            successCallOrder.push('server.close');
+            callOrder.push('success.server.close');
             callback();
             return undefined as never;
           },
         } as unknown as Server,
         scheduler: {
-          shutdown: () => successCallOrder.push('scheduler.shutdown'),
+          shutdown: () => callOrder.push('success.scheduler.shutdown'),
         },
         webhookManager: {
           shutdown: async () => {
-            successCallOrder.push('webhookManager.shutdown');
+            callOrder.push('success.webhookManager.shutdown');
           },
         },
         idempotencyStore: {
-          shutdown: () => successCallOrder.push('idempotencyStore.shutdown'),
+          shutdown: () => callOrder.push('success.idempotencyStore.shutdown'),
         },
         forceExitAfterMs: 100,
         exit: ((code: number) => {
-          successExitCodes.push(code);
+          exitCodes.push(code);
           return undefined as never;
         }) as (code: number) => never,
       };
 
       await expect(gracefulShutdown(successDeps)).resolves.toBeUndefined();
-      expect(successExitCodes).toEqual([0]);
-      expect(successCallOrder).toEqual([
-        'server.close',
-        'scheduler.shutdown',
-        'webhookManager.shutdown',
-        'idempotencyStore.shutdown',
+      expect(exitCodes).toEqual([0]);
+      expect(callOrder).toEqual([
+        'success.server.close',
+        'success.scheduler.shutdown',
+        'success.webhookManager.shutdown',
+        'success.idempotencyStore.shutdown',
       ]);
-    });
-
-    it('should exit 1 and stop before idempotency shutdown when webhook shutdown fails', async () => {
-      const { gracefulShutdown } = await import('./kaseki-api/service-bootstrapper');
-
-      const errorCallOrder: string[] = [];
-      const errorExitCodes: number[] = [];
       const errorDeps: ShutdownDeps = {
         server: {
           close: (callback: (err?: Error) => void) => {
-            errorCallOrder.push('server.close');
+            callOrder.push('error.server.close');
             callback();
             return undefined as never;
           },
         } as unknown as Server,
         scheduler: {
-          shutdown: () => errorCallOrder.push('scheduler.shutdown'),
+          shutdown: () => callOrder.push('error.scheduler.shutdown'),
         },
         webhookManager: {
           shutdown: async () => {
-            errorCallOrder.push('webhookManager.shutdown');
+            callOrder.push('error.webhookManager.shutdown');
             throw new Error('webhook failure');
           },
         },
         idempotencyStore: {
-          shutdown: () => errorCallOrder.push('idempotencyStore.shutdown'),
+          shutdown: () => callOrder.push('error.idempotencyStore.shutdown'),
         },
         forceExitAfterMs: 100,
         exit: ((code: number) => {
-          errorExitCodes.push(code);
+          exitCodes.push(code);
           return undefined as never;
         }) as (code: number) => never,
       };
 
       await expect(gracefulShutdown(errorDeps)).resolves.toBeUndefined();
-      expect(errorExitCodes).toEqual([1]);
-      expect(errorCallOrder).toEqual([
-        'server.close',
-        'scheduler.shutdown',
-        'webhookManager.shutdown',
+      expect(exitCodes).toEqual([0, 1]);
+      expect(callOrder).toEqual([
+        'success.server.close',
+        'success.scheduler.shutdown',
+        'success.webhookManager.shutdown',
+        'success.idempotencyStore.shutdown',
+        'error.server.close',
+        'error.scheduler.shutdown',
+        'error.webhookManager.shutdown',
       ]);
     });
 
