@@ -28,6 +28,16 @@ KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
+KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
+GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
+if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
+  case "$KASEKI_PUBLISH_MODE:$KASEKI_TASK_MODE:$KASEKI_DRY_RUN:$GITHUB_APP_ENABLED" in
+    pr:patch:0:1|draft_pr:patch:0:1) KASEKI_RUN_EVALUATION="1" ;;
+    *) KASEKI_RUN_EVALUATION="0" ;;
+  esac
+fi
+KASEKI_RUN_EVALUATION_MODEL="${KASEKI_RUN_EVALUATION_MODEL:-$KASEKI_GOAL_CHECK_MODEL}"
+KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS="${KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS:-300}"
 KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 KASEKI_CHANGED_FILES_ALLOWLIST="${KASEKI_CHANGED_FILES_ALLOWLIST:-src/lib/parser.ts tests/parser.validation.ts}"
 KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
@@ -41,9 +51,7 @@ KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
 KASEKI_STRICT_SCRIPT_CHECK="${KASEKI_STRICT_SCRIPT_CHECK:-0}"
-GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK="${KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK:-0}"
-KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 KASEKI_GITHUB_PR_RETRIES="${KASEKI_GITHUB_PR_RETRIES:-3}"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK="${KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK:-1}"
 START_EPOCH="$(date +%s)"
@@ -67,6 +75,10 @@ GOAL_CHECK_MET=false
 GOAL_CHECK_FAILURE_REASON=""
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
+RUN_EVALUATION_EXIT=0
+RUN_EVALUATION_DURATION_SECONDS=0
+RUN_EVALUATION_ACTUAL_MODEL="unknown"
+RUN_EVALUATION_WARNING=""
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -104,9 +116,12 @@ DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
 GOAL_CHECK_RAW_EVENTS="/tmp/pi-goal-check-events.raw.jsonl"
+RUN_EVALUATION_RAW_EVENTS="/tmp/pi-run-evaluation-events.raw.jsonl"
 SCOUTING_ARTIFACT="/results/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
+RUN_EVALUATION_ARTIFACT="/results/run-evaluation.json"
+RUN_EVALUATION_CANDIDATE_ARTIFACT="/results/run-evaluation-candidate.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
 KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
@@ -200,6 +215,10 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/goal-check-stderr.log
 : > /results/goal-check-attempts.jsonl
 : > /results/goal-check.json
+: > /results/run-evaluation-events.jsonl
+: > /results/run-evaluation-summary.json
+: > /results/run-evaluation-stderr.log
+: > /results/run-evaluation.json
 : > /results/validation.log
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
@@ -402,6 +421,8 @@ write_metadata() {
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
+  "run_evaluation_enabled": $([[ "$KASEKI_RUN_EVALUATION" == "1" ]] && printf 'true' || printf 'false'),
+  "run_evaluation_model": $(printf '%s' "$KASEKI_RUN_EVALUATION_MODEL" | json_encode),
   "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
   "allow_empty_diff": $(printf '%s' "$KASEKI_ALLOW_EMPTY_DIFF" | json_encode),
   "started_at": $(printf '%s' "$START_ISO" | json_encode),
@@ -414,6 +435,7 @@ write_metadata() {
   "scouting_attempts": ${KASEKI_SCOUTING_ATTEMPTS:-1},
   "scouting_succeeded_on_attempt": $([ -n "${KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT:-}" ] && printf '%s' "$KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT" || printf 'null'),
   "goal_check_duration_seconds": $GOAL_CHECK_DURATION_SECONDS,
+  "run_evaluation_duration_seconds": $RUN_EVALUATION_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
@@ -425,6 +447,7 @@ write_metadata() {
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_check_exit_code": $GOAL_CHECK_EXIT,
+  "run_evaluation_exit_code": $RUN_EVALUATION_EXIT,
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
@@ -443,6 +466,8 @@ write_metadata() {
   "actual_model": $(printf '%s' "$ACTUAL_MODEL" | json_encode),
   "scouting_actual_model": $(printf '%s' "$SCOUTING_ACTUAL_MODEL" | json_encode),
   "goal_check_actual_model": $(printf '%s' "$GOAL_CHECK_ACTUAL_MODEL" | json_encode),
+  "run_evaluation_actual_model": $(printf '%s' "$RUN_EVALUATION_ACTUAL_MODEL" | json_encode),
+  "run_evaluation_warning": $(printf '%s' "$RUN_EVALUATION_WARNING" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
   "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
@@ -547,6 +572,7 @@ Artifacts:
 - pi-events.jsonl
 - goal-check.json
 - goal-check-attempts.jsonl
+- run-evaluation.json
 - pre-validation.log
 - pre-validation-timings.tsv
 - validation.log
@@ -2341,6 +2367,215 @@ fs.appendFileSync("/results/goal-check-attempts.jsonl", JSON.stringify(artifact)
   return 0
 }
 
+build_run_evaluation_prompt() {
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text
+  validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+  stage_timings="$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)"
+  dependency_cache="$(tail -80 /results/dependency-cache.log 2>/dev/null || true)"
+  restoration_report="$(tail -80 /results/restoration-report.md 2>/dev/null || true)"
+  metadata_text="$(cat /results/metadata.json 2>/dev/null || true)"
+  draft_pr_body="$(build_pr_body)"
+  cat <<EOF
+You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process value, stage efficiency, and opportunities for Kaseki to improve. Do not duplicate the goal-check evaluator; use its artifact as one input.
+
+Inputs you must inspect:
+- Original task prompt below.
+- Scouting report: /results/scouting.json
+- Goal-check verdict: /results/goal-check.json and /results/goal-check-attempts.jsonl
+- Changed files: /results/changed-files.txt
+- Diff and status: /results/git.diff and /results/git.status
+- Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
+- Stage timings: /results/stage-timings.tsv
+- Progress log: /results/progress.log
+- Metadata: /results/metadata.json
+- Restoration report and dependency cache log when present
+- Draft PR body below
+
+Rules:
+- Do not edit repository files, git state, dependencies, generated artifacts other than $RUN_EVALUATION_CANDIDATE_ARTIFACT, or secrets.
+- Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
+- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+- Write exactly one JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT.
+- Treat this evaluation as annotate-only. Do not recommend blocking the PR.
+
+Required JSON shape:
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "task_completion_score": 4,
+  "summary": "brief verdict",
+  "human_review_focus": ["specific item humans should review"],
+  "stage_value": [{"stage": "goal check", "value": "high", "reason": "brief reason"}],
+  "efficiency_findings": ["brief process observation"],
+  "kaseki_improvement_opportunities": [{"category": "validation", "priority": "medium", "suggestion": "brief suggestion"}],
+  "pr_summary": "one or two sentence PR-ready summary",
+  "warnings": []
+}
+
+Allowed enum values:
+- overall_assessment: excellent, good, mixed, poor, unknown
+- reviewer_confidence: high, medium, low
+- stage_value.value: high, medium, low, unknown
+- kaseki_improvement_opportunities.priority: high, medium, low
+- task_completion_score: integer from 1 to 5
+
+Original task prompt:
+$TASK_PROMPT
+
+Current metadata:
+$metadata_text
+
+Stage timings:
+$stage_timings
+
+Validation log tail:
+$validation_tail
+
+Progress log tail:
+$progress_tail
+
+Dependency cache log tail:
+$dependency_cache
+
+Restoration report tail:
+$restoration_report
+
+Draft PR body:
+$draft_pr_body
+EOF
+}
+
+write_run_evaluation_fallback() {
+  local warning="$1"
+  RUN_EVALUATION_WARNING="$warning"
+  node - "$RUN_EVALUATION_ARTIFACT" "$warning" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+const [output, warning, model, actualModel] = process.argv.slice(2);
+const artifact = {
+  overall_assessment: 'unknown',
+  reviewer_confidence: 'low',
+  task_completion_score: 1,
+  summary: 'Run evaluation was unavailable.',
+  human_review_focus: ['Review the PR manually because the run evaluator did not produce a valid artifact.'],
+  stage_value: [],
+  efficiency_findings: [],
+  kaseki_improvement_opportunities: [{
+    category: 'run_evaluation',
+    priority: 'medium',
+    suggestion: 'Inspect run-evaluation-stderr.log and improve evaluator reliability.'
+  }],
+  pr_summary: 'Run evaluation was unavailable; please rely on the summary, validation results, and changed files.',
+  warnings: [warning],
+  timestamp: new Date().toISOString(),
+  model,
+  actual_model: actualModel || 'unknown'
+};
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + '\n');
+NODE
+}
+
+run_run_evaluation() {
+  local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+  RUN_EVALUATION_EXIT=0
+  RUN_EVALUATION_WARNING=""
+
+  printf '\n==> run evaluation\n'
+  set_current_stage "run evaluation"
+  if [ "$KASEKI_RUN_EVALUATION" != "1" ]; then
+    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a /results/run-evaluation-stderr.log
+    record_stage_timing "run evaluation" 0 0 "skipped_by_config"
+    return 0
+  fi
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a /results/run-evaluation-stderr.log
+    record_stage_timing "run evaluation" 0 0 "dry_run=true"
+    return 0
+  fi
+
+  emit_progress "run evaluation" "started"
+  write_metadata "$STATUS"
+  evaluation_prompt="$(build_run_evaluation_prompt)"
+  evaluation_start="$(date +%s)"
+  eval_dirty_before="$(git status --porcelain 2>> /results/run-evaluation-stderr.log || true)"
+  chmod -R a-w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+  set +e
+  OPENROUTER_API_KEY="$openrouter_api_key" \
+    timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
+    2> >(tee -a /results/run-evaluation-stderr.log >&2) \
+    | tee "$RUN_EVALUATION_RAW_EVENTS" \
+    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+  RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
+  unset evaluation_prompt
+  RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
+  chmod -R u+w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+  set +e
+
+  if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! node -e '
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const model = process.argv[3];
+const actualModel = process.argv[4] || "unknown";
+const assessmentValues = new Set(["excellent", "good", "mixed", "poor", "unknown"]);
+const confidenceValues = new Set(["high", "medium", "low"]);
+const stageValueValues = new Set(["high", "medium", "low", "unknown"]);
+const priorityValues = new Set(["high", "medium", "low"]);
+const invalid = [];
+const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
+if (!assessmentValues.has(artifact.overall_assessment)) invalid.push("overall_assessment");
+if (!confidenceValues.has(artifact.reviewer_confidence)) invalid.push("reviewer_confidence");
+if (!Number.isInteger(artifact.task_completion_score) || artifact.task_completion_score < 1 || artifact.task_completion_score > 5) invalid.push("task_completion_score");
+for (const key of ["summary", "pr_summary"]) if (typeof artifact[key] !== "string") invalid.push(key);
+for (const key of ["human_review_focus", "efficiency_findings", "warnings"]) {
+  if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
+}
+if (!Array.isArray(artifact.stage_value) || !artifact.stage_value.every((item) => item && typeof item.stage === "string" && stageValueValues.has(item.value) && typeof item.reason === "string")) invalid.push("stage_value");
+if (!Array.isArray(artifact.kaseki_improvement_opportunities) || !artifact.kaseki_improvement_opportunities.every((item) => item && typeof item.category === "string" && priorityValues.has(item.priority) && typeof item.suggestion === "string")) invalid.push("kaseki_improvement_opportunities");
+if (invalid.length) throw new Error("invalid run-evaluation fields: " + invalid.join(", "));
+artifact.timestamp = new Date().toISOString();
+artifact.model = model;
+artifact.actual_model = actualModel;
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> /results/run-evaluation-stderr.log; then
+    RUN_EVALUATION_EXIT=86
+    emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact" "continue"
+  fi
+  rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
+  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" /results/run-evaluation-events.jsonl /results/run-evaluation-summary.json 2>> /results/run-evaluation-stderr.log || true
+  RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  if [ -s "$RUN_EVALUATION_ARTIFACT" ]; then
+    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> /results/run-evaluation-stderr.log || true
+const fs = require('fs');
+const [file, actualModel] = process.argv.slice(2);
+const artifact = JSON.parse(fs.readFileSync(file, 'utf8'));
+artifact.actual_model = actualModel || 'unknown';
+fs.writeFileSync(file, JSON.stringify(artifact, null, 2) + '\n');
+NODE
+  fi
+
+  eval_dirty_after="$(git status --porcelain 2>> /results/run-evaluation-stderr.log || true)"
+  if [ "$eval_dirty_before" != "$eval_dirty_after" ]; then
+    RUN_EVALUATION_EXIT=86
+    emit_error_event "run_evaluation_workspace_modified" "Read-only run evaluation changed repository state; restoring workspace" "continue"
+    git reset --hard -q HEAD 2>> /results/run-evaluation-stderr.log || true
+    git clean -fd -q 2>> /results/run-evaluation-stderr.log || true
+  fi
+
+  if [ "$RUN_EVALUATION_EXIT" -ne 0 ] || [ ! -s "$RUN_EVALUATION_ARTIFACT" ]; then
+    write_run_evaluation_fallback "run_evaluation_failed_exit_$RUN_EVALUATION_EXIT"
+    emit_progress "run evaluation" "finished with warning $RUN_EVALUATION_WARNING"
+  else
+    emit_progress "run evaluation" "wrote run evaluation artifact"
+  fi
+  record_stage_timing "run evaluation" "$RUN_EVALUATION_EXIT" "$(($(date +%s) - evaluation_start))" "timeout_seconds=$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS warning=$RUN_EVALUATION_WARNING"
+  return 0
+}
+
 
 parse_github_repo_url() {
   local repo_url repo_name
@@ -3166,7 +3401,11 @@ derive_pr_title() {
     candidate="$stripped"
   fi
 
-  changed_files="$(sanitize_pr_metadata_text < /results/changed-files.txt || true)"
+  if [ -s /results/changed-files.txt ]; then
+    changed_files="$(sanitize_pr_metadata_text < /results/changed-files.txt || true)"
+  else
+    changed_files=""
+  fi
   prefix="chore:"
   case "$(printf '%s %s' "$prompt_for_prefix" "$changed_files" | tr '[:upper:]' '[:lower:]')" in
     *doc*|*readme*|*.md*|*markdown*) prefix="docs:" ;;
@@ -3281,6 +3520,136 @@ format_pr_changed_files() {
   else
     printf '%b' "$list_output"
   fi
+}
+
+format_pr_json_list() {
+  local file="$1"
+  local key="$2"
+  local max_rows="${3:-3}"
+  local max_length="${4:-180}"
+  if [ ! -s "$file" ]; then
+    return 0
+  fi
+
+  node - "$file" "$key" "$max_rows" "$max_length" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+const [file, key, maxRowsValue, maxLengthValue] = process.argv.slice(2);
+const maxRows = Number.parseInt(maxRowsValue, 10) || 3;
+const maxLength = Number.parseInt(maxLengthValue, 10) || 180;
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  process.exit(0);
+}
+const value = data && data[key];
+const values = Array.isArray(value) ? value : value ? [value] : [];
+for (const item of values.slice(0, maxRows)) {
+  const text = String(item || '')
+    .replace(/\r/g, '')
+    .replace(/\n+/g, ' ')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) continue;
+  const clipped = text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 3))}...` : text;
+  console.log(`- ${clipped}`);
+}
+NODE
+}
+
+build_pr_agent_review() {
+  local goal_file="/results/goal-check.json"
+  local scouting_file="/results/scouting.json"
+  local goal_summary evidence missing validation_notes risks
+
+  goal_summary=""
+  if [ -s "$goal_file" ]; then
+    goal_summary="$(node - "$goal_file" <<'NODE' 2>/dev/null || true
+const fs = require('fs');
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const summary = String(data.summary || '').replace(/\r/g, '').replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (summary) console.log(summary);
+} catch {}
+NODE
+)"
+    goal_summary="$(printf '%s' "$goal_summary" | sanitize_pr_metadata_text)"
+    goal_summary="$(truncate_pr_metadata_text 220 "$goal_summary")"
+  fi
+
+  printf '### What went well\n'
+  if [ -n "$goal_summary" ]; then
+    printf -- '- %s\n' "$goal_summary"
+  fi
+  evidence="$(format_pr_json_list "$goal_file" "evidence" 3 180 | sanitize_pr_metadata_text)"
+  validation_notes="$(format_pr_json_list "$goal_file" "validation_notes" 2 180 | sanitize_pr_metadata_text)"
+  if [ -n "$evidence" ]; then
+    printf '%s\n' "$evidence"
+  elif [ "$all_validation_statuses_pass" -eq 1 ]; then
+    printf -- '- All configured validation, quality, and secret-scan gates passed.\n'
+  fi
+  if [ -n "$validation_notes" ]; then
+    printf '%s\n' "$validation_notes"
+  fi
+
+  printf '\n### Needs attention\n'
+  missing="$(format_pr_json_list "$goal_file" "missing" 3 180 | sanitize_pr_metadata_text)"
+  risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
+  if [ -n "$missing" ]; then
+    printf '%s\n' "$missing"
+  elif [ "$all_validation_statuses_pass" -eq 1 ]; then
+    printf -- '- No unmet task requirements were reported by the goal check.\n'
+  fi
+  if [ -n "$risks" ]; then
+    printf '%s\n' "$risks"
+  elif [ "$all_validation_statuses_pass" -ne 1 ]; then
+    printf -- '- Review the failed validation or quality gate output before merging.\n'
+  fi
+}
+
+build_pr_agent_evaluation() {
+  local evaluation_file="/results/run-evaluation.json"
+  if [ ! -s "$evaluation_file" ]; then
+    return 0
+  fi
+
+  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_metadata_text || true
+const fs = require('fs');
+const file = process.argv[2];
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(file, 'utf8'));
+} catch {
+  process.exit(0);
+}
+const text = (value, max = 220) => {
+  const normalized = String(value || '')
+    .replace(/\r/g, '')
+    .replace(/\n+/g, ' ')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 3))}...` : normalized;
+};
+const assessment = text(data.overall_assessment || 'unknown', 40);
+const confidence = text(data.reviewer_confidence || 'unknown', 40);
+console.log(`- Overall: ${assessment}; reviewer confidence: ${confidence}.`);
+const prSummary = text(data.pr_summary || data.summary || '', 260);
+if (prSummary) console.log(`- ${prSummary}`);
+const focus = Array.isArray(data.human_review_focus)
+  ? data.human_review_focus.map((value) => text(value, 180)).filter(Boolean).slice(0, 3)
+  : [];
+for (const item of focus) console.log(`- Review focus: ${item}`);
+let processNote = '';
+if (Array.isArray(data.efficiency_findings) && data.efficiency_findings.length > 0) {
+  processNote = text(data.efficiency_findings[0], 180);
+} else if (Array.isArray(data.kaseki_improvement_opportunities) && data.kaseki_improvement_opportunities.length > 0) {
+  const item = data.kaseki_improvement_opportunities[0] || {};
+  processNote = text(item.suggestion || '', 180);
+}
+if (processNote) console.log(`- Process note: ${processNote}`);
+NODE
 }
 
 build_pr_improvements_summary() {
@@ -3491,6 +3860,10 @@ $post_validation_commands"
 ## Summary
 $(build_pr_improvements_summary)
 
+## Agent review
+$(build_pr_agent_review)
+
+$(if [ -s /results/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
 ## Validation
 ### Validation statuses
 - Pre-agent validation: $pre_validation_status
@@ -4518,6 +4891,8 @@ else
   record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
+
+run_run_evaluation
 
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()

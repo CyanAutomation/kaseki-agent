@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Kaseki Agent API",
-    "version": "1.49.1",
+    "version": "1.50.0",
     "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment",
     "contact": {
       "name": "CyanAutomation",
@@ -349,6 +349,26 @@
                       }
                     }
                   },
+                  "runEvaluation": {
+                    "type": "object",
+                    "description": "Final task-agnostic run evaluation controls",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "description": "Enable the final run evaluation phase"
+                      },
+                      "model": {
+                        "type": "string",
+                        "description": "Optional Pi model override for run evaluation"
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 10800,
+                        "description": "Optional run evaluation timeout in seconds"
+                      }
+                    }
+                  },
                   "taskMode": {
                     "type": "string",
                     "enum": [
@@ -588,6 +608,26 @@
                         "minimum": 60,
                         "maximum": 10800,
                         "description": "Optional goal-check timeout in seconds"
+                      }
+                    }
+                  },
+                  "runEvaluation": {
+                    "type": "object",
+                    "description": "Final task-agnostic run evaluation controls",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "description": "Enable the final run evaluation phase"
+                      },
+                      "model": {
+                        "type": "string",
+                        "description": "Optional Pi model override for run evaluation"
+                      },
+                      "timeoutSeconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 10800,
+                        "description": "Optional run evaluation timeout in seconds"
                       }
                     }
                   },
@@ -1759,6 +1799,102 @@
         }
       }
     },
+    "/api/improvements": {
+      "get": {
+        "operationId": "getRunImprovements",
+        "summary": "Aggregate run improvement findings",
+        "description": "Aggregates recent terminal run-evaluation artifacts, stage timings, and compact run entries for continual improvement dashboards.",
+        "tags": [
+          "Run Details"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "Maximum number of recent terminal runs to aggregate"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated run improvement summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "totalRuns": {
+                      "type": "integer"
+                    },
+                    "counts": {
+                      "type": "object"
+                    },
+                    "evaluator": {
+                      "type": "object"
+                    },
+                    "topImprovementOpportunities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "slowestStages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Request ID for debugging"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webhooks/test": {
       "post": {
         "operationId": "testWebhook",
@@ -1949,6 +2085,26 @@
                 "minimum": 60,
                 "maximum": 10800,
                 "description": "Optional goal-check timeout in seconds"
+              }
+            }
+          },
+          "runEvaluation": {
+            "type": "object",
+            "description": "Final task-agnostic run evaluation controls",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "Enable the final run evaluation phase"
+              },
+              "model": {
+                "type": "string",
+                "description": "Optional Pi model override for run evaluation"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 10800,
+                "description": "Optional run evaluation timeout in seconds"
               }
             }
           },

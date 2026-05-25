@@ -859,6 +859,59 @@ function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record
   };
 }
 
+function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    '/api/improvements': {
+      get: {
+        operationId: 'getRunImprovements',
+        summary: 'Aggregate run improvement findings',
+        description:
+          'Aggregates recent terminal run-evaluation artifacts, stage timings, and compact run entries for continual improvement dashboards.',
+        tags: ['Run Details'],
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+            description: 'Maximum number of recent terminal runs to aggregate',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Aggregated run improvement summary',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    limit: { type: 'integer' },
+                    totalRuns: { type: 'integer' },
+                    counts: { type: 'object' },
+                    evaluator: { type: 'object' },
+                    topImprovementOpportunities: { type: 'array', items: { type: 'object' } },
+                    slowestStages: { type: 'array', items: { type: 'object' } },
+                    runs: { type: 'array', items: { type: 'object' } },
+                  },
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 /**
  * Build all paths/endpoints for the OpenAPI spec.
  * Aggregates all endpoint builders organized by feature area.
@@ -875,6 +928,7 @@ export function buildAllPaths(
     ...buildLogsProgressPaths(errorResponseSchema),
     ...buildArtifactPaths(errorResponseSchema),
     ...buildRunAnalysisPaths(errorResponseSchema),
+    ...buildImprovementPaths(errorResponseSchema),
     ...buildWebhookPaths(errorResponseSchema),
   };
 }

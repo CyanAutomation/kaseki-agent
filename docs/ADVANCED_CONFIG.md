@@ -326,6 +326,30 @@ Or via API:
 
 The latest verdict is written to `/results/goal-check.json`, all verdicts are appended to `/results/goal-check-attempts.jsonl`, and exhausted retries fail the run with exit code `8`.
 
+### Run Evaluation
+
+Kaseki can run a final task-agnostic evaluator after validation and goal-check, before PR creation. It is enabled by default for PR-publishing patch runs (`pr` and `draft_pr`) and disabled for inspect, startup-check, branch-only, and publish-none runs unless explicitly enabled.
+
+```bash
+export KASEKI_RUN_EVALUATION=1
+export KASEKI_RUN_EVALUATION_MODEL="$KASEKI_GOAL_CHECK_MODEL"
+export KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS=300
+```
+
+API requests can override the same behavior with:
+
+```json
+{
+  "runEvaluation": {
+    "enabled": true,
+    "model": "openrouter/free",
+    "timeoutSeconds": 300
+  }
+}
+```
+
+The evaluator writes `/results/run-evaluation.json`, `/results/run-evaluation-events.jsonl`, `/results/run-evaluation-summary.json`, and `/results/run-evaluation-stderr.log`. It is annotate-only in v1: invalid output or evaluator failure records a warning artifact and does not block publishing.
+
 ### `KASEKI_CHANGED_FILES_ALLOWLIST`
 
 - **Type**: `string` (space-separated glob patterns)

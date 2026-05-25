@@ -223,6 +223,18 @@ describe('Kaseki API Request Validation', () => {
       },
     },
     {
+      name: 'accepts run evaluation controls',
+      request: {
+        repoUrl: 'https://github.com/org/repo',
+        runEvaluation: { enabled: true, model: 'openrouter/free', timeoutSeconds: 300 },
+      },
+      expected: {
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        runEvaluation: { enabled: true, model: 'openrouter/free', timeoutSeconds: 300 },
+      },
+    },
+    {
       name: 'accepts controller-style allowlist and validation aliases',
       request: {
         repoUrl: 'https://github.com/org/repo',
@@ -247,6 +259,7 @@ describe('Kaseki API Request Validation', () => {
         validation_commands: ['npm test'],
         scouting_config: { enabled: false, model: 'openrouter/free', timeoutSeconds: 300 },
         goal_check: { enabled: true, maxRetries: 1, model: 'openrouter/free', timeoutSeconds: 300 },
+        run_evaluation: { enabled: true, model: 'openrouter/free', timeoutSeconds: 300 },
         task_mode: 'inspect',
         publish_mode: 'none',
         skip_pre_agent_validation: true,
@@ -263,6 +276,7 @@ describe('Kaseki API Request Validation', () => {
         validationCommands: ['npm test'],
         scouting: { enabled: false, model: 'openrouter/free', timeoutSeconds: 300 },
         goalCheck: { enabled: true, maxRetries: 1, model: 'openrouter/free', timeoutSeconds: 300 },
+        runEvaluation: { enabled: true, model: 'openrouter/free', timeoutSeconds: 300 },
         taskMode: 'inspect',
         publishMode: 'none',
         startupCheck: true,
