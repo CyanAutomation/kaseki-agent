@@ -193,7 +193,8 @@ describe('KasekiApiService Integration', () => {
       expect('gracefulShutdown' in apiService).toBe(false);
     });
 
-    it('barrel file exposes stable contracts and callable exports', async () => {
+    // Type export checks belong in compile-time type tests, not runtime Jest assertions.
+    it('barrel file exposes stable callable exports', async () => {
       const os = await import('os');
       const fs = await import('fs');
       const barrel = await import('./kaseki-api');
