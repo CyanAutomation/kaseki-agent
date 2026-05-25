@@ -1128,7 +1128,7 @@ export function createApiRouter(
     const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
     const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
     const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
-    
+
     if (shouldBlockForFreshness(publishMode) && freshness.stale) {
       return {
         ok: false,
@@ -1220,7 +1220,7 @@ export function createApiRouter(
     | { state: 'pending' }
   > {
     const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
-    
+
     if (claimResult.kind === 'fulfilled') {
       const currentJob = scheduler.getJob(claimResult.response.id);
       const response = currentJob

@@ -44,6 +44,9 @@ prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
+elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  printf 'goal-check\n' >> "$PI_CALLS"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -80,7 +83,7 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'scouting\ncoding' ] || fail "Pi calls were not scouting then coding"
+[ "$(cat "$PI_CALLS")" = $'scouting\ncoding\ngoal-check' ] || fail "Pi calls were not scouting then coding then goal-check"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "scouting.json was not copied into results"
 grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "scouting stage timing missing"
 grep -q "$RESULTS_DIR/scouting.json" "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not mention scouting artifact"

@@ -1,6 +1,6 @@
 /**
  * tests/inspect-report.test.ts
- * 
+ *
  * Tests for the inspect-report.md generation script.
  */
 
@@ -23,7 +23,7 @@ describe('inspect-report generation', () => {
     const scriptPath = path.join(__dirname, '../scripts/generate-inspect-report.js');
     execSync(`node "${scriptPath}" "${resultsDir}"`);
     return fs.readFileSync(path.join(resultsDir, 'inspect-report.md'), 'utf8');
-  });
+  }
 
   test('generates report with minimal artifacts', () => {
     // Minimal setup: just the required pi-events and pi-summary

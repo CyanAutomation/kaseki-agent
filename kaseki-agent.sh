@@ -665,8 +665,8 @@ derive_allowlist_from_scouting() {
 
 validate_allowlist_patterns() {
   local patterns_str test_regex
-  patterns_str="${1:?missing patterns string}"
-  
+  patterns_str="${1:-}"
+
   # Try to build a regex from the patterns - if it fails, return error
   test_regex="$(build_allowlist_regex "$patterns_str" 2>&1)"
   if [ -z "$test_regex" ]; then
@@ -684,7 +684,7 @@ validate_allowlist_patterns() {
 
 merge_allowlists() {
   local scouting_patterns user_patterns merged_patterns
-  scouting_patterns="${1:?missing scouting patterns}"
+  scouting_patterns="${1:-}"
   user_patterns="${2:-}"
   
   # Merge patterns: if both provided, union them; otherwise use whichever is non-empty
@@ -2145,7 +2145,7 @@ run_scouting_agent_with_retry() {
     printf '[Scouting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
 
     # Capture stderr for failure classification
-    scouting_stderr_capture="$(/tmp/scouting-stderr-$attempt.log)"
+    scouting_stderr_capture="/tmp/scouting-stderr-$attempt.log"
     set +e
     run_scouting_agent 2>"$scouting_stderr_capture"
     scouting_last_exit=$?
