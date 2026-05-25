@@ -178,6 +178,7 @@ function normalizeText(value: unknown): string {
     .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted]')
     .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, '[redacted]')
     .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted]')
+    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1F\x7F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

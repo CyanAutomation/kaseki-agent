@@ -590,6 +590,9 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.status === 'string') {
             items.push(['Response status', stripControlSequences(payload.status)]);
           }
+          if (typeof payload.taskProgressPercent === 'number') {
+            items.push(['Task Progress', payload.taskProgressPercent + '%']);
+          }
           const elapsed = formatElapsedSeconds(payload.elapsedSeconds);
           if (elapsed) {
             items.push(['Response elapsed time', elapsed]);

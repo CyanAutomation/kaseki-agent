@@ -49,6 +49,7 @@ export class StatusResponseBuilder {
 
     this.addTimingInfo(response, job);
     this.addProgressInfo(response, job);
+    this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
 
     return response;
@@ -153,6 +154,57 @@ export class StatusResponseBuilder {
       } else if (keyFileAvailability['result-summary.md']) {
         response.diagnosticEntryPoint = 'result-summary.md';
       }
+    }
+  }
+
+  private addTaskProgressInfo(response: StatusResponse, job: Job): void {
+    try {
+      const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+      const metadata = this.readMetadata(runDir);
+
+      // If no stages defined in metadata, skip progress calculation
+      if (!metadata || !Array.isArray(metadata.stages) || metadata.stages.length === 0) {
+        response.taskProgressPercent = undefined;
+        return;
+      }
+
+      const totalStages = metadata.stages.length;
+      const progressFile = path.join(runDir, 'progress.jsonl');
+      let completedStages = 0;
+
+      if (fs.existsSync(progressFile)) {
+        try {
+          const content = fs.readFileSync(progressFile, 'utf-8');
+          const lines = content.split('\n').filter(line => line.trim());
+
+          // Track which stages we've seen with "finished" status
+          const finishedStages = new Set<string>();
+
+          for (const line of lines) {
+            try {
+              const event = JSON.parse(line);
+              if (event.stage && typeof event.stage === 'string') {
+                // Count a stage as completed if we see any "finished" status for it
+                if ((event.status === 'finished' || event.detail?.includes('finished')) && !finishedStages.has(event.stage)) {
+                  finishedStages.add(event.stage);
+                }
+              }
+            } catch {
+              // Skip malformed JSON lines
+            }
+          }
+
+          completedStages = finishedStages.size;
+        } catch {
+          // If reading progress.jsonl fails, leave completedStages as 0
+        }
+      }
+
+      // Calculate percentage: completed / total
+      response.taskProgressPercent = totalStages > 0 ? Math.round((completedStages / totalStages) * 100) : 0;
+    } catch {
+      // If any error occurs, skip task progress calculation
+      response.taskProgressPercent = undefined;
     }
   }
 
