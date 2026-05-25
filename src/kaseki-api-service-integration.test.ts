@@ -70,8 +70,6 @@ describe('KasekiApiService Integration', () => {
       }
     });
 
-
-
     it('should return null and increment cache misses for missing artifacts', async () => {
       const os = await import('os');
       const fs = await import('fs');

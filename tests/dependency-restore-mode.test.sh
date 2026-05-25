@@ -18,9 +18,9 @@ emit_event() { :; }
 
 DEPENDENCY_CACHE_LOG="$TMP_DIR/dependency-cache.log"
 : > "$DEPENDENCY_CACHE_LOG"
-KASEKI_DEPENDENCY_CACHE_PRUNE=1
-KASEKI_DEPENDENCY_CACHE_MAX_BYTES=1024
-KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS=30
+export KASEKI_DEPENDENCY_CACHE_PRUNE=1
+export KASEKI_DEPENDENCY_CACHE_MAX_BYTES=1024
+export KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS=30
 
 mkdir -p "$TMP_DIR/cache/node_modules/pkg" "$TMP_DIR/workspace"
 printf 'cached package\n' > "$TMP_DIR/cache/node_modules/pkg/index.js"
