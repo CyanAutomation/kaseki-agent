@@ -58,6 +58,8 @@ PI_EXIT=0
 SCOUTING_EXIT=0
 SCOUTING_DURATION_SECONDS=0
 SCOUTING_ACTUAL_MODEL="unknown"
+KASEKI_SCOUTING_ATTEMPTS=1
+KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
 GOAL_CHECK_EXIT=0
 GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
@@ -409,6 +411,8 @@ write_metadata() {
   "total_duration_seconds": $duration,
   "pi_duration_seconds": $PI_DURATION_SECONDS,
   "scouting_duration_seconds": $SCOUTING_DURATION_SECONDS,
+  "scouting_attempts": ${KASEKI_SCOUTING_ATTEMPTS:-1},
+  "scouting_succeeded_on_attempt": $([ -n "${KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT:-}" ] && printf '%s' "$KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT" || printf 'null'),
   "goal_check_duration_seconds": $GOAL_CHECK_DURATION_SECONDS,
   "exit_code": $exit_code,
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
@@ -1948,6 +1952,49 @@ $retry_section
 EOF
 }
 
+is_transient_scouting_failure() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # Exit code 124 = timeout (transient, retryable)
+  if [ "$exit_code" -eq 124 ]; then
+    return 0
+  fi
+
+  # Exit code 86 = local validation failure (deterministic, not retryable)
+  if [ "$exit_code" -eq 86 ]; then
+    return 1
+  fi
+
+  # Exit code 2 = missing config/API key (not retryable)
+  if [ "$exit_code" -eq 2 ]; then
+    return 1
+  fi
+
+  # Check for deterministic schema/validation errors first
+  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
+    return 1  # Deterministic (do not retry)
+  fi
+
+  # Check for Pi CLI errors in stderr (transient LLM/network issues)
+  if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
+    return 0  # Transient (retry)
+  fi
+
+  # JSON parsing errors from Pi output (transient)
+  if echo "$stderr_content" | grep -qi "json" 2>/dev/null; then
+    return 0  # Transient (retry)
+  fi
+
+  # Pi non-zero exit (transient, could be model unavailability)
+  if [ "$exit_code" -ne 0 ]; then
+    return 0  # Transient (retry)
+  fi
+
+  # Exit code 0 but validation failed = deterministic
+  return 1
+}
+
 build_scouting_prompt() {
   cat <<EOF
 You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
@@ -2071,6 +2118,69 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
   fi
   emit_progress "pi scouting agent" "wrote scouting artifact"
   return 0
+}
+
+run_scouting_agent_with_retry() {
+  local attempt scouting_stderr_capture max_attempts scouting_last_exit scouting_last_stderr
+
+  max_attempts=2
+  attempt=1
+  scouting_last_exit=0
+  scouting_last_stderr=""
+
+  # Initialize scouting retry tracking env vars
+  export KASEKI_SCOUTING_ATTEMPTS=0
+  export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+  export KASEKI_SCOUTING_ERRORS=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    printf '[Scouting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+
+    # Capture stderr for failure classification
+    scouting_stderr_capture="$(/tmp/scouting-stderr-$attempt.log)"
+    set +e
+    run_scouting_agent 2>"$scouting_stderr_capture"
+    scouting_last_exit=$?
+    set -e
+
+    # Append stderr to results for logging
+    cat "$scouting_stderr_capture" >> /results/scouting-stderr.log 2>/dev/null || true
+    scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
+    rm -f "$scouting_stderr_capture"
+
+    # Success on any attempt
+    if [ "$scouting_last_exit" -eq 0 ]; then
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      return 0
+    fi
+
+    # Check if this is a transient failure worth retrying
+    if is_transient_scouting_failure "$scouting_last_exit" "$scouting_last_stderr"; then
+      if [ "$attempt" -lt "$max_attempts" ]; then
+        printf '[Scouting Phase] Transient failure detected (exit %d), retrying immediately...\n' "$scouting_last_exit"
+        attempt=$((attempt + 1))
+        # Reset scouting artifacts for retry
+        rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>/dev/null || true
+        continue
+      fi
+    else
+      # Deterministic failure - do not retry
+      printf '[Scouting Phase] Deterministic failure (exit %d), not retrying\n' "$scouting_last_exit"
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+      return "$scouting_last_exit"
+    fi
+
+    # Fallthrough to next attempt
+    attempt=$((attempt + 1))
+  done
+
+  # Max attempts exhausted
+  export KASEKI_SCOUTING_ATTEMPTS=$max_attempts
+  export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+  printf '[Scouting Phase] Max retry attempts exhausted (exit %d)\n' "$scouting_last_exit"
+  return "$scouting_last_exit"
 }
 
 snapshot_attempt_artifacts() {
@@ -3993,7 +4103,7 @@ fi
 
 PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 printf 'Pi version: %s\n' "$PI_VERSION"
-if ! run_scouting_agent; then
+if ! run_scouting_agent_with_retry; then
   exit 0
 fi
 
