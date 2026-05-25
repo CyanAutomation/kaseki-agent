@@ -385,6 +385,13 @@ const controllerPage = String.raw`<!doctype html>
             <label for="run-id">Run ID (for Check Status)</label>
             <input id="run-id" placeholder="Filled after a run is submitted">
           </div>
+          <div class="run-links" id="runs-list-panel">
+            <strong>Recent runs</strong>
+            <div class="action-row controller-actions">
+              <button class="secondary toolbar-button" id="refresh-runs" type="button">Refresh runs</button>
+            </div>
+            <div class="link-grid" id="runs-list"></div>
+          </div>
           <div id="state" role="status" aria-live="polite"></div>
         </div>
         <div id="submit-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="submit-heading" hidden aria-hidden="true">
@@ -502,7 +509,9 @@ const controllerPage = String.raw`<!doctype html>
       const recommendedArtifacts = document.querySelector('#recommended-artifacts');
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       const headerStatus = document.querySelector('#header-status');
+      const runsList = document.querySelector('#runs-list');
       let pollTimer = null;
+      let activeRunView = 'status';
 
       function getApiToken() {
         return headerTokenInput.value.trim();
@@ -635,6 +644,40 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
+      function formatRunButtonLabel(run) {
+        const created = run.createdAt ? new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        return [run.id, run.status, created].filter(Boolean).join(' - ');
+      }
+
+      function renderRunsList(payload) {
+        if (!runsList || !payload || !Array.isArray(payload.runs)) return;
+        runsList.replaceChildren();
+        payload.runs.slice(0, 12).forEach((run) => {
+          const button = document.createElement('button');
+          button.className = 'secondary toolbar-button';
+          button.type = 'button';
+          button.textContent = formatRunButtonLabel(run);
+          button.addEventListener('click', () => {
+            runIdInput.value = run.id;
+            showRunLinks(run.id);
+            activeRunView = 'status';
+            pollRun(run.id);
+          });
+          runsList.appendChild(button);
+        });
+      }
+
+      async function loadRunsList(options) {
+        try {
+          const result = await apiRequest('/api/runs', { auth: true, preserveOutput: options && options.preserveOutput });
+          if (result.response.ok) {
+            renderRunsList(result.payload);
+          }
+        } catch {
+          if (runsList) runsList.textContent = 'Runs could not be loaded.';
+        }
+      }
+
       function isTerminalStatus(status) {
         return status === 'completed' || status === 'failed';
       }
@@ -680,9 +723,7 @@ const controllerPage = String.raw`<!doctype html>
           publishMode: String(data.get('publishMode') || 'auto'),
           taskMode: String(data.get('taskMode') || 'patch'),
         };
-        if (data.get('scouting') === 'on') {
-          body.scouting = { enabled: true };
-        }
+        body.scouting = { enabled: data.get('scouting') === 'on' };
         if (data.get('skipPreAgentValidation') === 'on') {
           body.skipPreAgentValidation = true;
         }
@@ -759,11 +800,14 @@ const controllerPage = String.raw`<!doctype html>
         const maxRetries = 36;
         async function poll() {
           try {
-            const result = await apiRequest(runUrl(runId, '/status'), { auth: true });
+            const result = await apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput: activeRunView !== 'status' });
             summarizeRun(result.payload);
             retryCount = 0;
             if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
               pollTimer = setTimeout(poll, 5000);
+              loadRunsList({ preserveOutput: true });
+            } else {
+              loadRunsList({ preserveOutput: true });
             }
           } catch {
             retryCount++;
@@ -814,6 +858,7 @@ const controllerPage = String.raw`<!doctype html>
           run(button, button.dataset.probe, {
             auth: button.dataset.auth === 'true',
           }).then(({ response }) => {
+            loadRunsList({ preserveOutput: true });
             if (statusEl) {
               statusEl.className = response.ok ? 'health-check-status ok' : 'health-check-status bad';
             }
@@ -852,6 +897,7 @@ const controllerPage = String.raw`<!doctype html>
             return;
           }
           const action = event.currentTarget.dataset.runAction;
+          activeRunView = action;
           const paths = {
             status: runUrl(runId, '/status'),
             events: runUrl(runId, '/events?tail=50'),
@@ -859,6 +905,12 @@ const controllerPage = String.raw`<!doctype html>
             artifacts: runUrl(runId, '/artifacts'),
           };
           run(event.currentTarget, paths[action], { auth: true });
+        });
+      });
+
+      document.querySelector('#refresh-runs').addEventListener('click', (event) => {
+        run(event.currentTarget, '/api/runs', { auth: true }).then(({ payload, response }) => {
+          if (response.ok) renderRunsList(payload);
         });
       });
 
@@ -886,7 +938,9 @@ const controllerPage = String.raw`<!doctype html>
             if (response.ok && payload && typeof payload.id === 'string') {
               runIdInput.value = payload.id;
               showRunLinks(payload.id);
+              activeRunView = 'status';
               setOutputMetadata('queued', payload.id);
+              loadRunsList({ preserveOutput: true });
               pollRun(payload.id);
             }
           })
@@ -899,6 +953,7 @@ const controllerPage = String.raw`<!doctype html>
             button.disabled = false;
           });
       });
+      loadRunsList({ preserveOutput: true });
     </script>
   </body>
 </html>

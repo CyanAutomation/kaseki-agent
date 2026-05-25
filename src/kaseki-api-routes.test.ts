@@ -383,7 +383,10 @@ describe('kaseki-api-routes request aliases', () => {
         }),
       });
 
-      expect(res.status).toBe(202);
+      const body = (await res.json()) as any;
+      if (res.status !== 202) {
+        throw new Error(`Expected 202, got ${res.status}: ${JSON.stringify(body)}`);
+      }
       expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
         repoUrl: 'https://github.com/org/repo',
         ref: 'main',
@@ -453,6 +456,51 @@ describe('kaseki-api-routes template readiness gate', () => {
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       fs.rmSync(templateDir, { recursive: true, force: true });
+    }
+  });
+
+  test('POST /api/runs admits inspect runs with goal check and scouting disabled by default', async () => {
+    process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation(async (request) => ({
+      id: 'kaseki-1',
+      status: 'queued',
+      createdAt: new Date(),
+      request,
+      resultDir: path.join(resultsDir, 'kaseki-1'),
+    }));
+    const config = createTestConfig(resultsDir);
+    const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler as any, config, idempotencyStore, preFlightValidator));
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repoUrl: 'https://github.com/org/repo',
+          taskPrompt: 'Inspect this repository and report findings only.',
+          taskMode: 'inspect',
+          publishMode: 'none',
+        }),
+      });
+
+      const body = (await res.json()) as any;
+      expect(body.id).toBe('kaseki-1');
+      expect(res.status).toBe(202);
+      expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+        taskMode: 'inspect',
+        publishMode: 'none',
+        scouting: { enabled: false },
+        goalCheck: { enabled: false },
+      }));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
     }
   });
 });
