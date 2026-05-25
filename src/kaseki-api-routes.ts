@@ -16,6 +16,7 @@ import {
   PreflightCheck,
   PreflightResponse,
   Job,
+  RunRequest,
 } from './kaseki-api-types';
 import { KasekiApiConfig, validateApiKey } from './kaseki-api-config';
 import { createEventLogger } from './logger';
@@ -1103,6 +1104,159 @@ export function createApiRouter(
   });
 
   /**
+   * Extract: Validate publish mode has proper authentication.
+   */
+  async function validatePublishModeAndAuth(publishMode: string): Promise<{ ok: boolean; error?: string }> {
+    if (
+      (publishMode === 'branch' || publishMode === 'pr' || publishMode === 'draft_pr') &&
+      !isGitHubAppReady()
+    ) {
+      return {
+        ok: false,
+        error: `publishMode=${publishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
+      };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Extract: Validate checkout freshness for publishable runs.
+   */
+  async function validateCheckoutFreshness(
+    publishMode: string
+  ): Promise<{ ok: boolean; response?: Record<string, unknown> }> {
+    const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+    const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+    const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
+    
+    if (shouldBlockForFreshness(publishMode) && freshness.stale) {
+      return {
+        ok: false,
+        response: {
+          type: 'https://api.kaseki.local/errors#checkout-stale',
+          title: 'Conflict',
+          status: 409,
+          detail: freshness.detail,
+          checkoutDir: freshness.checkoutDir,
+          localRef: freshness.localRef,
+          remoteRef: freshness.remoteRef,
+          remoteUrl: freshness.remoteUrl,
+          remediation: freshness.remediation || TEMPLATE_REMEDIATION,
+        },
+      };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Extract: Validate template readiness and compatibility.
+   */
+  async function validateTemplateReadiness(
+    publishMode: string
+  ): Promise<{ ok: boolean; statusCode?: number; response?: Record<string, unknown> }> {
+    const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+
+    // Check publish mode compatibility
+    const templateCompatibility = checkTemplatePublishModeCompatibility(publishMode);
+    if (!templateCompatibility.ok) {
+      return {
+        ok: false,
+        statusCode: 400,
+        response: {
+          type: 'https://api.kaseki.local/errors#template-incompatible',
+          title: 'Bad Request',
+          status: 400,
+          detail: templateCompatibility.detail,
+          templateMetadataPath: templateCompatibility.metadataPath,
+          supportedPublishModes: templateCompatibility.supportedPublishModes,
+          remediation: templateCompatibility.remediation,
+        },
+      };
+    }
+
+    // Check bootstrap status (unless skipped)
+    if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
+      const { status: templateHealth, fromCache: templateHealthFromCache } = getSubmissionTemplateHealthStatus(templateDir);
+      if (!templateHealth.ok) {
+        if (isTemplateDoctorTimeout(templateHealth)) {
+          metricsRegistry.incAdmissionRejection('template-doctor-timeout');
+          logger.event('api_template_doctor_timeout_admitted', {
+            fromCache: templateHealthFromCache,
+            detail: templateHealth.detail,
+          });
+        } else {
+          metricsRegistry.incAdmissionRejection('template-not-ready');
+          return {
+            ok: false,
+            statusCode: 400,
+            response: {
+              type: 'https://api.kaseki.local/errors#template-not-ready',
+              title: 'Bad Request',
+              status: 400,
+              detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
+              templatePath: templateHealth.templateDir,
+              checkoutRef: templateHealth.checkoutRef ?? 'unknown',
+              doctorCommand: templateHealth.doctorCommand,
+              doctorStderrTail: templateHealth.doctorStderrTail,
+              remediation: TEMPLATE_REMEDIATION,
+            },
+          };
+        }
+      }
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Extract: Handle idempotency key claim and check.
+   */
+  async function handleIdempotency(
+    idempotencyKey: string,
+    requestFingerprint: string
+  ): Promise<
+    | { state: 'fresh' }
+    | { state: 'fulfilled'; response: RunResponse; jobId: string }
+    | { state: 'pending' }
+  > {
+    const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
+    
+    if (claimResult.kind === 'fulfilled') {
+      const currentJob = scheduler.getJob(claimResult.response.id);
+      const response = currentJob
+        ? buildRunResponse(currentJob, true)
+        : (claimResult.response as RunResponse);
+      return {
+        state: 'fulfilled',
+        response,
+        jobId: claimResult.response.id,
+      };
+    }
+
+    if (claimResult.kind === 'pending') {
+      return { state: 'pending' };
+    }
+
+    return { state: 'fresh' };
+  }
+
+  /**
+   * Extract: Normalize task mode settings.
+   */
+  function normalizeTaskMode(runRequest: RunRequest): void {
+    if (runRequest.taskMode === 'inspect') {
+      runRequest.scouting = {
+        ...runRequest.scouting,
+        enabled: runRequest.scouting?.enabled ?? false,
+      };
+      runRequest.goalCheck = {
+        ...runRequest.goalCheck,
+        enabled: runRequest.goalCheck?.enabled ?? false,
+      };
+    }
+  }
+
+  /**
    * POST /api/runs - Trigger a new kaseki run.
    */
   router.post('/runs', async (req: Request, res: Response) => {
@@ -1117,113 +1271,42 @@ export function createApiRouter(
       });
 
       const effectivePublishMode = runRequest.publishMode || 'pr';
-      const effectiveRunRequest = {
-        ...runRequest,
-        publishMode: effectivePublishMode,
-      };
-      if (
-        (effectivePublishMode === 'branch' || effectivePublishMode === 'pr' || effectivePublishMode === 'draft_pr') &&
-        !isGitHubAppReady()
-      ) {
-        return sendErrorResponse(
-          res,
-          400,
-          'Bad Request',
-          `publishMode=${effectivePublishMode} requires readable GitHub App credentials. Check /api/preflight before submitting publishable runs.`,
-        );
+      runRequest.publishMode = effectivePublishMode;
+
+      // 1. Validate publish mode and authentication
+      const authValidation = await validatePublishModeAndAuth(effectivePublishMode);
+      if (!authValidation.ok) {
+        return sendErrorResponse(res, 400, 'Bad Request', authValidation.error!);
       }
 
-      const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-      const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
-      const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
-      if (shouldBlockForFreshness(effectivePublishMode) && freshness.stale) {
-        return res.status(409).json({
-          type: 'https://api.kaseki.local/errors#checkout-stale',
-          title: 'Conflict',
-          status: 409,
-          detail: freshness.detail,
-          checkoutDir: freshness.checkoutDir,
-          localRef: freshness.localRef,
-          remoteRef: freshness.remoteRef,
-          remoteUrl: freshness.remoteUrl,
-          remediation: freshness.remediation || TEMPLATE_REMEDIATION,
-        });
+      // 2. Validate checkout freshness
+      const freshnessValidation = await validateCheckoutFreshness(effectivePublishMode);
+      if (!freshnessValidation.ok) {
+        return res.status(409).json(freshnessValidation.response);
       }
 
-      const templateCompatibility = checkTemplatePublishModeCompatibility(effectivePublishMode);
-      if (!templateCompatibility.ok) {
-        return res.status(400).json({
-          type: 'https://api.kaseki.local/errors#template-incompatible',
-          title: 'Bad Request',
-          status: 400,
-          detail: templateCompatibility.detail,
-          templateMetadataPath: templateCompatibility.metadataPath,
-          supportedPublishModes: templateCompatibility.supportedPublishModes,
-          remediation: templateCompatibility.remediation,
-        });
+      // 3. Validate template readiness
+      const templateValidation = await validateTemplateReadiness(effectivePublishMode);
+      if (!templateValidation.ok) {
+        return res.status(templateValidation.statusCode || 400).json(templateValidation.response);
       }
 
-      if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
-        const { status: templateHealth, fromCache: templateHealthFromCache } = getSubmissionTemplateHealthStatus(templateDir);
-        if (!templateHealth.ok) {
-          if (isTemplateDoctorTimeout(templateHealth)) {
-            metricsRegistry.incAdmissionRejection('template-doctor-timeout');
-            logger.event('api_template_doctor_timeout_admitted', {
-              repoUrl: runRequest.repoUrl,
-              ref: runRequest.ref,
-              publishMode: effectivePublishMode,
-              fromCache: templateHealthFromCache,
-              detail: templateHealth.detail,
-            });
-          } else {
-            metricsRegistry.incAdmissionRejection('template-not-ready');
-            return res.status(400).json({
-              type: 'https://api.kaseki.local/errors#template-not-ready',
-              title: 'Bad Request',
-              status: 400,
-              detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
-              templatePath: templateHealth.templateDir,
-              checkoutRef: templateHealth.checkoutRef ?? 'unknown',
-              doctorCommand: templateHealth.doctorCommand,
-              doctorStderrTail: templateHealth.doctorStderrTail,
-              remediation: TEMPLATE_REMEDIATION,
-            });
-          }
-        }
-      }
+      // 4. Normalize task mode
+      normalizeTaskMode(runRequest);
 
-      if (effectiveRunRequest.taskMode === 'inspect') {
-        effectiveRunRequest.scouting = {
-          ...effectiveRunRequest.scouting,
-          enabled: effectiveRunRequest.scouting?.enabled ?? false,
-        };
-        effectiveRunRequest.goalCheck = {
-          ...effectiveRunRequest.goalCheck,
-          enabled: effectiveRunRequest.goalCheck?.enabled ?? false,
-        };
-      }
-
-      // Auto-generate idempotency key if not provided
+      // 5. Handle idempotency
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
-      const requestFingerprint = buildRequestFingerprint(effectiveRunRequest as Record<string, unknown>);
+      const requestFingerprint = buildRequestFingerprint(runRequest as Record<string, unknown>);
 
-      const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
-      if (claimResult.kind === 'fulfilled') {
-        const currentJob = scheduler.getJob(claimResult.response.id);
-        const response = currentJob
-          ? buildRunResponse(currentJob, true)
-          : {
-            ...claimResult.response,
-            cached: true,
-          };
+      const idempotencyResult = await handleIdempotency(idempotencyKey, requestFingerprint);
+      if (idempotencyResult.state === 'fulfilled') {
         logger.event('api_idempotent_resubmission', {
-          jobId: response.id,
+          jobId: idempotencyResult.jobId,
           idempotencyKey,
-          currentStatus: currentJob?.status,
         });
-        return res.status(200).json(response); // 200 OK, not 202
+        return res.status(200).json(idempotencyResult.response); // 200 OK, not 202
       }
-      if (claimResult.kind === 'pending') {
+      if (idempotencyResult.state === 'pending') {
         return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
       }
 
@@ -1238,7 +1321,7 @@ export function createApiRouter(
       });
 
       // Submit to scheduler
-      const job = await scheduler.submitJob(effectiveRunRequest);
+      const job = await scheduler.submitJob(runRequest);
 
       // Store idempotency key on job
       job.idempotencyKey = idempotencyKey;
