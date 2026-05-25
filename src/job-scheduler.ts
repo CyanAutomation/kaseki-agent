@@ -352,6 +352,18 @@ export class JobScheduler {
     if (job.request.goalCheck?.timeoutSeconds) {
       env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(job.request.goalCheck.timeoutSeconds);
     }
+    const taskMode = job.request.taskMode || this.config.defaultTaskMode;
+    const publishMode = job.request.publishMode || 'pr';
+    const defaultRunEvaluation = publishMode === 'pr' || publishMode === 'draft_pr'
+      ? taskMode !== 'inspect' && !job.request.startupCheck
+      : false;
+    env.KASEKI_RUN_EVALUATION = (job.request.runEvaluation?.enabled ?? defaultRunEvaluation) ? '1' : '0';
+    if (job.request.runEvaluation?.model) {
+      env.KASEKI_RUN_EVALUATION_MODEL = job.request.runEvaluation.model;
+    }
+    if (job.request.runEvaluation?.timeoutSeconds) {
+      env.KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS = String(job.request.runEvaluation.timeoutSeconds);
+    }
   }
 
   /**
@@ -365,6 +377,7 @@ export class JobScheduler {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
       env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
+      env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled ? '1' : '0';
     }
   }
 

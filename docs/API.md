@@ -234,6 +234,7 @@ curl -X POST http://localhost:8080/api/runs \
     "maxDiffBytes": 150000,
     "validationCommands": ["npm run lint", "npm run test"],
     "validation": { "commands": ["npm run lint", "npm run test"] },
+    "runEvaluation": { "enabled": true },
     "taskMode": "patch",
     "publishMode": "auto"
   }'
@@ -255,6 +256,7 @@ curl -X POST http://localhost:8080/api/runs \
   publishMode?: "auto" | "none" | "branch" | "pr" | "draft_pr"; // Optional; omitted API runs default to "pr"
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
   scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted
+  runEvaluation?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional final task-agnostic run evaluator
   timeoutSeconds?: number;    // Optional per-run timeout (60-10800 seconds)
 }
 ```
@@ -327,6 +329,26 @@ See [docs/QUICK_START.md](QUICK_START.md#scouting-agent--allowlist-control) for 
 For controller activation checks, submit `startupCheck: true` or call `POST /api/runs?dryRun=true`. The default `startupCheckMode: "boot"` performs a minimal container boot smoke test for OpenRouter secret mount, writable workspace/results/cache paths, Node, Git, and Pi CLI without cloning or installing dependencies. Use `startupCheckMode: "baseline-validation"` (or provide validation commands with the startup check) to keep Pi disabled while invoking `/usr/local/bin/kaseki-agent` far enough to clone the repo, install dependencies, and run pre-agent baseline validation.
 
 Dependency installation in worker runs is lockfile-enforced (`npm ci --omit=dev`, optionally with `--ignore-scripts`), and run artifacts expose cache/install observability. Controllers can read `progress.jsonl`, `stage-timings.tsv`, and `dependency-cache.log` for install elapsed time plus cache hit/miss and reuse source details.
+
+### Run Evaluation & Improvement Aggregation
+
+PR-publishing patch runs (`publishMode: "pr"` or `"draft_pr"`) run a final annotate-only Pi evaluation by default before PR creation. Override it with:
+
+```json
+{
+  "runEvaluation": {
+    "enabled": true,
+    "model": "openrouter/free",
+    "timeoutSeconds": 300
+  }
+}
+```
+
+The evaluator writes `run-evaluation.json` plus event, summary, and stderr artifacts. It never blocks PR creation in v1; failures are recorded as warnings.
+
+**GET `/api/improvements?limit=50`**
+
+Returns recent terminal-run improvement aggregates from indexed runs, including assessment/confidence counts, evaluator availability, recurring improvement opportunities, slowest stages, and compact per-run entries.
 
 **Response (202 Accepted):**
 

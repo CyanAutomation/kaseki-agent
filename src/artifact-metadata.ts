@@ -160,6 +160,39 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'run-evaluation.json': {
+    name: 'run-evaluation.json',
+    contentType: 'application/json',
+    description: 'Final task-agnostic run evaluation: reviewer confidence, stage value, and Kaseki improvement opportunities',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 5,
+    sizeHint: 'small',
+  },
+
+  'run-evaluation-events.jsonl': {
+    name: 'run-evaluation-events.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Sanitized Pi events from the final run evaluation phase',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'large',
+  },
+
+  'run-evaluation-summary.json': {
+    name: 'run-evaluation-summary.json',
+    contentType: 'application/json',
+    description: 'Pi run evaluation event statistics including model metadata when available',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
+  'run-evaluation-stderr.log': {
+    name: 'run-evaluation-stderr.log',
+    contentType: 'text/plain',
+    description: 'Run evaluation Pi stderr and artifact validation diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'medium',
+  },
+
   // Progress & stage tracking
   'progress.log': {
     name: 'progress.log',

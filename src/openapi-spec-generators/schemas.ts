@@ -78,6 +78,20 @@ export function buildRunRequestSchema(): Record<string, unknown> {
           },
         },
       },
+      runEvaluation: {
+        type: 'object',
+        description: 'Final task-agnostic run evaluation controls',
+        properties: {
+          enabled: { type: 'boolean', description: 'Enable the final run evaluation phase' },
+          model: { type: 'string', description: 'Optional Pi model override for run evaluation' },
+          timeoutSeconds: {
+            type: 'integer',
+            minimum: 60,
+            maximum: 10800,
+            description: 'Optional run evaluation timeout in seconds',
+          },
+        },
+      },
       taskMode: {
         type: 'string',
         enum: ['patch', 'inspect'],

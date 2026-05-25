@@ -148,6 +148,7 @@ describe('OpenAPI Schema Builders', () => {
       expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
       expect(runRequest.properties?.skipPreAgentValidation).toBeUndefined();
       expect(runRequest.properties?.goalCheck).toMatchObject({ type: 'object' });
+      expect(runRequest.properties?.runEvaluation).toMatchObject({ type: 'object' });
 
       // Additional semantic checks for exact enum values and constraints
       const taskModeSchema = runRequest.properties?.taskMode as JsonSchemaObject;
@@ -468,6 +469,20 @@ describe('OpenAPI Schema Builders', () => {
       });
       expect(goalCheckProps.model).toMatchObject({ type: 'string' });
       expect(goalCheckProps.timeoutSeconds).toMatchObject({
+        type: 'integer',
+        minimum: 60,
+        maximum: 10800,
+      });
+    });
+
+    it('runEvaluation object should have enabled, model, and timeoutSeconds properties', () => {
+      const schema = buildRunRequestSchema() as JsonSchemaObject;
+      const runEvaluation = schema.properties?.runEvaluation as JsonSchemaObject;
+      const runEvaluationProps = runEvaluation.properties as Record<string, JsonSchemaObject>;
+
+      expect(runEvaluationProps.enabled).toMatchObject({ type: 'boolean' });
+      expect(runEvaluationProps.model).toMatchObject({ type: 'string' });
+      expect(runEvaluationProps.timeoutSeconds).toMatchObject({
         type: 'integer',
         minimum: 60,
         maximum: 10800,

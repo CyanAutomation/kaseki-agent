@@ -38,6 +38,9 @@ eval "$(extract_function derive_pr_title)"
 eval "$(extract_function is_pr_draft_mode)"
 eval "$(extract_function format_pr_command_results)"
 eval "$(extract_function format_pr_changed_files)"
+eval "$(extract_function format_pr_json_list)"
+eval "$(extract_function build_pr_agent_review)"
+eval "$(extract_function build_pr_agent_evaluation)"
 eval "$(extract_function build_pr_improvements_summary)"
 eval "$(extract_function build_pr_body)"
 eval "$(extract_function run_node_subprocess)"
@@ -100,6 +103,53 @@ cat > "$RESULTS_DIR/result-summary.md" <<'SUMMARY'
 ## Validation
 - Do not include this validation detail in the reviewer summary.
 SUMMARY
+cat > "$RESULTS_DIR/goal-check.json" <<'JSON'
+{
+  "met": true,
+  "summary": "Implemented the OAuth redirect-state fix and verified the requested reviewer-facing behavior.",
+  "evidence": [
+    "Added regression coverage for quoted redirect-state values.",
+    "Preserved the existing fallback path while tightening token handling.",
+    "Updated reviewer notes so the behavior is discoverable."
+  ],
+  "missing": [],
+  "validation_notes": [
+    "npm run test passed for the OAuth route tests.",
+    "No secret-scan findings were reported."
+  ]
+}
+JSON
+cat > "$RESULTS_DIR/scouting.json" <<'JSON'
+{
+  "risks": [
+    "OAuth provider behavior can vary for unusual redirect-state encodings.",
+    "Manual review should confirm the copy matches product terminology."
+  ]
+}
+JSON
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "task_completion_score": 4,
+  "summary": "The run produced a focused OAuth fix.",
+  "human_review_focus": [
+    "Confirm OAuth provider behavior with quoted redirect-state values.",
+    "Check reviewer-facing copy for product terminology."
+  ],
+  "stage_value": [
+    { "stage": "goal check", "value": "high", "reason": "Confirmed requirements." }
+  ],
+  "efficiency_findings": [
+    "Post-validation repeated the same test command and may benefit from delta-aware validation."
+  ],
+  "kaseki_improvement_opportunities": [
+    { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
+  ],
+  "pr_summary": "Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.",
+  "warnings": []
+}
+JSON
 
 # Mock kaseki-agent.sh global variables that normally point to /results
 KASEKI_RESULTS_DIR="$RESULTS_DIR"
@@ -209,6 +259,19 @@ for expected in \
   'Tests updated: 1.' \
   'Documentation updated: 1.' \
   'Diff stats: +2/-1 lines' \
+  '## Agent review' \
+  '### What went well' \
+  'Implemented the OAuth redirect-state fix and verified the requested reviewer-facing behavior.' \
+  'Added regression coverage for quoted redirect-state values.' \
+  'npm run test passed for the OAuth route tests.' \
+  '### Needs attention' \
+  'No unmet task requirements were reported by the goal check.' \
+  'OAuth provider behavior can vary for unusual redirect-state encodings.' \
+  '## Agent evaluation' \
+  'Overall: good; reviewer confidence: high.' \
+  'Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.' \
+  'Review focus: Confirm OAuth provider behavior with quoted redirect-state values.' \
+  'Process note: Post-validation repeated the same test command and may benefit from delta-aware validation.' \
   '## Validation' \
   '### Validation statuses' \
   'Pre-agent validation: passed' \
@@ -337,14 +400,19 @@ fi
 summary_line="$(grep -nF '## Summary' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 validation_line="$(grep -nF '## Validation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 files_changed_line="$(grep -nF '## Files changed' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+agent_review_line="$(grep -nF '## Agent review' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+agent_evaluation_line="$(grep -nF '## Agent evaluation' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 original_prompt_line="$(grep -nF '## Original task prompt' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
 run_metadata_line="$(grep -nF '## Run metadata' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
-if [ -n "$summary_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$original_prompt_line" ] && [ -n "$run_metadata_line" ] \
+if [ -n "$summary_line" ] && [ -n "$agent_review_line" ] && [ -n "$agent_evaluation_line" ] && [ -n "$validation_line" ] && [ -n "$files_changed_line" ] && [ -n "$original_prompt_line" ] && [ -n "$run_metadata_line" ] \
   && [ "$summary_line" -lt "$validation_line" ] \
+  && [ "$summary_line" -lt "$agent_review_line" ] \
+  && [ "$agent_review_line" -lt "$agent_evaluation_line" ] \
+  && [ "$agent_evaluation_line" -lt "$validation_line" ] \
   && [ "$validation_line" -lt "$files_changed_line" ] \
   && [ "$files_changed_line" -lt "$original_prompt_line" ] \
   && [ "$original_prompt_line" -lt "$run_metadata_line" ]; then
-  pass "PR body orders Summary, Validation, Files changed, Original task prompt, and Run metadata sections"
+  pass "PR body orders Summary, Agent review, Agent evaluation, Validation, Files changed, Original task prompt, and Run metadata sections"
 else
   fail "PR body sections were not in expected order"
 fi

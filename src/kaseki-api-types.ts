@@ -116,6 +116,14 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Post-coding goal-check evaluator controls'),
+  runEvaluation: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable the final task-agnostic run evaluator'),
+      model: z.string().min(1).optional().describe('Optional Pi model override for run evaluation'),
+      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional run evaluation timeout in seconds'),
+    })
+    .optional()
+    .describe('Final run evaluation controls'),
   taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch (default, requires code changes) or inspect (read-only analysis, skips pre-agent validation)'),
   publishMode: z.enum(['auto', 'none', 'branch', 'pr', 'draft_pr']).optional().describe('Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
@@ -144,6 +152,7 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['validation_commands', 'validationCommands'],
     ['scouting_config', 'scouting'],
     ['goal_check', 'goalCheck'],
+    ['run_evaluation', 'runEvaluation'],
     ['task_mode', 'taskMode'],
     ['publish_mode', 'publishMode'],
     ['startup_check', 'startupCheck'],

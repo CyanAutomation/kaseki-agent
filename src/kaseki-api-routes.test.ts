@@ -21,6 +21,7 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as os from 'os';
 import { execFileSync } from 'child_process';
 import express, { Express } from 'express';
 import { AddressInfo, Server } from 'net';
@@ -180,6 +181,97 @@ describe('kaseki-api-routes log truncation helpers', () => {
     },
   ])('tailLogByLines handles $name', ({ content, lineCount, expected }) => {
     expect(tailLogByLines(content, lineCount)).toBe(expected);
+  });
+});
+
+describe('kaseki-api-routes improvements aggregation', () => {
+  let resultsDir: string;
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-improvements-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('GET /api/improvements aggregates recent run evaluation artifacts and tolerates missing/invalid evaluations', async () => {
+    const jobA = {
+      id: 'kaseki-101',
+      status: 'completed' as const,
+      createdAt: new Date('2026-05-25T10:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-101'),
+      request: { repoUrl: 'https://github.com/org/repo-a', ref: 'main' },
+    };
+    const jobB = {
+      id: 'kaseki-100',
+      status: 'failed' as const,
+      createdAt: new Date('2026-05-25T09:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-100'),
+      request: { repoUrl: 'https://github.com/org/repo-b', ref: 'main' },
+    };
+    const jobC = {
+      id: 'kaseki-99',
+      status: 'completed' as const,
+      createdAt: new Date('2026-05-25T08:00:00.000Z'),
+      resultDir: path.join(resultsDir, 'kaseki-99'),
+      request: { repoUrl: 'https://github.com/org/repo-c', ref: 'main' },
+    };
+    for (const job of [jobA, jobB, jobC]) fs.mkdirSync(job.resultDir, { recursive: true });
+    fs.writeFileSync(path.join(jobA.resultDir, 'metadata.json'), JSON.stringify({
+      repo_url: 'https://github.com/org/repo-a',
+      duration_seconds: 120,
+      github_pr_url: 'https://github.com/org/repo-a/pull/1',
+    }));
+    fs.writeFileSync(path.join(jobA.resultDir, 'stage-timings.tsv'), 'validation\t0\t30\t\nrun evaluation\t0\t5\t\n');
+    fs.writeFileSync(path.join(jobA.resultDir, 'run-evaluation.json'), JSON.stringify({
+      overall_assessment: 'good',
+      reviewer_confidence: 'high',
+      task_completion_score: 4,
+      human_review_focus: ['Review auth copy'],
+      kaseki_improvement_opportunities: [
+        { category: 'validation', priority: 'medium', suggestion: 'Avoid repeated validation commands.' },
+      ],
+    }));
+    fs.writeFileSync(path.join(jobB.resultDir, 'run-evaluation.json'), '{not-json');
+
+    const scheduler = createMockScheduler({
+      [jobA.id]: jobA as any,
+      [jobB.id]: jobB as any,
+      [jobC.id]: jobC as any,
+    });
+    scheduler.listJobs.mockReturnValue([jobA, jobB, jobC]);
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/improvements?limit=3`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body.evaluator).toEqual({ available: 1, missing: 1, invalid: 1 });
+      expect(body.counts.byAssessment.good).toBe(1);
+      expect(body.counts.byConfidence.high).toBe(1);
+      expect(body.topImprovementOpportunities[0]).toMatchObject({
+        category: 'validation',
+        priority: 'medium',
+        count: 1,
+      });
+      expect(body.slowestStages[0]).toMatchObject({ stage: 'validation', averageSeconds: 30 });
+      expect(body.runs[0]).toMatchObject({
+        id: 'kaseki-101',
+        assessment: 'good',
+        confidence: 'high',
+        taskCompletionScore: 4,
+        topReviewFocus: 'Review auth copy',
+        topImprovement: 'Avoid repeated validation commands.',
+        prUrl: 'https://github.com/org/repo-a/pull/1',
+      });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
   });
 });
 
