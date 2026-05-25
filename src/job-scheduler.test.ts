@@ -1302,16 +1302,22 @@ describe('JobScheduler shutdown lifecycle', () => {
     enqueueWebhookSpy.mockClear();
 
     scheduler.shutdown();
+    scheduler.shutdown();
 
     expect(job.finalized).toBe(true);
     expect(job.status).toBe('failed');
     expect(job.failureClass).toBe('shutdown_aborted');
+    expect(job.completedAt).toBeInstanceOf(Date);
     expect(scheduler.getQueueStatus().pending).toBe(0);
     expect(enqueueWebhookSpy).toHaveBeenCalledTimes(1);
     expect(enqueueWebhookSpy).toHaveBeenCalledWith(
       job.id,
       expect.objectContaining({
         eventType: 'job.failed',
+        data: expect.objectContaining({
+          status: 'failed',
+          failureClass: 'shutdown_aborted',
+        }),
       }),
       job.webhookConfig
     );
