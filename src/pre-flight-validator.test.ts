@@ -163,18 +163,19 @@ describe('PreFlightValidator validation logic', () => {
           output: 'abc123\trefs/heads/main\n',
           timedOut: false,
         });
-      const request: RunRequest = {
-        repoUrl: 'https://github.com/example/repo',
-        ref: 'main',
-        validationCommands: ['npm test', 'npm build'],
-        changedFilesAllowlist: ['src/**'],
-      };
+      try {
+        const request: RunRequest = {
+          repoUrl: 'https://github.com/example/repo',
+          ref: 'main',
+          validationCommands: ['npm test', 'npm build'],
+          changedFilesAllowlist: ['src/**'],
+        };
 
-      const response = await validator.validate(request);
+        const response = await validator.validate(request);
 
-      // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
-      expect(response.checks.length).toBeGreaterThanOrEqual(5);
-      expect(gitSpy).toHaveBeenCalledTimes(1);
+        // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
+        expect(response.checks.length).toBeGreaterThanOrEqual(5);
+        expect(gitSpy).toHaveBeenCalledTimes(1);
       } finally {
         gitSpy.mockRestore();
       }
