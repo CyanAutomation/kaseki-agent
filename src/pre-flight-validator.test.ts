@@ -1,7 +1,6 @@
 import { PreFlightValidator, globToRegex, testPathAgainstPatterns, validateAllowlistPatternMatching } from './pre-flight-validator';
 import type { RunRequest } from './kaseki-api-types';
 
-
 const successfulGitResult = {
   code: 0,
   durationMs: 12,
@@ -179,17 +178,17 @@ describe('PreFlightValidator validation logic', () => {
     });
 
     test('collects multiple validation checks', async () => {
-        const request: RunRequest = {
-          repoUrl: 'https://github.com/example/repo',
-          ref: 'main',
-          validationCommands: ['npm test', 'npm build'],
-          changedFilesAllowlist: ['src/**'],
-        };
+      const request: RunRequest = {
+        repoUrl: 'https://github.com/example/repo',
+        ref: 'main',
+        validationCommands: ['npm test', 'npm build'],
+        changedFilesAllowlist: ['src/**'],
+      };
 
-        const response = await validator.validate(request);
+      const response = await validator.validate(request);
 
-        // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
-        expect(response.checks.length).toBeGreaterThanOrEqual(5);
+      // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
+      expect(response.checks.length).toBeGreaterThanOrEqual(5);
     });
 
     test('marks validation invalid when there are errors', async () => {
