@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Kaseki Agent API",
-    "version": "1.49.0",
+    "version": "1.49.1",
     "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment",
     "contact": {
       "name": "CyanAutomation",
@@ -368,10 +368,6 @@
                     ],
                     "description": "Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing"
                   },
-                  "skipPreAgentValidation": {
-                    "type": "boolean",
-                    "description": "Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured."
-                  },
                   "startupCheck": {
                     "type": "boolean",
                     "description": "Start a worker container and exit after boot checks"
@@ -613,10 +609,6 @@
                       "draft_pr"
                     ],
                     "description": "Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing"
-                  },
-                  "skipPreAgentValidation": {
-                    "type": "boolean",
-                    "description": "Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured."
                   },
                   "startupCheck": {
                     "type": "boolean",
@@ -1978,10 +1970,6 @@
               "draft_pr"
             ],
             "description": "Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing"
-          },
-          "skipPreAgentValidation": {
-            "type": "boolean",
-            "description": "Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured."
           },
           "startupCheck": {
             "type": "boolean",
