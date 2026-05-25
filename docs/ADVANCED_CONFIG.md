@@ -483,7 +483,9 @@ Variables for dependency caching and performance optimization.
 - **Example**:
 
   ```bash
-  KASEKI_DEPENDENCY_RESTORE_MODE=hardlink  # Faster when cache/workspace share a filesystem
+  KASEKI_DEPENDENCY_RESTORE_MODE=auto  # Recommended when cache/workspace may be separate mounts
+  # KASEKI_DEPENDENCY_RESTORE_MODE=copy  # Use for fixed cross-device layouts
+  # KASEKI_DEPENDENCY_RESTORE_MODE=hardlink  # Only when cache/workspace are same filesystem
   ```
 
 ### Dependency Cache Pruning
