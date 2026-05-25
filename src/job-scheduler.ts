@@ -15,6 +15,20 @@ import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 
+/**
+ * Execution state for a job process lifecycle.
+ * Replaces distributed boolean flags (timedOut, processExited) with a single state machine.
+ */
+enum JobExecutionState {
+  IDLE = 'idle',
+  STARTING = 'starting',
+  RUNNING = 'running',
+  TIMED_OUT = 'timed_out',
+  EXITED = 'exited',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+}
+
 type CleanupResult = {
   attempted: boolean;
   ok?: boolean;
@@ -24,6 +38,13 @@ type CleanupResult = {
 type LiveProgressCacheEntry = {
   events: Array<Record<string, unknown>>;
   expiresAt: number;
+};
+
+type TimeoutHandles = {
+  timeoutHandle: NodeJS.Timeout;
+  forceKillHandle?: NodeJS.Timeout;
+  cleanup: () => void;
+  isTimedOut?: () => boolean;
 };
 
 /**
@@ -40,6 +61,7 @@ export class JobScheduler {
   private shutdownKillTimers = new Map<string, NodeJS.Timeout>();
   private timeoutKillTimers = new Map<string, NodeJS.Timeout>();
   private liveProgressCache = new Map<string, LiveProgressCacheEntry>();
+  private executionState = new Map<string, JobExecutionState>();
   private config: KasekiApiConfig;
   private logger: EventLogger;
   private webhookManager: WebhookManager;
@@ -225,11 +247,230 @@ export class JobScheduler {
   /**
    * Execute a single job.
    */
+  /**
+   * Build the environment variables for a job execution.
+   * Extracted to reduce executeJob complexity and enable isolated testing.
+   */
+  private buildProcessEnvironment(job: Job, effectiveTimeoutSeconds: number): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      // run-kaseki.sh owns creation of the per-instance result directory and
+      // refuses to overwrite it. Keep host log mirroring at the parent results
+      // directory so the API does not accidentally reserve the final result path.
+      KASEKI_LOG_DIR: this.config.resultsDir,
+      KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
+      KASEKI_PUBLISH_MODE: job.request.publishMode || 'pr',
+      KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
+      KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
+    };
+
+    if (job.request.skipPreAgentValidation) {
+      env.KASEKI_PRE_AGENT_VALIDATION = '0';
+    }
+    if ((job.request.publishMode || 'pr') === 'none') {
+      env.GITHUB_APP_ENABLED = '0';
+    }
+
+    this.populateGitHubAppEnv(env);
+    this.setupStartupCheckMode(job, env);
+    this.setupValidationCommands(job, env);
+    this.setupChangedFilesAllowlist(job, env);
+    this.setupScoutingAndGoalCheckEnv(job, env);
+    this.setupTaskPrompt(job, env);
+
+    return env;
+  }
+
+  /**
+   * Configure startup check mode environment variables.
+   */
+  private setupStartupCheckMode(job: Job, env: NodeJS.ProcessEnv): void {
+    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    const startupCheckMode =
+      job.request.startupCheckMode || (job.request.startupCheck && validationCommands ? 'baseline-validation' : 'boot');
+
+    if (job.request.startupCheck) {
+      env.KASEKI_DRY_RUN = '1';
+      env.KASEKI_TASK_MODE = 'inspect';
+      env.KASEKI_STARTUP_CHECK_MODE = startupCheckMode;
+      if (startupCheckMode === 'baseline-validation') {
+        env.KASEKI_BASELINE_VALIDATION_DRY_RUN = '1';
+      } else {
+        env.KASEKI_VALIDATION_COMMANDS = 'none';
+      }
+      env.TASK_PROMPT =
+        job.request.taskPrompt ||
+        (startupCheckMode === 'baseline-validation'
+          ? 'Run Kaseki baseline validation startup checks only. Clone the repo, install dependencies, run pre-agent validation, then exit without Pi agent work.'
+          : 'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.');
+    }
+  }
+
+  /**
+   * Configure validation commands in environment.
+   */
+  private setupValidationCommands(job: Job, env: NodeJS.ProcessEnv): void {
+    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    if (validationCommands) {
+      env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
+    }
+  }
+
+  /**
+   * Configure changed files allowlist in environment.
+   */
+  private setupChangedFilesAllowlist(job: Job, env: NodeJS.ProcessEnv): void {
+    const changedFilesAllowlist = job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
+    if (changedFilesAllowlist) {
+      env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
+    }
+  }
+
+  /**
+   * Configure scouting and goal-check environment variables.
+   */
+  private setupScoutingAndGoalCheckEnv(job: Job, env: NodeJS.ProcessEnv): void {
+    if (job.request.scouting?.enabled !== undefined) {
+      env.KASEKI_SCOUTING = job.request.scouting.enabled ? '1' : '0';
+    }
+    if (job.request.scouting?.model) {
+      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
+    }
+    if (job.request.scouting?.timeoutSeconds) {
+      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(job.request.scouting.timeoutSeconds);
+    }
+    if (job.request.goalCheck?.enabled !== undefined) {
+      env.KASEKI_GOAL_CHECK = job.request.goalCheck.enabled ? '1' : '0';
+    }
+    if (job.request.goalCheck?.maxRetries !== undefined) {
+      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(job.request.goalCheck.maxRetries);
+    }
+    if (job.request.goalCheck?.model) {
+      env.KASEKI_GOAL_CHECK_MODEL = job.request.goalCheck.model;
+    }
+    if (job.request.goalCheck?.timeoutSeconds) {
+      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(job.request.goalCheck.timeoutSeconds);
+    }
+  }
+
+  /**
+   * Configure task prompt and related settings.
+   */
+  private setupTaskPrompt(job: Job, env: NodeJS.ProcessEnv): void {
+    if (job.request.taskPrompt) {
+      env.TASK_PROMPT = job.request.taskPrompt;
+    }
+    if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
+      env.KASEKI_ALLOW_EMPTY_DIFF = '1';
+      env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
+      env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
+    }
+  }
+
+  /**
+   * Configure timeout and kill timer for a job.
+   * Orchestrates SIGTERM → grace period → SIGKILL flow.
+   * Returns an object with timeout handles and a flag to check if timeout occurred.
+   */
+  private configureJobTimeout(
+    jobId: string,
+    proc: ChildProcess,
+    effectiveTimeoutSeconds: number
+  ): TimeoutHandles & { isTimedOut: () => boolean } {
+    let hasTimedOut = false;
+
+    const timeoutHandle = setTimeout(() => {
+      if (hasTimedOut) {
+        return; // Already timed out, prevent double-kill
+      }
+      hasTimedOut = true;
+      this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.TIMED_OUT);
+      
+      proc.kill('SIGTERM');
+
+      // Grace period: attempt SIGKILL after 5 seconds if process still alive
+      const forceKillHandle = setTimeout(() => {
+        if (!this.processExited.get(jobId)) {
+          proc.kill('SIGKILL');
+        }
+        this.timeoutKillTimers.delete(jobId);
+      }, JobScheduler.SHUTDOWN_GRACE_MS);
+
+      this.unrefTimer(forceKillHandle);
+      this.timeoutKillTimers.set(jobId, forceKillHandle);
+    }, effectiveTimeoutSeconds * 1000);
+
+    this.unrefTimer(timeoutHandle);
+
+    return {
+      timeoutHandle,
+      cleanup: () => {
+        clearTimeout(timeoutHandle);
+        const forceKillHandle = this.timeoutKillTimers.get(jobId);
+        if (forceKillHandle) {
+          clearTimeout(forceKillHandle);
+          this.timeoutKillTimers.delete(jobId);
+        }
+      },
+      isTimedOut: () => hasTimedOut,
+    };
+  }
+
+  /**
+   * Attach event listeners to process for stdout, stderr, exit, and error handling.
+   * Extracted to separate concerns and enable isolated listener testing.
+   */
+  private attachProcessListeners(
+    jobId: string,
+    job: Job,
+    proc: ChildProcess,
+    stdoutData: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void }
+  ): void {
+    proc.stdout?.on('data', (chunk: Buffer | string) => {
+      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+    });
+
+    proc.stderr?.on('data', (chunk: Buffer | string) => {
+      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+    });
+
+    proc.on('exit', (code) => {
+      this.processExited.set(jobId, true);
+      if (job.finalized) {
+        return;
+      }
+      this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.EXITED);
+      stdoutData.onExit(code ?? -1);
+    });
+
+    proc.on('error', (err) => {
+      this.processExited.set(jobId, true);
+      if (job.finalized) {
+        return;
+      }
+      this.transitionState(jobId, JobExecutionState.STARTING, JobExecutionState.FAILED);
+      const errorMsg = `Failed to spawn process: ${err.message}`;
+      this.logger.event('job_failed', {
+        jobId,
+        failureClass: 'spawn_error',
+        error: errorMsg,
+      });
+      this.finalizeJobIfNeeded(job, {
+        status: 'failed',
+        error: errorMsg,
+        completedAt: new Date(),
+      });
+    });
+  }
+
   private executeJob(job: Job): void {
     const effectiveTimeoutSeconds = job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
-    // Ensure stale live-progress snapshots from any previous lifecycle edge
-    // are removed before this run attaches process listeners and starts.
+
+    // Initialize job state
     this.clearLiveProgressCache(job.id);
+    this.transitionState(job.id, JobExecutionState.IDLE, JobExecutionState.STARTING);
     job.status = 'running';
     job.startedAt = new Date();
     job.effectiveTimeoutSeconds = effectiveTimeoutSeconds;
@@ -258,84 +499,9 @@ export class JobScheduler {
       processId: job.processId,
       runningCount: this.running.size,
     });
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      // run-kaseki.sh owns creation of the per-instance result directory and
-      // refuses to overwrite it. Keep host log mirroring at the parent results
-      // directory so the API does not accidentally reserve the final result path.
-      KASEKI_LOG_DIR: this.config.resultsDir,
-      KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
-      KASEKI_PUBLISH_MODE: job.request.publishMode || 'pr',
-      KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
-      KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
-    };
-    if (job.request.skipPreAgentValidation) {
-      env.KASEKI_PRE_AGENT_VALIDATION = '0';
-    }
-    if ((job.request.publishMode || 'pr') === 'none') {
-      env.GITHUB_APP_ENABLED = '0';
-    }
-    this.populateGitHubAppEnv(env);
 
-    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
-    const startupCheckMode =
-      job.request.startupCheckMode || (job.request.startupCheck && validationCommands ? 'baseline-validation' : 'boot');
-
-    if (job.request.startupCheck) {
-      env.KASEKI_DRY_RUN = '1';
-      env.KASEKI_TASK_MODE = 'inspect';
-      env.KASEKI_STARTUP_CHECK_MODE = startupCheckMode;
-      if (startupCheckMode === 'baseline-validation') {
-        env.KASEKI_BASELINE_VALIDATION_DRY_RUN = '1';
-      } else {
-        env.KASEKI_VALIDATION_COMMANDS = 'none';
-      }
-      env.TASK_PROMPT =
-        job.request.taskPrompt ||
-        (startupCheckMode === 'baseline-validation'
-          ? 'Run Kaseki baseline validation startup checks only. Clone the repo, install dependencies, run pre-agent validation, then exit without Pi agent work.'
-          : 'Run Kaseki startup checks only. Verify container boot and dependencies, then exit without agent work.');
-    }
-
-    const changedFilesAllowlist = job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
-    if (changedFilesAllowlist) {
-      env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
-    }
-
-    if (validationCommands) {
-      env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
-    }
-
-    if (job.request.scouting?.enabled !== undefined) {
-      env.KASEKI_SCOUTING = job.request.scouting.enabled ? '1' : '0';
-    }
-    if (job.request.scouting?.model) {
-      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
-    }
-    if (job.request.scouting?.timeoutSeconds) {
-      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(job.request.scouting.timeoutSeconds);
-    }
-    if (job.request.goalCheck?.enabled !== undefined) {
-      env.KASEKI_GOAL_CHECK = job.request.goalCheck.enabled ? '1' : '0';
-    }
-    if (job.request.goalCheck?.maxRetries !== undefined) {
-      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(job.request.goalCheck.maxRetries);
-    }
-    if (job.request.goalCheck?.model) {
-      env.KASEKI_GOAL_CHECK_MODEL = job.request.goalCheck.model;
-    }
-    if (job.request.goalCheck?.timeoutSeconds) {
-      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(job.request.goalCheck.timeoutSeconds);
-    }
-
-    if (job.request.taskPrompt) {
-      env.TASK_PROMPT = job.request.taskPrompt;
-    }
-    if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
-      env.KASEKI_ALLOW_EMPTY_DIFF = '1';
-      env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
-      env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
-    }
+    // Build process environment (extracted)
+    const env = this.buildProcessEnvironment(job, effectiveTimeoutSeconds);
 
     // Determine kaseki-activate.sh path
     let activateScript = '/agents/kaseki-template/scripts/kaseki-activate.sh';
@@ -344,135 +510,151 @@ export class JobScheduler {
       activateScript = `${process.env.PWD || '/workspaces/kaseki-agent'}/scripts/kaseki-activate.sh`;
     }
 
-    // Invoke kaseki-activate.sh with --controller flag
+    // Spawn process
     const proc = spawn('bash', [activateScript, '--controller', 'run', job.request.repoUrl, job.request.ref, job.id], {
       env,
       stdio: 'pipe',
     });
+
     this.processes.set(job.id, proc);
     this.processExited.set(job.id, false);
     this.clearLiveProgressCache(job.id);
+
     let stdoutTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
     job.processId = proc.pid;
-    let timedOut = false;
     this.persistJobs();
 
-    proc.stdout?.on('data', (chunk: Buffer | string) => {
-      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stdoutTail = this.appendBoundedTail(stdoutTail, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
-    });
-    proc.stderr?.on('data', (chunk: Buffer | string) => {
-      const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stderrTail = this.appendBoundedTail(stderrTail, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
-    });
+    // Transition to RUNNING after successful spawn
+    this.transitionState(job.id, JobExecutionState.STARTING, JobExecutionState.RUNNING);
 
-    // Set timeout
-    const timeout = setTimeout(() => {
-      if (job.finalized) {
-        return;
-      }
-      timedOut = true;
-      proc.kill('SIGTERM');
-      const timeoutKillTimer = setTimeout(() => {
-        if (!this.processExited.get(job.id) && !job.finalized) {
-          proc.kill('SIGKILL');
-        }
-        this.timeoutKillTimers.delete(job.id);
-      }, JobScheduler.SHUTDOWN_GRACE_MS);
-      this.unrefTimer(timeoutKillTimer);
-      this.timeoutKillTimers.set(job.id, timeoutKillTimer);
-    }, effectiveTimeoutSeconds * 1000);
-    this.unrefTimer(timeout);
+    // Configure timeout (extracted)
+    const timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
+    job.timeout = timeoutHandles.timeoutHandle;
 
-    job.timeout = timeout;
+    // Attach process listeners (extracted)
+    const stdoutData = {
+      buffer: stdoutTail,
+      isTimedOut: false,
+      onExit: (code: number) => {
+        const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
+        this.handleProcessExit(job, code, isTimedOut, stdoutTail, stderrTail, timeoutHandles);
+      },
+    };
 
-    // Handle process exit
-    proc.on('exit', (code) => {
-      this.processExited.set(job.id, true);
-      if (job.finalized) {
-        return;
-      }
-      clearTimeout(timeout);
-      const timeoutKillTimer = this.timeoutKillTimers.get(job.id);
-      if (timeoutKillTimer) {
-        clearTimeout(timeoutKillTimer);
-        this.timeoutKillTimers.delete(job.id);
-      }
-      const updates: Partial<Job> = {
-        completedAt: new Date(),
-        exitCode: code ?? -1,
-      };
-      if (timedOut) {
-        metricsRegistry.incTimeout();
-        updates.status = 'failed';
-        updates.exitCode = 124;
-        updates.failureClass = 'timeout';
-        updates.error = `Agent timeout after ${effectiveTimeoutSeconds} seconds`;
-        this.logger.event('job_failed', {
-          jobId: job.id,
-          failureClass: 'timeout',
-          exitCode: 124,
-          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
-        });
+    this.attachProcessListeners(job.id, job, proc, stdoutData);
 
-      } else if (code === 0) {
-        updates.status = 'completed';
-        this.logger.event('job_completed', {
-          jobId: job.id,
-          exitCode: code,
-          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
-        });
+    // Update references
+    stdoutTail = stdoutData.buffer;
+  }
 
-      } else {
-        updates.status = 'failed';
-        this.parseFailureFromResults(job);
-        this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
-        this.failureArtifactWriter.writeFailureArtifacts(job, { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' }, {
+  /**
+   * Handle process exit event.
+   * Extracted to reduce nesting and improve readability of exit logic.
+   */
+  private handleProcessExit(
+    job: Job,
+    code: number | null,
+    isTimedOut: boolean,
+    stdoutTail: Buffer<ArrayBufferLike>,
+    stderrTail: Buffer<ArrayBufferLike>,
+    timeoutHandles: TimeoutHandles
+  ): void {
+    // Clean up timeout handles
+    timeoutHandles.cleanup();
+
+    const updates: Partial<Job> = {
+      completedAt: new Date(),
+      exitCode: code ?? -1,
+    };
+
+    if (isTimedOut) {
+      metricsRegistry.incTimeout();
+      updates.status = 'failed';
+      updates.exitCode = 124;
+      updates.failureClass = 'timeout';
+      updates.error = `Agent timeout after ${job.effectiveTimeoutSeconds} seconds`;
+      this.logger.event('job_failed', {
+        jobId: job.id,
+        failureClass: 'timeout',
+        exitCode: 124,
+        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+      });
+    } else if (code === 0) {
+      updates.status = 'completed';
+      this.transitionState(job.id, JobExecutionState.EXITED, JobExecutionState.COMPLETED);
+      this.logger.event('job_completed', {
+        jobId: job.id,
+        exitCode: code,
+        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+      });
+    } else {
+      updates.status = 'failed';
+      this.transitionState(job.id, JobExecutionState.EXITED, JobExecutionState.FAILED);
+      this.parseFailureFromResults(job);
+      this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
+      this.failureArtifactWriter.writeFailureArtifacts(
+        job,
+        { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' },
+        {
           stdoutTail,
           stderrTail,
           lastStage: 'worker_exit',
-        });
-        this.logger.event('job_failed', {
-          jobId: job.id,
-          exitCode: code,
-          failureClass: job.failureClass,
-          error: job.error,
-          durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
-        });
-
-      }
-      this.finalizeJobIfNeeded(job, updates);
-      if (timedOut) {
-        const cleanup = this.cleanupContainer(job.id);
-        this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
-      }
-    });
-
-    // Handle process error
-    proc.on('error', (err) => {
-      this.processExited.set(job.id, true);
-      if (job.finalized) {
-        return;
-      }
-      clearTimeout(timeout);
-      const errorMsg = `Failed to spawn process: ${err.message}`;
+        }
+      );
       this.logger.event('job_failed', {
         jobId: job.id,
-        failureClass: 'spawn_error',
-        error: errorMsg,
+        exitCode: code,
+        failureClass: job.failureClass,
+        error: job.error,
+        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
       });
-      this.finalizeJobIfNeeded(job, {
-        status: 'failed',
-        error: errorMsg,
-        completedAt: new Date(),
-      });
-    });
+    }
+
+    this.finalizeJobIfNeeded(job, updates);
+    this.clearExecutionState(job.id);
+
+    if (isTimedOut) {
+      const cleanup = this.cleanupContainer(job.id);
+      this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
+    }
   }
 
   private unrefTimer(timer: NodeJS.Timeout): void {
     timer.unref();
+  }
+
+  /**
+   * Transition job execution state with logging.
+   * Prevents invalid state transitions and logs state changes for debugging.
+   */
+  private transitionState(jobId: string, fromState: JobExecutionState, toState: JobExecutionState): void {
+    const currentState = this.executionState.get(jobId) || JobExecutionState.IDLE;
+    
+    // Log state transitions for debugging
+    if (currentState !== fromState) {
+      this.logger.event('job_execution_state_mismatch', {
+        jobId,
+        expected: fromState,
+        actual: currentState,
+        target: toState,
+      });
+    }
+
+    this.executionState.set(jobId, toState);
+    this.logger.event('job_execution_state_transition', {
+      jobId,
+      from: currentState,
+      to: toState,
+    });
+  }
+
+  /**
+   * Clear execution state for a job (after finalization).
+   */
+  private clearExecutionState(jobId: string): void {
+    this.executionState.delete(jobId);
   }
 
   private populateGitHubAppEnv(env: NodeJS.ProcessEnv): void {
