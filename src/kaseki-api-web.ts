@@ -430,6 +430,7 @@ const controllerPage = String.raw`<!doctype html>
                   <option value="patch" selected>Patch</option>
                   <option value="inspect">Inspect</option>
                 </select>
+                <p class="field-helper">Patch: require code changes. Inspect: read-only analysis (skips pre-validation for speed).</p>
               </div>
               <div class="form-field">
                 <label for="publish-mode">Publish mode</label>
@@ -451,15 +452,6 @@ const controllerPage = String.raw`<!doctype html>
                 <div class="check-copy">
                   <label class="check-label">Enable scouting mode</label>
                   <div class="check-helper">Allow the agent to explore beyond the specified scope (experimental).</div>
-                </div>
-              </div>
-            </div>
-            <div class="form-field">
-              <div class="check">
-                <input name="skipPreAgentValidation" type="checkbox">
-                <div class="check-copy">
-                  <label class="check-label">Fast inspect mode</label>
-                  <div class="check-helper">Skip pre-agent validation for quicker inspect-only runs.</div>
                 </div>
               </div>
             </div>
@@ -724,9 +716,6 @@ const controllerPage = String.raw`<!doctype html>
           taskMode: String(data.get('taskMode') || 'patch'),
         };
         body.scouting = { enabled: data.get('scouting') === 'on' };
-        if (data.get('skipPreAgentValidation') === 'on') {
-          body.skipPreAgentValidation = true;
-        }
         const parsed = Number(timeoutSeconds);
         if (!isNaN(parsed)) {
           body.timeoutSeconds = parsed;

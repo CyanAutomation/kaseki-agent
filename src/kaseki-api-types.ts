@@ -116,9 +116,8 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Post-coding goal-check evaluator controls'),
-  taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch or inspect'),
+  taskMode: z.enum(['patch', 'inspect']).optional().describe('Task mode: patch (default, requires code changes) or inspect (read-only analysis, skips pre-agent validation)'),
   publishMode: z.enum(['auto', 'none', 'branch', 'pr', 'draft_pr']).optional().describe('Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing'),
-  skipPreAgentValidation: z.boolean().optional().describe('Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured.'),
   startupCheck: z.boolean().optional().describe('Start a worker container and exit after boot/runtime checks'),
   startupCheckMode: z
     .enum(['boot', 'baseline-validation'])
@@ -147,7 +146,6 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['goal_check', 'goalCheck'],
     ['task_mode', 'taskMode'],
     ['publish_mode', 'publishMode'],
-    ['skip_pre_agent_validation', 'skipPreAgentValidation'],
     ['startup_check', 'startupCheck'],
     ['startup_check_mode', 'startupCheckMode'],
     ['webhook_config', 'webhookConfig'],
@@ -159,6 +157,13 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     if (request[camelCase] === undefined && request[snakeCase] !== undefined) {
       request[camelCase] = request[snakeCase];
     }
+  }
+
+  // Reject skipPreAgentValidation - it's been deprecated in favor of taskMode='inspect'
+  if ((request as Record<string, unknown>).skipPreAgentValidation !== undefined) {
+    throw new Error(
+      'skipPreAgentValidation field has been deprecated. Use taskMode="inspect" instead for read-only analysis that skips pre-validation.'
+    );
   }
 
   return request;

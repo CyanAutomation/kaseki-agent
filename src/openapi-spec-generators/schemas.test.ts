@@ -146,7 +146,7 @@ describe('OpenAPI Schema Builders', () => {
       expect(runRequest.required).toEqual(['repoUrl']);
       expect(runRequest.properties?.taskMode?.enum).toEqual(['patch', 'inspect']);
       expect(runRequest.properties?.publishMode?.enum).toEqual(['auto', 'none', 'branch', 'pr', 'draft_pr']);
-      expect(runRequest.properties?.skipPreAgentValidation).toMatchObject({ type: 'boolean' });
+      expect(runRequest.properties?.skipPreAgentValidation).toBeUndefined();
       expect(runRequest.properties?.goalCheck).toMatchObject({ type: 'object' });
 
       // Additional semantic checks for exact enum values and constraints
@@ -155,6 +155,8 @@ describe('OpenAPI Schema Builders', () => {
       expect(taskModeSchema.enum).toHaveLength(2);
       expect(taskModeSchema.enum).toContain('patch');
       expect(taskModeSchema.enum).toContain('inspect');
+      // Verify skipPreAgentValidation is removed (deprecated in favor of taskMode='inspect')
+      expect(runRequest.properties?.skipPreAgentValidation).toBeUndefined();
 
       const publishModeSchema = runRequest.properties?.publishMode as JsonSchemaObject;
       expect(publishModeSchema.type).toBe('string');
@@ -246,7 +248,7 @@ describe('OpenAPI Schema Builders', () => {
       // Integer fields
       expect(properties.maxDiffBytes.type).toBe('integer');
       expect(properties.timeoutSeconds.type).toBe('integer');
-      expect(properties.skipPreAgentValidation.type).toBe('boolean');
+      expect(properties.skipPreAgentValidation).toBeUndefined();
 
       // Object fields
       expect(properties.scouting.type).toBe('object');

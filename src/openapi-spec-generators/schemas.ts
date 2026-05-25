@@ -89,11 +89,6 @@ export function buildRunRequestSchema(): Record<string, unknown> {
         description:
           'Publishing mode after validation: pr creates a normal pull request (controller default when omitted), draft_pr creates a draft pull request, branch pushes only, auto publishes when credentials are available and skips if missing, none skips publishing',
       },
-      skipPreAgentValidation: {
-        type: 'boolean',
-        description:
-          'Skip baseline validation before the Pi agent starts. Useful for fast inspect-only runs; validation still runs after agent execution unless otherwise configured.',
-      },
       startupCheck: {
         type: 'boolean',
         description: 'Start a worker container and exit after boot checks',

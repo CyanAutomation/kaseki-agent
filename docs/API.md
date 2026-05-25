@@ -251,7 +251,7 @@ curl -X POST http://localhost:8080/api/runs \
   maxDiffBytes?: number;     // Max diff size in bytes
   validationCommands?: string[];     // Commands to run after agent completes
   validation?: { commands?: string[] }; // Alias accepted for controllers
-  taskMode?: "patch" | "inspect";    // "patch" (default) = require changes
+  taskMode?: "patch" | "inspect";    // "patch" (default) = require changes; "inspect" = read-only analysis, skips pre-validation
   publishMode?: "auto" | "none" | "branch" | "pr" | "draft_pr"; // Optional; omitted API runs default to "pr"
   startupCheck?: boolean;     // Start worker, verify boot/runtime, then exit
   scouting?: { enabled?: boolean; model?: string; timeoutSeconds?: number }; // Optional; default behavior is enabled when omitted

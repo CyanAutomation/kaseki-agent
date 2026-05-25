@@ -1068,6 +1068,14 @@ finish() {
   fi
   
   write_result_summary
+  
+  # Generate inspect-report.md for inspect mode on success
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ "$STATUS" -eq 0 ]; then
+    if [ -x /app/scripts/generate-inspect-report.js ]; then
+      node /app/scripts/generate-inspect-report.js /results 2>/dev/null || true
+    fi
+  fi
+  
   write_failure_json "$STATUS"
   write_repo_memory_summary
   write_metadata "$STATUS"

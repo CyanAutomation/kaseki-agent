@@ -264,7 +264,8 @@ export class JobScheduler {
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
 
-    if (job.request.skipPreAgentValidation) {
+    // Inspect mode always skips pre-agent validation for speed (fast by default)
+    if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
       env.KASEKI_PRE_AGENT_VALIDATION = '0';
     }
     if ((job.request.publishMode || 'pr') === 'none') {
