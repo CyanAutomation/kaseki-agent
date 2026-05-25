@@ -96,7 +96,7 @@ describe('JobScheduler timeout lifecycle', () => {
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
 
-        maxConcurrentRuns: 1,
+        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 1,
@@ -274,7 +274,7 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
+        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 42,
@@ -364,7 +364,7 @@ describe('JobScheduler timeout lifecycle', () => {
         port: 8080,
         apiKeys: ['test-key'],
         resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
+        maxConcurrentRuns: 2,
         defaultTaskMode: 'patch',
         maxDiffBytes: 400000,
         agentTimeoutSeconds: 30,
@@ -699,6 +699,96 @@ describe('JobScheduler timeout lifecycle', () => {
           KASEKI_SCOUTING_TIMEOUT_SECONDS: '120',
         }),
       }),
+    );
+  });
+
+  test('passes run evaluation request controls to the worker environment', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      publishMode: 'none',
+      runEvaluation: { enabled: true, model: 'eval-model', timeoutSeconds: 180 },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_RUN_EVALUATION: '1',
+          KASEKI_RUN_EVALUATION_MODEL: 'eval-model',
+          KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS: '180',
+        }),
+      }),
+    );
+  });
+
+  test('defaults run evaluation on for PR publishing and off for branch publishing', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const prScheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await prScheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'draft_pr' });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({ env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '1' }) }),
+    );
+
+    mockSpawn.mockClear();
+    const branchScheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    await branchScheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'branch' });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({ env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '0' }) }),
     );
   });
 
