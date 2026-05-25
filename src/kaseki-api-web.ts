@@ -398,6 +398,8 @@ const controllerPage = String.raw`<!doctype html>
           <div>
             <h2 id="submit-heading">Submit Repository Task</h2>
             <p>Configure and submit a task for the ephemeral agent to execute.</p>
+            <!-- Simplified UI: Git ref, timeout, and publish mode use defaults (main, 3h, auto).
+                 For advanced options, use the CLI or API directly with explicit parameters. -->
           </div>
         <form id="run-form">
           <fieldset class="form-fields">
@@ -413,39 +415,17 @@ const controllerPage = String.raw`<!doctype html>
               <textarea id="task-prompt" name="taskPrompt" required minlength="10" placeholder="Describe the task for the ephemeral agent."></textarea>
               <p class="field-error" data-error-for="taskPrompt" aria-live="polite"></p>
             </div>
-            <div class="grid">
-              <div class="form-field">
-                <label for="ref">Git ref</label>
-                <input id="ref" name="ref" value="main" placeholder="main">
-                <p class="field-helper">Branch, tag, or commit SHA to start from.</p>
-              </div>
-              <div class="form-field">
-                <label for="timeout-seconds">Timeout</label>
-                <input id="timeout-seconds" name="timeoutSeconds" type="number" min="60" max="10800" step="60" value="10800">
-                <p class="field-helper">Run timeout in seconds.</p>
-              </div>
-              <div class="form-field">
-                <label for="task-mode">Task mode</label>
-                <select id="task-mode" name="taskMode">
-                  <option value="patch" selected>Patch</option>
-                  <option value="inspect">Inspect</option>
-                </select>
-                <p class="field-helper">Patch: require code changes. Inspect: read-only analysis (skips pre-validation for speed).</p>
-              </div>
-              <div class="form-field">
-                <label for="publish-mode">Publish mode</label>
-                <select id="publish-mode" name="publishMode">
-                  <option value="pr" selected>Pull request</option>
-                  <option value="draft_pr">Draft pull request</option>
-                  <option value="branch">Branch only</option>
-                  <option value="auto">Auto</option>
-                  <option value="none">None</option>
-                </select>
-              </div>
-            </div>
           </fieldset>
           <fieldset>
             <legend>Options</legend>
+            <div class="form-field">
+              <label for="task-mode">Task mode</label>
+              <select id="task-mode" name="taskMode">
+                <option value="patch" selected>Patch</option>
+                <option value="inspect">Inspect</option>
+              </select>
+              <p class="field-helper">Patch: require code changes. Inspect: read-only analysis (skips pre-validation for speed).</p>
+            </div>
             <div class="form-field">
               <div class="check">
                 <input name="scouting" type="checkbox" checked>
@@ -707,19 +687,12 @@ const controllerPage = String.raw`<!doctype html>
 
       function requestBody() {
         const data = new FormData(form);
-        const timeoutSeconds = String(data.get('timeoutSeconds') || '10800').trim();
         const body = {
           repoUrl: String(data.get('repoUrl') || '').trim(),
-          ref: String(data.get('ref') || 'main').trim(),
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
-          publishMode: String(data.get('publishMode') || 'auto'),
           taskMode: String(data.get('taskMode') || 'patch'),
         };
         body.scouting = { enabled: data.get('scouting') === 'on' };
-        const parsed = Number(timeoutSeconds);
-        if (!isNaN(parsed)) {
-          body.timeoutSeconds = parsed;
-        }
         return body;
       }
 

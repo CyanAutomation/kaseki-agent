@@ -30,9 +30,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain('/api/preflight');
       expect(body).toContain('/api/validate');
       expect(body).toContain('/api/runs');
-      expect(body).toContain('name="publishMode"');
       expect(body).toContain('name="taskMode"');
-      expect(body).toContain('name="timeoutSeconds"');
       expect(body).toContain('id="cancel-run"');
       expect(body).toContain('data-run-action="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
@@ -91,9 +89,7 @@ describe('kaseki API web console', () => {
 
       const baseValues: Array<[string, string]> = [
         ['repoUrl', 'https://github.com/org/repo'],
-        ['ref', 'main'],
         ['taskPrompt', 'Test prompt body'],
-        ['publishMode', 'pr'],
         ['taskMode', 'patch'],
       ];
 
