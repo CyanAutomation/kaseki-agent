@@ -175,6 +175,9 @@ describe('PreFlightValidator validation logic', () => {
       // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
       expect(response.checks.length).toBeGreaterThanOrEqual(5);
       expect(gitSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        gitSpy.mockRestore();
+      }
     });
 
     test('marks validation invalid when there are errors', async () => {
