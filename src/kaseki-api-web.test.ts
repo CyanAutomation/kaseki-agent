@@ -33,7 +33,6 @@ describe('kaseki API web console', () => {
       expect(body).toContain('name="publishMode"');
       expect(body).toContain('name="taskMode"');
       expect(body).toContain('name="timeoutSeconds"');
-      expect(body).toContain('name="skipPreAgentValidation"');
       expect(body).toContain('id="cancel-run"');
       expect(body).toContain('data-run-action="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
@@ -112,9 +111,6 @@ describe('kaseki API web console', () => {
 
       const uncheckedBody = buildRequestBody(baseValues);
       expect(uncheckedBody.scouting).toEqual({ enabled: false });
-
-      const fastInspectBody = buildRequestBody([...baseValues, ['skipPreAgentValidation', 'on']]);
-      expect(fastInspectBody.skipPreAgentValidation).toBe(true);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => error ? reject(error) : resolve());

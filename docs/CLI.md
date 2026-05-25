@@ -109,9 +109,9 @@ Get detailed status of a specific instance (JSON format).
 category such as `validation`, `timeout`, `empty-diff`, `quality`,
 `secret-scan`, `github`, or `credentials` for failures.
 
-For read-only controller tasks, launch with `KASEKI_TASK_MODE=inspect` or
-`KASEKI_ALLOW_EMPTY_DIFF=1` so an empty git diff is treated as success.
-Set `KASEKI_VALIDATION_COMMANDS=none` when validation should be skipped.
+**Inspect mode**: For read-only analysis tasks, use `KASEKI_TASK_MODE=inspect`.
+Inspect mode automatically skips pre-agent validation for speed and accepts empty diffs
+as success. Successful inspect runs generate `inspect-report.md` with findings, statistics, and recommendations.
 
 ### `logs <instance> [options]`
 

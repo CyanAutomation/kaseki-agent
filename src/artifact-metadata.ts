@@ -39,6 +39,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'inspect-report.md': {
+    name: 'inspect-report.md',
+    contentType: 'text/markdown',
+    description: 'Inspect mode findings summary: analysis scope, key statistics, findings, recommendations',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'medium',
+  },
+
   // Failure-specific diagnostics
   'failure.json': {
     name: 'failure.json',
