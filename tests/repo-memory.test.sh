@@ -32,6 +32,7 @@ REPO_MEMORY_DIR=""
 REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
 SCOUTING_ARTIFACT="/results/scouting.json"
+GOAL_CHECK_RETRY_PROMPT=""
 
 init_repo_memory_paths
 trap 'rm -rf "$TMP_DIR" "$REPO_MEMORY_DIR"' EXIT
@@ -106,3 +107,5 @@ if ! grep -q 'npm test: exit 0, 3s' "$REPO_MEMORY_FILE"; then
   printf 'Expected validation outcome to be summarized.\n' >&2
   exit 1
 fi
+
+printf '✅ Repository memory tests passed\n'
