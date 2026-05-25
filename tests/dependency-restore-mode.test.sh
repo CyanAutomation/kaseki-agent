@@ -14,6 +14,7 @@ eval "$(awk '
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
+emit_event() { :; }
 
 DEPENDENCY_CACHE_LOG="$TMP_DIR/dependency-cache.log"
 : > "$DEPENDENCY_CACHE_LOG"
@@ -38,10 +39,35 @@ printf 'cached package\n' > "$TMP_DIR/cache/node_modules/pkg/index.js"
 )
 
 [ -f "$TMP_DIR/workspace/node_modules/pkg/index.js" ] || fail "Fallback copy did not restore package file"
-if ! grep -q 'hardlink restore failed; falling back to copy' "$DEPENDENCY_CACHE_LOG"; then
-  fail "Expected dependency-cache.log to include hardlink fallback message"
+if ! grep -q 'hardlink restore fallback to copy (reason=hardlink_failed)' "$DEPENDENCY_CACHE_LOG"; then
+  fail "Expected dependency-cache.log to include normalized hardlink fallback message"
 fi
 pass "hardlink restore falls back to copy when cp -al fails"
+
+rm -rf "$TMP_DIR/workspace/node_modules"
+: > "$DEPENDENCY_CACHE_LOG"
+(
+  cd "$TMP_DIR/workspace"
+  # shellcheck disable=SC2317
+  cp() {
+    if [ "${1:-}" = "-al" ]; then
+      printf 'cp: cannot create hard link %q to %q: Invalid cross-device link\n' "$3" "$2" >&2
+      return 1
+    fi
+    command cp "$@"
+  }
+  restore_node_modules_from_cache "$TMP_DIR/cache/node_modules" ./node_modules hardlink
+  [ "${DEPENDENCY_RESTORE_METHOD:-}" = "hardlink_fallback_copy" ] || fail "Expected hardlink fallback method, got ${DEPENDENCY_RESTORE_METHOD:-unset}"
+)
+
+[ -f "$TMP_DIR/workspace/node_modules/pkg/index.js" ] || fail "EXDEV fallback copy did not restore package file"
+if grep -q 'cp: cannot create hard link .*Invalid cross-device link' "$DEPENDENCY_CACHE_LOG"; then
+  fail "Expected dependency-cache.log to suppress raw cp EXDEV stderr"
+fi
+if ! grep -q 'hardlink restore fallback to copy (reason=hardlink_cross_device)' "$DEPENDENCY_CACHE_LOG"; then
+  fail "Expected dependency-cache.log to include normalized hardlink fallback reason"
+fi
+pass "hardlink EXDEV stderr uses normalized fallback logging without raw cp noise"
 
 rm -rf "$TMP_DIR/workspace/node_modules" "$TMP_DIR/published"
 ln -s "$TMP_DIR/cache/node_modules" "$TMP_DIR/workspace/node_modules"
