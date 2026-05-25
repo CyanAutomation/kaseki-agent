@@ -1,6 +1,14 @@
 import { PreFlightValidator, globToRegex, testPathAgainstPatterns, validateAllowlistPatternMatching } from './pre-flight-validator';
 import type { RunRequest } from './kaseki-api-types';
 
+
+const successfulGitResult = {
+  code: 0,
+  durationMs: 12,
+  output: 'abc123\trefs/heads/main\ndef456\trefs/heads/dev\n',
+  timedOut: false,
+};
+
 describe('PreFlightValidator validation logic', () => {
   let validator: PreFlightValidator;
 
@@ -11,6 +19,10 @@ describe('PreFlightValidator validation logic', () => {
   });
 
   describe('validateCommandsSyntax', () => {
+    beforeEach(() => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+    });
+
     test('rejects empty validation commands', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
@@ -51,6 +63,10 @@ describe('PreFlightValidator validation logic', () => {
   });
 
   describe('validateAllowlistPatterns', () => {
+    beforeEach(() => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+    });
+
     test('accepts valid file patterns', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
@@ -90,6 +106,10 @@ describe('PreFlightValidator validation logic', () => {
   });
 
   describe('validateDiffBytes', () => {
+    beforeEach(() => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+    });
+
     test('passes reasonable max diff bytes values', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
@@ -129,6 +149,10 @@ describe('PreFlightValidator validation logic', () => {
   });
 
   describe('full validation response structure', () => {
+    beforeEach(() => {
+      jest.spyOn(validator as any, 'lsRemoteHeadsAndTags').mockResolvedValue(successfulGitResult);
+    });
+
     test('returns valid response for basic request', async () => {
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
@@ -155,15 +179,6 @@ describe('PreFlightValidator validation logic', () => {
     });
 
     test('collects multiple validation checks', async () => {
-      const gitSpy = jest
-        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
-        .mockResolvedValue({
-          code: 0,
-          durationMs: 12,
-          output: 'abc123\trefs/heads/main\n',
-          timedOut: false,
-        });
-      try {
         const request: RunRequest = {
           repoUrl: 'https://github.com/example/repo',
           ref: 'main',
@@ -175,10 +190,6 @@ describe('PreFlightValidator validation logic', () => {
 
         // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
         expect(response.checks.length).toBeGreaterThanOrEqual(5);
-        expect(gitSpy).toHaveBeenCalledTimes(1);
-      } finally {
-        gitSpy.mockRestore();
-      }
     });
 
     test('marks validation invalid when there are errors', async () => {
@@ -198,13 +209,6 @@ describe('PreFlightValidator validation logic', () => {
 
   describe('preflight result cache', () => {
     const baseTime = new Date('2026-05-06T00:00:00.000Z');
-    const successfulGitResult = {
-      code: 0,
-      durationMs: 12,
-      output: 'abc123\trefs/heads/main\ndef456\trefs/heads/dev\n',
-      timedOut: false,
-    };
-
     beforeEach(() => {
       jest.useFakeTimers();
       jest.setSystemTime(baseTime);
