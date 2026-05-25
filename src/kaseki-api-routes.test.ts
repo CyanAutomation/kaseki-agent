@@ -296,7 +296,18 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
 
   test('GET /api/metrics returns prometheus content type and expected metric keys', async () => {
     const scheduler = createMockScheduler();
-    const config = createTestConfig(resultsDir);
+    const dependencyMetricsFile = path.join(resultsDir, 'dependency-cache.metrics');
+    fs.writeFileSync(
+      dependencyMetricsFile,
+      'size_bytes=4096\nentry_count=2\nmax_bytes=8192\nmax_age_days=7\n',
+      'utf-8'
+    );
+    const config = {
+      ...createTestConfig(resultsDir),
+      dependencyCacheMetricsFile: dependencyMetricsFile,
+      dependencyCacheMaxBytes: 8192,
+      dependencyCacheMaxAgeDays: 7,
+    };
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
 
     try {
@@ -309,6 +320,10 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       expect(body).toContain('kaseki_queue_pending');
       expect(body).toContain('kaseki_runs_total');
       expect(body).toContain('kaseki_run_duration_seconds');
+      expect(body).toContain('kaseki_dependency_cache_bytes 4096');
+      expect(body).toContain('kaseki_dependency_cache_entries 2');
+      expect(body).toContain('kaseki_dependency_cache_config_max_bytes 8192');
+      expect(body).toContain('kaseki_dependency_cache_config_max_age_days 7');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }

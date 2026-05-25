@@ -15,6 +15,7 @@ export interface ResultCacheStats {
   bytes: number;
   hits: number;
   misses: number;
+  evictions: number;
   maxEntries: number;
   ttlMs: number;
   maxFileBytes: number;
@@ -39,6 +40,7 @@ export class ResultCache {
   private readonly maxFileBytes: number;
   private hits = 0;
   private misses = 0;
+  private evictions = 0;
 
   constructor(maxEntries?: number, ttlMs?: number, maxFileBytes?: number);
   constructor(options?: ResultCacheOptions);
@@ -79,6 +81,8 @@ export class ResultCache {
 
           if (unchanged) {
             this.hits += 1;
+            this.cache.delete(filePath);
+            this.cache.set(filePath, cached);
             return cached.content;
           }
         } catch {
@@ -119,11 +123,17 @@ export class ResultCache {
       return;
     }
 
-    // Evict oldest entry if cache is full
+    if (this.cache.has(filePath)) {
+      this.cache.delete(filePath);
+    }
+
+    // Evict least-recently used entry if cache is full. Map insertion order is
+    // refreshed on hits, so this avoids sorting on every insert.
     if (this.cache.size >= this.maxEntries) {
-      const oldest = Array.from(this.cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-      if (oldest) {
-        this.cache.delete(oldest[0]);
+      const oldestKey = this.cache.keys().next().value as string | undefined;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        this.evictions += 1;
       }
     }
 
@@ -173,6 +183,7 @@ export class ResultCache {
       bytes,
       hits: this.hits,
       misses: this.misses,
+      evictions: this.evictions,
       maxEntries: this.maxEntries,
       ttlMs: this.ttlMs,
       maxFileBytes: this.maxFileBytes,
