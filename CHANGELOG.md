@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.50.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.49.1...v1.50.0) (2026-05-25)
+
+
+### Bug Fixes
+
+* handle missing patterns gracefully in allowlist validation and improve report generation script formatting ([b5b19a7](https://github.com/CyanAutomation/kaseki-agent/commit/b5b19a7540d1d7416fa8648bebde55034c876d01))
+* increase prune threshold for dependency cache to improve performance ([ea2fb1f](https://github.com/CyanAutomation/kaseki-agent/commit/ea2fb1f2471c8aad2d9402b9e4acc5f0a22bf395))
+
+
+### Features
+
+* enhance inspect mode with report generation and validation improvements ([e74a7b0](https://github.com/CyanAutomation/kaseki-agent/commit/e74a7b01849ca59e11f3f53709be66727dd8c7be))
+* implement scouting phase retry mechanism with transient failure handling ([5a076a8](https://github.com/CyanAutomation/kaseki-agent/commit/5a076a848690beff757a3b481f65ea19828f8ab6))
+* simplify UI by setting default values for Git ref, timeout, and publish mode ([f0eb598](https://github.com/CyanAutomation/kaseki-agent/commit/f0eb5982bf4cff24b4b856780e7335b9a08e4bef))
+
 ## [1.49.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.49.0...v1.49.1) (2026-05-25)
 
 
