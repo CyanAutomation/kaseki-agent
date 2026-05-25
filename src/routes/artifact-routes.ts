@@ -124,8 +124,16 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     // Check availability based on job status
     try {
       const filePath = path.join(config.resultsDir, job.id, fileName);
-      const fileExists = fs.existsSync(filePath);
-      const fileSize = fileExists ? fs.statSync(filePath).size : 0;
+      let fileExists = false;
+      let fileSize = 0;
+      let fileStat: fs.Stats | undefined;
+      try {
+        fileStat = fs.statSync(filePath);
+        fileExists = fileStat.isFile();
+        fileSize = fileExists ? fileStat.size : 0;
+      } catch {
+        // Availability handling below returns a client-facing not-available response.
+      }
       const available = isArtifactAvailable(fileName, job.status, fileExists, fileSize);
 
       if (!available) {
@@ -148,12 +156,10 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
       }
 
-      const stat = fs.statSync(filePath);
-
       const response: ArtifactResponse = {
         file: fileName,
         contentType,
-        size: stat.size,
+        size: fileStat?.size ?? fileSize,
         content,
       };
 

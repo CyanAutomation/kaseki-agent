@@ -8,13 +8,18 @@ import { resolveInstanceExitCode } from '../instance-state-derivation';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { StatusResponseBuilder } from '../utils/status-response-builder';
+import type { ResultCache } from '../result-cache';
 
 /**
  * Create status-related routes (runs list, status, cancel).
  */
-export function createStatusRoutes(scheduler: JobScheduler, config: KasekiApiConfig): Router {
+export function createStatusRoutes(
+  scheduler: JobScheduler,
+  config: KasekiApiConfig,
+  artifactCache?: Pick<ResultCache, 'getOrLoad'>
+): Router {
   const router = Router();
-  const statusBuilder = new StatusResponseBuilder(scheduler, config);
+  const statusBuilder = new StatusResponseBuilder(scheduler, config, artifactCache);
 
   /**
    * GET /api/runs - List all runs.

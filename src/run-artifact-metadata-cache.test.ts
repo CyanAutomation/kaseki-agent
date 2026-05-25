@@ -26,7 +26,7 @@ describe('RunArtifactMetadataCache', () => {
 
     expect(first['metadata.json']).toEqual(second['metadata.json']);
     expect(second['metadata.json']).toMatchObject({ exists: true, size: 2 });
-    expect(cache.getStats()).toEqual({ entries: 1 });
+    expect(cache.getStats()).toMatchObject({ entries: 1, hits: 1, misses: 1 });
   });
 
   test('non-terminal metadata requests are not cached', () => {
@@ -42,7 +42,7 @@ describe('RunArtifactMetadataCache', () => {
 
     expect(first['metadata.json'].size).toBe(2);
     expect(second['metadata.json'].size).toBe(16);
-    expect(cache.getStats()).toEqual({ entries: 0 });
+    expect(cache.getStats()).toMatchObject({ entries: 0 });
   });
 
   test('terminal cache entries invalidate when artifact size and mtime change', () => {
@@ -61,7 +61,7 @@ describe('RunArtifactMetadataCache', () => {
     expect(first['result-summary.md'].size).toBe(3);
     expect(second['result-summary.md'].size).toBe(13);
     expect(second['result-summary.md'].mtimeMs).not.toBe(first['result-summary.md'].mtimeMs);
-    expect(cache.getStats()).toEqual({ entries: 1 });
+    expect(cache.getStats()).toMatchObject({ entries: 1, misses: 2 });
   });
 
   test('clear removes a terminal cache entry for a job result directory', () => {
@@ -71,10 +71,10 @@ describe('RunArtifactMetadataCache', () => {
     fs.writeFileSync(path.join(jobDir, 'failure.json'), '{}');
 
     cache.get('kaseki-clear-cache', jobDir, ['failure.json'], true);
-    expect(cache.getStats()).toEqual({ entries: 1 });
+    expect(cache.getStats()).toMatchObject({ entries: 1 });
 
     cache.clear('kaseki-clear-cache', jobDir);
 
-    expect(cache.getStats()).toEqual({ entries: 0 });
+    expect(cache.getStats()).toMatchObject({ entries: 0 });
   });
 });
