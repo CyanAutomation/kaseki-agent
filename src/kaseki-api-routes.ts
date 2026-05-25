@@ -1387,7 +1387,7 @@ export function createApiRouter(
   });
 
   // Register domain-focused route modules
-  router.use(createStatusRoutes(scheduler, config));
+  router.use(createStatusRoutes(scheduler, config, artifactCache));
   router.use(createLogRoutes(scheduler, config));
   router.use(createArtifactRoutes(scheduler, config, artifactCache));
   router.use(createWebhookRoutes());

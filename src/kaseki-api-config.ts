@@ -32,6 +32,16 @@ export interface KasekiApiConfig {
   artifactCacheTtlMs?: number;
   /** Maximum artifact file size eligible for content caching, in bytes. */
   artifactCacheMaxFileBytes?: number;
+  /** Root cache directory mounted into API and worker containers. */
+  cacheDir?: string;
+  /** Dependency cache directory used by worker containers. */
+  dependencyCacheDir?: string;
+  /** Worker-maintained metrics file for dependency cache size/count. */
+  dependencyCacheMetricsFile?: string;
+  /** Configured maximum dependency cache size before worker pruning, in bytes. */
+  dependencyCacheMaxBytes?: number;
+  /** Configured maximum dependency cache entry age before worker pruning, in days. */
+  dependencyCacheMaxAgeDays?: number;
 }
 
 /**
@@ -202,6 +212,22 @@ export function loadConfig(): KasekiApiConfig {
 
   const { maxEntries: artifactCacheMaxEntries, ttlMs: artifactCacheTtlMs, maxFileBytes: artifactCacheMaxFileBytes } =
     loadArtifactCacheConfig();
+  const cacheDir = process.env.KASEKI_CACHE_DIR || '/cache';
+  const dependencyCacheDir = process.env.KASEKI_DEPENDENCY_CACHE_DIR || `${cacheDir}/dependencies`;
+  const dependencyCacheMetricsFile =
+    process.env.KASEKI_DEPENDENCY_CACHE_METRICS_FILE || `${dependencyCacheDir}/.kaseki-cache-metrics`;
+  const dependencyCacheMaxBytes = validatePositiveInt(
+    'KASEKI_DEPENDENCY_CACHE_MAX_BYTES',
+    5 * 1024 * 1024 * 1024,
+    0,
+    'KASEKI_DEPENDENCY_CACHE_MAX_BYTES'
+  );
+  const dependencyCacheMaxAgeDays = validatePositiveInt(
+    'KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS',
+    30,
+    0,
+    'KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS'
+  );
 
   const taskMode = validateTaskMode();
   const resultsDir = ensureResultsDir();
@@ -221,6 +247,11 @@ export function loadConfig(): KasekiApiConfig {
     artifactCacheMaxEntries,
     artifactCacheTtlMs,
     artifactCacheMaxFileBytes,
+    cacheDir,
+    dependencyCacheDir,
+    dependencyCacheMetricsFile,
+    dependencyCacheMaxBytes,
+    dependencyCacheMaxAgeDays,
   };
 }
 

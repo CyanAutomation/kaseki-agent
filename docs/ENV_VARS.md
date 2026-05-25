@@ -116,6 +116,11 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_CACHE_ENABLED` | `0` | boolean | Enable dependency caching for npm install |
 | `KASEKI_CACHE_DIR` | `/cache` | string | Root cache directory (container mount point) |
 | `KASEKI_DEPENDENCY_CACHE_DIR` | `${KASEKI_CACHE_DIR}/dependencies` | string | npm packages cache |
+| `KASEKI_DEPENDENCY_RESTORE_MODE` | `auto` | enum | Restore `node_modules` from cache with `auto`, `copy`, `hardlink`, or `symlink` |
+| `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` | `5368709120` | integer | Maximum dependency cache size before worker pruning; `0` disables size pruning |
+| `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` | `30` | integer | Maximum dependency cache entry age before worker pruning; `0` disables age pruning |
+| `KASEKI_DEPENDENCY_CACHE_PRUNE` | `1` | boolean | Enable dependency cache pruning after dependency preparation |
+| `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/metrics` |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
 
 ### Directories & Paths

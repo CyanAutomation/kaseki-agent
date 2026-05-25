@@ -34,6 +34,9 @@ export class RunArtifactMetadataCache {
   private readonly ttlMs: number;
   private readonly maxEntries: number;
   private readonly cache = new Map<string, CacheEntry>();
+  private hits = 0;
+  private misses = 0;
+  private evictions = 0;
 
   constructor(options: RunArtifactMetadataCacheOptions = {}) {
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -49,9 +52,13 @@ export class RunArtifactMetadataCache {
     const cached = this.cache.get(key);
     if (cached && this.isUsable(cached, resultDir, fileNames)) {
       cached.timestamp = Date.now();
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      this.hits += 1;
       return this.project(cached.files, fileNames);
     }
 
+    this.misses += 1;
     const metadata = this.readMetadata(resultDir, fileNames);
     this.set(key, metadata);
     return metadata;
@@ -76,8 +83,13 @@ export class RunArtifactMetadataCache {
     }
   }
 
-  getStats(): { entries: number } {
-    return { entries: this.cache.size };
+  getStats(): { entries: number; hits: number; misses: number; evictions: number } {
+    return {
+      entries: this.cache.size,
+      hits: this.hits,
+      misses: this.misses,
+      evictions: this.evictions,
+    };
   }
 
   private isUsable(entry: CacheEntry, resultDir: string, fileNames: readonly string[]): boolean {
@@ -138,10 +150,19 @@ export class RunArtifactMetadataCache {
   }
 
   private set(key: string, metadata: RunArtifactMetadata): void {
+    if (this.maxEntries <= 0) {
+      return;
+    }
+
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    }
+
     if (!this.cache.has(key) && this.cache.size >= this.maxEntries) {
-      const oldest = Array.from(this.cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-      if (oldest) {
-        this.cache.delete(oldest[0]);
+      const oldestKey = this.cache.keys().next().value as string | undefined;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        this.evictions += 1;
       }
     }
 

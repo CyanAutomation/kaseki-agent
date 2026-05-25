@@ -58,6 +58,8 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.artifactCacheMaxEntries).toBe(7);
     expect(config.artifactCacheTtlMs).toBe(12345);
     expect(config.artifactCacheMaxFileBytes).toBe(4096);
+    expect(config.dependencyCacheMaxBytes).toBe(5 * 1024 * 1024 * 1024);
+    expect(config.dependencyCacheMaxAgeDays).toBe(30);
   });
 
   test('loadConfig uses default values when env vars are not set', () => {
@@ -87,6 +89,11 @@ describe('kaseki-api-config load configuration', () => {
     expect(config.artifactCacheMaxEntries).toBe(20); // default
     expect(config.artifactCacheTtlMs).toBe(5 * 60 * 1000); // default
     expect(config.artifactCacheMaxFileBytes).toBe(10 * 1024 * 1024); // default
+    expect(config.cacheDir).toBe('/cache'); // default
+    expect(config.dependencyCacheDir).toBe('/cache/dependencies'); // default
+    expect(config.dependencyCacheMetricsFile).toBe('/cache/dependencies/.kaseki-cache-metrics'); // default
+    expect(config.dependencyCacheMaxBytes).toBe(5 * 1024 * 1024 * 1024); // default
+    expect(config.dependencyCacheMaxAgeDays).toBe(30); // default
   });
 
   test('loadConfig allows empty API keys for trusted unauthenticated local mode', () => {
@@ -197,6 +204,18 @@ describe('kaseki-api-config load configuration', () => {
     process.env.KASEKI_ARTIFACT_CACHE_TTL_MS = '1';
     process.env.KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES = '-1';
     expect(() => loadConfig()).toThrow('KASEKI_ARTIFACT_CACHE_MAX_FILE_BYTES must be >= 0');
+  });
+
+  test('loadConfig throws when dependency cache pruning configuration is invalid', () => {
+    process.env.KASEKI_API_KEYS = 'test-key';
+    process.env.KASEKI_RESULTS_DIR = testDir;
+
+    process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES = '-1';
+    expect(() => loadConfig()).toThrow('KASEKI_DEPENDENCY_CACHE_MAX_BYTES must be >= 0');
+
+    delete process.env.KASEKI_DEPENDENCY_CACHE_MAX_BYTES;
+    process.env.KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS = '-1';
+    expect(() => loadConfig()).toThrow('KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS must be >= 0');
   });
 
   test('loadConfig throws when KASEKI_TASK_MODE is invalid', () => {
