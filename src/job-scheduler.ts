@@ -227,6 +227,9 @@ export class JobScheduler {
    */
   private executeJob(job: Job): void {
     const effectiveTimeoutSeconds = job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
+    // Ensure stale live-progress snapshots from any previous lifecycle edge
+    // are removed before this run attaches process listeners and starts.
+    this.clearLiveProgressCache(job.id);
     job.status = 'running';
     job.startedAt = new Date();
     job.effectiveTimeoutSeconds = effectiveTimeoutSeconds;
@@ -715,6 +718,7 @@ export class JobScheduler {
     }
     const job = this.jobs.get(id);
     if (job && (job.status === 'completed' || job.status === 'failed')) {
+      this.clearLiveProgressCache(id);
       return [];
     }
 
