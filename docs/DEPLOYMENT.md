@@ -1108,6 +1108,13 @@ Expected response:
   workers use:
   - `KASEKI_DEPENDENCY_CACHE_DIR=/cache/dependencies`
   - `NPM_CONFIG_CACHE=/cache/npm-cache`
+- `KASEKI_DEPENDENCY_RESTORE_MODE` defaults to `auto` at worker runtime
+  (not hardlink-forced by bootstrap wiring). For deployments where cache
+  and workspace are on separate mounts/devices, keep `auto` (recommended)
+  or pin `copy` for deterministic cross-device behavior.
+- If logs show EXDEV/cross-device link failures during restore, switch to
+  `auto`/`copy` and confirm recovery via dependency cache status events in
+  `progress.log`/`progress.jsonl` and `dependency-cache.log`.
 - Cache key is deterministic: `sha256(repo_url) + lockfile sha256 +
   Node major version`.
 - Progress + timing artifacts include install/cache signals:
