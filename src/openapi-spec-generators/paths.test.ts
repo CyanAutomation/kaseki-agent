@@ -200,6 +200,9 @@ describe('OpenAPI Path Builders', () => {
           }),
         ])
       );
+      expect(runStatusPath.get.responses['200'].content['application/json'].schema).toEqual({
+        $ref: '#/components/schemas/StatusResponse',
+      });
       expect(runStatusPath.get.responses).toEqual(
         expect.objectContaining({
           '200': expect.objectContaining({
@@ -229,6 +232,7 @@ describe('OpenAPI Path Builders', () => {
           'application/json': expect.objectContaining({
             schema: expect.objectContaining({
               type: 'object',
+              required: ['url'],
             }),
           }),
         })
@@ -262,23 +266,14 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('should match stable run endpoint operation ids', () => {
+    it('should expose only expected HTTP methods for stable public routes', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
-      expect({
-        '/api/runs': Object.keys(paths['/api/runs'] as Record<string, unknown>).sort(),
-        '/api/runs/{id}/status': Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort(),
-      }).toMatchInlineSnapshot(`
-        {
-          "/api/runs": [
-            "get",
-            "post",
-          ],
-          "/api/runs/{id}/status": [
-            "get",
-          ],
-        }
-      `);
+      expect(Object.keys(paths['/api/runs'] as Record<string, unknown>).sort()).toEqual(['get', 'post']);
+      expect(Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual([
+        'get',
+      ]);
+      expect(Object.keys(paths['/api/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
     });
   });
 
