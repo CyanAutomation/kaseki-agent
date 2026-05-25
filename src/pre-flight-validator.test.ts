@@ -155,6 +155,14 @@ describe('PreFlightValidator validation logic', () => {
     });
 
     test('collects multiple validation checks', async () => {
+      const gitSpy = jest
+        .spyOn(validator as any, 'lsRemoteHeadsAndTags')
+        .mockResolvedValue({
+          code: 0,
+          durationMs: 12,
+          output: 'abc123\trefs/heads/main\n',
+          timedOut: false,
+        });
       const request: RunRequest = {
         repoUrl: 'https://github.com/example/repo',
         ref: 'main',
@@ -166,6 +174,10 @@ describe('PreFlightValidator validation logic', () => {
 
       // Should include at least: repo-reachable, repo-size, commands-syntax, allowlist-patterns, max-diff-bytes
       expect(response.checks.length).toBeGreaterThanOrEqual(5);
+      expect(gitSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        gitSpy.mockRestore();
+      }
     });
 
     test('marks validation invalid when there are errors', async () => {
