@@ -40,6 +40,19 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
 
       const sendProgressUpdate = () => {
         const currentJob = scheduler.getJob(job.id);
+
+        if (currentJob && (currentJob.status === 'completed' || currentJob.status === 'failed')) {
+          res.write(
+            `data: ${JSON.stringify({
+              type: 'status',
+              status: currentJob.status,
+              elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
+            })}\n\n`
+          );
+          res.end();
+          return;
+        }
+
         const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
 
         let hasNewEvents = false;
@@ -66,18 +79,6 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
           } catch {
             // Ignore file read errors
           }
-        }
-
-        if (currentJob && (currentJob.status === 'completed' || currentJob.status === 'failed')) {
-          res.write(
-            `data: ${JSON.stringify({
-              type: 'status',
-              status: currentJob.status,
-              elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
-            })}\n\n`
-          );
-          res.end();
-          return;
         }
 
         if (!hasNewEvents) {
