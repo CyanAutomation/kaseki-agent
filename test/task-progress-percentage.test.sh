@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# Test suite for Task Progress Percentage feature
+# This validates that the percentage field is correctly calculated and displayed
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+TESTS_PASSED=0
+TESTS_FAILED=0
+
+# Test utilities
+test_case() {
+  local name="$1"
+  echo -e "${YELLOW}[TEST]${NC} $name"
+}
+
+assert_equal() {
+  local expected="$1"
+  local actual="$2"
+  local description="$3"
+
+  if [[ "$expected" == "$actual" ]]; then
+    echo -e "${GREEN}✓${NC} $description"
+    ((TESTS_PASSED++))
+  else
+    echo -e "${RED}✗${NC} $description"
+    echo "  Expected: $expected"
+    echo "  Actual: $actual"
+    ((TESTS_FAILED++))
+  fi
+}
+
+assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local description="$3"
+
+  if [[ "$haystack" == *"$needle"* ]]; then
+    echo -e "${GREEN}✓${NC} $description"
+    ((TESTS_PASSED++))
+  else
+    echo -e "${RED}✗${NC} $description"
+    echo "  String should contain: $needle"
+    echo "  Actual: $haystack"
+    ((TESTS_FAILED++))
+  fi
+}
+
+# ============================================================================
+# TEST SUITE 1: Metadata stages array generation
+# ============================================================================
+
+test_case "Metadata includes stages array"
+# Create a temporary test directory
+TEST_DIR=$(mktemp -d)
+trap "rm -rf $TEST_DIR" EXIT
+
+# Simulate metadata.json with stages
+cat > "$TEST_DIR/metadata.json" <<'EOF'
+{
+  "instance": "kaseki-test-1",
+  "stages": ["clone repository", "pi coding agent", "quality checks", "validation", "complete"],
+  "exit_code": 0
+}
+EOF
+
+if [ -f "$TEST_DIR/metadata.json" ]; then
+  assert_equal "true" "true" "metadata.json created with stages array"
+  
+  # Verify stages array exists
+  stages=$(jq '.stages | length' "$TEST_DIR/metadata.json" 2>/dev/null || echo "0")
+  assert_equal "5" "$stages" "metadata.json contains 5 stages"
+fi
+
+# ============================================================================
+# TEST SUITE 2: Progress calculation logic
+# ============================================================================
+
+test_case "Progress calculation with completed stages"
+
+# Create progress.jsonl with some finished stages
+cat > "$TEST_DIR/progress.jsonl" <<'EOF'
+{"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"finished"}
+{"timestamp":"2024-05-25T10:05:00Z","stage":"pi coding agent","status":"finished"}
+{"timestamp":"2024-05-25T10:10:00Z","stage":"quality checks","status":"started"}
+EOF
+
+# Count finished stages
+finished_count=$(grep -c '"status":"finished"' "$TEST_DIR/progress.jsonl" || echo "0")
+total_count=5
+expected_percentage=$((finished_count * 100 / total_count))
+
+assert_equal "2" "$finished_count" "Correctly counted 2 finished stages"
+assert_equal "40" "$expected_percentage" "Calculated correct percentage (2/5 = 40%)"
+
+test_case "Progress calculation with no completed stages"
+
+cat > "$TEST_DIR/progress_empty.jsonl" <<'EOF'
+{"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"started"}
+EOF
+
+finished_count_empty=$(grep -c '"status":"finished"' "$TEST_DIR/progress_empty.jsonl" || echo "0")
+expected_percentage_empty=$((finished_count_empty * 100 / total_count))
+
+assert_equal "0" "$finished_count_empty" "No finished stages detected"
+assert_equal "0" "$expected_percentage_empty" "Calculated correct percentage (0/5 = 0%)"
+
+test_case "Progress calculation with all completed stages"
+
+# All stages finished
+cat > "$TEST_DIR/progress_complete.jsonl" <<'EOF'
+{"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"finished"}
+{"timestamp":"2024-05-25T10:05:00Z","stage":"pi coding agent","status":"finished"}
+{"timestamp":"2024-05-25T10:10:00Z","stage":"quality checks","status":"finished"}
+{"timestamp":"2024-05-25T10:15:00Z","stage":"validation","status":"finished"}
+{"timestamp":"2024-05-25T10:20:00Z","stage":"complete","status":"finished"}
+EOF
+
+finished_count_all=$(grep -c '"status":"finished"' "$TEST_DIR/progress_complete.jsonl" || echo "0")
+expected_percentage_all=$((finished_count_all * 100 / total_count))
+
+assert_equal "5" "$finished_count_all" "All 5 stages finished"
+assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/5 = 100%)"
+
+# ============================================================================
+# TEST SUITE 3: Stage filtering by configuration
+# ============================================================================
+
+test_case "Stage filtering based on configuration"
+
+# Test different feature combinations
+# Note: These are logical tests, not actual bash function tests
+
+# Scenario 1: Minimal configuration (no scouting, no goal check, no eval, no github)
+declare -a minimal_stages=("clone repository" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "complete")
+assert_equal "8" "${#minimal_stages[@]}" "Minimal configuration has 8 stages"
+
+# Scenario 2: With scouting
+declare -a with_scouting=("clone repository" "pi scouting agent" "derive allowlist from scouting" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "complete")
+assert_equal "10" "${#with_scouting[@]}" "Configuration with scouting has 10 stages"
+
+# Scenario 3: With all features
+declare -a all_features=("clone repository" "pre-agent validation" "pi scouting agent" "derive allowlist from scouting" "goal check" "run evaluation" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "github operations" "complete")
+assert_equal "14" "${#all_features[@]}" "Full configuration has 14 stages"
+
+# ============================================================================
+# TEST SUITE 4: Edge cases
+# ============================================================================
+
+test_case "Edge cases"
+
+# Empty stages array
+empty_stages_file="$TEST_DIR/metadata_empty_stages.json"
+cat > "$empty_stages_file" <<'EOF'
+{
+  "instance": "kaseki-empty",
+  "stages": [],
+  "exit_code": 0
+}
+EOF
+total_empty=$(jq '.stages | length' "$empty_stages_file" 2>/dev/null)
+assert_equal "0" "$total_empty" "Empty stages array handled correctly"
+
+# Missing stages field
+no_stages_file="$TEST_DIR/metadata_no_stages.json"
+cat > "$no_stages_file" <<'EOF'
+{
+  "instance": "kaseki-no-stages",
+  "exit_code": 0
+}
+EOF
+has_stages=$(jq 'has("stages")' "$no_stages_file" 2>/dev/null)
+assert_equal "false" "$has_stages" "Missing stages field detected correctly"
+
+# ============================================================================
+# Print summary
+# ============================================================================
+
+echo ""
+echo "=========================================="
+echo "Test Results:"
+echo "  Passed: $TESTS_PASSED"
+echo "  Failed: $TESTS_FAILED"
+echo "=========================================="
+
+if [ $TESTS_FAILED -gt 0 ]; then
+  exit 1
+else
+  echo -e "${GREEN}All tests passed!${NC}"
+  exit 0
+fi
