@@ -35,10 +35,16 @@ describe('kaseki API web console', () => {
       expect(body).toContain('data-run-action="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
       expect(body).toContain('id="runs-list"');
+      expect(body).toContain('id="response-summary"');
       expect(body).toContain('Refresh runs');
       expect(body).toContain('Recommended artifacts');
       expect(body).toContain('function loadRecommendedArtifacts(runId)');
       expect(body).toContain('function loadRunsList(options)');
+      expect(body).toContain('Enter the API bearer token to load recent runs.');
+      expect(body).toContain('function setResponseSummary(payload)');
+      expect(body).toContain('Response status');
+      expect(body).toContain('Response elapsed time');
+      expect(body).toContain('Response progress stage');
       expect(body).toContain("apiRequest('/api/runs', { auth: true, preserveOutput: options && options.preserveOutput })");
       expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
       expect(body).toContain('function stripControlSequences(value)');
@@ -51,6 +57,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain("activeRunView !== 'status'");
       expect(body).toContain('return payload.status;');
       expect(body).toContain('Run status updated.');
+      expect(body).not.toContain("setOutputMetadata('queued', payload.id);");
       expect(body).not.toContain('kasekiApiToken =');
     } finally {
       await new Promise<void>((resolve, reject) => {
