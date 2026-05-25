@@ -329,7 +329,7 @@ export class JobScheduler {
       env.TASK_PROMPT = job.request.taskPrompt;
     }
     if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
-      env.KASEKI_ALLOW_EMPTY_DIFF = env.KASEKI_ALLOW_EMPTY_DIFF || '1';
+      env.KASEKI_ALLOW_EMPTY_DIFF = '1';
       env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
     }
