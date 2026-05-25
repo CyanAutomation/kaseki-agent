@@ -113,8 +113,10 @@ describe('KasekiApiService Integration', () => {
       }
     });
 
-    // Circular dependency prevention belongs in static CI checks (dependency graph/lint rules),
-    // not runtime import tests. Successful imports do not prove absence of cycles.
+    // Circular dependency prevention must be enforced by a dedicated static CI tool
+    // (dependency graph analyzer or lint rule), not runtime import tests.
+    // Runtime import checks are insufficient cycle detectors because successful imports
+    // can still occur in partially initialized cyclic module graphs.
   });
 
   describe('Module organization', () => {
