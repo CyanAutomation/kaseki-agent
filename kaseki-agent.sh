@@ -106,7 +106,11 @@ SCOUTING_ARTIFACT="/results/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
-KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-copy}"
+KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
+KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
+KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
+KASEKI_DEPENDENCY_CACHE_PRUNE="${KASEKI_DEPENDENCY_CACHE_PRUNE:-1}"
+KASEKI_DEPENDENCY_CACHE_METRICS_FILE="${KASEKI_DEPENDENCY_CACHE_METRICS_FILE:-${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics}"
 KASEKI_INSTALL_IGNORE_SCRIPTS="${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kaseki/workspace-cache}"
@@ -1276,15 +1280,31 @@ same_filesystem() {
   local left="$1"
   local right="$2"
   local left_device right_device
-  left_device="$(stat -c %d "$left" 2>/dev/null || true)"
-  right_device="$(stat -c %d "$right" 2>/dev/null || true)"
+  left_device="$(stat -c %d "$left" 2>/dev/null || stat -f %d "$left" 2>/dev/null || true)"
+  right_device="$(stat -c %d "$right" 2>/dev/null || stat -f %d "$right" 2>/dev/null || true)"
   [ -n "$left_device" ] && [ "$left_device" = "$right_device" ]
+}
+
+resolve_dependency_restore_mode() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local mode="${3:-auto}"
+  if [ "$mode" != "auto" ]; then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+  if same_filesystem "$source_dir" "$(dirname "$target_dir")"; then
+    printf 'hardlink\n'
+  else
+    printf 'copy\n'
+  fi
 }
 
 restore_node_modules_from_cache() {
   local source_dir="$1"
   local target_dir="$2"
   local mode="${3:-copy}"
+  mode="$(resolve_dependency_restore_mode "$source_dir" "$target_dir" "$mode")"
   DEPENDENCY_RESTORE_METHOD="$mode"
   case "$mode" in
     copy)
@@ -1312,7 +1332,7 @@ restore_node_modules_from_cache() {
       ln -s "$source_dir" "$target_dir"
       ;;
     *)
-      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected copy, hardlink, or symlink)\n' "$mode" >&2
+      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected auto, copy, hardlink, or symlink)\n' "$mode" >&2
       return 2
       ;;
   esac
@@ -1323,6 +1343,76 @@ publish_node_modules_cache() {
   local tmp_cache_dir="$2"
   rm -rf "$tmp_cache_dir"
   mkdir -p "$tmp_cache_dir" && cp -a "$source_dir/." "$tmp_cache_dir/"
+}
+
+dependency_cache_entry_roots() {
+  local cache_dir="$1"
+  find "$cache_dir" -mindepth 4 -maxdepth 4 -type d -name 'flags-*' 2>/dev/null || true
+}
+
+dependency_cache_size_bytes() {
+  local cache_dir="$1"
+  local size_kb
+  size_kb="$(du -sk "$cache_dir" 2>/dev/null | awk '{print $1}')"
+  if [ -n "$size_kb" ]; then
+    printf '%s\n' $((size_kb * 1024))
+  else
+    printf '0\n'
+  fi
+}
+
+write_dependency_cache_metrics() {
+  local cache_dir="$1"
+  local metrics_file="$2"
+  local size_bytes entry_count now
+  mkdir -p "$(dirname "$metrics_file")" 2>/dev/null || return 0
+  size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+  entry_count="$(dependency_cache_entry_roots "$cache_dir" | wc -l | tr -d ' ')"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  {
+    printf 'timestamp=%s\n' "$now"
+    printf 'cache_dir=%s\n' "$cache_dir"
+    printf 'size_bytes=%s\n' "$size_bytes"
+    printf 'entry_count=%s\n' "$entry_count"
+    printf 'max_bytes=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES"
+    printf 'max_age_days=%s\n' "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS"
+  } > "$metrics_file" 2>/dev/null || true
+}
+
+prune_dependency_cache() {
+  local cache_dir="$1"
+  local max_bytes="$2"
+  local max_age_days="$3"
+  local metrics_file="$4"
+  local size_bytes oldest_entry
+
+  [ "$KASEKI_DEPENDENCY_CACHE_PRUNE" = "1" ] || return 0
+  [ -d "$cache_dir" ] || return 0
+
+  if [ "$max_age_days" -gt 0 ] 2>/dev/null; then
+    dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+      if [ -n "$entry" ] && [ "$(find "$entry" -maxdepth 0 -mtime +"$max_age_days" -print 2>/dev/null)" = "$entry" ]; then
+        printf 'Dependency cache prune: removing aged entry %s\n' "$entry" | tee -a "$DEPENDENCY_CACHE_LOG"
+        rm -rf "$entry"
+      fi
+    done
+  fi
+
+  if [ "$max_bytes" -gt 0 ] 2>/dev/null; then
+    size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+    while [ "$size_bytes" -gt "$max_bytes" ]; do
+      oldest_entry="$(dependency_cache_entry_roots "$cache_dir" | while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        printf '%s\t%s\n' "$(stat -c %Y "$entry" 2>/dev/null || stat -f %m "$entry" 2>/dev/null || printf '0')" "$entry"
+      done | sort -n | awk 'NR==1 {print $2}')"
+      [ -n "$oldest_entry" ] || break
+      printf 'Dependency cache prune: removing oldest entry %s (size=%s max=%s)\n' "$oldest_entry" "$size_bytes" "$max_bytes" | tee -a "$DEPENDENCY_CACHE_LOG"
+      rm -rf "$oldest_entry"
+      size_bytes="$(dependency_cache_size_bytes "$cache_dir")"
+    done
+  fi
+
+  write_dependency_cache_metrics "$cache_dir" "$metrics_file"
 }
 
 dependency_cache_flags_identity() {
@@ -3692,9 +3782,9 @@ prepare_dependencies() {
   restore_mode="$KASEKI_DEPENDENCY_RESTORE_MODE"
   restore_method="$restore_mode"
   case "$restore_mode" in
-    copy|hardlink|symlink) ;;
+    auto|copy|hardlink|symlink) ;;
     *)
-      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected copy, hardlink, or symlink)\n' "$restore_mode" >&2
+      printf 'Unsupported KASEKI_DEPENDENCY_RESTORE_MODE: %s (expected auto, copy, hardlink, or symlink)\n' "$restore_mode" >&2
       set_dependency_cache_status "restore-mode-invalid" "restore_mode=$restore_mode repo_url=$REPO_URL git_ref=$GIT_REF"
       emit_progress "dependency install" "failed invalid restore_mode=$restore_mode" "error"
       return 1
@@ -3800,6 +3890,15 @@ prepare_dependencies() {
     fi
   fi
 
+  if [ "$cache_reused" = "true" ] && [ "$cache_source" = "workspace" ]; then
+    printf 'Dependency cache status: workspace cache already current; skipping cache publish.\n' | tee -a "$DEPENDENCY_CACHE_LOG"
+    set_dependency_cache_status "workspace-cache-publish-skipped" "$cache_detail restore_method=$restore_method reason=workspace_cache_hit"
+    emit_event "dependency_cache_decision" "strategy=skip_workspace_cache_publish" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=workspace_cache_hit" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
+    exec {cache_lock_fd}>&-
+    return 0
+  fi
+
   if ! mkdir -p "$workspace_cache_root"; then
     exec {cache_lock_fd}>&-
     return 1
@@ -3833,6 +3932,8 @@ prepare_dependencies() {
     exec {cache_lock_fd}>&-
     return 1
   fi
+
+  prune_dependency_cache "$KASEKI_DEPENDENCY_CACHE_DIR" "$KASEKI_DEPENDENCY_CACHE_MAX_BYTES" "$KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS" "$KASEKI_DEPENDENCY_CACHE_METRICS_FILE"
 
   exec {cache_lock_fd}>&-
   return 0

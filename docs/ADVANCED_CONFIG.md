@@ -472,17 +472,26 @@ Variables for dependency caching and performance optimization.
 ### `KASEKI_DEPENDENCY_RESTORE_MODE`
 
 - **Type**: `string` (enum)
-- **Default**: `copy`
+- **Default**: `auto`
 - **Paths**: Single-run, Local API, Production API
 - **Description**: How to restore dependencies from cache
 - **Options**:
+  - `auto` — Hardlink when cache and workspace share a filesystem, otherwise copy
   - `copy` — Copy from cache (disk intensive but isolated)
-  - `link` — Hard link from cache (faster, but shared state)
+  - `hardlink` — Hardlink from cache when possible, copy fallback otherwise
+  - `symlink` — Symlink `node_modules` to the cache (experimental)
 - **Example**:
 
   ```bash
-  KASEKI_DEPENDENCY_RESTORE_MODE=link  # Faster but requires care
+  KASEKI_DEPENDENCY_RESTORE_MODE=hardlink  # Faster when cache/workspace share a filesystem
   ```
+
+### Dependency Cache Pruning
+
+- `KASEKI_DEPENDENCY_CACHE_MAX_BYTES` defaults to `5368709120` (5 GiB). Set `0` to disable size pruning.
+- `KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS` defaults to `30`. Set `0` to disable age pruning.
+- `KASEKI_DEPENDENCY_CACHE_PRUNE` defaults to `1`; set `0` to disable worker pruning.
+- The worker writes `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics`, which the API exposes as Prometheus dependency-cache gauges.
 
 ### `KASEKI_INSTALL_IGNORE_SCRIPTS`
 

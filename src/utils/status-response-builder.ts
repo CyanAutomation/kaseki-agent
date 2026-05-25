@@ -8,6 +8,7 @@ import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { resolveInstanceExitCode, extractValidationFailureReason, extractQualityFailureReason, extractGoalCheckFailureReason } from '../instance-state-derivation';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
+import type { ResultCache } from '../result-cache';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 
@@ -18,7 +19,8 @@ const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', '
 export class StatusResponseBuilder {
   constructor(
     private scheduler: JobScheduler,
-    private config: KasekiApiConfig
+    private config: KasekiApiConfig,
+    private artifactCache?: Pick<ResultCache, 'getOrLoad'>
   ) {}
 
   /**
@@ -122,24 +124,20 @@ export class StatusResponseBuilder {
     try {
       // Always try to load result-summary.md for terminal jobs
       const summaryPath = path.join(runDir, 'result-summary.md');
-      if (fs.existsSync(summaryPath)) {
-        const content = fs.readFileSync(summaryPath, 'utf-8');
-        if (content.length > 0 && content.length <= 65536) { // Max 64 KB inline
-          response.resultSummaryContent = content;
-        }
+      const summaryContent = this.readSmallTerminalArtifact(summaryPath);
+      if (summaryContent && summaryContent.length <= 65536) { // Max 64 KB inline
+        response.resultSummaryContent = summaryContent;
       }
 
       // Load failure.json for failed jobs
       if (job.status === 'failed') {
         const failurePath = path.join(runDir, 'failure.json');
-        if (fs.existsSync(failurePath)) {
-          const content = fs.readFileSync(failurePath, 'utf-8');
-          if (content.length > 0 && content.length <= 65536) { // Max 64 KB inline
-            try {
-              response.failureJsonContent = JSON.parse(content);
-            } catch {
-              // If JSON parse fails, skip inlining
-            }
+        const failureContent = this.readSmallTerminalArtifact(failurePath);
+        if (failureContent && failureContent.length <= 65536) { // Max 64 KB inline
+          try {
+            response.failureJsonContent = JSON.parse(failureContent);
+          } catch {
+            // If JSON parse fails, skip inlining
           }
         }
       }
@@ -168,6 +166,18 @@ export class StatusResponseBuilder {
       // Ignore metadata read errors
     }
     return {};
+  }
+
+  private readSmallTerminalArtifact(filePath: string): string | null {
+    if (this.artifactCache) {
+      return this.artifactCache.getOrLoad(filePath);
+    }
+
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch {
+      return null;
+    }
   }
 
   private resolveExitCode(job: Job, runDir: string): number | null {
