@@ -37,8 +37,12 @@ describe('kaseki API web console', () => {
       expect(body).toContain('id="cancel-run"');
       expect(body).toContain('data-run-action="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
+      expect(body).toContain('id="runs-list"');
+      expect(body).toContain('Refresh runs');
       expect(body).toContain('Recommended artifacts');
       expect(body).toContain('function loadRecommendedArtifacts(runId)');
+      expect(body).toContain('function loadRunsList(options)');
+      expect(body).toContain("apiRequest('/api/runs', { auth: true, preserveOutput: options && options.preserveOutput })");
       expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
       expect(body).toContain('function stripControlSequences(value)');
       expect(body).toContain('hidden aria-hidden="true"');
@@ -47,6 +51,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain('/events?tail=50');
       expect(body).toContain("runUrl(runId, '/cancel')");
       expect(body).toContain('function responseStatusLabel(response, payload)');
+      expect(body).toContain("activeRunView !== 'status'");
       expect(body).toContain('return payload.status;');
       expect(body).toContain('Run status updated.');
       expect(body).not.toContain('kasekiApiToken =');
@@ -106,7 +111,7 @@ describe('kaseki API web console', () => {
       expect(checkedBody.scouting).toEqual({ enabled: true });
 
       const uncheckedBody = buildRequestBody(baseValues);
-      expect(uncheckedBody).not.toHaveProperty('scouting');
+      expect(uncheckedBody.scouting).toEqual({ enabled: false });
 
       const fastInspectBody = buildRequestBody([...baseValues, ['skipPreAgentValidation', 'on']]);
       expect(fastInspectBody.skipPreAgentValidation).toBe(true);

@@ -3,6 +3,7 @@ class MetricsRegistry {
   private runningJobs = 0;
   private runsTotal = { success: 0, failure: 0 };
   private timeoutsTotal = 0;
+  private admissionRejections = new Map<string, number>();
   private readonly durationBuckets = [0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1800];
   private durationBucketCounts: number[] = this.durationBuckets.map(() => 0);
   private durationSum = 0;
@@ -13,6 +14,10 @@ class MetricsRegistry {
   incRunSuccess(): void { this.runsTotal.success += 1; }
   incRunFailure(): void { this.runsTotal.failure += 1; }
   incTimeout(): void { this.timeoutsTotal += 1; }
+  incAdmissionRejection(reason: string): void {
+    const normalized = reason.replace(/[^a-zA-Z0-9_-]/g, '_') || 'unknown';
+    this.admissionRejections.set(normalized, (this.admissionRejections.get(normalized) || 0) + 1);
+  }
 
   observeRunDuration(seconds: number): void {
     const value = Number.isFinite(seconds) && seconds >= 0 ? seconds : 0;
@@ -58,6 +63,17 @@ class MetricsRegistry {
     lines.push('# TYPE kaseki_timeout_rate gauge');
     const totalRuns = this.runsTotal.success + this.runsTotal.failure;
     lines.push(`kaseki_timeout_rate ${totalRuns > 0 ? this.timeoutsTotal / totalRuns : 0}`);
+
+    lines.push('# HELP kaseki_admission_rejections_total Total number of run submissions rejected before scheduler admission.');
+    lines.push('# TYPE kaseki_admission_rejections_total counter');
+    const rejectionEntries = Array.from(this.admissionRejections.entries()).sort(([left], [right]) => left.localeCompare(right));
+    if (rejectionEntries.length === 0) {
+      lines.push('kaseki_admission_rejections_total{reason="none"} 0');
+    } else {
+      rejectionEntries.forEach(([reason, count]) => {
+        lines.push(`kaseki_admission_rejections_total{reason="${reason}"} ${count}`);
+      });
+    }
 
     return `${lines.join('\n')}\n`;
   }
