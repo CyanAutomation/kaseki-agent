@@ -123,6 +123,28 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/metrics` |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
 
+#### `KASEKI_DEPENDENCY_RESTORE_MODE` decision guide
+
+- **Runtime default is `auto`**. The worker sets `KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"`, so it is **not** force-overridden to `hardlink` by bootstrap/runtime wiring.
+- **Use `auto` for most container deployments**, especially when `/cache` and workspace paths (for example `/agents/kaseki-runs`) can be separate mounts/devices.
+  - In `auto`, restore prefers hardlinks only when same-filesystem linking works; otherwise it falls back to copy behavior.
+- **Use `copy`** when your mount topology is fixed and you want deterministic behavior without any hardlink attempts.
+- **Use `hardlink`** only when cache + workspace are known to be on the same filesystem and you want maximum speed/lowest extra disk usage.
+  - If they are on different devices, Linux returns **EXDEV** for cross-device link attempts; the worker normalizes this by falling back to copy and logging a cross-device fallback reason.
+- **Tradeoff summary**
+  - `hardlink`: fastest, lowest disk amplification, but sensitive to mount topology.
+  - `copy`: most predictable across devices, but higher I/O and disk duplication.
+  - `auto`: safest default in mixed/unknown environments; good balance for most operators.
+  - `symlink`: experimental, highest coupling between cache and active workspace.
+
+#### Operator runbook: EXDEV during dependency restore
+
+If dependency restore logs show EXDEV/cross-device hardlink failures:
+
+1. Set `KASEKI_DEPENDENCY_RESTORE_MODE=auto` (recommended) or `KASEKI_DEPENDENCY_RESTORE_MODE=copy`.
+2. Re-run the workload.
+3. Verify recovery by checking dependency cache status events/logs (for example `dependency-cache.log`) and confirm restore method reports copy/auto fallback rather than repeated hardlink failure.
+
 ### Directories & Paths
 
 | Variable | Default | Type | Purpose |
