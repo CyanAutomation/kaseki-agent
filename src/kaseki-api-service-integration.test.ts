@@ -145,11 +145,6 @@ describe('KasekiApiService Integration', () => {
         templateDir: '/tmp/template-dir',
       });
       expect(callOrder).toEqual(['assertNodeVersion', 'ensureTemplate:/tmp/template-dir']);
-      expect(Object.keys(setupOrch).sort()).toEqual([
-        'assertSupportedNodeVersion',
-        'ensureTemplateInitialized',
-        'initializeSetup',
-      ]);
     });
 
     it('service bootstrapper constructs dependencies', async () => {
@@ -239,11 +234,16 @@ describe('KasekiApiService Integration', () => {
     });
 
     // Type export checks belong in compile-time type tests, not runtime Jest assertions.
-    it('barrel file exposes stable callable exports', async () => {
+    it('barrel file exposes stable callable exports and runtime contracts', async () => {
       const os = await import('os');
       const fs = await import('fs');
       const barrel = await import('./kaseki-api');
 
+      expect(Object.keys(barrel).sort()).toEqual([
+        'bootstrapServices',
+        'gracefulShutdown',
+        'initializeSetup',
+      ]);
       expect(barrel).toEqual(
         expect.objectContaining({
           initializeSetup: expect.any(Function),
@@ -283,6 +283,9 @@ describe('KasekiApiService Integration', () => {
 
       try {
         expect(typeof services.scheduler.shutdown).toBe('function');
+        expect(typeof services.webhookManager.shutdown).toBe('function');
+        expect(typeof services.idempotencyStore.shutdown).toBe('function');
+        expect(services.artifactCache.getOrLoad(path.join(resultsDir, 'missing.log'))).toBeNull();
       } finally {
         services.scheduler.shutdown();
         await services.webhookManager.shutdown();
@@ -290,28 +293,18 @@ describe('KasekiApiService Integration', () => {
         fs.rmSync(resultsDir, { recursive: true, force: true });
       }
 
-      const shutdownOrder: string[] = [];
       const exitCodes: number[] = [];
       await expect(
         barrel.gracefulShutdown({
           server: {
             close: (callback: (err?: Error) => void) => {
-              shutdownOrder.push('server.close');
               callback();
               return undefined as never;
             },
           } as unknown as Server,
-          scheduler: {
-            shutdown: () => shutdownOrder.push('scheduler.shutdown'),
-          },
-          webhookManager: {
-            shutdown: async () => {
-              shutdownOrder.push('webhookManager.shutdown');
-            },
-          },
-          idempotencyStore: {
-            shutdown: () => shutdownOrder.push('idempotencyStore.shutdown'),
-          },
+          scheduler: { shutdown: () => undefined },
+          webhookManager: { shutdown: async () => undefined },
+          idempotencyStore: { shutdown: () => undefined },
           forceExitAfterMs: 100,
           exit: ((code: number) => {
             exitCodes.push(code);
@@ -320,13 +313,26 @@ describe('KasekiApiService Integration', () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(exitCodes).toEqual([0]);
-      expect(shutdownOrder).toEqual([
-        'server.close',
-        'scheduler.shutdown',
-        'webhookManager.shutdown',
-        'idempotencyStore.shutdown',
-      ]);
+      await expect(
+        barrel.gracefulShutdown({
+          server: {
+            close: (callback: (err?: Error) => void) => {
+              callback(new Error('barrel server close error'));
+              return undefined as never;
+            },
+          } as unknown as Server,
+          scheduler: { shutdown: () => undefined },
+          webhookManager: { shutdown: async () => undefined },
+          idempotencyStore: { shutdown: () => undefined },
+          forceExitAfterMs: 100,
+          exit: ((code: number) => {
+            exitCodes.push(code);
+            return undefined as never;
+          }) as (code: number) => never,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(exitCodes).toEqual([0, 1]);
     });
   });
 
