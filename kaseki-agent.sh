@@ -408,11 +408,17 @@ emit_error_event() {
 }
 
 write_metadata() {
-  local end_epoch end_iso duration exit_code
+  local end_epoch end_iso duration exit_code stages_json
   end_epoch="$(date +%s)"
   end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   duration=$((end_epoch - START_EPOCH))
   exit_code="${1:-$STATUS}"
+  
+  # Convert stages array to JSON array
+  local stage_array
+  stage_array="$(build_stages_array)"
+  stages_json="$(printf '%s\n' "$stage_array" | jq -R . | jq -s . 2>/dev/null || printf '["unknown"]')"
+  
   cat > /results/metadata.json <<META
 {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
@@ -494,7 +500,8 @@ write_metadata() {
   "validation_filter_exit_code": 0,
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
-  "pi_version": $(printf '%s' "$PI_VERSION" | json_encode)
+  "pi_version": $(printf '%s' "$PI_VERSION" | json_encode),
+  "stages": $stages_json
 }
 META
   printf '%s\n' "$exit_code" > /results/exit_code
@@ -502,6 +509,45 @@ META
 
 set_current_stage() {
   CURRENT_STAGE="$1"
+}
+
+# Build array of expected stages based on configuration
+build_stages_array() {
+  local stages=()
+  stages+=("clone repository")
+  
+  if [[ "$KASEKI_PRE_AGENT_VALIDATION" == "1" ]]; then
+    stages+=("pre-agent validation")
+  fi
+  
+  if [[ "$KASEKI_SCOUTING" == "1" ]]; then
+    stages+=("pi scouting agent")
+    stages+=("derive allowlist from scouting")
+  fi
+  
+  if [[ "$KASEKI_GOAL_CHECK" == "1" ]]; then
+    stages+=("goal check")
+  fi
+  
+  if [[ "$KASEKI_RUN_EVALUATION" == "1" ]]; then
+    stages+=("run evaluation")
+  fi
+  
+  stages+=("agent setup")
+  stages+=("pi coding agent")
+  stages+=("collect agent diff")
+  stages+=("quality checks")
+  stages+=("validation")
+  stages+=("secret scan")
+  
+  # GitHub operations: only if not dry-run and GitHub app is enabled
+  if [[ "$KASEKI_DRY_RUN" != "1" ]] && [[ "$GITHUB_APP_ENABLED" == "1" ]]; then
+    stages+=("github operations")
+  fi
+  
+  stages+=("complete")
+  
+  printf '%s\n' "${stages[@]}"
 }
 
 write_result_summary() {

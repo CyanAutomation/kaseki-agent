@@ -217,6 +217,7 @@ export interface StatusResponse {
   progress?: StructuredProgress;
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
+  taskProgressPercent?: number;
   goalCheckFailureReason?: string;
   exitCode?: number;
   failureClass?: string;
