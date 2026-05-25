@@ -28,12 +28,14 @@ import { createWebhookRoutes } from './routes/webhook-routes';
 import { createHealthRoutes } from './routes/health-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
+import { metricsRegistry } from './metrics';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
 const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootstrap.';
 const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 15000;
+const DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS = 60_000;
 const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
 const REQUIRED_TEMPLATE_FILES = [
   'run-kaseki.sh',
@@ -81,6 +83,14 @@ interface FreshnessStatus {
   detail: string;
   remediation?: string;
 }
+
+type TemplateHealthCacheEntry = {
+  checkedAt: number;
+  templateDir: string;
+  status: TemplateHealthStatus;
+};
+
+let templateHealthCache: TemplateHealthCacheEntry | undefined;
 
 interface GitRefResolution {
   ref?: string;
@@ -396,6 +406,57 @@ function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR
     doctorStderrTail: '',
     detail: `Template runner passed doctor check: ${runScript}`,
   };
+}
+
+function getTemplateHealthCacheTtlMs(): number {
+  const raw = process.env.KASEKI_TEMPLATE_HEALTH_CACHE_TTL_MS;
+  if (!raw) return DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS;
+}
+
+function getCachedTemplateHealthStatus(templateDir: string): TemplateHealthStatus | undefined {
+  if (!templateHealthCache) return undefined;
+  if (templateHealthCache.templateDir !== templateDir) {
+    return undefined;
+  }
+  if (Date.now() - templateHealthCache.checkedAt > getTemplateHealthCacheTtlMs()) {
+    templateHealthCache = undefined;
+    return undefined;
+  }
+  return templateHealthCache.status;
+}
+
+function cacheTemplateHealthStatus(status: TemplateHealthStatus): void {
+  templateHealthCache = {
+    checkedAt: Date.now(),
+    templateDir: status.templateDir,
+    status,
+  };
+}
+
+function isTemplateDoctorTimeout(status: TemplateHealthStatus): boolean {
+  return Boolean(
+    status.doctorCommand &&
+    (
+      status.detail.toLowerCase().includes('timed out') ||
+      status.doctorStderrTail?.toLowerCase().includes('etimedout') ||
+      status.doctorSignal === 'SIGTERM'
+    )
+  );
+}
+
+function getSubmissionTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): { status: TemplateHealthStatus; fromCache: boolean } {
+  const cached = getCachedTemplateHealthStatus(templateDir);
+  if (cached?.ok) {
+    return { status: cached, fromCache: true };
+  }
+
+  const status = buildTemplateHealthStatus(templateDir);
+  if (status.ok) {
+    cacheTemplateHealthStatus(status);
+  }
+  return { status, fromCache: false };
 }
 
 interface TemplateVersionMetadata {
@@ -1103,20 +1164,43 @@ export function createApiRouter(
       }
 
       if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
-        const templateHealth = buildTemplateHealthStatus();
+        const { status: templateHealth, fromCache: templateHealthFromCache } = getSubmissionTemplateHealthStatus(templateDir);
         if (!templateHealth.ok) {
-          return res.status(400).json({
-            type: 'https://api.kaseki.local/errors#template-not-ready',
-            title: 'Bad Request',
-            status: 400,
-            detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
-            templatePath: templateHealth.templateDir,
-            checkoutRef: templateHealth.checkoutRef ?? 'unknown',
-            doctorCommand: templateHealth.doctorCommand,
-            doctorStderrTail: templateHealth.doctorStderrTail,
-            remediation: TEMPLATE_REMEDIATION,
-          });
+          if (isTemplateDoctorTimeout(templateHealth)) {
+            metricsRegistry.incAdmissionRejection('template-doctor-timeout');
+            logger.event('api_template_doctor_timeout_admitted', {
+              repoUrl: runRequest.repoUrl,
+              ref: runRequest.ref,
+              publishMode: effectivePublishMode,
+              fromCache: templateHealthFromCache,
+              detail: templateHealth.detail,
+            });
+          } else {
+            metricsRegistry.incAdmissionRejection('template-not-ready');
+            return res.status(400).json({
+              type: 'https://api.kaseki.local/errors#template-not-ready',
+              title: 'Bad Request',
+              status: 400,
+              detail: `Kaseki template is not ready. ${templateHealth.detail}. ${TEMPLATE_REMEDIATION}`,
+              templatePath: templateHealth.templateDir,
+              checkoutRef: templateHealth.checkoutRef ?? 'unknown',
+              doctorCommand: templateHealth.doctorCommand,
+              doctorStderrTail: templateHealth.doctorStderrTail,
+              remediation: TEMPLATE_REMEDIATION,
+            });
+          }
         }
+      }
+
+      if (effectiveRunRequest.taskMode === 'inspect') {
+        effectiveRunRequest.scouting = {
+          ...effectiveRunRequest.scouting,
+          enabled: effectiveRunRequest.scouting?.enabled ?? false,
+        };
+        effectiveRunRequest.goalCheck = {
+          ...effectiveRunRequest.goalCheck,
+          enabled: effectiveRunRequest.goalCheck?.enabled ?? false,
+        };
       }
 
       // Auto-generate idempotency key if not provided
