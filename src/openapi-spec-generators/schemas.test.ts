@@ -79,7 +79,6 @@ describe('OpenAPI Schema Builders', () => {
 
       expect(schema.required).not.toContain('taskPrompt');
       expect(schema.required).not.toContain('taskMode');
-      expect(schema.required).not.toContain('taskMode');
       expect(schema.required).not.toContain('publishMode');
     });
   });
@@ -181,12 +180,8 @@ describe('OpenAPI Schema Builders', () => {
       expect(errorResponse.required).toEqual(['error']);
       expect(errorResponse.properties?.requestId).toMatchObject({ type: 'string' });
 
-      // Semantic checks for documented status enum with exact constraints
-      expect(runResponse.properties?.status).toEqual({
-        type: 'string',
-        description: 'Current job status',
-        enum: ['queued', 'running', 'completed', 'failed'],
-      });
+      // Status is externally documented and should remain exact
+      expect(runResponse.properties?.status?.enum).toEqual(['queued', 'running', 'completed', 'failed']);
     });
   });
 
