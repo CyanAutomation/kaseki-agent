@@ -85,7 +85,7 @@ printf '%2048s\n' x > "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a/node_mo
 printf '%2048s\n' y > "$TMP_DIR/prune-cache/npm/lock-new/node-24/flags-b/node_modules/pkg/blob.txt"
 touch -t 202501010000 "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a"
 metrics_file="$TMP_DIR/prune-cache/.kaseki-cache-metrics"
-prune_dependency_cache "$TMP_DIR/prune-cache" 5000 0 "$metrics_file"
+prune_dependency_cache "$TMP_DIR/prune-cache" 50000 0 "$metrics_file"
 [ ! -d "$TMP_DIR/prune-cache/npm/lock-old/node-24/flags-a" ] || fail "Oldest dependency cache entry was not pruned"
 [ -f "$metrics_file" ] || fail "Dependency cache metrics file was not written"
 grep -q '^size_bytes=' "$metrics_file" || fail "Dependency cache metrics missing size_bytes"
