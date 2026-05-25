@@ -67,6 +67,52 @@ describe('KasekiApiService Integration', () => {
       }
     });
 
+
+
+    it('should return null and increment cache misses for missing artifacts', async () => {
+      const os = await import('os');
+      const fs = await import('fs');
+      const { bootstrapServices } = await import('./kaseki-api/service-bootstrapper');
+
+      const resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-missing-artifact-'));
+      const missingArtifactPath = path.join(resultsDir, 'missing-artifact.log');
+
+      let services;
+      try {
+        services = await bootstrapServices({
+          port: 3000,
+          host: 'localhost',
+          resultsDir,
+          logLevel: 'info',
+          apiKeys: [],
+          maxConcurrentRuns: 2,
+          maxDiffBytes: 200000,
+          agentTimeoutSeconds: 600,
+          artifactCacheMaxEntries: 5,
+          artifactCacheTtlMs: 60000,
+          artifactCacheMaxFileBytes: 1024 * 1024,
+          defaultTaskMode: 'patch',
+        });
+
+        const firstLoad = services.artifactCache.getOrLoad(missingArtifactPath);
+        const secondLoad = services.artifactCache.getOrLoad(missingArtifactPath);
+        const stats = services.artifactCache.getStats();
+
+        expect(firstLoad).toBeNull();
+        expect(secondLoad).toBeNull();
+        expect(stats.hits).toBe(0);
+        expect(stats.misses).toBe(2);
+        expect(stats.entries).toBe(0);
+      } finally {
+        if (services) {
+          services.scheduler.shutdown();
+          await services.webhookManager.shutdown();
+          services.idempotencyStore.shutdown();
+        }
+        fs.rmSync(resultsDir, { recursive: true, force: true });
+      }
+    });
+
     // Circular dependency prevention belongs in static CI checks (dependency graph/lint rules),
     // not runtime import tests. Successful imports do not prove absence of cycles.
   });
