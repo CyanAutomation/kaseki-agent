@@ -301,47 +301,58 @@ describe('JobScheduler timeout lifecycle', () => {
   });
 
   test('passes fast inspect and publish-none controls to worker environment', async () => {
+    const originalAllowEmptyDiff = process.env.KASEKI_ALLOW_EMPTY_DIFF;
+    process.env.KASEKI_ALLOW_EMPTY_DIFF = '0';
+
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
 
-    const scheduler = new JobScheduler(
-      {
-        port: 8080,
-        apiKeys: ['test-key'],
-        resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
-        defaultTaskMode: 'patch',
-        maxDiffBytes: 400000,
-        agentTimeoutSeconds: 30,
-        logLevel: 'info',
-      },
-      createMockWebhookManager()
-    );
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager()
+      );
 
-    await scheduler.submitJob({
-      repoUrl: 'https://github.com/org/repo',
-      ref: 'main',
-      taskMode: 'inspect',
-      publishMode: 'none',
-      skipPreAgentValidation: true,
-    });
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskMode: 'inspect',
+        publishMode: 'none',
+        skipPreAgentValidation: true,
+      });
 
-    expect(mockSpawn).toHaveBeenCalledWith(
-      'bash',
-      expect.any(Array),
-      expect.objectContaining({
-        env: expect.objectContaining({
-          KASEKI_TASK_MODE: 'inspect',
-          KASEKI_PUBLISH_MODE: 'none',
-          KASEKI_PRE_AGENT_VALIDATION: '0',
-          KASEKI_ALLOW_EMPTY_DIFF: '1',
-          KASEKI_SCOUTING: '0',
-          KASEKI_GOAL_CHECK: '0',
-          GITHUB_APP_ENABLED: '0',
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'bash',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            KASEKI_TASK_MODE: 'inspect',
+            KASEKI_PUBLISH_MODE: 'none',
+            KASEKI_PRE_AGENT_VALIDATION: '0',
+            KASEKI_ALLOW_EMPTY_DIFF: '1',
+            KASEKI_SCOUTING: '0',
+            KASEKI_GOAL_CHECK: '0',
+            GITHUB_APP_ENABLED: '0',
+          }),
         }),
-      }),
-    );
+      );
+    } finally {
+      if (originalAllowEmptyDiff === undefined) {
+        delete process.env.KASEKI_ALLOW_EMPTY_DIFF;
+      } else {
+        process.env.KASEKI_ALLOW_EMPTY_DIFF = originalAllowEmptyDiff;
+      }
+    }
   });
 
   test('passes goal check controls to worker environment', async () => {
