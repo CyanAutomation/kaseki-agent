@@ -29,37 +29,62 @@ describe('ServiceBootstrapper', () => {
   });
 
   describe('bootstrapServices', () => {
-    it('should bootstrap all services successfully', async () => {
-      const services = await bootstrapServices(mockConfig);
+    it('should bootstrap service contracts and invoke each service method successfully', async () => {
+      const artifactGetOrLoad = jest.fn().mockResolvedValue('cached-result');
+      const webhookShutdown = jest.fn().mockResolvedValue(undefined);
+      const idempotencyShutdown = jest.fn();
+      const preFlightValidate = jest.fn().mockResolvedValue({ valid: true });
+      const schedulerShutdown = jest.fn();
 
-      expect(services).toHaveProperty('artifactCache');
-      expect(services).toHaveProperty('webhookManager');
-      expect(services).toHaveProperty('idempotencyStore');
-      expect(services).toHaveProperty('preFlightValidator');
-      expect(services).toHaveProperty('scheduler');
-    });
+      let mockedBootstrapServices!: typeof bootstrapServices;
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('../result-cache', () => ({
+          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: artifactGetOrLoad })),
+        }));
 
-    it('should return BootstrappedServices interface with correct types', async () => {
-      const services = await bootstrapServices(mockConfig);
+        jest.doMock('../webhook-manager', () => ({
+          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: webhookShutdown })),
+        }));
 
-      expect(services.artifactCache).toBeDefined();
-      expect(services.webhookManager).toBeDefined();
-      expect(services.idempotencyStore).toBeDefined();
-      expect(services.preFlightValidator).toBeDefined();
-      expect(services.scheduler).toBeDefined();
+        jest.doMock('../idempotency-store', () => ({
+          IdempotencyStore: jest.fn().mockImplementation(() => ({ shutdown: idempotencyShutdown })),
+        }));
 
-      // Verify they are objects with expected methods
-      expect(typeof services.artifactCache.getOrLoad).toBe('function');
-      expect(typeof services.webhookManager.shutdown).toBe('function');
-      expect(typeof services.idempotencyStore.shutdown).toBe('function');
-      expect(typeof services.preFlightValidator.validate).toBe('function');
-      expect(typeof services.scheduler.shutdown).toBe('function');
+        jest.doMock('../pre-flight-validator', () => ({
+          PreFlightValidator: jest.fn().mockImplementation(() => ({ validate: preFlightValidate })),
+        }));
+
+        jest.doMock('../job-scheduler', () => ({
+          JobScheduler: jest.fn().mockImplementation(() => ({ shutdown: schedulerShutdown })),
+        }));
+
+        const bootstrapper = await import('./service-bootstrapper');
+        mockedBootstrapServices = bootstrapper.bootstrapServices;
+      });
+
+      if (!mockedBootstrapServices) {
+        throw new Error('Failed to load bootstrapServices from isolated module');
+      }
+
+      const services = await mockedBootstrapServices(mockConfig);
+
+      await expect(services.artifactCache.getOrLoad('cache-key' as any)).resolves.toBe('cached-result');
+      await expect(services.preFlightValidator.validate({ repoUrl: 'https://example.com/repo.git', ref: 'main' } as any)).resolves.toEqual({ valid: true });
+      await expect(services.webhookManager.shutdown()).resolves.toBeUndefined();
+      services.idempotencyStore.shutdown();
+      services.scheduler.shutdown();
+
+      expect(artifactGetOrLoad).toHaveBeenCalledWith('cache-key');
+      expect(preFlightValidate).toHaveBeenCalledWith({ repoUrl: 'https://example.com/repo.git', ref: 'main' });
+      expect(webhookShutdown).toHaveBeenCalledTimes(1);
+      expect(idempotencyShutdown).toHaveBeenCalledTimes(1);
+      expect(schedulerShutdown).toHaveBeenCalledTimes(1);
     });
 
     it('should initialize services in dependency order: cache -> webhook -> idempotency -> preflight -> scheduler', async () => {
       const initOrder: string[] = [];
 
-      let mockedBootstrapServices: typeof bootstrapServices;
+      let mockedBootstrapServices!: typeof bootstrapServices;
       await jest.isolateModulesAsync(async () => {
         jest.doMock('../result-cache', () => ({
           ResultCache: jest.fn().mockImplementation(() => {
@@ -252,14 +277,4 @@ describe('ServiceBootstrapper', () => {
     });
   });
 
-  describe('BootstrappedServices interface', () => {
-    it('should have all required service properties', async () => {
-      const services = await bootstrapServices(mockConfig);
-      expect(services).toHaveProperty('artifactCache');
-      expect(services).toHaveProperty('webhookManager');
-      expect(services).toHaveProperty('idempotencyStore');
-      expect(services).toHaveProperty('preFlightValidator');
-      expect(services).toHaveProperty('scheduler');
-    });
-  });
 });
