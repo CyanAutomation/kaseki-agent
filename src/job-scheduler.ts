@@ -438,16 +438,21 @@ export class JobScheduler {
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    stdoutData: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void }
+    streamData: { 
+      stdoutBuffer: Buffer<ArrayBufferLike>; 
+      stderrBuffer: Buffer<ArrayBufferLike>; 
+      isTimedOut: boolean; 
+      onExit: (code: number) => void 
+    }
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamData.stdoutBuffer = this.appendBoundedTail(streamData.stdoutBuffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamData.stderrBuffer = this.appendBoundedTail(streamData.stderrBuffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.on('exit', (code) => {
@@ -456,7 +461,7 @@ export class JobScheduler {
         return;
       }
       this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.EXITED);
-      stdoutData.onExit(code ?? -1);
+      streamData.onExit(code ?? -1);
     });
 
     proc.on('error', (err) => {
@@ -548,19 +553,21 @@ export class JobScheduler {
     job.timeout = timeoutHandles.timeoutHandle;
 
     // Attach process listeners (extracted)
-    const stdoutData = {
-      buffer: stdoutTail,
+    const streamData = {
+      stdoutBuffer: stdoutTail,
+      stderrBuffer: stderrTail,
       isTimedOut: false,
       onExit: (code: number) => {
         const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-        this.handleProcessExit(job, code, isTimedOut, stdoutTail, stderrTail, timeoutHandles);
+        this.handleProcessExit(job, code, isTimedOut, streamData.stdoutBuffer, streamData.stderrBuffer, timeoutHandles);
       },
     };
 
-    this.attachProcessListeners(job.id, job, proc, stdoutData);
+    this.attachProcessListeners(job.id, job, proc, streamData);
 
     // Update references
-    stdoutTail = stdoutData.buffer;
+    stdoutTail = streamData.stdoutBuffer;
+    stderrTail = streamData.stderrBuffer;
   }
 
   /**
