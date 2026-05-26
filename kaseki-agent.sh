@@ -4123,6 +4123,8 @@ run_github_operations() {
     
     # Encode PR title and body as JSON strings
     local pr_title_json pr_body_json
+    pr_title_json='""'
+    pr_body_json='""'
     if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" /results/git-push.log; then
       printf 'ERROR: Failed to JSON encode PR title\n' | tee -a /results/git-push.log >&2
       GITHUB_PR_EXIT=8
@@ -4130,6 +4132,13 @@ run_github_operations() {
     fi
     if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" /results/git-push.log; then
       printf 'ERROR: Failed to JSON encode PR body\n' | tee -a /results/git-push.log >&2
+      GITHUB_PR_EXIT=8
+      return 8
+    fi
+    
+    # Validate both variables are non-empty before using in curl
+    if [ -z "$pr_title_json" ] || [ -z "$pr_body_json" ]; then
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a /results/git-push.log >&2
       GITHUB_PR_EXIT=8
       return 8
     fi

@@ -37,7 +37,7 @@ FROM ${NODE_IMAGE} AS runtime
 
 # System dependencies + user setup (consolidated)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git procps tini \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io git jq procps tini \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10000 kaseki \
     && useradd --system --uid 10000 --gid kaseki --create-home --home-dir /home/kaseki --shell /usr/sbin/nologin kaseki \
