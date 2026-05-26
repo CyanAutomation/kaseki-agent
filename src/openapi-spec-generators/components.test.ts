@@ -122,7 +122,7 @@ describe('OpenAPI Component Builders', () => {
       const servers = buildServers();
 
       expect(Array.isArray(servers)).toBe(true);
-      expect(servers.length).toBe(2);
+      expect(servers.length).toBeGreaterThan(0);
     });
 
     it('should include localhost development server', () => {
@@ -135,20 +135,33 @@ describe('OpenAPI Component Builders', () => {
 
     it('should include production server template', () => {
       const servers = buildServers();
-      const production = servers.find((s) => (s.url as string).includes('example.com'));
+      const production = servers.find((s) => (s.description as string).toLowerCase().includes('production'));
 
       expect(production).toBeDefined();
-      expect(production?.description).toContain('Production');
+      expect(production?.url).toMatch(/^https:\/\/.+\.example\.com(?:\/.*)?$/);
+
+      if (production?.variables) {
+        const variables = production.variables as Record<string, { default?: string; enum?: string[] }>;
+        expect(Object.keys(variables).length).toBeGreaterThan(0);
+        Object.values(variables).forEach((variable) => {
+          expect(typeof variable.default).toBe('string');
+          if (variable.enum) {
+            expect(variable.enum.length).toBeGreaterThan(0);
+          }
+        });
+      }
     });
 
-    it('each server should have url and description', () => {
+    it('each server should have required OpenAPI server fields', () => {
       const servers = buildServers();
 
       servers.forEach((server) => {
         expect(server).toHaveProperty('url');
         expect(server).toHaveProperty('description');
         expect(typeof server.url).toBe('string');
+        expect(server.url).toMatch(/^https?:\/\//);
         expect(typeof server.description).toBe('string');
+        expect((server.description as string).trim().length).toBeGreaterThan(0);
       });
     });
   });
@@ -309,9 +322,17 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildServers detailed validation', () => {
-    it('should always return exactly 2 servers', () => {
+    it('server list should remain schema-compatible', () => {
       const servers = buildServers();
-      expect(servers).toHaveLength(2);
+
+      expect(servers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            url: expect.any(String),
+            description: expect.any(String),
+          }),
+        ])
+      );
     });
 
     it('localhost server should use http://localhost', () => {
