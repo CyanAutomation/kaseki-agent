@@ -139,15 +139,54 @@ describe('ServiceBootstrapper', () => {
       ]);
     });
 
-    it('should handle missing results directory gracefully', async () => {
-      const configWithMissingDir: KasekiApiConfig = {
-        ...mockConfig,
-        resultsDir: path.join(os.tmpdir(), 'nonexistent', 'kaseki-results'),
-      };
+    it('should propagate initialization failure and not initialize downstream dependencies', async () => {
+      const cleanupSpy = jest.fn();
+      const schedulerCtorSpy = jest.fn();
+      const preFlightCtorSpy = jest.fn();
+      const initError = new Error('IdempotencyStore failed to initialize');
 
-      // Should not throw; services should handle or create directory
-      const services = await bootstrapServices(configWithMissingDir);
-      expect(services).toBeDefined();
+      let mockedBootstrapServices!: typeof bootstrapServices;
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('../result-cache', () => ({
+          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: jest.fn(), dispose: cleanupSpy })),
+        }));
+
+        jest.doMock('../webhook-manager', () => ({
+          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: jest.fn().mockResolvedValue(undefined) })),
+        }));
+
+        jest.doMock('../idempotency-store', () => ({
+          IdempotencyStore: jest.fn().mockImplementation(() => {
+            throw initError;
+          }),
+        }));
+
+        jest.doMock('../pre-flight-validator', () => ({
+          PreFlightValidator: jest.fn().mockImplementation(() => {
+            preFlightCtorSpy();
+            return { validate: jest.fn() };
+          }),
+        }));
+
+        jest.doMock('../job-scheduler', () => ({
+          JobScheduler: jest.fn().mockImplementation(() => {
+            schedulerCtorSpy();
+            return { shutdown: jest.fn() };
+          }),
+        }));
+
+        const bootstrapper = await import('./service-bootstrapper');
+        mockedBootstrapServices = bootstrapper.bootstrapServices;
+      });
+
+      await expect(mockedBootstrapServices(mockConfig)).rejects.toThrow(
+        'Service bootstrap failed: IdempotencyStore failed to initialize',
+      );
+
+      expect(preFlightCtorSpy).not.toHaveBeenCalled();
+      expect(schedulerCtorSpy).not.toHaveBeenCalled();
+      // Explicitly verify no implicit cleanup contract exists during bootstrap failure.
+      expect(cleanupSpy).not.toHaveBeenCalled();
     });
   });
 
