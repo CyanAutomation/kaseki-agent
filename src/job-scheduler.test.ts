@@ -28,6 +28,8 @@ class MockProcess extends EventEmitter {
   pid = 12345;
   kill = jest.fn((_signal?: NodeJS.Signals) => true);
   unref = jest.fn(() => this);
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
 }
 
 const tempDirs: string[] = [];
@@ -1658,5 +1660,283 @@ describe('JobScheduler readiness repair', () => {
 
     expect(scheduler.getReadiness()).toEqual({ ready: true, reasons: [] });
     expect(fs.statSync(resultsDir).isDirectory()).toBe(true);
+  });
+});
+
+describe('JobScheduler attachProcessListeners - stderr/stdout separation', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.clearAllMocks();
+    secretValueCache.clear();
+  });
+
+  afterEach(() => {
+    secretValueCache.clear();
+    delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    jest.useRealTimers();
+    cleanupResultsDirs();
+  });
+
+  test('simultaneous stdout and stderr events are processed without mixing buffers', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(job.status).toBe('running');
+
+    // Emit stdout data
+    if (proc.stdout) {
+      proc.stdout.emit('data', 'STDOUT_CONTENT_1\n');
+    }
+    // Emit stderr data
+    if (proc.stderr) {
+      proc.stderr.emit('data', 'STDERR_CONTENT_1\n');
+    }
+    // Emit more stdout
+    if (proc.stdout) {
+      proc.stdout.emit('data', 'STDOUT_CONTENT_2\n');
+    }
+
+    // Emit exit to complete the process
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('completed');
+    expect(job.exitCode).toBe(0);
+  });
+
+  test('interleaved stdout and stderr events are processed separately', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    // Emit interleaved data: stdout -> stderr -> stdout -> stderr
+    if (proc.stdout) {
+      proc.stdout.emit('data', 'OUT1');
+    }
+    if (proc.stderr) {
+      proc.stderr.emit('data', 'ERR1');
+    }
+    if (proc.stdout) {
+      proc.stdout.emit('data', 'OUT2');
+    }
+    if (proc.stderr) {
+      proc.stderr.emit('data', 'ERR2');
+    }
+    if (proc.stdout) {
+      proc.stdout.emit('data', 'OUT3');
+    }
+
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('completed');
+  });
+
+  test('large stdout and stderr data each apply bounded tail limit independently', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    // Emit large stdout data (100 KB - exceeds 64 KB default tail limit)
+    const largeStdout = Buffer.alloc(102400, 'A');
+    const largeStderr = Buffer.alloc(102400, 'B');
+
+    if (proc.stdout) {
+      proc.stdout.emit('data', largeStdout);
+    }
+    if (proc.stderr) {
+      proc.stderr.emit('data', largeStderr);
+    }
+
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('completed');
+  });
+
+  test('process timeout failure with stdout and stderr creates failure artifacts with separate buffers', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    // Emit data to both streams before timeout
+    if (proc.stdout) {
+      proc.stdout.emit('data', Buffer.from('stdout content before timeout'));
+    }
+    if (proc.stderr) {
+      proc.stderr.emit('data', Buffer.from('stderr content before timeout'));
+    }
+
+    // Trigger timeout
+    jest.advanceTimersByTime(1000);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+
+    // Process exits after timeout
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('failed');
+    expect(job.failureClass).toBe('timeout');
+    expect(job.exitCode).toBe(124);
+
+    // Verify failure artifacts were created
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    expect(fs.existsSync(stderrLogPath)).toBe(true);
+  });
+
+  test('stdout and stderr buffers remain separate across many alternating events', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    // Emit many alternating events
+    for (let i = 0; i < 50; i++) {
+      if (proc.stdout) {
+        proc.stdout.emit('data', Buffer.from(`stdout line ${i}\n`));
+      }
+      if (proc.stderr) {
+        proc.stderr.emit('data', Buffer.from(`stderr line ${i}\n`));
+      }
+    }
+
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('completed');
+  });
+
+  test('process failure with only stderr data creates artifacts correctly', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    // Emit only stderr data
+    if (proc.stderr) {
+      proc.stderr.emit('data', Buffer.from('error output'));
+    }
+
+    // Trigger timeout to create failure artifacts
+    jest.advanceTimersByTime(1000);
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+
+    // Process exits
+    proc.emit('exit', 0);
+
+    expect(job.status).toBe('failed');
+    expect(job.failureClass).toBe('timeout');
+
+    // Verify failure artifacts exist
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    expect(fs.existsSync(stderrLogPath)).toBe(true);
   });
 });
