@@ -161,29 +161,22 @@ export class StatusResponseBuilder {
     try {
       const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
       const metadata = this.readMetadata(runDir);
-
-      // If no stages defined in metadata, skip progress calculation
-      if (!metadata || !Array.isArray(metadata.stages) || metadata.stages.length === 0) {
-        response.taskProgressPercent = undefined;
-        return;
-      }
-
-      const totalStages = metadata.stages.length;
       const progressFile = path.join(runDir, 'progress.jsonl');
-      let completedStages = 0;
+
+      // Read progress events to identify stages and their completion status
+      let allStages = new Set<string>();
+      const finishedStages = new Set<string>();
 
       if (fs.existsSync(progressFile)) {
         try {
           const content = fs.readFileSync(progressFile, 'utf-8');
           const lines = content.split('\n').filter(line => line.trim());
 
-          // Track which stages we've seen with "finished" status
-          const finishedStages = new Set<string>();
-
           for (const line of lines) {
             try {
               const event = JSON.parse(line);
               if (event.stage && typeof event.stage === 'string') {
+                allStages.add(event.stage);
                 // Count a stage as completed if we see any "finished" status for it
                 if ((event.status === 'finished' || event.detail?.includes('finished')) && !finishedStages.has(event.stage)) {
                   finishedStages.add(event.stage);
@@ -193,17 +186,54 @@ export class StatusResponseBuilder {
               // Skip malformed JSON lines
             }
           }
-
-          completedStages = finishedStages.size;
         } catch {
-          // If reading progress.jsonl fails, leave completedStages as 0
+          // If reading progress.jsonl fails, can't calculate progress
+          response.taskProgressPercent = undefined;
+          return;
         }
       }
 
-      // Calculate percentage: completed / total
-      response.taskProgressPercent = totalStages > 0 ? Math.round((completedStages / totalStages) * 100) : 0;
-    } catch {
+      // Use stages from metadata if available (preferred for terminal states)
+      let totalStages = 0;
+      if (metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0) {
+        totalStages = metadata.stages.length;
+      } else if (allStages.size > 0) {
+        // Fallback: use stages observed in progress.jsonl (for running state)
+        totalStages = allStages.size;
+      } else {
+        // No stages found anywhere
+        response.taskProgressPercent = undefined;
+        return;
+      }
+
+      let completedStages = finishedStages.size;
+
+      // Validate: completedStages should never exceed totalStages
+      // This prevents edge cases where the calculation could exceed 100%
+      if (completedStages > totalStages) {
+        if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
+          console.warn(
+            `[TaskProgressInfo] Warning: completedStages (${completedStages}) > totalStages (${totalStages}) for ${job.id}. Clamping to totalStages.`
+          );
+        }
+        completedStages = totalStages;
+      }
+
+      // Calculate percentage: completed / total, with explicit bounds (0-100)
+      const rawPercent = totalStages > 0 ? (completedStages / totalStages) * 100 : 0;
+      response.taskProgressPercent = Math.min(100, Math.max(0, Math.round(rawPercent)));
+
+      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
+        console.log(
+          `[TaskProgressInfo] ${job.id}: ${completedStages}/${totalStages} stages = ${response.taskProgressPercent}%`
+        );
+      }
+    } catch (error) {
       // If any error occurs, skip task progress calculation
+      // Log the error for debugging 1000% issues
+      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
+        console.error(`[TaskProgressInfo] Error calculating progress for ${job.id}:`, error);
+      }
       response.taskProgressPercent = undefined;
     }
   }

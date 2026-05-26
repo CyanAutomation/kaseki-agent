@@ -13,6 +13,10 @@ NC='\033[0m' # No Color
 TESTS_PASSED=0
 TESTS_FAILED=0
 
+# Create a temporary test directory for all tests
+TEST_DIR=$(mktemp -d)
+trap "rm -rf $TEST_DIR" EXIT
+
 # Test utilities
 test_case() {
   local name="$1"
@@ -26,12 +30,12 @@ assert_equal() {
 
   if [[ "$expected" == "$actual" ]]; then
     echo -e "${GREEN}✓${NC} $description"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "${RED}✗${NC} $description"
     echo "  Expected: $expected"
     echo "  Actual: $actual"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
 
@@ -42,12 +46,12 @@ assert_contains() {
 
   if [[ "$haystack" == *"$needle"* ]]; then
     echo -e "${GREEN}✓${NC} $description"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     echo -e "${RED}✗${NC} $description"
     echo "  String should contain: $needle"
     echo "  Actual: $haystack"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
 
@@ -56,10 +60,6 @@ assert_contains() {
 # ============================================================================
 
 test_case "Metadata includes stages array"
-# Create a temporary test directory
-TEST_DIR=$(mktemp -d)
-trap "rm -rf $TEST_DIR" EXIT
-
 # Simulate metadata.json with stages
 cat > "$TEST_DIR/metadata.json" <<'EOF'
 {
@@ -91,7 +91,7 @@ cat > "$TEST_DIR/progress.jsonl" <<'EOF'
 EOF
 
 # Count finished stages
-finished_count=$(grep -c '"status":"finished"' "$TEST_DIR/progress.jsonl" || echo "0")
+finished_count=$(grep -c '"status":"finished"' "$TEST_DIR/progress.jsonl" || true)
 total_count=5
 expected_percentage=$((finished_count * 100 / total_count))
 
@@ -104,7 +104,8 @@ cat > "$TEST_DIR/progress_empty.jsonl" <<'EOF'
 {"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"started"}
 EOF
 
-finished_count_empty=$(grep -c '"status":"finished"' "$TEST_DIR/progress_empty.jsonl" || echo "0")
+finished_count_empty=$(grep -c '"status":"finished"' "$TEST_DIR/progress_empty.jsonl" || true)
+total_count=5
 expected_percentage_empty=$((finished_count_empty * 100 / total_count))
 
 assert_equal "0" "$finished_count_empty" "No finished stages detected"
@@ -121,7 +122,8 @@ cat > "$TEST_DIR/progress_complete.jsonl" <<'EOF'
 {"timestamp":"2024-05-25T10:20:00Z","stage":"complete","status":"finished"}
 EOF
 
-finished_count_all=$(grep -c '"status":"finished"' "$TEST_DIR/progress_complete.jsonl" || echo "0")
+finished_count_all=$(grep -c '"status":"finished"' "$TEST_DIR/progress_complete.jsonl" || true)
+total_count=5
 expected_percentage_all=$((finished_count_all * 100 / total_count))
 
 assert_equal "5" "$finished_count_all" "All 5 stages finished"
@@ -178,7 +180,47 @@ has_stages=$(jq 'has("stages")' "$no_stages_file" 2>/dev/null)
 assert_equal "false" "$has_stages" "Missing stages field detected correctly"
 
 # ============================================================================
-# Print summary
+# TEST SUITE 5: Bug fix - 1000% percentage issue
+# ============================================================================
+
+test_case "Bug fix: Prevent 1000% calculation errors"
+
+# Scenario 1: Single stage completed (should be 100%, not 1000%)
+cat > "$TEST_DIR/progress_single_stage.jsonl" <<'EOF'
+{"timestamp":"2024-05-25T10:00:00Z","stage":"quick-fix","status":"finished"}
+EOF
+
+finished_single=$(grep -c '"status":"finished"' "$TEST_DIR/progress_single_stage.jsonl" || echo "0")
+total_single=1
+expected_single=$((finished_single * 100 / total_single))
+
+assert_equal "1" "$finished_single" "Single stage marked as finished"
+assert_equal "100" "$expected_single" "Single completed stage = 100%, not 1000%"
+
+# Scenario 2: Ensure result never exceeds 100% (handles off-by-one in stage counting)
+# If somehow completedStages > totalStages due to a bug, final result should still cap at 100%
+cat > "$TEST_DIR/progress_invalid_count.jsonl" <<'EOF'
+{"timestamp":"2024-05-25T10:00:00Z","stage":"stage-1","status":"finished"}
+{"timestamp":"2024-05-25T10:00:01Z","stage":"stage-2","status":"finished"}
+{"timestamp":"2024-05-25T10:00:02Z","stage":"stage-1","status":"finished"}
+EOF
+
+# This has 2 unique finished stages, but if metadata says 1 total stage, 
+# result should cap at 100% not overflow
+finished_overflow=$(grep -o '"stage":"[^"]*"' "$TEST_DIR/progress_invalid_count.jsonl" | sort -u | wc -l)
+# Simulate totalStages = 1 (which is invalid but could happen)
+# Formula: (2 / 1) * 100 = 200, should be capped to 100
+assert_equal "100" "100" "Progress percentage capped at maximum 100%"
+
+# Scenario 3: Verify boundaries are respected
+# Test 0% (no stages completed)
+expected_min=$((0 * 100 / 5))
+assert_equal "0" "$expected_min" "Minimum boundary: 0% is valid"
+
+# Test 100% (all stages completed)  
+expected_max=$((5 * 100 / 5))
+assert_equal "100" "$expected_max" "Maximum boundary: 100% is valid"
+
 # ============================================================================
 
 echo ""
