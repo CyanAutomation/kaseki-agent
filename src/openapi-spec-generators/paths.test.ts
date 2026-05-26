@@ -17,52 +17,103 @@ describe('OpenAPI Path Builders', () => {
   });
 
   describe('buildAllPaths', () => {
-    it('should include health check endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+    it.each([
+      { path: '/health', method: 'get', operationId: 'getHealth', requiresAuth: false, statuses: ['200'] },
+      { path: '/ready', method: 'get', operationId: 'getReady', requiresAuth: false, statuses: ['200', '503'] },
+      {
+        path: '/api/metrics',
+        method: 'get',
+        operationId: 'getMetrics',
+        requiresAuth: true,
+        statuses: ['200', '401'],
+      },
+      {
+        path: '/api/preflight',
+        method: 'get',
+        operationId: 'getPreFlight',
+        requiresAuth: true,
+        statuses: ['200', '401'],
+      },
+      {
+        path: '/api/validate',
+        method: 'post',
+        operationId: 'validateTask',
+        requiresAuth: true,
+        statuses: ['200', '400', '401'],
+      },
+      {
+        path: '/api/runs',
+        method: 'get',
+        operationId: 'listRuns',
+        requiresAuth: true,
+        statuses: ['200', '401'],
+      },
+      {
+        path: '/api/runs',
+        method: 'post',
+        operationId: 'triggerRun',
+        requiresAuth: true,
+        statuses: ['200', '202', '400', '401'],
+      },
+      {
+        path: '/api/runs/{id}/status',
+        method: 'get',
+        operationId: 'getRunStatus',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+      {
+        path: '/api/runs/{id}/cancel',
+        method: 'post',
+        operationId: 'cancelRun',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+      {
+        path: '/api/runs/{id}/logs/{logtype}',
+        method: 'get',
+        operationId: 'getRunLog',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+      {
+        path: '/api/runs/{id}/artifacts',
+        method: 'get',
+        operationId: 'getRunArtifacts',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+      {
+        path: '/api/results/{id}/{file}',
+        method: 'get',
+        operationId: 'downloadArtifact',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+      {
+        path: '/api/runs/{id}/analysis',
+        method: 'get',
+        operationId: 'getRunAnalysis',
+        requiresAuth: true,
+        statuses: ['200', '401', '404'],
+      },
+    ])(
+      'should define route contract for $method $path',
+      ({ path, method, operationId, requiresAuth, statuses }) => {
+        const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+        const pathDef = paths[path] as Record<string, any>;
 
-      expect(paths['/health']).toBeDefined();
-      expect(paths['/ready']).toBeDefined();
-    });
-
-    it('should include service info endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/metrics']).toBeDefined();
-      expect(paths['/api/preflight']).toBeDefined();
-    });
-
-    it('should include run management endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/runs']).toBeDefined();
-      expect(paths['/api/runs/{id}/status']).toBeDefined();
-      expect(paths['/api/runs/{id}/cancel']).toBeDefined();
-    });
-
-    it('should include logs and progress endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/runs/{id}/logs/{logtype}']).toBeDefined();
-      expect(paths['/api/runs/{id}/progress']).toBeDefined();
-    });
-
-    it('should include artifacts endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/runs/{id}/artifacts']).toBeDefined();
-    });
-
-    it('should include run analysis endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/runs/{id}/analysis']).toBeDefined();
-    });
-
-    it('should include webhook endpoints', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      expect(paths['/api/webhooks/test']).toBeDefined();
-    });
+        expect(pathDef).toBeDefined();
+        expect(pathDef[method]).toBeDefined();
+        expect(pathDef[method].operationId).toBe(operationId);
+        if (requiresAuth) {
+          expect(pathDef[method].security).toEqual([{ BearerAuth: [] }]);
+        } else {
+          expect(pathDef[method].security).toBeUndefined();
+        }
+        expect(Object.keys(pathDef[method].responses).sort()).toEqual(expect.arrayContaining(statuses));
+      }
+    );
 
     it('should have at least 14 endpoints', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
