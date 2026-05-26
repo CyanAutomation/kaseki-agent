@@ -551,18 +551,14 @@ export class JobScheduler {
     job.timeout = timeoutHandles.timeoutHandle;
 
     // Attach process listeners (extracted)
-    const stdoutData = {
-      buffer: stdoutTailRef.buffer,
-      isTimedOut: false,
-      onExit: (code: number) => {
-        const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-        this.handleProcessExit(job, code, isTimedOut, stdoutTailRef.buffer, stderrTailRef.buffer, timeoutHandles);
-      },
+    const stdoutData = stdoutTailRef as { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void };
+    stdoutData.isTimedOut = false;
+    stdoutData.onExit = (code: number) => {
+      const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
+      this.handleProcessExit(job, code, isTimedOut, stdoutTailRef.buffer, stderrTailRef.buffer, timeoutHandles);
     };
 
-    const stderrData = {
-      buffer: stderrTailRef.buffer,
-    };
+    const stderrData = stderrTailRef;
 
     this.attachProcessListeners(job.id, job, proc, stdoutData, stderrData);
 
