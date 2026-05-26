@@ -3826,7 +3826,7 @@ build_pr_agent_evaluation() {
     return 0
   fi
 
-  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_metadata_text || true
+  node - "$evaluation_file" <<'NODE' 2>/dev/null | sanitize_pr_body_text || true
 const fs = require('fs');
 const file = process.argv[2];
 let data;
