@@ -1717,7 +1717,7 @@ run_typescript_precheck() {
   TS_PRE_CHECK_EXIT=$ts_check_exit
   TS_PRE_CHECK_DURATION_SECONDS=$ts_check_duration
   
-  if [ $ts_check_exit -eq 0 ]; then
+  if [ "$ts_check_exit" -eq 0 ]; then
     emit_progress "typescript precheck" "passed ($ts_check_duration seconds)"
     record_stage_timing "typescript precheck" 0 "$ts_check_duration" "success"
   else

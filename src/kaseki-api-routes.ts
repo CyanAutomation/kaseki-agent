@@ -1102,7 +1102,7 @@ export function createApiRouter(
    */
   router.get('/preflight', (_req: Request, res: Response) => {
     const response = buildPreflightResponse(config);
-    
+
     // Include container startup diagnostics if available
     const containerPreflightResults = getContainerPreflightResults();
     if (containerPreflightResults) {
@@ -1111,7 +1111,7 @@ export function createApiRouter(
         checks: containerPreflightResults.checks,
       };
     }
-    
+
     res.status(response.status === 'error' ? 503 : 200).json(response);
   });
 

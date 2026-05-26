@@ -96,7 +96,7 @@ export class ContainerPreflightDiagnostics {
       return {
         name: 'setup-completeness',
         ok: true,
-        detail: `Required /agents subdirectories exist and are readable`,
+        detail: 'Required /agents subdirectories exist and are readable',
       };
     }
 
@@ -112,7 +112,7 @@ export class ContainerPreflightDiagnostics {
       name: 'setup-completeness',
       ok: false,
       detail: issues.join('; '),
-      remediation: `Run: sudo kaseki-agent host setup --fix`,
+      remediation: 'Run: sudo kaseki-agent host setup --fix',
     };
   }
 
@@ -132,7 +132,7 @@ export class ContainerPreflightDiagnostics {
         name: 'secrets-readable',
         ok: false,
         detail: `Secrets directory does not exist: ${secretsDir}`,
-        remediation: `Run: sudo kaseki-agent host setup --fix`,
+        remediation: 'Run: sudo kaseki-agent host setup --fix',
       };
     }
 
@@ -167,7 +167,7 @@ export class ContainerPreflightDiagnostics {
       return {
         name: 'secrets-readable',
         ok: true,
-        detail: `Secrets directory is readable and required secrets are accessible`,
+        detail: 'Secrets directory is readable and required secrets are accessible',
       };
     }
 
@@ -183,7 +183,7 @@ export class ContainerPreflightDiagnostics {
       name: 'secrets-readable',
       ok: false,
       detail: issues.join('; '),
-      remediation: `Run: sudo kaseki-agent host setup --fix`,
+      remediation: 'Run: sudo kaseki-agent host setup --fix',
     };
   }
 
@@ -199,7 +199,7 @@ export class ContainerPreflightDiagnostics {
         name: 'checkout-exists',
         ok: false,
         detail: `Checkout directory does not exist: ${checkoutDir}`,
-        remediation: `Run: sudo kaseki-agent host setup --fix`,
+        remediation: 'Run: sudo kaseki-agent host setup --fix',
       };
     }
 
@@ -234,7 +234,7 @@ export class ContainerPreflightDiagnostics {
         name: 'git-freshness',
         ok: false,
         detail: `Git directory is missing or inaccessible: ${gitDir}`,
-        remediation: `Run: sudo kaseki-agent host setup --fix`,
+        remediation: 'Run: sudo kaseki-agent host setup --fix',
       };
     }
 
@@ -256,15 +256,15 @@ export class ContainerPreflightDiagnostics {
 
     // Parse git error to provide better diagnostics
     const stderr = (result.stderr || '').toLowerCase();
-    let detail = `Git command failed when reading repository`;
+    let detail = 'Git command failed when reading repository';
     let remediation = `Fix permissions so ${checkoutDir} is readable by UID 10000`;
 
     if (stderr.includes('dubious ownership') || stderr.includes('permission denied')) {
-      detail = `Git reports dubious ownership or permission denied`;
+      detail = 'Git reports dubious ownership or permission denied';
       remediation = `Configure git safe.directory: git config --global --add safe.directory ${checkoutDir}`;
     } else if (stderr.includes('not a git repository')) {
       detail = `${gitDir} exists but is not a valid git repository`;
-      remediation = `Run: sudo kaseki-agent host setup --fix`;
+      remediation = 'Run: sudo kaseki-agent host setup --fix';
     }
 
     return {
@@ -288,8 +288,8 @@ export class ContainerPreflightDiagnostics {
       return {
         name: 'git-safe-directory',
         ok: false,
-        detail: `Git directory missing; cannot verify safe.directory configuration`,
-        remediation: `Run: sudo kaseki-agent host setup --fix`,
+        detail: 'Git directory missing; cannot verify safe.directory configuration',
+        remediation: 'Run: sudo kaseki-agent host setup --fix',
       };
     }
 
@@ -352,7 +352,7 @@ export class ContainerPreflightDiagnostics {
       return {
         name: 'template-bootstrap',
         ok: true,
-        detail: `All required template bootstrap files are present and executable`,
+        detail: 'All required template bootstrap files are present and executable',
         templatePath: templateDir,
       };
     }
@@ -369,7 +369,7 @@ export class ContainerPreflightDiagnostics {
       name: 'template-bootstrap',
       ok: false,
       detail: issues.join('; '),
-      remediation: `Run: sudo kaseki-agent host setup --fix`,
+      remediation: 'Run: sudo kaseki-agent host setup --fix',
       templatePath: templateDir,
     };
   }
@@ -385,22 +385,22 @@ export class ContainerPreflightDiagnostics {
         return {
           name: 'deleted-bind-mounts',
           ok: false,
-          detail: `Detected deleted bind mount in /proc/self/mountinfo`,
-          remediation: `Recreate the kaseki-api container: docker-compose up -d --force-recreate kaseki-api`,
+          detail: 'Detected deleted bind mount in /proc/self/mountinfo',
+          remediation: 'Recreate the kaseki-api container: docker-compose up -d --force-recreate kaseki-api',
         };
       }
 
       return {
         name: 'deleted-bind-mounts',
         ok: true,
-        detail: `No deleted bind mounts detected`,
+        detail: 'No deleted bind mounts detected',
       };
-    } catch (err) {
+    } catch {
       // If we can't read /proc/self/mountinfo, assume we're not in a container (edge case)
       return {
         name: 'deleted-bind-mounts',
         ok: true,
-        detail: `Could not read /proc/self/mountinfo; skipping check`,
+        detail: 'Could not read /proc/self/mountinfo; skipping check',
       };
     }
   }
