@@ -83,7 +83,6 @@ if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested
     expect(fs.existsSync(outPath)).toBe(false);
     expect(deriveValidationAllowlist(inPath)).toBe('7');
 
-    const fallbackDefaults = { agent_patterns: '', validation_patterns: '' };
-    expect(fallbackDefaults).toEqual({ agent_patterns: '', validation_patterns: '' });
+    // Fallback verification should test actual system behavior, not local variable equality
   });
 });
