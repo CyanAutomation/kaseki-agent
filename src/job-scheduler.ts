@@ -536,8 +536,9 @@ export class JobScheduler {
     this.processExited.set(job.id, false);
     this.clearLiveProgressCache(job.id);
 
-    let stdoutTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-    let stderrTail: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    // Use mutable references to track buffer state changes
+    const stdoutTailRef = { buffer: Buffer.alloc(0) };
+    const stderrTailRef = { buffer: Buffer.alloc(0) };
 
     job.processId = proc.pid;
     this.persistJobs();
@@ -551,23 +552,22 @@ export class JobScheduler {
 
     // Attach process listeners (extracted)
     const stdoutData = {
-      buffer: stdoutTail,
+      buffer: stdoutTailRef.buffer,
       isTimedOut: false,
       onExit: (code: number) => {
         const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-        this.handleProcessExit(job, code, isTimedOut, stdoutTail, stderrTail, timeoutHandles);
+        this.handleProcessExit(job, code, isTimedOut, stdoutTailRef.buffer, stderrTailRef.buffer, timeoutHandles);
       },
     };
 
     const stderrData = {
-      buffer: stderrTail,
+      buffer: stderrTailRef.buffer,
     };
 
     this.attachProcessListeners(job.id, job, proc, stdoutData, stderrData);
 
-    // Update references (stderrData needs to be captured since buffers are mutated)
-    stdoutTail = stdoutData.buffer;
-    stderrTail = stderrData.buffer;
+    // The mutable references are updated in place, so we can access the final state directly
+    // via stdoutTailRef.buffer and stderrTailRef.buffer in the onExit callback
   }
 
   /**
