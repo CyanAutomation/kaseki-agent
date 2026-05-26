@@ -536,6 +536,8 @@ export class JobScheduler {
     this.clearLiveProgressCache(job.id);
 
     // Create shared mutable stream state object for live buffer references
+    // Create shared mutable stream state object for live buffer references
+    let timeoutHandles: TimeoutHandles & { isTimedOut: () => boolean };
     const streamState = {
       stdout: {
         buffer: Buffer.alloc(0),
