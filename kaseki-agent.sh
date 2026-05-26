@@ -3844,23 +3844,46 @@ const text = (value, max = 220) => {
     .trim();
   return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 3))}...` : normalized;
 };
+
+// Overall Assessment subsection
+console.log('### Overall Assessment');
 const assessment = text(data.overall_assessment || 'unknown', 40);
 const confidence = text(data.reviewer_confidence || 'unknown', 40);
 console.log(`- Overall: ${assessment}; reviewer confidence: ${confidence}.`);
-const prSummary = text(data.pr_summary || data.summary || '', 260);
-if (prSummary) console.log(`- ${prSummary}`);
+
+// Summary subsection
+const prSummary = text(data.pr_summary || data.summary || '', 320);
+if (prSummary) {
+  console.log('');
+  console.log('### Summary');
+  console.log(`- ${prSummary}`);
+}
+
+// Review Focus subsection
 const focus = Array.isArray(data.human_review_focus)
-  ? data.human_review_focus.map((value) => text(value, 180)).filter(Boolean).slice(0, 3)
+  ? data.human_review_focus.map((value) => text(value, 320)).filter(Boolean).slice(0, 3)
   : [];
-for (const item of focus) console.log(`- Review focus: ${item}`);
+if (focus.length > 0) {
+  console.log('');
+  console.log('### Review Focus');
+  for (const item of focus) {
+    console.log(`- ${item}`);
+  }
+}
+
+// Process Notes subsection
 let processNote = '';
 if (Array.isArray(data.efficiency_findings) && data.efficiency_findings.length > 0) {
-  processNote = text(data.efficiency_findings[0], 180);
+  processNote = text(data.efficiency_findings[0], 320);
 } else if (Array.isArray(data.kaseki_improvement_opportunities) && data.kaseki_improvement_opportunities.length > 0) {
   const item = data.kaseki_improvement_opportunities[0] || {};
-  processNote = text(item.suggestion || '', 180);
+  processNote = text(item.suggestion || '', 320);
 }
-if (processNote) console.log(`- Process note: ${processNote}`);
+if (processNote) {
+  console.log('');
+  console.log('### Process Notes');
+  console.log(`- ${processNote}`);
+}
 NODE
 }
 
