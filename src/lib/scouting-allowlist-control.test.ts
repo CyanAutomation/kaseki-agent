@@ -43,24 +43,6 @@ try {
     return JSON.parse(output) as { status: 'ok' | 'rejected'; message: string };
   };
 
-  const deriveValidationAllowlist = (scoutingPath: string): string => {
-    const output = execFileSync('node', ['-e', `
-const fs = require('node:fs');
-const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
-  console.log(artifact.suggested_allowlist.agent_patterns.join(' '));
-} else {
-  console.log('');
-}
-if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
-  console.log(artifact.suggested_allowlist.validation_patterns.join(' '));
-} else {
-  console.log('');
-}
-`, scoutingPath], { encoding: 'utf8' });
-    return output.trimEnd().split('\n')[1] || '';
-  };
-
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-scouting-derive-'));
   });
