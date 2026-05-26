@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 
 describe('Scouting allowlist parsing and ingestion', () => {
@@ -58,6 +58,29 @@ if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested
     return { agent, validation };
   };
 
+
+
+  const runProductionScoutingLoader = (inputPath: string, outputPath: string): { status: number; stderr: string } => {
+    const loaderScriptPath = path.resolve(__dirname, '../../kaseki-agent.sh');
+    const extraction = spawnSync('node', ['-e', `
+const fs = require('node:fs');
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('const fs=require("node:fs");');
+const endMarker = 'if (invalid.length) throw new Error("invalid scouting fields: " + invalid.join(", "));';
+const end = source.indexOf(endMarker, start);
+if (start < 0 || end < 0) throw new Error('unable to locate scouting loader in kaseki-agent.sh');
+const loader = source.slice(start, end + endMarker.length) + '\\nfs.writeFileSync(output, JSON.stringify(artifact, null, 2) + \"\\\\n\");';
+process.stdout.write(loader);
+`, loaderScriptPath], { encoding: 'utf8' });
+
+    if (extraction.status !== 0) {
+      throw new Error(`failed to extract production scouting loader: ${extraction.stderr}`);
+    }
+
+    const result = spawnSync('node', ['-e', extraction.stdout, inputPath, outputPath], { encoding: 'utf8' });
+    return { status: result.status ?? 1, stderr: result.stderr };
+  };
+
   const mergeAllowlists = (scoutingPatterns: string, userPatterns: string): string => {
     return execFileSync('bash', ['-lc', `
 scouting_patterns="$1"; user_patterns="$2";
@@ -105,22 +128,20 @@ fi
     expect(derived.validation).toBe('src/** tests/**');
   });
 
-  it('rejects malformed allowlist payload with explicit parser error', () => {
+  it('rejects invalid numeric allowlist patterns via production loader and falls back to empty derived patterns', () => {
+    const fixturePath = path.resolve(__dirname, '../../tests/fixtures/scouting/invalid-numeric-pattern.json');
     const inputPath = path.join(tmpDir, 'scouting.invalid.json');
     const outputPath = path.join(tmpDir, 'scouting.out.json');
-    fs.writeFileSync(inputPath, JSON.stringify({
-      task: 'Fix parser bug',
-      requirements: [],
-      relevant_files: [],
-      observations: [],
-      plan: [],
-      validation: [],
-      risks: [],
-      suggested_allowlist: { agent_patterns: ['src/parser.ts', 12], validation_patterns: ['src/**'] },
-    }));
+    fs.copyFileSync(fixturePath, inputPath);
 
-    expect(() => canonicalizeScoutingArtifact(inputPath, outputPath)).toThrow(/invalid scouting fields: suggested_allowlist\.agent_patterns values/);
+    const result = runProductionScoutingLoader(inputPath, outputPath);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('invalid scouting fields: suggested_allowlist.agent_patterns values');
     expect(fs.existsSync(outputPath)).toBe(false);
+    const fallback = deriveAllowlistFromScouting(inputPath);
+    expect(fallback.agent).toBe('src/parser.ts 12');
+    expect(fallback.validation).toBe('src/**');
   });
 
   it('applies default empty allowlist when suggested_allowlist is missing', () => {
