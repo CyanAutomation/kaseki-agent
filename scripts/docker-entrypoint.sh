@@ -2,16 +2,27 @@
 set -euo pipefail
 
 # === Docker Entrypoint for Kaseki Agent ===
-# Responsible for:
-#   1. Running early startup checks
-#   2. Dispatching to the appropriate command handler (api, agent, setup, etc.)
-
-# Phase 1: Check if init container already ran (for debugging)
-# The init container is a separate service in docker-compose and runs before this.
-# If you're seeing permission errors here, the init container either:
-#   - Failed to fix permissions (expected in restricted environments)
-#   - Hasn't run yet (check depends_on conditions)
-#   - Ran but the issue is fundamental to the environment
+# Four-Phase Startup Orchestration
+#
+# Phase 1: Entrypoint Dispatch
+#   - Determines which command to run (api, agent, setup, etc.)
+#   - Mounted below
+#
+# Phase 2: Early Filesystem Checks (startup-checks.sh)
+#   - Validates /agents directories, permissions, template bootstrap
+#   - Runs BEFORE any kaseki operation to catch permission/config issues early
+#   - Exit codes: 0/1/2 (blocking), 3 (warning-level, continues)
+#
+# Phase 3: API Initialization + Container Preflight Diagnostics (kaseki-api-service.ts)
+#   - Bootstraps all services (scheduler, cache, validator, etc.)
+#   - Runs container-safe startup checks (no root required)
+#   - Checks: setup completeness, git freshness, safe.directory config, deleted mounts
+#   - Exit code 3 semantics: Non-blocking warnings logged to stdout/stderr
+#   - Results cached in memory and accessible via /api/preflight endpoint
+#
+# Phase 4: HTTP Server Listening
+#   - Express server starts listening on configured port
+#   - Ready to accept requests
 
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
@@ -27,6 +38,7 @@ if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
   }
 fi
 
+# Phase 1: Dispatch to appropriate command handler
 case "${1:-agent}" in
   setup)
     # Interactive setup wizard inside container

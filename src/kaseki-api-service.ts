@@ -8,6 +8,7 @@ import { createEventLogger } from './logger';
 import { generateOpenAPISpec } from './openapi-spec-generator';
 import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
+import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './startup/container-preflight';
 
 export { assertSupportedNodeVersion, ensureTemplateInitialized };
 
@@ -96,6 +97,13 @@ async function main(): Promise<void> {
     preFlightValidator,
     scheduler
   } = await bootstrapServices(config);
+
+  // Run container preflight diagnostics (non-blocking startup checks)
+  // Results are cached and accessible via /api/preflight endpoint
+  logger.info('Running container preflight diagnostics...');
+  const containerPreflight = new ContainerPreflightDiagnostics(config);
+  const preflightChecks = containerPreflight.run();
+  logContainerPreflightResults(preflightChecks);
 
   // Create Express app
   const app = express();
