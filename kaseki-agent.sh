@@ -20,6 +20,8 @@ KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
+KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
+KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
@@ -89,6 +91,9 @@ PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
 PRE_VALIDATION_FAILURE_REASON=""
 PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+TS_PRE_CHECK_EXIT=0
+TS_PRE_CHECK_DURATION_SECONDS=0
+TS_PRE_CHECK_TIMESTAMP=""
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 VALIDATION_RAW_LOG="/results/validation-raw.log"
@@ -427,6 +432,19 @@ write_metadata() {
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
+  "goal_check_validation": {
+    "attempt_count": $GOAL_CHECK_ATTEMPTS,
+    "validation_errors_log": "goal-check-validation-errors.jsonl",
+    "attempts_log": "goal-check-attempts.jsonl"
+  },
+  "typescript_precheck": {
+    "enabled": $([[ "$KASEKI_TS_PRE_CHECK" == "1" ]] && printf 'true' || printf 'false'),
+    "command": $(printf '%s' "$KASEKI_TS_CHECK_COMMAND" | json_encode),
+    "exit_code": $TS_PRE_CHECK_EXIT,
+    "duration_seconds": $TS_PRE_CHECK_DURATION_SECONDS,
+    "timestamp": $(printf '%s' "$TS_PRE_CHECK_TIMESTAMP" | json_encode),
+    "log_file": "pre-validation-ts-check.log"
+  },
   "run_evaluation_enabled": $([[ "$KASEKI_RUN_EVALUATION" == "1" ]] && printf 'true' || printf 'false'),
   "run_evaluation_model": $(printf '%s' "$KASEKI_RUN_EVALUATION_MODEL" | json_encode),
   "task_mode": $(printf '%s' "$KASEKI_TASK_MODE" | json_encode),
@@ -1607,6 +1625,50 @@ record_skipped_validation_command() {
   printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
 }
 
+run_typescript_precheck() {
+  # TypeScript compilation pre-check: runs before agent invocation to catch export/compile errors early
+  # Exit code: 0 = passed, non-zero = failed
+  # Returns silently; exit code stored in TS_PRE_CHECK_EXIT global
+  
+  TS_PRE_CHECK_EXIT=0
+  TS_PRE_CHECK_DURATION_SECONDS=0
+  TS_PRE_CHECK_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  
+  if [ "$KASEKI_TS_PRE_CHECK" != "1" ]; then
+    emit_progress "typescript precheck" "skipped (KASEKI_TS_PRE_CHECK=0)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_by_config"
+    return 0
+  fi
+  
+  set +e
+  local ts_check_start ts_check_end ts_check_duration ts_check_exit
+  ts_check_start="$(date +%s)"
+  
+  {
+    printf '\n==> TypeScript pre-check\n'
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND"
+    eval "cd /workspace/repo && $KASEKI_TS_CHECK_COMMAND" 2>&1
+  } 2>&1 | tee -a /results/pre-validation-ts-check.log
+  ts_check_exit="${PIPESTATUS[0]}"
+  
+  ts_check_end="$(date +%s)"
+  ts_check_duration=$((ts_check_end - ts_check_start))
+  TS_PRE_CHECK_EXIT=$ts_check_exit
+  TS_PRE_CHECK_DURATION_SECONDS=$ts_check_duration
+  
+  if [ $ts_check_exit -eq 0 ]; then
+    emit_progress "typescript precheck" "passed ($ts_check_duration seconds)"
+    record_stage_timing "typescript precheck" 0 "$ts_check_duration" "success"
+  else
+    emit_error_event "typescript_precheck_failed" "TypeScript compilation failed: $KASEKI_TS_CHECK_COMMAND" "continue"
+    emit_progress "typescript precheck" "failed (exit $ts_check_exit, $ts_check_duration seconds)"
+    record_stage_timing "typescript precheck" "$ts_check_exit" "$ts_check_duration" "failed"
+  fi
+  
+  set -e
+  return "$ts_check_exit"
+}
+
 append_validation_failure_tail() {
   local raw_log="$1"
   local visible_log="$2"
@@ -2362,19 +2424,62 @@ const fs = require("node:fs");
 const input = process.argv[1];
 const output = process.argv[2];
 const attempt = Number(process.argv[3]);
-const invalid = [];
+const errors = [];
 const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
-if (typeof artifact.met !== "boolean") invalid.push("met");
-if (!["low", "medium", "high"].includes(artifact.confidence)) invalid.push("confidence");
-for (const key of ["summary", "retry_prompt"]) {
-  if (typeof artifact[key] !== "string") invalid.push(key);
+
+// Root object validation
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+  errors.push({field: "root", expected: "object", actual: typeof artifact, severity: "critical", suggestion: "Goal check must return a JSON object (not array/null/primitive)"});
 }
+
+// Core boolean field validation
+if (typeof artifact.met !== "boolean") {
+  errors.push({field: "met", expected: "boolean", actual: typeof artifact.met, severity: "critical", suggestion: "met must be true or false"});
+}
+
+// Confidence enum validation  
+if (!["low", "medium", "high"].includes(artifact.confidence)) {
+  errors.push({field: "confidence", expected: "low|medium|high", actual: artifact.confidence || "missing", severity: "critical", suggestion: "confidence must be one of: low, medium, high (case-sensitive)"});
+}
+
+// Summary validation: must be non-empty string
+if (typeof artifact.summary !== "string") {
+  errors.push({field: "summary", expected: "non-empty string", actual: typeof artifact.summary, severity: "critical", suggestion: "summary must be a string describing the goal check result"});
+} else if (artifact.summary.trim().length === 0) {
+  errors.push({field: "summary", expected: "non-empty string", actual: "empty string", severity: "critical", suggestion: "summary cannot be empty; provide at least a brief verdict description"});
+}
+
+// Retry prompt validation: only required if met=false (RELAXED constraint)
+if (artifact.met === false) {
+  if (typeof artifact.retry_prompt !== "string") {
+    errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: typeof artifact.retry_prompt, severity: "critical", suggestion: "When met=false, retry_prompt must be a string with guidance for the next attempt"});
+  } else if (artifact.retry_prompt.trim().length === 0) {
+    errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: "empty string", severity: "critical", suggestion: "retry_prompt cannot be empty when met=false; provide clear guidance for the next attempt"});
+  }
+}
+
+// Arrays validation
 for (const key of ["evidence", "missing", "validation_notes"]) {
-  if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) invalid.push(key);
+  if (!Array.isArray(artifact[key])) {
+    errors.push({field: key, expected: "array of strings", actual: Array.isArray(artifact[key]) ? "array" : typeof artifact[key], severity: "warning", suggestion: key + " should be an array of strings"});
+  } else if (!artifact[key].every((v) => typeof v === "string")) {
+    errors.push({field: key, expected: "array of strings", actual: "array with non-strings", severity: "warning", suggestion: "All elements in " + key + " must be strings"});
+  }
 }
-if (!artifact.met && !artifact.retry_prompt.trim()) invalid.push("retry_prompt non-empty when unmet");
-if (invalid.length) throw new Error("invalid goal-check fields: " + invalid.join(", "));
+
+// If there are errors, write structured error log and fail
+if (errors.length) {
+  const summary = errors.filter(e => e.severity === "critical").length > 0 ? "critical" : "warning";
+  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", 
+    JSON.stringify({timestamp: new Date().toISOString(), attempt, summary, errors}) + "\n");
+  
+  const msg = errors
+    .map(e => e.field + ": " + e.suggestion)
+    .join("; ");
+  throw new Error("goal-check artifact invalid (" + summary + "): " + msg);
+}
+
+// Validation passed: enrich artifact with metadata
 artifact.attempt = attempt;
 artifact.timestamp = new Date().toISOString();
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
@@ -4533,6 +4638,22 @@ else
       PRE_VALIDATION_FAILURE_REASON="pre_agent_validation_failed"
     fi
     emit_error_event "pre_agent_validation_failed" "Pre-agent validation failed before Pi was invoked: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-exit $PRE_VALIDATION_EXIT}" "exit"
+    exit 0
+  fi
+fi
+
+# TypeScript pre-check: runs after pre-agent validation, before scouting agent
+printf '\n==> typescript pre-check\n'
+set_current_stage "typescript precheck"
+if ! run_typescript_precheck; then
+  if [ "$KASEKI_SCOUTING" = "1" ]; then
+    # If scouting is enabled (experimental path), continue anyway with warning
+    printf 'WARNING: TypeScript pre-check failed, but continuing due to scouting mode being enabled.\n' | tee -a /results/quality.log
+  else
+    # Without scouting, TypeScript failures are fatal
+    STATUS="$TS_PRE_CHECK_EXIT"
+    FAILED_COMMAND="typescript precheck"
+    emit_error_event "typescript_precheck_failed" "TypeScript pre-check failed before agent invocation" "exit"
     exit 0
   fi
 fi
