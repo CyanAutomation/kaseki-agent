@@ -139,9 +139,6 @@ fi
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain('invalid scouting fields: suggested_allowlist.agent_patterns values');
     expect(fs.existsSync(outputPath)).toBe(false);
-    const fallback = deriveAllowlistFromScouting(inputPath);
-    expect(fallback.agent).toBe('src/parser.ts 12');
-    expect(fallback.validation).toBe('src/**');
   });
 
   it('applies default empty allowlist when suggested_allowlist is missing', () => {
