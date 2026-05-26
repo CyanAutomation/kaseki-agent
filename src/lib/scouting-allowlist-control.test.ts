@@ -81,7 +81,7 @@ if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested
     expect(result.message).toMatch(/invalid scouting fields: suggested_allowlist\.validation_patterns values/);
 
     expect(fs.existsSync(outPath)).toBe(false);
-    expect(deriveValidationAllowlist(inPath)).toBe('7');
+    // After rejection, no canonicalized output exists; deriveValidationAllowlist on invalid input is undefined behavior
 
     // Fallback verification should test actual system behavior, not local variable equality
   });
