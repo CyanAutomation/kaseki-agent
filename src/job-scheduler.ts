@@ -433,12 +433,14 @@ export class JobScheduler {
   /**
    * Attach event listeners to process for stdout, stderr, exit, and error handling.
    * Extracted to separate concerns and enable isolated listener testing.
+   * Maintains separate buffers for stdout and stderr to prevent diagnostic misclassification.
    */
   private attachProcessListeners(
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    stdoutData: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void }
+    stdoutData: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void },
+    stderrData: { buffer: Buffer<ArrayBufferLike> }
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -447,7 +449,7 @@ export class JobScheduler {
 
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      stderrData.buffer = this.appendBoundedTail(stderrData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.on('exit', (code) => {
@@ -557,10 +559,15 @@ export class JobScheduler {
       },
     };
 
-    this.attachProcessListeners(job.id, job, proc, stdoutData);
+    const stderrData = {
+      buffer: stderrTail,
+    };
 
-    // Update references
+    this.attachProcessListeners(job.id, job, proc, stdoutData, stderrData);
+
+    // Update references (stderrData needs to be captured since buffers are mutated)
     stdoutTail = stdoutData.buffer;
+    stderrTail = stderrData.buffer;
   }
 
   /**
