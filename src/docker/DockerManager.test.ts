@@ -110,10 +110,21 @@ describe('DockerManager', () => {
       expect(spawnArgs).not.toContain('--network=host');
     });
 
-    it('should filter out OPENROUTER_API_KEY from environment', () => {
-      // This test verifies that the buildDockerArgs method filters out the API key
-      // The actual filtering happens in buildDockerArgs when building the docker args
-      // We're testing the configuration pattern expected by the method
+    it('should use file-based secret only when apiKeyFile mode is active', async () => {
+      const mockChild = {
+        stdout: null,
+        stderr: null,
+        on: jest.fn((event, callback) => {
+          if (event === 'exit') {
+            callback(0);
+          }
+        }),
+        kill: jest.fn(),
+      };
+
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
+
       const config: ContainerConfig = {
         image: 'test:latest',
         name: 'test-container',
@@ -121,16 +132,77 @@ describe('DockerManager', () => {
         resultsDir: '/results',
         environment: {
           REPO_URL: 'https://github.com/test/repo',
-          OPENROUTER_API_KEY: 'sk-or-xxx', // Can be present in config
+          OPENROUTER_API_KEY: 'sk-or-xxx',
         },
-        apiKeyFile: '/secrets/key', // But should use file-based mounting instead
+        apiKeyFile: '/secrets/key',
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
         command: ['agent'],
       };
 
-      // Verify that the config supports both patterns (env var in config, but file-based mounting)
-      expect(config.apiKeyFile).toBeDefined();
-      expect(config.environment.OPENROUTER_API_KEY).toBe('sk-or-xxx');
+      await DockerManager.runContainer(config);
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+      const [, spawnArgs] = (spawn as jest.Mock).mock.calls[0];
+
+      // Positive assertion: file-based secret wiring is present.
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
+
+      // Negative assertions: no plain env secret leakage.
+      expect(spawnArgs).not.toContain('-e OPENROUTER_API_KEY=sk-or-xxx');
+      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
+
+      const openRouterEnvArgs = (spawnArgs as string[]).filter((arg: string) =>
+        arg.startsWith('OPENROUTER_API_KEY=')
+      );
+      expect(openRouterEnvArgs).toEqual([]);
+    });
+
+    it('should not leak OPENROUTER_API_KEY with mixed environment input in apiKeyFile mode', async () => {
+      const mockChild = {
+        stdout: null,
+        stderr: null,
+        on: jest.fn((event, callback) => {
+          if (event === 'exit') {
+            callback(0);
+          }
+        }),
+        kill: jest.fn(),
+      };
+
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
+
+      const config: ContainerConfig = {
+        image: 'test:latest',
+        name: 'test-container',
+        workspaceDir: '/workspace',
+        resultsDir: '/results',
+        cacheDir: '/cache',
+        apiKeyFile: '/secrets/key',
+        environment: {
+          REPO_URL: 'https://github.com/test/repo',
+          GIT_REF: 'main',
+          OPENROUTER_API_KEY: 'sk-or-xxx',
+          OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
+          CUSTOM_FLAG: '1',
+        },
+        entrypoint: '/usr/local/bin/kaseki-entrypoint',
+        command: ['agent'],
+      };
+
+      await DockerManager.runContainer(config);
+
+      const [, spawnArgs] = (spawn as jest.Mock).mock.calls[0];
+
+      // Non-secret env vars still flow through.
+      expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');
+      expect(spawnArgs).toContain('GIT_REF=main');
+      expect(spawnArgs).toContain('OPENROUTER_BASE_URL=https://openrouter.ai/api/v1');
+      expect(spawnArgs).toContain('CUSTOM_FLAG=1');
+
+      // Secret must be file-only in this mode.
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
+      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
     });
   });
 
