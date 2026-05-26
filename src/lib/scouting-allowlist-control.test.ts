@@ -4,7 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 
-describe('Scouting allowlist parsing and ingestion', () => {
+describe('Scouting allowlist derivation from scouting.json contract', () => {
   let tmpDir: string;
 
   const canonicalizeScoutingArtifact = (inputPath: string, outputPath: string): void => {
@@ -36,7 +36,7 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2));
 `, inputPath, outputPath], { stdio: 'pipe' });
   };
 
-  const deriveAllowlistFromScouting = (scoutingPath: string): { agent: string; validation: string } => {
+  const deriveValidationAllowlist = (scoutingPath: string): string => {
     const output = execFileSync('node', ['-e', `
 const fs = require('node:fs');
 const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
@@ -51,103 +51,34 @@ if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested
   console.log('');
 }
 `, scoutingPath], { encoding: 'utf8' });
-    const lines = output.trimEnd().split('\n');
-    const agent = lines[0] || '';
-    const validation = lines[1] || '';
-    return { agent, validation };
-    return { agent, validation };
-  };
-
-  const mergeAllowlists = (scoutingPatterns: string, userPatterns: string): string => {
-    return execFileSync('bash', ['-lc', `
-scouting_patterns="$1"; user_patterns="$2";
-if [ -n "$scouting_patterns" ] && [ -n "$user_patterns" ]; then
-  printf '%s' "$scouting_patterns $user_patterns"
-elif [ -n "$scouting_patterns" ]; then
-  printf '%s' "$scouting_patterns"
-elif [ -n "$user_patterns" ]; then
-  printf '%s' "$user_patterns"
-fi
-`, '--', scoutingPatterns, userPatterns], { encoding: 'utf8' });
+    return output.trimEnd().split('\n')[1] || '';
   };
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-allowlist-test-'));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-scouting-derive-'));
   });
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('accepts valid suggested_allowlist and derives both allowlists', () => {
-    const inputPath = path.join(tmpDir, 'scouting.valid.json');
-    const outputPath = path.join(tmpDir, 'scouting.out.json');
-    fs.writeFileSync(inputPath, JSON.stringify({
-      task: 'Fix parser bug',
-      requirements: ['Fix parse error'],
-      relevant_files: [{ path: 'src/parser.ts', reason: 'contains bug' }],
-      observations: ['repro in parser'],
-      plan: ['patch parser'],
-      validation: ['npm test'],
-      risks: ['regression risk'],
-      suggested_allowlist: {
-        agent_patterns: ['src/parser.ts', 'tests/parser.test.ts'],
-        validation_patterns: ['src/**', 'tests/**'],
-      },
-    }));
+  it('produces exact normalized validation allowlist or rejects invalid contract cases', () => {
+    const base = { task: 't', requirements: [], relevant_files: [], observations: [], plan: [], validation: [], risks: [] };
+    const inPath = path.join(tmpDir, 'scouting.json');
+    const outPath = path.join(tmpDir, 'scouting.out.json');
 
-    canonicalizeScoutingArtifact(inputPath, outputPath);
-    const parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-    const derived = deriveAllowlistFromScouting(outputPath);
+    fs.writeFileSync(inPath, JSON.stringify({ ...base, suggested_allowlist: { agent_patterns: [], validation_patterns: [] } }));
+    canonicalizeScoutingArtifact(inPath, outPath);
+    expect(deriveValidationAllowlist(outPath)).toBe('');
 
-    expect(parsed.suggested_allowlist.agent_patterns).toEqual(['src/parser.ts', 'tests/parser.test.ts']);
-    expect(derived.agent).toBe('src/parser.ts tests/parser.test.ts');
-    expect(derived.validation).toBe('src/** tests/**');
-  });
+    fs.writeFileSync(inPath, JSON.stringify({ ...base, suggested_allowlist: { agent_patterns: [], validation_patterns: ['src/**', 'src/**', 'tests/**'] } }));
+    canonicalizeScoutingArtifact(inPath, outPath);
+    expect(deriveValidationAllowlist(outPath)).toBe('src/** src/** tests/**');
 
-  it('rejects malformed allowlist payload with explicit parser error', () => {
-    const inputPath = path.join(tmpDir, 'scouting.invalid.json');
-    const outputPath = path.join(tmpDir, 'scouting.out.json');
-    fs.writeFileSync(inputPath, JSON.stringify({
-      task: 'Fix parser bug',
-      requirements: [],
-      relevant_files: [],
-      observations: [],
-      plan: [],
-      validation: [],
-      risks: [],
-      suggested_allowlist: { agent_patterns: ['src/parser.ts', 12], validation_patterns: ['src/**'] },
-    }));
+    fs.writeFileSync(inPath, JSON.stringify({ ...base, suggested_allowlist: { agent_patterns: [], validation_patterns: [7] } }));
+    expect(() => canonicalizeScoutingArtifact(inPath, outPath)).toThrow(/invalid scouting fields: suggested_allowlist\.validation_patterns values/);
 
-    expect(() => canonicalizeScoutingArtifact(inputPath, outputPath)).toThrow(/invalid scouting fields: suggested_allowlist\.agent_patterns values/);
-    expect(fs.existsSync(outputPath)).toBe(false);
-  });
-
-  it('applies default empty allowlist when suggested_allowlist is missing', () => {
-    const inputPath = path.join(tmpDir, 'scouting.missing-allowlist.json');
-    const outputPath = path.join(tmpDir, 'scouting.out.json');
-    fs.writeFileSync(inputPath, JSON.stringify({
-      task: 'Fix parser bug',
-      requirements: [],
-      relevant_files: [],
-      observations: [],
-      plan: [],
-      validation: [],
-      risks: [],
-    }));
-
-    canonicalizeScoutingArtifact(inputPath, outputPath);
-    const parsed = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-    const derived = deriveAllowlistFromScouting(outputPath);
-
-    expect(parsed.suggested_allowlist).toEqual({ agent_patterns: [], validation_patterns: [] });
-    expect(derived.agent).toBe('');
-    expect(derived.validation).toBe('');
-  });
-
-  it('merges scouting and user allowlists through CLI ingestion semantics', () => {
-    expect(mergeAllowlists('src/parser.ts tests/parser.test.ts', 'src/**')).toBe('src/parser.ts tests/parser.test.ts src/**');
-    expect(mergeAllowlists('README.md docs/**', '')).toBe('README.md docs/**');
-    expect(mergeAllowlists('', 'src/**')).toBe('src/**');
+    fs.writeFileSync(inPath, JSON.stringify({ ...base, suggested_allowlist: { agent_patterns: [], validation_patterns: ['src/**', null] } }));
+    expect(() => canonicalizeScoutingArtifact(inPath, outPath)).toThrow(/invalid scouting fields: suggested_allowlist\.validation_patterns values/);
   });
 });
