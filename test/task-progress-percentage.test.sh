@@ -15,7 +15,7 @@ TESTS_FAILED=0
 
 # Create a temporary test directory for all tests
 TEST_DIR=$(mktemp -d)
-trap "rm -rf $TEST_DIR" EXIT
+trap 'rm -rf "$TEST_DIR"' EXIT
 
 # Test utilities
 test_case() {
@@ -35,22 +35,6 @@ assert_equal() {
     echo -e "${RED}✗${NC} $description"
     echo "  Expected: $expected"
     echo "  Actual: $actual"
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-  fi
-}
-
-assert_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local description="$3"
-
-  if [[ "$haystack" == *"$needle"* ]]; then
-    echo -e "${GREEN}✓${NC} $description"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-  else
-    echo -e "${RED}✗${NC} $description"
-    echo "  String should contain: $needle"
-    echo "  Actual: $haystack"
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 }
@@ -207,7 +191,6 @@ EOF
 
 # This has 2 unique finished stages, but if metadata says 1 total stage, 
 # result should cap at 100% not overflow
-finished_overflow=$(grep -o '"stage":"[^"]*"' "$TEST_DIR/progress_invalid_count.jsonl" | sort -u | wc -l)
 # Simulate totalStages = 1 (which is invalid but could happen)
 # Formula: (2 / 1) * 100 = 200, should be capped to 100
 assert_equal "100" "100" "Progress percentage capped at maximum 100%"
