@@ -373,6 +373,10 @@ export interface PreflightResponse {
   status: 'ok' | 'degraded' | 'error';
   timestamp: string;
   checks: PreflightCheck[];
+  containerStartup?: {
+    timestamp: string;
+    checks: PreflightCheck[];
+  };
   image?: string;
   imageDigest?: string;
   templateImage?: string;

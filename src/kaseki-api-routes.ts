@@ -9,6 +9,7 @@ import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import { execDockerCommand } from './lib/subprocess-helpers';
+import { getContainerPreflightResults } from './startup/container-preflight';
 import {
   RunRequestSchema,
   RunResponse,
@@ -1101,6 +1102,16 @@ export function createApiRouter(
    */
   router.get('/preflight', (_req: Request, res: Response) => {
     const response = buildPreflightResponse(config);
+    
+    // Include container startup diagnostics if available
+    const containerPreflightResults = getContainerPreflightResults();
+    if (containerPreflightResults) {
+      response.containerStartup = {
+        timestamp: containerPreflightResults.timestamp,
+        checks: containerPreflightResults.checks,
+      };
+    }
+    
     res.status(response.status === 'error' ? 503 : 200).json(response);
   });
 

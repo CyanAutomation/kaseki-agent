@@ -144,6 +144,56 @@ docker-compose up -d
 docker-compose logs -f kaseki-api
 ```
 
+### Symptom: Container startup warnings in logs
+
+**Logs show:**
+
+```
+⚠️ Container preflight diagnostics completed with X warning(s):
+  • git-freshness: FAIL — Permission denied
+  → Remediation: Fix permissions: sudo chown -R 10000:10000 /agents
+  
+  • git-safe-directory: FAIL — Git safe.directory not configured
+  → Remediation: Configure: git config --global --add safe.directory /agents/kaseki-agent
+
+The API will continue to start. See /api/preflight for full details.
+```
+
+**Cause:** These are **non-blocking warnings** from container startup diagnostics. They indicate that:
+
+1. **Setup completeness issue**: `sudo kaseki-agent host setup --fix` may not have run, or permissions have drifted since then
+2. **Setup staleness issue**: Git configuration or permissions need refreshing
+
+The container startup diagnostics automatically check for these conditions and log warnings **without blocking the API from starting**. This allows the API to serve requests while you remediate background issues.
+
+**Fix:** Run the host setup command to resolve all warnings:
+
+```bash
+# On the host (not in container):
+sudo kaseki-agent host setup --fix --recreate-api
+
+# Or if you don't have the CLI installed:
+cd /path/to/kaseki-agent && sudo ./scripts/kaseki-setup-host.sh --fix --recreate-api
+```
+
+**Verify fix:** After remediation, restart the container and check logs for "All container preflight checks passed":
+
+```bash
+docker-compose down
+docker-compose up -d
+
+# Check for success message:
+docker-compose logs kaseki-api | grep "preflight"
+```
+
+**For programmatic access:** Call the `/api/preflight` endpoint to see full diagnostic details:
+
+```bash
+curl -H "Authorization: Bearer $KASEKI_API_KEY" http://localhost:8080/api/preflight | jq '.containerStartup'
+```
+
+The `containerStartup` section in the response lists all startup diagnostics with detailed status.
+
 ### Symptom: "Could not create /agents/kaseki-template"
 
 **Logs show:**
