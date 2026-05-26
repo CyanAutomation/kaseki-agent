@@ -111,7 +111,7 @@ describe('OpenAPI Path Builders', () => {
         } else {
           expect(pathDef[method].security).toBeUndefined();
         }
-        expect(Object.keys(pathDef[method].responses).sort()).toEqual(expect.arrayContaining(statuses));
+        expect(Object.keys(pathDef[method].responses).sort()).toEqual(statuses.sort());
       }
     );
 
