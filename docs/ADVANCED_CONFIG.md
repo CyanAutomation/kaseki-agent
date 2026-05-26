@@ -289,11 +289,13 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/**"  # Manual allowlist only
 ```
 
 Or via API:
+
 ```json
 { "scouting": { "enabled": false }, "changedFilesAllowlist": ["src/**"] }
 ```
 
 **Artifacts generated**:
+
 - `/results/scouting.json` → Full research + suggested_allowlist + coverage metrics
 - `/results/scouting-report.md` → Human-readable coverage summary
 - `/results/metadata.jsonl` → Log entry for allowlist merge decision
@@ -452,19 +454,35 @@ Kaseki can run TypeScript compilation before invoking the agent to catch export 
 - **Default**: `true`
 - **Paths**: Single-run, Local API, Production API
 - **Description**: Enable automatic TypeScript pre-check before agent invocation
-- **Behavior**:
-  - If `true` (default), runs `KASEKI_TS_CHECK_COMMAND` after dependencies are installed, before agent runs
-  - If TypeScript compilation fails and scouting is disabled, execution exits immediately (exit code propagated)
-  - If TypeScript compilation fails and scouting is enabled, a warning is logged but execution continues (experimental path)
+- **Behavior** (now with intelligent auto-detection):
+  - If `false` (explicitly disabled), skips entirely → `skipped_by_config`
+  - If `true` (default) AND no TypeScript detected, skips gracefully → `skipped_no_typescript`
+    - Checks for `tsconfig.json` OR `typescript` dependency (dev/regular/optional)
+    - Non-TS projects don't fail on missing build script (safe for multi-language repos)
+  - If `true` AND TypeScript detected but npm script missing, skips with warning → `skipped_missing_script`
+    - Logs warning to `/results/pre-validation-ts-check.log`
+    - Emits `typescript_precheck_skipped_missing_script` event (non-fatal)
+  - If `true` AND TypeScript detected AND script exists:
+    - Runs `KASEKI_TS_CHECK_COMMAND` after dependencies are installed
+    - If compilation succeeds → `success`
+    - If compilation fails and scouting disabled → fatal exit (propagated exit code)
+    - If compilation fails and scouting enabled → logs warning, continues (experimental path)
   - Output logged to `/results/pre-validation-ts-check.log`
-  - Exit code and duration recorded in `metadata.json` under `typescript_precheck`
-- **Timing Impact**: ~30 seconds per run (minimal)
-- **Use case**: Repositories where TypeScript exports are critical; prevents wasted agent time
+  - Exit code, duration, and detail (success/failed/skipped_*) recorded in `metadata.json` under `typescript_precheck`
+  - Stage timings recorded to `/results/stage-timings.tsv`
+- **Timing Impact**: ~30 seconds per run (if check runs); 0-1 seconds for skipped cases
+- **Use case**:
+  - Repositories where TypeScript exports are critical → keep default `true`
+  - Multi-language repos (Python, Go, JS mixed) → auto-detection skips safely for non-TS projects
+  - Performance-optimized runs → set to `false` to disable entirely
 - **Example**:
 
   ```bash
-  # Disable TS pre-check for speed-optimized runs (not recommended)
+  # Disable TS pre-check entirely (not recommended)
   KASEKI_TS_PRE_CHECK=0
+  
+  # Keep enabled (default) - auto-detection handles non-TS projects safely
+  KASEKI_TS_PRE_CHECK=1
   ```
 
 ### `KASEKI_TS_CHECK_COMMAND`
@@ -472,11 +490,12 @@ Kaseki can run TypeScript compilation before invoking the agent to catch export 
 - **Type**: `string` (shell command)
 - **Default**: `npm run build`
 - **Paths**: Single-run, Local API, Production API
-- **Description**: Command to run for TypeScript pre-check
+- **Description**: Command to run for TypeScript pre-check (only runs if TypeScript is detected and script exists)
 - **Behavior**:
   - Executed in the repository root after dependencies are installed
+  - Only executed if TypeScript project detected AND npm script exists (auto-detection prevents errors)
   - Must succeed (exit code 0) for the check to pass
-  - Common commands: `npm run build`, `tsc --noEmit`, `tsc`
+  - Common commands: `npm run build`, `tsc --noEmit`, `tsc`, `npm run compile`
   - Customizable per project; check your `package.json` for available scripts
 - **Examples**:
 
@@ -495,11 +514,13 @@ Kaseki can run TypeScript compilation before invoking the agent to catch export 
   ```
 
 **Artifacts generated**:
+
 - `/results/pre-validation-ts-check.log` → Full command output and errors
 - `metadata.json` → `typescript_precheck` object with `{enabled, command, exit_code, duration_seconds, timestamp, log_file}`
 
 **Error diagnostics**:
 Check `/results/pre-validation-ts-check.log` for TypeScript compiler output. Common issues:
+
 - Missing type definitions
 - Export statements referencing non-existent modules
 - TypeScript configuration errors (tsconfig.json)
