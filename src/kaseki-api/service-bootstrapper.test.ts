@@ -140,7 +140,8 @@ describe('ServiceBootstrapper', () => {
     });
 
     it('should propagate initialization failure and not initialize downstream dependencies', async () => {
-      const cleanupSpy = jest.fn();
+      const cacheCleanupSpy = jest.fn();
+      const webhookShutdownSpy = jest.fn().mockResolvedValue(undefined);
       const schedulerCtorSpy = jest.fn();
       const preFlightCtorSpy = jest.fn();
       const initError = new Error('IdempotencyStore failed to initialize');
@@ -148,11 +149,11 @@ describe('ServiceBootstrapper', () => {
       let mockedBootstrapServices!: typeof bootstrapServices;
       await jest.isolateModulesAsync(async () => {
         jest.doMock('../result-cache', () => ({
-          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: jest.fn(), dispose: cleanupSpy })),
+          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: jest.fn(), clearAll: cacheCleanupSpy })),
         }));
 
         jest.doMock('../webhook-manager', () => ({
-          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: jest.fn().mockResolvedValue(undefined) })),
+          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: webhookShutdownSpy })),
         }));
 
         jest.doMock('../idempotency-store', () => ({
@@ -185,8 +186,8 @@ describe('ServiceBootstrapper', () => {
 
       expect(preFlightCtorSpy).not.toHaveBeenCalled();
       expect(schedulerCtorSpy).not.toHaveBeenCalled();
-      // Explicitly verify no implicit cleanup contract exists during bootstrap failure.
-      expect(cleanupSpy).not.toHaveBeenCalled();
+      expect(webhookShutdownSpy).toHaveBeenCalledTimes(1);
+      expect(cacheCleanupSpy).toHaveBeenCalledTimes(1);
     });
   });
 
