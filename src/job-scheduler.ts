@@ -558,7 +558,8 @@ export class JobScheduler {
     this.transitionState(job.id, JobExecutionState.STARTING, JobExecutionState.RUNNING);
 
     // Configure timeout (extracted)
-    const timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
+    // Configure timeout (extracted)
+    timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
     job.timeout = timeoutHandles.timeoutHandle;
 
     // Attach process listeners with shared stream state
