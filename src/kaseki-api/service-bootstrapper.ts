@@ -49,6 +49,8 @@ export interface ShutdownDeps {
 export async function bootstrapServices(config: KasekiApiConfig): Promise<BootstrappedServices> {
   logger.info('Starting service bootstrap');
 
+  const cleanupTasks: Array<{ name: string; run: () => void | Promise<void> }> = [];
+
   try {
     // 1. Create artifact cache (no dependencies)
     logger.info('Initializing ResultCache');
@@ -58,16 +60,28 @@ export async function bootstrapServices(config: KasekiApiConfig): Promise<Bootst
       maxFileBytes: config.artifactCacheMaxFileBytes,
     });
     logger.info('ResultCache initialized');
+    cleanupTasks.push({
+      name: 'ResultCache',
+      run: () => artifactCache.clearAll(),
+    });
 
     // 2. Create webhook manager (depends on: resultsDir)
     logger.info('Initializing WebhookManager');
     const webhookManager = new WebhookManager(config.resultsDir);
     logger.info('WebhookManager initialized');
+    cleanupTasks.push({
+      name: 'WebhookManager',
+      run: () => webhookManager.shutdown(),
+    });
 
     // 3. Create idempotency store (depends on: resultsDir)
     logger.info('Initializing IdempotencyStore');
     const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
     logger.info('IdempotencyStore initialized');
+    cleanupTasks.push({
+      name: 'IdempotencyStore',
+      run: () => idempotencyStore.shutdown(),
+    });
 
     // 4. Create pre-flight validator (no dependencies)
     logger.info('Initializing PreFlightValidator');
@@ -89,6 +103,18 @@ export async function bootstrapServices(config: KasekiApiConfig): Promise<Bootst
       scheduler,
     };
   } catch (err) {
+    for (const task of cleanupTasks.reverse()) {
+      try {
+        await task.run();
+        logger.info(`Cleaned up ${task.name} after bootstrap failure`);
+      } catch (cleanupErr) {
+        logger.error('Failed bootstrap cleanup task', {
+          service: task.name,
+          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        });
+      }
+    }
+
     const errorMessage = err instanceof Error ? err.message : String(err);
     logger.error('Failed to bootstrap services', { error: errorMessage });
     throw new Error(`Service bootstrap failed: ${errorMessage}`, { cause: err });
