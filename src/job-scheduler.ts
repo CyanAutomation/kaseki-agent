@@ -439,17 +439,16 @@ export class JobScheduler {
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    stdoutData: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void },
-    stderrData: { buffer: Buffer<ArrayBufferLike> }
+    streamState: { stdout: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void }; stderr: { buffer: Buffer<ArrayBufferLike> } }
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stdoutData.buffer = this.appendBoundedTail(stdoutData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stdout.buffer = this.appendBoundedTail(streamState.stdout.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      stderrData.buffer = this.appendBoundedTail(stderrData.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stderr.buffer = this.appendBoundedTail(streamState.stderr.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.on('exit', (code) => {
@@ -458,7 +457,7 @@ export class JobScheduler {
         return;
       }
       this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.EXITED);
-      stdoutData.onExit(code ?? -1);
+      streamState.stdout.onExit(code ?? -1);
     });
 
     proc.on('error', (err) => {
@@ -536,9 +535,21 @@ export class JobScheduler {
     this.processExited.set(job.id, false);
     this.clearLiveProgressCache(job.id);
 
-    // Use mutable references to track buffer state changes
-    const stdoutTailRef = { buffer: Buffer.alloc(0) };
-    const stderrTailRef = { buffer: Buffer.alloc(0) };
+    // Create shared mutable stream state object for live buffer references
+    // Create shared mutable stream state object for live buffer references
+    let timeoutHandles: TimeoutHandles & { isTimedOut: () => boolean };
+    const streamState = {
+      stdout: {
+        buffer: Buffer.alloc(0),
+        isTimedOut: false,
+        onExit: (code: number) => {
+          const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
+          // Read current buffer state from shared object at exit time
+          this.handleProcessExit(job, code, isTimedOut, streamState.stdout.buffer, streamState.stderr.buffer, timeoutHandles);
+        }
+      } as { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void },
+      stderr: { buffer: Buffer.alloc(0) }
+    };
 
     job.processId = proc.pid;
     this.persistJobs();
@@ -547,23 +558,12 @@ export class JobScheduler {
     this.transitionState(job.id, JobExecutionState.STARTING, JobExecutionState.RUNNING);
 
     // Configure timeout (extracted)
-    const timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
+    // Configure timeout (extracted)
+    timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
     job.timeout = timeoutHandles.timeoutHandle;
 
-    // Attach process listeners (extracted)
-    const stdoutData = stdoutTailRef as { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void };
-    stdoutData.isTimedOut = false;
-    stdoutData.onExit = (code: number) => {
-      const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-      this.handleProcessExit(job, code, isTimedOut, stdoutTailRef.buffer, stderrTailRef.buffer, timeoutHandles);
-    };
-
-    const stderrData = stderrTailRef;
-
-    this.attachProcessListeners(job.id, job, proc, stdoutData, stderrData);
-
-    // The mutable references are updated in place, so we can access the final state directly
-    // via stdoutTailRef.buffer and stderrTailRef.buffer in the onExit callback
+    // Attach process listeners with shared stream state
+    this.attachProcessListeners(job.id, job, proc, streamState);
   }
 
   /**
