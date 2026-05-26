@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.52.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.51.1...v1.52.0) (2026-05-26)
+
+
+### Bug Fixes
+
+* add jq to Dockerfile dependencies and validate JSON encoding in GitHub operations ([6d086da](https://github.com/CyanAutomation/kaseki-agent/commit/6d086da66dfd3a5a689fe459695b80b019a7cc68))
+* standardize string quotes in diagnostics messages for consistency ([f40b5d5](https://github.com/CyanAutomation/kaseki-agent/commit/f40b5d598803d32e4ee582f3a48cacdde6fa1841))
+
+
+### Features
+
+* add TypeScript pre-check feature to catch compilation errors early ([bbb3f5d](https://github.com/CyanAutomation/kaseki-agent/commit/bbb3f5d2bc8accb387e606318a0f33ab6e63b782))
+* enhance JobScheduler to maintain separate stdout and stderr buffers for improved logging ([84e558f](https://github.com/CyanAutomation/kaseki-agent/commit/84e558fad5f24ca572c27aebeaebc33660153bd0))
+* enhance TypeScript pre-check with auto-detection and improved logging ([9c214ab](https://github.com/CyanAutomation/kaseki-agent/commit/9c214ab6ba0923f03a2a115b73d3953869c9462f))
+* implement container preflight diagnostics for startup checks and logging ([14861da](https://github.com/CyanAutomation/kaseki-agent/commit/14861da90d28a7404cec8beb596f458114b214cf))
+
 ## [1.51.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.51.0...v1.51.1) (2026-05-25)
 
 
