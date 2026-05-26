@@ -1,0 +1,13 @@
+{
+  "task": "inspect",
+  "requirements": [],
+  "relevant_files": [],
+  "observations": [],
+  "plan": [],
+  "validation": [],
+  "risks": [],
+  "suggested_allowlist": {
+    "agent_patterns": [],
+    "validation_patterns": [7]
+  }
+}
