@@ -51,7 +51,10 @@ if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested
   console.log('');
 }
 `, scoutingPath], { encoding: 'utf8' });
-    const [agent = '', validation = ''] = output.trimEnd().split('\n');
+    const lines = output.trimEnd().split('\n');
+    const agent = lines[0] || '';
+    const validation = lines[1] || '';
+    return { agent, validation };
     return { agent, validation };
   };
 
