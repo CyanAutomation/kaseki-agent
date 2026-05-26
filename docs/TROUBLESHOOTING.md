@@ -490,100 +490,139 @@ TypeScript pre-check runs automatically after dependencies install, before the a
 }
 ```
 
-If `KASEKI_TS_PRE_CHECK=1` (default) and `KASEKI_SCOUTING=0`, TypeScript failures are **fatal** and stop execution.  
-If scouting is enabled, a warning is logged but execution continues (experimental path).
+If `KASEKI_TS_PRE_CHECK=1` (default), TypeScript detection is **automatic**:
+
+- Non-TypeScript projects skip gracefully (no fatal error)
+- Missing npm scripts are warned about but don't fail
+- Only genuine compilation failures trigger exit (fatal if scouting disabled)
 
 ### Diagnosis
 
 ```bash
-# 1. View TypeScript compilation output
+# 1. View TypeScript pre-check output
 cat /agents/kaseki-results/kaseki-N/pre-validation-ts-check.log
 
-# Output example:
-# src/types.ts:42:8 - error TS2307: Cannot find module 'missing-dep'
-# Found 1 error in 3.42s
+# Output examples:
+# - "skipped (no TypeScript detected)" → Non-TS project, skipped safely
+# - "skipped (npm script 'build' not found)" → TS project but script missing
+# - "error TS2307: Cannot find module 'missing-dep'" → Real compilation error
 
-# 2. Check metadata for exit code and duration
+# 2. Check metadata for detail status
 cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.typescript_precheck'
 
-# 3. Check if TS pre-check was enabled
-cat /agents/kaseki-results/kaseki-N/metadata.json |
-  jq '.typescript_precheck.enabled, .typescript_precheck.command'
+# Possible detail values:
+# - success: Check passed
+# - failed: Genuine TypeScript compilation errors
+# - skipped_no_typescript: Non-TS project (no tsconfig.json, no typescript dependency)
+# - skipped_missing_script: TS detected but npm script not defined
+# - skipped_by_config: KASEKI_TS_PRE_CHECK=0
+
+# 3. Check stage timings for all pre-check details
+cat /agents/kaseki-results/kaseki-N/stage-timings.tsv | grep "typescript precheck"
 ```
 
-### Common Issues & Fixes
+### Common Scenarios & Fixes
 
-**Issue: "Cannot find module" error**
+**Scenario: TypeScript pre-check skipped, non-TS project**
+
+```
+✓ typescript precheck: skipped (no TypeScript detected)
+detail: skipped_no_typescript
+```
+
+Expected for Python, Go, pure JS projects. No action needed.
+
+**Scenario: TypeScript detected but npm script missing (warning)**
+
+```
+⚠ typescript precheck: skipped (npm script 'build' not found)
+detail: skipped_missing_script
+error event: typescript_precheck_skipped_missing_script
+```
+
+**Fix (optional):** Either:
+
+- Define the script in `package.json`: `"build": "tsc"`
+- Use a different existing script: `KASEKI_TS_CHECK_COMMAND="npm run compile"`
+- Explicitly use tsc: `KASEKI_TS_CHECK_COMMAND="tsc --noEmit"`
+
+**Scenario: "Cannot find module" error (actual compilation failure)**
 
 ```
 error TS2307: Cannot find module '@types/node' or its corresponding type declarations
 ```
 
-**Fix:** Missing type definitions. Either:
+**Fix:** Missing type definitions:
+
 - Run `npm install @types/node` to add missing dependency
 - Use `npm ci --include=optional` in your build script
 - Verify `tsconfig.json` has correct `types` array
 
-**Issue: Build script doesn't exist**
+**Scenario: Build script doesn't exist in non-TS project**
 
 ```
-error: npm run build: No such npm script
+✓ typescript precheck: skipped (no TypeScript detected)
 ```
 
-**Check:** Verify `npm run build` is defined in package.json. If not, set:
+This is normal. Non-TS projects skip even if `npm run build` doesn't exist.
 
-```bash
-KASEKI_TS_CHECK_COMMAND="tsc --noEmit"  # Use tsc directly
-```
-
-**Issue: TypeScript configuration error**
+**Scenario: TypeScript configuration error**
 
 ```
 error TS5024: 'rootDir' is not specified, and there are files found in the project.
 ```
 
-**Fix:** tsconfig.json misconfiguration. Either:
+**Fix:** `tsconfig.json` misconfiguration:
+
 - Add `"rootDir": "src"` to tsconfig.json
 - Verify tsconfig.json is in repo root
 - Check for conflicting tsconfig files
 
-**Issue: Type errors in source code**
+**Scenario: Type errors in source code**
 
 ```
 error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'
 ```
 
-**Fix:** Genuine type errors in source. Either:
+**Fix:** Genuine type errors:
+
 - Fix the source code
-- Disable TS pre-check if known: `KASEKI_TS_PRE_CHECK=0`
-- Use different TS check command: `KASEKI_TS_CHECK_COMMAND="tsc"`
+- Disable TS pre-check if not critical: `KASEKI_TS_PRE_CHECK=0`
+- Use lighter check: `KASEKI_TS_CHECK_COMMAND="tsc --noEmit"`
 
 ### Configuration & Prevention
 
-- **Disable TS pre-check** (not recommended, defeats the purpose):
+**Disable TS pre-check entirely** (not recommended, defeats early error detection):
 
-  ```bash
-  KASEKI_TS_PRE_CHECK=0
-  ```
+```bash
+KASEKI_TS_PRE_CHECK=0
+```
 
-- **Use lighter TS check** (type-check only, no emit):
+**Use lighter TS check** (type-check only, no emit):
 
-  ```bash
-  KASEKI_TS_CHECK_COMMAND="tsc --noEmit"
-  ```
+```bash
+KASEKI_TS_CHECK_COMMAND="tsc --noEmit"
+```
 
-- **Custom build command**:
+**Custom build command** (must exist in package.json):
 
-  ```bash
-  KASEKI_TS_CHECK_COMMAND="npm run build:validate"
-  ```
+```bash
+KASEKI_TS_CHECK_COMMAND="npm run build:validate"
+```
 
-- **Continue despite TS failures** (experimental, only with scouting):
+**Continue despite TS failures** (experimental, only with scouting):
 
-  ```bash
-  KASEKI_TS_PRE_CHECK=1
-  KASEKI_SCOUTING=1
-  ```
+```bash
+KASEKI_TS_PRE_CHECK=1
+KASEKI_SCOUTING=1
+```
+
+**Multi-language repos** (Python, Go, JS mixed):
+
+```bash
+# Default is safe - TS auto-detection skips non-TS projects
+KASEKI_TS_PRE_CHECK=1  # stays enabled, works safely
+```
 
 ---
 

@@ -1625,9 +1625,49 @@ record_skipped_validation_command() {
   printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
 }
 
+has_typescript_project() {
+  # Auto-detect TypeScript presence in the project
+  # Checks for:
+  # 1. tsconfig.json file (explicit TypeScript config)
+  # 2. typescript dependency (regular, dev, or optional)
+  # Exit code: 0 if TypeScript detected, 1 otherwise
+  
+  # Check for tsconfig.json
+  [ -f tsconfig.json ] && return 0
+  
+  # Check for typescript in package.json (dev, regular, or optional dependencies)
+  [ -f package.json ] || return 1
+  node - <<'NODE'
+try {
+  const pkg = require('./package.json');
+  const isDep = pkg.dependencies?.typescript || 
+                pkg.devDependencies?.typescript ||
+                pkg.optionalDependencies?.typescript;
+  process.exit(isDep ? 0 : 1);
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+has_npm_build_command() {
+  # Check if the configured npm script exists in package.json
+  # Returns 0 if script exists, 1 otherwise
+  local command="$1"
+  local script_name
+  
+  script_name="$(npm_run_script_name "$command")" || return 1
+  package_json_has_npm_script "$script_name" && return 0
+  return 1
+}
+
 run_typescript_precheck() {
   # TypeScript compilation pre-check: runs before agent invocation to catch export/compile errors early
-  # Exit code: 0 = passed, non-zero = failed
+  # Now with intelligent auto-detection:
+  # - Skips if no TypeScript detected in project
+  # - Skips if configured command (npm script) doesn't exist
+  # - Only fails if TypeScript is present AND the check genuinely fails
+  # Exit code: 0 = passed/skipped, non-zero = failed
   # Returns silently; exit code stored in TS_PRE_CHECK_EXIT global
   
   TS_PRE_CHECK_EXIT=0
@@ -1640,6 +1680,27 @@ run_typescript_precheck() {
     return 0
   fi
   
+  # Auto-detect: skip if no TypeScript project detected
+  if ! has_typescript_project; then
+    emit_progress "typescript precheck" "skipped (no TypeScript detected)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_no_typescript"
+    return 0
+  fi
+  
+  # Auto-detect: skip if configured npm script doesn't exist
+  if ! has_npm_build_command "$KASEKI_TS_CHECK_COMMAND"; then
+    local missing_script
+    missing_script="$(npm_run_script_name "$KASEKI_TS_CHECK_COMMAND")" || missing_script="$KASEKI_TS_CHECK_COMMAND"
+    printf '\n==> TypeScript pre-check\n' | tee -a /results/pre-validation-ts-check.log
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a /results/pre-validation-ts-check.log
+    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a /results/pre-validation-ts-check.log
+    emit_error_event "typescript_precheck_skipped_missing_script" "TypeScript check skipped: npm script '$missing_script' not defined" "continue"
+    emit_progress "typescript precheck" "skipped (npm script '$missing_script' not found)"
+    record_stage_timing "typescript precheck" 0 0 "skipped_missing_script"
+    return 0
+  fi
+  
+  # TypeScript detected and script exists - run the check
   set +e
   local ts_check_start ts_check_end ts_check_duration ts_check_exit
   ts_check_start="$(date +%s)"
@@ -4643,6 +4704,8 @@ else
 fi
 
 # TypeScript pre-check: runs after pre-agent validation, before scouting agent
+# Now with auto-detection: skips gracefully if no TypeScript is detected or npm script is missing
+# Only fails if TypeScript is present AND the check genuinely fails
 printf '\n==> typescript pre-check\n'
 set_current_stage "typescript precheck"
 if ! run_typescript_precheck; then
