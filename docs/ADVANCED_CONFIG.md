@@ -440,6 +440,71 @@ The evaluator writes `/results/run-evaluation.json`, `/results/run-evaluation-ev
   KASEKI_VALIDATION_ALLOW_MISSING_SCRIPTS=false
   ```
 
+### TypeScript Pre-Check (v2.7+)
+
+**Early TypeScript compilation detection before agent runs**
+
+Kaseki can run TypeScript compilation before invoking the agent to catch export issues, type errors, and build failures early. Without this check, TypeScript errors are only discovered during post-agent validation, wasting 15+ minutes of agent time.
+
+### `KASEKI_TS_PRE_CHECK`
+
+- **Type**: `boolean`
+- **Default**: `true`
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Enable automatic TypeScript pre-check before agent invocation
+- **Behavior**:
+  - If `true` (default), runs `KASEKI_TS_CHECK_COMMAND` after dependencies are installed, before agent runs
+  - If TypeScript compilation fails and scouting is disabled, execution exits immediately (exit code propagated)
+  - If TypeScript compilation fails and scouting is enabled, a warning is logged but execution continues (experimental path)
+  - Output logged to `/results/pre-validation-ts-check.log`
+  - Exit code and duration recorded in `metadata.json` under `typescript_precheck`
+- **Timing Impact**: ~30 seconds per run (minimal)
+- **Use case**: Repositories where TypeScript exports are critical; prevents wasted agent time
+- **Example**:
+
+  ```bash
+  # Disable TS pre-check for speed-optimized runs (not recommended)
+  KASEKI_TS_PRE_CHECK=0
+  ```
+
+### `KASEKI_TS_CHECK_COMMAND`
+
+- **Type**: `string` (shell command)
+- **Default**: `npm run build`
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Command to run for TypeScript pre-check
+- **Behavior**:
+  - Executed in the repository root after dependencies are installed
+  - Must succeed (exit code 0) for the check to pass
+  - Common commands: `npm run build`, `tsc --noEmit`, `tsc`
+  - Customizable per project; check your `package.json` for available scripts
+- **Examples**:
+
+  ```bash
+  # Default: full build (catches export issues)
+  KASEKI_TS_CHECK_COMMAND="npm run build"
+
+  # Just type-check without emit (faster)
+  KASEKI_TS_CHECK_COMMAND="tsc --noEmit"
+
+  # Custom build script
+  KASEKI_TS_CHECK_COMMAND="npm run build:validate"
+
+  # Monorepo or multi-step build
+  KASEKI_TS_CHECK_COMMAND="npm run prebuild && npm run build"
+  ```
+
+**Artifacts generated**:
+- `/results/pre-validation-ts-check.log` → Full command output and errors
+- `metadata.json` → `typescript_precheck` object with `{enabled, command, exit_code, duration_seconds, timestamp, log_file}`
+
+**Error diagnostics**:
+Check `/results/pre-validation-ts-check.log` for TypeScript compiler output. Common issues:
+- Missing type definitions
+- Export statements referencing non-existent modules
+- TypeScript configuration errors (tsconfig.json)
+- Build script misconfiguration
+
 ---
 
 ## Caching & Performance Zone

@@ -375,6 +375,218 @@ npm ERR! code E401 Unauthorized
 
 ---
 
+## Goal Check Artifact Validation Failures
+
+### Problem: Goal Check Fails with "goal_check_artifact_invalid"
+
+Goal check validation happens after initial validation, before attempting retry. If the goal-check artifact (JSON verdict) fails schema validation, the run logs exit code **86** and may retry (if `KASEKI_GOAL_CHECK_MAX_RETRIES > 0`).
+
+**Symptoms:**
+
+```json
+{
+  "exit_code": 86,
+  "goal_check_failure_reason": "goal_check_artifact_invalid",
+  "goal_check_met": false
+}
+```
+
+### Diagnosis
+
+Goal check errors are recorded in `/results/goal-check-validation-errors.jsonl` with per-field details:
+
+```bash
+# 1. View validation errors
+cat /agents/kaseki-results/kaseki-N/goal-check-validation-errors.jsonl | jq .
+
+# Output includes:
+# {
+#   "timestamp": "2026-05-25T23:30:00Z",
+#   "attempt": 1,
+#   "summary": "critical",
+#   "errors": [
+#     {"field": "confidence", "expected": "low|medium|high", "actual": "MEDIUM", ...},
+#     {"field": "retry_prompt", "expected": "non-empty string (when met=false)", ...}
+#   ]
+# }
+
+# 2. View all attempted verdicts
+cat /agents/kaseki-results/kaseki-N/goal-check-attempts.jsonl | jq .
+
+# 3. Check raw goal-check output
+tail -100 /agents/kaseki-results/kaseki-N/goal-check-stderr.log
+
+# 4. Check goal-check prompt that was sent
+grep -A 200 "build_goal_check_prompt" /results/metadata.jsonl 2>/dev/null || echo "N/A"
+```
+
+### Common Issues & Fixes
+
+**Issue: Confidence value is wrong case** (`"MEDIUM"` instead of `"medium"`)
+
+```
+errors: [
+  {"field": "confidence", "expected": "low|medium|high", "actual": "MEDIUM", ...}
+]
+```
+
+**Fix:** Goal check model is generating the wrong case. This usually happens due to ambiguous instructions. The model will be retried with clarified instructions.
+
+**Issue: Retry prompt missing when met=false**
+
+```
+errors: [
+  {"field": "retry_prompt", "expected": "non-empty string (when met=false)", "actual": "empty string", ...}
+]
+```
+
+**Fix:** When the goal is unmet, the evaluator must provide guidance. If this persists, the agent may need clearer task instructions or simpler goals.
+
+**Issue: Summary is empty**
+
+```
+errors: [
+  {"field": "summary", "expected": "non-empty string", "actual": "empty string", ...}
+]
+```
+
+**Fix:** Goal check verdict summary cannot be empty. The evaluator will retry.
+
+**Issue: Root artifact is not an object** (null, array, primitive)
+
+```
+errors: [
+  {"field": "root", "expected": "object", "actual": "null", "severity": "critical", ...}
+]
+```
+
+**Fix:** Goal check output was malformed JSON or not an object. Check `goal-check-stderr.log` for parse errors.
+
+### Prevention
+
+- Goal check validation is automatic and transparent
+- Errors are logged but retries proceed if `KASEKI_GOAL_CHECK_MAX_RETRIES > 0` (default: 1)
+- If retries are exhausted (exit code 8), review the artifact structure in `goal-check-attempts.jsonl`
+- To disable goal check entirely: `KASEKI_GOAL_CHECK=0`
+
+---
+
+## TypeScript Pre-Check Failures
+
+### Problem: TypeScript Pre-Check Fails Before Agent Runs
+
+TypeScript pre-check runs automatically after dependencies install, before the agent is invoked. It catches TypeScript compilation errors early (within ~30 seconds) instead of wasting 15+ minutes on agent invocation.
+
+**Symptoms:**
+
+```json
+{
+  "typescript_precheck": {
+    "enabled": true,
+    "exit_code": 1,
+    "duration_seconds": 25,
+    "log_file": "pre-validation-ts-check.log"
+  }
+}
+```
+
+If `KASEKI_TS_PRE_CHECK=1` (default) and `KASEKI_SCOUTING=0`, TypeScript failures are **fatal** and stop execution.  
+If scouting is enabled, a warning is logged but execution continues (experimental path).
+
+### Diagnosis
+
+```bash
+# 1. View TypeScript compilation output
+cat /agents/kaseki-results/kaseki-N/pre-validation-ts-check.log
+
+# Output example:
+# src/types.ts:42:8 - error TS2307: Cannot find module 'missing-dep'
+# Found 1 error in 3.42s
+
+# 2. Check metadata for exit code and duration
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.typescript_precheck'
+
+# 3. Check if TS pre-check was enabled
+cat /agents/kaseki-results/kaseki-N/metadata.json |
+  jq '.typescript_precheck.enabled, .typescript_precheck.command'
+```
+
+### Common Issues & Fixes
+
+**Issue: "Cannot find module" error**
+
+```
+error TS2307: Cannot find module '@types/node' or its corresponding type declarations
+```
+
+**Fix:** Missing type definitions. Either:
+- Run `npm install @types/node` to add missing dependency
+- Use `npm ci --include=optional` in your build script
+- Verify `tsconfig.json` has correct `types` array
+
+**Issue: Build script doesn't exist**
+
+```
+error: npm run build: No such npm script
+```
+
+**Check:** Verify `npm run build` is defined in package.json. If not, set:
+
+```bash
+KASEKI_TS_CHECK_COMMAND="tsc --noEmit"  # Use tsc directly
+```
+
+**Issue: TypeScript configuration error**
+
+```
+error TS5024: 'rootDir' is not specified, and there are files found in the project.
+```
+
+**Fix:** tsconfig.json misconfiguration. Either:
+- Add `"rootDir": "src"` to tsconfig.json
+- Verify tsconfig.json is in repo root
+- Check for conflicting tsconfig files
+
+**Issue: Type errors in source code**
+
+```
+error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'
+```
+
+**Fix:** Genuine type errors in source. Either:
+- Fix the source code
+- Disable TS pre-check if known: `KASEKI_TS_PRE_CHECK=0`
+- Use different TS check command: `KASEKI_TS_CHECK_COMMAND="tsc"`
+
+### Configuration & Prevention
+
+- **Disable TS pre-check** (not recommended, defeats the purpose):
+
+  ```bash
+  KASEKI_TS_PRE_CHECK=0
+  ```
+
+- **Use lighter TS check** (type-check only, no emit):
+
+  ```bash
+  KASEKI_TS_CHECK_COMMAND="tsc --noEmit"
+  ```
+
+- **Custom build command**:
+
+  ```bash
+  KASEKI_TS_CHECK_COMMAND="npm run build:validate"
+  ```
+
+- **Continue despite TS failures** (experimental, only with scouting):
+
+  ```bash
+  KASEKI_TS_PRE_CHECK=1
+  KASEKI_SCOUTING=1
+  ```
+
+---
+
 ## Quality Gate Failures
 
 ### Exit Code 4: Diff Exceeds Maximum Size

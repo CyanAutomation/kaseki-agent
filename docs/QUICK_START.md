@@ -300,6 +300,14 @@ KASEKI_AGENT_TIMEOUT_SECONDS=3600  # 1 hour
 KASEKI_PRE_AGENT_VALIDATION=false
 ```
 
+**Disable TypeScript pre-check** (enabled by default for early error detection):
+
+```bash
+KASEKI_TS_PRE_CHECK=0
+```
+
+By default, kaseki-agent runs `npm run build` before invoking the agent to catch TypeScript compilation errors early (saves ~15 minutes when export issues occur). This is automatic and transparent; errors are logged to `/results/pre-validation-ts-check.log`.
+
 ### Complete Variable Reference
 
 For full documentation of all 60+ configuration variables:
