@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.53.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.52.0...v1.53.0) (2026-05-26)
+
+
+### Bug Fixes
+
+* bind stdout/stderr listener state to tail refs (follow-up to kaseki-66) ([#422](https://github.com/CyanAutomation/kaseki-agent/issues/422)) ([ca4d00c](https://github.com/CyanAutomation/kaseki-agent/commit/ca4d00c33e13781d232da92638946ad4bb0e48c0))
+* correct trap syntax and remove unused variable in test scripts ([41704f3](https://github.com/CyanAutomation/kaseki-agent/commit/41704f355976fa6f731b45d2af274f90663ea4d8))
+* pass stream tail refs directly to listener wiring ([b694458](https://github.com/CyanAutomation/kaseki-agent/commit/b69445816c0e56b84289c75f2578f0d8ab3cefde))
+* stderr tail is never captured (wrong buffer is updat... (kaseki-66) ([#421](https://github.com/CyanAutomation/kaseki-agent/issues/421)) ([fa1e911](https://github.com/CyanAutomation/kaseki-agent/commit/fa1e911f2a7e1ea16ee206b8e3a3d36e19ebf944))
+* update version to 1.52.0 and enhance task progress calculation to prevent overflow errors ([b67aea1](https://github.com/CyanAutomation/kaseki-agent/commit/b67aea1eab6ac97ecb2e9a03885dc2f73d070124))
+
+
+### Features
+
+* enhance assessment report with structured subsections and increased text limits ([5bf7b4e](https://github.com/CyanAutomation/kaseki-agent/commit/5bf7b4efac5add7c9e0f150f8e5de87068a833bf))
+
 # [1.52.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.51.1...v1.52.0) (2026-05-26)
 
 
