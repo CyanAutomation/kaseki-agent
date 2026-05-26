@@ -100,7 +100,10 @@ describe('ServiceBootstrapper', () => {
         mockedBootstrapServices = bootstrapper.bootstrapServices;
       });
 
-      await mockedBootstrapServices!(mockConfig);
+      if (!mockedBootstrapServices) {
+        throw new Error('Failed to load bootstrapServices from isolated module');
+      }
+      await mockedBootstrapServices(mockConfig);
 
       expect(initOrder).toEqual([
         'ResultCache',
