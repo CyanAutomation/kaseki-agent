@@ -46,7 +46,21 @@ describe('DockerManager', () => {
   });
 
   describe('buildDockerArgs', () => {
-    it('should build correct docker args with entrypoint', () => {
+    it('should invoke docker run with expected arg ordering via runContainer', async () => {
+      const mockChild = {
+        stdout: null,
+        stderr: null,
+        on: jest.fn((event, callback) => {
+          if (event === 'exit') {
+            callback(0);
+          }
+        }),
+        kill: jest.fn(),
+      };
+
+      (spawn as jest.Mock).mockReturnValue(mockChild);
+      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
+
       const config: ContainerConfig = {
         image: 'test:latest',
         name: 'test-container',
@@ -57,17 +71,43 @@ describe('DockerManager', () => {
         environment: {
           REPO_URL: 'https://github.com/test/repo',
           GIT_REF: 'main',
+          OPENROUTER_API_KEY: 'sk-or-xxx',
         },
-        timeout: 1200,
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
-        command: ['agent'],
+        command: ['agent', '--task', 'run'],
       };
 
-      // Call the private method through runContainer's docker args building
-      // Since buildDockerArgs is private, we'll test through the public interface
-      // by checking that runContainer properly configures the arguments
-      expect(config.entrypoint).toBe('/usr/local/bin/kaseki-entrypoint');
-      expect(config.command).toEqual(['agent']);
+      await DockerManager.runContainer(config);
+
+      expect(spawn).toHaveBeenCalledTimes(1);
+
+      const [, spawnArgs] = (spawn as jest.Mock).mock.calls[0];
+      expect(spawnArgs[0]).toBe('run');
+
+      const imageIndex = spawnArgs.indexOf('test:latest');
+      expect(imageIndex).toBeGreaterThan(-1);
+
+      expect(spawnArgs).toContain('--entrypoint');
+      const entrypointIndex = spawnArgs.indexOf('--entrypoint');
+      expect(spawnArgs[entrypointIndex + 1]).toBe('/usr/local/bin/kaseki-entrypoint');
+
+      const workspaceMountIndex = spawnArgs.indexOf('-v');
+      expect(spawnArgs[workspaceMountIndex + 1]).toBe('/workspace:/workspace:rw');
+      expect(spawnArgs).toContain('/results:/results:rw');
+      expect(spawnArgs).toContain('/cache:/cache:rw');
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
+
+      expect(spawnArgs).toContain('-e');
+      expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');
+      expect(spawnArgs).toContain('GIT_REF=main');
+      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
+
+      expect(entrypointIndex).toBeLessThan(imageIndex);
+      expect(spawnArgs[imageIndex + 1]).toBe('agent');
+      expect(spawnArgs.slice(imageIndex + 1, imageIndex + 4)).toEqual(['agent', '--task', 'run']);
+
+      expect(spawnArgs).not.toContain('--privileged');
+      expect(spawnArgs).not.toContain('--network=host');
     });
 
     it('should filter out OPENROUTER_API_KEY from environment', () => {
