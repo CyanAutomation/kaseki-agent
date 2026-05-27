@@ -73,23 +73,58 @@ function artifactContentType(fileName: string): string {
   return 'text/plain';
 }
 
-function renderRunEvaluationPayload(parsed: Record<string, unknown>): RunEvaluationRenderedResponse {
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry));
+  }
+  if (value === undefined || value === null || value === '') {
+    return [];
+  }
+  return [String(value)];
+}
+
+function asObjectArray(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : { value: entry }));
+}
+
+function renderRunEvaluationPayload(parsed: Record<string, unknown>, includeMarkdown: boolean): RunEvaluationRenderedResponse {
+  const sections = {
+    overall: (parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment)
+      ? { assessment: parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment }
+      : undefined,
+    summary: asStringArray(parsed.summary),
+    problem: asStringArray(parsed.problem ?? parsed.issues ?? parsed.problems),
+    solution: asStringArray(parsed.solution ?? parsed.what_was_fixed ?? parsed.whatWasFixed ?? parsed.fixes),
+    humanReview: asStringArray(
+      parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus
+    ),
+    stages: asObjectArray(parsed.stages ?? parsed.stage_by_stage_evaluation ?? parsed.stageByStageEvaluation),
+    efficiency: asObjectArray(parsed.efficiency ?? parsed.efficiency_findings ?? parsed.efficiencyFindings),
+    validation: asObjectArray(parsed.validation ?? parsed.validation_outcome ?? parsed.validationOutcome),
+    opportunities: asObjectArray(
+      parsed.opportunities ?? parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities
+    ),
+    warnings: asObjectArray(parsed.warnings),
+    metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
+      ? parsed.metadata as Record<string, unknown>
+      : undefined,
+  };
+
+  const markdown = includeMarkdown
+    ? [
+      sections.summary.length ? `## Summary\n${sections.summary.map((line) => `- ${line}`).join('\n')}` : '',
+      sections.problem.length ? `## Problem\n${sections.problem.map((line) => `- ${line}`).join('\n')}` : '',
+      sections.solution.length ? `## Solution\n${sections.solution.map((line) => `- ${line}`).join('\n')}` : '',
+      sections.humanReview.length ? `## Human review\n${sections.humanReview.map((line) => `- ${line}`).join('\n')}` : '',
+    ].filter(Boolean).join('\n\n')
+    : undefined;
+
   return {
     format: 'rendered',
     file: 'run-evaluation.json',
-    sections: {
-      overallAssessment: parsed.overall_assessment ?? parsed.overallAssessment,
-      summary: parsed.summary,
-      whatWasFixed: parsed.what_was_fixed ?? parsed.whatWasFixed,
-      humanReviewRecommendations: parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus,
-      stageByStageEvaluation: parsed.stage_by_stage_evaluation ?? parsed.stageByStageEvaluation,
-      efficiencyFindings: parsed.efficiency_findings ?? parsed.efficiencyFindings,
-      validationOutcome: parsed.validation_outcome ?? parsed.validationOutcome,
-      improvementOpportunities: parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities,
-      warnings: parsed.warnings,
-      prSummary: parsed.pr_summary ?? parsed.prSummary,
-      metadata: parsed.metadata,
-    },
+    sections,
+    markdown,
     raw: parsed,
   };
 }
@@ -127,6 +162,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
 
     const fileName = req.params.file;
     const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : undefined;
+    const includeMarkdown = req.query.markdown === 'true' || req.query.markdown === '1';
 
     // Validate that the artifact is in the registry
     if (!ALL_ARTIFACT_NAMES.includes(fileName)) {
@@ -205,7 +241,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
           return sendErrorResponse(res, 422, 'Unprocessable Entity', 'run-evaluation.json must contain a JSON object');
         }
 
-        const rendered = renderRunEvaluationPayload(parsed as Record<string, unknown>);
+        const rendered = renderRunEvaluationPayload(parsed as Record<string, unknown>, includeMarkdown);
         res.setHeader('Content-Type', 'application/json');
         return res.json(rendered);
       }
