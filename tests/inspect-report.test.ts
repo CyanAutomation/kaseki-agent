@@ -301,7 +301,9 @@ describe('inspect-report generation', () => {
     const report = runGenerateScript(tempDir);
 
     // Semantic validation: should extract only relevant findings
+    // Semantic validation: should extract only relevant findings
     const findingMatches = report.match(/^\d+\. /gm);
+    expect(findingMatches).toBeDefined();
     expect(findingMatches).toHaveLength(5); // Should extract 5 valid findings
 
     // Semantic validation: should include severity-based findings
