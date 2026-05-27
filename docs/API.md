@@ -787,6 +787,47 @@ curl -H "Authorization: Bearer sk-your-api-key" \
 
 Attempting to download an unavailable artifact returns `400 Bad Request`.
 
+#### Rendered evaluation contract (`run-evaluation.json?format=rendered`)
+
+For `run-evaluation.json`, pass `?format=rendered` to receive UI-friendly structured sections with stable keys.
+Structured fields are authoritative for UI binding; `markdown` is optional and only included when `markdown=true` or `markdown=1` is present.
+
+**Example request:**
+
+```bash
+curl -s -H "Authorization: Bearer sk-your-api-key" \
+  "http://localhost:8080/api/results/kaseki-42/run-evaluation.json?format=rendered&markdown=true" | jq '.'
+```
+
+**Example response (200 OK):**
+
+```json
+{
+  "format": "rendered",
+  "file": "run-evaluation.json",
+  "sections": {
+    "overall": { "assessment": "good" },
+    "summary": ["Core requirements were met and validation passed."],
+    "problem": ["Intermittent auth test failure due to fixture timing."],
+    "solution": ["Stabilized fixture setup and tightened retry handling."],
+    "humanReview": ["Confirm token refresh behavior in staging."],
+    "stages": [{ "stage": "validation", "score": 0.91, "note": "all checks green" }],
+    "efficiency": [{ "metric": "durationSeconds", "value": 612 }],
+    "validation": [{ "command": "npm test", "exitCode": 0 }],
+    "opportunities": [{ "suggestion": "parallelize integration test shard 2" }],
+    "warnings": [{ "code": "slow-stage", "message": "validation exceeded historical p90" }],
+    "metadata": { "evaluator": "pi", "model": "openrouter/free" }
+  },
+  "markdown": "## Summary\n- Core requirements were met and validation passed.\n\n## Problem\n- Intermittent auth test failure due to fixture timing.\n\n## Solution\n- Stabilized fixture setup and tightened retry handling.\n\n## Human review\n- Confirm token refresh behavior in staging.",
+  "raw": {
+    "overall_assessment": "good",
+    "summary": ["Core requirements were met and validation passed."],
+    "problem": ["Intermittent auth test failure due to fixture timing."],
+    "solution": ["Stabilized fixture setup and tightened retry handling."]
+  }
+}
+```
+
 ## Error Handling
 
 Errors follow [RFC 7807 Problem Details](https://tools.ietf.org/html/rfc7807):
