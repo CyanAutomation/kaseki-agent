@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { StringDecoder } from 'node:string_decoder';
 import { Job } from '../kaseki-api-types';
+import { writeIfEmptyAtomic, logWriteError } from './file-helpers';
 
 export type CleanupResult = {
   attempted: boolean;
@@ -45,111 +46,127 @@ export class FailureArtifactWriter {
 
   private writeFailureJson(resultDir: string, job: Job, now: string, cleanup: CleanupResult): void {
     const failurePath = path.join(resultDir, 'failure.json');
-    const shouldWriteFailure = !fs.existsSync(failurePath) || fs.statSync(failurePath).size === 0;
-    if (shouldWriteFailure) {
-      const payload = {
-        failureClass: job.failureClass || 'api_finalized',
-        error: job.error || 'Job failed before runner failure metadata was written',
-        exitCode: job.exitCode,
-        cancelledAt: job.failureClass === 'cancelled' ? now : undefined,
-        completedAt: now,
-        apiFinalized: true,
-        cleanup,
-      };
-      fs.writeFileSync(failurePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+    const payload = {
+      failureClass: job.failureClass || 'api_finalized',
+      error: job.error || 'Job failed before runner failure metadata was written',
+      exitCode: job.exitCode,
+      cancelledAt: job.failureClass === 'cancelled' ? now : undefined,
+      completedAt: now,
+      apiFinalized: true,
+      cleanup,
+    };
+    const content = `${JSON.stringify(payload, null, 2)}\n`;
+    
+    try {
+      const written = writeIfEmptyAtomic(failurePath, content, { mode: 0o600 });
+      if (!written) {
+        logWriteError('write failure.json', failurePath, 'File already exists and is non-empty', job.id);
+      }
+    } catch (error) {
+      logWriteError('write failure.json', failurePath, error, job.id);
     }
   }
 
   private writeResultSummary(resultDir: string, job: Job, now: string): void {
     const summaryPath = path.join(resultDir, 'result-summary.md');
-    const shouldWriteSummary = !fs.existsSync(summaryPath) || fs.statSync(summaryPath).size === 0;
-    if (shouldWriteSummary) {
-      fs.writeFileSync(
-        summaryPath,
-        [
-          `# ${job.id} failed`,
-          '',
-          `Failure class: ${job.failureClass || 'unknown'}`,
-          `Exit code: ${job.exitCode ?? 'unknown'}`,
-          `Error: ${job.error || 'unknown'}`,
-          `Completed at: ${now}`,
-          '',
-        ].join('\n'),
-        'utf-8'
-      );
+    const content = [
+      `# ${job.id} failed`,
+      '',
+      `Failure class: ${job.failureClass || 'unknown'}`,
+      `Exit code: ${job.exitCode ?? 'unknown'}`,
+      `Error: ${job.error || 'unknown'}`,
+      `Completed at: ${now}`,
+      '',
+    ].join('\n');
+    
+    try {
+      const written = writeIfEmptyAtomic(summaryPath, content);
+      if (!written) {
+        logWriteError('write result-summary.md', summaryPath, 'File already exists and is non-empty', job.id);
+      }
+    } catch (error) {
+      logWriteError('write result-summary.md', summaryPath, error, job.id);
     }
   }
 
   private writeAnalysis(resultDir: string, job: Job, now: string, cleanup: CleanupResult, lastStage?: string): void {
     const analysisPath = path.join(resultDir, 'analysis.md');
-    const shouldWriteAnalysis = !fs.existsSync(analysisPath) || fs.statSync(analysisPath).size === 0;
-    if (shouldWriteAnalysis) {
-      fs.writeFileSync(
-        analysisPath,
-        [
-          `# Failure analysis for ${job.id}`,
-          '',
-          '## Completed work',
-          `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
-          '- API finalization fallback written: yes',
-          '',
-          '## Failure classification',
-          `- Failure class: ${job.failureClass || 'unknown'}`,
-          `- Exit code: ${job.exitCode ?? 'unknown'}`,
-          `- Error: ${job.error || 'unknown'}`,
-          `- Last stage: ${lastStage || 'unknown'}`,
-          '',
-          '## Known warnings',
-          `- Container cleanup attempted: ${cleanup.attempted ? 'yes' : 'no'}`,
-          `- Container cleanup ok: ${cleanup.ok ? 'yes' : 'no'}`,
-          `- Cleanup detail: ${cleanup.detail || 'none'}`,
-          '',
-          `Completed at: ${now}`,
-          '',
-        ].join('\n'),
-        'utf-8'
-      );
+    const content = [
+      `# Failure analysis for ${job.id}`,
+      '',
+      '## Completed work',
+      `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
+      '- API finalization fallback written: yes',
+      '',
+      '## Failure classification',
+      `- Failure class: ${job.failureClass || 'unknown'}`,
+      `- Exit code: ${job.exitCode ?? 'unknown'}`,
+      `- Error: ${job.error || 'unknown'}`,
+      `- Last stage: ${lastStage || 'unknown'}`,
+      '',
+      '## Known warnings',
+      `- Container cleanup attempted: ${cleanup.attempted ? 'yes' : 'no'}`,
+      `- Container cleanup ok: ${cleanup.ok ? 'yes' : 'no'}`,
+      `- Cleanup detail: ${cleanup.detail || 'none'}`,
+      '',
+      `Completed at: ${now}`,
+      '',
+    ].join('\n');
+    
+    try {
+      const written = writeIfEmptyAtomic(analysisPath, content);
+      if (!written) {
+        logWriteError('write analysis.md', analysisPath, 'File already exists and is non-empty', job.id);
+      }
+    } catch (error) {
+      logWriteError('write analysis.md', analysisPath, error, job.id);
     }
   }
 
   private writeMetadata(resultDir: string, job: Job, now: string): void {
     const metadataPath = path.join(resultDir, 'metadata.json');
-    const shouldWriteMetadata = !fs.existsSync(metadataPath) || fs.statSync(metadataPath).size === 0;
-    if (shouldWriteMetadata) {
-      const startedAt = job.startedAt?.toISOString();
-      const completedAt = job.completedAt?.toISOString() || now;
-      const durationSeconds =
-        job.startedAt && (job.completedAt || now)
-          ? Math.max(0, Math.round((new Date(completedAt).getTime() - job.startedAt.getTime()) / 1000))
-          : undefined;
-      const payload = {
-        id: job.id,
-        status: job.status,
-        timestamps: {
-          createdAt: job.createdAt.toISOString(),
-          startedAt,
-          completedAt,
-        },
-        durations: {
-          totalSeconds: durationSeconds,
-        },
-        runtime: {
-          timeoutSeconds: job.effectiveTimeoutSeconds,
-          pid: job.processId,
-          nodeVersion: process.version,
-          platform: process.platform,
-        },
-        env: {
-          taskMode: job.request.taskMode,
-          startupCheck: !!job.request.startupCheck,
-        },
-        failure: {
-          failureClass: job.failureClass || 'api_finalized',
-          error: job.error || 'Job failed before runner failure metadata was written',
-          exitCode: job.exitCode,
+    const startedAt = job.startedAt?.toISOString();
+    const completedAt = job.completedAt?.toISOString() || now;
+    const durationSeconds =
+      job.startedAt && (job.completedAt || now)
+        ? Math.max(0, Math.round((new Date(completedAt).getTime() - job.startedAt.getTime()) / 1000))
+        : undefined;
+    const payload = {
+      id: job.id,
+      status: job.status,
+      timestamps: {
+        createdAt: job.createdAt.toISOString(),
+        startedAt,
+        completedAt,
+      },
+      durations: {
+        totalSeconds: durationSeconds,
+      },
+      runtime: {
+        timeoutSeconds: job.effectiveTimeoutSeconds,
+        pid: job.processId,
+        nodeVersion: process.version,
+        platform: process.platform,
+      },
+      env: {
+        taskMode: job.request.taskMode,
+        startupCheck: !!job.request.startupCheck,
+      },
+      failure: {
+        failureClass: job.failureClass || 'api_finalized',
+        error: job.error || 'Job failed before runner failure metadata was written',
+        exitCode: job.exitCode,
         },
       };
-      fs.writeFileSync(metadataPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8');
+    const content = `${JSON.stringify(payload, null, 2)}\n`;
+    
+    try {
+      const written = writeIfEmptyAtomic(metadataPath, content, { mode: 0o600 });
+      if (!written) {
+        logWriteError('write metadata.json', metadataPath, 'File already exists and is non-empty', job.id);
+      }
+    } catch (error) {
+      logWriteError('write metadata.json', metadataPath, error, job.id);
     }
   }
 
@@ -160,23 +177,28 @@ export class FailureArtifactWriter {
     stderrTail?: Buffer<ArrayBufferLike>
   ): void {
     const stderrPath = path.join(resultDir, 'stderr.log');
-    const shouldWriteStderr = !fs.existsSync(stderrPath) || fs.statSync(stderrPath).size === 0;
-    if (shouldWriteStderr) {
-      const decodedStderr = stderrTail ? this.decodeUtf8Tail(stderrTail) : '';
-      const decodedStdout = stdoutTail ? this.decodeUtf8Tail(stdoutTail) : '';
-      const content = [
-        'stderr fallback generated by API finalization',
-        `failureClass=${job.failureClass || 'unknown'} exitCode=${job.exitCode ?? 'unknown'}`,
-        `error=${job.error || 'unknown'}`,
-        '',
-        decodedStderr ? '--- captured stderr tail ---' : '',
-        decodedStderr,
-        decodedStdout ? '--- captured stdout tail ---' : '',
-        decodedStdout,
-      ]
-        .filter(Boolean)
-        .join('\n');
-      fs.writeFileSync(stderrPath, `${content}\n`, 'utf-8');
+    const decodedStderr = stderrTail ? this.decodeUtf8Tail(stderrTail) : '';
+    const decodedStdout = stdoutTail ? this.decodeUtf8Tail(stdoutTail) : '';
+    const content = [
+      'stderr fallback generated by API finalization',
+      `failureClass=${job.failureClass || 'unknown'} exitCode=${job.exitCode ?? 'unknown'}`,
+      `error=${job.error || 'unknown'}`,
+      '',
+      decodedStderr ? '--- captured stderr tail ---' : '',
+      decodedStderr,
+      decodedStdout ? '--- captured stdout tail ---' : '',
+      decodedStdout,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    
+    try {
+      const written = writeIfEmptyAtomic(stderrPath, `${content}\n`);
+      if (!written) {
+        logWriteError('write stderr.log', stderrPath, 'File already exists and is non-empty', job.id);
+      }
+    } catch (error) {
+      logWriteError('write stderr.log', stderrPath, error, job.id);
     }
   }
 
