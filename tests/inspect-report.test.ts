@@ -358,7 +358,9 @@ describe('inspect-report generation', () => {
     expect(report).toContain('vulnerability in authentication system');
 
     // Semantic validation: findings should have valid structure
+    // Semantic validation: findings should have valid structure
     const findingMatches = report.match(/^\d+\. /gm);
+    expect(findingMatches).toBeDefined();
     expect(findingMatches).toHaveLength(4); // All 4 events should be extracted as findings
   });
 
