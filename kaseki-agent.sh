@@ -3005,7 +3005,7 @@ EOF_ASKPASS
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
-  local health_log="/results/github-health-check.log"
+  local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
   : > "$health_log"
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
@@ -3039,8 +3039,9 @@ check_github_operations_health() {
   printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
   
   # Check 3: Test Node.js github-app-token helper file exists and is executable
-  if ! [ -x /usr/local/bin/github-app-token ]; then
-    printf '[health-check] ERROR: github-app-token helper not found at /usr/local/bin/github-app-token\n' | tee -a "$health_log" >&2
+  local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
+  if ! [ -x "$github_app_token_helper" ]; then
+    printf '[health-check] ERROR: github-app-token helper not found at %s\n' "$github_app_token_helper" | tee -a "$health_log" >&2
     return 1
   fi
   printf '[health-check] ✓ github-app-token helper file exists and is executable\n' | tee -a "$health_log"
@@ -3076,7 +3077,7 @@ check_github_operations_health() {
     return 1
   }
 
-  /usr/local/bin/github-app-token >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
+  "$github_app_token_helper" >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
   helper_probe_exit_code=$?
   helper_probe_stdout="$(cat "$helper_probe_stdout_tmp" 2>/dev/null || true)"
   helper_probe_stderr="$(cat "$helper_probe_stderr_tmp" 2>/dev/null || true)"
@@ -3127,7 +3128,7 @@ check_github_operations_health() {
         return 1
       }
 
-      /usr/local/bin/github-app-token "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+      "$github_app_token_helper" "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
       token_exit_code=$?
       token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
       token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"

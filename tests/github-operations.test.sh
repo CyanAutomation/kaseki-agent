@@ -124,6 +124,11 @@ info "Test 7: Actual build_github_skip_reasons behavior under errexit"
   VALIDATION_EXIT=5
   QUALITY_EXIT=0
   SECRET_SCAN_EXIT=0
+  GOAL_CHECK_EXIT=0
+  KASEKI_GOAL_CHECK=0
+  SCOUTING_ARTIFACT="/dev/null"
+  GOAL_CHECK_MET=false
+  STATUS=0
   DIFF_NONEMPTY=true
   build_github_skip_reasons
   printf -- 'GitHub operations: skipped (reasons: %s)\n' \
