@@ -390,10 +390,12 @@ run_health_check_with_env() {
     export GITHUB_APP_ID_FILE="$app_id_file"
     export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
     export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
-    export PATH="$path_override"
+    # shellcheck disable=SC2030
+    PATH="$path_override"
     # Stubs used by check_github_operations_health
     resolve_github_secret_file() { printf '%s' "$2"; }
     generate_github_app_token() { return 1; }
+    # shellcheck source=/dev/null
     . "$HEALTH_TEST_LIB"
     check_github_operations_health >/dev/null 2>&1
     exit $?
@@ -401,6 +403,7 @@ run_health_check_with_env() {
 }
 
 MISSING_SECRETS_LOG="$TEST_TMP_DIR/missing-secrets-health.log"
+# shellcheck disable=SC2031
 if ! run_health_check_with_env \
   "$MISSING_SECRETS_LOG" \
   "$TEST_TMP_DIR/secrets" \
