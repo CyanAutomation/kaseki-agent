@@ -9,6 +9,13 @@ import { generateOpenAPISpec } from './openapi-spec-generator';
 import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
 import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './startup/container-preflight';
+import {
+  initSentry,
+  sentryRequestHandler,
+  sentryErrorHandler,
+  captureException,
+  flushSentry,
+} from './sentry-integration';
 
 export { assertSupportedNodeVersion, ensureTemplateInitialized };
 
@@ -29,6 +36,13 @@ export function ensureResultsDir(resultsDir: string): void {
  */
 async function main(): Promise<void> {
   const logger = createEventLogger('kaseki-api');
+
+  // Initialize Sentry for error tracking and monitoring
+  initSentry();
+  logger.debug('Sentry initialized', {
+    enabled: process.env.SENTRY_DSN ? 'true' : 'false',
+    environment: process.env.SENTRY_ENVIRONMENT || 'development',
+  });
 
   // Phase 3: Auto-initialize setup (Node version and template directory)
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
@@ -109,6 +123,9 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
 
+  // Mount Sentry request handler to track incoming requests
+  app.use(sentryRequestHandler());
+
   // Generate OpenAPI specification
   const openApiSpec = generateOpenAPISpec();
 
@@ -131,6 +148,9 @@ async function main(): Promise<void> {
   app.use('/api', apiRouter);
   app.use('/', apiRouter);
 
+  // Mount Sentry error handler to capture errors in routes and middleware
+  app.use(sentryErrorHandler());
+
   // Start server
   const onListening = () => {
     const displayHost = config.host || 'localhost';
@@ -152,7 +172,11 @@ async function main(): Promise<void> {
     : app.listen(config.port, onListening);
 
   // Graceful shutdown
-  const shutdown = () => gracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
+  const shutdown = async () => {
+    await gracefulShutdown({ server, scheduler, webhookManager, idempotencyStore });
+    // Flush any pending Sentry events before process exit
+    await flushSentry(2000);
+  };
 
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
@@ -160,11 +184,13 @@ async function main(): Promise<void> {
   // Catch unhandled errors
   process.on('uncaughtException', (err) => {
     logger.error('Uncaught exception:', { error: String(err), stack: err instanceof Error ? err.stack : undefined });
+    captureException(err, { type: 'uncaughtException' });
     process.exit(1);
   });
 
   process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled rejection:', { reason: String(reason) });
+    captureException(reason, { type: 'unhandledRejection' });
     process.exit(1);
   });
 }

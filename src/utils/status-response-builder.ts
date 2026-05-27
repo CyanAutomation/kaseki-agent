@@ -187,9 +187,8 @@ export class StatusResponseBuilder {
             }
           }
         } catch {
-          // If reading progress.jsonl fails, can't calculate progress
-          response.taskProgressPercent = undefined;
-          return;
+          // If reading progress.jsonl fails, continue with allStages set
+          // We'll use metadata.stages if available
         }
       }
 

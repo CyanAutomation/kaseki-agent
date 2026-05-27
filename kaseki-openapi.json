@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Kaseki Agent API",
-    "version": "1.52.0",
+    "version": "1.53.4",
     "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment",
     "contact": {
       "name": "CyanAutomation",
@@ -1574,6 +1574,33 @@
               "type": "string"
             },
             "description": "Artifact filename (e.g., git.diff, metadata.json)"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "rendered"
+              ]
+            },
+            "description": "Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content."
+          },
+          {
+            "name": "markdown",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            },
+            "description": "When format=rendered for run-evaluation.json, include optional markdown summary."
           }
         ],
         "security": [
@@ -1585,10 +1612,146 @@
           "200": {
             "description": "Artifact file content",
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "format": "binary"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "file",
+                        "contentType",
+                        "size",
+                        "content"
+                      ],
+                      "properties": {
+                        "file": {
+                          "type": "string"
+                        },
+                        "contentType": {
+                          "type": "string"
+                        },
+                        "size": {
+                          "type": "integer"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "format",
+                        "file",
+                        "sections",
+                        "raw"
+                      ],
+                      "properties": {
+                        "format": {
+                          "type": "string",
+                          "enum": [
+                            "rendered"
+                          ]
+                        },
+                        "file": {
+                          "type": "string",
+                          "enum": [
+                            "run-evaluation.json"
+                          ]
+                        },
+                        "sections": {
+                          "type": "object",
+                          "required": [
+                            "summary",
+                            "problem",
+                            "solution",
+                            "humanReview",
+                            "stages",
+                            "efficiency",
+                            "validation",
+                            "opportunities",
+                            "warnings"
+                          ],
+                          "properties": {
+                            "overall": {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            "summary": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "problem": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "solution": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "humanReview": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "stages": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "efficiency": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "validation": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "opportunities": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "metadata": {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "markdown": {
+                          "type": "string"
+                        },
+                        "raw": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
@@ -1618,6 +1781,29 @@
           },
           "404": {
             "description": "Artifact not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Error message"
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Request ID for debugging"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid artifact content for requested format",
             "content": {
               "application/json": {
                 "schema": {

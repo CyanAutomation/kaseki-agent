@@ -44,7 +44,15 @@ Run and manage kaseki-agent in production.
 | [CI_CD_INTEGRATION.md](CI_CD_INTEGRATION.md) | Integrate with GitHub Actions, GitLab CI, Jenkins |
 | [CLI.md](CLI.md) | Use kaseki-cli for monitoring and analysis |
 
-### 🛠️ Usage & Examples
+### � Monitoring & Observability
+
+Monitor and debug kaseki-agent in production.
+
+| Document | Purpose |
+|---------|---------|
+| [SENTRY_INTEGRATION.md](SENTRY_INTEGRATION.md) | Error tracking with Sentry (setup, config, alerts) |
+
+### �🛠️ Usage & Examples
 
 Learn by example.
 
@@ -363,7 +371,6 @@ May 2026
 | [README.md](../README.md) | Project overview |
 | [CLAUDE.md](../CLAUDE.md) | AI coding agent guidance |
 | [CHANGELOG.md](../CHANGELOG.md) | Release notes & archived docs |
-
 
 ---
 
