@@ -386,9 +386,6 @@ if command -v git >/dev/null 2>&1; then
     printf '%b✗%b Health check missing git command detection\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   fi
-  
-  # Restore git
-  mv "${GIT_PATH}.bak" "$GIT_PATH"
 else
   printf '%s' "git not available in test environment, skipping git test\n"
 fi
