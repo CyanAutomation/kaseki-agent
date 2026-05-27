@@ -3005,7 +3005,7 @@ EOF_ASKPASS
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
-  local health_log="/results/github-health-check.log"
+  local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
   : > "$health_log"
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
