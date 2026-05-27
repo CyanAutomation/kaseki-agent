@@ -297,7 +297,7 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-3);
       }
       .run-links[hidden] { display: none; }
-      .link-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+      .link-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
       .link-grid a {
         align-items: center;
         background: transparent;
@@ -364,7 +364,8 @@ const controllerPage = String.raw`<!doctype html>
         color: #001f24;
       }
       button:disabled { cursor: wait; opacity: .5; }
-      .toolbar-button { white-space: nowrap; }
+      .toolbar-button { }
+      .toolbar-button-no-wrap { white-space: nowrap; }
       .response-panel {
         background: var(--bg);
         border: 1px solid var(--line);
@@ -678,10 +679,10 @@ const controllerPage = String.raw`<!doctype html>
         <div class="run-links" id="run-links" hidden>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
-            <button class="secondary toolbar-button" data-run-action="status" type="button">Status</button>
-            <button class="secondary toolbar-button" data-run-action="events" type="button">Events</button>
-            <button class="secondary toolbar-button" data-run-action="stdout" type="button">Stdout</button>
-            <button class="secondary toolbar-button" data-run-action="artifacts" type="button">Artifacts</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="status" type="button">Status</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="events" type="button">Events</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="stdout" type="button">Stdout</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="artifacts" type="button">Artifacts</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Recommended artifacts</span>
@@ -875,7 +876,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         recommended.forEach((fileName) => {
           const button = document.createElement('button');
-          button.className = 'secondary toolbar-button';
+          button.className = 'secondary toolbar-button-no-wrap';
           button.type = 'button';
           button.dataset.artifactFile = fileName;
           button.textContent = fileName;
@@ -900,6 +901,13 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function formatRunButtonLabel(run) {
+        const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+        if (!isDesktop) {
+          // Mobile: Extract number from 'kaseki-77' and show condensed format
+          const runNumber = run.id.split('-')[1] || run.id;
+          return 'K-' + runNumber + ' ' + (run.status || '');
+        }
+        // Desktop: Full format with time, allow wrapping
         const created = run.createdAt ? new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         return [run.id, run.status, created].filter(Boolean).join(' - ');
       }
