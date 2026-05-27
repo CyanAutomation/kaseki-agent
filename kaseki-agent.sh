@@ -3815,6 +3815,7 @@ NODE
 }
 
 build_pr_agent_review() {
+  local validation_pass_flag="${1:-0}"
   local goal_file="/results/goal-check.json"
   local scouting_file="/results/scouting.json"
   local goal_summary evidence missing validation_notes risks
@@ -3842,7 +3843,7 @@ NODE
   validation_notes="$(format_pr_json_list "$goal_file" "validation_notes" 2 180 | sanitize_pr_metadata_text)"
   if [ -n "$evidence" ]; then
     printf '%s\n' "$evidence"
-  elif [ "$all_validation_statuses_pass" -eq 1 ]; then
+  elif [ "$validation_pass_flag" -eq 1 ]; then
     printf -- '- All configured validation, quality, and secret-scan gates passed.\n'
   fi
   if [ -n "$validation_notes" ]; then
@@ -3854,12 +3855,12 @@ NODE
   risks="$(format_pr_json_list "$scouting_file" "risks" 2 180 | sanitize_pr_metadata_text)"
   if [ -n "$missing" ]; then
     printf '%s\n' "$missing"
-  elif [ "$all_validation_statuses_pass" -eq 1 ]; then
+  elif [ "$validation_pass_flag" -eq 1 ]; then
     printf -- '- No unmet task requirements were reported by the goal check.\n'
   fi
   if [ -n "$risks" ]; then
     printf '%s\n' "$risks"
-  elif [ "$all_validation_statuses_pass" -ne 1 ]; then
+  elif [ "$validation_pass_flag" -ne 1 ]; then
     printf -- '- Review the failed validation or quality gate output before merging.\n'
   fi
 }
@@ -4171,7 +4172,7 @@ $post_validation_commands"
 $(build_pr_improvements_summary)
 
 ## Agent review
-$(build_pr_agent_review)
+$(build_pr_agent_review "$all_validation_statuses_pass")
 
 $(if [ -s /results/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
 ## Validation
