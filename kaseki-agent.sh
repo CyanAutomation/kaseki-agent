@@ -3845,11 +3845,11 @@ const text = (value, max = 220) => {
   return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 3))}...` : normalized;
 };
 
-// Overall Assessment subsection
-console.log('### Overall Assessment');
+// Key-value summary
 const assessment = text(data.overall_assessment || 'unknown', 40);
 const confidence = text(data.reviewer_confidence || 'unknown', 40);
-console.log(`- Overall: ${assessment}; reviewer confidence: ${confidence}.`);
+console.log(`- Overall: ${assessment}`);
+console.log(`- Reviewer confidence: ${confidence}`);
 
 // Summary subsection
 const prSummary = text(data.pr_summary || data.summary || '', 320);
@@ -3859,19 +3859,19 @@ if (prSummary) {
   console.log(`- ${prSummary}`);
 }
 
-// Review Focus subsection
+// Review focus subsection
 const focus = Array.isArray(data.human_review_focus)
   ? data.human_review_focus.map((value) => text(value, 320)).filter(Boolean).slice(0, 3)
   : [];
 if (focus.length > 0) {
   console.log('');
-  console.log('### Review Focus');
+  console.log('### Review focus');
   for (const item of focus) {
     console.log(`- ${item}`);
   }
 }
 
-// Process Notes subsection
+// Process notes subsection
 let processNote = '';
 if (Array.isArray(data.efficiency_findings) && data.efficiency_findings.length > 0) {
   processNote = text(data.efficiency_findings[0], 320);
@@ -3881,7 +3881,7 @@ if (Array.isArray(data.efficiency_findings) && data.efficiency_findings.length >
 }
 if (processNote) {
   console.log('');
-  console.log('### Process Notes');
+  console.log('### Process notes');
   console.log(`- ${processNote}`);
 }
 NODE
