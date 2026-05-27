@@ -6,18 +6,40 @@ const controllerPage = String.raw`<!doctype html>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Kaseki Task Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f4f1ea;
-        --panel: #fffdf8;
-        --ink: #1e2628;
-        --muted: #566568;
-        --line: #cbd4cf;
-        --focus: #146b6d;
-        --accent: #b84b2d;
-        --ok: #0c6951;
-        --bad: #a6332a;
+        color-scheme: dark;
+
+        /* Surfaces — tonal layering, no drop shadows */
+        --bg:              #10141a;
+        --surface-low:     #181c22;
+        --surface:         #1c2026;
+        --surface-high:    #262a31;
+        --surface-highest: #31353c;
+
+        /* Text */
+        --ink:   #dfe2eb;
+        --muted: #bac9cc;
+
+        /* Borders */
+        --line:        #3b494c;
+        --line-strong: #849396;
+
+        /* Cyan — primary action */
+        --focus:        #00daf3;
+        --focus-bright: #00e5ff;
+        --focus-text:   #c3f5ff;
+
+        /* Status */
+        --ok:      #2ff801;
+        --ok-text: #d7ffc5;
+        --bad:     #ffb4ab;
+        --bad-bg:  #93000a;
+
+        /* Spacing */
         --space-1: 8px;
         --space-2: 12px;
         --space-3: 16px;
@@ -25,16 +47,20 @@ const controllerPage = String.raw`<!doctype html>
         --control-gap: var(--space-2);
         --control-min-height: 42px;
         --control-pad: var(--space-2) var(--space-3);
+
+        /* Fonts */
+        --font-ui:   'Hanken Grotesk', system-ui, sans-serif;
+        --font-mono: 'JetBrains Mono', 'Courier New', monospace;
       }
       * { box-sizing: border-box; letter-spacing: 0; }
       body {
         margin: 0;
         background: var(--bg);
         color: var(--ink);
-        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 16px/1.5 var(--font-ui);
       }
       .header-bar {
-        background: var(--panel);
+        background: var(--surface-low);
         border-bottom: 1px solid var(--line);
         padding: var(--space-3) var(--space-3);
         display: flex;
@@ -44,8 +70,12 @@ const controllerPage = String.raw`<!doctype html>
       }
       .header-bar h1 {
         margin: 0;
-        font-size: clamp(24px, 4vw, 32px);
-        line-height: 1.2;
+        font-size: clamp(18px, 3vw, 24px);
+        font-family: var(--font-ui);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.3;
+        color: var(--focus-text);
       }
       .header-bar-title {
         display: flex;
@@ -56,9 +86,21 @@ const controllerPage = String.raw`<!doctype html>
         min-width: 200px;
         max-width: 300px;
         width: auto;
-        padding: 10px 11px;
+        background: var(--surface-highest);
+        border: none;
+        border-bottom: 1px solid var(--line-strong);
+        border-radius: 4px 4px 0 0;
+        color: var(--ink);
+        font-family: var(--font-ui);
         font-size: 14px;
+        padding: 10px 11px;
+        min-height: var(--control-min-height);
       }
+      .header-token-input:focus {
+        outline: none;
+        border-bottom: 2px solid var(--focus);
+      }
+      .header-token-input::placeholder { color: var(--muted); }
       @media (max-width: 767px) {
         .header-token-input {
           min-width: 160px;
@@ -68,26 +110,47 @@ const controllerPage = String.raw`<!doctype html>
       .status-indicator {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: var(--muted);
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 9999px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        background: color-mix(in srgb, var(--muted) 15%, transparent);
+        color: var(--muted);
         flex-shrink: 0;
       }
+      .status-indicator::before {
+        content: '';
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        flex-shrink: 0;
+      }
+      .status-indicator::after { content: 'Idle'; }
       .status-indicator.running {
-        background: #e8b923;
-        animation: pulse 1s ease-in-out infinite;
+        background: color-mix(in srgb, var(--focus) 15%, transparent);
+        color: var(--focus-bright);
       }
+      .status-indicator.running::after { content: 'Running'; }
+      .status-indicator.running::before { animation: pulse 1s ease-in-out infinite; }
       .status-indicator.completed {
-        background: var(--ok);
+        background: color-mix(in srgb, var(--ok) 15%, transparent);
+        color: var(--ok);
       }
+      .status-indicator.completed::after { content: 'Done'; }
       .status-indicator.failed {
-        background: var(--bad);
+        background: color-mix(in srgb, var(--bad) 20%, transparent);
+        color: var(--bad);
       }
+      .status-indicator.failed::after { content: 'Failed'; }
       @keyframes pulse {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
+        50% { opacity: 0.4; }
       }
       main {
         display: grid;
@@ -98,12 +161,18 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-3);
       }
       h1, h2 { margin: 0; }
-      h2 { font-size: clamp(20px, 2.2vw, 24px); line-height: 1.2; }
-      p { color: var(--muted); font-size: 16px; line-height: 1.5; margin: var(--space-1) 0 0; }
+      h2 {
+        font-family: var(--font-ui);
+        font-size: clamp(17px, 2.2vw, 20px);
+        font-weight: 600;
+        line-height: 1.4;
+        color: var(--ink);
+      }
+      p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: var(--space-1) 0 0; }
       .panel {
-        background: var(--panel);
+        background: var(--surface-low);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 4px;
         padding: var(--space-4);
       }
       header, form, .stack, fieldset { display: grid; gap: var(--space-3); }
@@ -111,32 +180,58 @@ const controllerPage = String.raw`<!doctype html>
       section.panel { display: grid; gap: var(--space-3); }
       fieldset {
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 4px;
         margin: 0;
         padding: var(--space-3);
       }
-      legend { font-weight: 650; padding: 0 var(--space-1); }
+      legend {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 0 var(--space-1);
+      }
       .form-fields { display: grid; gap: var(--space-3); }
       .form-field { display: grid; gap: var(--space-1); }
-      .form-field > label { font-size: 14px; font-weight: 650; line-height: 1.35; }
-      .field-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
-      .field-error { color: var(--bad); font-size: 14px; line-height: 1.4; min-height: 1em; }
+      .form-field > label {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+      .field-helper { color: var(--muted); font-family: var(--font-ui); font-size: 13px; line-height: 1.5; }
+      .field-error { color: var(--bad); font-family: var(--font-ui); font-size: 13px; line-height: 1.4; min-height: 1em; }
       input, textarea, select, button {
-        border: 1px solid #99aaa5;
-        border-radius: 6px;
+        box-sizing: border-box;
         color: inherit;
         font: inherit;
       }
       input, textarea, select {
-        background: #fff;
+        background: var(--surface-highest);
+        border: none;
+        border-bottom: 1px solid var(--line-strong);
+        border-radius: 4px 4px 0 0;
+        color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 14px;
         min-height: var(--control-min-height);
         padding: 10px 11px;
         width: 100%;
       }
+      input::placeholder, textarea::placeholder { color: var(--muted); }
       textarea { min-height: 140px; resize: vertical; }
-      input:focus, textarea:focus, select:focus, button:focus {
-        outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
-        outline-offset: 1px;
+      input:focus, textarea:focus, select:focus {
+        outline: none;
+        border-bottom: 2px solid var(--focus);
+      }
+      button:focus {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
       }
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { display: grid; gap: var(--control-gap); }
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { grid-template-columns: minmax(0, 1fr); }
@@ -158,22 +253,35 @@ const controllerPage = String.raw`<!doctype html>
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       }
       .summary-card {
-        background: #f7faf8;
+        background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 4px;
         display: grid;
         gap: 4px;
         min-height: 76px;
         padding: var(--space-2);
       }
-      .summary-label { color: var(--muted); font-size: 13px; font-weight: 650; }
-      .summary-value { color: var(--ink); font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+      .summary-label {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .summary-value {
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 16px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
       .summary-value.ok { color: var(--ok); }
       .summary-value.bad { color: var(--bad); }
       .run-links {
-        background: #f7faf8;
+        background: var(--surface);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 4px;
         display: grid;
         gap: var(--space-2);
         padding: var(--space-3);
@@ -182,46 +290,94 @@ const controllerPage = String.raw`<!doctype html>
       .link-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
       .link-grid a {
         align-items: center;
-        background: #eef2ee;
-        border: 1px solid #99aaa5;
-        border-radius: 6px;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 4px;
         color: var(--ink);
         display: inline-flex;
-        font-weight: 650;
+        font-family: var(--font-ui);
+        font-weight: 600;
         justify-content: center;
         min-height: var(--control-min-height);
         padding: var(--control-pad);
         text-decoration: none;
+        transition: border-color 0.15s, color 0.15s;
+      }
+      .link-grid a:hover {
+        border-color: var(--focus);
+        color: var(--focus-text);
+      }
+      .panel-section-label {
+        display: block;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
       }
       button {
-        background: var(--ink);
-        color: #fff;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        color: var(--ink);
         cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 14px;
+        font-weight: 600;
         min-height: var(--control-min-height);
         padding: var(--control-pad);
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
       }
-      button.secondary { background: #eef2ee; color: var(--ink); }
-      button.run { background: var(--accent); }
-      button:disabled { cursor: wait; opacity: .65; }
+      button:hover:not(:disabled) {
+        border-color: var(--focus);
+        color: var(--focus-text);
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--ink);
+        border-color: var(--line);
+      }
+      button.secondary:hover:not(:disabled) {
+        border-color: var(--focus);
+        color: var(--focus-text);
+      }
+      button.run {
+        background: var(--focus-bright);
+        border-color: var(--focus-bright);
+        color: #00363d;
+        font-weight: 700;
+      }
+      button.run:hover:not(:disabled) {
+        background: var(--focus-text);
+        border-color: var(--focus-text);
+        color: #001f24;
+      }
+      button:disabled { cursor: wait; opacity: .5; }
       .toolbar-button { white-space: nowrap; }
       .response-panel {
-        background: #172022;
-        border: 1px solid #2e3a3d;
-        border-radius: 8px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 4px;
         display: grid;
         grid-template-rows: auto auto minmax(0, 1fr);
         min-height: 300px;
         overflow: hidden;
       }
       .response-meta {
-        border-bottom: 1px solid #2e3a3d;
-        color: #b9c8c3;
-        font-size: 14px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
         margin: 0;
         padding: var(--space-2) var(--space-3);
       }
       .response-summary {
-        border-bottom: 1px solid #2e3a3d;
+        background: var(--surface-low);
+        border-bottom: 1px solid var(--line);
         display: grid;
         gap: var(--space-2);
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -234,19 +390,26 @@ const controllerPage = String.raw`<!doctype html>
         min-width: 0;
       }
       .response-summary-label {
-        color: #9db0aa;
-        font-size: 12px;
-        font-weight: 650;
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
       }
       .response-summary-value {
-        color: #eef7f2;
-        font-size: 14px;
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 13px;
         font-weight: 700;
         overflow-wrap: anywhere;
       }
       .response-log {
         align-self: start;
-        color: #e4eee9;
+        color: var(--ink);
+        font-family: var(--font-mono);
+        font-size: 13px;
+        line-height: 1.6;
         margin: 0;
         min-height: 0;
         overflow: auto;
@@ -254,8 +417,13 @@ const controllerPage = String.raw`<!doctype html>
         white-space: pre-wrap;
         word-break: break-word;
       }
-      .response-log.empty { color: #9db0aa; }
-      #state { color: var(--muted); min-height: 22px; }
+      .response-log.empty { color: var(--muted); }
+      #state {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        min-height: 22px;
+      }
       #state.ok { color: var(--ok); }
       #state.bad { color: var(--bad); }
       @media (min-width: 768px) {
@@ -276,29 +444,36 @@ const controllerPage = String.raw`<!doctype html>
       }
       .tabs-nav {
         display: flex;
-        gap: var(--space-2);
-        border-bottom: 2px solid var(--line);
+        gap: 0;
+        border-bottom: 1px solid var(--line);
         margin-bottom: var(--space-3);
       }
       .tabs-nav button {
         background: transparent;
         border: none;
+        border-bottom: 2px solid transparent;
         color: var(--muted);
         cursor: pointer;
-        font-size: 16px;
-        font-weight: 600;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
         padding: var(--space-2) var(--space-3);
-        border-bottom: 3px solid transparent;
-        margin-bottom: -2px;
-        transition: color 0.2s, border-color 0.2s;
+        margin-bottom: -1px;
+        min-height: auto;
+        transition: color 0.15s, border-color 0.15s;
       }
-      .tabs-nav button:hover { color: var(--ink); }
+      .tabs-nav button:hover:not(:disabled) {
+        color: var(--ink);
+        border-color: transparent;
+      }
       .tabs-nav button.active {
-        color: var(--focus);
+        color: var(--focus-text);
         border-bottom-color: var(--focus);
       }
       .tabs-nav button:focus {
-        outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
+        outline: 2px solid var(--focus);
         outline-offset: 2px;
       }
       .tab-content {
@@ -312,46 +487,60 @@ const controllerPage = String.raw`<!doctype html>
         gap: var(--space-3);
       }
       .health-check-button {
-        background: var(--focus);
-        color: #fff;
+        background: var(--surface);
+        color: var(--ink);
         padding: var(--space-3);
-        border-radius: 8px;
-        border: none;
+        border-radius: 4px;
+        border: 1px solid var(--line);
         cursor: pointer;
+        font-family: var(--font-ui);
+        font-size: 14px;
         font-weight: 600;
-        min-height: 100px;
+        min-height: 80px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: var(--space-2);
-        transition: background 0.2s, opacity 0.2s;
+        gap: var(--space-1);
+        transition: border-color 0.15s, color 0.15s;
       }
-      .health-check-button:hover:not(:disabled) { background: #1a5d5f; }
-      .health-check-button:disabled { opacity: 0.65; cursor: wait; }
+      .health-check-button:hover:not(:disabled) {
+        border-color: var(--focus);
+        color: var(--focus-text);
+      }
+      .health-check-button:disabled { opacity: 0.5; cursor: wait; }
       .health-check-button:focus {
-        outline: 3px solid color-mix(in srgb, var(--focus) 35%, transparent);
+        outline: 2px solid var(--focus);
         outline-offset: 1px;
+      }
+      .hc-label {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
       }
       .health-check-status {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 24px;
-        height: 24px;
-        font-size: 12px;
+        width: 20px;
+        height: 20px;
+        font-family: var(--font-mono);
+        font-size: 13px;
       }
       .health-check-status.spinner::after {
         content: '⟳';
         display: inline-block;
         animation: spin 1s linear infinite;
+        color: var(--focus);
       }
       @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
       }
-      .health-check-status.ok::before { content: '✓'; }
-      .health-check-status.bad::before { content: '✕'; }
+      .health-check-status.ok::before { content: '✓'; color: var(--ok); }
+      .health-check-status.bad::before { content: '✕'; color: var(--bad); }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
         .response-panel { min-height: 40vh; }
@@ -382,10 +571,10 @@ const controllerPage = String.raw`<!doctype html>
             <p>Run diagnostics to verify the Kaseki API controller is operating correctly.</p>
           </div>
           <div class="health-checks-grid">
-            <button class="health-check-button" data-probe="/health" type="button">Health<span class="health-check-status" data-status="health"></span></button>
-            <button class="health-check-button" data-probe="/ready" type="button">Readiness<span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button">Preflight<span class="health-check-status" data-status="preflight"></span></button>
-            <button class="health-check-button" id="status-check" type="button">Check status<span class="health-check-status" data-status="status"></span></button>
+            <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
+            <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
             <div class="summary-card">
@@ -410,7 +599,7 @@ const controllerPage = String.raw`<!doctype html>
             <input id="run-id" placeholder="Filled after a run is submitted">
           </div>
           <div class="run-links" id="runs-list-panel">
-            <strong>Recent runs</strong>
+            <strong class="panel-section-label">Recent runs</strong>
             <div class="action-row controller-actions">
               <button class="secondary toolbar-button" id="refresh-runs" type="button">Refresh runs</button>
             </div>
@@ -476,7 +665,7 @@ const controllerPage = String.raw`<!doctype html>
           <h2 id="responses-heading">Responses</h2>
         </div>
         <div class="run-links" id="run-links" hidden>
-          <strong>Run follow-through</strong>
+          <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
             <button class="secondary toolbar-button" data-run-action="status" type="button">Status</button>
             <button class="secondary toolbar-button" data-run-action="events" type="button">Events</button>
@@ -1002,7 +1191,7 @@ const controllerPage = String.raw`<!doctype html>
 export function createWebRouter(): Router {
   const router = Router();
   router.get(['/', '/ui'], (_req, res) => {
-    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'");
+    res.set('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'");
     res.set('Referrer-Policy', 'no-referrer');
     res.type('html').send(controllerPage);
   });
