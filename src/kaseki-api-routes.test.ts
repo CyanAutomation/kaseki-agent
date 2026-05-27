@@ -1192,6 +1192,69 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       await cleanupTestApp(server, idempotencyStore);
     }
   });
+
+  test('run-evaluation.json supports rendered format while preserving raw default', async () => {
+    const jobId = 'kaseki-eval-rendered-1';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'run-evaluation.json'), JSON.stringify({
+      overall_assessment: 'good',
+      summary: 'All checks passed',
+      what_was_fixed: ['fixed flake'],
+      human_review_recommendations: ['verify auth edge case'],
+      metadata: { evaluator: 'pi' },
+    }));
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed' as const, createdAt: new Date(), resultDir: jobDir },
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    const headers = { Authorization: 'Bearer test-key' };
+
+    try {
+      const rawRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json`, { headers });
+      expect(rawRes.status).toBe(200);
+      const rawBody = (await rawRes.json()) as any;
+      expect(rawBody.file).toBe('run-evaluation.json');
+      expect(typeof rawBody.content).toBe('string');
+
+      const renderedRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json?format=rendered`, { headers });
+      expect(renderedRes.status).toBe(200);
+      const renderedBody = (await renderedRes.json()) as any;
+      expect(renderedBody.format).toBe('rendered');
+      expect(renderedBody.sections.overallAssessment).toBe('good');
+      expect(renderedBody.sections.summary).toBe('All checks passed');
+      expect(renderedBody.sections.whatWasFixed).toEqual(['fixed flake']);
+      expect(renderedBody.raw.metadata).toEqual({ evaluator: 'pi' });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rendered format returns 422 when run-evaluation.json has invalid json', async () => {
+    const jobId = 'kaseki-eval-rendered-invalid';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'run-evaluation.json'), '{invalid-json');
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed' as const, createdAt: new Date(), resultDir: jobDir },
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json?format=rendered`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as any;
+      expect(body.detail).toContain('Invalid JSON in run-evaluation.json artifact');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
 });
 
 describe('kaseki-api-routes run artifacts inventory endpoint', () => {

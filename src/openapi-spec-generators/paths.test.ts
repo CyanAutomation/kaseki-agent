@@ -88,7 +88,7 @@ describe('OpenAPI Path Builders', () => {
         method: 'get',
         operationId: 'downloadArtifact',
         requiresAuth: true,
-        statuses: ['200', '401', '404'],
+        statuses: ['200', '401', '404', '422'],
       },
       {
         path: '/api/runs/{id}/analysis',
@@ -532,6 +532,11 @@ describe('OpenAPI Path Builders', () => {
       const fileParam = downloadPath.parameters.find((p: Record<string, any>) => p.name === 'file');
       expect(fileParam.in).toBe('path');
       expect(fileParam.required).toBe(true);
+      const formatParam = downloadPath.parameters.find((p: Record<string, any>) => p.name === 'format');
+      expect(formatParam.in).toBe('query');
+      expect(formatParam.required).toBe(false);
+      expect(formatParam.schema.enum).toContain('rendered');
+      expect(downloadPath.responses['422']).toBeDefined();
     });
   });
 

@@ -41,6 +41,8 @@ export class IdempotencyStore {
   private cache = new Map<string, IdempotencyCacheEntry>();
   private persistencePath: string;
   private lockPath: string;
+  private lockOwnerPath: string;
+  private activeLockToken: string | null = null;
   private logger: EventLogger;
   private ttlHours: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -51,6 +53,7 @@ export class IdempotencyStore {
     fs.mkdirSync(resultsDir, { recursive: true });
     this.persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
     this.lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    this.lockOwnerPath = path.join(this.lockPath, 'owner.json');
     this.logger = createEventLogger('idempotency-store');
     this.ttlHours = ttlHours;
     this.loadFromDisk();
@@ -153,21 +156,33 @@ export class IdempotencyStore {
     let retries = 0;
 
     while (retries < maxRetries) {
+      const owner = {
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        token: this.generateLockToken(),
+      };
+      const tempLockPath = `${this.lockPath}.${owner.token}.tmp`;
+      const tempOwnerPath = path.join(tempLockPath, 'owner.json');
+
       try {
-        fs.mkdirSync(this.lockPath);
+        fs.mkdirSync(tempLockPath);
+        fs.writeFileSync(tempOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
+        fs.renameSync(tempLockPath, this.lockPath);
+        this.activeLockToken = owner.token;
         return;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw error;
-        }
-        try {
-          const stats = fs.statSync(this.lockPath);
-          if (Date.now() - stats.mtimeMs > staleThresholdMs) {
-            fs.rmdirSync(this.lockPath);
+        const code = (error as NodeJS.ErrnoException).code;
+        this.forceRemovePath(tempLockPath);
+
+        if (code === 'EEXIST' || code === 'ENOTEMPTY') {
+          const ownerMetadata = this.readLockOwner();
+          const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
+          if (lockLooksStale && this.canRemoveStaleLock(ownerMetadata)) {
+            this.forceRemoveLockDir();
             continue;
           }
-        } catch {
-          // If stale-lock check/removal fails, proceed to retry sleep.
+        } else if (code !== 'ENOENT') {
+          throw error;
         }
 
         this.sleepSync(5);
@@ -179,11 +194,72 @@ export class IdempotencyStore {
   }
 
   private releaseLock(): void {
+    const ownerMetadata = this.readLockOwner();
+    if (!ownerMetadata || ownerMetadata.token !== this.activeLockToken) {
+      this.activeLockToken = null;
+      return;
+    }
+
     try {
+      fs.rmSync(this.lockOwnerPath, { force: true });
       fs.rmdirSync(this.lockPath);
     } catch {
       // Ignore lock release failures.
+    } finally {
+      this.activeLockToken = null;
     }
+  }
+
+  private readLockOwner(): { pid?: number; token?: string } | null {
+    try {
+      const content = fs.readFileSync(this.lockOwnerPath, 'utf-8');
+      return JSON.parse(content) as { pid?: number; token?: string };
+    } catch {
+      return null;
+    }
+  }
+
+  private isLockStale(staleThresholdMs: number, ownerPid?: number): boolean {
+    try {
+      const stats = fs.statSync(this.lockPath);
+      const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
+      if (!exceedsAgeThreshold) {
+        return false;
+      }
+      return ownerPid ? !this.isProcessAlive(ownerPid) : true;
+    } catch {
+      return false;
+    }
+  }
+
+  private canRemoveStaleLock(ownerMetadata: { pid?: number; token?: string } | null): boolean {
+    if (!ownerMetadata?.token) {
+      return true;
+    }
+
+    const latestOwner = this.readLockOwner();
+    return latestOwner?.token === ownerMetadata.token;
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private forceRemovePath(targetPath: string): void {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  }
+
+  private forceRemoveLockDir(): void {
+    fs.rmSync(this.lockPath, { recursive: true, force: true });
+  }
+
+  private generateLockToken(): string {
+    return `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
   private sleepSync(ms: number): void {
