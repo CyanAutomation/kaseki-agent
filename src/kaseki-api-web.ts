@@ -278,6 +278,16 @@ const controllerPage = String.raw`<!doctype html>
       }
       .summary-value.ok { color: var(--ok); }
       .summary-value.bad { color: var(--bad); }
+      .summary-details {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.4;
+        margin-top: 4px;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
       .run-links {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -592,6 +602,7 @@ const controllerPage = String.raw`<!doctype html>
             <div class="summary-card">
               <span class="summary-label">Run</span>
               <span class="summary-value" data-summary="run">No run selected</span>
+              <div class="summary-details" id="run-details"></div>
             </div>
           </div>
           <div class="form-field">
@@ -825,6 +836,20 @@ const controllerPage = String.raw`<!doctype html>
         element.className = 'summary-value' + (kind ? ' ' + kind : '');
       }
 
+      function setRunDetails(progress) {
+        const detailsEl = document.getElementById('run-details');
+        if (!detailsEl) return;
+        if (!progress) {
+          detailsEl.innerHTML = '';
+          return;
+        }
+        const stage = progress.stage ? stripControlSequences(progress.stage) : '';
+        const message = progress.message ? stripControlSequences(progress.message) : '';
+        const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
+        const parts = [stage, message, percent].filter(Boolean);
+        detailsEl.textContent = parts.join(' | ');
+      }
+
       function runUrl(runId, suffix) {
         return '/api/runs/' + encodeURIComponent(runId) + suffix;
       }
@@ -940,11 +965,8 @@ const controllerPage = String.raw`<!doctype html>
 
       function summarizeRun(payload) {
         if (!payload || !payload.status) return;
-        const bits = [payload.status];
-        if (payload.progress && payload.progress.stage) bits.push(stripControlSequences(payload.progress.stage));
-        if (payload.progress && payload.progress.message) bits.push(stripControlSequences(payload.progress.message));
-        if (payload.progress && typeof payload.progress.percentComplete === 'number') bits.push(String(payload.progress.percentComplete) + '%');
-        setSummary('run', bits.join(' - '), payload.status === 'failed' ? 'bad' : 'ok');
+        setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
+        setRunDetails(payload.progress);
       }
 
       function requestBody() {
