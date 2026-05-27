@@ -1833,6 +1833,10 @@ run_validation_commands() {
           pipefail_was_enabled=1
         fi
         set -o pipefail
+        # validation-output-filter may intentionally stop reading early (for
+        # truncation/summary behavior), which can close a downstream pipe.
+        # Use warn-nopipe so tee still reports real file-write problems but
+        # does not emit noisy benign broken-pipe warnings for pipe sinks.
         {
           printf '\n==> %s\n' "$trimmed"
           unset OPENROUTER_API_KEY
@@ -1843,15 +1847,10 @@ run_validation_commands() {
           command_exit=$?
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
-        } 2>&1 \
-          # validation-output-filter may intentionally stop reading early (for
-          # truncation/summary behavior), which can close a downstream pipe.
-          # Use warn-nopipe so tee still reports real file-write problems but
-          # does not emit noisy benign broken-pipe warnings for pipe sinks.
-          | tee --output-error=warn-nopipe \
-              >(cat >> "$log_file") \
-              >(cat >> "$raw_log") \
-              2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
+        } 2>&1 | tee --output-error=warn-nopipe \
+            >(cat >> "$log_file") \
+            >(cat >> "$raw_log") \
+            2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
           | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
         if [ "$pipefail_was_enabled" -eq 1 ]; then
