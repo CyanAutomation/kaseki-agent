@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.55.0...v1.55.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* Enhance debugging output in health check and update mock helper behavior for testing ([1d46069](https://github.com/CyanAutomation/kaseki-agent/commit/1d4606985dbfa45c6c3cf725e548fa8b2b2bf97f))
+* Enhance health check for github-app-token helper and improve test environment variable handling ([98a9462](https://github.com/CyanAutomation/kaseki-agent/commit/98a9462c5238c0043a9cc613d6e57fa89d4150af))
+* Improve health check tests by enhancing temporary directory handling and error classification ([5837514](https://github.com/CyanAutomation/kaseki-agent/commit/5837514e516a1d23acde26cce922acca1f5fd414))
+* Refactor health check logging and improve test output handling ([b5c5d2d](https://github.com/CyanAutomation/kaseki-agent/commit/b5c5d2d4f73e882580b88cf49ddf8a781093d7ce))
+* tests/inspect-report.test.ts findingMatches existenc... (kaseki-77) ([#452](https://github.com/CyanAutomation/kaseki-agent/issues/452)) ([98b3d1c](https://github.com/CyanAutomation/kaseki-agent/commit/98b3d1c787276f9126200241d58fe8f3e7fcb001))
+* Update github-app-token helper mock to output usage and improve error handling in tests ([5b7048e](https://github.com/CyanAutomation/kaseki-agent/commit/5b7048ea41e39e9068c4976b9bf0e1888003288a))
+* Update health log variable in github operations health check and adjust tests for improved flexibility ([af9b666](https://github.com/CyanAutomation/kaseki-agent/commit/af9b666a9f26a37b6cf672f47ecf7922385874f8))
+
 # [1.55.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.54.0...v1.55.0) (2026-05-27)
 
 
