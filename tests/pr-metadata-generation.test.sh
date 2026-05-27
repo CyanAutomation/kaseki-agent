@@ -268,10 +268,13 @@ for expected in \
   'No unmet task requirements were reported by the goal check.' \
   'OAuth provider behavior can vary for unusual redirect-state encodings.' \
   '## Agent evaluation' \
-  'Overall: good; reviewer confidence: high.' \
+  '- Overall: good' \
   'Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.' \
-  'Review focus: Confirm OAuth provider behavior with quoted redirect-state values.' \
-  'Process note: Post-validation repeated the same test command and may benefit from delta-aware validation.' \
+  '- Reviewer confidence: high' \
+  '### Review focus' \
+  'Confirm OAuth provider behavior with quoted redirect-state values.' \
+  '### Process notes' \
+  'Post-validation repeated the same test command and may benefit from delta-aware validation.' \
   '## Validation' \
   '### Validation statuses' \
   'Pre-agent validation: passed' \
@@ -415,6 +418,18 @@ if [ -n "$summary_line" ] && [ -n "$agent_review_line" ] && [ -n "$agent_evaluat
   pass "PR body orders Summary, Agent review, Agent evaluation, Validation, Files changed, Original task prompt, and Run metadata sections"
 else
   fail "PR body sections were not in expected order"
+fi
+
+
+agent_eval_overall_line="$(grep -nF -- '- Overall: good' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+agent_eval_confidence_line="$(grep -nF -- '- Reviewer confidence: high' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+agent_eval_summary_heading_line="$(grep -nF '### Summary' <<<"$pr_body" | tail -n 1 | cut -d: -f1)"
+agent_eval_review_focus_heading_line="$(grep -nF '### Review focus' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+agent_eval_process_notes_heading_line="$(grep -nF '### Process notes' <<<"$pr_body" | head -n 1 | cut -d: -f1)"
+if [ -n "$agent_evaluation_line" ] && [ -n "$agent_eval_overall_line" ] && [ -n "$agent_eval_confidence_line" ]   && [ -n "$agent_eval_summary_heading_line" ] && [ -n "$agent_eval_review_focus_heading_line" ] && [ -n "$agent_eval_process_notes_heading_line" ]   && [ "$agent_evaluation_line" -lt "$agent_eval_overall_line" ]   && [ "$agent_eval_overall_line" -lt "$agent_eval_confidence_line" ]   && [ "$agent_eval_confidence_line" -lt "$agent_eval_summary_heading_line" ]   && [ "$agent_eval_summary_heading_line" -lt "$agent_eval_review_focus_heading_line" ]   && [ "$agent_eval_review_focus_heading_line" -lt "$agent_eval_process_notes_heading_line" ]; then
+  pass "Agent evaluation renders key-value lines before optional subsections in order"
+else
+  fail "Agent evaluation markdown order did not match expected multiline format"
 fi
 
 if [ "$summary_line" -lt "$original_prompt_line" ]; then
