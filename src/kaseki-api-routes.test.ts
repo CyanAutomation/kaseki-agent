@@ -1223,10 +1223,43 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(renderedRes.status).toBe(200);
       const renderedBody = (await renderedRes.json()) as any;
       expect(renderedBody.format).toBe('rendered');
-      expect(renderedBody.sections.overallAssessment).toBe('good');
-      expect(renderedBody.sections.summary).toBe('All checks passed');
-      expect(renderedBody.sections.whatWasFixed).toEqual(['fixed flake']);
+      expect(renderedBody.sections.overall).toEqual({ assessment: 'good' });
+      expect(renderedBody.sections.summary).toEqual(['All checks passed']);
+      expect(renderedBody.sections.solution).toEqual(['fixed flake']);
+      expect(renderedBody.sections.problem).toEqual([]);
+      expect(renderedBody.sections.humanReview).toEqual(['verify auth edge case']);
       expect(renderedBody.raw.metadata).toEqual({ evaluator: 'pi' });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('rendered format includes markdown when requested', async () => {
+    const jobId = 'kaseki-eval-rendered-markdown';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'run-evaluation.json'), JSON.stringify({
+      summary: ['All checks passed'],
+      problem: ['Flaky auth test'],
+      solution: ['Stabilized test fixture'],
+    }));
+
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'completed' as const, createdAt: new Date(), resultDir: jobDir },
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const renderedRes = await fetch(
+        `http://127.0.0.1:${port}/api/results/${jobId}/run-evaluation.json?format=rendered&markdown=true`,
+        { headers: { Authorization: 'Bearer test-key' } }
+      );
+      expect(renderedRes.status).toBe(200);
+      const renderedBody = (await renderedRes.json()) as any;
+      expect(renderedBody.markdown).toContain('## Summary');
+      expect(renderedBody.markdown).toContain('## Problem');
+      expect(renderedBody.markdown).toContain('## Solution');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
