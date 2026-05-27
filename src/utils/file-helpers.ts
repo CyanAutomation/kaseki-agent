@@ -3,6 +3,27 @@ import { commandOutput as executeCommand } from '../lib/subprocess-helpers';
 import * as path from 'path';
 
 type BufferEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'base64url' | 'latin1' | 'binary' | 'hex';
+type AtomicWriteOperation = 'writeAtomic' | 'writeIfEmptyAtomic';
+
+type AtomicLogContext = {
+  operation: AtomicWriteOperation;
+  jobId?: string;
+};
+
+function toErrnoDetails(error: unknown): { errorCode?: string; errorMessage: string } {
+  if (error instanceof Error) {
+    const errno = error as NodeJS.ErrnoException;
+    return {
+      errorCode: errno.code,
+      errorMessage: error.message,
+    };
+  }
+  return { errorMessage: String(error) };
+}
+
+function logAtomicStage(event: string, details: Record<string, unknown>): void {
+  console.debug(`[file-helpers] ${event}`, details);
+}
 
 /**
  * Check if a file exists and is non-empty.
@@ -157,29 +178,45 @@ export function getFileStats(filePath: string): fs.Stats | null {
  * This avoids TOCTOU race conditions by writing to a temporary file first,
  * then renaming it to the final destination atomically.
  */
-export function writeAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): void {
+export function writeAtomic(
+  filePath: string,
+  content: string,
+  options: { mode?: number; encoding?: BufferEncoding } = {},
+  context: AtomicLogContext = { operation: 'writeAtomic' }
+): void {
   const tempPath = `${filePath}.tmp`;
+  const baseContext = { operation: context.operation, filePath, tempPath, jobId: context.jobId };
+  logAtomicStage('atomic_write_start', baseContext);
 
   try {
     // Ensure parent directory exists
     const dir = path.dirname(filePath);
+    logAtomicStage('ensure_parent_dir', baseContext);
     fs.mkdirSync(dir, { recursive: true });
 
     // Write to temp file
+    logAtomicStage('temp_write_start', baseContext);
     fs.writeFileSync(tempPath, content, {
       mode: options.mode,
       encoding: options.encoding || 'utf-8',
     });
+    logAtomicStage('temp_write_success', baseContext);
 
     // Atomically rename temp file to final destination
+    logAtomicStage('rename_start', baseContext);
     fs.renameSync(tempPath, filePath);
+    logAtomicStage('rename_success', baseContext);
   } catch (error) {
     // Clean up temp file on error
+    const errDetails = toErrnoDetails(error);
+    logAtomicStage('cleanup_temp_start', { ...baseContext, ...errDetails });
     try {
       fs.unlinkSync(tempPath);
+      logAtomicStage('cleanup_temp_success', { ...baseContext, ...errDetails });
     } catch {
-      // Ignore cleanup errors
+      logAtomicStage('cleanup_temp_failed', { ...baseContext, ...errDetails });
     }
+    logAtomicStage('atomic_write_failed', { ...baseContext, ...errDetails });
     throw error;
   }
 }
@@ -215,18 +252,34 @@ export function writeIfMissingAtomic(filePath: string, content: string, options:
  * Returns true if written, false if file exists and is non-empty or another
  * writer won the lock.
  */
-export function writeIfEmptyAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): boolean {
+export function writeIfEmptyAtomic(
+  filePath: string,
+  content: string,
+  options: { mode?: number; encoding?: BufferEncoding } = {},
+  context: Pick<AtomicLogContext, 'jobId'> = {}
+): boolean {
   const encoding = options.encoding || 'utf-8';
+  const operationContext: AtomicLogContext = { operation: 'writeIfEmptyAtomic', jobId: context.jobId };
+  const baseContext = { operation: operationContext.operation, filePath, tempPath: `${filePath}.tmp`, jobId: operationContext.jobId };
+  logAtomicStage('atomic_write_start', baseContext);
 
   // Fast path: file does not exist yet.
   try {
+    logAtomicStage('ensure_parent_dir', baseContext);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    logAtomicStage('temp_write_start', baseContext);
     fs.writeFileSync(filePath, content, {
       mode: options.mode,
       encoding,
       flag: 'wx',
     });
+    logAtomicStage('temp_write_success', baseContext);
+    logAtomicStage('rename_start', baseContext);
+    logAtomicStage('rename_success', baseContext);
     return true;
   } catch (err) {
+    const errDetails = toErrnoDetails(err);
+    logAtomicStage('atomic_write_failed', { ...baseContext, ...errDetails });
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
       throw err;
     }
@@ -256,13 +309,15 @@ export function writeIfEmptyAtomic(filePath: string, content: string, options: {
       return false;
     }
 
-    writeAtomic(filePath, content, options);
+    writeAtomic(filePath, content, options, operationContext);
     return true;
   } finally {
+    logAtomicStage('cleanup_temp_start', { ...baseContext, tempPath: lockPath });
     try {
       fs.unlinkSync(lockPath);
+      logAtomicStage('cleanup_temp_success', { ...baseContext, tempPath: lockPath });
     } catch {
-      // Ignore lock cleanup errors.
+      logAtomicStage('cleanup_temp_failed', { ...baseContext, tempPath: lockPath });
     }
   }
 }
@@ -272,6 +327,16 @@ export function writeIfEmptyAtomic(filePath: string, content: string, options: {
  */
 export function logWriteError(operation: string, filePath: string, error: unknown, jobId?: string): void {
   const jobContext = jobId ? ` (job: ${jobId})` : '';
+  const errno = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
   const errorInfo = error instanceof Error ? error.message : String(error);
+  const errnoInfo = errno ? ` [${errno}]` : '';
   console.error(`[FailureArtifactWriter] Failed to ${operation} ${filePath}${jobContext}: ${errorInfo}`);
+  console.debug('[FailureArtifactWriter] write_error_context', {
+    operation,
+    filePath,
+    jobId,
+    errorCode: errno,
+    errorMessage: errorInfo,
+    details: `${operation}${errnoInfo}`,
+  });
 }
