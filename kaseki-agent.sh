@@ -3039,8 +3039,9 @@ check_github_operations_health() {
   printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
   
   # Check 3: Test Node.js github-app-token helper file exists and is executable
-  if ! [ -x /usr/local/bin/github-app-token ]; then
-    printf '[health-check] ERROR: github-app-token helper not found at /usr/local/bin/github-app-token\n' | tee -a "$health_log" >&2
+  local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
+  if ! [ -x "$github_app_token_helper" ]; then
+    printf '[health-check] ERROR: github-app-token helper not found at %s\n' "$github_app_token_helper" | tee -a "$health_log" >&2
     return 1
   fi
   printf '[health-check] ✓ github-app-token helper file exists and is executable\n' | tee -a "$health_log"
