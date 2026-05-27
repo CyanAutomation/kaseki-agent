@@ -410,9 +410,6 @@ if command -v node >/dev/null 2>&1; then
     printf '%b✗%b Health check missing Node.js detection\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   fi
-  
-  # Restore node
-  mv "${NODE_PATH}.bak" "$NODE_PATH"
 else
   printf '%s' "Node.js not available in test environment, skipping Node.js test\n"
 fi
