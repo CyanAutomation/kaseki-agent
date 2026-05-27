@@ -1844,7 +1844,11 @@ run_validation_commands() {
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
         } 2>&1 \
-          | tee --output-error=warn \
+          # validation-output-filter may intentionally stop reading early (for
+          # truncation/summary behavior), which can close a downstream pipe.
+          # Use warn-nopipe so tee still reports real file-write problems but
+          # does not emit noisy benign broken-pipe warnings for pipe sinks.
+          | tee --output-error=warn-nopipe \
               >(cat >> "$log_file") \
               >(cat >> "$raw_log") \
               2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
