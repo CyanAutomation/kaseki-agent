@@ -494,6 +494,75 @@ else
   fail "PR body missing run duration"
 fi
 
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "started_at": "2026-01-01T00:00:00.000Z",
+  "ended_at": "2026-01-01T00:00:00.350Z"
+}
+JSON
+subsecond_eval="$(build_pr_agent_evaluation)"
+if grep -Fq 'Duration: 350ms' <<<"$subsecond_eval"; then
+  pass "Agent evaluation shows sub-second duration in milliseconds"
+else
+  fail "Agent evaluation did not show sub-second milliseconds precision"
+fi
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "started_at": "2026-01-01T00:00:00.000Z",
+  "ended_at": "2026-01-01T00:00:01.450Z"
+}
+JSON
+one_to_two_second_eval="$(build_pr_agent_evaluation)"
+if grep -Fq 'Duration: 1.45s' <<<"$one_to_two_second_eval"; then
+  pass "Agent evaluation shows 1-2 second duration with sub-second precision"
+else
+  fail "Agent evaluation did not format 1-2 second duration correctly"
+fi
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "duration_seconds": 2
+}
+JSON
+missing_timestamp_eval="$(build_pr_agent_evaluation)"
+if grep -Fq 'Duration: 2s' <<<"$missing_timestamp_eval"; then
+  pass "Agent evaluation falls back to duration_seconds when timestamps are missing"
+else
+  fail "Agent evaluation missing timestamp fallback behavior"
+fi
+
+cat > "$RESULTS_DIR/run-evaluation.json" <<'JSON'
+{
+  "overall_assessment": "good",
+  "reviewer_confidence": "high",
+  "task_completion_score": 4,
+  "summary": "The run produced a focused OAuth fix.",
+  "human_review_focus": [
+    "Confirm OAuth provider behavior with quoted redirect-state values.",
+    "Check reviewer-facing copy for product terminology."
+  ],
+  "stage_value": [
+    { "stage": "goal check", "value": "high", "reason": "Confirmed requirements." }
+  ],
+  "efficiency_findings": [
+    "Post-validation repeated the same test command and may benefit from delta-aware validation."
+  ],
+  "kaseki_improvement_opportunities": [
+    { "category": "validation", "priority": "medium", "suggestion": "Consider reusing pre-validation results when commands are identical." }
+  ],
+  "pr_summary": "Kaseki appears to have completed the requested OAuth fix with high reviewer confidence.",
+  "warnings": []
+}
+JSON
+
 if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$pr_body"; then
   fail "Normal PR body should not include draft review sentence"
 else
