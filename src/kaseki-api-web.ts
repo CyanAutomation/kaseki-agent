@@ -278,6 +278,16 @@ const controllerPage = String.raw`<!doctype html>
       }
       .summary-value.ok { color: var(--ok); }
       .summary-value.bad { color: var(--bad); }
+      .summary-details {
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.4;
+        margin-top: 4px;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
       .run-links {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -287,7 +297,7 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-3);
       }
       .run-links[hidden] { display: none; }
-      .link-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+      .link-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
       .link-grid a {
         align-items: center;
         background: transparent;
@@ -354,7 +364,8 @@ const controllerPage = String.raw`<!doctype html>
         color: #001f24;
       }
       button:disabled { cursor: wait; opacity: .5; }
-      .toolbar-button { white-space: nowrap; }
+      .toolbar-button { }
+      .toolbar-button-no-wrap { white-space: nowrap; }
       .response-panel {
         background: var(--bg);
         border: 1px solid var(--line);
@@ -592,6 +603,7 @@ const controllerPage = String.raw`<!doctype html>
             <div class="summary-card">
               <span class="summary-label">Run</span>
               <span class="summary-value" data-summary="run">No run selected</span>
+              <div class="summary-details" id="run-details"></div>
             </div>
           </div>
           <div class="form-field">
@@ -667,10 +679,10 @@ const controllerPage = String.raw`<!doctype html>
         <div class="run-links" id="run-links" hidden>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
-            <button class="secondary toolbar-button" data-run-action="status" type="button">Status</button>
-            <button class="secondary toolbar-button" data-run-action="events" type="button">Events</button>
-            <button class="secondary toolbar-button" data-run-action="stdout" type="button">Stdout</button>
-            <button class="secondary toolbar-button" data-run-action="artifacts" type="button">Artifacts</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="status" type="button">Status</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="events" type="button">Events</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="stdout" type="button">Stdout</button>
+            <button class="secondary toolbar-button-no-wrap" data-run-action="artifacts" type="button">Artifacts</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Recommended artifacts</span>
@@ -825,6 +837,20 @@ const controllerPage = String.raw`<!doctype html>
         element.className = 'summary-value' + (kind ? ' ' + kind : '');
       }
 
+      function setRunDetails(progress) {
+        const detailsEl = document.getElementById('run-details');
+        if (!detailsEl) return;
+        if (!progress) {
+          detailsEl.innerHTML = '';
+          return;
+        }
+        const stage = progress.stage ? stripControlSequences(progress.stage) : '';
+        const message = progress.message ? stripControlSequences(progress.message) : '';
+        const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
+        const parts = [stage, message, percent].filter(Boolean);
+        detailsEl.textContent = parts.join(' | ');
+      }
+
       function runUrl(runId, suffix) {
         return '/api/runs/' + encodeURIComponent(runId) + suffix;
       }
@@ -850,7 +876,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         recommended.forEach((fileName) => {
           const button = document.createElement('button');
-          button.className = 'secondary toolbar-button';
+          button.className = 'secondary toolbar-button-no-wrap';
           button.type = 'button';
           button.dataset.artifactFile = fileName;
           button.textContent = fileName;
@@ -875,6 +901,13 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function formatRunButtonLabel(run) {
+        const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+        if (!isDesktop) {
+          // Mobile: Extract number from 'kaseki-77' and show condensed format
+          const runNumber = run.id.split('-')[1] || run.id;
+          return 'K-' + runNumber + ' ' + (run.status || '');
+        }
+        // Desktop: Full format with time, allow wrapping
         const created = run.createdAt ? new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         return [run.id, run.status, created].filter(Boolean).join(' - ');
       }
@@ -940,11 +973,8 @@ const controllerPage = String.raw`<!doctype html>
 
       function summarizeRun(payload) {
         if (!payload || !payload.status) return;
-        const bits = [payload.status];
-        if (payload.progress && payload.progress.stage) bits.push(stripControlSequences(payload.progress.stage));
-        if (payload.progress && payload.progress.message) bits.push(stripControlSequences(payload.progress.message));
-        if (payload.progress && typeof payload.progress.percentComplete === 'number') bits.push(String(payload.progress.percentComplete) + '%');
-        setSummary('run', bits.join(' - '), payload.status === 'failed' ? 'bad' : 'ok');
+        setSummary('run', payload.status, payload.status === 'failed' ? 'bad' : 'ok');
+        setRunDetails(payload.progress);
       }
 
       function requestBody() {
