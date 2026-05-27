@@ -357,8 +357,57 @@ export GITHUB_APP_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_id"
 export GITHUB_APP_CLIENT_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id"
 export GITHUB_APP_PRIVATE_KEY_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key"
 
-# Mock the health check function extraction and execution
-if grep -A 50 'check_github_operations_health()' "$PROJECT_ROOT/kaseki-agent.sh" | head -60 | grep -q 'Cannot read GitHub App ID'; then
+# Extract and execute the actual health check function from kaseki-agent.sh
+HEALTH_TEST_LIB="$TEST_TMP_DIR/health-check-lib.sh"
+awk '
+  /^check_github_operations_health\(\) \{/ {in_func=1}
+  in_func {print}
+  in_func && /^}/ {exit}
+' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_TEST_LIB"
+
+if [ ! -s "$HEALTH_TEST_LIB" ] || ! grep -q '^check_github_operations_health()' "$HEALTH_TEST_LIB"; then
+  printf '%b✗%b Failed to extract health check function from kaseki-agent.sh\n' "$RED" "$NC"
+  rm -rf "$TEST_TMP_DIR"
+  exit 1
+fi
+
+run_health_check_with_env() {
+  local health_log_path="$1"
+  local secrets_dir="$2"
+  local app_id_file="$3"
+  local client_id_file="$4"
+  local private_key_file="$5"
+  local path_override="$6"
+
+  (
+    set +e
+    if [ ! -f "$HEALTH_TEST_LIB" ]; then
+      printf 'ERROR: Health check library not found: %s\n' "$HEALTH_TEST_LIB" >&2
+      exit 1
+    fi
+    export KASEKI_HEALTH_LOG="$health_log_path"
+    export KASEKI_SECRETS_DIR="$secrets_dir"
+    export GITHUB_APP_ID_FILE="$app_id_file"
+    export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
+    export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
+    export PATH="$path_override"
+    # Stubs used by check_github_operations_health
+    resolve_github_secret_file() { printf '%s' "$2"; }
+    generate_github_app_token() { return 1; }
+    . "$HEALTH_TEST_LIB"
+    check_github_operations_health >/dev/null 2>&1
+    exit $?
+  )
+}
+
+MISSING_SECRETS_LOG="$TEST_TMP_DIR/missing-secrets-health.log"
+if ! run_health_check_with_env \
+  "$MISSING_SECRETS_LOG" \
+  "$TEST_TMP_DIR/secrets" \
+  "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
+  "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
+  "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+  "$PATH" && grep -q 'Cannot read GitHub App ID' "$MISSING_SECRETS_LOG"; then
   printf '%b✓%b Health check detects missing GitHub App secrets\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
@@ -369,17 +418,17 @@ fi
 # Test 9b: Test health check with missing git command
 printf '%s' "Testing health check with missing git... "
 if command -v git >/dev/null 2>&1; then
-  # Temporarily rename git to simulate missing command
-  GIT_PATH=$(command -v git)
-  PATH="/nonexistent:$PATH" command -v git >/dev/null 2>&1 && {
-    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+  GIT_MISSING_LOG="$TEST_TMP_DIR/missing-git-health.log"
+  if run_health_check_with_env \
+    "$GIT_MISSING_LOG" \
+    "$TEST_TMP_DIR/secrets" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "/nonexistent:/usr/bin:/bin"; then
+    printf '%b✗%b Health check unexpectedly passed with missing git\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
-  } || {
-    printf '%b✓%b Health check detects missing git command\\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  }
-  
-  if grep -A 10 "git --version" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'git command is not available'; then
+  elif grep -q 'git command is not available' "$GIT_MISSING_LOG"; then
     printf '%b✓%b Health check detects missing git command\n' "$GREEN" "$NC"
     ((TESTS_PASSED++))
   else
@@ -393,17 +442,17 @@ fi
 # Test 9c: Test health check with missing Node.js
 printf '%s' "Testing health check with missing Node.js... "
 if command -v node >/dev/null 2>&1; then
-  # Temporarily rename node to simulate missing command
-  NODE_PATH=$(command -v node)
-  PATH="/nonexistent:$PATH" command -v node >/dev/null 2>&1 && {
-    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+  NODE_MISSING_LOG="$TEST_TMP_DIR/missing-node-health.log"
+  if run_health_check_with_env \
+    "$NODE_MISSING_LOG" \
+    "$TEST_TMP_DIR/secrets" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "/nonexistent:/usr/bin:/bin"; then
+    printf '%b✗%b Health check unexpectedly passed with missing Node.js\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
-  } || {
-    printf '%b✓%b Health check detects missing Node.js\\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  }
-  
-  if grep -A 5 "Node.js is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'Node.js is not available'; then
+  elif grep -q 'Node.js is not available' "$NODE_MISSING_LOG"; then
     printf '%b✓%b Health check detects missing Node.js\n' "$GREEN" "$NC"
     ((TESTS_PASSED++))
   else
@@ -417,17 +466,17 @@ fi
 # Test 9d: Test health check with missing curl
 printf '%s' "Testing health check with missing curl... "
 if command -v curl >/dev/null 2>&1; then
-  # Temporarily rename curl to simulate missing command
-  CURL_PATH=$(command -v curl)
-  PATH="/nonexistent:$PATH" command -v curl >/dev/null 2>&1 && {
-    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+  CURL_MISSING_LOG="$TEST_TMP_DIR/missing-curl-health.log"
+  if run_health_check_with_env \
+    "$CURL_MISSING_LOG" \
+    "$TEST_TMP_DIR/secrets" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
+    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "/nonexistent:/usr/bin:/bin"; then
+    printf '%b✗%b Health check unexpectedly passed with missing curl\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
-  } || {
-    printf '%b✓%b Health check detects missing curl\\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  }
-  
-  if grep -A 5 "curl is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'curl is not available'; then
+  elif grep -q 'curl is not available' "$CURL_MISSING_LOG"; then
     printf '%b✓%b Health check detects missing curl\n' "$GREEN" "$NC"
     ((TESTS_PASSED++))
   else
