@@ -401,15 +401,13 @@ run_health_check_with_env() {
 }
 
 MISSING_SECRETS_LOG="$TEST_TMP_DIR/missing-secrets-health.log"
-if run_health_check_with_env \
+if ! run_health_check_with_env \
   "$MISSING_SECRETS_LOG" \
   "$TEST_TMP_DIR/secrets" \
   "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
   "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
   "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
-  "$PATH" && false; then
-  :
-elif grep -q 'Cannot read GitHub App ID' "$MISSING_SECRETS_LOG"; then
+  "$PATH" && grep -q 'Cannot read GitHub App ID' "$MISSING_SECRETS_LOG"; then
   printf '%b✓%b Health check detects missing GitHub App secrets\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
