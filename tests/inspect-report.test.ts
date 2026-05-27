@@ -240,6 +240,7 @@ describe('inspect-report generation', () => {
 
     // Semantic validation: should have exactly 10 findings (max limit)
     // Semantic validation: should have exactly 10 findings (max limit)
+    // Semantic validation: should have exactly 10 findings (max limit)
     const findingMatches = report.match(/^\d+\. /gm);
     expect(findingMatches).toBeDefined();
     expect(findingMatches).toHaveLength(10);
@@ -250,7 +251,7 @@ describe('inspect-report generation', () => {
     expect(report).toContain('missing error handling');
 
     // Semantic validation: findings should be properly numbered
-    findingMatches?.forEach((match, index) => {
+    findingMatches!.forEach((match, index) => {
       const expectedNumber = index + 1;
       expect(match).toBe(`${expectedNumber}. `);
     });
