@@ -68,8 +68,8 @@ All Sentry configuration is optional and controlled by environment variables:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SENTRY_DSN` | — | Enable Sentry error tracking |
-| `SENTRY_ENVIRONMENT` | `development` | Environment label in Sentry |
-| `SENTRY_RELEASE` | Auto-detected | Version/release label |
+| `SENTRY_ENVIRONMENT` | `production` | Environment label in Sentry |
+| `SENTRY_RELEASE` | Auto-detected (git tags or commit hash) | Version/release label |
 | `SENTRY_SAMPLE_RATE` | `0.1` | Transaction sampling (0.0-1.0) |
 | `SENTRY_ENABLED` | Auto-detect | Explicitly enable/disable |
 
@@ -266,21 +266,35 @@ SENTRY_ENVIRONMENT=staging SENTRY_SAMPLE_RATE=0.5
 SENTRY_ENVIRONMENT=production SENTRY_SAMPLE_RATE=0.1
 ```
 
-### 2. Set Release Version
+### 2. Release Version Tracking (Automatic)
 
-Link errors to specific code versions:
+Release version is **automatically detected** from:
 
-```bash
-# In your CI/CD
-SENTRY_RELEASE=$(git describe --tags --always)
-docker-compose up -d kaseki-api
-```
+1. `SENTRY_RELEASE` environment variable (if set)
+2. Latest Git tag via `git describe --tags` (e.g., `v1.53.4`)
+3. Latest commit hash via `git rev-parse HEAD` (e.g., `abc1234d`)
 
-This helps you:
+This automatic detection helps you:
 
 - Know which versions have errors
-- Resolve issues when fixed in new releases
-- Compare error rates across versions
+- Track error trends across releases
+- Resolve issues when fixed in new versions
+
+**Override the auto-detected version (optional):**
+
+```bash
+# In your CI/CD, explicitly set release
+SENTRY_RELEASE=1.53.4-custom docker-compose up -d kaseki-api
+```
+
+In GitHub Actions, you can use the release tag from a release workflow:
+
+```yaml
+- name: Start API with release version
+  env:
+    SENTRY_RELEASE: ${{ github.event.release.tag_name }}
+  run: docker-compose up -d kaseki-api
+```
 
 ### 3. Monitor Error Trends
 

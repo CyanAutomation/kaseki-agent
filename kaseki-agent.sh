@@ -4366,7 +4366,7 @@ run_github_operations() {
     local fallback_timestamp fallback_validation_status
     fallback_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     fallback_validation_status="unknown"
-    fallback_validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf "failed (exit $VALIDATION_EXIT)")"
+    fallback_validation_status="$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed (exit %s)' "$VALIDATION_EXIT")"
     pr_body=$(cat <<EOF
 ## Summary
 - Automated PR body fallback was used because generated body was empty after sanitization.
