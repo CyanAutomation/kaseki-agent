@@ -41,6 +41,19 @@ describe('run-evaluation-formatter', () => {
     expect(report.sections.map((s) => s.key)).toEqual(['summary', 'stage-values', 'warnings', 'strengths']);
   });
 
+  it('preserves empty string values instead of coercing to N/A', () => {
+    const report = formatRunEvaluation({
+      overall_assessment: '',
+      stage_value: [{ key: 'notes', value: '' }],
+    });
+
+    const summary = report.sections.find((s) => s.key === 'summary');
+    expect(summary?.items[0].value).toBe('');
+
+    const stageValues = report.sections.find((s) => s.key === 'stage-values');
+    expect(stageValues?.items[0].value).toBe('Value: ');
+  });
+
   it('serializes report to markdown', () => {
     const markdown = serializeRunEvaluationMarkdown(
       formatRunEvaluation({

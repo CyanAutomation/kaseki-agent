@@ -74,8 +74,13 @@ export function formatUtcTimestamp(input?: string | number | Date | null): strin
 }
 
 function asText(value: unknown): string {
-  if (value === null || value === undefined || value === '') return 'N/A';
+  if (value === null || value === undefined) return 'N/A';
   return String(value);
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null | undefined {
+  if (value === null || value === undefined) return value;
+  return normalizeLabel(value);
 }
 
 export function formatRunEvaluation(input: RunEvaluationInput): FormattedRunEvaluationReport {
@@ -85,10 +90,10 @@ export function formatRunEvaluation(input: RunEvaluationInput): FormattedRunEval
     key: 'summary',
     title: 'Summary',
     items: [
-      { label: 'Overall assessment', value: asText(input.overall_assessment ? normalizeLabel(input.overall_assessment) : null) },
+      { label: 'Overall assessment', value: asText(normalizeOptionalText(input.overall_assessment)) },
       {
         label: 'Reviewer confidence',
-        value: asText(typeof input.reviewer_confidence === 'string' ? normalizeLabel(input.reviewer_confidence) : input.reviewer_confidence),
+        value: asText(typeof input.reviewer_confidence === 'string' ? normalizeOptionalText(input.reviewer_confidence) : input.reviewer_confidence),
       },
     ],
   });
