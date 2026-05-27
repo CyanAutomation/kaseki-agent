@@ -418,16 +418,12 @@ if (artifact.suggested_allowlist) {
     if (Array.isArray(artifact.suggested_allowlist.agent_patterns) && !artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.agent_patterns values");
     if (Array.isArray(artifact.suggested_allowlist.validation_patterns) && !artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.validation_patterns values");
   }
-} else {
-  // Initialize empty suggested_allowlist if not provided
-  artifact.suggested_allowlist = { agent_patterns: [], validation_patterns: [] };
-}
-
 if (invalid.length) {
   const errors = invalid.map(field => `invalid_${field}`);
   fs.appendFileSync(errorLog, JSON.stringify({timestamp: new Date().toISOString(), errors}) + "\n");
   throw new Error("invalid scouting fields: " + invalid.join(", "));
 }
+// Write output only after all validation passes
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
 ' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log; then
       
