@@ -1117,6 +1117,19 @@ check_secret_scan_allowlist() {
 
 finish() {
   local code=$?
+  maybe_call_finish_helper() {
+    local helper="$1"
+    shift
+    if declare -F "$helper" >/dev/null; then
+      "$helper" "$@"
+      return $?
+    fi
+    printf '[finish] helper_missing name=%s status=%s stage=%s\n' "$helper" "$STATUS" "$CURRENT_STAGE" >&2
+    if declare -F emit_event >/dev/null; then
+      emit_event "finish_helper_missing" "helper=$helper" "status=$STATUS" "stage=$CURRENT_STAGE"
+    fi
+    return 0
+  }
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     # Capture diagnostic context for the catch-all error
     STATUS="$code"
@@ -1134,7 +1147,7 @@ finish() {
     emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
-  collect_git_artifacts
+  maybe_call_finish_helper collect_git_artifacts
   
   # Debug output for restoration report generation
   if [ -f /results/restoration.jsonl ]; then
@@ -1143,8 +1156,15 @@ finish() {
     printf '[debug] restoration.jsonl does not exist\n' >&2
   fi
   
-  if ! generate_restoration_report; then
-    printf 'warning: restoration report generation failed, but continuing with cleanup\n' >&2
+  if declare -F generate_restoration_report >/dev/null; then
+    if ! generate_restoration_report; then
+      printf 'warning: restoration report generation failed, but continuing with cleanup\n' >&2
+    fi
+  else
+    printf '[finish] helper_missing name=generate_restoration_report status=%s stage=%s\n' "$STATUS" "$CURRENT_STAGE" >&2
+    if declare -F emit_event >/dev/null; then
+      emit_event "finish_helper_missing" "helper=generate_restoration_report" "status=$STATUS" "stage=$CURRENT_STAGE"
+    fi
   fi
   
   # Calculate and record maturity score
@@ -1157,7 +1177,7 @@ finish() {
     /app/scripts/kaseki-performance-metrics.sh /results/stage-timings.tsv /results/performance-metrics.json 2>/dev/null || true
   fi
   
-  write_result_summary
+  maybe_call_finish_helper write_result_summary
   
   # Generate inspect-report.md for inspect mode on success
   if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ "$STATUS" -eq 0 ]; then
@@ -1166,9 +1186,9 @@ finish() {
     fi
   fi
   
-  write_failure_json "$STATUS"
-  write_repo_memory_summary
-  write_metadata "$STATUS"
+  maybe_call_finish_helper write_failure_json "$STATUS"
+  maybe_call_finish_helper write_repo_memory_summary
+  maybe_call_finish_helper write_metadata "$STATUS"
   exit "$STATUS"
 }
 trap finish EXIT
