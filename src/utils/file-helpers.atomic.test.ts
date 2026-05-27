@@ -43,7 +43,11 @@ describe('file-helpers atomic write behavior', () => {
     const targetPath = path.join(tempDir, 'artifact.log');
     realFs.writeFileSync(targetPath, '');
 
-    const attempts = Array.from({ length: 20 }, (_, idx) => Promise.resolve().then(() => writeIfEmptyAtomic(targetPath, `writer-${idx}`)));
+    const attempts = Array.from({ length: 20 }, (_, idx) => 
+      new Promise<boolean>((resolve) => 
+        setImmediate(() => resolve(writeIfEmptyAtomic(targetPath, `writer-${idx}`)))
+      )
+    );
 
     const results = await Promise.all(attempts);
     expect(results.filter(Boolean)).toHaveLength(1);
