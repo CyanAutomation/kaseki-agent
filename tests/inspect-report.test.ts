@@ -239,7 +239,9 @@ describe('inspect-report generation', () => {
     const report = runGenerateScript(tempDir);
 
     // Semantic validation: should have exactly 10 findings (max limit)
+    // Semantic validation: should have exactly 10 findings (max limit)
     const findingMatches = report.match(/^\d+\. /gm);
+    expect(findingMatches).toBeDefined();
     expect(findingMatches).toHaveLength(10);
 
     // Semantic validation: findings should contain expected key terms
