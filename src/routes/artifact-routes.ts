@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { ResultCache } from '../result-cache';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { ArtifactResponse, RunArtifactsResponse, ArtifactAvailability } from '../kaseki-api-types';
+import { ArtifactResponse, RunArtifactsResponse, ArtifactAvailability, RunEvaluationRenderedResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
@@ -73,6 +73,27 @@ function artifactContentType(fileName: string): string {
   return 'text/plain';
 }
 
+function renderRunEvaluationPayload(parsed: Record<string, unknown>): RunEvaluationRenderedResponse {
+  return {
+    format: 'rendered',
+    file: 'run-evaluation.json',
+    sections: {
+      overallAssessment: parsed.overall_assessment ?? parsed.overallAssessment,
+      summary: parsed.summary,
+      whatWasFixed: parsed.what_was_fixed ?? parsed.whatWasFixed,
+      humanReviewRecommendations: parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus,
+      stageByStageEvaluation: parsed.stage_by_stage_evaluation ?? parsed.stageByStageEvaluation,
+      efficiencyFindings: parsed.efficiency_findings ?? parsed.efficiencyFindings,
+      validationOutcome: parsed.validation_outcome ?? parsed.validationOutcome,
+      improvementOpportunities: parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities,
+      warnings: parsed.warnings,
+      prSummary: parsed.pr_summary ?? parsed.prSummary,
+      metadata: parsed.metadata,
+    },
+    raw: parsed,
+  };
+}
+
 export function readArtifactContent(
   filePath: string,
   jobStatus: 'queued' | 'running' | 'completed' | 'failed',
@@ -105,6 +126,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     }
 
     const fileName = req.params.file;
+    const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : undefined;
 
     // Validate that the artifact is in the registry
     if (!ALL_ARTIFACT_NAMES.includes(fileName)) {
@@ -162,6 +184,31 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         size: fileStat?.size ?? fileSize,
         content,
       };
+
+      if (format !== undefined) {
+        if (format !== 'rendered') {
+          return sendErrorResponse(res, 400, 'Bad Request', `Unsupported format: ${format}. Supported: rendered`);
+        }
+
+        if (fileName !== 'run-evaluation.json') {
+          return sendErrorResponse(res, 400, 'Bad Request', 'Rendered format is only supported for run-evaluation.json');
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          return sendErrorResponse(res, 422, 'Unprocessable Entity', 'Invalid JSON in run-evaluation.json artifact');
+        }
+
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          return sendErrorResponse(res, 422, 'Unprocessable Entity', 'run-evaluation.json must contain a JSON object');
+        }
+
+        const rendered = renderRunEvaluationPayload(parsed as Record<string, unknown>);
+        res.setHeader('Content-Type', 'application/json');
+        return res.json(rendered);
+      }
 
       res.setHeader('Content-Type', contentType);
       res.json(response);
