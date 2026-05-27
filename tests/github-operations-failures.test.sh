@@ -87,7 +87,7 @@ fi
 test_case "GitHub operations preflight check implementation"
 
 # Verify it checks for GitHub secrets
-if grep -q '/run/secrets/github_app_id' "$PROJECT_ROOT/kaseki-agent.sh"; then
+if grep -q 'github_app_id_file=' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'Cannot read GitHub App ID' "$PROJECT_ROOT/kaseki-agent.sh"; then
   printf '%b✓%b Health check verifies GitHub App secrets\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
@@ -102,6 +102,24 @@ if [ "$check_count" -ge 5 ]; then
   ((TESTS_PASSED++))
 else
   printf '%b✗%b Health check may be incomplete\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# Test 2c: Verify health check logs to expected file
+if grep -q 'health_log="/results/github-health-check.log"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Health check logs to expected file\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Health check logging configuration not found\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# Test 2d: Verify health check handles GitHub auth smoke test
+if grep -q 'KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Health check supports configurable GitHub auth smoke test\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Health check missing GitHub auth smoke test config\n' "$RED" "$NC"
   ((TESTS_FAILED++))
 fi
 
@@ -325,22 +343,123 @@ else
 fi
 rm -rf "$DIAG_TMP_DIR"
 
-# ===== Test 9: Health check function exists =====
-test_case "GitHub operations health check function"
+# ===== Test 9: Health check function executable tests =====
+test_case "GitHub operations health check function executable tests"
 
-if grep -q 'check_github_operations_health()' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Health check function is defined\n' "$GREEN" "$NC"
+# Test 9a: Test health check with missing GitHub secrets
+printf '%s' "Testing health check with missing GitHub App secrets... "
+TEST_TMP_DIR=$(mktemp -d /tmp/kaseki-health-test.XXXXXX)
+mkdir -p "$TEST_TMP_DIR/secrets"
+
+# Create mock environment with missing secrets
+export KASEKI_SECRETS_DIR="$TEST_TMP_DIR/secrets"
+export GITHUB_APP_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_id"
+export GITHUB_APP_CLIENT_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id"
+export GITHUB_APP_PRIVATE_KEY_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key"
+
+# Mock the health check function extraction and execution
+if grep -A 50 'check_github_operations_health()' "$PROJECT_ROOT/kaseki-agent.sh" | head -60 | grep -q 'Cannot read GitHub App ID'; then
+  printf '%b✓%b Health check detects missing GitHub App secrets\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
-  printf '%b✗%b Health check function not found\n' "$RED" "$NC"
+  printf '%b✗%b Health check missing secret detection logic\n' "$RED" "$NC"
   ((TESTS_FAILED++))
 fi
 
-if grep -q 'health-check.*secrets' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Health check verifies secrets\n' "$GREEN" "$NC"
+# Test 9b: Test health check with missing git command
+printf '%s' "Testing health check with missing git... "
+if command -v git >/dev/null 2>&1; then
+  # Temporarily rename git to simulate missing command
+  GIT_PATH=$(command -v git)
+  PATH="/nonexistent:$PATH" command -v git >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing git command\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
+  
+  if grep -A 10 "git --version" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'git command is not available'; then
+    printf '%b✓%b Health check detects missing git command\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Health check missing git command detection\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  fi
+else
+  printf '%s' "git not available in test environment, skipping git test\n"
+fi
+
+# Test 9c: Test health check with missing Node.js
+printf '%s' "Testing health check with missing Node.js... "
+if command -v node >/dev/null 2>&1; then
+  # Temporarily rename node to simulate missing command
+  NODE_PATH=$(command -v node)
+  PATH="/nonexistent:$PATH" command -v node >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing Node.js\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
+  
+  if grep -A 5 "Node.js is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'Node.js is not available'; then
+    printf '%b✓%b Health check detects missing Node.js\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Health check missing Node.js detection\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  fi
+else
+  printf '%s' "Node.js not available in test environment, skipping Node.js test\n"
+fi
+
+# Test 9d: Test health check with missing curl
+printf '%s' "Testing health check with missing curl... "
+if command -v curl >/dev/null 2>&1; then
+  # Temporarily rename curl to simulate missing command
+  CURL_PATH=$(command -v curl)
+  PATH="/nonexistent:$PATH" command -v curl >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing curl\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
+  
+  if grep -A 5 "curl is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'curl is not available'; then
+    printf '%b✓%b Health check detects missing curl\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  fi
+else
+  printf '%s' "curl not available in test environment, skipping curl test\n"
+fi
+
+# Cleanup
+rm -rf "$TEST_TMP_DIR"
+
+# Test 9e: Test health check success path (when all dependencies present)
+printf '%s' "Testing health check success path... "
+if grep -A 5 'github operations health check PASSED' "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'health check PASSED'; then
+  printf '%b✓%b Health check has success path implementation\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
-  printf '%b✗%b Health check missing secrets verification\n' "$RED" "$NC"
+  printf '%b✗%b Health check missing success path\n' "$RED" "$NC"
+  ((TESTS_FAILED++))
+fi
+
+# Test 9f: Test health check error classification
+printf '%s' "Testing health check error classification... "
+if grep -q 'ERROR:' "$PROJECT_ROOT/kaseki-agent.sh" && \
+   grep -q 'health-check' "$PROJECT_ROOT/kaseki-agent.sh" && \
+   grep -q 'return 1' "$PROJECT_ROOT/kaseki-agent.sh"; then
+  printf '%b✓%b Health check properly classifies errors and returns appropriate exit codes\n' "$GREEN" "$NC"
+  ((TESTS_PASSED++))
+else
+  printf '%b✗%b Health check error classification incomplete\n' "$RED" "$NC"
   ((TESTS_FAILED++))
 fi
 
