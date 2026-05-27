@@ -434,7 +434,7 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
       # Check the type of validation error
       if [ -s "$validation_error_file" ]; then
         local error_type
-        error_type=$(node -e 'try { const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (data.errors && data.errors.length > 0) console.log(data.errors[0]); } catch {}' "$validation_error_file" 2>/dev/null || echo "malformed_json")
+        error_type=$(node -e 'try { const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (data.errors && data.errors.length > 0 && data.errors[0]) console.log(data.errors[0]); } catch {}' "$validation_error_file" 2>/dev/null || echo "malformed_json")
         
         case "$error_type" in
           "invalid_root")
