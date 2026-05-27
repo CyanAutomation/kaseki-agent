@@ -3077,7 +3077,7 @@ check_github_operations_health() {
     return 1
   }
 
-  /usr/local/bin/github-app-token >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
+  "$github_app_token_helper" >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
   helper_probe_exit_code=$?
   helper_probe_stdout="$(cat "$helper_probe_stdout_tmp" 2>/dev/null || true)"
   helper_probe_stderr="$(cat "$helper_probe_stderr_tmp" 2>/dev/null || true)"

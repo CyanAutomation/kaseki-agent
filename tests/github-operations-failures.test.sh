@@ -428,9 +428,14 @@ run_health_check_with_env() {
     generate_github_app_token() { 
        if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"git"* ]]; then return 0; else return 1; fi
     }
-    # Create a mock github-app-token helper
+    # Create a mock github-app-token helper that outputs usage on no args (non-zero exit)
     export KASEKI_GITHUB_APP_TOKEN_HELPER="$TEST_TMP_DIR/mock-helper"
-    touch "$KASEKI_GITHUB_APP_TOKEN_HELPER"
+    cat > "$KASEKI_GITHUB_APP_TOKEN_HELPER" << 'HELPER_EOF'
+#!/bin/bash
+# Mock helper that outputs usage when called without args
+printf 'usage: github-app-token [OPTIONS]\n' >&2
+exit 1
+HELPER_EOF
     chmod +x "$KASEKI_GITHUB_APP_TOKEN_HELPER"
 
     # shellcheck source=/dev/null
@@ -518,6 +523,7 @@ if command -v curl >/dev/null 2>&1; then
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
+    cat "$CURL_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
 else
@@ -538,6 +544,7 @@ if run_health_check_with_env \
   ((TESTS_PASSED++))
 else
   printf '%b✗%b Health check success path implementation failed\n' "$RED" "$NC"
+    cat "$HEALTH_SUCCESS_LOG"
   ((TESTS_FAILED++))
 fi
 
