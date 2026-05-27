@@ -208,7 +208,7 @@ setup_host_logging_mirror() {
     exit 1
   fi
   exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
-  printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s\n' "$KASEKI_LOG_DIR" >&2
+  printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)\n' "$KASEKI_LOG_DIR" >&2
 }
 
 mkdir_paths=(/results)

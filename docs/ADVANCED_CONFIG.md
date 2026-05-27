@@ -659,10 +659,13 @@ Variables for logging, debugging, and diagnostics.
 - **Type**: `string` (directory path)
 - **Default**: `/var/log/kaseki`
 - **Paths**: Production API only
-- **Description**: Host-level log directory for API service
+- **Description**: Host-level log mirror directory for API service
 - **Requirements**:
-  - Must be writable by Docker container (UID 10000)
+  - Must be writable by Docker container (UID 10000) to enable host log mirroring
   - Recommend persistent volume mount
+- **Behavior if unavailable**:
+  - Default (`KASEKI_STRICT_HOST_LOGGING=0`): warning-only; startup continues with `/results/stdout.log` and `/results/stderr.log`
+  - Strict mode (`KASEKI_STRICT_HOST_LOGGING=1`): fail fast at startup when `KASEKI_LOG_DIR` is not writable
 - **Example**:
 
   ```bash
