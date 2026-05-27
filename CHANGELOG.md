@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.55.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.54.0...v1.55.0) (2026-05-27)
+
+
+### Features
+
+* Add detailed run progress display and styling to the Kaseki Task Console ([5239f6b](https://github.com/CyanAutomation/kaseki-agent/commit/5239f6bc2c28892ab4d0fd5f5bdbeabfaf80ee5e))
+* Update version to 1.54.0 and enhance toolbar button styling for better UI consistency ([d2036ff](https://github.com/CyanAutomation/kaseki-agent/commit/d2036ffee832a4d9d7fab64388bb34d4c235aae1))
+
 # [1.54.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.4...v1.54.0) (2026-05-27)
 
 
