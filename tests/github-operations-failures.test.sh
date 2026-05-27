@@ -106,7 +106,7 @@ else
 fi
 
 # Test 2c: Verify health check logs to expected file
-if grep -q 'health_log="/results/github-health-check.log"' "$PROJECT_ROOT/kaseki-agent.sh"; then
+if grep -q 'health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"' "$PROJECT_ROOT/kaseki-agent.sh"; then
   printf '%b✓%b Health check logs to expected file\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
@@ -390,10 +390,39 @@ run_health_check_with_env() {
     export GITHUB_APP_ID_FILE="$app_id_file"
     export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
     export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
+    
+    # Create a clean bin dir with only what we want
+    local fake_bin="$TEST_TMP_DIR/fake-bin"
+    mkdir -p "$fake_bin"
+    ln -sf "$(command -v tee)" "$fake_bin/tee"
+    ln -sf "$(command -v grep)" "$fake_bin/grep"
+    ln -sf "$(command -v cat)" "$fake_bin/cat"
+    ln -sf "$(command -v printf)" "$fake_bin/printf" 2>/dev/null || true
+    
+    # If path_override contains 'git', link it
+    if echo "$path_override" | grep -q "/usr/bin"; then
+       # This is a bit of a hack to keep basic tools if we want them
+       # but for the "missing" tests we usually want a very restricted PATH
+       :
+    fi
+    
     # shellcheck disable=SC2030
-    PATH="$path_override"
+    PATH="$fake_bin"
+    # If we want to simulate having git/node/curl, we link them explicitly
+    if [[ "$path_override" == *"git"* ]]; then ln -sf "$(command -v git)" "$fake_bin/git"; fi
+    if [[ "$path_override" == *"node"* ]]; then ln -sf "$(command -v node)" "$fake_bin/node"; fi
+    if [[ "$path_override" == *"curl"* ]]; then ln -sf "$(command -v curl)" "$fake_bin/curl"; fi
+
     # Stubs used by check_github_operations_health
-    resolve_github_secret_file() { printf '%s' "$2"; }
+    resolve_github_secret_file() {
+      case "$1" in
+        GITHUB_APP_ID_FILE) printf '%s' "${GITHUB_APP_ID_FILE:-$2}" ;;
+        GITHUB_APP_CLIENT_ID_FILE) printf '%s' "${GITHUB_APP_CLIENT_ID_FILE:-$2}" ;;
+        GITHUB_APP_PRIVATE_KEY_FILE) printf '%s' "${GITHUB_APP_PRIVATE_KEY_FILE:-$2}" ;;
+        *) printf '%s' "$2" ;;
+      esac
+    }
+    log_github_private_key_metadata() { :; }
     generate_github_app_token() { return 1; }
     # shellcheck source=/dev/null
     . "$HEALTH_TEST_LIB"
@@ -422,12 +451,17 @@ fi
 printf '%s' "Testing health check with missing git... "
 if command -v git >/dev/null 2>&1; then
   GIT_MISSING_LOG="$TEST_TMP_DIR/missing-git-health.log"
+  # Create dummy secrets so it gets past the secret check
+  touch "$TEST_TMP_DIR/secrets/dummy_app_id"
+  touch "$TEST_TMP_DIR/secrets/dummy_client_id"
+  touch "$TEST_TMP_DIR/secrets/dummy_private_key"
+  
   if run_health_check_with_env \
     "$GIT_MISSING_LOG" \
     "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "$TEST_TMP_DIR/secrets/dummy_app_id" \
+    "$TEST_TMP_DIR/secrets/dummy_client_id" \
+    "$TEST_TMP_DIR/secrets/dummy_private_key" \
     "/nonexistent:/usr/bin:/bin"; then
     printf '%b✗%b Health check unexpectedly passed with missing git\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
@@ -436,6 +470,8 @@ if command -v git >/dev/null 2>&1; then
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing git command detection\n' "$RED" "$NC"
+    printf 'Log content:\n'
+    cat "$GIT_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
 else
@@ -449,9 +485,9 @@ if command -v node >/dev/null 2>&1; then
   if run_health_check_with_env \
     "$NODE_MISSING_LOG" \
     "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "$TEST_TMP_DIR/secrets/dummy_app_id" \
+    "$TEST_TMP_DIR/secrets/dummy_client_id" \
+    "$TEST_TMP_DIR/secrets/dummy_private_key" \
     "/nonexistent:/usr/bin:/bin"; then
     printf '%b✗%b Health check unexpectedly passed with missing Node.js\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
@@ -473,9 +509,9 @@ if command -v curl >/dev/null 2>&1; then
   if run_health_check_with_env \
     "$CURL_MISSING_LOG" \
     "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
-    "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
+    "$TEST_TMP_DIR/secrets/dummy_app_id" \
+    "$TEST_TMP_DIR/secrets/dummy_client_id" \
+    "$TEST_TMP_DIR/secrets/dummy_private_key" \
     "/nonexistent:/usr/bin:/bin"; then
     printf '%b✗%b Health check unexpectedly passed with missing curl\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
