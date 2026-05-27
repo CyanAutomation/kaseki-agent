@@ -371,7 +371,13 @@ printf '%s' "Testing health check with missing git... "
 if command -v git >/dev/null 2>&1; then
   # Temporarily rename git to simulate missing command
   GIT_PATH=$(command -v git)
-  mv "$GIT_PATH" "${GIT_PATH}.bak"
+  PATH="/nonexistent:$PATH" command -v git >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing git command\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
   
   if grep -A 10 "git --version" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'git command is not available'; then
     printf '%b✓%b Health check detects missing git command\n' "$GREEN" "$NC"
