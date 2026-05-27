@@ -205,17 +205,23 @@ export function writeIfMissingAtomic(filePath: string, content: string, options:
 }
 
 /**
- * Write content to file only if it's empty (atomic version).
- * Uses temp file + rename pattern to avoid TOCTOU race conditions.
- * Returns true if written, false if file exists and is non-empty.
+ * Write content to file only if it's empty (atomic best-effort).
+ *
+ * Guarantees it will never overwrite an existing non-empty file. For an
+ * existing empty file, it uses a lock file created with `wx` to serialize
+ * writers, then re-checks emptiness before replacing content atomically.
+ * Returns true if written, false if file exists and is non-empty or another
+ * writer won the lock.
  */
 export function writeIfEmptyAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): boolean {
-  // Try to create exclusively first (fastest path for non-existent files)
+  const encoding = options.encoding || 'utf-8';
+
+  // Fast path: file does not exist yet.
   try {
     fs.writeFileSync(filePath, content, {
       mode: options.mode,
-      encoding: options.encoding || 'utf-8',
-      flag: 'wx', // Exclusive creation - fails if file exists
+      encoding,
+      flag: 'wx',
     });
     return true;
   } catch (err) {
@@ -223,46 +229,39 @@ export function writeIfEmptyAtomic(filePath: string, content: string, options: {
       throw err;
     }
   }
-  
-  // File exists - check if it's empty and try to overwrite
-  try {
-    const stats = fs.statSync(filePath);
-    if (stats.size > 0) {
-      return false; // File exists and is non-empty
-    }
-  } catch {
-    return false; // File doesn't exist anymore or other error
+
+  // File exists. If it is non-empty, do not modify.
+  const stats = fs.statSync(filePath);
+  if (stats.size > 0) {
+    return false;
   }
-  
-  // File exists and is empty - overwrite it atomically
-  writeAtomic(filePath, content, options);
-  return true;
+
+  // Serialize empty-file replacement attempts using a lock file.
+  const lockPath = `${filePath}.empty.lock`;
+  try {
+    fs.writeFileSync(lockPath, '', { flag: 'wx' });
   } catch (err) {
-    // Clean up temp file on error
-    try {
-      fs.unlinkSync(tempPath);
-    } catch {
-      // Ignore cleanup errors
-    }
-    
-    // If we get EEXIST here, it means another process created the file between our check and write
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-      // Verify the file is still empty
-      try {
-        const stats = fs.statSync(filePath);
-        if (stats.size === 0) {
-          // File is empty, so we can write to it
-          writeAtomic(filePath, content, options);
-          return true;
-        }
-        return false; // File exists and is non-empty
-      } catch {
-        // File doesn't exist or other error, we can write
-        writeAtomic(filePath, content, options);
-        return true;
-      }
+      return false;
     }
     throw err;
+  }
+
+  try {
+    // Re-check under lock to ensure we never overwrite non-empty content.
+    const underLockStats = fs.statSync(filePath);
+    if (underLockStats.size > 0) {
+      return false;
+    }
+
+    writeAtomic(filePath, content, options);
+    return true;
+  } finally {
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      // Ignore lock cleanup errors.
+    }
   }
 }
 
