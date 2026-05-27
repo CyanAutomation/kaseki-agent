@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.1...v1.53.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* remove TOCTOU overwrite path in writeIfEmptyAtomic ([622cd11](https://github.com/CyanAutomation/kaseki-agent/commit/622cd11dbb2543f14eba7dc6b7b36b281e31493b))
+* remove unnecessary whitespace in failure artifact writer and file helpers ([87ce16e](https://github.com/CyanAutomation/kaseki-agent/commit/87ce16e55f118b2f16680ec7bd90439c2ae4316d))
+* TOCTOU checks around file existence/stat before writ... (kaseki-69) ([#437](https://github.com/CyanAutomation/kaseki-agent/issues/437)) ([992b42e](https://github.com/CyanAutomation/kaseki-agent/commit/992b42e76bdc4ea53b55332ace911a0b2475fd0e))
+
 ## [1.53.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.0...v1.53.1) (2026-05-27)
 
 
