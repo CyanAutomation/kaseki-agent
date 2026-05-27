@@ -425,7 +425,13 @@ printf '%s' "Testing health check with missing curl... "
 if command -v curl >/dev/null 2>&1; then
   # Temporarily rename curl to simulate missing command
   CURL_PATH=$(command -v curl)
-  mv "$CURL_PATH" "${CURL_PATH}.bak"
+  PATH="/nonexistent:$PATH" command -v curl >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing curl\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
   
   if grep -A 5 "curl is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'curl is not available'; then
     printf '%b✓%b Health check detects missing curl\n' "$GREEN" "$NC"
