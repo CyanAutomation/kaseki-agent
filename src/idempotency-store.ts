@@ -172,7 +172,7 @@ export class IdempotencyStore {
           try {
             const ownerMetadata = this.readLockOwner();
             const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
-            if (lockLooksStale && this.canRemoveStaleLock(ownerMetadata)) {
+            if (lockLooksStale && ownerMetadata?.token && this.canRemoveStaleLock(ownerMetadata)) {
               this.forceRemoveLockDir();
               continue;
             }
