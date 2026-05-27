@@ -381,6 +381,10 @@ run_health_check_with_env() {
 
   (
     set +e
+    if [ ! -f "$HEALTH_TEST_LIB" ]; then
+      printf 'ERROR: Health check library not found: %s\n' "$HEALTH_TEST_LIB" >&2
+      exit 1
+    fi
     export KASEKI_HEALTH_LOG="$health_log_path"
     export KASEKI_SECRETS_DIR="$secrets_dir"
     export GITHUB_APP_ID_FILE="$app_id_file"
