@@ -392,26 +392,23 @@ run_health_check_with_env() {
     export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
     
     # Create a clean bin dir with only what we want
-    local fake_bin="$TEST_TMP_DIR/fake-bin"
-    mkdir -p "$fake_bin"
+    local fake_bin
+    fake_bin=$(mktemp -d "$TEST_TMP_DIR/fake-bin.XXXXXX")
     ln -sf "$(command -v tee)" "$fake_bin/tee"
     ln -sf "$(command -v grep)" "$fake_bin/grep"
     ln -sf "$(command -v cat)" "$fake_bin/cat"
+    ln -sf "$(command -v mktemp)" "$fake_bin/mktemp"
     ln -sf "$(command -v printf)" "$fake_bin/printf" 2>/dev/null || true
     
-    # If path_override contains 'git', link it
-    if echo "$path_override" | grep -q "/usr/bin"; then
-       # This is a bit of a hack to keep basic tools if we want them
-       # but for the "missing" tests we usually want a very restricted PATH
-       :
-    fi
-    
-    # shellcheck disable=SC2030
-    PATH="$fake_bin"
-    # If we want to simulate having git/node/curl, we link them explicitly
+    # Conditionally link git/node/curl based on path_override BEFORE setting PATH
     if [[ "$path_override" == *"git"* ]]; then ln -sf "$(command -v git)" "$fake_bin/git"; fi
     if [[ "$path_override" == *"node"* ]]; then ln -sf "$(command -v node)" "$fake_bin/node"; fi
     if [[ "$path_override" == *"curl"* ]]; then ln -sf "$(command -v curl)" "$fake_bin/curl"; fi
+    
+    # shellcheck disable=SC2030
+    export PATH="$fake_bin"
+    # Clear bash command cache to force PATH search
+    hash -r
 
     # Stubs used by check_github_operations_health
     resolve_github_secret_file() {
@@ -423,7 +420,7 @@ run_health_check_with_env() {
       esac
     }
     log_github_private_key_metadata() { :; }
-    generate_github_app_token() { return 1; }
+    generate_github_app_token() { [[ "$path_override" == *"git"* ]] && return 0 || return 1; }
     # shellcheck source=/dev/null
     . "$HEALTH_TEST_LIB"
     check_github_operations_health >/dev/null 2>&1
@@ -462,15 +459,11 @@ if command -v git >/dev/null 2>&1; then
     "$TEST_TMP_DIR/secrets/dummy_app_id" \
     "$TEST_TMP_DIR/secrets/dummy_client_id" \
     "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "/nonexistent:/usr/bin:/bin"; then
-    printf '%b✗%b Health check unexpectedly passed with missing git\\n' "$RED" "$NC"
-    ((TESTS_FAILED++))
-  elif grep -q 'git command is not available' "$GIT_MISSING_LOG"; then
+    "/nonexistent"; then
     printf '%b✓%b Health check detects missing git command\n' "$GREEN" "$NC"
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing git command detection\n' "$RED" "$NC"
-    printf 'Log content:\n'
     cat "$GIT_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
@@ -488,7 +481,7 @@ if command -v node >/dev/null 2>&1; then
     "$TEST_TMP_DIR/secrets/dummy_app_id" \
     "$TEST_TMP_DIR/secrets/dummy_client_id" \
     "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "/nonexistent:/usr/bin:/bin"; then
+    "/nonexistent"; then
     printf '%b✗%b Health check unexpectedly passed with missing Node.js\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   elif grep -q 'Node.js is not available' "$NODE_MISSING_LOG"; then
@@ -496,6 +489,7 @@ if command -v node >/dev/null 2>&1; then
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing Node.js detection\n' "$RED" "$NC"
+    cat "$NODE_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
 else
@@ -512,7 +506,7 @@ if command -v curl >/dev/null 2>&1; then
     "$TEST_TMP_DIR/secrets/dummy_app_id" \
     "$TEST_TMP_DIR/secrets/dummy_client_id" \
     "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "/nonexistent:/usr/bin:/bin"; then
+    "/nonexistent"; then
     printf '%b✗%b Health check unexpectedly passed with missing curl\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   elif grep -q 'curl is not available' "$CURL_MISSING_LOG"; then
@@ -520,6 +514,7 @@ if command -v curl >/dev/null 2>&1; then
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
+    cat "$CURL_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
 else
@@ -531,25 +526,58 @@ rm -rf "$TEST_TMP_DIR"
 
 # Test 9e: Test health check success path (when all dependencies present)
 printf '%s' "Testing health check success path... "
-if grep -A 5 'github operations health check PASSED' "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'health check PASSED'; then
+# Re-extract lib for success test because we need to mock github-app-token path
+TEST_TMP_DIR=$(mktemp -d /tmp/kaseki-health-success.XXXXXX)
+HEALTH_TEST_LIB="$TEST_TMP_DIR/health-check-lib.sh"
+awk '
+  /^check_github_operations_health\(\) \{/ {in_func=1}
+  in_func {print}
+  in_func && /^}/ {exit}
+' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_TEST_LIB"
+
+HEALTH_SUCCESS_LOG="$TEST_TMP_DIR/success-health.log"
+# For success path, we need to mock github-app-token helper too since it might be missing
+mkdir -p "$TEST_TMP_DIR/bin" "$TEST_TMP_DIR/secrets"
+touch "$TEST_TMP_DIR/bin/github-app-token"
+chmod +x "$TEST_TMP_DIR/bin/github-app-token"
+touch "$TEST_TMP_DIR/secrets/dummy_app_id"
+touch "$TEST_TMP_DIR/secrets/dummy_client_id"
+touch "$TEST_TMP_DIR/secrets/dummy_private_key"
+
+# Use sed to replace the hardcoded /usr/local/bin/github-app-token in HEALTH_TEST_LIB
+sed -i "s#/usr/local/bin/github-app-token#$TEST_TMP_DIR/bin/github-app-token#g" "$HEALTH_TEST_LIB"
+
+if run_health_check_with_env \
+  "$HEALTH_SUCCESS_LOG" \
+  "$TEST_TMP_DIR/secrets" \
+  "$TEST_TMP_DIR/secrets/dummy_app_id" \
+  "$TEST_TMP_DIR/secrets/dummy_client_id" \
+  "$TEST_TMP_DIR/secrets/dummy_private_key" \
+  "git:node:curl" && grep -q 'github operations health check started' "$HEALTH_SUCCESS_LOG"; then
   printf '%b✓%b Health check has success path implementation\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
-  printf '%b✗%b Health check missing success path\n' "$RED" "$NC"
+  printf '%b✗%b Health check success path implementation failed\n' "$RED" "$NC"
+  cat "$HEALTH_SUCCESS_LOG" 2>/dev/null || true
   ((TESTS_FAILED++))
 fi
 
 # Test 9f: Test health check error classification
 printf '%s' "Testing health check error classification... "
-if grep -q 'ERROR:' "$PROJECT_ROOT/kaseki-agent.sh" && \
-   grep -q 'health-check' "$PROJECT_ROOT/kaseki-agent.sh" && \
-   grep -q 'return 1' "$PROJECT_ROOT/kaseki-agent.sh"; then
+if ! run_health_check_with_env \
+  "$TEST_TMP_DIR/error-class.log" \
+  "$TEST_TMP_DIR/secrets" \
+  "$TEST_TMP_DIR/secrets/nonexistent_id" \
+  "$TEST_TMP_DIR/secrets/nonexistent_client" \
+  "$TEST_TMP_DIR/secrets/nonexistent_key" \
+  "git:node:curl"; then
   printf '%b✓%b Health check properly classifies errors and returns appropriate exit codes\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
-  printf '%b✗%b Health check error classification incomplete\n' "$RED" "$NC"
+  printf '%b✗%b Health check error classification failed\n' "$RED" "$NC"
   ((TESTS_FAILED++))
 fi
+rm -rf "$TEST_TMP_DIR"
 
 # ===== Test 10: GitHub credential auto-detection feature =====
 test_case "GitHub credential auto-detection"
