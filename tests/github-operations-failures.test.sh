@@ -365,6 +365,12 @@ awk '
   in_func && /^}/ {exit}
 ' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_TEST_LIB"
 
+if [ ! -s "$HEALTH_TEST_LIB" ] || ! grep -q '^check_github_operations_health()' "$HEALTH_TEST_LIB"; then
+  printf '%b✗%b Failed to extract health check function from kaseki-agent.sh\n' "$RED" "$NC"
+  rm -rf "$TEST_TMP_DIR"
+  exit 1
+fi
+
 run_health_check_with_env() {
   local health_log_path="$1"
   local secrets_dir="$2"
