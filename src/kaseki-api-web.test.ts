@@ -50,7 +50,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
       expect(body).toContain('function stripControlSequences(value)');
       expect(body).toContain('hidden aria-hidden="true"');
-      expect(body).toContain('Check status');
+      expect(body).toContain('Check Status');
       expect(body).toContain('/status');
       expect(body).toContain('/events?tail=50');
       expect(body).toContain("runUrl(runId, '/cancel')");

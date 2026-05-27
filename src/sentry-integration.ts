@@ -7,13 +7,19 @@
  * Environment Variables:
  * - SENTRY_DSN: Data Source Name for Sentry (required for integration)
  * - SENTRY_ENVIRONMENT: Environment (development, staging, production)
- * - SENTRY_RELEASE: Release version for tracking
+ * - SENTRY_RELEASE: Release version for tracking (auto-detected if not set)
  * - SENTRY_SAMPLE_RATE: Transaction sample rate (0.0 - 1.0)
  * - SENTRY_ENABLED: Explicitly enable/disable Sentry (default: auto-detect from DSN)
+ *
+ * Release Detection (in order of precedence):
+ * 1. SENTRY_RELEASE environment variable
+ * 2. Git describe output (e.g., v1.2.3, v1.2.3-5-g1a2b3c)
+ * 3. Package.json version
  */
 
 import * as Sentry from '@sentry/node';
 import { expressIntegration } from '@sentry/node';
+import { spawnSync } from 'child_process';
 import { Request, Response, NextFunction } from 'express';
 
 interface SentryConfig {
@@ -27,13 +33,62 @@ interface SentryConfig {
 let isInitialized = false;
 
 /**
+ * Get the release version for Sentry.
+ * Uses this precedence:
+ * 1. SENTRY_RELEASE environment variable
+ * 2. Git describe (latest tag or commit hash)
+ * 3. Package.json version
+ *
+ * @returns Release version string, or undefined if not available
+ */
+function detectReleaseVersion(): string | undefined {
+  // 1. Check explicit environment variable
+  if (process.env.SENTRY_RELEASE) {
+    return process.env.SENTRY_RELEASE;
+  }
+
+  // 2. Try git describe to get latest tag/version
+  try {
+    const result = spawnSync('git', ['describe', '--tags', '--always'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: 1000,
+    });
+
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim();
+    }
+  } catch {
+    // Git not available or command failed, fall through
+  }
+
+  // 3. Try git rev-parse HEAD (commit hash) as fallback
+  try {
+    const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: 1000,
+    });
+
+    if (result.status === 0 && result.stdout) {
+      const hash = result.stdout.trim();
+      return hash.substring(0, 8); // Use first 8 chars of commit hash
+    }
+  } catch {
+    // Git not available, continue
+  }
+
+  // 4. Return undefined - Sentry will handle the missing release
+  return undefined;
+}
+
+/**
  * Initialize Sentry with configuration from environment variables.
  * Can be called multiple times safely - only initializes once.
  *
- * @param packageVersion - Version string for the release (e.g., from package.json)
  * @param customConfig - Optional custom configuration overrides
  */
-export function initSentry(packageVersion?: string, customConfig?: Partial<SentryConfig>): void {
+export function initSentry(customConfig?: Partial<SentryConfig>): void {
   if (isInitialized) {
     return;
   }
@@ -55,10 +110,13 @@ export function initSentry(packageVersion?: string, customConfig?: Partial<Sentr
     return;
   }
 
+  // Detect release version dynamically
+  const releaseVersion = customConfig?.release || detectReleaseVersion();
+
   const config: Sentry.NodeOptions = {
     dsn,
-    environment: customConfig?.environment || process.env.SENTRY_ENVIRONMENT || 'development',
-    release: customConfig?.release || process.env.SENTRY_RELEASE || packageVersion || undefined,
+    environment: customConfig?.environment || process.env.SENTRY_ENVIRONMENT || 'production',
+    release: releaseVersion,
     tracesSampleRate: customConfig?.sampleRate || parseFloat(process.env.SENTRY_SAMPLE_RATE || '0.1'),
     integrations: [
       expressIntegration(),

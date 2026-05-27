@@ -714,28 +714,38 @@ Variables for error tracking and monitoring with Sentry.
 ### `SENTRY_ENVIRONMENT`
 
 - **Type**: `string`
-- **Default**: `development`
+- **Default**: `production`
 - **Paths**: Local API, Production API only
 - **Description**: Environment name for Sentry reporting
 - **Options**: `development`, `staging`, `production` (or custom values)
 - **Use case**: Filter and organize errors by environment in Sentry dashboard
+- **Behavior**: By default, assumes production environment. Override to `development` for local debugging or `staging` for pre-release environments.
 - **Example**:
 
   ```bash
-  SENTRY_ENVIRONMENT=production
+  # Override default for development
+  SENTRY_ENVIRONMENT=development
   ```
 
 ### `SENTRY_RELEASE`
 
 - **Type**: `string`
-- **Default**: Not set (auto-detected from package version)
+- **Default**: Auto-detected in this order:
+  1. `SENTRY_RELEASE` environment variable (if set)
+  2. Output of `git describe --tags --always` (latest Git tag or commit hash)
+  3. Not set (if Git unavailable)
 - **Paths**: Local API, Production API only
 - **Description**: Release version for tracking which version of code has errors
-- **Format**: Usually semantic versioning (e.g., `1.53.4`)
-- **Example**:
+- **Behavior**: Automatically detects from Git tags or commit hash. Useful for linking errors to specific deployed versions.
+- **Format**: Semantic versioning (e.g., `1.53.4`, `v1.53.4`) or Git commit hash (e.g., `abc1234d`)
+- **Override example**:
 
   ```bash
+  # Explicitly set (overrides auto-detection)
   SENTRY_RELEASE=1.53.4
+  
+  # Or set from GitHub Actions release workflow
+  SENTRY_RELEASE=${{ github.event.release.tag_name }}
   ```
 
 ### `SENTRY_SAMPLE_RATE`
