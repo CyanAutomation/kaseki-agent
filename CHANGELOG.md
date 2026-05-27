@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.54.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.4...v1.54.0) (2026-05-27)
+
+
+### Features
+
+* Enhance UI styling and accessibility for Kaseki Task Console with updated color scheme, typography, and layout adjustments ([f91e07a](https://github.com/CyanAutomation/kaseki-agent/commit/f91e07ada2b065772c6ff9f19df7d703c2dccefe))
+* Integrate Sentry for error tracking and monitoring in kaseki-agent ([ec02f01](https://github.com/CyanAutomation/kaseki-agent/commit/ec02f018f3ac659078712ce1cfe883b5c312b97c))
+* Update Sentry configuration and documentation for improved release tracking and environment settings ([6811170](https://github.com/CyanAutomation/kaseki-agent/commit/6811170cdc4414e08930030a2996ba7d5b3dd6f7))
+
 ## [1.53.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.3...v1.53.4) (2026-05-27)
 
 
