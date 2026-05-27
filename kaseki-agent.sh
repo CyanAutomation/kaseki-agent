@@ -3849,11 +3849,42 @@ const text = (value, max = 220) => {
   return normalized.length > max ? `${normalized.slice(0, Math.max(0, max - 3))}...` : normalized;
 };
 
+const parseEpochMs = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const epochMs = Date.parse(value);
+  return Number.isFinite(epochMs) ? epochMs : null;
+};
+
+const durationMsFromTimestamps = (() => {
+  const startMs = parseEpochMs(data.started_at || data.start_time || null);
+  const endMs = parseEpochMs(data.ended_at || data.end_time || null);
+  if (startMs === null || endMs === null) return null;
+  return Math.max(0, endMs - startMs);
+})();
+
+const fallbackDurationMs = (() => {
+  if (typeof data.duration_ms === 'number' && Number.isFinite(data.duration_ms) && data.duration_ms >= 0) {
+    return data.duration_ms;
+  }
+  if (typeof data.duration_seconds === 'number' && Number.isFinite(data.duration_seconds) && data.duration_seconds >= 0) {
+    return data.duration_seconds * 1000;
+  }
+  return null;
+})();
+
+const durationMs = durationMsFromTimestamps ?? fallbackDurationMs;
+const formatDuration = (ms) => {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return 'unknown';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(2).replace(/\.00$/, '')}s`;
+};
+
 // Key-value summary
 const assessment = text(data.overall_assessment || 'unknown', 40);
 const confidence = text(data.reviewer_confidence || 'unknown', 40);
 console.log(`- Overall: ${assessment}`);
 console.log(`- Reviewer confidence: ${confidence}`);
+console.log(`- Duration: ${formatDuration(durationMs)}`);
 
 // Summary subsection
 const prSummary = text(data.pr_summary || data.summary || '', 320);
