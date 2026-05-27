@@ -156,33 +156,32 @@ export class IdempotencyStore {
     let retries = 0;
 
     while (retries < maxRetries) {
+      const owner = {
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        token: this.generateLockToken(),
+      };
+      const tempLockPath = `${this.lockPath}.${owner.token}.tmp`;
+      const tempOwnerPath = path.join(tempLockPath, 'owner.json');
+
       try {
-        fs.mkdirSync(this.lockPath);
-        const owner = {
-          pid: process.pid,
-          createdAt: new Date().toISOString(),
-          token: this.generateLockToken(),
-        };
-        fs.writeFileSync(this.lockOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
+        fs.mkdirSync(tempLockPath);
+        fs.writeFileSync(tempOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
+        fs.renameSync(tempLockPath, this.lockPath);
         this.activeLockToken = owner.token;
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'EEXIST') {
-          try {
-            const ownerMetadata = this.readLockOwner();
-            const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
-            if (lockLooksStale && ownerMetadata?.token && this.canRemoveStaleLock(ownerMetadata)) {
-              this.forceRemoveLockDir();
-              continue;
-            }
-          } catch {
-            // If stale-lock check/removal fails, proceed to retry sleep.
+        this.forceRemovePath(tempLockPath);
+
+        if (code === 'EEXIST' || code === 'ENOTEMPTY') {
+          const ownerMetadata = this.readLockOwner();
+          const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
+          if (lockLooksStale && this.canRemoveStaleLock(ownerMetadata)) {
+            this.forceRemoveLockDir();
+            continue;
           }
-        } else if (code === 'ENOENT') {
-          // Lock dir may have been concurrently removed between creation and owner write.
-          continue;
-        } else {
+        } else if (code !== 'ENOENT') {
           throw error;
         }
 
@@ -231,12 +230,6 @@ export class IdempotencyStore {
     } catch {
       return false;
     }
-    const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
-    if (!exceedsAgeThreshold) {
-      return false;
-    }
-
-    return ownerPid ? !this.isProcessAlive(ownerPid) : true;
   }
 
   private canRemoveStaleLock(ownerMetadata: { pid?: number; token?: string } | null): boolean {
@@ -255,6 +248,10 @@ export class IdempotencyStore {
     } catch {
       return false;
     }
+  }
+
+  private forceRemovePath(targetPath: string): void {
+    fs.rmSync(targetPath, { recursive: true, force: true });
   }
 
   private forceRemoveLockDir(): void {
