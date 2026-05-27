@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import { commandOutput as executeCommand } from '../lib/subprocess-helpers';
 import * as path from 'path';
 
+type BufferEncoding = 'ascii' | 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'base64' | 'base64url' | 'latin1' | 'binary' | 'hex';
+
 /**
  * Check if a file exists and is non-empty.
  * Used for artifact availability checks.
@@ -157,18 +159,18 @@ export function getFileStats(filePath: string): fs.Stats | null {
  */
 export function writeAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): void {
   const tempPath = `${filePath}.tmp`;
-  
+
   try {
     // Ensure parent directory exists
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
-    
+
     // Write to temp file
     fs.writeFileSync(tempPath, content, {
       mode: options.mode,
       encoding: options.encoding || 'utf-8',
     });
-    
+
     // Atomically rename temp file to final destination
     fs.renameSync(tempPath, filePath);
   } catch (error) {
