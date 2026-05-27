@@ -675,14 +675,67 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             schema: { type: 'string' },
             description: 'Artifact filename (e.g., git.diff, metadata.json)',
           },
+          {
+            name: 'format',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['rendered'] },
+            description: 'Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content.',
+          },
         ],
         security: [{ BearerAuth: [] }],
         responses: {
           '200': {
             description: 'Artifact file content',
             content: {
-              '*/*': {
-                schema: { type: 'string', format: 'binary' },
+              'application/json': {
+                schema: {
+                  oneOf: [
+                    {
+                      type: 'object',
+                      required: ['file', 'contentType', 'size', 'content'],
+                      properties: {
+                        file: { type: 'string' },
+                        contentType: { type: 'string' },
+                        size: { type: 'integer' },
+                        content: { type: 'string' },
+                      },
+                    },
+                    {
+                      type: 'object',
+                      required: ['format', 'file', 'sections', 'raw'],
+                      properties: {
+                        format: { type: 'string', enum: ['rendered'] },
+                        file: { type: 'string', enum: ['run-evaluation.json'] },
+                        sections: {
+                          type: 'object',
+                          properties: {
+                            overallAssessment: {},
+                            summary: {},
+                            whatWasFixed: {},
+                            humanReviewRecommendations: {},
+                            stageByStageEvaluation: {},
+                            efficiencyFindings: {},
+                            validationOutcome: {},
+                            improvementOpportunities: {},
+                            warnings: {},
+                            prSummary: {},
+                            metadata: {},
+                          },
+                        },
+                        raw: { type: 'object', additionalProperties: true },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          '422': {
+            description: 'Invalid artifact content for requested format',
+            content: {
+              'application/json': {
+                schema: errorResponseSchema,
               },
             },
           },
