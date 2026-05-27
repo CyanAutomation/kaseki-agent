@@ -286,18 +286,19 @@ export interface RunEvaluationRenderedResponse {
   format: 'rendered';
   file: 'run-evaluation.json';
   sections: {
-    overallAssessment?: unknown;
-    summary?: unknown;
-    whatWasFixed?: unknown;
-    humanReviewRecommendations?: unknown;
-    stageByStageEvaluation?: unknown;
-    efficiencyFindings?: unknown;
-    validationOutcome?: unknown;
-    improvementOpportunities?: unknown;
-    warnings?: unknown;
-    prSummary?: unknown;
-    metadata?: unknown;
+    overall?: Record<string, unknown>;
+    summary: string[];
+    problem: string[];
+    solution: string[];
+    humanReview: string[];
+    stages: Array<Record<string, unknown>>;
+    efficiency: Array<Record<string, unknown>>;
+    validation: Array<Record<string, unknown>>;
+    opportunities: Array<Record<string, unknown>>;
+    warnings: Array<Record<string, unknown>>;
+    metadata?: Record<string, unknown>;
   };
+  markdown?: string;
   raw: Record<string, unknown>;
 }
 
