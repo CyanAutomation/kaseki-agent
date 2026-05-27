@@ -177,7 +177,7 @@ export class IdempotencyStore {
         if (code === 'EEXIST' || code === 'ENOTEMPTY') {
           const ownerMetadata = this.readLockOwner();
           const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
-          if (lockLooksStale && this.canRemoveStaleLock(ownerMetadata)) {
+          if (lockLooksStale) {
             this.forceRemoveLockDir();
             continue;
           }
@@ -230,15 +230,6 @@ export class IdempotencyStore {
     } catch {
       return false;
     }
-  }
-
-  private canRemoveStaleLock(ownerMetadata: { pid?: number; token?: string } | null): boolean {
-    if (!ownerMetadata?.token) {
-      return true;
-    }
-
-    const latestOwner = this.readLockOwner();
-    return latestOwner?.token === ownerMetadata.token;
   }
 
   private isProcessAlive(pid: number): boolean {
