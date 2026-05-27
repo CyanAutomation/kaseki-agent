@@ -1896,6 +1896,178 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.status).toBe('completed');
   });
 
+
+
+  test('bursty stdout with sparse stderr preserves latest tails without stale regression', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    for (let i = 0; i < 40; i++) {
+      proc.stdout?.emit('data', `OUT_BURST_${i}\n`);
+      if (i % 17 === 0) {
+        proc.stderr?.emit('data', `ERR_SPARSE_${i}\n`);
+      }
+    }
+
+    jest.advanceTimersByTime(1000);
+    proc.emit('exit', 0);
+
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('OUT_BURST_39');
+    expect(stderrLog).toContain('ERR_SPARSE_34');
+    expect(stderrLog).toContain('ERR_SPARSE_0');
+  });
+
+  test('alternating single-line stdout/stderr events keep latest merged stream state', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    for (let i = 0; i < 60; i++) {
+      proc.stdout?.emit('data', `ALT_OUT_${i}\n`);
+      proc.stderr?.emit('data', `ALT_ERR_${i}\n`);
+    }
+
+    jest.advanceTimersByTime(1000);
+    proc.emit('exit', 0);
+
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('ALT_OUT_59');
+    expect(stderrLog).toContain('ALT_ERR_59');
+    expect(stderrLog).not.toContain('ALT_OUT_60');
+    expect(stderrLog).not.toContain('ALT_ERR_60');
+  });
+
+  test('near-simultaneous final stdout/stderr chunks at exit are retained', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 1,
+        logLevel: 'info',
+      },
+      createMockWebhookManager()
+    );
+
+    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+
+    proc.stdout?.emit('data', 'PRE_FINAL_OUT\n');
+    proc.stderr?.emit('data', 'PRE_FINAL_ERR\n');
+
+    setTimeout(() => proc.stdout?.emit('data', 'FINAL_OUT_CHUNK\n'), 0);
+    setTimeout(() => proc.stderr?.emit('data', 'FINAL_ERR_CHUNK\n'), 0);
+    setTimeout(() => {
+      jest.advanceTimersByTime(1000);
+      proc.emit('exit', 0);
+    }, 0);
+
+    jest.runOnlyPendingTimers();
+
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('FINAL_OUT_CHUNK');
+    expect(stderrLog).toContain('FINAL_ERR_CHUNK');
+  });
+
+  test('deterministic seeded stress script repeatedly validates boundary ordering', async () => {
+    const seed = 1337;
+    const iterations = 8;
+
+    function lcg(next: number): number {
+      return (next * 48271) % 0x7fffffff;
+    }
+
+    for (let pass = 0; pass < iterations; pass++) {
+      const proc = new MockProcess();
+      mockSpawn.mockReturnValue(proc);
+      mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 1,
+          logLevel: 'info',
+        },
+        createMockWebhookManager()
+      );
+
+      const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+      let state = seed + pass;
+      let lastStdout = '';
+      let lastStderr = '';
+
+      for (let i = 0; i < 120; i++) {
+        state = lcg(state);
+        const isStdout = state % 2 === 0;
+        const payload = `${isStdout ? 'S' : 'E'}_${pass}_${i}\n`;
+        if (isStdout) {
+          lastStdout = payload.trim();
+          proc.stdout?.emit('data', payload);
+        } else {
+          lastStderr = payload.trim();
+          proc.stderr?.emit('data', payload);
+        }
+      }
+
+      jest.advanceTimersByTime(1000);
+      proc.emit('exit', 0);
+
+      const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+      const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+      expect(stderrLog).toContain(lastStdout);
+      expect(stderrLog).toContain(lastStderr);
+      expect(job.failureClass).toBe('timeout');
+    }
+  });
+
   test('process failure with only stderr data creates artifacts correctly', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
