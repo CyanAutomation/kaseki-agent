@@ -439,16 +439,16 @@ export class JobScheduler {
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    streamState: { stdout: { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void }; stderr: { buffer: Buffer<ArrayBufferLike> } }
+    streamState: { stdoutTailRef: { current: Buffer<ArrayBufferLike> }; stderrTailRef: { current: Buffer<ArrayBufferLike> }; onExit: (code: number) => void }
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      streamState.stdout.buffer = this.appendBoundedTail(streamState.stdout.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stdoutTailRef.current = this.appendBoundedTail(streamState.stdoutTailRef.current, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      streamState.stderr.buffer = this.appendBoundedTail(streamState.stderr.buffer, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stderrTailRef.current = this.appendBoundedTail(streamState.stderrTailRef.current, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
     });
 
     proc.on('exit', (code) => {
@@ -457,7 +457,7 @@ export class JobScheduler {
         return;
       }
       this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.EXITED);
-      streamState.stdout.onExit(code ?? -1);
+      streamState.onExit(code ?? -1);
     });
 
     proc.on('error', (err) => {
@@ -539,16 +539,12 @@ export class JobScheduler {
     // Create shared mutable stream state object for live buffer references
     let timeoutHandles: TimeoutHandles & { isTimedOut: () => boolean };
     const streamState = {
-      stdout: {
-        buffer: Buffer.alloc(0),
-        isTimedOut: false,
-        onExit: (code: number) => {
-          const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-          // Read current buffer state from shared object at exit time
-          this.handleProcessExit(job, code, isTimedOut, streamState.stdout.buffer, streamState.stderr.buffer, timeoutHandles);
-        }
-      } as { buffer: Buffer<ArrayBufferLike>; isTimedOut: boolean; onExit: (code: number) => void },
-      stderr: { buffer: Buffer.alloc(0) }
+      stdoutTailRef: { current: Buffer.alloc(0) },
+      stderrTailRef: { current: Buffer.alloc(0) },
+      onExit: (code: number) => {
+        const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
+        this.handleProcessExit(job, code, isTimedOut, streamState.stdoutTailRef.current, streamState.stderrTailRef.current, timeoutHandles);
+      },
     };
 
     job.processId = proc.pid;
