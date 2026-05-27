@@ -3083,6 +3083,8 @@ check_github_operations_health() {
   helper_probe_stderr="$(cat "$helper_probe_stderr_tmp" 2>/dev/null || true)"
   rm -f "$helper_probe_stdout_tmp" "$helper_probe_stderr_tmp"
 
+  printf 'DEBUG: exit=%d stdout=[%s] stderr=[%s]\n' "$helper_probe_exit_code" "$helper_probe_stdout" "$helper_probe_stderr" >&2
+
   if [ "$helper_probe_exit_code" -eq 0 ] || ! printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -qi 'usage:.*github-app-token'; then
     helper_probe_parse_result="$(parse_github_app_token_helper_failure "$helper_probe_stdout" "$helper_probe_stderr" "$helper_probe_exit_code")"
     helper_probe_error="${helper_probe_parse_result%%$'\t'*}"

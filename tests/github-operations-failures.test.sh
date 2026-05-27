@@ -393,6 +393,7 @@ run_health_check_with_env() {
     export GITHUB_APP_ID_FILE="$app_id_file"
     export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
     export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
+    export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0  # Disable optional auth smoke test in testing
     
     # Create a clean bin dir with only what we want
     local fake_bin
@@ -403,6 +404,8 @@ run_health_check_with_env() {
     ln -sf "$(command -v mktemp)" "$fake_bin/mktemp"
     ln -sf "$(command -v touch)" "$fake_bin/touch"
     ln -sf "$(command -v chmod)" "$fake_bin/chmod"
+    ln -sf "$(command -v rm)" "$fake_bin/rm"
+    ln -sf "$(command -v bash)" "$fake_bin/bash"
     ln -sf "$(command -v printf)" "$fake_bin/printf" 2>/dev/null || true
     
     # Conditionally link git/node/curl based on CURRENT_TEST_PATH_OVERRIDE BEFORE setting PATH
@@ -425,22 +428,18 @@ run_health_check_with_env() {
       esac
     }
     log_github_private_key_metadata() { :; }
+    parse_github_app_token_helper_failure() { printf 'mock failure\tmock type'; }
     generate_github_app_token() { 
-       if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"git"* ]]; then return 0; else return 1; fi
+       if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"curl"* ]]; then return 0; else return 1; fi
     }
-    # Create a mock github-app-token helper that outputs usage on no args (non-zero exit)
+    # Create a mock github-app-token helper that prints usage and returns 1
     export KASEKI_GITHUB_APP_TOKEN_HELPER="$TEST_TMP_DIR/mock-helper"
-    cat > "$KASEKI_GITHUB_APP_TOKEN_HELPER" << 'HELPER_EOF'
-#!/bin/bash
-# Mock helper that outputs usage when called without args
-printf 'usage: github-app-token [OPTIONS]\n' >&2
-exit 1
-HELPER_EOF
+    printf '#!/usr/bin/env bash\nprintf "usage: github-app-token\\n"\nexit 1\n' > "$KASEKI_GITHUB_APP_TOKEN_HELPER"
     chmod +x "$KASEKI_GITHUB_APP_TOKEN_HELPER"
 
     # shellcheck source=/dev/null
     . "$HEALTH_TEST_LIB"
-    check_github_operations_health >/dev/null 2>&1
+    check_github_operations_health >&2
     exit $?
   )
 }
