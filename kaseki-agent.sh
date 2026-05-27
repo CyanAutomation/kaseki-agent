@@ -3816,6 +3816,9 @@ NODE
 
 build_pr_agent_review() {
   local validation_pass_flag="${1:-0}"
+  case "$validation_pass_flag" in
+    ''|*[!0-9-]*) validation_pass_flag=0 ;;
+  esac
   local goal_file="/results/goal-check.json"
   local scouting_file="/results/scouting.json"
   local goal_summary evidence missing validation_notes risks
