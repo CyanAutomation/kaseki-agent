@@ -475,7 +475,7 @@ if command -v curl >/dev/null 2>&1; then
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
-    "/nonexistent:/usr/local/bin"; then
+    "/nonexistent:/usr/bin:/bin"; then
     printf '%b✗%b Health check unexpectedly passed with missing curl\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   elif grep -q 'curl is not available' "$CURL_MISSING_LOG"; then
