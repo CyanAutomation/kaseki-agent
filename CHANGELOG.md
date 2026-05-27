@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.53.0...v1.53.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* Exit handler receives stale tail values (captured be... (kaseki-67) ([#423](https://github.com/CyanAutomation/kaseki-agent/issues/423)) ([24623de](https://github.com/CyanAutomation/kaseki-agent/commit/24623defcaa483e282143a111fd88f4d4ce2f9b8))
+* improve run evaluation duration precision ([a3301fb](https://github.com/CyanAutomation/kaseki-agent/commit/a3301fb0efbcc87d76085160247be7989c16f73c))
+* improve run-evaluation duration precision and formatting ([#428](https://github.com/CyanAutomation/kaseki-agent/issues/428)) ([8b0fbaf](https://github.com/CyanAutomation/kaseki-agent/commit/8b0fbaf660a48e0ee9631bf7c7d7004a73067083))
+* preserve markdown sections in agent evaluation sanitization ([b565451](https://github.com/CyanAutomation/kaseki-agent/commit/b5654515eb261b4b1e9256f5020d6a218e78add9))
+* preserve markdown sections in agent evaluation sanitization ([#424](https://github.com/CyanAutomation/kaseki-agent/issues/424)) ([d295cbd](https://github.com/CyanAutomation/kaseki-agent/commit/d295cbd4bcbe877e3cdf58d97c894e96b979c295))
+
 # [1.53.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.52.0...v1.53.0) (2026-05-26)
 
 
