@@ -114,4 +114,69 @@ describe('IdempotencyStore persistence', () => {
 
     expect(kinds).toEqual(['claimed', 'pending']);
   }, 15000);
+
+  test('enforces exclusive critical section during long-held lock contention', async () => {
+    const workerPath = path.join(resultsDir, 'lock-worker.ts');
+    const markerPath = path.join(resultsDir, 'critical-section-marker.txt');
+    const overlapPath = path.join(resultsDir, 'critical-overlap.log');
+
+    fs.writeFileSync(markerPath, '0', 'utf-8');
+    fs.writeFileSync(overlapPath, '', 'utf-8');
+
+    fs.writeFileSync(
+      workerPath,
+      `
+      import * as fs from 'fs';
+      import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
+
+      const [resultsDir, markerPath, overlapPath] = process.argv.slice(2);
+      const store = new IdempotencyStore(resultsDir, 24);
+
+      (store as any).withLock(() => {
+        const active = Number(fs.readFileSync(markerPath, 'utf-8'));
+        if (active > 0) {
+          fs.appendFileSync(overlapPath, 'overlap\\n', 'utf-8');
+        }
+
+        fs.writeFileSync(markerPath, String(active + 1), 'utf-8');
+        const start = Date.now();
+        while (Date.now() - start < 250) {
+          // Hold lock
+        }
+        const after = Number(fs.readFileSync(markerPath, 'utf-8'));
+        fs.writeFileSync(markerPath, String(after - 1), 'utf-8');
+      });
+
+      store.shutdown();
+      process.stdout.write('done');
+    `,
+      'utf-8'
+    );
+
+    const runWorker = (): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ['--import', 'tsx', workerPath, resultsDir, markerPath, overlapPath]);
+        let stderr = '';
+        child.stderr.on('data', (chunk) => {
+          stderr += chunk.toString();
+        });
+        child.on('error', reject);
+        child.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`worker exited with code ${code}: ${stderr}`));
+            return;
+          }
+          resolve();
+        });
+      });
+
+    await Promise.all([runWorker(), runWorker(), runWorker()]);
+    const overlaps = fs
+      .readFileSync(overlapPath, 'utf-8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    expect(overlaps).toEqual([]);
+  }, 20000);
 });
