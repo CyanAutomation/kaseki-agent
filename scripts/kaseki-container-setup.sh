@@ -116,6 +116,14 @@ run_health_checks() {
     return 1
   fi
   
+  # Check jq (required for metadata/report JSON processing)
+  if command -v jq >/dev/null 2>&1; then
+    print_success "jq is available"
+  else
+    print_error "jq is not available"
+    return 1
+  fi
+
   # Check Pi CLI
   if command -v pi >/dev/null 2>&1; then
     print_success "Pi CLI is available"
