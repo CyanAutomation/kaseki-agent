@@ -3083,8 +3083,6 @@ check_github_operations_health() {
   helper_probe_stderr="$(cat "$helper_probe_stderr_tmp" 2>/dev/null || true)"
   rm -f "$helper_probe_stdout_tmp" "$helper_probe_stderr_tmp"
 
-  printf 'DEBUG: exit=%d stdout=[%s] stderr=[%s]\n' "$helper_probe_exit_code" "$helper_probe_stdout" "$helper_probe_stderr" >&2
-
   if [ "$helper_probe_exit_code" -eq 0 ] || ! printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -qi 'usage:.*github-app-token'; then
     helper_probe_parse_result="$(parse_github_app_token_helper_failure "$helper_probe_stdout" "$helper_probe_stderr" "$helper_probe_exit_code")"
     helper_probe_error="${helper_probe_parse_result%%$'\t'*}"
@@ -3130,7 +3128,7 @@ check_github_operations_health() {
         return 1
       }
 
-      /usr/local/bin/github-app-token "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+      "$github_app_token_helper" "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
       token_exit_code=$?
       token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
       token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"

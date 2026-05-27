@@ -393,7 +393,7 @@ run_health_check_with_env() {
     export GITHUB_APP_ID_FILE="$app_id_file"
     export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
     export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
-    export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0  # Disable optional auth smoke test in testing
+    export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
     
     # Create a clean bin dir with only what we want
     local fake_bin
@@ -439,7 +439,7 @@ run_health_check_with_env() {
 
     # shellcheck source=/dev/null
     . "$HEALTH_TEST_LIB"
-    check_github_operations_health >&2
+    check_github_operations_health >/dev/null 2>&1
     exit $?
   )
 }
@@ -522,7 +522,6 @@ if command -v curl >/dev/null 2>&1; then
     ((TESTS_PASSED++))
   else
     printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
-    cat "$CURL_MISSING_LOG"
     ((TESTS_FAILED++))
   fi
 else
@@ -538,7 +537,7 @@ if run_health_check_with_env \
   "$TEST_TMP_DIR/secrets/dummy_app_id" \
   "$TEST_TMP_DIR/secrets/dummy_client_id" \
   "$TEST_TMP_DIR/secrets/dummy_private_key" \
-  "git:node:curl" && grep -q 'github operations health check started' "$HEALTH_SUCCESS_LOG"; then
+  "git:node:curl" && grep -q 'github operations health check PASSED' "$HEALTH_SUCCESS_LOG"; then
   printf '%b✓%b Health check has success path implementation\n' "$GREEN" "$NC"
   ((TESTS_PASSED++))
 else
