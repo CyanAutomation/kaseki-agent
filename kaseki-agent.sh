@@ -176,6 +176,22 @@ trap 'handle_termination SIGINT' SIGINT
 # DEBUG trap: capture last command before execution for better error diagnostics
 trap 'LAST_COMMAND="$BASH_COMMAND"' DEBUG
 
+
+require_or_warn_binary() {
+  local binary="$1"
+  local mode="${2:-required}"
+  local install_hint="${3:-Install it and retry.}"
+  if command -v "$binary" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ "$mode" = "required" ]; then
+    printf 'Error: required dependency "%s" is missing. %s\n' "$binary" "$install_hint" >&2
+    exit 1
+  fi
+  printf 'Warning: optional dependency "%s" is missing. %s\n' "$binary" "$install_hint" >&2
+  return 1
+}
+
 setup_host_logging_mirror() {
   local base_name="$1"
   local stamp host_log_file
@@ -241,6 +257,7 @@ mkdir -p "${mkdir_paths[@]}"
 : >> "$STAGE_TIMINGS_FILE"
 : > "$DEPENDENCY_CACHE_LOG"
 setup_host_logging_mirror "$INSTANCE_NAME"
+require_or_warn_binary jq required 'Install jq (for Debian/Ubuntu: apt-get install -y jq). Metadata/report generation depends on it.'
 case "$KASEKI_GIT_CACHE_MODE" in
   off|mirror)
     ;;
@@ -419,7 +436,10 @@ write_metadata() {
   # Convert stages array to JSON array
   local stage_array
   stage_array="$(build_stages_array)"
-  stages_json="$(printf '%s\n' "$stage_array" | jq -R . | jq -s . 2>/dev/null || printf '["unknown"]')"
+  stages_json="$(printf '%s\n' "$stage_array" | jq -R . | jq -s . 2>/dev/null)"
+  if [ -z "$stages_json" ]; then
+    stages_json="[\"unknown\"]"
+  fi
   
   cat > /results/metadata.json <<META
 {
