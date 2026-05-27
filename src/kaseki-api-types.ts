@@ -282,6 +282,25 @@ export interface ArtifactResponse {
   url?: string; // For large artifacts, provide signed URL
 }
 
+export interface RunEvaluationRenderedResponse {
+  format: 'rendered';
+  file: 'run-evaluation.json';
+  sections: {
+    overallAssessment?: unknown;
+    summary?: unknown;
+    whatWasFixed?: unknown;
+    humanReviewRecommendations?: unknown;
+    stageByStageEvaluation?: unknown;
+    efficiencyFindings?: unknown;
+    validationOutcome?: unknown;
+    improvementOpportunities?: unknown;
+    warnings?: unknown;
+    prSummary?: unknown;
+    metadata?: unknown;
+  };
+  raw: Record<string, unknown>;
+}
+
 export interface RunArtifactFileMetadata {
   name: string;
   size: number;
