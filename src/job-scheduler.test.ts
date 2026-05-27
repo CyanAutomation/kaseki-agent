@@ -1929,7 +1929,9 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
 
     const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('OUT_BURST_39');
+    expect(stderrLog).toContain('--- captured stderr tail ---');
     expect(stderrLog).toContain('ERR_SPARSE_34');
     expect(stderrLog).toContain('ERR_SPARSE_0');
   });
@@ -1965,7 +1967,9 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
 
     const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('ALT_OUT_59');
+    expect(stderrLog).toContain('--- captured stderr tail ---');
     expect(stderrLog).toContain('ALT_ERR_59');
     expect(stderrLog).not.toContain('ALT_OUT_60');
     expect(stderrLog).not.toContain('ALT_ERR_60');
@@ -2006,7 +2010,9 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
 
     const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('FINAL_OUT_CHUNK');
+    expect(stderrLog).toContain('--- captured stderr tail ---');
     expect(stderrLog).toContain('FINAL_ERR_CHUNK');
   });
 
