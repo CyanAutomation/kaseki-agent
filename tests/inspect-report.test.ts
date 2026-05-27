@@ -285,7 +285,7 @@ describe('inspect-report generation', () => {
         acc[severityOf(finding)] += 1;
         return acc;
       },
-      { critical: 4, warning: 0, info: 0 }
+      { critical: 0, warning: 0, info: 0 }
     );
     expect(bySeverity.critical).toBeGreaterThanOrEqual(3);
     expect(bySeverity.warning).toBeGreaterThanOrEqual(3);
