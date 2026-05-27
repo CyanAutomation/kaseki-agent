@@ -1896,8 +1896,6 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.status).toBe('completed');
   });
 
-
-
   test('bursty stdout with sparse stderr preserves latest tails without stale regression', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
