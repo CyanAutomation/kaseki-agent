@@ -210,28 +210,33 @@ export function writeIfMissingAtomic(filePath: string, content: string, options:
  * Returns true if written, false if file exists and is non-empty.
  */
 export function writeIfEmptyAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): boolean {
-  // First check if file exists and is empty (best effort)
+  // Try to create exclusively first (fastest path for non-existent files)
+  try {
+    fs.writeFileSync(filePath, content, {
+      mode: options.mode,
+      encoding: options.encoding || 'utf-8',
+      flag: 'wx', // Exclusive creation - fails if file exists
+    });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw err;
+    }
+  }
+  
+  // File exists - check if it's empty and try to overwrite
   try {
     const stats = fs.statSync(filePath);
     if (stats.size > 0) {
       return false; // File exists and is non-empty
     }
   } catch {
-    // File doesn't exist, we can proceed
+    return false; // File doesn't exist anymore or other error
   }
   
-  // Now try to write atomically using temp file pattern
-  const tempPath = `${filePath}.tmp`;
-  try {
-    // Write to temp file
-    fs.writeFileSync(tempPath, content, {
-      mode: options.mode,
-      encoding: options.encoding || 'utf-8',
-    });
-    
-    // Atomically rename temp file to final destination
-    fs.renameSync(tempPath, filePath);
-    return true;
+  // File exists and is empty - overwrite it atomically
+  writeAtomic(filePath, content, options);
+  return true;
   } catch (err) {
     // Clean up temp file on error
     try {
