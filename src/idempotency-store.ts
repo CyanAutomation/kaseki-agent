@@ -221,7 +221,16 @@ export class IdempotencyStore {
   }
 
   private isLockStale(staleThresholdMs: number, ownerPid?: number): boolean {
-    const stats = fs.statSync(this.lockPath);
+    try {
+      const stats = fs.statSync(this.lockPath);
+      const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
+      if (!exceedsAgeThreshold) {
+        return false;
+      }
+      return ownerPid ? !this.isProcessAlive(ownerPid) : true;
+    } catch {
+      return false;
+    }
     const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
     if (!exceedsAgeThreshold) {
       return false;
