@@ -10,6 +10,11 @@ import { execSync } from 'node:child_process';
 
 describe('inspect-report generation', () => {
   let tempDir: string;
+  const severityKeywords = {
+    critical: ['critical', 'vulnerability', 'leak', 'race condition', 'unauthorized'],
+    warning: ['missing', 'performance', 'deprecated', 'memory leak', 'validation', 'needs improvement'],
+    info: ['style', 'good', 'standards are met', 'architecture is sound'],
+  } as const;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-inspect-test-'));
@@ -23,6 +28,20 @@ describe('inspect-report generation', () => {
     const scriptPath = path.join(__dirname, '../scripts/generate-inspect-report.js');
     execSync(`node "${scriptPath}" "${resultsDir}"`);
     return fs.readFileSync(path.join(resultsDir, 'inspect-report.md'), 'utf8');
+  }
+
+  function getFindings(report: string): string[] {
+    return report
+      .split('\n')
+      .filter(line => /^\d+\. /.test(line))
+      .map(line => line.replace(/^\d+\. /, '').trim());
+  }
+
+  function severityOf(finding: string): keyof typeof severityKeywords {
+    const lower = finding.toLowerCase();
+    if (severityKeywords.critical.some(keyword => lower.includes(keyword))) return 'critical';
+    if (severityKeywords.warning.some(keyword => lower.includes(keyword))) return 'warning';
+    return 'info';
   }
 
   test('generates report with minimal artifacts', () => {
@@ -241,9 +260,8 @@ describe('inspect-report generation', () => {
     // Semantic validation: should have exactly 10 findings (max limit)
     // Semantic validation: should have exactly 10 findings (max limit)
     // Semantic validation: should have exactly 10 findings (max limit)
-    const findingMatches = report.match(/^\d+\. /gm);
-    expect(findingMatches).toBeDefined();
-    expect(findingMatches).toHaveLength(10);
+    const findings = getFindings(report);
+    expect(findings).toHaveLength(10);
 
     // Semantic validation: findings should contain expected key terms
     expect(report).toContain('critical security vulnerability');
@@ -251,15 +269,27 @@ describe('inspect-report generation', () => {
     expect(report).toContain('missing error handling');
 
     // Semantic validation: findings should be properly numbered
-    findingMatches!.forEach((match, index) => {
+    const findingMatches = report.match(/^\d+\. /gm) ?? [];
+    findingMatches.forEach((match, index) => {
       const expectedNumber = index + 1;
       expect(match).toBe(`${expectedNumber}. `);
     });
 
     // Semantic validation: findings should not contain duplicates
-    const findings = report.split('\n').filter(line => /^\d+\. /.test(line));
     const uniqueFindings = [...new Set(findings)];
     expect(findings).toHaveLength(uniqueFindings.length);
+
+    // Semantic validation: findings include expected severity distribution
+    const bySeverity = findings.reduce<Record<'critical' | 'warning' | 'info', number>>(
+      (acc, finding) => {
+        acc[severityOf(finding)] += 1;
+        return acc;
+      },
+      { critical: 0, warning: 0, info: 0 }
+    );
+    expect(bySeverity.critical).toBeGreaterThanOrEqual(3);
+    expect(bySeverity.warning).toBeGreaterThanOrEqual(3);
+    expect(bySeverity.info).toBeGreaterThanOrEqual(1);
   });
 
   test('extracts findings with different severities and types', () => {
@@ -302,9 +332,8 @@ describe('inspect-report generation', () => {
 
     // Semantic validation: should extract only relevant findings
     // Semantic validation: should extract only relevant findings
-    const findingMatches = report.match(/^\d+\. /gm);
-    expect(findingMatches).toBeDefined();
-    expect(findingMatches).toHaveLength(5); // Should extract 5 valid findings
+    const findings = getFindings(report);
+    expect(findings).toHaveLength(5); // Should extract 5 valid findings
 
     // Semantic validation: should include severity-based findings
     expect(report).toContain('critical security issue');
@@ -317,6 +346,25 @@ describe('inspect-report generation', () => {
 
     // Semantic validation: should include positive findings
     expect(report).toContain('good test coverage');
+
+    // Semantic validation: each extracted finding should have required fields/shape
+    findings.forEach((finding) => {
+      expect(finding.length).toBeGreaterThanOrEqual(12);
+      expect(finding).not.toMatch(/^\s*$/);
+      expect(finding.toLowerCase()).toMatch(/(found|identified|discovered|analysis|observation|conclusion)/);
+    });
+
+    // Semantic validation: representative grouping behavior by severity
+    const grouped = findings.reduce<Record<'critical' | 'warning' | 'info', string[]>>(
+      (acc, finding) => {
+        acc[severityOf(finding)].push(finding);
+        return acc;
+      },
+      { critical: [], warning: [], info: [] }
+    );
+    expect(grouped.critical.length).toBe(1);
+    expect(grouped.warning.length).toBeGreaterThanOrEqual(2);
+    expect(grouped.info.length).toBeGreaterThanOrEqual(1);
   });
 
   test('sanitizes and filters findings properly', () => {
@@ -359,9 +407,12 @@ describe('inspect-report generation', () => {
 
     // Semantic validation: findings should have valid structure
     // Semantic validation: findings should have valid structure
-    const findingMatches = report.match(/^\d+\. /gm);
-    expect(findingMatches).toBeDefined();
-    expect(findingMatches).toHaveLength(4); // All 4 events should be extracted as findings
+    const findings = getFindings(report);
+    expect(findings).toHaveLength(4); // All 4 events should be extracted as findings
+    findings.forEach((finding) => {
+      expect(finding).not.toContain('sk-or-');
+      expect(finding).not.toContain('[thinking]');
+    });
   });
 
   test('handles findings with varying content lengths', () => {
@@ -397,9 +448,8 @@ describe('inspect-report generation', () => {
     expect(report).toContain('missing error handling in file operations');
     expect(report).toContain('potential memory leak in event listeners');
     // Semantic validation: should have exactly 3 findings (the long one is not filtered)
-    const findingMatches = report.match(/^\d+\. /gm);
-    expect(findingMatches).toBeDefined();
-    expect(findingMatches).toHaveLength(3);
+    const findings = getFindings(report);
+    expect(findings).toHaveLength(3);
   });
 
   test('report has proper markdown structure', () => {
