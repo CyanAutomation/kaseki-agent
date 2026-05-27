@@ -434,9 +434,6 @@ if command -v curl >/dev/null 2>&1; then
     printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   fi
-  
-  # Restore curl
-  mv "${CURL_PATH}.bak" "$CURL_PATH"
 else
   printf '%s' "curl not available in test environment, skipping curl test\n"
 fi
