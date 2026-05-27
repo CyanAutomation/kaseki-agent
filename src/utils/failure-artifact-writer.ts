@@ -56,7 +56,7 @@ export class FailureArtifactWriter {
       cleanup,
     };
     const content = `${JSON.stringify(payload, null, 2)}\n`;
-    
+
     try {
       const written = writeIfEmptyAtomic(failurePath, content, { mode: 0o600 });
       if (!written) {
@@ -78,7 +78,7 @@ export class FailureArtifactWriter {
       `Completed at: ${now}`,
       '',
     ].join('\n');
-    
+
     try {
       const written = writeIfEmptyAtomic(summaryPath, content);
       if (!written) {
@@ -112,7 +112,7 @@ export class FailureArtifactWriter {
       `Completed at: ${now}`,
       '',
     ].join('\n');
-    
+
     try {
       const written = writeIfEmptyAtomic(analysisPath, content);
       if (!written) {
@@ -156,10 +156,10 @@ export class FailureArtifactWriter {
         failureClass: job.failureClass || 'api_finalized',
         error: job.error || 'Job failed before runner failure metadata was written',
         exitCode: job.exitCode,
-        },
-      };
+      },
+    };
     const content = `${JSON.stringify(payload, null, 2)}\n`;
-    
+
     try {
       const written = writeIfEmptyAtomic(metadataPath, content, { mode: 0o600 });
       if (!written) {
@@ -191,7 +191,7 @@ export class FailureArtifactWriter {
     ]
       .filter(Boolean)
       .join('\n');
-    
+
     try {
       const written = writeIfEmptyAtomic(stderrPath, `${content}\n`);
       if (!written) {
