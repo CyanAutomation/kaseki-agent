@@ -4360,6 +4360,29 @@ run_github_operations() {
   local pr_title pr_body pr_response pr_url pr_number pr_http_status pr_draft_json
   pr_title="$(derive_pr_title)"
   pr_body="$(build_pr_body)"
+  local pr_body_compact
+  pr_body_compact="$(printf '%s' "$pr_body" | tr -d '[:space:]')"
+  if [ -z "$pr_body_compact" ]; then
+    local fallback_timestamp fallback_validation_status
+    fallback_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    fallback_validation_status="unknown"
+    if [ -n "${POST_AGENT_VALIDATION_STATUS:-}" ]; then
+      fallback_validation_status="$POST_AGENT_VALIDATION_STATUS"
+    fi
+    pr_body=$(cat <<EOF
+## Summary
+- Automated PR body fallback was used because generated body was empty after sanitization.
+
+## Validation
+- Post-agent validation: $fallback_validation_status
+- Publish mode: ${KASEKI_PUBLISH_MODE:-pr}
+
+## Run metadata
+- Generated at (UTC): $fallback_timestamp
+EOF
+)
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a /results/git-push.log >&2
+  fi
   if is_pr_draft_mode; then
     pr_draft_json=true
   else
