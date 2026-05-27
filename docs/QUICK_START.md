@@ -268,6 +268,14 @@ docker-compose logs kaseki-api
 docker pull docker.io/cyanautomation/kaseki-agent:latest
 ```
 
+
+**Host log mirror warning at startup**  
+
+If `KASEKI_LOG_DIR` is not writable, startup prints a warning and continues by default.
+
+- To fail fast instead: `KASEKI_STRICT_HOST_LOGGING=1`
+- To keep mirroring enabled: set `KASEKI_LOG_DIR` to a writable host path
+
 ---
 
 ## Advanced Configuration
