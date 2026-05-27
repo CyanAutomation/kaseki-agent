@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { commandOutput as executeCommand } from '../lib/subprocess-helpers';
+import * as path from 'path';
 
 /**
  * Check if a file exists and is non-empty.
@@ -147,4 +148,124 @@ export function getFileStats(filePath: string): fs.Stats | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Write content to file atomically using temp file + rename pattern.
+ * This avoids TOCTOU race conditions by writing to a temporary file first,
+ * then renaming it to the final destination atomically.
+ */
+export function writeAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): void {
+  const tempPath = `${filePath}.tmp`;
+  
+  try {
+    // Ensure parent directory exists
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    
+    // Write to temp file
+    fs.writeFileSync(tempPath, content, {
+      mode: options.mode,
+      encoding: options.encoding || 'utf-8',
+    });
+    
+    // Atomically rename temp file to final destination
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    // Clean up temp file on error
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
+/**
+ * Write content to file only if it doesn't exist (atomic version).
+ * Uses exclusive creation to avoid race conditions.
+ * Returns true if written, false if already exists.
+ */
+export function writeIfMissingAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): boolean {
+  try {
+    // Try to create the file exclusively (fails if already exists)
+    fs.writeFileSync(filePath, content, {
+      mode: options.mode,
+      encoding: options.encoding || 'utf-8',
+      flag: 'wx', // Exclusive creation - fails if file exists
+    });
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false; // File already exists
+    }
+    throw err;
+  }
+}
+
+/**
+ * Write content to file only if it's empty (atomic version).
+ * Uses temp file + rename pattern to avoid TOCTOU race conditions.
+ * Returns true if written, false if file exists and is non-empty.
+ */
+export function writeIfEmptyAtomic(filePath: string, content: string, options: { mode?: number; encoding?: BufferEncoding } = {}): boolean {
+  // First check if file exists and is empty (best effort)
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.size > 0) {
+      return false; // File exists and is non-empty
+    }
+  } catch {
+    // File doesn't exist, we can proceed
+  }
+  
+  // Now try to write atomically using temp file pattern
+  const tempPath = `${filePath}.tmp`;
+  try {
+    // Write to temp file
+    fs.writeFileSync(tempPath, content, {
+      mode: options.mode,
+      encoding: options.encoding || 'utf-8',
+    });
+    
+    // Atomically rename temp file to final destination
+    fs.renameSync(tempPath, filePath);
+    return true;
+  } catch (err) {
+    // Clean up temp file on error
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+    
+    // If we get EEXIST here, it means another process created the file between our check and write
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      // Verify the file is still empty
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.size === 0) {
+          // File is empty, so we can write to it
+          writeAtomic(filePath, content, options);
+          return true;
+        }
+        return false; // File exists and is non-empty
+      } catch {
+        // File doesn't exist or other error, we can write
+        writeAtomic(filePath, content, options);
+        return true;
+      }
+    }
+    throw err;
+  }
+}
+
+/**
+ * Log write failures with context information.
+ */
+export function logWriteError(operation: string, filePath: string, error: unknown, jobId?: string): void {
+  const jobContext = jobId ? ` (job: ${jobId})` : '';
+  const errorInfo = error instanceof Error ? error.message : String(error);
+  console.error(`[FailureArtifactWriter] Failed to ${operation} ${filePath}${jobContext}: ${errorInfo}`);
 }
