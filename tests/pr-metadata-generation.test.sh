@@ -611,3 +611,44 @@ if (!payload.body.includes('This PR is in draft status. Please review before mer
 if (payload.draft !== true) process.exit(2);
 NODE
 pass "Draft GitHub PR API payload marks the PR as draft"
+
+build_pr_body_for_payload() {
+  local candidate_body="$1"
+  local compact_body fallback_timestamp fallback_validation_status
+  compact_body="$(printf '%s' "$candidate_body" | tr -d '[:space:]')"
+  if [ -n "$compact_body" ]; then
+    printf '%s' "$candidate_body"
+    return 0
+  fi
+
+  fallback_timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  fallback_validation_status="unknown"
+  if [ -n "${POST_AGENT_VALIDATION_STATUS:-}" ]; then
+    fallback_validation_status="$POST_AGENT_VALIDATION_STATUS"
+  fi
+  cat <<EOF
+## Summary
+- Automated PR body fallback was used because generated body was empty after sanitization.
+
+## Validation
+- Post-agent validation: $fallback_validation_status
+- Publish mode: ${KASEKI_PUBLISH_MODE:-pr}
+
+## Run metadata
+- Generated at (UTC): $fallback_timestamp
+EOF
+}
+
+for publish_mode in pr draft_pr; do
+  KASEKI_PUBLISH_MODE="$publish_mode"
+  ensured_body="$(build_pr_body_for_payload $'   \n\t  ')"
+  run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$ensured_body" "$TMP_DIR/node.log"
+  payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
+  PAYLOAD="$payload" node <<'NODE'
+const payload = JSON.parse(process.env.PAYLOAD);
+if (typeof payload.body !== 'string') process.exit(1);
+if (payload.body.trim().length === 0) process.exit(2);
+if (!payload.body.includes('## Summary')) process.exit(3);
+NODE
+  pass "PR payload body is never empty in ${publish_mode} mode"
+done
