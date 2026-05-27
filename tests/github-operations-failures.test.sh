@@ -398,7 +398,13 @@ printf '%s' "Testing health check with missing Node.js... "
 if command -v node >/dev/null 2>&1; then
   # Temporarily rename node to simulate missing command
   NODE_PATH=$(command -v node)
-  mv "$NODE_PATH" "${NODE_PATH}.bak"
+  PATH="/nonexistent:$PATH" command -v node >/dev/null 2>&1 && {
+    printf '%b✗%b PATH manipulation test failed\\n' "$RED" "$NC"
+    ((TESTS_FAILED++))
+  } || {
+    printf '%b✓%b Health check detects missing Node.js\\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  }
   
   if grep -A 5 "Node.js is not available" "$PROJECT_ROOT/kaseki-agent.sh" | grep -q 'Node.js is not available'; then
     printf '%b✓%b Health check detects missing Node.js\n' "$GREEN" "$NC"
