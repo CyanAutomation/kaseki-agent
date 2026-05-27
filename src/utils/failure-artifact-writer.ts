@@ -58,7 +58,7 @@ export class FailureArtifactWriter {
     const content = `${JSON.stringify(payload, null, 2)}\n`;
 
     try {
-      const written = writeIfEmptyAtomic(failurePath, content, { mode: 0o600 });
+      const written = writeIfEmptyAtomic(failurePath, content, { mode: 0o600 }, { jobId: job.id });
       if (!written) {
         logWriteError('write failure.json', failurePath, 'File already exists and is non-empty', job.id);
       }
@@ -80,7 +80,7 @@ export class FailureArtifactWriter {
     ].join('\n');
 
     try {
-      const written = writeIfEmptyAtomic(summaryPath, content);
+      const written = writeIfEmptyAtomic(summaryPath, content, {}, { jobId: job.id });
       if (!written) {
         logWriteError('write result-summary.md', summaryPath, 'File already exists and is non-empty', job.id);
       }
@@ -114,7 +114,7 @@ export class FailureArtifactWriter {
     ].join('\n');
 
     try {
-      const written = writeIfEmptyAtomic(analysisPath, content);
+      const written = writeIfEmptyAtomic(analysisPath, content, {}, { jobId: job.id });
       if (!written) {
         logWriteError('write analysis.md', analysisPath, 'File already exists and is non-empty', job.id);
       }
@@ -161,7 +161,7 @@ export class FailureArtifactWriter {
     const content = `${JSON.stringify(payload, null, 2)}\n`;
 
     try {
-      const written = writeIfEmptyAtomic(metadataPath, content, { mode: 0o600 });
+      const written = writeIfEmptyAtomic(metadataPath, content, { mode: 0o600 }, { jobId: job.id });
       if (!written) {
         logWriteError('write metadata.json', metadataPath, 'File already exists and is non-empty', job.id);
       }
@@ -193,7 +193,7 @@ export class FailureArtifactWriter {
       .join('\n');
 
     try {
-      const written = writeIfEmptyAtomic(stderrPath, `${content}\n`);
+      const written = writeIfEmptyAtomic(stderrPath, `${content}\n`, {}, { jobId: job.id });
       if (!written) {
         logWriteError('write stderr.log', stderrPath, 'File already exists and is non-empty', job.id);
       }

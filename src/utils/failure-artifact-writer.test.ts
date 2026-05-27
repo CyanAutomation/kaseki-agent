@@ -42,7 +42,17 @@ function createMockJob(overrides?: Partial<Job>): Job {
 }
 
 describe('FailureArtifactWriter', () => {
+  let debugSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
   afterEach(() => {
+    debugSpy.mockRestore();
+    errorSpy.mockRestore();
     cleanupResultsDirs();
   });
 
@@ -259,6 +269,32 @@ describe('FailureArtifactWriter', () => {
       expect(fs.existsSync(path.join(resultDir, 'metadata.json'))).toBe(true);
       expect(fs.existsSync(path.join(resultDir, 'stderr.log'))).toBe(true);
     });
+
+    test('emits structured atomic write stage logs for successful writes', () => {
+      const resultsDir = createResultsDir();
+      const writer = new FailureArtifactWriter(resultsDir);
+      const job = createMockJob();
+
+      writer.writeFailureArtifacts(job, { attempted: true, ok: false });
+
+      const events = debugSpy.mock.calls
+        .filter(([message]) => typeof message === 'string' && (message as string).startsWith('[file-helpers]'))
+        .map(([message]) => (message as string).replace('[file-helpers] ', ''));
+
+      expect(events).toContain('atomic_write_start');
+      expect(events).toContain('ensure_parent_dir');
+      expect(events).toContain('temp_write_start');
+      expect(events).toContain('temp_write_success');
+      expect(events).toContain('rename_start');
+      expect(events).toContain('rename_success');
+      const firstPayload = debugSpy.mock.calls.find(([message]) =>
+        typeof message === 'string' && (message as string).includes('atomic_write_start')
+      )?.[1] as Record<string, unknown>;
+      expect(firstPayload.operation).toBe('writeIfEmptyAtomic');
+      expect(firstPayload.filePath).toContain(job.id);
+      expect(firstPayload.jobId).toBe(job.id);
+      expect(String(firstPayload.tempPath)).toContain('.tmp');
+    });
   });
 
   describe('writeFailureArtifacts error handling', () => {
@@ -286,6 +322,29 @@ describe('FailureArtifactWriter', () => {
       expect(() => {
         writer.writeFailureArtifacts(job, { attempted: true, ok: false });
       }).not.toThrow();
+    });
+
+    test('logs errno-style failure context for duplicate artifacts', () => {
+      const resultsDir = createResultsDir();
+      const writer = new FailureArtifactWriter(resultsDir);
+      const job = createMockJob();
+      const resultDir = path.join(resultsDir, job.id);
+      fs.mkdirSync(resultDir, { recursive: true });
+      fs.writeFileSync(path.join(resultDir, 'failure.json'), '{"existing":true}\n');
+
+      writer.writeFailureArtifacts(job, { attempted: true, ok: false });
+
+      const structuredErrors = debugSpy.mock.calls.filter(
+        ([message]) => typeof message === 'string' && (message as string).includes('write_error_context')
+      );
+      expect(structuredErrors.length).toBeGreaterThan(0);
+      expect(structuredErrors.some(([, payload]) => String((payload as Record<string, unknown>).filePath).includes('failure.json'))).toBe(
+        true
+      );
+      expect(
+        structuredErrors.some(([, payload]) => (payload as Record<string, unknown>).errorMessage === 'File already exists and is non-empty')
+      ).toBe(true);
+      expect(errorSpy).toHaveBeenCalled();
     });
   });
 });
