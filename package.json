@@ -78,6 +78,7 @@
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json"
   },
   "dependencies": {
+    "@sentry/node": "^10.54.0",
     "enquirer": "^2.4.1",
     "express": "^4.18.2",
     "swagger-ui-express": "^5.0.1",

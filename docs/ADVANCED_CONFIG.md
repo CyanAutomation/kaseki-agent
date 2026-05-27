@@ -14,11 +14,12 @@ Complete documentation of all 60+ kaseki-agent configuration variables.
 3. [Validation & Quality Gates Zone](#validation--quality-gates-zone)
 4. [Caching & Performance Zone](#caching--performance-zone)
 5. [Logging & Debugging Zone](#logging--debugging-zone)
-6. [Infrastructure Zone (API Service)](#infrastructure-zone-api-service-only)
-7. [GitHub Integration Zone](#github-integration-zone)
-8. [Advanced & Experimental Zone](#advanced--experimental-zone)
-9. [Configuration Precedence](#configuration-precedence)
-10. [Variable Types & Validation](#variable-types--validation)
+6. [Monitoring Zone (Sentry)](#monitoring-zone-sentry)
+7. [Infrastructure Zone (API Service)](#infrastructure-zone-api-service-only)
+8. [GitHub Integration Zone](#github-integration-zone)
+9. [Advanced & Experimental Zone](#advanced--experimental-zone)
+10. [Configuration Precedence](#configuration-precedence)
+11. [Variable Types & Validation](#variable-types--validation)
 
 ---
 
@@ -683,6 +684,92 @@ Variables for logging, debugging, and diagnostics.
 
   ```bash
   KASEKI_API_LOG_LEVEL=debug
+  ```
+
+---
+
+## Monitoring Zone (Sentry)
+
+Variables for error tracking and monitoring with Sentry.
+
+### `SENTRY_DSN`
+
+- **Type**: `string` (Data Source Name)
+- **Default**: Not set (monitoring disabled)
+- **Paths**: Local API, Production API only
+- **Required**: Optional, but recommended for production
+- **Description**: Sentry Data Source Name for error tracking and performance monitoring
+- **Security**: The DSN contains your organization and project ID; keep it secure
+- **Setup**:
+  1. Create a Sentry account at [sentry.io](https://sentry.io)
+  2. Create a new project for `kaseki-agent` (Node.js environment)
+  3. Copy the DSN from project settings
+  4. Set this environment variable
+- **Example**:
+
+  ```bash
+  SENTRY_DSN=https://your-key@o4510014518919168.ingest.de.sentry.io/4511464131264593
+  ```
+
+### `SENTRY_ENVIRONMENT`
+
+- **Type**: `string`
+- **Default**: `development`
+- **Paths**: Local API, Production API only
+- **Description**: Environment name for Sentry reporting
+- **Options**: `development`, `staging`, `production` (or custom values)
+- **Use case**: Filter and organize errors by environment in Sentry dashboard
+- **Example**:
+
+  ```bash
+  SENTRY_ENVIRONMENT=production
+  ```
+
+### `SENTRY_RELEASE`
+
+- **Type**: `string`
+- **Default**: Not set (auto-detected from package version)
+- **Paths**: Local API, Production API only
+- **Description**: Release version for tracking which version of code has errors
+- **Format**: Usually semantic versioning (e.g., `1.53.4`)
+- **Example**:
+
+  ```bash
+  SENTRY_RELEASE=1.53.4
+  ```
+
+### `SENTRY_SAMPLE_RATE`
+
+- **Type**: `number` (0.0 - 1.0)
+- **Default**: `0.1` (10% of transactions)
+- **Paths**: Local API, Production API only
+- **Description**: Percentage of transactions to sample for performance monitoring
+- **Use case**: Reduce costs while still collecting performance data
+- **Values**:
+  - `0.0` — No transactions sampled (errors still tracked)
+  - `0.1` — 10% of transactions (default, recommended for production)
+  - `0.5` — 50% of transactions
+  - `1.0` — All transactions (high cost, useful for debugging)
+- **Example**:
+
+  ```bash
+  SENTRY_SAMPLE_RATE=0.1
+  ```
+
+### `SENTRY_ENABLED`
+
+- **Type**: `boolean` (0 or 1)
+- **Default**: Auto-detected from `SENTRY_DSN`
+- **Paths**: Local API, Production API only
+- **Description**: Explicitly enable or disable Sentry monitoring
+- **Behavior**:
+  - If `SENTRY_DSN` is set, Sentry is enabled by default
+  - Set `SENTRY_ENABLED=0` to disable even if DSN is present
+  - Set `SENTRY_ENABLED=1` to explicitly require DSN (fails if missing)
+- **Example**:
+
+  ```bash
+  SENTRY_ENABLED=1
   ```
 
 ---
