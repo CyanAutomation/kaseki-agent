@@ -427,7 +427,7 @@ if command -v git >/dev/null 2>&1; then
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
     "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
-    "/nonexistent"; then
+    "/nonexistent:/usr/bin:/bin"; then
     printf '%b✗%b Health check unexpectedly passed with missing git\\n' "$RED" "$NC"
     ((TESTS_FAILED++))
   elif grep -q 'git command is not available' "$GIT_MISSING_LOG"; then
