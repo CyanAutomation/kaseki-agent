@@ -1847,11 +1847,12 @@ run_validation_commands() {
           command_exit=$?
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
-        } 2>&1 | tee --output-error=warn-nopipe \
+        } 2>&1 |
+          tee --output-error=warn-nopipe \
             >(cat >> "$log_file") \
             >(cat >> "$raw_log") \
-            2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") \
-          | FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
+            2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") |
+          FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
         if [ "$pipefail_was_enabled" -eq 1 ]; then
           set -o pipefail
