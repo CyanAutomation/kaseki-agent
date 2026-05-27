@@ -396,9 +396,9 @@ describe('inspect-report generation', () => {
     // Semantic validation: should include findings of valid length
     expect(report).toContain('missing error handling in file operations');
     expect(report).toContain('potential memory leak in event listeners');
-
     // Semantic validation: should have exactly 3 findings (the long one is not filtered)
     const findingMatches = report.match(/^\d+\. /gm);
+    expect(findingMatches).toBeDefined();
     expect(findingMatches).toHaveLength(3);
   });
 
