@@ -373,33 +373,23 @@ validate_numeric() {
   return 0
 }
 
-# Validate scouting artifact and emit structured reason code
-validate_scouting_artifact() {
+validate_scouting_artifact_with_node() {
   local candidate_artifact="$1"
   local final_artifact="$2"
-  local reason_file="$3"
-  
-  local reason_code=""
-  local reason_details=""
-  
-  # Default: assume valid unless proven otherwise
-  reason_code="valid"
-  reason_details="artifact validation passed"
-  
-  if [ ! -f "$candidate_artifact" ]; then
-    reason_code="missing_file"
-    reason_details="scouting candidate artifact not found: $candidate_artifact"
-  else
-    # Create a temporary file to capture validation errors
-    local validation_error_file="/tmp/scouting-validation-errors.json"
-    : > "$validation_error_file"
-    
-    if ! node -e '
+  local validation_error_file="$3"
+
+  node -e '
 const fs=require("node:fs");
 const input=process.argv[1];
 const output=process.argv[2];
 const errorLog=process.argv[3];
-const artifact=JSON.parse(fs.readFileSync(input,"utf8"));
+let artifact;
+try {
+  artifact=JSON.parse(fs.readFileSync(input,"utf8"));
+} catch {
+  fs.writeFileSync(errorLog, JSON.stringify({ reason_code: "malformed_json", details: "scouting artifact failed JSON parsing" }) + "\n");
+  process.exit(1);
+}
 const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"];
 const invalid=[];
 
@@ -418,67 +408,43 @@ if (artifact.suggested_allowlist) {
     if (Array.isArray(artifact.suggested_allowlist.agent_patterns) && !artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.agent_patterns values");
     if (Array.isArray(artifact.suggested_allowlist.validation_patterns) && !artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.validation_patterns values");
   }
-if (invalid.length) {
-  const errors = invalid.map(field => `invalid_${field}`);
-  fs.appendFileSync(errorLog, JSON.stringify({timestamp: new Date().toISOString(), errors}) + "\n");
-  throw new Error("invalid scouting fields: " + invalid.join(", "));
 }
-// Write output only after all validation passes
+if (invalid.length) {
+  const hasTask = invalid.includes("task");
+  const onlyTaskMissing = hasTask && invalid.length === 1;
+  const reasonCode = onlyTaskMissing ? "missing_required_fields" : "schema_mismatch";
+  fs.writeFileSync(
+    errorLog,
+    JSON.stringify({ reason_code: reasonCode, details: `invalid scouting fields: ${invalid.join(", ")}` }) + "\n"
+  );
+  process.exit(1);
+}
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log; then
-      
-      # Check the type of validation error
-      if [ -s "$validation_error_file" ]; then
-        local error_type
-        error_type=$(node -e 'try { const data = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (data.errors && data.errors.length > 0 && data.errors[0]) console.log(data.errors[0]); } catch {}' "$validation_error_file" 2>/dev/null || echo "malformed_json")
-        
-        case "$error_type" in
-          "invalid_root")
-            reason_code="malformed_json"
-            reason_details="scouting artifact root is not a valid JSON object"
-            ;;
-          "invalid_task")
-            reason_code="missing_required_fields"
-            reason_details="scouting artifact missing required task field"
-            ;;
-          "invalid_requirements"|"invalid_relevant_files"|"invalid_observations"|"invalid_plan"|"invalid_validation"|"invalid_risks")
-            reason_code="schema_mismatch"
-            reason_details="scouting artifact missing required array fields"
-            ;;
-          "invalid_suggested_allowlist"|"invalid_suggested_allowlist.agent_patterns"|"invalid_suggested_allowlist.validation_patterns")
-            reason_code="schema_mismatch"
-            reason_details="scouting artifact suggested_allowlist validation failed"
-            ;;
-          *)
-            reason_code="malformed_json"
-            reason_details="scouting artifact failed validation with unknown error"
-            ;;
-        esac
-      else
-        # JSON parsing errors (malformed JSON)
-        reason_code="malformed_json"
-        reason_details="scouting artifact failed JSON parsing"
-      fi
-    else
-      # Validation passed - clean up error files
-      rm -f "$validation_error_file" 2>/dev/null || true
-      rm -f /results/scouting-validation-reason.txt 2>/dev/null || true
-    fi
+' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log
+}
+
+# Validate scouting artifact and emit structured reason code
+validate_scouting_artifact() {
+  local candidate_artifact="$1"
+  local final_artifact="$2"
+  local reason_file="$3"
+  local validation_error_file="/tmp/scouting-validation-errors.json"
+  local reason_code="valid"
+  local reason_details="artifact validation passed"
+
+  : > "$validation_error_file"
+  if [ ! -f "$candidate_artifact" ]; then
+    reason_code="missing_file"
+    reason_details="scouting candidate artifact not found: $candidate_artifact"
+  elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
+    reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
+    reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
   fi
-  
-  # Write the reason code to file
+
   printf '%s\n' "$reason_code" > "$reason_file"
   printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/scouting-stderr.log
-  
-  # Clean up temporary files
   rm -f "$validation_error_file" 2>/dev/null || true
-  
-  # Return 0 if valid, 1 if invalid
-  if [ "$reason_code" = "valid" ]; then
-    return 0
-  else
-    return 1
-  fi
+  [ "$reason_code" = "valid" ]
 }
 
 emit_progress() {
@@ -2320,7 +2286,7 @@ is_transient_scouting_failure() {
         # This shouldn't happen when exit_code=86, but just in case
         return 1
         ;;
-      schema_mismatch|malformed_json|missing_required_fields)
+      schema_mismatch|malformed_json|missing_required_fields|missing_file)
         # Deterministic failures - do not retry
         return 1
         ;;
@@ -2351,16 +2317,6 @@ is_transient_scouting_failure() {
   if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
     return 0  # Transient (retry)
   fi
-
-  # NARROWED: Only retry on specific transient JSON-related errors, not all JSON mentions
-  # Only retry if it's clearly a parsing/connection issue, not a schema/validation error
-  if echo "$stderr_content" | grep -qi -E "parse.*json|json.*parse|unexpected.*token|invalid.*token" 2>/dev/null; then
-    return 0  # Transient (retry) - specific parsing errors
-  fi
-  
-  # Remove the broad "json" rule that was causing problems
-  # The old rule: if echo "$stderr_content" | grep -qi "json" 2>/dev/null; then return 0; fi
-  # This was too broad and caused unnecessary retries for deterministic failures
 
   # Pi non-zero exit (transient, could be model unavailability)
   if [ "$exit_code" -ne 0 ]; then
