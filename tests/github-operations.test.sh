@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015,SC2016
-# Integration tests for github operations printf safety
-# Tests that github operations skip logging doesn't break with variable substitution
+# Integration/contract tests for GitHub-operation user-visible behavior.
+# These tests exercise commands with controlled environments and assert exit
+# codes, messages, and artifact side effects instead of checking implementation
+# text in kaseki-agent.sh.
 
 set -euo pipefail
 
@@ -13,267 +14,263 @@ pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 info() { printf '[info] %s\n' "$1"; }
 
-# Test setup
-mkdir -p "$TMP_DIR/results"
-RESULTS_DIR="$TMP_DIR/results"
+assert_file_contains() {
+  local file="$1" expected="$2" description="$3"
+  if grep -Fq "$expected" "$file"; then
+    pass "$description"
+  else
+    printf -- '--- %s ---\n' "$file" >&2
+    cat "$file" >&2 2>/dev/null || true
+    fail "$description"
+  fi
+}
 
-# Test 1: printf with dash-containing variable doesn't fail
-info "Test 1: printf with dash-containing skip reasons"
-{
-  GITHUB_SKIP_REASONS=("agent_failed" "-validation_failed" "empty_diff")
-  printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" > "$RESULTS_DIR/test1.log"
-} && pass "printf with dash-containing reasons succeeded" || fail "printf with dash-containing reasons failed"
+assert_file_not_contains() {
+  local file="$1" unexpected="$2" description="$3"
+  if grep -Fq "$unexpected" "$file"; then
+    printf -- '--- %s ---\n' "$file" >&2
+    cat "$file" >&2 2>/dev/null || true
+    fail "$description"
+  else
+    pass "$description"
+  fi
+}
 
-# Verify output contains all reasons
-if grep -q "agent_failed,-validation_failed,empty_diff" "$RESULTS_DIR/test1.log"; then
-  pass "All skip reasons captured in output"
-else
-  fail "Skip reasons not properly captured: $(cat "$RESULTS_DIR/test1.log")"
-fi
+extract_function() {
+  local name="$1"
+  awk -v name="$name" '
+    $0 ~ "^" name "\\(\\)[[:space:]]*\\{" { emit=1 }
+    emit { print }
+    emit && /^}$/ { exit }
+  ' "$ROOT_DIR/kaseki-agent.sh"
+}
 
-# Test 2: printf with multi-argument substitution (github skip diagnostics)
-info "Test 2: Multi-argument printf with exit code variables"
-{
-  PI_EXIT=0
-  VALIDATION_EXIT=1
-  QUALITY_EXIT=0
-  SECRET_SCAN_EXIT=0
-  GITHUB_SKIP_REASONS=("validation_failed")
-  DIFF_NONEMPTY="true"
-  GITHUB_APP_ENABLED="0"
-  
-  printf -- 'GitHub operations: skipped (reasons: %s; agent %s, validation %s, quality %s, secret_scan %s, diff %s, github_enabled %s)\n' \
-    "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" \
-    "$([ "$PI_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
-    "$([ "$VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
-    "$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
-    "$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
-    "$DIFF_NONEMPTY" \
-    "$GITHUB_APP_ENABLED" > "$RESULTS_DIR/test2.log"
-} && pass "Multi-argument printf succeeded" || fail "Multi-argument printf failed"
+build_github_function_harness() {
+  local harness="$1"
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+    extract_function run_node_subprocess
+    extract_function validate_github_api_response
+    extract_function apply_github_pr_labels
+    extract_function is_github_pr_error_retryable
+    cat <<'HARNESS'
+case "${1:-}" in
+  validate)
+    shift
+    GITHUB_API_ERROR_TYPE=""
+    GITHUB_API_ERROR_MESSAGE=""
+    GITHUB_API_HTTP_STATUS=""
+    validate_github_api_response "$@"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      printf 'VALID=1\n'
+      exit 0
+    fi
+    printf 'VALID=0\nTYPE=%s\nMESSAGE=%s\nHTTP=%s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_ERROR_MESSAGE" "$GITHUB_API_HTTP_STATUS"
+    exit "$rc"
+    ;;
+  retryable)
+    shift
+    if is_github_pr_error_retryable "$@"; then
+      printf 'retryable\n'
+      exit 0
+    fi
+    printf 'not retryable\n'
+    exit 1
+    ;;
+  label)
+    shift
+    apply_github_pr_labels "$@"
+    exit "$?"
+    ;;
+  *)
+    printf 'unknown harness command: %s\n' "${1:-}" >&2
+    exit 64
+    ;;
+esac
+HARNESS
+  } > "$harness"
+  chmod +x "$harness"
+}
 
-# Verify output contains all placeholders properly filled
-if grep -q "validation_failed; agent passed, validation failed, quality passed, secret_scan passed, diff true, github_enabled 0" "$RESULTS_DIR/test2.log"; then
-  pass "All arguments properly substituted in output"
-else
-  fail "Arguments not properly substituted: $(cat "$RESULTS_DIR/test2.log")"
-fi
+create_minimal_repo() {
+  local repo="$1"
+  mkdir -p "$repo/deps/fake-dep"
+  git -C "$repo" init -q -b main
+  printf '{"name":"github-operations-contract","version":"1.0.0","private":true,"dependencies":{"fake-dep":"file:deps/fake-dep"}}\n' > "$repo/package.json"
+  printf '{"name":"fake-dep","version":"1.0.0","private":true}\n' > "$repo/deps/fake-dep/package.json"
+  printf '{"name":"github-operations-contract","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"github-operations-contract","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"name":"fake-dep","version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}\n' > "$repo/package-lock.json"
+  git -C "$repo" add package.json package-lock.json deps/fake-dep/package.json
+  git -C "$repo" -c user.email=kaseki-test@example.invalid -c user.name='Kaseki Test' commit -q -m initial
+}
 
-# Test 3: printf with edge case: empty array expansion
-info "Test 3: printf with empty skip reasons"
-{
-  GITHUB_SKIP_REASONS=()
-  printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]:-none}")" > "$RESULTS_DIR/test3.log"
-} && pass "printf with empty array succeeded" || fail "printf with empty array failed"
+prepare_agent_copy() {
+  local case_dir="$1" source_repo="$2" results_dir="$3" workspace_repo="$4" app_lib="$5"
+  mkdir -p "$case_dir/scripts" "$results_dir" "$workspace_repo" "$app_lib"
+  cp "$ROOT_DIR/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
+  touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
+  sed "s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" \
+    "$ROOT_DIR/kaseki-agent.sh" > "$case_dir/kaseki-agent.sh"
+  chmod +x "$case_dir/kaseki-agent.sh"
+  create_minimal_repo "$source_repo"
+}
 
-if grep -q "reasons: none" "$RESULTS_DIR/test3.log"; then
-  pass "Empty array handled correctly"
-else
-  fail "Empty array not handled correctly: $(cat "$RESULTS_DIR/test3.log")"
-fi
+run_agent_case() {
+  local case_name="$1" expected_exit="$2"
+  shift 2
+  local case_dir="$TMP_DIR/$case_name"
+  local source_repo="$case_dir/source-repo"
+  local results_dir="$case_dir/results"
+  local workspace_repo="$case_dir/workspace-repo"
+  local app_lib="$case_dir/app/lib"
+  local run_log="$case_dir/run.log"
 
-# Test 4: printf with special characters in variable values
-info "Test 4: printf with special characters in REPO_URL"
-{
-  REPO_URL="https://github.com/owner-name/repo-name.git"
-  printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" > "$RESULTS_DIR/test4.log"
-} && pass "printf with special chars in URL succeeded" || fail "printf with special chars in URL failed"
+  prepare_agent_copy "$case_dir" "$source_repo" "$results_dir" "$workspace_repo" "$app_lib"
 
-if grep -q "owner-name/repo-name" "$RESULTS_DIR/test4.log"; then
-  pass "Special characters preserved in output"
-else
-  fail "Special characters not preserved: $(cat "$RESULTS_DIR/test4.log")"
-fi
-
-# Test 5: printf with feature branch containing instance name
-info "Test 5: printf with feature branch name containing dashes"
-{
-  INSTANCE_NAME="kaseki-9142"
-  feature_branch="kaseki/$INSTANCE_NAME"
-  printf -- 'Creating feature branch: %s\n' "$feature_branch" > "$RESULTS_DIR/test5.log"
-} && pass "printf with dash-containing branch name succeeded" || fail "printf with dash-containing branch name failed"
-
-if grep -q "kaseki/kaseki-9142" "$RESULTS_DIR/test5.log"; then
-  pass "Feature branch name correctly output"
-else
-  fail "Feature branch name not correct: $(cat "$RESULTS_DIR/test5.log")"
-fi
-
-# Test 6: Verify all printf calls have -- separator (source code check)
-info "Test 6: Verify -- separator present in critical printf calls"
-if grep -n "printf -- 'GitHub operations: skipped (reasons:" "$ROOT_DIR/kaseki-agent.sh" > /dev/null; then
-  pass "Primary github operations printf has -- separator"
-else
-  fail "Primary github operations printf missing -- separator"
-fi
-
-if grep -n "printf -- 'GitHub operations: skipped (reasons:.*agent %s" "$ROOT_DIR/kaseki-agent.sh" > /dev/null; then
-  pass "Multi-argument github operations printf has -- separator"
-else
-  fail "Multi-argument github operations printf missing -- separator"
-fi
-
-# Test 7: Integration test - actual function behavior under errexit
-info "Test 7: Actual build_github_skip_reasons behavior under errexit"
-(
+  set +e
+  env \
+    REPO_URL="$source_repo" \
+    GIT_REF=main \
+    KASEKI_DRY_RUN=1 \
+    KASEKI_GIT_CACHE_MODE=off \
+    KASEKI_SCOUTING=0 \
+    KASEKI_GOAL_CHECK=0 \
+    KASEKI_RUN_EVALUATION=0 \
+    KASEKI_PRE_AGENT_VALIDATION=0 \
+    KASEKI_TS_PRE_CHECK=0 \
+    KASEKI_VALIDATION_COMMANDS=":" \
+    KASEKI_ALLOW_EMPTY_DIFF=1 \
+    KASEKI_DEPENDENCY_CACHE_DIR="$case_dir/dependency-cache" \
+    KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$case_dir/image-cache" \
+    OPENROUTER_API_KEY=test-key \
+    PATH="$PATH" \
+    "$@" bash "$case_dir/kaseki-agent.sh" > "$run_log" 2>&1
+  local run_exit=$?
   set -e
-  eval "$(awk '/^build_github_skip_reasons\(\) \{/{flag=1} flag{print} flag && /^}/{exit}' "$ROOT_DIR/kaseki-agent.sh")"
-  GITHUB_SKIP_REASONS=()
-  GITHUB_APP_ENABLED=1
-  PI_EXIT=1
-  VALIDATION_EXIT=5
-  QUALITY_EXIT=0
-  SECRET_SCAN_EXIT=0
-  GOAL_CHECK_EXIT=0
-  KASEKI_GOAL_CHECK=0
-  SCOUTING_ARTIFACT="/dev/null"
-  GOAL_CHECK_MET=false
-  STATUS=0
-  DIFF_NONEMPTY=true
-  build_github_skip_reasons
-  printf -- 'GitHub operations: skipped (reasons: %s)\n' \
-    "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" > "$RESULTS_DIR/test7.log"
-) && pass "Actual skip reasons logic survived errexit" || fail "Actual skip reasons logic failed under errexit"
 
-if grep -q "agent_failed,validation_failed" "$RESULTS_DIR/test7.log"; then
-  pass "Skip reasons correctly accumulated and logged"
-else
-  fail "Skip reasons not correctly accumulated: $(cat "$RESULTS_DIR/test7.log")"
-fi
+  if [ "$run_exit" -eq "$expected_exit" ]; then
+    pass "$case_name exits with $expected_exit"
+  else
+    cat "$run_log" >&2
+    fail "$case_name exited with $run_exit, expected $expected_exit"
+  fi
 
-if grep -Eq '\[[^]]+\][[:space:]]*&&[[:space:]]*GITHUB_SKIP_REASONS\+=' "$ROOT_DIR/kaseki-agent.sh"; then
-  fail "Skip reason builder still uses errexit-sensitive test-and-append"
-else
-  pass "Skip reason builder avoids errexit-sensitive test-and-append"
-fi
+  RUN_AGENT_CASE_DIR="$case_dir"
+  RUN_AGENT_RESULTS_DIR="$results_dir"
+  RUN_AGENT_LOG="$run_log"
+}
 
-# Test 8: GitHub API response validation - extract helper functions and test directly
-info "Test 8: GitHub API validation function logic"
-{
-  # Define validation function inline for testing
-  test_validate_github_api_response() {
-    local http_status="$1" 
-    # shellcheck disable=SC2034
-    local response="$2"
-    [ "$http_status" = "201" ] && return 0 || return 1
-  }
-  
-  # Test successful response
-  test_validate_github_api_response "201" '{"html_url": "https://example.com"}' && printf "201 success\n" || printf "201 failed\n"
-  
-  # Test error response
-  test_validate_github_api_response "429" '{"message": "Rate limited"}' && printf "429 success\n" || printf "429 failed\n"
-} > "$RESULTS_DIR/test8.log" 2>&1
+RESULTS_DIR="$TMP_DIR/results"
+mkdir -p "$RESULTS_DIR"
+HARNESS="$TMP_DIR/github-function-harness.sh"
+build_github_function_harness "$HARNESS"
 
-if grep -q "201 success" "$RESULTS_DIR/test8.log" && grep -q "429 failed" "$RESULTS_DIR/test8.log"; then
-  pass "API response validation logic works correctly"
-else
-  fail "API response validation logic failed: $(cat "$RESULTS_DIR/test8.log")"
-fi
+# Test 1: disabled GitHub integration is reported as a skipped operation with artifacts.
+info 'Test 1: disabled GitHub integration skip contract'
+run_agent_case disabled_github 0 GITHUB_APP_ENABLED=0
+assert_file_contains "$RUN_AGENT_LOG" 'GitHub operations: skipped (reasons: github_app_disabled,empty_diff; agent passed, validation passed, quality passed, secret_scan passed, diff false, github_enabled 0)' 'Disabled GitHub skip message is user-visible on stdout/stderr'
+assert_file_contains "$RUN_AGENT_RESULTS_DIR/git-push.log" 'GitHub operations: skipped (reasons: github_app_disabled,empty_diff; agent passed, validation passed, quality passed, secret_scan passed, diff false, github_enabled 0)' 'Disabled GitHub skip message is recorded in git-push.log'
+assert_file_contains "$RUN_AGENT_RESULTS_DIR/progress.log" 'github operations info: skipped: github_app_disabled,empty_diff' 'Disabled GitHub skip reason is recorded in progress log'
 
-# Test 9: Error type detection from HTTP status codes
-info "Test 9: GitHub error type detection from HTTP status"
-{
-  # Test mapping different HTTP statuses to error types
-  test_error_type() {
-    case "$1" in
-      401) printf "authentication_error" ;;
-      403) printf "permission_error" ;;
-      429) printf "rate_limit_error" ;;
-      500|502|503|504) printf "server_error" ;;
-      *)  printf "unknown" ;;
-    esac
-  }
-  
-  [ "$(test_error_type 403)" = "permission_error" ] && printf "403 mapped correctly\n" || printf "403 mapping failed\n"
-  [ "$(test_error_type 429)" = "rate_limit_error" ] && printf "429 mapped correctly\n" || printf "429 mapping failed\n"
-  [ "$(test_error_type 503)" = "server_error" ] && printf "503 mapped correctly\n" || printf "503 mapping failed\n"
-} > "$RESULTS_DIR/test9.log" 2>&1
+# Test 2: enabled GitHub integration with missing auth material reports preflight guidance,
+# then still records the later GitHub skip reason that is user-visible for this run.
+info 'Test 2: missing GitHub App preflight contract'
+run_agent_case missing_github_secrets 0 GITHUB_APP_ENABLED=1 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+assert_file_contains "$RUN_AGENT_LOG" 'ERROR: GitHub operations preflight health check failed' 'Missing GitHub secrets produce an operator-visible preflight warning'
+assert_file_contains "$RUN_AGENT_RESULTS_DIR/github-health-check.log" 'CLASSIFICATION: missing_github_app_id' 'Missing GitHub App ID classification is recorded in health-check artifact'
+assert_file_contains "$RUN_AGENT_RESULTS_DIR/git-push.log" 'GitHub operations: skipped (reasons: empty_diff; agent passed, validation passed, quality passed, secret_scan passed, diff false, github_enabled 1)' 'GitHub skip summary is recorded after a preflight warning'
+assert_file_contains "$RUN_AGENT_RESULTS_DIR/progress.log" 'github operations info: skipped: empty_diff' 'GitHub skip progress is recorded after a preflight warning'
 
-if grep -q "403 mapped correctly" "$RESULTS_DIR/test9.log" && \
-   grep -q "429 mapped correctly" "$RESULTS_DIR/test9.log" && \
-   grep -q "503 mapped correctly" "$RESULTS_DIR/test9.log"; then
-  pass "Error type detection works correctly"
-else
-  fail "Error type detection failed: $(cat "$RESULTS_DIR/test9.log")"
-fi
+# Test 3: API response validation returns contract exit codes, messages, and log side effects.
+info 'Test 3: GitHub API validation response contract'
+set +e
+"$HARNESS" validate 201 '{"html_url":"https://github.com/acme/widgets/pull/1"}' "$RESULTS_DIR/api-success.log" > "$RESULTS_DIR/api-success.out" 2>&1
+api_success_exit=$?
+"$HARNESS" validate 403 '{"message":"Resource not accessible by integration"}' "$RESULTS_DIR/api-403.log" > "$RESULTS_DIR/api-403.out" 2>&1
+api_403_exit=$?
+"$HARNESS" validate 429 '{"message":"API rate limit exceeded"}' "$RESULTS_DIR/api-429.log" > "$RESULTS_DIR/api-429.out" 2>&1
+api_429_exit=$?
+set -e
+[ "$api_success_exit" -eq 0 ] || fail "201 validation exited $api_success_exit"
+[ "$api_403_exit" -eq 1 ] || fail "403 validation exited $api_403_exit"
+[ "$api_429_exit" -eq 1 ] || fail "429 validation exited $api_429_exit"
+pass 'API validation exit codes match success/error contract'
+assert_file_contains "$RESULTS_DIR/api-success.out" 'VALID=1' '201 API response is accepted'
+assert_file_contains "$RESULTS_DIR/api-403.out" 'TYPE=permission_error' '403 API response exposes permission_error type'
+assert_file_contains "$RESULTS_DIR/api-403.log" 'GitHub API error (HTTP 403): permission_error - Resource not accessible by integration' '403 API validation writes operator log message'
+assert_file_contains "$RESULTS_DIR/api-429.out" 'TYPE=rate_limit_error' '429 API response exposes rate_limit_error type'
+assert_file_contains "$RESULTS_DIR/api-429.log" 'GitHub API error (HTTP 429): rate_limit_error - API rate limit exceeded' '429 API validation writes operator log message'
 
-# Test 10: Retryability logic - transient errors
-info "Test 10: Retryability detection for transient errors"
-{
-  # Test retryability logic
-  test_is_retryable() {
-    case "$1" in
-      429|500|502|503|504|0) return 0 ;;  # Retryable
-      *) return 1 ;;  # Not retryable
-    esac
-  }
-  
-  test_is_retryable "429" && printf "429 retryable\n" || printf "429 not retryable\n"
-  test_is_retryable "503" && printf "503 retryable\n" || printf "503 not retryable\n"
-  test_is_retryable "0" && printf "curl_failure retryable\n" || printf "curl_failure not retryable\n"
-} > "$RESULTS_DIR/test10.log" 2>&1
+# Test 4: retryability is expressed through command exit status and output.
+info 'Test 4: GitHub PR retryability contract'
+set +e
+"$HARNESS" retryable 429 rate_limit_error > "$RESULTS_DIR/retry-429.out" 2>&1; retry_429_exit=$?
+"$HARNESS" retryable 503 server_error > "$RESULTS_DIR/retry-503.out" 2>&1; retry_503_exit=$?
+"$HARNESS" retryable 0 curl_error > "$RESULTS_DIR/retry-curl.out" 2>&1; retry_curl_exit=$?
+"$HARNESS" retryable 403 permission_error > "$RESULTS_DIR/retry-403.out" 2>&1; retry_403_exit=$?
+"$HARNESS" retryable 422 validation_error > "$RESULTS_DIR/retry-422.out" 2>&1; retry_422_exit=$?
+set -e
+[ "$retry_429_exit" -eq 0 ] && [ "$retry_503_exit" -eq 0 ] && [ "$retry_curl_exit" -eq 0 ] || fail 'Transient GitHub PR failures should be retryable'
+[ "$retry_403_exit" -eq 1 ] && [ "$retry_422_exit" -eq 1 ] || fail 'Permanent GitHub PR failures should not be retryable'
+pass 'Retryability exit codes match transient/permanent contract'
+assert_file_contains "$RESULTS_DIR/retry-429.out" 'retryable' '429 retryability output is user-readable'
+assert_file_contains "$RESULTS_DIR/retry-403.out" 'not retryable' '403 retryability output is user-readable'
 
-if grep -q "429 retryable" "$RESULTS_DIR/test10.log" && \
-   grep -q "503 retryable" "$RESULTS_DIR/test10.log" && \
-   grep -q "curl_failure retryable" "$RESULTS_DIR/test10.log"; then
-  pass "Transient error retryability detection works"
-else
-  fail "Retryability detection failed: $(cat "$RESULTS_DIR/test10.log")"
-fi
+# Test 5: PR label application calls GitHub with the documented label and records success.
+info 'Test 5: PR label application success contract'
+LABEL_SUCCESS_BIN="$TMP_DIR/label-success-bin"
+mkdir -p "$LABEL_SUCCESS_BIN"
+cat > "$LABEL_SUCCESS_BIN/curl" <<'EOF_CURL_SUCCESS'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$CURL_ARGS_FILE"
+payload=''
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-d" ]; then
+    shift
+    payload="${1:-}"
+  fi
+  shift || true
+done
+printf '%s' "$payload" > "$CURL_PAYLOAD_FILE"
+printf '[{"name":"kaseki-agent"}]201'
+EOF_CURL_SUCCESS
+chmod +x "$LABEL_SUCCESS_BIN/curl"
+set +e
+env PATH="$LABEL_SUCCESS_BIN:$PATH" CURL_ARGS_FILE="$RESULTS_DIR/label-success.args" CURL_PAYLOAD_FILE="$RESULTS_DIR/label-success.payload" \
+  "$HARNESS" label acme widgets 17 test-token "$RESULTS_DIR/label-success.log" > "$RESULTS_DIR/label-success.out" 2>&1
+label_success_exit=$?
+set -e
+[ "$label_success_exit" -eq 0 ] || fail "Label success exited $label_success_exit"
+pass 'PR label success exits 0'
+assert_file_contains "$RESULTS_DIR/label-success.args" 'https://api.github.com/repos/acme/widgets/issues/17/labels' 'Label application targets the PR issue labels endpoint'
+assert_file_contains "$RESULTS_DIR/label-success.payload" '{"labels":["kaseki-agent"]}' 'Label application sends the documented kaseki-agent label payload'
+assert_file_contains "$RESULTS_DIR/label-success.log" 'Applied kaseki-agent label to PR #17' 'Label application records success in git-push log'
 
-# Test 11: Retryability logic - permanent errors
-info "Test 11: Retryability detection for permanent errors"
-{
-  test_is_retryable() {
-    case "$1" in
-      429|500|502|503|504|0) return 0 ;;
-      *) return 1 ;;
-    esac
-  }
-  
-  test_is_retryable "403" && printf "403 retryable\n" || printf "403 not retryable\n"
-  test_is_retryable "404" && printf "404 retryable\n" || printf "404 not retryable\n"
-  test_is_retryable "422" && printf "422 retryable\n" || printf "422 not retryable\n"
-} > "$RESULTS_DIR/test11.log" 2>&1
+# Test 6: PR label application failures are warning-only for the created PR and leave an artifact trail.
+info 'Test 6: PR label application failure contract'
+LABEL_FAILURE_BIN="$TMP_DIR/label-failure-bin"
+mkdir -p "$LABEL_FAILURE_BIN"
+cat > "$LABEL_FAILURE_BIN/curl" <<'EOF_CURL_FAILURE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$CURL_ARGS_FILE"
+printf '{"message":"Validation Failed"}422'
+EOF_CURL_FAILURE
+chmod +x "$LABEL_FAILURE_BIN/curl"
+set +e
+env PATH="$LABEL_FAILURE_BIN:$PATH" CURL_ARGS_FILE="$RESULTS_DIR/label-failure.args" \
+  "$HARNESS" label acme widgets 18 test-token "$RESULTS_DIR/label-failure.log" > "$RESULTS_DIR/label-failure.out" 2>&1
+label_failure_exit=$?
+set -e
+[ "$label_failure_exit" -eq 1 ] || fail "Label failure exited $label_failure_exit"
+pass 'PR label failure exits non-zero for caller policy handling'
+assert_file_contains "$RESULTS_DIR/label-failure.log" 'Warning: failed to apply kaseki-agent label to PR #18 (HTTP 422); preserving created PR' 'Label failure log preserves created PR contract'
+assert_file_not_contains "$RESULTS_DIR/label-failure.log" 'Applied kaseki-agent label' 'Label failure does not report a false success'
 
-if grep -q "403 not retryable" "$RESULTS_DIR/test11.log" && \
-   grep -q "404 not retryable" "$RESULTS_DIR/test11.log" && \
-   grep -q "422 not retryable" "$RESULTS_DIR/test11.log"; then
-  pass "Permanent error non-retryability detection works"
-else
-  fail "Permanent error detection failed: $(cat "$RESULTS_DIR/test11.log")"
-fi
-
-# Test 12: Exponential backoff calculation
-info "Test 12: Exponential backoff delay calculation"
-{
-  # Test backoff delay progression
-  backoff_delay=2
-  [ $backoff_delay -eq 2 ] && printf "initial_2s\n"
-  backoff_delay=$((backoff_delay * 2))
-  [ $backoff_delay -eq 4 ] && printf "second_4s\n"
-  backoff_delay=$((backoff_delay * 2))
-  [ $backoff_delay -eq 8 ] && printf "third_8s\n"
-  if [ $backoff_delay -gt 8 ]; then backoff_delay=8; fi
-  [ $backoff_delay -eq 8 ] && printf "capped_8s\n"
-} > "$RESULTS_DIR/test12.log" 2>&1
-
-if grep -q "initial_2s" "$RESULTS_DIR/test12.log" && \
-   grep -q "second_4s" "$RESULTS_DIR/test12.log" && \
-   grep -q "third_8s" "$RESULTS_DIR/test12.log" && \
-   grep -q "capped_8s" "$RESULTS_DIR/test12.log"; then
-  pass "Exponential backoff calculation works correctly"
-else
-  fail "Backoff calculation failed: $(cat "$RESULTS_DIR/test12.log")"
-fi
-
-
-# Test 13: Git push pipeline failures are not hidden by tee without pipefail
-info "Test 13: Git push failure survives tee when pipefail is disabled"
+# Test 7: Git push failures piped through tee surface the git exit code and log a failure.
+info 'Test 7: Git push pipeline failure contract'
 {
   GITHUB_PUSH_EXIT=0
-  git_push_log="$RESULTS_DIR/test13.log"
+  git_push_log="$RESULTS_DIR/git-push-failure.log"
   : > "$git_push_log"
 
   simulate_github_push_with_tee() {
@@ -288,7 +285,7 @@ info "Test 13: Git push failure survives tee when pipefail is disabled"
     }
 
     set +o pipefail
-    git push "https://github.com/owner-name/repo-name.git" "kaseki/test-instance" --force-with-lease 2>&1 | tee -a "$git_push_log"
+    git push "https://github.com/acme/widgets.git" "kaseki/test-instance" --force-with-lease 2>&1 | tee -a "$git_push_log"
     git_push_exit="${PIPESTATUS[0]:-1}"
     if [ "$git_push_exit" -eq 0 ]; then
       printf 'Branch pushed successfully\n' | tee -a "$git_push_log"
@@ -301,58 +298,13 @@ info "Test 13: Git push failure survives tee when pipefail is disabled"
 
   simulate_github_push_with_tee || printf 'simulate_exit=%s\n' "$?" >> "$git_push_log"
   printf 'GITHUB_PUSH_EXIT=%s\n' "$GITHUB_PUSH_EXIT" >> "$git_push_log"
-} > "$RESULTS_DIR/test13.out" 2>&1
+} > "$RESULTS_DIR/git-push-failure.out" 2>&1
+assert_file_not_contains "$RESULTS_DIR/git-push-failure.log" 'Branch pushed successfully' 'Git push failure is not reported as success'
+assert_file_contains "$RESULTS_DIR/git-push-failure.log" 'Failed to push branch (exit 42)' 'Git push failure records the git exit code despite tee'
+assert_file_contains "$RESULTS_DIR/git-push-failure.log" 'GITHUB_PUSH_EXIT=42' 'Git push failure updates the caller-visible push exit artifact'
 
-if grep -q "Branch pushed successfully" "$RESULTS_DIR/test13.log"; then
-  fail "Git push failure was hidden by tee: $(cat "$RESULTS_DIR/test13.log")"
-fi
-
-if grep -q "Failed to push branch (exit 42)" "$RESULTS_DIR/test13.log" && \
-   grep -q "GITHUB_PUSH_EXIT=42" "$RESULTS_DIR/test13.log"; then
-  pass "Git push failure is reported from PIPESTATUS despite pipefail being disabled"
-else
-  fail "Git push failure was not reported correctly: $(cat "$RESULTS_DIR/test13.log")"
-fi
-
-if grep -q 'git_push_exit="${PIPESTATUS\[0\]:-1}"' "$ROOT_DIR/kaseki-agent.sh" && \
-   grep -q 'Failed to push branch (exit %s)' "$ROOT_DIR/kaseki-agent.sh"; then
-  pass "Production GitHub push block records git push exit status"
-else
-  fail "Production GitHub push block does not record git push exit status"
-fi
-
-# Test 14: Pull request label application wiring
-info "Test 14: Pull request label application wiring"
-if grep -q 'https://api.github.com/repos/$owner/$repo/issues/$issue_number/labels' "$ROOT_DIR/kaseki-agent.sh"; then
-  pass "PR labels endpoint is used"
-else
-  fail "PR labels endpoint is missing"
-fi
-
-if grep -Fq "labels: ['kaseki-agent']" "$ROOT_DIR/kaseki-agent.sh"; then
-  pass "PR label payload uses exactly the kaseki-agent label"
-else
-  fail "PR label payload does not use the expected kaseki-agent label"
-fi
-
-if grep -q 'Number.isInteger(d.number)' "$ROOT_DIR/kaseki-agent.sh" && \
-   grep -q 'run_node_subprocess pr_number' "$ROOT_DIR/kaseki-agent.sh"; then
-  pass "PR number is extracted from the create-PR response number field"
-else
-  fail "PR number extraction from create-PR response is missing"
-fi
-
-if grep -q 'apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /results/git-push.log || true' "$ROOT_DIR/kaseki-agent.sh" && \
-   grep -q 'Warning: failed to apply kaseki-agent label' "$ROOT_DIR/kaseki-agent.sh" && \
-   grep -q 'preserving created PR' "$ROOT_DIR/kaseki-agent.sh"; then
-  pass "PR label failures are warning-only and preserve the created PR"
-else
-  fail "PR label failure policy is not warning-only"
-fi
-
-# Summary
-info "All tests passed!"
+info 'All tests passed!'
 printf '\n==> Summary\n'
-printf 'Tests run: 14\n'
-printf 'Passed: 14\n'
+printf 'Tests run: 7\n'
+printf 'Passed: 7\n'
 printf 'Failed: 0\n'
