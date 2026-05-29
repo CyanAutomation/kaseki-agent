@@ -179,13 +179,38 @@ cat
 EOF_VALIDATION_FILTER
   chmod +x "$bin_dir/validation-output-filter"
 
-  if [ "${3:-}" = "api_failure" ]; then
-    cat > "$bin_dir/curl" <<'EOF_CURL'
+  case "${3:-}" in
+    api_failure)
+      cat > "$bin_dir/curl" <<'EOF_CURL'
 #!/usr/bin/env bash
 printf '{"message":"Validation Failed: fixture duplicate pull request","errors":[{"resource":"PullRequest","code":"custom","message":"fixture duplicate"}]}422'
 EOF_CURL
-    chmod +x "$bin_dir/curl"
-  fi
+      chmod +x "$bin_dir/curl"
+      ;;
+    curl_failure)
+      cat > "$bin_dir/curl" <<'EOF_CURL'
+#!/usr/bin/env bash
+printf 'fixture curl timeout before receiving a response
+' >&2
+exit 28
+EOF_CURL
+      chmod +x "$bin_dir/curl"
+      ;;
+    empty_response)
+      cat > "$bin_dir/curl" <<'EOF_CURL'
+#!/usr/bin/env bash
+printf '201'
+EOF_CURL
+      chmod +x "$bin_dir/curl"
+      ;;
+    malformed_json)
+      cat > "$bin_dir/curl" <<'EOF_CURL'
+#!/usr/bin/env bash
+printf 'not-json201'
+EOF_CURL
+      chmod +x "$bin_dir/curl"
+      ;;
+  esac
 
   export KASEKI_TEST_REAL_GIT="$REAL_GIT"
   export KASEKI_TEST_SOURCE_REPO="$source_repo"
@@ -320,6 +345,36 @@ assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_ty
 assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_message' "Validation Failed: fixture duplicate pull request" "metadata records API error message"
 assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_http_status' "422" "metadata records API HTTP status"
 assert_error_event_field_eq "$api_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (validation_error): Validation Failed: fixture duplicate pull request (HTTP 422)" "API failure emits structured error event detail"
+
+test_case "GitHub Pulls API curl command failure"
+curl_case="$(run_agent_fixture api-curl-failure success curl_failure)"
+assert_eq "8" "$(cat "$curl_case/exit")" "curl command failure uses runtime failure exit code"
+assert_file_contains "$curl_case/results/git-push.log" 'GitHub PR API curl command failed with exit code 28' "curl command failure emits user-facing error"
+assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_pr_exit_code' "8" "metadata records curl PR exit code"
+assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_type' "curl_error" "metadata records curl error type"
+assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_error_message' "curl exited with code 28" "metadata records curl error message"
+assert_json_field_eq "$curl_case/results/metadata.json" 'data.github_api_http_status' "0" "metadata records curl HTTP status sentinel"
+assert_error_event_field_eq "$curl_case/results/progress.jsonl" "github_pr_curl_failed" "detail" "curl command failed (exit 28) when creating PR" "curl command failure emits structured error event detail"
+
+test_case "GitHub Pulls API empty response"
+empty_case="$(run_agent_fixture api-empty-response success empty_response)"
+assert_eq "9" "$(cat "$empty_case/exit")" "empty API response uses API category exit code"
+assert_file_contains "$empty_case/results/git-push.log" 'GitHub API response malformed \(HTTP 201\): GitHub API returned an empty response' "empty API response emits user-facing error"
+assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records empty response PR exit code"
+assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_error_type' "empty_response" "metadata records empty response error type"
+assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_error_message' "GitHub API returned an empty response" "metadata records empty response error message"
+assert_json_field_eq "$empty_case/results/metadata.json" 'data.github_api_http_status' "201" "metadata records empty response HTTP status"
+assert_error_event_field_eq "$empty_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (empty_response): GitHub API returned an empty response (HTTP 201)" "empty API response emits structured error event detail"
+
+test_case "GitHub Pulls API malformed JSON response"
+malformed_case="$(run_agent_fixture api-malformed-json success malformed_json)"
+assert_eq "9" "$(cat "$malformed_case/exit")" "malformed API JSON uses API category exit code"
+assert_file_contains "$malformed_case/results/git-push.log" 'GitHub API response malformed \(HTTP 201\): GitHub API returned malformed JSON' "malformed API JSON emits user-facing error"
+assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records malformed JSON PR exit code"
+assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_type' "malformed_json" "metadata records malformed JSON error type"
+assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_error_message' "GitHub API returned malformed JSON" "metadata records malformed JSON error message"
+assert_json_field_eq "$malformed_case/results/metadata.json" 'data.github_api_http_status' "201" "metadata records malformed JSON HTTP status"
+assert_error_event_field_eq "$malformed_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (malformed_json): GitHub API returned malformed JSON (HTTP 201)" "malformed API JSON emits structured error event detail"
 
 # ===== Diagnostic script behavior remains command-level =====
 test_case "diagnostic script distinguishes token and push phases"
