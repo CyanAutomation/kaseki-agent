@@ -323,16 +323,24 @@ function getResponseCodes(operation: Operation): string[] {
 function getJsonResponseSchema(operation: Operation, statusCode: string): Schema | undefined {
   const response = getResponses(operation)[statusCode];
   if (!response) return undefined;
-  const content = response.content as Record<string, Record<string, unknown>> | undefined;
+
   const content = response.content as Record<string, Record<string, unknown>> | undefined;
   return content?.['application/json']?.schema as Schema | undefined;
 }
 
 function getProperty(schema: Schema, propertyPath: string[]): Schema {
-  return propertyPath.reduce<Schema>((current, segment) => {
-    const properties = current.properties as Record<string, Schema>;
-    return properties[segment];
-  }, schema);
+  let current: Schema | undefined = schema;
+
+  for (const segment of propertyPath) {
+    const properties = current?.properties as Record<string, Schema> | undefined;
+    current = properties?.[segment];
+
+    if (!current) {
+      throw new Error(`Expected schema property path "${propertyPath.join('.')}" to include "${segment}".`);
+    }
+  }
+
+  return current;
 }
 
 function expectErrorResponseSchema(schema: Schema | undefined): void {
