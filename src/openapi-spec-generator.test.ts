@@ -322,6 +322,8 @@ function getResponseCodes(operation: Operation): string[] {
 
 function getJsonResponseSchema(operation: Operation, statusCode: string): Schema | undefined {
   const response = getResponses(operation)[statusCode];
+  if (!response) return undefined;
+  const content = response.content as Record<string, Record<string, unknown>> | undefined;
   const content = response.content as Record<string, Record<string, unknown>> | undefined;
   return content?.['application/json']?.schema as Schema | undefined;
 }
