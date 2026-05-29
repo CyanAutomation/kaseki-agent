@@ -231,6 +231,8 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/pi-summary.json
 : > /results/scouting-events.jsonl
 : > /results/scouting-summary.json
+: > /results/scouting-validation-errors.jsonl
+: > /results/scouting-validation-summary.txt
 : > /results/goal-check-events.jsonl
 : > /results/goal-check-summary.json
 : > /results/goal-check-stderr.log
@@ -379,50 +381,116 @@ validate_scouting_artifact_with_node() {
   local validation_error_file="$3"
 
   node -e '
-const fs=require("node:fs");
-const input=process.argv[1];
-const output=process.argv[2];
-const errorLog=process.argv[3];
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const errorLog = process.argv[3];
+const jsonlLog = "/results/scouting-validation-errors.jsonl";
+
+function actualType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function appendValidationFailure(reasonCode, error) {
+  fs.appendFileSync(jsonlLog, JSON.stringify({
+    timestamp: new Date().toISOString(),
+    reason_code: reasonCode,
+    ...error,
+  }) + "\n");
+}
+
+function summarize(errors) {
+  const critical = errors.filter((error) => error.severity === "critical").length;
+  const warning = errors.filter((error) => error.severity === "warning").length;
+  const counts = [];
+  if (critical) counts.push(`${critical} critical`);
+  if (warning) counts.push(`${warning} warning`);
+  const fields = errors.slice(0, 2).map((error) => error.field).join(", ");
+  const suffix = errors.length > 2 ? `, +${errors.length - 2} more` : "";
+  return `${counts.join(", ")} scouting validation ${errors.length === 1 ? "error" : "errors"}: ${fields}${suffix}`;
+}
+
 let artifact;
 try {
-  artifact=JSON.parse(fs.readFileSync(input,"utf8"));
-} catch {
-  fs.writeFileSync(errorLog, JSON.stringify({ reason_code: "malformed_json", details: "scouting artifact failed JSON parsing" }) + "\n");
+  artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+} catch (err) {
+  const reasonCode = "malformed_json";
+  const error = {
+    field: "root",
+    expected: "exactly one valid JSON object",
+    actual: err && err.message ? String(err.message) : "JSON parse failed",
+    severity: "critical",
+    suggestion: "ensure exactly one valid JSON object is written to /results/scouting-candidate.json",
+  };
+  appendValidationFailure(reasonCode, error);
+  fs.writeFileSync(errorLog, JSON.stringify({
+    reason_code: reasonCode,
+    details: summarize([error]),
+    errors: [error],
+  }) + "\n");
   process.exit(1);
 }
-const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"];
-const invalid=[];
 
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
-if (typeof artifact.task !== "string" || !artifact.task.trim()) invalid.push("task");
-for (const key of arrayKeys) if (!Array.isArray(artifact[key])) invalid.push(key);
-if (Array.isArray(artifact.relevant_files) && artifact.relevant_files.some((item) => !item || typeof item.path !== "string" || typeof item.reason !== "string")) invalid.push("relevant_files entries");
+const errors = [];
+const addError = (field, expected, actual, severity, suggestion) => {
+  errors.push({ field, expected, actual, severity, suggestion });
+};
+const arrayKeys = ["requirements", "relevant_files", "observations", "plan", "validation", "risks"];
 
-// Validate suggested_allowlist (optional but if present, must be valid)
-if (artifact.suggested_allowlist) {
-  if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
-    invalid.push("suggested_allowlist");
-  } else {
-    if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) invalid.push("suggested_allowlist.agent_patterns");
-    if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) invalid.push("suggested_allowlist.validation_patterns");
-    if (Array.isArray(artifact.suggested_allowlist.agent_patterns) && !artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.agent_patterns values");
-    if (Array.isArray(artifact.suggested_allowlist.validation_patterns) && !artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.validation_patterns values");
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+  addError("root", "object", actualType(artifact), "critical", "Scouting artifact must be a JSON object, not an array/null/primitive");
+} else {
+  if (typeof artifact.task !== "string" || !artifact.task.trim()) {
+    addError("task", "non-empty string", typeof artifact.task === "string" ? "empty string" : actualType(artifact.task), "critical", "task must be a non-empty string describing the requested work");
+  }
+  for (const key of arrayKeys) {
+    if (!Array.isArray(artifact[key])) {
+      addError(key, "array", actualType(artifact[key]), "critical", `${key} must be an array in the scouting handoff`);
+    }
+  }
+  if (Array.isArray(artifact.relevant_files)) {
+    artifact.relevant_files.forEach((item, index) => {
+      if (!item || typeof item.path !== "string" || typeof item.reason !== "string") {
+        addError(`relevant_files[${index}]`, "object with string path and string reason", actualType(item), "warning", "Each relevant_files entry must include path and reason strings");
+      }
+    });
+  }
+
+  // Validate suggested_allowlist (optional but if present, must be valid)
+  if (artifact.suggested_allowlist) {
+    if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
+      addError("suggested_allowlist", "object", actualType(artifact.suggested_allowlist), "warning", "suggested_allowlist must be an object with agent_patterns and validation_patterns arrays");
+    } else {
+      if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
+        addError("suggested_allowlist.agent_patterns", "array of strings", actualType(artifact.suggested_allowlist.agent_patterns), "warning", "agent_patterns must be an array of glob pattern strings");
+      } else if (!artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) {
+        addError("suggested_allowlist.agent_patterns", "array of strings", "array with non-strings", "warning", "All agent_patterns entries must be strings");
+      }
+      if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
+        addError("suggested_allowlist.validation_patterns", "array of strings", actualType(artifact.suggested_allowlist.validation_patterns), "warning", "validation_patterns must be an array of glob pattern strings");
+      } else if (!artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) {
+        addError("suggested_allowlist.validation_patterns", "array of strings", "array with non-strings", "warning", "All validation_patterns entries must be strings");
+      }
+    }
   }
 }
-if (invalid.length) {
-  const hasTask = invalid.includes("task");
-  const onlyTaskMissing = hasTask && invalid.length === 1;
+
+if (errors.length) {
+  const onlyTaskMissing = errors.length === 1 && errors[0].field === "task";
   const reasonCode = onlyTaskMissing ? "missing_required_fields" : "schema_mismatch";
-  fs.writeFileSync(
-    errorLog,
-    JSON.stringify({ reason_code: reasonCode, details: `invalid scouting fields: ${invalid.join(", ")}` }) + "\n"
-  );
+  for (const error of errors) appendValidationFailure(reasonCode, error);
+  fs.writeFileSync(errorLog, JSON.stringify({
+    reason_code: reasonCode,
+    details: summarize(errors),
+    errors,
+  }) + "\n");
   process.exit(1);
 }
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
 ' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log
 }
-
 # Validate scouting artifact and emit structured reason code
 validate_scouting_artifact() {
   local candidate_artifact="$1"
@@ -435,13 +503,15 @@ validate_scouting_artifact() {
   : > "$validation_error_file"
   if [ ! -f "$candidate_artifact" ]; then
     reason_code="missing_file"
-    reason_details="scouting candidate artifact not found: $candidate_artifact"
+    reason_details="1 critical scouting validation error: scouting-candidate.json"
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const error={timestamp:new Date().toISOString(),reason_code:"missing_file",field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" 2>> /results/scouting-stderr.log || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
   fi
 
   printf '%s\n' "$reason_code" > "$reason_file"
+  printf '%s\n' "$reason_details" > /results/scouting-validation-summary.txt
   printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/scouting-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
@@ -526,6 +596,10 @@ write_metadata() {
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
+  "scouting_validation": {
+    "validation_errors_log": "scouting-validation-errors.jsonl",
+    "summary_file": "scouting-validation-summary.txt"
+  },
   "goal_check_validation": {
     "attempt_count": $GOAL_CHECK_ATTEMPTS,
     "validation_errors_log": "goal-check-validation-errors.jsonl",
@@ -728,8 +802,10 @@ Artifacts:
 - metadata.json
 - pi-summary.json
 - pi-events.jsonl
+- scouting-validation-errors.jsonl
 - goal-check.json
 - goal-check-attempts.jsonl
+- goal-check-validation-errors.jsonl
 - run-evaluation.json
 - pre-validation.log
 - pre-validation-timings.tsv
@@ -2399,7 +2475,8 @@ run_scouting_agent() {
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "/results/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
-    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting did not write a schema-valid JSON handoff to $SCOUTING_CANDIDATE_ARTIFACT" "exit"
+    scouting_validation_summary="$(cat /results/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
+    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_summary (full details: /results/scouting-validation-errors.jsonl)" "exit"
   fi
   scout_dirty_after="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
