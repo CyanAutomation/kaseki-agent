@@ -13,8 +13,8 @@
  * Writes to: <results-dir>/inspect-report.md
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
 
 function readFile(filePath) {
   try {
@@ -63,18 +63,16 @@ function extractFindings(events) {
     // Skip non-content events
     if (!event.content) return;
 
-    const content = event.content;
+    const sanitized = event.content
+      .replace(/\[thinking\].*?\[\/thinking\]/gs, '')
+      .replace(/sk-or-[a-zA-Z0-9]+/g, '[redacted-key]')
+      .trim();
+    const content = sanitized.toLowerCase();
 
-    // Extract key observations/conclusions
+    // Extract key observations/conclusions after sanitizing private/internal blocks.
     if (content.includes('found') || content.includes('identified') ||
         content.includes('discovered') || content.includes('analysis') ||
         content.includes('observation') || content.includes('conclusion')) {
-      // Sanitize: remove thinking blocks, env vars, secrets
-      let sanitized = content
-        .replace(/\[thinking\].*?\[\/thinking\]/gs, '')
-        .replace(/sk-or-[a-zA-Z0-9]+/g, '[redacted-key]')
-        .trim();
-
       // Keep only substantial findings
       if (sanitized.length > 20 && sanitized.length < 500) {
         findings.push(sanitized);
