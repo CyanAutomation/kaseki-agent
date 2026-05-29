@@ -73,6 +73,30 @@ EOF_VALIDATION_FILTER
   calls="$(cat "$pi_calls" 2>/dev/null || true)"
   [ "$calls" = $'scouting' ] || fail "$case_name: scouting should run once without retry (calls=$calls)"
   [ "$(cat "$results_dir/scouting-validation-reason.txt")" = "$expected_reason" ] || fail "$case_name: reason mismatch"
+  [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
+  node - "$results_dir/scouting-validation-errors.jsonl" "$expected_reason" <<'NODE' || fail "$case_name: invalid scouting validation errors jsonl"
+const fs = require('node:fs');
+const logPath = process.argv[2];
+const expectedReason = process.argv[3];
+const lines = fs.readFileSync(logPath, 'utf8').trim().split(/\n+/).filter(Boolean);
+if (!lines.length) throw new Error('expected at least one validation error line');
+const entries = lines.map((line) => JSON.parse(line));
+for (const entry of entries) {
+  for (const key of ['timestamp', 'reason_code', 'field', 'expected', 'actual', 'severity', 'suggestion']) {
+    if (!(key in entry)) throw new Error(`missing key ${key}`);
+  }
+  if (entry.reason_code !== expectedReason) throw new Error(`expected ${expectedReason}, got ${entry.reason_code}`);
+}
+if (expectedReason === 'malformed_json') {
+  const entry = entries[0];
+  if (entry.field !== 'root') throw new Error('malformed JSON should target root');
+  if (!String(entry.actual).includes('JSON')) throw new Error('malformed JSON should capture parser error text');
+  if (!String(entry.suggestion).includes('/results/scouting-candidate.json')) throw new Error('malformed JSON should include targeted candidate suggestion');
+}
+if (expectedReason === 'schema_mismatch' && !entries.some((entry) => entry.field === 'requirements')) {
+  throw new Error('schema mismatch should identify requirements field');
+}
+NODE
 }
 
 MALFORMED_PAYLOAD="$TMP_DIR/malformed.json"
