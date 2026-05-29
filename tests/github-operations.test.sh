@@ -81,7 +81,7 @@ case "${1:-}" in
   label)
     shift
     apply_github_pr_labels "$@"
-    exit $?
+    exit "$?"
     ;;
   *)
     printf 'unknown harness command: %s\n' "${1:-}" >&2
