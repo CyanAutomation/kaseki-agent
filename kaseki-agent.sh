@@ -3405,7 +3405,7 @@ resolve_github_secret_file() {
 }
 
 validate_github_api_response() {
-  local http_status response log_file error_type error_message
+  local http_status response log_file error_type error_message json_valid
   http_status="$1"
   response="$2"
   log_file="${3:-/results/git-push.log}"
@@ -3413,6 +3413,42 @@ validate_github_api_response() {
   # Try to parse error info from response
   error_type="unknown"
   error_message=""
+
+  if [ -z "$http_status" ] || ! printf '%s' "$http_status" | grep -Eq '^[0-9][0-9][0-9]$'; then
+    error_type="invalid_http_status"
+    error_message="GitHub API returned an invalid or missing HTTP status"
+    printf 'GitHub API response malformed: %s (status: %s)\n' "$error_message" "${http_status:-missing}" | tee -a "$log_file" >&2
+    GITHUB_API_ERROR_TYPE="$error_type"
+    GITHUB_API_ERROR_MESSAGE="$error_message"
+    GITHUB_API_HTTP_STATUS="${http_status:-0}"
+    return 1
+  fi
+
+  if [ -z "$response" ]; then
+    error_type="empty_response"
+    error_message="GitHub API returned an empty response"
+    printf 'GitHub API response malformed (HTTP %s): %s\n' "$http_status" "$error_message" | tee -a "$log_file" >&2
+    GITHUB_API_ERROR_TYPE="$error_type"
+    GITHUB_API_ERROR_MESSAGE="$error_message"
+    GITHUB_API_HTTP_STATUS="$http_status"
+    return 1
+  fi
+
+  if printf '%s' "$response" | node -e "JSON.parse(require('fs').readFileSync(0, 'utf8'))" >/dev/null 2>&1; then
+    json_valid=1
+  else
+    json_valid=0
+  fi
+
+  if [ "$json_valid" -ne 1 ]; then
+    error_type="malformed_json"
+    error_message="GitHub API returned malformed JSON"
+    printf 'GitHub API response malformed (HTTP %s): %s\n' "$http_status" "$error_message" | tee -a "$log_file" >&2
+    GITHUB_API_ERROR_TYPE="$error_type"
+    GITHUB_API_ERROR_MESSAGE="$error_message"
+    GITHUB_API_HTTP_STATUS="$http_status"
+    return 1
+  fi
   
   if [ "$http_status" = "201" ]; then
     # Success - but still need to verify html_url exists
@@ -3422,10 +3458,8 @@ validate_github_api_response() {
   # Attempt to extract error info using Node.js
   {
     error_message=$(printf '%s' "$response" | node -e "
-      try {
-        const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-        if (d.message) process.stdout.write(d.message);
-      } catch (e) {}
+      const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+      if (d.message) process.stdout.write(d.message);
     " 2>/dev/null || true)
   }
   
@@ -4618,7 +4652,7 @@ EOF
       # curl command itself failed (network error, timeout, etc.)
       printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a /results/git-push.log >&2
       GITHUB_API_HTTP_STATUS="0"
-      if is_github_pr_error_retryable "0" "curl_error"; then
+      if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$max_retries" ]; then
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
         continue
@@ -4626,6 +4660,7 @@ EOF
         emit_error_event "github_pr_curl_failed" "curl command failed (exit $curl_exit) when creating PR" "exit"
         GITHUB_API_ERROR_TYPE="curl_error"
         GITHUB_API_ERROR_MESSAGE="curl exited with code $curl_exit"
+        GITHUB_API_HTTP_STATUS="0"
         GITHUB_PR_EXIT=8
         rm -f "$pr_response_file"
         return 8
@@ -4678,7 +4713,7 @@ EOF
       fi
     else
       # API returned an error
-      if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE"; then
+      if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE" && [ "$retry_count" -lt "$max_retries" ]; then
         printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a /results/git-push.log
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
