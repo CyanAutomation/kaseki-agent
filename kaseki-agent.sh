@@ -4713,7 +4713,7 @@ EOF
       fi
     else
       # API returned an error
-      if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE" && [ "$retry_count" -lt "$max_retries" ]; then
+      if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
         printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a /results/git-push.log
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
