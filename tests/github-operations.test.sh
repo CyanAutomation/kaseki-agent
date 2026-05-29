@@ -39,7 +39,7 @@ assert_file_not_contains() {
 extract_function() {
   local name="$1"
   awk -v name="$name" '
-    $0 ~ "^" name "\\(\\) \\{" { emit=1 }
+    $0 ~ "^" name "\\(\\)[[:space:]]*\\{" { emit=1 }
     emit { print }
     emit && /^}$/ { exit }
   ' "$ROOT_DIR/kaseki-agent.sh"
