@@ -349,10 +349,12 @@ describe('ContainerPreflightDiagnostics', () => {
     });
 
     test('fails when checkout directory is unreadable', () => {
+      const originalAccessSync = fs.accessSync;
       jest.spyOn(fs, 'accessSync').mockImplementation((target, mode) => {
         if (target === fixture.checkoutDir && mode === fs.constants.R_OK) {
           throw new Error('permission denied');
         }
+        return originalAccessSync(target, mode);
       });
 
       const check = getCheck(runDiagnostics(fixture), 'checkout-exists');
