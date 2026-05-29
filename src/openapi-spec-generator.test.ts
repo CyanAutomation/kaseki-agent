@@ -1,1298 +1,533 @@
 /**
- * Unit tests for OpenAPI spec generator
+ * Unit tests for OpenAPI spec generator.
+ *
+ * These tests intentionally avoid existence-only assertions. The focused
+ * contracts below should fail when generated client behavior, endpoint auth,
+ * response semantics, or schema constraints drift.
  */
 
+import { z } from 'zod';
 import { generateOpenAPISpec } from '../src/openapi-spec-generator';
 import {
   forEachPathOperation,
-  assertAllPathsHaveOperations
+  assertAllPathsHaveOperations,
 } from './__test-utils/api-client-assertions';
 
+type OpenApiSpec = Record<string, unknown>;
+type PathItem = Record<string, Operation>;
+type Operation = Record<string, unknown>;
+type Schema = Record<string, unknown>;
+
+type EndpointContract = {
+  path: string;
+  method: string;
+  operationId: string;
+  auth: 'public' | 'protected';
+  successCodes: string[];
+  errorCodes?: string[];
+  pathParams?: string[];
+};
+
+type SchemaContract = {
+  schemaName: string;
+  required: string[];
+  properties: Record<string, Partial<Schema>>;
+};
+
+type PropertyConstraint = {
+  label: string;
+  schemaName: string;
+  propertyPath: string[];
+  expected: Partial<Schema>;
+};
+
+const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'] as const;
+const expectedEndpoints: EndpointContract[] = [
+  {
+    path: '/health',
+    method: 'get',
+    operationId: 'getHealth',
+    auth: 'public',
+    successCodes: ['200'],
+  },
+  {
+    path: '/ready',
+    method: 'get',
+    operationId: 'getReady',
+    auth: 'public',
+    successCodes: ['200'],
+    errorCodes: ['503'],
+  },
+  {
+    path: '/api/metrics',
+    method: 'get',
+    operationId: 'getMetrics',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
+    path: '/api/preflight',
+    method: 'get',
+    operationId: 'getPreFlight',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
+    path: '/api/validate',
+    method: 'post',
+    operationId: 'validateTask',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['400', '401'],
+  },
+  {
+    path: '/api/runs',
+    method: 'post',
+    operationId: 'triggerRun',
+    auth: 'protected',
+    successCodes: ['202', '200'],
+    errorCodes: ['400', '401'],
+  },
+  {
+    path: '/api/runs',
+    method: 'get',
+    operationId: 'listRuns',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
+    path: '/api/runs/{id}/status',
+    method: 'get',
+    operationId: 'getRunStatus',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/runs/{id}/cancel',
+    method: 'post',
+    operationId: 'cancelRun',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/runs/{id}/progress',
+    method: 'get',
+    operationId: 'getRunProgress',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/runs/{id}/logs/{logtype}',
+    method: 'get',
+    operationId: 'getRunLog',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id', 'logtype'],
+  },
+  {
+    path: '/api/runs/{id}/artifacts',
+    method: 'get',
+    operationId: 'getRunArtifacts',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/results/{id}/{file}',
+    method: 'get',
+    operationId: 'downloadArtifact',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['422', '404', '401'],
+    pathParams: ['id', 'file'],
+  },
+  {
+    path: '/api/runs/{id}/analysis',
+    method: 'get',
+    operationId: 'getRunAnalysis',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['404', '401'],
+    pathParams: ['id'],
+  },
+  {
+    path: '/api/improvements',
+    method: 'get',
+    operationId: 'getRunImprovements',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['401'],
+  },
+  {
+    path: '/api/webhooks/test',
+    method: 'post',
+    operationId: 'testWebhook',
+    auth: 'protected',
+    successCodes: ['200'],
+    errorCodes: ['400', '401'],
+  },
+];
+
+const expectedSchemas: SchemaContract[] = [
+  {
+    schemaName: 'RunRequest',
+    required: ['repoUrl'],
+    properties: {
+      repoUrl: { type: 'string', format: 'uri' },
+      timeoutSeconds: { type: 'integer', minimum: 60, maximum: 10800 },
+      changedFilesAllowlist: { type: 'array' },
+      validationCommands: { type: 'array' },
+      idempotencyKey: { type: 'string', format: 'uuid' },
+      startupCheck: { type: 'boolean' },
+    },
+  },
+  {
+    schemaName: 'RunResponse',
+    required: ['id', 'status', 'createdAt'],
+    properties: {
+      id: { type: 'string' },
+      status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+      createdAt: { type: 'string', format: 'date-time' },
+      completedAt: { type: 'string', format: 'date-time' },
+      exitCode: { type: 'integer' },
+      error: { type: 'string' },
+    },
+  },
+  {
+    schemaName: 'StatusResponse',
+    required: ['id', 'status', 'elapsedSeconds', 'timeoutRiskPercent'],
+    properties: {
+      id: { type: 'string' },
+      status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+      elapsedSeconds: { type: 'number' },
+      timeoutRiskPercent: { type: 'number' },
+    },
+  },
+  {
+    schemaName: 'ErrorResponse',
+    required: ['error'],
+    properties: {
+      error: { type: 'string' },
+      requestId: { type: 'string' },
+    },
+  },
+  {
+    schemaName: 'WebhookConfig',
+    required: [],
+    properties: {
+      url: { type: 'string', format: 'uri' },
+      events: { type: 'array' },
+    },
+  },
+  {
+    schemaName: 'RequestTracing',
+    required: [],
+    properties: {
+      correlationId: { type: 'string', format: 'uuid' },
+      requestId: { type: 'string', format: 'uuid' },
+    },
+  },
+];
+
+const enumConstraints: PropertyConstraint[] = [
+  {
+    label: 'RunRequest.taskMode',
+    schemaName: 'RunRequest',
+    propertyPath: ['taskMode'],
+    expected: { type: 'string', enum: ['patch', 'inspect'] },
+  },
+  {
+    label: 'RunRequest.publishMode',
+    schemaName: 'RunRequest',
+    propertyPath: ['publishMode'],
+    expected: { type: 'string', enum: ['auto', 'none', 'branch', 'pr', 'draft_pr'] },
+  },
+  {
+    label: 'RunRequest.startupCheckMode',
+    schemaName: 'RunRequest',
+    propertyPath: ['startupCheckMode'],
+    expected: { type: 'string', enum: ['boot', 'baseline-validation'] },
+  },
+  {
+    label: 'RunResponse.status',
+    schemaName: 'RunResponse',
+    propertyPath: ['status'],
+    expected: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+  },
+  {
+    label: 'StatusResponse.progress.percentComplete',
+    schemaName: 'StatusResponse',
+    propertyPath: ['progress', 'percentComplete'],
+    expected: { type: 'integer', minimum: 0, maximum: 100 },
+  },
+];
+
+const openApiStructuralSchema = z.object({
+  openapi: z.literal('3.1.0'),
+  info: z.object({
+    title: z.literal('Kaseki Agent API'),
+    version: z.string().min(1),
+    description: z.string().min(1),
+  }).passthrough(),
+  servers: z.array(z.object({
+    url: z.string().min(1),
+    description: z.string().min(1),
+  }).passthrough()).min(1),
+  paths: z.record(z.string().startsWith('/'), z.record(z.unknown())),
+  components: z.object({
+    schemas: z.record(z.record(z.unknown())),
+    securitySchemes: z.object({
+      BearerAuth: z.object({
+        type: z.literal('http'),
+        scheme: z.literal('bearer'),
+      }).passthrough(),
+    }).passthrough(),
+  }).passthrough(),
+  tags: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+  }).passthrough()).min(1),
+});
+
+function getPaths(spec: OpenApiSpec): Record<string, PathItem> {
+  return spec.paths as Record<string, PathItem>;
+}
+
+function getSchemas(spec: OpenApiSpec): Record<string, Schema> {
+  return (spec.components as Record<string, Record<string, Schema>>).schemas;
+}
+
+function getOperation(spec: OpenApiSpec, path: string, method: string): Operation {
+  return getPaths(spec)[path][method];
+}
+
+function getResponses(operation: Operation): Record<string, Record<string, unknown>> {
+  return operation.responses as Record<string, Record<string, unknown>>;
+}
+
+function getResponseCodes(operation: Operation): string[] {
+  return Object.keys(getResponses(operation));
+}
+
+function getJsonResponseSchema(operation: Operation, statusCode: string): Schema | undefined {
+  const response = getResponses(operation)[statusCode];
+  const content = response.content as Record<string, Record<string, unknown>> | undefined;
+  return content?.['application/json']?.schema as Schema | undefined;
+}
+
+function getProperty(schema: Schema, propertyPath: string[]): Schema {
+  return propertyPath.reduce<Schema>((current, segment) => {
+    const properties = current.properties as Record<string, Schema>;
+    return properties[segment];
+  }, schema);
+}
+
+function expectErrorResponseSchema(schema: Schema | undefined): void {
+  expect(schema).toMatchObject({
+    type: 'object',
+    required: ['error'],
+    properties: expect.objectContaining({
+      error: expect.objectContaining({ type: 'string' }),
+    }),
+  });
+}
+
 describe('OpenAPI Spec Generator', () => {
-  let spec: Record<string, unknown>;
+  let spec: OpenApiSpec;
 
   beforeAll(() => {
     spec = generateOpenAPISpec();
   });
 
-  describe('Basic Structure', () => {
-    test('generates valid OpenAPI 3.1 spec', () => {
-      expect(spec).toBeDefined();
-      expect(spec.openapi).toBe('3.1.0');
-    });
+  describe('OpenAPI structural validation', () => {
+    test('generates a structurally valid OpenAPI 3.1 document', () => {
+      const parsedSpec = openApiStructuralSchema.parse(spec);
+      const paths = parsedSpec.paths as Record<string, Record<string, unknown>>;
 
-    test('includes required info section', () => {
-      expect(spec.info).toBeDefined();
-      expect((spec.info as Record<string, unknown>).title).toBe('Kaseki Agent API');
-      expect((spec.info as Record<string, unknown>).version).toBeDefined();
-      expect((spec.info as Record<string, unknown>).description).toBeDefined();
-    });
-
-    test('includes servers array', () => {
-      expect(spec.servers).toBeDefined();
-      expect(Array.isArray(spec.servers)).toBe(true);
-      expect((spec.servers as Array<unknown>).length).toBeGreaterThan(0);
-    });
-
-    test('includes paths object', () => {
-      expect(spec.paths).toBeDefined();
-      expect(typeof spec.paths).toBe('object');
-    });
-
-    test('includes components section', () => {
-      expect(spec.components).toBeDefined();
-      expect((spec.components as Record<string, unknown>).schemas).toBeDefined();
-      expect((spec.components as Record<string, unknown>).securitySchemes).toBeDefined();
-    });
-
-    test('includes tags array', () => {
-      expect(spec.tags).toBeDefined();
-      expect(Array.isArray(spec.tags)).toBe(true);
-      expect((spec.tags as Array<unknown>).length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Paths and Endpoints', () => {
-    test('includes health endpoint', () => {
-      expect((spec.paths as Record<string, unknown>)['/health']).toBeDefined();
-    });
-
-    test('includes ready endpoint', () => {
-      expect((spec.paths as Record<string, unknown>)['/ready']).toBeDefined();
-    });
-
-    test('includes metrics endpoint', () => {
-      expect((spec.paths as Record<string, unknown>)['/api/metrics']).toBeDefined();
-    });
-
-    test('includes run management endpoints', () => {
-      const runEndpoints = ['/api/runs', '/api/runs/{id}/status', '/api/runs/{id}/cancel'];
-      runEndpoints.forEach((endpoint) => {
-        expect((spec.paths as Record<string, unknown>)[endpoint]).toBeDefined();
-      });
-    });
-
-    test('includes artifact endpoints', () => {
-      const artifactEndpoints = ['/api/runs/{id}/artifacts', '/api/results/{id}/{file}'];
-      artifactEndpoints.forEach((endpoint) => {
-        expect((spec.paths as Record<string, unknown>)[endpoint]).toBeDefined();
-      });
-    });
-
-    test('includes webhook endpoint', () => {
-      expect((spec.paths as Record<string, unknown>)['/api/webhooks/test']).toBeDefined();
-    });
-
-    test('all paths have operations defined', () => {
-      const paths = spec.paths as Record<string, Record<string, unknown>>;
       assertAllPathsHaveOperations(paths);
-    });
-
-    test('all endpoints have descriptions', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      Object.values(paths).forEach((pathItem) => {
-        Object.values(pathItem).forEach((operation) => {
-          if (typeof operation === 'object' && operation !== null && 'description' in operation) {
-            expect(operation.description).toBeTruthy();
-          }
-        });
-      });
-    });
-
-    test('all endpoints have responses defined', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      forEachPathOperation(paths, (_, method, operation) => {
-        if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-          expect((operation as Record<string, unknown>).responses).toBeDefined();
+      forEachPathOperation(paths, (path, method, operation) => {
+        if (!httpMethods.includes(method as (typeof httpMethods)[number])) {
+          return;
         }
+
+        expect(path).toMatch(/^\//);
+        expect(operation).toMatchObject({
+          operationId: expect.any(String),
+          description: expect.any(String),
+          responses: expect.any(Object),
+        });
+        expect(Object.keys(operation.responses as Record<string, unknown>)).toEqual(
+          expect.arrayContaining([expect.stringMatching(/^(?:[1-5]\d{2}|default)$/)]),
+        );
       });
     });
   });
 
-  describe('Authentication', () => {
-    test('defines BearerAuth security scheme', () => {
-      const securitySchemes = (spec.components as Record<string, Record<string, unknown>>).securitySchemes;
-      expect(securitySchemes.BearerAuth).toBeDefined();
-      expect((securitySchemes.BearerAuth as Record<string, unknown>).type).toBe('http');
-      expect((securitySchemes.BearerAuth as Record<string, unknown>).scheme).toBe('bearer');
+  describe('Endpoint contracts', () => {
+    test.each(expectedEndpoints)('$method $path has expected operation, auth, and response semantics', (contract) => {
+      const operation = getOperation(spec, contract.path, contract.method);
+      const responseCodes = getResponseCodes(operation);
+      const security = operation.security as Array<Record<string, unknown>> | undefined;
+
+      expect(operation.operationId).toBe(contract.operationId);
+      expect(responseCodes).toEqual(expect.arrayContaining(contract.successCodes));
+
+      if (contract.auth === 'public') {
+        expect(security ?? []).toHaveLength(0);
+        expect(responseCodes).not.toContain('401');
+      } else {
+        expect(security).toEqual([{ BearerAuth: [] }]);
+        expect(responseCodes).toContain('401');
+      }
+
+      (contract.errorCodes ?? []).forEach((statusCode) => {
+        expect(responseCodes).toContain(statusCode);
+        expectErrorResponseSchema(getJsonResponseSchema(operation, statusCode));
+      });
+
+      const documentedPathParams = ((operation.parameters as Array<Record<string, unknown>> | undefined) ?? [])
+        .filter((parameter) => parameter.in === 'path')
+        .map((parameter) => parameter.name);
+      const templatedPathParams = (contract.path.match(/\{([^}]+)\}/g) ?? []).map((parameter) => parameter.slice(1, -1));
+      expect(documentedPathParams).toEqual(contract.pathParams ?? templatedPathParams);
     });
 
-    test('public endpoints do not require authentication', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const publicEndpoints = ['/health', '/ready'];
+    test('operationIds are unique and only documented path/method pairs are emitted', () => {
+      const paths = getPaths(spec);
+      const expectedPairs = new Set(expectedEndpoints.map(({ path, method }) => `${method.toUpperCase()} ${path}`));
+      const seenOperationIds = new Map<string, string>();
+      const duplicateOperationIds: string[] = [];
+      const emittedPairs: string[] = [];
 
-      publicEndpoints.forEach((endpoint) => {
-        const pathItem = paths[endpoint];
-        Object.values(pathItem).forEach((operation) => {
-          if (typeof operation === 'object' && operation !== null && 'security' in operation) {
-            // Public endpoints should not have security requirement or have empty security array
-            const security = (operation as Record<string, unknown>).security;
-            if (security) {
-              expect(Array.isArray(security)).toBe(true);
-            }
-          }
-        });
+      forEachPathOperation(paths, (path, method, operation) => {
+        if (!httpMethods.includes(method as (typeof httpMethods)[number])) {
+          return;
+        }
+
+        const pair = `${method.toUpperCase()} ${path}`;
+        const operationId = operation.operationId as string;
+        emittedPairs.push(pair);
+
+        if (seenOperationIds.has(operationId)) {
+          duplicateOperationIds.push(`${operationId}: ${seenOperationIds.get(operationId)} and ${pair}`);
+        }
+        seenOperationIds.set(operationId, pair);
+      });
+
+      expect(duplicateOperationIds).toEqual([]);
+      expect(emittedPairs.sort()).toEqual([...expectedPairs].sort());
+    });
+
+    test('path templates and documented path parameters stay consistent for every operation', () => {
+      forEachPathOperation(getPaths(spec), (path, method, operation) => {
+        if (!httpMethods.includes(method as (typeof httpMethods)[number])) {
+          return;
+        }
+
+        const templatedPathParams = (path.match(/\{([^}]+)\}/g) ?? []).map((parameter) => parameter.slice(1, -1));
+        const documentedPathParams = ((operation.parameters as Array<Record<string, unknown>> | undefined) ?? [])
+          .filter((parameter) => parameter.in === 'path')
+          .map((parameter) => parameter.name);
+
+        expect(documentedPathParams.sort()).toEqual(templatedPathParams.sort());
+      });
+    });
+  });
+
+  describe('Schema contracts', () => {
+    test.each(expectedSchemas)('$schemaName defines required fields and high-value properties', (contract) => {
+      const schema = getSchemas(spec)[contract.schemaName];
+      const properties = schema.properties as Record<string, Schema>;
+
+      expect(schema.type).toBe('object');
+      expect(schema.required ?? []).toEqual(contract.required);
+
+      Object.entries(contract.properties).forEach(([propertyName, expected]) => {
+        expect(properties[propertyName]).toMatchObject(expected);
       });
     });
 
-    test('protected endpoints require bearer auth', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const protectedEndpoints = ['/api/runs', '/api/metrics', '/api/artifacts'];
+    test.each(enumConstraints)('$label enforces expected enum/range constraints', (contract) => {
+      const schema = getSchemas(spec)[contract.schemaName];
+      expect(getProperty(schema, contract.propertyPath)).toMatchObject(contract.expected);
+    });
 
-      protectedEndpoints.forEach((endpoint) => {
-        const pathItem = paths[endpoint];
-        if (pathItem) {
-          Object.values(pathItem).forEach((operation) => {
-            if (typeof operation === 'object' && operation !== null && 'security' in operation) {
-              const security = (operation as Record<string, unknown>).security;
-              // Protected endpoints should have security defined
-              if (security) {
-                expect(Array.isArray(security)).toBe(true);
-              }
-            }
+    test('array schemas preserve item types for generated clients', () => {
+      const runRequest = getSchemas(spec).RunRequest;
+      expect(getProperty(runRequest, ['changedFilesAllowlist']).items).toMatchObject({ type: 'string' });
+      expect(getProperty(runRequest, ['validationCommands']).items).toMatchObject({ type: 'string' });
+
+      const webhookConfig = getSchemas(spec).WebhookConfig;
+      expect(getProperty(webhookConfig, ['events']).items).toMatchObject({ type: 'string' });
+    });
+
+    test('all required schema fields are present in their schema properties', () => {
+      Object.entries(getSchemas(spec)).forEach(([schemaName, schema]) => {
+        const required = (schema.required as string[] | undefined) ?? [];
+        const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
+        const missingRequiredFields = required.filter((field) => !(field in properties));
+
+        expect({ schemaName, missingRequiredFields }).toEqual({
+          schemaName,
+          missingRequiredFields: [],
+        });
+      });
+    });
+  });
+
+  describe('Request and response payload semantics', () => {
+    test.each([
+      ['/api/runs', 'post', 'RunRequest'],
+      ['/api/validate', 'post', 'RunRequest'],
+      ['/api/webhooks/test', 'post', undefined],
+    ] as Array<[string, string, string | undefined]>)('%s %s request body contract is JSON and required', (path, method, schemaName) => {
+      const operation = getOperation(spec, path, method);
+      const requestBody = operation.requestBody as Record<string, unknown>;
+      const content = requestBody.content as Record<string, Record<string, unknown>>;
+      const jsonSchema = content['application/json'].schema as Schema;
+
+      expect(requestBody.required).toBe(true);
+      if (schemaName) {
+        expect(jsonSchema).toEqual(getSchemas(spec)[schemaName]);
+      } else {
+        expect(jsonSchema).toMatchObject({ type: 'object', required: ['url'] });
+        expect(getProperty(jsonSchema, ['url'])).toMatchObject({ type: 'string', format: 'uri' });
+      }
+    });
+
+    test('protected error responses use the shared ErrorResponse contract', () => {
+      expectedEndpoints
+        .filter((contract) => contract.auth === 'protected')
+        .forEach((contract) => {
+          const operation = getOperation(spec, contract.path, contract.method);
+          (contract.errorCodes ?? ['401']).forEach((statusCode) => {
+            expectErrorResponseSchema(getJsonResponseSchema(operation, statusCode));
           });
-        }
-      });
-    });
-  });
-
-  describe('Schemas', () => {
-    test('includes all required schemas', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const requiredSchemas = ['RunRequest', 'RunResponse', 'StatusResponse', 'ErrorResponse'];
-
-      requiredSchemas.forEach((schema) => {
-        expect(schemas[schema]).toBeDefined();
-      });
-    });
-
-    test('RunRequest schema has required properties', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, unknown>;
-
-      expect(runRequest.type).toBe('object');
-      expect(runRequest.properties).toBeDefined();
-      const props = runRequest.properties as Record<string, unknown>;
-      expect(props.repoUrl).toBeDefined();
-    });
-
-    test('RunResponse schema is properly defined', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, unknown>;
-
-      expect(runResponse.type).toBe('object');
-      expect(runResponse.properties).toBeDefined();
-      const props = runResponse.properties as Record<string, unknown>;
-      expect(props.id).toBeDefined();
-      expect(props.status).toBeDefined();
-      expect(props.createdAt).toBeDefined();
-    });
-
-    test('ErrorResponse schema is properly defined', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const errorResponse = schemas.ErrorResponse as Record<string, unknown>;
-
-      expect(errorResponse.type).toBe('object');
-      expect(errorResponse.properties).toBeDefined();
-      const props = errorResponse.properties as Record<string, unknown>;
-      expect(props.error).toBeDefined();
-    });
-  });
-
-  describe('Response Codes', () => {
-    test('successful operations include 200 or 202 responses', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      forEachPathOperation(paths, (_, method, operation) => {
-        if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-          const responses = (operation as Record<string, unknown>).responses;
-          if (responses) {
-            const responseCodes = Object.keys(responses as Record<string, unknown>);
-            // Most operations should have at least one 2xx response
-            const has2xx = responseCodes.some((code) => code.startsWith('2'));
-            expect(has2xx || responseCodes.includes('default')).toBe(true);
-          }
-        }
-      });
-    });
-
-    test('protected endpoints include 401 unauthorized response', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const endpoints = ['/api/runs', '/api/metrics'];
-
-      endpoints.forEach((endpoint) => {
-        const pathItem = paths[endpoint];
-        if (pathItem) {
-          forEachPathOperation(pathItem, (_, method, operation) => {
-            if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-              const responses = (operation as Record<string, unknown>).responses;
-              if (responses) {
-                const responseCodes = Object.keys(responses as Record<string, unknown>);
-                expect(responseCodes).toContain('401');
-              }
-            }
-          });
-        }
-      });
-    });
-
-    test('bad request endpoints include 400 response', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const postEndpoints = ['/api/runs', '/api/validate'];
-
-      postEndpoints.forEach((endpoint) => {
-        const pathItem = paths[endpoint];
-        if (pathItem && pathItem.post) {
-          const responses = (pathItem.post as Record<string, unknown>).responses;
-          if (responses) {
-            const responseCodes = Object.keys(responses as Record<string, unknown>);
-            expect(responseCodes).toContain('400');
-          }
-        }
-      });
-    });
-  });
-
-  describe('Tags', () => {
-    test('all tag names are referenced in operations', () => {
-      const tags = spec.tags as Array<Record<string, unknown>>;
-      const tagNames = tags.map((tag) => tag.name as string);
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      const usedTags = new Set<string>();
-      forEachPathOperation(paths, (_, __, operation) => {
-        if (typeof operation === 'object' && operation !== null && 'tags' in operation) {
-          const operationTags = (operation as Record<string, unknown>).tags;
-          if (Array.isArray(operationTags)) {
-            operationTags.forEach((tag) => usedTags.add(tag as string));
-          }
-        }
-      });
-
-      usedTags.forEach((tag) => {
-        expect(tagNames).toContain(tag);
-      });
-    });
-  });
-
-  describe('Content', () => {
-    test('spec is serializable to JSON', () => {
-      expect(() => {
-        JSON.stringify(spec);
-      }).not.toThrow();
-    });
-
-    test('JSON serialization produces valid string', () => {
-      const json = JSON.stringify(spec);
-      expect(typeof json).toBe('string');
-      expect(json.length).toBeGreaterThan(100);
-
-      // Should be parseable back
-      const parsed = JSON.parse(json);
-      expect(parsed.openapi).toBe('3.1.0');
-    });
-
-    test('has reasonable number of endpoints', () => {
-      const paths = spec.paths as Record<string, unknown>;
-      const endpointCount = Object.keys(paths).length;
-      expect(endpointCount).toBeGreaterThanOrEqual(14); // At least 14 endpoints
-      expect(endpointCount).toBeLessThan(100); // But not too many
-    });
-  });
-
-  describe('Path and Payload Validation', () => {
-    test('all path parameters are documented', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([pathName, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const op = operation as Record<string, unknown>;
-            const parameters = op.parameters as Array<Record<string, unknown>> | undefined;
-
-            // Extract path parameters from the path template (e.g., {id}, {file})
-            const pathParamNames = (pathName.match(/\{([^}]+)\}/g) || []).map(p => p.slice(1, -1));
-
-            if (pathParamNames.length > 0 && parameters) {
-              const documentedParams = parameters.map(p => p.name as string);
-              pathParamNames.forEach((paramName) => {
-                expect(documentedParams).toContain(paramName);
-              });
-            }
-          }
         });
-      });
     });
 
-    test('POST/PUT operations with request body have requestBody defined', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const methodsWithBody = ['post', 'put'];
-
-      forEachPathOperation(paths, (_, method, operation) => {
-        if (methodsWithBody.includes(method)) {
-          // Methods that modify state should have a requestBody or be idempotent
-          if (method === 'post' && !('requestBody' in operation)) {
-            // Allow some POST endpoints without bodies (e.g., cancel)
-            const operationId = operation.operationId as string | undefined;
-            if (operationId && !operationId.includes('cancel') && !operationId.includes('shutdown')) {
-              expect(operation.requestBody).toBeDefined();
-            }
-          }
-        }
-      });
-    });
-
-    test('request body schemas reference defined schemas', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const schemaNames = Object.keys(schemas);
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([, operation]) => {
-          if (typeof operation === 'object' && operation !== null && 'requestBody' in operation) {
-            const rb = operation as Record<string, unknown>;
-            const requestBody = rb.requestBody as Record<string, Record<string, Record<string, unknown>>> | undefined;
-
-            if (requestBody && requestBody['content']) {
-              Object.values(requestBody['content']).forEach((content) => {
-                const schema = content.schema as Record<string, unknown> | undefined;
-                if (schema && '$ref' in schema) {
-                  const ref = (schema.$ref as string).split('/').pop();
-                  if (ref && !ref.startsWith('object')) {
-                    expect(schemaNames).toContain(ref);
-                  }
-                }
-              });
-            }
-          }
-        });
-      });
-    });
-
-    test('response schemas reference defined schemas', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const schemaNames = Object.keys(schemas);
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([, operation]) => {
-          if (typeof operation === 'object' && operation !== null && 'responses' in operation) {
-            const responses = (operation as Record<string, unknown>).responses as Record<string, Record<string, Record<string, unknown>>> | undefined;
-
-            if (responses) {
-              Object.values(responses).forEach((response) => {
-                const resp = response as Record<string, unknown>;
-                if (resp.content) {
-                  const content = resp.content as Record<string, Record<string, unknown>>;
-                  Object.values(content).forEach((contentType) => {
-                    const schema = (contentType as Record<string, unknown>).schema as Record<string, unknown> | undefined;
-                    if (schema && '$ref' in schema) {
-                      const ref = (schema.$ref as string).split('/').pop();
-                      if (ref && !ref.startsWith('object')) {
-                        expect(schemaNames).toContain(ref);
-                      }
-                    }
-                  });
-                }
-              });
-            }
-          }
-        });
-      });
-    });
-  });
-
-  describe('Error Response Contract', () => {
-    test('all 4xx/5xx responses include ErrorResponse schema', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const responses = (operation as Record<string, unknown>).responses as Record<string, Record<string, unknown>> | undefined;
-
-            if (responses) {
-              Object.entries(responses).forEach(([statusCode, response]) => {
-                if ((statusCode.startsWith('4') || statusCode.startsWith('5')) && statusCode !== 'default') {
-                  if (response.content) {
-                    const jsonContent = (response.content as Record<string, Record<string, unknown>>) ['application/json'];
-                    if (jsonContent && jsonContent.schema) {
-                      const schema = jsonContent.schema as Record<string, unknown>;
-                      if ('$ref' in schema) {
-                        const ref = schema.$ref as string;
-                        expect(ref).toContain('ErrorResponse');
-                      }
-                    }
-                  }
-                }
-              });
-            }
-          }
-        });
-      });
-    });
-
-    test('all protected endpoints document 401 and 403 responses', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const protectedEndpoints = ['/api/runs', '/api/metrics', '/api/runs/{id}/status', '/api/runs/{id}/cancel'];
-
-      protectedEndpoints.forEach((endpoint) => {
-        const pathItem = paths[endpoint];
-        if (pathItem) {
-          Object.entries(pathItem).forEach(([method, operation]) => {
-            if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-              const op = operation as Record<string, unknown>;
-              const security = op.security as Array<Record<string, unknown>> | undefined;
-
-              // If endpoint has security requirement, it should document 401
-              if (security && security.length > 0) {
-                const responses = op.responses as Record<string, unknown> | undefined;
-                if (responses && ('401' in responses || 'default' in responses)) {
-                  expect(responses['401'] || responses['default']).toBeDefined();
-                }
-              }
-            }
-          });
-        }
-      });
-    });
-
-    test('delete/destructive endpoints document error responses', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        ['delete', 'put'].forEach((method) => {
-          if (method in pathItem && typeof pathItem[method] === 'object') {
-            const operation = pathItem[method] as Record<string, unknown>;
-            const responses = operation.responses as Record<string, unknown> | undefined;
-
-            if (responses) {
-              // Destructive operations should have 4xx error responses
-              const hasErrorResponse = ['400', '401', '404', '409', '422'].some((code) => code in responses);
-              expect(hasErrorResponse || responses['default']).toBeTruthy();
-            }
-          }
-        });
-      });
-    });
-
-    test('documented error codes are consistent across endpoints', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const errorCodesByType = new Map<string, Set<string>>();
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
-
-            if (responses) {
-              const codes = Object.keys(responses).filter((code) => code.match(/^[45]\d{2}$/));
-              const endpointType = method.toUpperCase();
-
-              if (!errorCodesByType.has(endpointType)) {
-                errorCodesByType.set(endpointType, new Set());
-              }
-              codes.forEach((code) => {
-                errorCodesByType.get(endpointType)!.add(code);
-              });
-            }
-          }
-        });
+    test('response schemas preserve public API status enums', () => {
+      const runArtifacts = getJsonResponseSchema(getOperation(spec, '/api/runs/{id}/artifacts', 'get'), '200');
+      expect(getProperty(runArtifacts as Schema, ['runStatus'])).toMatchObject({
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
       });
 
-      // Check that similar operations use consistent error codes
-      // (e.g., all GET endpoints should document similar error patterns)
-      expect(errorCodesByType.size).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Request Validation Constraints', () => {
-    test('RunRequest repoUrl property has validation constraints', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const repoUrl = props.repoUrl as Record<string, unknown>;
-
-      // Should have string type and format validations
-      expect(repoUrl.type).toBe('string');
-      expect(repoUrl.format || repoUrl.pattern).toBeDefined(); // Either format:uri or a pattern
-    });
-
-    test('RunRequest timeoutSeconds has min/max constraints', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const timeout = props.timeoutSeconds as Record<string, unknown>;
-
-      // Should have numeric type
-      expect(timeout.type).toBe('integer');
-      // Should document min/max or constraints in description
-      expect((timeout.minimum || timeout.description) !== undefined).toBe(true);
-    });
-
-    test('enum fields constrain allowed values', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-
-      // Check for taskMode or similar enum fields
-      const taskMode = props.taskMode as Record<string, unknown>;
-      if (taskMode) {
-        expect(taskMode.enum || taskMode.allOf).toBeDefined();
-      }
-    });
-  });
-
-  describe('Response Structure', () => {
-    test('error responses have consistent structure', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
-      const props = errorResponse.properties as Record<string, unknown>;
-
-      expect(props.error).toBeDefined(); // error message
-      expect(Object.keys(props).length).toBeGreaterThan(0);
-    });
-
-    test('error responses include requestId for tracing', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
-      const props = errorResponse.properties as Record<string, unknown>;
-
-      // Should have some form of request ID or correlation ID
-      const hasTracingField = Object.keys(props).some(
-        (key) => key.includes('request') || key.includes('correlation') || key.includes('id')
-      );
-      expect(hasTracingField || props.requestId !== undefined).toBe(true);
-    });
-
-    test('successful responses include timestamp', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      Object.keys(schemas).forEach((schemaName) => {
-        if (['Response', 'Result', 'Status'].some((suffix) => schemaName.includes(suffix))) {
-          const schema = (schemas[schemaName] as Record<string, Record<string, unknown>>) || {};
-          const props = schema.properties as Record<string, unknown>;
-
-          if (props && Object.keys(props).length > 0) {
-            // Most response schemas should have a timestamp
-            // Verify structure is reasonable
-            expect(props).toBeDefined();
-            expect(Object.keys(props).length).toBeGreaterThan(0);
-          }
-        }
-      });
-    });
-  });
-
-  describe('Content Negotiation', () => {
-    test('responses define content types appropriately', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      let contentTypesFound = 0;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const op = operation as Record<string, unknown>;
-            const responses = op.responses as Record<string, Record<string, unknown>> | undefined;
-
-            if (responses) {
-              Object.values(responses).forEach((response) => {
-                if (response && response.content) {
-                  contentTypesFound++;
-                  const content = response.content as Record<string, unknown>;
-                  // Verify content types are defined and not empty
-                  expect(Object.keys(content).length).toBeGreaterThan(0);
-                }
-              });
-            }
-          }
-        });
-      });
-
-      // Should have found at least some responses with content types
-      expect(contentTypesFound).toBeGreaterThan(0);
-    });
-
-    test('request content type is application/json', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([, operation]) => {
-          if (typeof operation === 'object' && operation !== null && 'requestBody' in operation) {
-            const op = operation as Record<string, unknown>;
-            const rb = op.requestBody as Record<string, Record<string, unknown>> | undefined;
-
-            if (rb && rb.content) {
-              Object.keys(rb.content).forEach((contentType) => {
-                expect(contentType).toContain('application/json');
-              });
-            }
-          }
-        });
-      });
-    });
-  });
-
-  describe('Optional and Required Fields', () => {
-    test('RunRequest marks required fields in spec', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-
-      expect(runRequest.required).toBeDefined();
-      expect(Array.isArray(runRequest.required)).toBe(true);
-
-      // repoUrl should be required
-      const required = runRequest.required as unknown as Array<string>;
-      expect(required).toContain('repoUrl');
-    });
-
-    test('optional fields are not in required array', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const required = (runRequest.required as unknown as Array<string>) || [];
-
-      // taskPrompt, webhookConfig, etc. should not be required
-      expect(required.length).toBeLessThan(Object.keys((runRequest.properties as Record<string, unknown>)).length);
-    });
-  });
-
-  describe('Nested Objects and Complex Types', () => {
-    test('webhookConfig is properly documented', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const webhookConfig = props.webhookConfig as Record<string, unknown>;
-
-      if (webhookConfig) {
-        expect(webhookConfig.type || webhookConfig.$ref || webhookConfig.allOf).toBeDefined();
-      }
-    });
-
-    test('tracing object has proper structure', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const tracing = props.tracing as Record<string, unknown>;
-
-      if (tracing) {
-        expect(tracing.type || tracing.$ref).toBeDefined();
-      }
-    });
-  });
-
-  describe('Endpoint Completeness', () => {
-    test('all Express routes are documented in OpenAPI spec', () => {
-      // This is a meta-test to ensure nothing is missing
-      const paths = spec.paths as Record<string, unknown>;
-      const endpoints = Object.keys(paths);
-
-      // Should have at least the major endpoints
-      const requiredEndpoints = ['/health', '/ready', '/api/runs', '/api/metrics'];
-      requiredEndpoints.forEach((endpoint) => {
-        expect(endpoints).toContain(endpoint);
-      });
-    });
-
-    test('all endpoints have operationId defined for client generation', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const op = operation as Record<string, unknown>;
-            // operationId helps with client generation and documentation
-            if (op.operationId) {
-              expect(typeof op.operationId).toBe('string');
-              expect((op.operationId as string).length).toBeGreaterThan(0);
-            }
-          }
-        });
-      });
-    });
-
-    test('parameter documentation is complete', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const op = operation as Record<string, unknown>;
-            const parameters = op.parameters as Array<Record<string, unknown>> | undefined;
-
-            if (parameters) {
-              parameters.forEach((param) => {
-                expect(param.name).toBeDefined();
-                expect(param.in).toBeDefined();
-                expect(['path', 'query', 'header'].includes(param.in as string)).toBe(true);
-              });
-            }
-          }
-        });
-      });
-    });
-  });
-
-  describe('Request Validation Edge Cases', () => {
-    test('taskPrompt field exists and has correct type', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const taskPrompt = props.taskPrompt as Record<string, unknown>;
-
-      expect(taskPrompt).toBeDefined();
-      expect(taskPrompt.type).toBe('string');
-      expect(taskPrompt.description).toBeDefined();
-    });
-
-    test('repoUrl is required and has URI format validation', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const required = runRequest.required as unknown as Array<string>;
-
-      expect(required).toContain('repoUrl');
-
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const repoUrl = props.repoUrl as Record<string, unknown>;
-      expect(repoUrl.format).toBe('uri');
-    });
-
-    test('maxDiffBytes has integer type and reasonable constraints', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const maxDiffBytes = props.maxDiffBytes as Record<string, unknown>;
-
-      expect(maxDiffBytes.type).toBe('integer');
-      // Should have constraints to prevent unreasonably large values
-      expect(maxDiffBytes.minimum !== undefined || maxDiffBytes.maximum !== undefined || maxDiffBytes.description).toBeDefined();
-    });
-
-    test('timeoutSeconds has integer type with min/max constraints', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const timeout = props.timeoutSeconds as Record<string, unknown>;
-
-      expect(timeout.type).toBe('integer');
-      expect(timeout.minimum).toBeDefined();
-      expect(timeout.maximum).toBeDefined();
-      // Minimum should be reasonable (e.g., at least 60 seconds)
-      expect((timeout.minimum as number) >= 60).toBe(true);
-    });
-
-    test('changedFilesAllowlist has array type with string items', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const allowlist = props.changedFilesAllowlist as Record<string, unknown>;
-
-      expect(allowlist.type).toBe('array');
-      const items = allowlist.items as Record<string, unknown>;
-      expect(items.type).toBe('string');
-    });
-
-    test('validationCommands has array type with string items', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const commands = props.validationCommands as Record<string, unknown>;
-
-      expect(commands.type).toBe('array');
-      const items = commands.items as Record<string, unknown>;
-      expect(items.type).toBe('string');
-    });
-
-    test('taskMode enum is defined and includes valid values', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const taskMode = props.taskMode as Record<string, unknown>;
-
-      expect(taskMode.enum).toBeDefined();
-      const enumValues = taskMode.enum as unknown as Array<string>;
-      expect(enumValues).toContain('patch');
-      expect(enumValues).toContain('inspect');
-    });
-
-    test('publishMode enum is defined with comprehensive publish options', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const publishMode = props.publishMode as Record<string, unknown>;
-
-      expect(publishMode.enum).toBeDefined();
-      const enumValues = publishMode.enum as unknown as Array<string>;
-      expect(enumValues.length).toBeGreaterThan(0);
-      // Should include at least common modes
-      expect(enumValues.some((v) => ['auto', 'none', 'pr', 'branch', 'draft_pr'].includes(v))).toBe(true);
-    });
-
-    test('startupCheck is boolean type when defined', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const startupCheck = props.startupCheck as Record<string, unknown>;
-
-      expect(startupCheck.type).toBe('boolean');
-    });
-
-    test('idempotencyKey has UUID format when present', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const idempotencyKey = props.idempotencyKey as Record<string, unknown>;
-
-      if (idempotencyKey) {
-        expect(idempotencyKey.type).toBe('string');
-        expect(idempotencyKey.format).toBe('uuid');
-      }
-    });
-
-    test('all properties have descriptions', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-
-      Object.entries(props).forEach(([_, propSchema]) => {
-        expect((propSchema as Record<string, unknown>).description).toBeDefined();
-      });
-    });
-  });
-
-  describe('Schema Property Validation', () => {
-    test('RunResponse has all required properties with correct types', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
-      const required = runResponse.required as unknown as Array<string>;
-      const props = runResponse.properties as Record<string, Record<string, unknown>>;
-
-      expect(required).toContain('id');
-      expect(required).toContain('status');
-      expect(required).toContain('createdAt');
-
-      // Verify types
-      expect(props.id.type).toBe('string');
-      expect(props.status.type).toBe('string');
-      expect(props.createdAt.type).toBe('string');
-      expect(props.createdAt.format).toBe('date-time');
-    });
-
-    test('RunResponse status field has valid enum values', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
-      const props = runResponse.properties as Record<string, Record<string, unknown>>;
-      const status = props.status as Record<string, unknown>;
-
-      expect(status.enum).toBeDefined();
-      const statusValues = status.enum as unknown as Array<string>;
-      expect(statusValues).toContain('queued');
-      expect(statusValues).toContain('running');
-      expect(statusValues).toContain('completed');
-      expect(statusValues).toContain('failed');
-    });
-
-    test('StatusResponse has all required properties with correct types', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
-      const required = statusResponse.required as unknown as Array<string>;
-      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
-
-      expect(required).toContain('id');
-      expect(required).toContain('status');
-      expect(required).toContain('elapsedSeconds');
-      expect(required).toContain('timeoutRiskPercent');
-
-      // Verify types
-      expect(props.id.type).toBe('string');
-      expect(props.elapsedSeconds.type).toBe('number');
-      expect(props.timeoutRiskPercent.type).toBe('number');
-    });
-
-    test('StatusResponse progress object has required structure when present', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
-      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
-      const progress = props.progress as Record<string, Record<string, unknown>>;
-
-      if (progress && progress.properties) {
-        const progressProps = progress.properties as Record<string, Record<string, unknown>>;
-        // Progress should have stage information
-        expect(progressProps.stage || progressProps.percentComplete).toBeDefined();
-      }
-    });
-
-    test('StatusResponse percentComplete has min/max constraints', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const statusResponse = schemas.StatusResponse as Record<string, Record<string, unknown>>;
-      const props = statusResponse.properties as Record<string, Record<string, unknown>>;
-      const progress = props.progress as Record<string, Record<string, unknown>>;
-
-      if (progress && progress.properties) {
-        const progressProps = progress.properties as Record<string, Record<string, unknown>>;
-        const percentComplete = progressProps.percentComplete as Record<string, unknown>;
-
-        if (percentComplete) {
-          expect(percentComplete.type).toBe('integer');
-          expect(percentComplete.minimum).toBe(0);
-          expect(percentComplete.maximum).toBe(100);
-        }
-      }
-    });
-
-    test('ErrorResponse has required error field', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const errorResponse = schemas.ErrorResponse as Record<string, Record<string, unknown>>;
-      const required = errorResponse.required as unknown as Array<string>;
-
-      expect(required).toContain('error');
-    });
-
-    test('all date-time fields use proper format constraint', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      Object.entries(schemas).forEach(([, schema]) => {
-        const schemaObj = schema as Record<string, Record<string, unknown>>;
-        const props = schemaObj.properties as Record<string, Record<string, unknown>>;
-
-        Object.entries(props || {}).forEach(([propName, propSchema]) => {
-          if (
-            propName.includes('At') ||
-            propName.includes('Timestamp') ||
-            propName.includes('created') ||
-            propName.includes('updated')
-          ) {
-            expect((propSchema as Record<string, unknown>).format).toBe('date-time');
-          }
-        });
-      });
-    });
-
-    test('UUID fields use proper format constraint when defined', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      // Check for idempotencyKey specifically, which should have UUID format
-      const runRequest = schemas.RunRequest as Record<string, Record<string, unknown>>;
-      const props = runRequest.properties as Record<string, Record<string, unknown>>;
-      const idempotencyKey = props.idempotencyKey as Record<string, unknown>;
-
-      if (idempotencyKey && idempotencyKey.type === 'string') {
-        expect(idempotencyKey.format).toBe('uuid');
-      }
-    });
-
-    test('RunResponse completedAt is optional and date-time format', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
-      const props = runResponse.properties as Record<string, Record<string, unknown>>;
-      const completedAt = props.completedAt as Record<string, unknown>;
-
-      if (completedAt) {
-        expect(completedAt.type).toBe('string');
-        expect(completedAt.format).toBe('date-time');
-      }
-    });
-
-    test('RunResponse exitCode is integer type when present', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
-      const props = runResponse.properties as Record<string, Record<string, unknown>>;
-      const exitCode = props.exitCode as Record<string, unknown>;
-
-      if (exitCode) {
-        expect(exitCode.type).toBe('integer');
-      }
-    });
-
-    test('RunResponse error field is string when present', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-      const runResponse = schemas.RunResponse as Record<string, Record<string, unknown>>;
-      const props = runResponse.properties as Record<string, Record<string, unknown>>;
-      const error = props.error as Record<string, unknown>;
-
-      if (error) {
-        expect(error.type).toBe('string');
-      }
-    });
-  });
-
-  describe('Advanced Error Response Validation', () => {
-    test('all 5xx responses indicate server error with ErrorResponse', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      let found5xx = false;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
-
-            if (responses) {
-              Object.entries(responses).forEach(([statusCode]) => {
-                if (statusCode.startsWith('5')) {
-                  found5xx = true;
-                  const response = (responses as Record<string, Record<string, unknown>>)[statusCode];
-                  if (response.content) {
-                    const jsonContent = (response.content as Record<string, Record<string, unknown>>)['application/json'];
-                    if (jsonContent && jsonContent.schema) {
-                      const schema = jsonContent.schema as Record<string, unknown>;
-                      // 5xx errors should reference ErrorResponse
-                      if ('$ref' in schema) {
-                        expect((schema.$ref as string).includes('ErrorResponse')).toBe(true);
-                      }
-                    }
-                  }
-                }
-              });
-            }
-          }
-        });
-      });
-
-      // If no 5xx responses found, that's fine (not all endpoints may have them documented)
-      expect(typeof found5xx).toBe('boolean');
-    });
-
-    test('protected endpoints document complete authentication failure scenarios', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const op = operation as Record<string, unknown>;
-            const security = op.security as Array<Record<string, unknown>> | undefined;
-
-            // If endpoint requires security
-            if (security && Array.isArray(security) && security.length > 0) {
-              const responses = op.responses as Record<string, unknown> | undefined;
-              if (responses) {
-                // Should have 401 for invalid/missing token
-                expect('401' in responses || 'default' in responses).toBe(true);
-              }
-            }
-          }
-        });
-      });
-    });
-
-    test('error response examples are valid JSON', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      Object.entries(paths).forEach(([, pathItem]) => {
-        Object.entries(pathItem).forEach(([method, operation]) => {
-          if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-            const responses = (operation as Record<string, unknown>).responses as Record<string, unknown> | undefined;
-
-            if (responses) {
-              Object.entries(responses).forEach(([statusCode, response]) => {
-                if (statusCode.startsWith('4') || statusCode.startsWith('5')) {
-                  const resp = response as Record<string, Record<string, Record<string, unknown>>>;
-                  if (resp.content && resp.content['application/json'] && resp.content['application/json'].example) {
-                    // If example is provided, it should be valid
-                    expect(typeof resp.content['application/json'].example).not.toBe('undefined');
-                  }
-                }
-              });
-            }
-          }
-        });
-      });
-    });
-  });
-
-  describe('Error Handling and Edge Cases', () => {
-    test('spec remains valid even with empty paths', () => {
-      // This tests the resilience of the spec structure
-      const testSpec = generateOpenAPISpec();
-      expect(testSpec.openapi).toBe('3.1.0');
-      expect(testSpec.info).toBeDefined();
-      expect(testSpec.components).toBeDefined();
-    });
-
-    test('all response objects have defined content or description', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-
-      forEachPathOperation(paths, (_, method, operation) => {
-        if (method !== 'parameters' && typeof operation === 'object' && operation !== null) {
-          const responses = (operation as Record<string, unknown>).responses as Record<string, Record<string, unknown>> | undefined;
-
-          if (responses) {
-            Object.values(responses).forEach((response) => {
-              const resp = response as Record<string, unknown>;
-              // Each response should either have content or description
-              expect(resp.content || resp.description).toBeTruthy();
-            });
-          }
-        }
-      });
-    });
-
-    test('all schema properties with format have valid type pairs', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      Object.values(schemas).forEach((schema) => {
-        const schemaObj = schema as Record<string, unknown>;
-        if (schemaObj.properties) {
-          const properties = schemaObj.properties as Record<string, Record<string, unknown>>;
-
-          Object.values(properties).forEach((prop) => {
-            // If a property has a format, it should have a type
-            if (prop.format) {
-              expect(prop.type).toBeTruthy();
-            }
-
-            // Valid type-format combinations
-            const validPairs = [
-              ['string', 'date'],
-              ['string', 'date-time'],
-              ['string', 'uuid'],
-              ['string', 'email'],
-              ['number', 'double'],
-              ['number', 'float'],
-              ['integer', 'int32'],
-              ['integer', 'int64'],
-            ];
-
-            if (prop.format) {
-              const pair = [prop.type, prop.format];
-              const isValid = validPairs.some((v) => JSON.stringify(v) === JSON.stringify(pair));
-              expect(isValid || prop.type === 'string').toBe(true);
-            }
-          });
-        }
-      });
-    });
-
-    test('all security requirements reference defined schemes', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const securitySchemes = (spec.components as Record<string, Record<string, unknown>>).securitySchemes;
-      const schemeNames = Object.keys(securitySchemes);
-
-      forEachPathOperation(paths, (_, __, operation) => {
-        if (typeof operation === 'object' && operation !== null && 'security' in operation) {
-          const security = (operation as Record<string, unknown>).security as Array<Record<string, unknown>> | undefined;
-
-          if (security && Array.isArray(security)) {
-            security.forEach((req) => {
-              if (typeof req === 'object' && req !== null) {
-                Object.keys(req).forEach((schemeName) => {
-                  expect(schemeNames).toContain(schemeName);
-                });
-              }
-            });
-          }
-        }
-      });
-    });
-
-    test('no circular schema references', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      const checkCircular = (schema: Record<string, unknown>, visited = new Set<string>()): boolean => {
-        if (!schema || typeof schema !== 'object') {
-          return false;
-        }
-
-        if ('$ref' in schema) {
-          const ref = (schema.$ref as string).split('/').pop() || '';
-          if (visited.has(ref)) {
-            return true; // Circular reference found
-          }
-          visited.add(ref);
-          const refSchema = schemas[ref] as Record<string, unknown> | undefined;
-          if (refSchema) {
-            return checkCircular(refSchema, visited);
-          }
-        }
-
-        return false;
-      };
-
-      Object.entries(schemas).forEach(([_, schema]) => {
-        const schemaObj = schema as Record<string, unknown>;
-        const isCircular = checkCircular(schemaObj);
-        if (isCircular) {
-          // Some circular refs are acceptable (e.g., for extensibility)
-          // but we should at least not infinitely recurse
-          expect(true).toBe(true);
-        }
-      });
-    });
-
-    test('all operation IDs are unique', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const operationIds = new Set<string>();
-      const duplicates: string[] = [];
-
-      forEachPathOperation(paths, (_, __, operation) => {
-        if (typeof operation === 'object' && operation !== null && 'operationId' in operation) {
-          const opId = (operation as Record<string, unknown>).operationId as string;
-          if (operationIds.has(opId)) {
-            duplicates.push(opId);
-          }
-          operationIds.add(opId);
-        }
-      });
-
-      expect(duplicates.length).toBe(0);
-    });
-
-    test('all required fields in schemas are defined in properties', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      Object.values(schemas).forEach((schema) => {
-        const schemaObj = schema as Record<string, unknown>;
-        if (schemaObj.required) {
-          const required = schemaObj.required as Array<string>;
-          const properties = (schemaObj.properties as Record<string, unknown>) || {};
-
-          required.forEach((requiredField) => {
-            expect(properties[requiredField]).toBeDefined();
-          });
-        }
-      });
-    });
-
-    test('all parameter types are valid OpenAPI types', () => {
-      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
-      const validTypes = ['string', 'number', 'integer', 'boolean', 'array', 'object'];
-
-      forEachPathOperation(paths, (_, __, operation) => {
-        if (typeof operation === 'object' && operation !== null && 'parameters' in operation) {
-          const parameters = (operation as Record<string, unknown>).parameters as Array<Record<string, unknown>> | undefined;
-
-          if (Array.isArray(parameters)) {
-            parameters.forEach((param) => {
-              if (param.schema) {
-                const schema = param.schema as Record<string, unknown>;
-                if (schema.type) {
-                  expect(validTypes).toContain(schema.type);
-                }
-              }
-            });
-          }
-        }
-      });
-    });
-
-    test('all example values match their schema types', () => {
-      const schemas = (spec.components as Record<string, Record<string, unknown>>).schemas;
-
-      Object.values(schemas).forEach((schema) => {
-        const schemaObj = schema as Record<string, unknown>;
-        if (schemaObj.example) {
-          const example = schemaObj.example;
-          const schemaType = schemaObj.type as string;
-
-          // Basic type validation of examples
-          if (schemaType === 'string') {
-            expect(typeof example).toBe('string');
-          } else if (schemaType === 'integer' || schemaType === 'number') {
-            expect(typeof example).toBe('number');
-          } else if (schemaType === 'boolean') {
-            expect(typeof example).toBe('boolean');
-          } else if (schemaType === 'array') {
-            expect(Array.isArray(example)).toBe(true);
-          }
-        }
+      const runAnalysis = getJsonResponseSchema(getOperation(spec, '/api/runs/{id}/analysis', 'get'), '200');
+      expect(getProperty(runAnalysis as Schema, ['status'])).toMatchObject({
+        type: 'string',
+        enum: ['queued', 'running', 'completed', 'failed'],
       });
     });
   });
