@@ -4652,7 +4652,7 @@ EOF
       # curl command itself failed (network error, timeout, etc.)
       printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a /results/git-push.log >&2
       GITHUB_API_HTTP_STATUS="0"
-      if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$max_retries" ]; then
+      if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
         continue
