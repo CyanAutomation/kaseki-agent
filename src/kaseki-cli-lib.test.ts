@@ -539,14 +539,206 @@ kaseki-10-suffix
     expect(errors.length).toBe(0); // Should not scan when condition is false
   });
 
-  test('ERROR_PATTERNS should be centralized and accessible', () => {
-    expect(kasekiCli.ERROR_PATTERNS).toBeDefined();
-    expect(kasekiCli.ERROR_PATTERNS.stderr).toBeDefined();
-    expect(kasekiCli.ERROR_PATTERNS.validation).toBeDefined();
-    expect(kasekiCli.ERROR_PATTERNS.stderrExclude).toBeDefined();
+  test.each([
+    {
+      label: 'runtime stderr errors',
+      artifactName: 'stderr.log',
+      content: [
+        'debug: retrying request',
+        'RuntimeError: agent process failed',
+        '# documented non-error heading',
+      ].join('\n'),
+      pattern: kasekiCli.ERROR_PATTERNS.stderr,
+      source: 'stderr',
+      severity: 'error',
+      options: { excludePattern: kasekiCli.ERROR_PATTERNS.stderrExclude },
+      expected: [
+        {
+          severity: 'error',
+          source: 'stderr',
+          line: 2,
+          message: 'RuntimeError: agent process failed',
+        },
+      ],
+    },
+    {
+      label: 'validation command output',
+      artifactName: 'validation.log',
+      content: [
+        'npm test -- --runInBand',
+        'PASS src/smoke.test.ts',
+        'FAILED src/service.test.ts',
+        'Error: expected 200 but received 500',
+      ].join('\n'),
+      pattern: kasekiCli.ERROR_PATTERNS.validation,
+      source: 'validation',
+      severity: 'error',
+      expected: [
+        {
+          severity: 'error',
+          source: 'validation',
+          line: 3,
+          message: 'FAILED src/service.test.ts',
+        },
+        {
+          severity: 'error',
+          source: 'validation',
+          line: 4,
+          message: 'Error: expected 200 but received 500',
+        },
+      ],
+    },
+    {
+      label: 'quality gate output treats every non-empty line as critical',
+      artifactName: 'quality.log',
+      content: 'eslint failed: no-floating-promises\n\nprettier failed: src/index.ts\n',
+      pattern: /.*/,
+      source: 'quality-gate',
+      severity: 'critical',
+      options: { allNonEmptyLines: true },
+      expected: [
+        {
+          severity: 'critical',
+          source: 'quality-gate',
+          line: 1,
+          message: 'eslint failed: no-floating-promises',
+        },
+        {
+          severity: 'critical',
+          source: 'quality-gate',
+          line: 3,
+          message: 'prettier failed: src/index.ts',
+        },
+      ],
+    },
+  ])(
+    'scanLogForErrors should classify representative $label samples',
+    ({ artifactName, content, pattern, source, severity, options, expected }) => {
+      const instanceName = `kaseki-sample-${source}`;
+      createMockInstance(instanceName);
+      fs.writeFileSync(path.join(MOCK_RESULTS_DIR, instanceName, artifactName), content);
 
-    // Test that patterns are RegExp objects
-    expect(kasekiCli.ERROR_PATTERNS.stderr instanceof RegExp).toBe(true);
-    expect(kasekiCli.ERROR_PATTERNS.validation instanceof RegExp).toBe(true);
-  });
+      const errors = kasekiCli.scanLogForErrors(
+        instanceName,
+        artifactName,
+        pattern,
+        source,
+        severity,
+        options
+      );
+
+      expect(errors).toEqual(expected);
+    }
+  );
+
+  test.each([
+    {
+      label: 'successful exit wins over stale validation metadata',
+      metadata: { failed_command: 'validation' },
+      exitCode: 0,
+      expected: 'none',
+    },
+    {
+      label: 'timeout exit code wins over validation failure metadata',
+      metadata: { failed_command: 'validation' },
+      exitCode: 124,
+      expected: 'timeout',
+    },
+    {
+      label: 'goal-check exit code wins over empty-diff command text',
+      metadata: { failed_command: 'empty git diff' },
+      exitCode: 8,
+      expected: 'goal-unmet',
+    },
+    {
+      label: 'empty diff exit code wins over validation command text',
+      metadata: { failed_command: 'validation' },
+      exitCode: 3,
+      expected: 'empty-diff',
+    },
+    {
+      label: 'validation command wins over generic non-zero runtime exit',
+      metadata: { failed_command: 'validation' },
+      exitCode: 1,
+      expected: 'validation',
+    },
+    {
+      label: 'named runtime command is normalized for display',
+      metadata: { failed_command: 'npm run build' },
+      exitCode: 1,
+      expected: 'npm-run-build',
+    },
+    {
+      label: 'unclassified non-zero exit falls back to nonzero-exit',
+      metadata: {},
+      exitCode: 42,
+      expected: 'nonzero-exit',
+    },
+  ])(
+    'classifyFailure should enforce precedence: $label',
+    ({ metadata, exitCode, expected }) => {
+      expect(kasekiCli.classifyFailureLocal(metadata, exitCode)).toBe(expected);
+    }
+  );
+
+  test.each([
+    {
+      label: 'validation metadata gains a user-facing prefix',
+      metadata: {
+        exit_code: 1,
+        validation_failed_command: 'first failing command was "npm run test" with exit 1',
+      },
+      artifacts: {},
+      expectedFirstError: {
+        severity: 'error',
+        source: 'validation',
+        line: 0,
+        message: 'Validation failed: first failing command was "npm run test" with exit 1',
+      },
+      expectedErrorCount: 1,
+    },
+    {
+      label: 'long runtime stderr lines are truncated before display',
+      metadata: { exit_code: 1 },
+      artifacts: {
+        'stderr.log': `Error: ${'x'.repeat(200)}`,
+      },
+      expectedFirstError: {
+        severity: 'error',
+        source: 'stderr',
+        line: 1,
+        message: `Error: ${'x'.repeat(143)}`,
+      },
+      expectedErrorCount: 1,
+    },
+    {
+      label: 'comment-style stderr headings that mention errors are hidden',
+      metadata: { exit_code: 1 },
+      artifacts: {
+        'stderr.log': '# errors observed during previous run\nactual panic: current process aborted',
+      },
+      expectedFirstError: {
+        severity: 'error',
+        source: 'stderr',
+        line: 2,
+        message: 'actual panic: current process aborted',
+      },
+      expectedErrorCount: 1,
+    },
+  ])(
+    'detectErrors should apply user-visible output transformations: $label',
+    ({ metadata, artifacts, expectedFirstError, expectedErrorCount }) => {
+      const instanceName = `kaseki-format-${expectedFirstError.source}-${expectedFirstError.line}`;
+      createMockInstance(instanceName, { metadata });
+      for (const [artifactName, content] of Object.entries(artifacts)) {
+        fs.writeFileSync(path.join(MOCK_RESULTS_DIR, instanceName, artifactName), content);
+      }
+
+      const errors = kasekiCli.detectErrors(instanceName);
+
+      expect(errors).toHaveLength(expectedErrorCount);
+      expect(errors[0]).toEqual(expectedFirstError);
+      expect(errors[0].message.length).toBeLessThanOrEqual(150);
+    }
+  );
 });
