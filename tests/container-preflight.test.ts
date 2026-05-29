@@ -439,10 +439,12 @@ describe('ContainerPreflightDiagnostics', () => {
 
     test('fails with the exact unexecutable file set', () => {
       writeRequiredTemplateFiles(fixture);
+      const originalAccessSync = fs.accessSync;
       jest.spyOn(fs, 'accessSync').mockImplementation((target, mode) => {
         if (target === path.join(fixture.templateDir, 'kaseki-agent.sh') && mode === fs.constants.X_OK) {
           throw new Error('permission denied');
         }
+        return originalAccessSync(target, mode);
       });
 
       const check = getCheck(runDiagnostics(fixture), 'template-bootstrap');
