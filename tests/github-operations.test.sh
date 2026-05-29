@@ -48,7 +48,7 @@ extract_function() {
 build_github_function_harness() {
   local harness="$1"
   {
-    printf '#!/usr/bin/env bash\nset -uo pipefail\n'
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n'
     extract_function run_node_subprocess
     extract_function validate_github_api_response
     extract_function apply_github_pr_labels
