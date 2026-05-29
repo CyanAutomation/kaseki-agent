@@ -329,17 +329,21 @@ run_node_subprocess() {
 
 # Safely encode value as JSON string; fallback to empty string if node unavailable
 json_encode() {
-  if ! command -v node &>/dev/null; then
-    printf '""' # Return empty JSON string if node is unavailable
+  local input output exit_code
+  input="$(cat)"
+  input="${input%$'\n'}"
+  if [ -x /usr/bin/python3 ]; then
+    output=$(/usr/bin/python3 -c 'import json,sys; print(json.dumps(sys.argv[1]), end="")' "$input" 2>&1)
+  elif command -v node >/dev/null 2>&1; then
+    output=$(node -e 'process.stdout.write(JSON.stringify(process.argv[1] || ""));' "$input" 2>&1)
+  else
+    printf '""'
     return 1
   fi
-  local output
-  output=$(node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));' 2>&1)
-  local exit_code=$?
+  exit_code=$?
   if [ $exit_code -eq 0 ] && [ -n "$output" ]; then
     printf '%s' "$output"
   else
-    # Log error and return empty JSON string as fallback
     printf 'warning: json_encode failed (exit %d): %s\n' "$exit_code" "$output" >&2
     printf '""'
     return 1
@@ -2445,7 +2449,7 @@ run_scouting_agent_with_retry() {
     set +e
     run_scouting_agent 2>"$scouting_stderr_capture"
     scouting_last_exit=$?
-    set -e
+    set +e
 
     # Append stderr to results for logging
     cat "$scouting_stderr_capture" >> /results/scouting-stderr.log 2>/dev/null || true
@@ -2914,38 +2918,47 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  # shellcheck disable=SC2016,SC1078,SC1079,SC2026
-  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
-    const fs = require(\"fs\");
-    const stdout = fs.readFileSync(0, 'utf8');
-    const stderr = process.env.TOKEN_HELPER_STDERR || '';
-    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
-    const sanitize = (value) => String(value || "")
-      .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
-      .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
-      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
-      .replace(/[\r\n\t]+/g, " ")
-      .replace(/ {2,}/g, " ")
-      .trim();
-    let error = "";
-    let status = "";
-    try {
-      const parsed = JSON.parse(stdout || "{}");
-      error = parsed.error || parsed.message || "";
-      const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
-      if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
-    } catch (_) {}
-    error = sanitize(error);
-    if (!error) error = sanitize(stderr);
-    if (!error) error = `github-app-token helper exited with code ${exitCode}`;
-    if (!status) {
-      const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
-      if (match) status = match[1];
-    }
-    process.stdout.write(`${error}\t${status}`);
-  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
-}
+  TOKEN_HELPER_STDOUT="$helper_stdout" TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" /usr/bin/python3 - <<'PY_PARSE' 2>/dev/null || printf 'github-app-token helper exited with code %s	' "$helper_exit_code"
+import json
+import os
+import re
 
+stdout = os.environ.get("TOKEN_HELPER_STDOUT", "")
+stderr = os.environ.get("TOKEN_HELPER_STDERR", "")
+exit_code = os.environ.get("TOKEN_HELPER_EXIT_CODE", "unknown")
+
+def sanitize(value):
+    value = str(value or "")
+    value = re.sub(r"-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----", "[redacted private key]", value)
+    value = re.sub(r"\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b", "[redacted token]", value)
+    value = re.sub(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[redacted jwt]", value)
+    value = re.sub(r"[\r\n\t]+", " ", value)
+    value = re.sub(r" {2,}", " ", value)
+    return value.strip()
+
+error = ""
+status = ""
+for candidate in (stdout, stderr):
+    if error:
+        break
+    try:
+        parsed = json.loads(candidate or "{}")
+    except Exception:
+        continue
+    if isinstance(parsed, dict):
+        error = parsed.get("error") or parsed.get("message") or ""
+        candidate_status = parsed.get("status") or parsed.get("statusCode") or parsed.get("http_status") or parsed.get("httpStatus") or ""
+        if re.match(r"^[1-5][0-9]{2}$", str(candidate_status)):
+            status = str(candidate_status)
+
+error = sanitize(error) or sanitize(stderr) or f"github-app-token helper exited with code {exit_code}"
+if not status:
+    match = re.search(r"(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})", error, re.I)
+    if match:
+        status = match.group(1)
+print(f"{error}\t{status}", end="")
+PY_PARSE
+}
 
 github_private_key_metadata_json() {
   local key_file="$1"
@@ -4612,7 +4625,7 @@ printf 'Model: %s\n' "$KASEKI_MODEL"
 printf 'Pi version: %s\n' "${PI_VERSION:-not checked before pre-agent validation}"
 
 # Run preflight health check for GitHub operations if enabled
-if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "${KASEKI_SKIP_GITHUB_PREFLIGHT:-0}" != "1" ]; then
   printf '\n==> github operations preflight health check\n'
   if ! check_github_operations_health; then
     printf 'ERROR: GitHub operations preflight health check failed\n' >&2
@@ -5411,6 +5424,12 @@ if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     FAILED_COMMAND="github push"
     emit_error_event "github_operation_failed" "GitHub push or PR creation failed (exit code $GITHUB_PUSH_EXIT)" "exit"
   fi
+fi
+
+if [ "$GITHUB_PR_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
+  STATUS="$GITHUB_PR_EXIT"
+  FAILED_COMMAND="github pull request creation"
+  emit_error_event "github_operation_failed" "GitHub push or PR creation failed (exit code $GITHUB_PR_EXIT)" "exit"
 fi
 
 if [ "$DIFF_NONEMPTY" != "true" ] &&
