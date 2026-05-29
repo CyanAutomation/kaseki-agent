@@ -1,386 +1,355 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016,SC2317
 # tests/github-operations-failures.test.sh
-# Test suite for github operations failure scenarios
-# Tests various failure modes to ensure proper error handling and exit codes
+# Command-level tests for GitHub operation failure contracts.
 
 set -uo pipefail
 
-# Configuration
 TESTS_PASSED=0
 TESTS_FAILED=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Helper functions
+TEST_ROOT="$(mktemp -d /tmp/kaseki-github-ops-failures.XXXXXX)"
+REAL_GIT="$(command -v git)"
+ORIGINAL_TOKEN_HELPER_BACKUP=""
+ORIGINAL_TOKEN_HELPER_PRESENT=0
+CREATED_APP_LIB_FIXTURES=()
+
+cleanup() {
+  if [ "$ORIGINAL_TOKEN_HELPER_PRESENT" -eq 1 ] && [ -n "$ORIGINAL_TOKEN_HELPER_BACKUP" ] && [ -f "$ORIGINAL_TOKEN_HELPER_BACKUP" ]; then
+    cp "$ORIGINAL_TOKEN_HELPER_BACKUP" /usr/local/bin/github-app-token 2>/dev/null || true
+    chmod +x /usr/local/bin/github-app-token 2>/dev/null || true
+  else
+    rm -f /usr/local/bin/github-app-token 2>/dev/null || true
+  fi
+  for helper_file in "${CREATED_APP_LIB_FIXTURES[@]:-}"; do
+    rm -f "$helper_file" 2>/dev/null || true
+  done
+  rm -rf "$TEST_ROOT"
+}
+trap cleanup EXIT
+
+if [ -e /usr/local/bin/github-app-token ]; then
+  ORIGINAL_TOKEN_HELPER_PRESENT=1
+  ORIGINAL_TOKEN_HELPER_BACKUP="$TEST_ROOT/original-github-app-token"
+  cp /usr/local/bin/github-app-token "$ORIGINAL_TOKEN_HELPER_BACKUP"
+fi
+
 test_case() {
-  local test_name="$1"
-  printf '\n%b[TEST]%b %s\n' "$YELLOW" "$NC" "$test_name"
+  printf '\n%b[TEST]%b %s\n' "$YELLOW" "$NC" "$1"
 }
 
-assert_exit_code() {
-  local expected="$1"
-  local actual="$2"
-  local test_desc="$3"
-  
-  if [ "$actual" -eq "$expected" ]; then
-    printf '%b✓%b %s (exit %d)\n' "$GREEN" "$NC" "$test_desc" "$actual"
-    ((TESTS_PASSED++))
-    return 0
+pass() {
+  printf '%b✓%b %s\n' "$GREEN" "$NC" "$1"
+  ((TESTS_PASSED++))
+}
+
+fail() {
+  printf '%b✗%b %s\n' "$RED" "$NC" "$1"
+  ((TESTS_FAILED++))
+}
+
+assert_eq() {
+  local expected="$1" actual="$2" desc="$3"
+  if [ "$actual" = "$expected" ]; then
+    pass "$desc"
   else
-    printf '%b✗%b %s - expected exit %d, got %d\n' "$RED" "$NC" "$test_desc" "$expected" "$actual"
-    ((TESTS_FAILED++))
-    return 1
+    fail "$desc - expected '$expected', got '$actual'"
   fi
 }
 
 assert_file_contains() {
-  local file="$1"
-  local pattern="$2"
-  local test_desc="$3"
-  
-  if [ ! -f "$file" ]; then
-    printf '%b✗%b %s - file not found: %s\n' "$RED" "$NC" "$test_desc" "$file"
-    ((TESTS_FAILED++))
-    return 1
-  fi
-  
-  if grep -q "$pattern" "$file"; then
-    printf '%b✓%b %s\n' "$GREEN" "$NC" "$test_desc"
-    ((TESTS_PASSED++))
-    return 0
+  local file="$1" pattern="$2" desc="$3"
+  if [ -f "$file" ] && grep -Eq "$pattern" "$file"; then
+    pass "$desc"
   else
-    printf '%b✗%b %s - pattern not found in %s\n' "$RED" "$NC" "$test_desc" "$file"
-    ((TESTS_FAILED++))
-    return 1
+    fail "$desc - pattern '$pattern' not found in $file"
+    [ -f "$file" ] && sed -n '1,160p' "$file"
   fi
 }
 
-# ===== Test 1: Node.js subprocess error handling =====
-test_case "Node.js subprocess error handling"
+json_field() {
+  local file="$1" expr="$2"
+  node -e '
+const fs = require("node:fs");
+const [file, expr] = process.argv.slice(1);
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+const fn = new Function("data", `return (${expr});`);
+const value = fn(data);
+if (value === undefined || value === null) process.exit(2);
+process.stdout.write(String(value));
+' "$file" "$expr"
+}
 
-# Verify the helper function exists and has error logging
-if grep -q 'node_stderr_tmp=' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Helper captures stderr from Node.js errors\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Helper missing stderr capture\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+assert_json_field_eq() {
+  local file="$1" expr="$2" expected="$3" desc="$4" actual
+  actual="$(json_field "$file" "$expr" 2>/dev/null || true)"
+  assert_eq "$expected" "$actual" "$desc"
+}
 
-# Verify it returns error codes properly
-if grep -q 'return.*node_exit_code' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Helper propagates Node.js exit codes\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Helper missing exit code propagation\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+last_error_event_field() {
+  local file="$1" error_type="$2" field="$3"
+  node -e '
+const fs = require("node:fs");
+const [file, errorType, field] = process.argv.slice(1);
+let match = null;
+for (const line of fs.readFileSync(file, "utf8").trim().split(/\n/)) {
+  if (!line) continue;
+  const event = JSON.parse(line);
+  if (event.event_type === "error" && event.error_type === errorType) match = event;
+}
+if (!match) process.exit(2);
+process.stdout.write(String(match[field] ?? ""));
+' "$file" "$error_type" "$field"
+}
 
-# ===== Test 2: GitHub health check verification =====
-test_case "GitHub operations preflight check implementation"
+assert_error_event_field_eq() {
+  local progress_file="$1" error_type="$2" field="$3" expected="$4" desc="$5" actual
+  actual="$(last_error_event_field "$progress_file" "$error_type" "$field" 2>/dev/null || true)"
+  assert_eq "$expected" "$actual" "$desc"
+}
 
-PREFLIGHT_TMP_DIR="$(mktemp -d /tmp/kaseki-github-preflight-exec.XXXXXX)"
-PREFLIGHT_LIB="$PREFLIGHT_TMP_DIR/github-preflight-functions.sh"
-PREFLIGHT_SECRETS_DIR="$PREFLIGHT_TMP_DIR/secrets"
-mkdir -p "$PREFLIGHT_SECRETS_DIR"
+create_source_repo() {
+  local repo_dir="$1"
+  mkdir -p "$repo_dir"
+  "$REAL_GIT" -C "$repo_dir" init -q -b main
+  printf 'initial\n' > "$repo_dir/fixture.txt"
+  "$REAL_GIT" -C "$repo_dir" add fixture.txt
+  "$REAL_GIT" -C "$repo_dir" -c user.name='Fixture' -c user.email='fixture@example.test' commit -q -m 'initial fixture commit'
+}
 
-awk '
-  /^github_preflight_fail\(\)/ { emit=1 }
-  /^# must match host preflight\/API secret resolution contract\./ { emit=0 }
-  emit { print }
-' "$PROJECT_ROOT/kaseki-agent.sh" > "$PREFLIGHT_LIB"
+write_common_fake_bin() {
+  local bin_dir="$1" source_repo="$2"
+  mkdir -p "$bin_dir"
 
-if [ ! -s "$PREFLIGHT_LIB" ] || \
-   ! grep -q '^github_preflight_fail()' "$PREFLIGHT_LIB" || \
-   ! grep -q '^check_github_operations_health()' "$PREFLIGHT_LIB"; then
-  printf '%b✗%b Could not extract executable GitHub preflight functions\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-else
-  printf '123456\n' > "$PREFLIGHT_SECRETS_DIR/github_app_id"
-  printf 'Iv1.testclient\n' > "$PREFLIGHT_SECRETS_DIR/github_app_client_id"
-  printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----test-----END RSA PRIVATE KEY-----' > "$PREFLIGHT_SECRETS_DIR/github_app_private_key"
-
-  run_github_preflight_case() {
-    local case_name="$1"
-    local tools_csv="$2"
-    local secrets_dir="$3"
-    local health_log="$PREFLIGHT_TMP_DIR/${case_name}.log"
-    local stdout_log="$PREFLIGHT_TMP_DIR/${case_name}.stdout"
-    local stderr_log="$PREFLIGHT_TMP_DIR/${case_name}.stderr"
-    local fake_bin="$PREFLIGHT_TMP_DIR/${case_name}-bin"
-    local helper_path="$PREFLIGHT_TMP_DIR/${case_name}-github-app-token"
-    mkdir -p "$fake_bin"
-
-    for tool in tee grep cat mktemp rm bash; do
-      if command -v "$tool" >/dev/null 2>&1; then
-        ln -sf "$(command -v "$tool")" "$fake_bin/$tool"
-      fi
-    done
-
-    case ",$tools_csv," in *",git,"*) ln -sf "$(command -v git)" "$fake_bin/git" ;; esac
-    case ",$tools_csv," in *",node,"*) ln -sf "$(command -v node)" "$fake_bin/node" ;; esac
-    case ",$tools_csv," in *",curl,"*) ln -sf "$(command -v curl)" "$fake_bin/curl" ;; esac
-
-    cat > "$helper_path" <<'EOF_HELPER'
+  cat > "$bin_dir/git" <<'EOF_GIT'
 #!/usr/bin/env bash
-printf 'Usage: github-app-token <app-id> <private-key-file> <owner> <repo>\n'
-exit 1
-EOF_HELPER
-    chmod +x "$helper_path"
+set -uo pipefail
+if [ "${1:-}" = "clone" ]; then
+  dest="${@: -1}"
+  rm -rf "$dest"
+  exec "$KASEKI_TEST_REAL_GIT" clone --quiet "$KASEKI_TEST_SOURCE_REPO" "$dest"
+fi
+if [ "${1:-}" = "push" ]; then
+  printf 'fixture git push accepted: %s\n' "$*"
+  exit 0
+fi
+exec "$KASEKI_TEST_REAL_GIT" "$@"
+EOF_GIT
+  chmod +x "$bin_dir/git"
 
-    (
-      set +e
-      export PATH="$fake_bin"
-      export KASEKI_HEALTH_LOG="$health_log"
-      export KASEKI_SECRETS_DIR="$secrets_dir"
-      export KASEKI_GITHUB_APP_TOKEN_HELPER="$helper_path"
-      export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
-      unset GITHUB_APP_ID_FILE GITHUB_APP_CLIENT_ID_FILE GITHUB_APP_PRIVATE_KEY_FILE
-      hash -r
+  cat > "$bin_dir/pi" <<'EOF_PI'
+#!/usr/bin/env bash
+set -uo pipefail
+if [ "${1:-}" = "--version" ]; then
+  printf 'fixture-pi 1.0.0\n'
+  exit 0
+fi
+printf 'updated by fixture pi\n' >> /workspace/repo/fixture.txt
+printf '{"type":"message","model":"fixture-model","content":"fixture change"}\n'
+EOF_PI
+  chmod +x "$bin_dir/pi"
 
-      resolve_github_secret_file() {
-        printf '%s/%s' "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}" "$2"
-      }
-      log_github_private_key_metadata() { :; }
-      parse_github_app_token_helper_failure() { printf 'mock helper failure\t'; }
+  cat > "$bin_dir/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
+#!/usr/bin/env bash
+cat >/dev/null
+: > "${1:-/tmp/progress.jsonl}"
+: > "${2:-/tmp/progress.log}"
+EOF_PROGRESS
+  chmod +x "$bin_dir/kaseki-pi-progress-stream"
 
-      # shellcheck source=/dev/null
-      . "$PREFLIGHT_LIB"
-      check_github_operations_health >"$stdout_log" 2>"$stderr_log"
-    )
-  }
+  cat > "$bin_dir/kaseki-pi-event-filter" <<'EOF_FILTER'
+#!/usr/bin/env bash
+input="$1"
+output="$2"
+summary="$3"
+cp "$input" "$output" 2>/dev/null || : > "$output"
+printf '{"selected_model":"fixture-model","model":"fixture-model","counters":{"models":{"fixture-model":1}}}\n' > "$summary"
+EOF_FILTER
+  chmod +x "$bin_dir/kaseki-pi-event-filter"
 
-  MISSING_SECRETS_DIR="$PREFLIGHT_TMP_DIR/missing-secrets"
-  mkdir -p "$MISSING_SECRETS_DIR"
-  MISSING_SECRETS_LOG="$PREFLIGHT_TMP_DIR/missing-secrets.log"
-  if ! run_github_preflight_case "missing-secrets" "git,node,curl" "$MISSING_SECRETS_DIR" && \
-     grep -q 'ERROR: Cannot read GitHub App ID' "$MISSING_SECRETS_LOG" && \
-     grep -q 'CLASSIFICATION: missing_github_app_id' "$MISSING_SECRETS_LOG" && \
-     grep -q 'REMEDIATION: Provide a readable GitHub App ID secret' "$MISSING_SECRETS_LOG"; then
-    printf '%b✓%b Preflight classifies missing GitHub secrets and prints remediation\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  else
-    printf '%b✗%b Preflight did not classify/remediate missing GitHub secrets\n' "$RED" "$NC"
-    [ -f "$MISSING_SECRETS_LOG" ] && cat "$MISSING_SECRETS_LOG"
-    ((TESTS_FAILED++))
+  cat > "$bin_dir/validation-output-filter" <<'EOF_VALIDATION_FILTER'
+#!/usr/bin/env bash
+cat
+EOF_VALIDATION_FILTER
+  chmod +x "$bin_dir/validation-output-filter"
+
+  if [ "${3:-}" = "api_failure" ]; then
+    cat > "$bin_dir/curl" <<'EOF_CURL'
+#!/usr/bin/env bash
+printf '{"message":"Validation Failed: fixture duplicate pull request","errors":[{"resource":"PullRequest","code":"custom","message":"fixture duplicate"}]}422'
+EOF_CURL
+    chmod +x "$bin_dir/curl"
   fi
 
-  MISSING_GIT_LOG="$PREFLIGHT_TMP_DIR/missing-git.log"
-  if ! run_github_preflight_case "missing-git" "node,curl" "$PREFLIGHT_SECRETS_DIR" && \
-     grep -q 'ERROR: git command is not available' "$MISSING_GIT_LOG" && \
-     grep -q 'CLASSIFICATION: missing_git' "$MISSING_GIT_LOG" && \
-     grep -q 'REMEDIATION: Install git' "$MISSING_GIT_LOG"; then
-    printf '%b✓%b Preflight classifies missing git dependency and prints remediation\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
+  export KASEKI_TEST_REAL_GIT="$REAL_GIT"
+  export KASEKI_TEST_SOURCE_REPO="$source_repo"
+}
+
+ensure_app_lib_fixtures() {
+  mkdir -p /app/lib
+  local helper_file
+  for helper_file in event-aggregator.js timestamp-tracker.js progress-stream-utils.js; do
+    if [ ! -e "/app/lib/$helper_file" ]; then
+      printf '// fixture helper for command-level tests\n' > "/app/lib/$helper_file"
+      CREATED_APP_LIB_FIXTURES+=("/app/lib/$helper_file")
+    fi
+  done
+}
+
+write_token_helper() {
+  local mode="$1"
+  case "$mode" in
+    structured_failure)
+      cat > /usr/local/bin/github-app-token <<'EOF_TOKEN_FAIL'
+if (process.argv.length <= 2) {
+  console.log('Usage: github-app-token <app-id> <private-key-file> <owner> <repo>');
+  process.exit(1);
+}
+console.error(JSON.stringify({ error: 'fixture helper refused installation token', status: 401 }));
+process.exit(42);
+EOF_TOKEN_FAIL
+      ;;
+    success)
+      cat > /usr/local/bin/github-app-token <<'EOF_TOKEN_OK'
+if (process.argv.length <= 2) {
+  console.log('Usage: github-app-token <app-id> <private-key-file> <owner> <repo>');
+  process.exit(1);
+}
+console.log(JSON.stringify({ token: 'fixture-token' }));
+EOF_TOKEN_OK
+      ;;
+  esac
+  chmod +x /usr/local/bin/github-app-token
+}
+
+write_secrets() {
+  local secrets_dir="$1"
+  mkdir -p "$secrets_dir"
+  printf '123456\n' > "$secrets_dir/github_app_id"
+  printf 'Iv1.fixtureclient\n' > "$secrets_dir/github_app_client_id"
+  printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----' 'fixture' '-----END RSA PRIVATE KEY-----' > "$secrets_dir/github_app_private_key"
+}
+
+run_agent_fixture() {
+  local name="$1" token_mode="$2" curl_mode="${3:-none}" secrets_mode="${4:-present}"
+  local case_dir="$TEST_ROOT/$name"
+  local source_repo="$case_dir/source-repo"
+  local bin_dir="$case_dir/bin"
+  local secrets_dir="$case_dir/secrets"
+  local stdout_log="$case_dir/stdout.log"
+  local stderr_log="$case_dir/stderr.log"
+  local exit_file="$case_dir/exit"
+  mkdir -p "$case_dir"
+  ensure_app_lib_fixtures
+  create_source_repo "$source_repo"
+  write_common_fake_bin "$bin_dir" "$source_repo" "$curl_mode"
+  if [ "$secrets_mode" = "present" ]; then
+    write_secrets "$secrets_dir"
   else
-    printf '%b✗%b Preflight did not classify/remediate missing git dependency\n' "$RED" "$NC"
-    [ -f "$MISSING_GIT_LOG" ] && cat "$MISSING_GIT_LOG"
-    ((TESTS_FAILED++))
+    mkdir -p "$secrets_dir"
+  fi
+  if [ "$token_mode" != "missing" ]; then
+    write_token_helper "$token_mode"
+  else
+    rm -f /usr/local/bin/github-app-token
   fi
 
-  SUCCESS_LOG="$PREFLIGHT_TMP_DIR/success.log"
-  if run_github_preflight_case "success" "git,node,curl" "$PREFLIGHT_SECRETS_DIR" && \
-     grep -q 'github operations health check PASSED' "$SUCCESS_LOG" && \
-     ! grep -q 'CLASSIFICATION:' "$SUCCESS_LOG"; then
-    printf '%b✓%b Preflight succeeds when required secrets and dependencies are present\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  else
-    printf '%b✗%b Preflight success path failed with required prerequisites present\n' "$RED" "$NC"
-    [ -f "$SUCCESS_LOG" ] && cat "$SUCCESS_LOG"
-    ((TESTS_FAILED++))
-  fi
-fi
-rm -rf "$PREFLIGHT_TMP_DIR"
+  rm -rf /results /workspace/repo
+  mkdir -p /results /workspace
 
-# ===== Test 3: Verify exit codes are specific (not generic "unexpected shell failure") =====
-test_case "Exit codes are properly classified"
+  (
+    set +e
+    export PATH="$bin_dir:$PATH"
+    export REPO_URL="https://github.com/example/fixture-repo"
+    export GIT_REF="main"
+    export KASEKI_INSTANCE="fixture-$name"
+    export OPENROUTER_API_KEY="fixture-openrouter-key"
+    export KASEKI_SECRETS_DIR="$secrets_dir"
+    export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+    export KASEKI_PRE_AGENT_VALIDATION=0
+    export KASEKI_TS_PRE_CHECK=0
+    export KASEKI_SCOUTING=0
+    export KASEKI_GOAL_CHECK=0
+    export KASEKI_RUN_EVALUATION=0
+    export KASEKI_VALIDATION_COMMANDS=none
+    export KASEKI_CHANGED_FILES_ALLOWLIST='fixture.txt'
+    export KASEKI_GIT_CACHE_MODE=off
+    export KASEKI_PUBLISH_MODE=pr
+    export KASEKI_GITHUB_PR_RETRIES=0
+    bash "$PROJECT_ROOT/kaseki-agent.sh" >"$stdout_log" 2>"$stderr_log"
+    printf '%s\n' "$?" > "$exit_file"
+  )
 
-# Check that exit code 7 is used for config errors
-if grep -q 'GITHUB_PUSH_EXIT=7' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Exit code 7 is used for config errors\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Exit code 7 usage not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+  mkdir -p "$case_dir/results"
+  cp -a /results/. "$case_dir/results/" 2>/dev/null || true
+  printf '%s' "$case_dir"
+}
 
-# Check that exit code 8 is used for runtime errors
-if grep -q 'GITHUB_PUSH_EXIT=8' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Exit code 8 is used for runtime errors\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Exit code 8 usage not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+# ===== Command-level fixtures =====
+test_case "missing GitHub App secrets"
+missing_case="$(run_agent_fixture missing-secrets success none missing)"
+assert_eq "7" "$(cat "$missing_case/exit")" "missing secrets use config failure exit code"
+assert_file_contains "$missing_case/results/git-push.log" 'GitHub operations: skipped \(reasons: github_app_secrets_missing\)' "missing secrets emit user-facing skip reason"
+assert_json_field_eq "$missing_case/results/metadata.json" 'data.github_push_exit_code' "7" "metadata records config category exit code"
+assert_json_field_eq "$missing_case/results/metadata.json" 'data.github_operation_phase' "secrets" "metadata records secrets failure phase"
+assert_error_event_field_eq "$missing_case/results/progress.jsonl" "github_operation_failed" "recovery_action" "exit" "missing secrets emit terminal error event recovery"
+assert_error_event_field_eq "$missing_case/results/progress.jsonl" "github_operation_failed" "detail" "GitHub push or PR creation failed (exit code 7)" "missing secrets emit expected error event detail"
 
-# Check that exit code 9 is used for API errors
-if grep -q 'GITHUB_PR_EXIT=9' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Exit code 9 is used for API errors\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Exit code 9 usage not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+test_case "token helper non-zero with structured stderr"
+token_case="$(run_agent_fixture token-helper-failure structured_failure)"
+assert_eq "7" "$(cat "$token_case/exit")" "token helper failure uses config/auth failure exit code"
+assert_file_contains "$token_case/results/git-push.log" 'Failed to generate token: fixture helper refused installation token' "token helper failure emits parsed user-facing error"
+assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_type' "github_app_token_error" "metadata records token helper error type"
+assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_message' "fixture helper refused installation token" "metadata records structured token helper message"
+assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_http_status' "401" "metadata records structured token helper HTTP status"
+assert_error_event_field_eq "$token_case/results/progress.jsonl" "github_app_token_failed" "detail" "GitHub App token generation failed (exit code 7)" "token helper failure emits expected terminal event detail"
 
-# ===== Test 4: DEBUG trap is set up =====
-test_case "DEBUG trap for command tracking"
+test_case "GitHub Pulls API known payload failure"
+api_case="$(run_agent_fixture api-payload-failure success api_failure)"
+assert_eq "9" "$(cat "$api_case/exit")" "GitHub API failure uses API category exit code"
+assert_file_contains "$api_case/results/git-push.log" 'GitHub API error \(HTTP 422\): validation_error - Validation Failed: fixture duplicate pull request' "API failure emits parsed user-facing error"
+assert_file_contains "$api_case/results/git-push.log" 'Failed to create PR\. API error: Validation Failed: fixture duplicate pull request' "API failure emits PR creation failure summary"
+assert_json_field_eq "$api_case/results/metadata.json" 'data.github_pr_exit_code' "9" "metadata records PR API exit code"
+assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_type' "validation_error" "metadata records API error type"
+assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_error_message' "Validation Failed: fixture duplicate pull request" "metadata records API error message"
+assert_json_field_eq "$api_case/results/metadata.json" 'data.github_api_http_status' "422" "metadata records API HTTP status"
+assert_error_event_field_eq "$api_case/results/progress.jsonl" "github_pr_api_failed" "detail" "GitHub API error (validation_error): Validation Failed: fixture duplicate pull request (HTTP 422)" "API failure emits structured error event detail"
 
-if grep -q 'trap.*BASH_COMMAND.*DEBUG' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b DEBUG trap is configured\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b DEBUG trap not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'LAST_COMMAND=' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b LAST_COMMAND variable is tracked\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b LAST_COMMAND tracking not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 5: Finish trap enhanced with diagnostic context =====
-test_case "Finish trap includes diagnostic context"
-
-if grep -q 'LAST_COMMAND_LOG=' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Finish trap logs last command\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Finish trap missing last command logging\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'emit_error_event "unexpected_shell_failure"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Finish trap emits error event for unexpected failures\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Finish trap missing error event emission\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 6: run_node_subprocess helper exists and has error handling =====
-test_case "run_node_subprocess() helper function"
-
-if grep -q 'run_node_subprocess()' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Helper function is defined\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Helper function not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'mktemp /tmp/node-stderr' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Helper captures Node.js stderr\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Helper missing stderr capture\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q '\[node-subprocess-error\]' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Helper logs errors with structured format\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Helper missing structured error logging\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 7: GitHub App token helper failure diagnostics =====
-test_case "GitHub App token helper failure diagnostics"
-
-if grep -q 'token_exit_code=\$?' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'github-app-token.*>"\$token_stdout_tmp" 2>"\$token_stderr_tmp"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Token helper captures stdout, stderr, and exit code\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Token helper capture logic not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'parsed.error || parsed.message' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'Failed to generate token: %s' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Token helper failures log parsed error details\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Token helper failure logging lacks parsed error details\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'GITHUB_API_ERROR_TYPE="github_app_token_error"' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'emit_error_event "github_app_token_failed"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Token helper failures set token-specific API error state and event type\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Token helper failures missing token-specific API error state or event\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 8: Diagnostic script exists =====
-test_case "Diagnostic script availability"
-
-DIAG_SCRIPT="$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh"
-if [ -f "$DIAG_SCRIPT" ] && [ -x "$DIAG_SCRIPT" ]; then
-  printf '%b✓%b Diagnostic script is present and executable\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Diagnostic script not found or not executable\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-
-# ===== Test 8b: Token generation phase metadata and final error handling =====
-test_case "GitHub token generation phase is distinct from push failures"
-
-if grep -q 'GITHUB_OPERATION_PHASE="token_generation"' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q '"github_operation_phase"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b GitHub operation phase tracks token generation and is written to metadata\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b GitHub operation phase token metadata not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'GitHub App token generation failed (exit code \$GITHUB_PUSH_EXIT)' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Final GitHub failure emission reports token generation precisely\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Final GitHub failure emission does not distinguish token generation\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 8c: Diagnostic script distinguishes token and push phases =====
-test_case "Diagnostic script reports token failures separately from push failures"
-
-DIAG_TMP_DIR="$(mktemp -d /tmp/kaseki-github-diagnose-test.XXXXXX)"
-TOKEN_RESULTS="$DIAG_TMP_DIR/token"
-PUSH_RESULTS="$DIAG_TMP_DIR/push"
-mkdir -p "$TOKEN_RESULTS" "$PUSH_RESULTS"
-cat > "$TOKEN_RESULTS/metadata.json" <<'JSON'
+# ===== Diagnostic script behavior remains command-level =====
+test_case "diagnostic script distinguishes token and push phases"
+DIAG_TMP_DIR="$TEST_ROOT/diagnostic"
+mkdir -p "$DIAG_TMP_DIR/token/results" "$DIAG_TMP_DIR/push/results"
+printf '7\n' > "$DIAG_TMP_DIR/token/results/exit_code"
+cat > "$DIAG_TMP_DIR/token/results/metadata.json" <<'JSON'
 {
-  "instance": "token-case",
+  "instance": "fixture-token",
   "current_stage": "github operations",
   "exit_code": 7,
   "github_push_exit_code": 7,
   "github_pr_exit_code": 0,
   "github_operation_phase": "token_generation",
   "github_api_error_type": "github_app_token_error",
-  "github_api_error_message": "installation not found",
-  "github_api_http_status": "404"
+  "github_api_error_message": "fixture helper refused installation token",
+  "github_api_http_status": "401"
 }
 JSON
-cat > "$TOKEN_RESULTS/failure.json" <<'JSON'
-{"error":"token"}
+cat > "$DIAG_TMP_DIR/token/results/failure.json" <<'JSON'
+{"exit_code":7,"failed_command":"github token generation"}
 JSON
-printf 'Generating GitHub App installation token...\nFailed to generate token: installation not found\n' > "$TOKEN_RESULTS/git-push.log"
-
-cat > "$PUSH_RESULTS/metadata.json" <<'JSON'
+cat > "$DIAG_TMP_DIR/token/results/git-push.log" <<'LOG'
+Generating GitHub App installation token...
+Failed to generate token: fixture helper refused installation token
+LOG
+printf '8\n' > "$DIAG_TMP_DIR/push/results/exit_code"
+cat > "$DIAG_TMP_DIR/push/results/metadata.json" <<'JSON'
 {
-  "instance": "push-case",
+  "instance": "fixture-push",
   "current_stage": "github operations",
   "exit_code": 8,
   "github_push_exit_code": 8,
@@ -391,317 +360,28 @@ cat > "$PUSH_RESULTS/metadata.json" <<'JSON'
   "github_api_http_status": ""
 }
 JSON
-cat > "$PUSH_RESULTS/failure.json" <<'JSON'
-{"error":"push"}
+cat > "$DIAG_TMP_DIR/push/results/failure.json" <<'JSON'
+{"exit_code":8,"failed_command":"github push"}
 JSON
-printf 'Pushing branch to GitHub...\nFailed to push branch\n' > "$PUSH_RESULTS/git-push.log"
-
-TOKEN_REPORT="$DIAG_TMP_DIR/token-report.txt"
-PUSH_REPORT="$DIAG_TMP_DIR/push-report.txt"
-if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$TOKEN_RESULTS" > "$TOKEN_REPORT" && \
-   grep -q 'GitHub App token generation failed' "$TOKEN_REPORT" && \
-   ! grep -q '\*\*Git push failed' "$TOKEN_REPORT"; then
-  printf '%b✓%b Diagnostic script reports token phase failures as token generation failures\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
+cat > "$DIAG_TMP_DIR/push/results/git-push.log" <<'LOG'
+Pushing branch to GitHub...
+Failed to push branch (exit 8)
+LOG
+if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$DIAG_TMP_DIR/token/results" > "$DIAG_TMP_DIR/token/report.md" && \
+   grep -q 'GitHub App token generation failed' "$DIAG_TMP_DIR/token/report.md" && \
+   ! grep -q 'Git push failed' "$DIAG_TMP_DIR/token/report.md"; then
+  pass "diagnostic script reports token phase distinctly"
 else
-  printf '%b✗%b Diagnostic script did not report token phase distinctly\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
+  fail "diagnostic script reports token phase distinctly"
 fi
-
-if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$PUSH_RESULTS" > "$PUSH_REPORT" && \
-   grep -q '\*\*Git push failed (exit code: 8)\*\*' "$PUSH_REPORT" && \
-   ! grep -q 'GitHub App token generation failed' "$PUSH_REPORT"; then
-  printf '%b✓%b Diagnostic script still reports push phase failures as git push failures\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
+if "$PROJECT_ROOT/scripts/kaseki-diagnose-github-failure.sh" "$DIAG_TMP_DIR/push/results" > "$DIAG_TMP_DIR/push/report.md" && \
+   grep -q 'Git push failed (exit code: 8)' "$DIAG_TMP_DIR/push/report.md" && \
+   ! grep -q 'GitHub App token generation failed' "$DIAG_TMP_DIR/push/report.md"; then
+  pass "diagnostic script reports push phase distinctly"
 else
-  printf '%b✗%b Diagnostic script did not preserve push failure diagnosis\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-rm -rf "$DIAG_TMP_DIR"
-
-# ===== Test 9: Health check function executable tests =====
-test_case "GitHub operations health check function executable tests"
-
-# Test 9a: Test health check with missing GitHub secrets
-printf '%s' "Testing health check with missing GitHub App secrets... "
-TEST_TMP_DIR=$(mktemp -d /tmp/kaseki-health-test.XXXXXX)
-mkdir -p "$TEST_TMP_DIR/secrets"
-
-# Create mock environment with missing secrets
-export KASEKI_SECRETS_DIR="$TEST_TMP_DIR/secrets"
-export GITHUB_APP_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_id"
-export GITHUB_APP_CLIENT_ID_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id"
-export GITHUB_APP_PRIVATE_KEY_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key"
-
-# Extract and execute the actual health check function from kaseki-agent.sh
-HEALTH_TEST_LIB="$TEST_TMP_DIR/health-check-lib.sh"
-awk '
-  /^github_preflight_fail\(\)/ { emit=1 }
-  /^# must match host preflight\/API secret resolution contract\./ { emit=0 }
-  emit { print }
-' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_TEST_LIB"
-
-if [ ! -s "$HEALTH_TEST_LIB" ] || ! grep -q '^github_preflight_fail()' "$HEALTH_TEST_LIB" || ! grep -q '^check_github_operations_health()' "$HEALTH_TEST_LIB"; then
-  printf '%b✗%b Failed to extract health check function from kaseki-agent.sh\n' "$RED" "$NC"
-  rm -rf "$TEST_TMP_DIR"
-  exit 1
+  fail "diagnostic script reports push phase distinctly"
 fi
 
-run_health_check_with_env() {
-  local health_log_path="$1"
-  local secrets_dir="$2"
-  local app_id_file="$3"
-  local client_id_file="$4"
-  local private_key_file="$5"
-  local path_override="$6"
-
-  # Use a global variable for stubs to access
-  export CURRENT_TEST_PATH_OVERRIDE="$path_override"
-
-  (
-    set +e
-    if [ ! -f "$HEALTH_TEST_LIB" ]; then
-      printf 'ERROR: Health check library not found: %s\n' "$HEALTH_TEST_LIB" >&2
-      exit 1
-    fi
-    export KASEKI_HEALTH_LOG="$health_log_path"
-    export KASEKI_SECRETS_DIR="$secrets_dir"
-    export GITHUB_APP_ID_FILE="$app_id_file"
-    export GITHUB_APP_CLIENT_ID_FILE="$client_id_file"
-    export GITHUB_APP_PRIVATE_KEY_FILE="$private_key_file"
-    export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
-    
-    # Create a clean bin dir with only what we want
-    local fake_bin
-    fake_bin=$(mktemp -d "$TEST_TMP_DIR/fake-bin.XXXXXX")
-    ln -sf "$(command -v tee)" "$fake_bin/tee"
-    ln -sf "$(command -v grep)" "$fake_bin/grep"
-    ln -sf "$(command -v cat)" "$fake_bin/cat"
-    ln -sf "$(command -v mktemp)" "$fake_bin/mktemp"
-    ln -sf "$(command -v touch)" "$fake_bin/touch"
-    ln -sf "$(command -v chmod)" "$fake_bin/chmod"
-    ln -sf "$(command -v rm)" "$fake_bin/rm"
-    ln -sf "$(command -v bash)" "$fake_bin/bash"
-    ln -sf "$(command -v printf)" "$fake_bin/printf" 2>/dev/null || true
-    
-    # Conditionally link git/node/curl based on CURRENT_TEST_PATH_OVERRIDE BEFORE setting PATH
-    if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"git"* ]]; then ln -sf "$(command -v git)" "$fake_bin/git"; fi
-    if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"node"* ]]; then ln -sf "$(command -v node)" "$fake_bin/node"; fi
-    if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"curl"* ]]; then ln -sf "$(command -v curl)" "$fake_bin/curl"; fi
-    
-    # shellcheck disable=SC2030
-    PATH="$fake_bin"
-    # Clear bash command cache to force PATH search
-    hash -r
-
-    # Stubs used by check_github_operations_health
-    resolve_github_secret_file() {
-      case "$1" in
-        GITHUB_APP_ID_FILE) printf '%s' "${GITHUB_APP_ID_FILE:-$2}" ;;
-        GITHUB_APP_CLIENT_ID_FILE) printf '%s' "${GITHUB_APP_CLIENT_ID_FILE:-$2}" ;;
-        GITHUB_APP_PRIVATE_KEY_FILE) printf '%s' "${GITHUB_APP_PRIVATE_KEY_FILE:-$2}" ;;
-        *) printf '%s' "$2" ;;
-      esac
-    }
-    log_github_private_key_metadata() { :; }
-    parse_github_app_token_helper_failure() { printf 'mock failure\tmock type'; }
-    generate_github_app_token() { 
-       if [[ "$CURRENT_TEST_PATH_OVERRIDE" == *"curl"* ]]; then return 0; else return 1; fi
-    }
-    # Create a mock github-app-token helper that prints usage and returns 1
-    export KASEKI_GITHUB_APP_TOKEN_HELPER="$TEST_TMP_DIR/mock-helper"
-    printf '#!/usr/bin/env bash\nprintf "usage: github-app-token\\n"\nexit 1\n' > "$KASEKI_GITHUB_APP_TOKEN_HELPER"
-    chmod +x "$KASEKI_GITHUB_APP_TOKEN_HELPER"
-
-    # shellcheck source=/dev/null
-    . "$HEALTH_TEST_LIB"
-    check_github_operations_health >/dev/null 2>&1
-    exit $?
-  )
-}
-
-MISSING_SECRETS_LOG="$TEST_TMP_DIR/missing-secrets-health.log"
-# shellcheck disable=SC2031
-if ! run_health_check_with_env \
-  "$MISSING_SECRETS_LOG" \
-  "$TEST_TMP_DIR/secrets" \
-  "$TEST_TMP_DIR/secrets/nonexistent_github_app_id" \
-  "$TEST_TMP_DIR/secrets/nonexistent_github_app_client_id" \
-  "$TEST_TMP_DIR/secrets/nonexistent_github_app_private_key" \
-  "$PATH" && grep -q 'Cannot read GitHub App ID' "$MISSING_SECRETS_LOG"; then
-  printf '%b✓%b Health check detects missing GitHub App secrets\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check missing secret detection logic\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# Test 9b: Test health check with missing git command
-printf '%s' "Testing health check with missing git... "
-if command -v git >/dev/null 2>&1; then
-  GIT_MISSING_LOG="$TEST_TMP_DIR/missing-git-health.log"
-  # Create dummy secrets so it gets past the secret check
-  touch "$TEST_TMP_DIR/secrets/dummy_app_id"
-  touch "$TEST_TMP_DIR/secrets/dummy_client_id"
-  touch "$TEST_TMP_DIR/secrets/dummy_private_key"
-  
-  if ! run_health_check_with_env \
-    "$GIT_MISSING_LOG" \
-    "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/dummy_app_id" \
-    "$TEST_TMP_DIR/secrets/dummy_client_id" \
-    "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "/nonexistent" && grep -q 'git command is not available' "$GIT_MISSING_LOG"; then
-    printf '%b✓%b Health check detects missing git command\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  else
-    printf '%b✗%b Health check missing git command detection\n' "$RED" "$NC"
-    ((TESTS_FAILED++))
-  fi
-else
-  printf '%s' "git not available in test environment, skipping git test\n"
-fi
-
-# Test 9c: Test health check with missing Node.js
-printf '%s' "Testing health check with missing Node.js... "
-if command -v node >/dev/null 2>&1; then
-  NODE_MISSING_LOG="$TEST_TMP_DIR/missing-node-health.log"
-  if ! run_health_check_with_env \
-    "$NODE_MISSING_LOG" \
-    "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/dummy_app_id" \
-    "$TEST_TMP_DIR/secrets/dummy_client_id" \
-    "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "git" && grep -q 'Node.js is not available' "$NODE_MISSING_LOG"; then
-    printf '%b✓%b Health check detects missing Node.js\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  else
-    printf '%b✗%b Health check missing Node.js detection\n' "$RED" "$NC"
-    ((TESTS_FAILED++))
-  fi
-else
-  printf '%s' "Node.js not available in test environment, skipping Node.js test\n"
-fi
-
-# Test 9d: Test health check with missing curl
-printf '%s' "Testing health check with missing curl... "
-if command -v curl >/dev/null 2>&1; then
-  CURL_MISSING_LOG="$TEST_TMP_DIR/missing-curl-health.log"
-  if ! run_health_check_with_env \
-    "$CURL_MISSING_LOG" \
-    "$TEST_TMP_DIR/secrets" \
-    "$TEST_TMP_DIR/secrets/dummy_app_id" \
-    "$TEST_TMP_DIR/secrets/dummy_client_id" \
-    "$TEST_TMP_DIR/secrets/dummy_private_key" \
-    "git:node" && grep -q 'curl is not available' "$CURL_MISSING_LOG"; then
-    printf '%b✓%b Health check detects missing curl\n' "$GREEN" "$NC"
-    ((TESTS_PASSED++))
-  else
-    printf '%b✗%b Health check missing curl detection\n' "$RED" "$NC"
-    ((TESTS_FAILED++))
-  fi
-else
-  printf '%s' "curl not available in test environment, skipping curl test\n"
-fi
-
-# Test 9e: Test health check success path
-printf '%s' "Testing health check success path... "
-HEALTH_SUCCESS_LOG="$TEST_TMP_DIR/success-health.log"
-if run_health_check_with_env \
-  "$HEALTH_SUCCESS_LOG" \
-  "$TEST_TMP_DIR/secrets" \
-  "$TEST_TMP_DIR/secrets/dummy_app_id" \
-  "$TEST_TMP_DIR/secrets/dummy_client_id" \
-  "$TEST_TMP_DIR/secrets/dummy_private_key" \
-  "git:node:curl" && grep -q 'github operations health check PASSED' "$HEALTH_SUCCESS_LOG"; then
-  printf '%b✓%b Health check has success path implementation\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check success path implementation failed\n' "$RED" "$NC"
-    cat "$HEALTH_SUCCESS_LOG"
-  ((TESTS_FAILED++))
-fi
-
-# Test 9f: Test health check error classification
-printf '%s' "Testing health check error classification... "
-if ! run_health_check_with_env \
-  "$TEST_TMP_DIR/error-class.log" \
-  "$TEST_TMP_DIR/secrets" \
-  "$TEST_TMP_DIR/secrets/nonexistent_id" \
-  "$TEST_TMP_DIR/secrets/nonexistent_client" \
-  "$TEST_TMP_DIR/secrets/nonexistent_key" \
-  "git:node:curl"; then
-  printf '%b✓%b Health check properly classifies errors and returns appropriate exit codes\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check error classification failed\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# Cleanup
-rm -rf "$TEST_TMP_DIR"
-
-# ===== Test 10: GitHub credential auto-detection feature =====
-test_case "GitHub credential auto-detection"
-
-if grep -q 'resolve_github_credentials()' "$PROJECT_ROOT/run-kaseki.sh"; then
-  printf '%b✓%b Auto-detection function is defined\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Auto-detection function not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q '.ssh/github-app-private-key' "$PROJECT_ROOT/run-kaseki.sh"; then
-  printf '%b✓%b Auto-detection includes standard paths\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Auto-detection missing standard paths\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 11: GitHub App enabled by default =====
-test_case "GitHub App default behavior"
-
-if grep -q 'GITHUB_APP_ENABLED="\${GITHUB_APP_ENABLED:-1}"' "$PROJECT_ROOT/run-kaseki.sh"; then
-  printf '%b✓%b run-kaseki.sh defaults to enabled\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b run-kaseki.sh default not updated\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-if grep -q 'GITHUB_APP_ENABLED="\${GITHUB_APP_ENABLED:-1}"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b kaseki-agent.sh defaults to enabled\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b kaseki-agent.sh default not updated\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 12: Graceful credential degradation =====
-test_case "Graceful credential degradation"
-
-if grep -q 'KASEKI_PUBLISH_MODE=.*auto.*GITHUB_APP_ENABLED=0' "$PROJECT_ROOT/run-kaseki.sh" || grep -q 'graceful degrade' "$PROJECT_ROOT/run-kaseki.sh"; then
-  printf '%b✓%b Missing credentials handled gracefully in auto mode\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Graceful degradation not implemented\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Test 13: Explicit disable still respected =====
-test_case "Explicit GitHub App disable respected"
-
-if grep -q 'GITHUB_APP_ENABLED="0"' "$PROJECT_ROOT/run-kaseki.sh"; then
-  printf '%b✓%b Explicit disable setting is preserved\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Explicit disable not found\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
-
-# ===== Summary =====
 printf '\n%b=== Test Summary ===%b\n' "$YELLOW" "$NC"
 printf 'Passed: %b%d%b\n' "$GREEN" "$TESTS_PASSED" "$NC"
 printf 'Failed: %b%d%b\n' "$RED" "$TESTS_FAILED" "$NC"
@@ -709,7 +389,6 @@ printf 'Failed: %b%d%b\n' "$RED" "$TESTS_FAILED" "$NC"
 if [ "$TESTS_FAILED" -eq 0 ]; then
   printf '\n%bAll tests passed!%b\n' "$GREEN" "$NC"
   exit 0
-else
-  printf '\n%bSome tests failed!%b\n' "$RED" "$NC"
-  exit 1
 fi
+printf '\n%bSome tests failed!%b\n' "$RED" "$NC"
+exit 1
