@@ -86,42 +86,118 @@ fi
 # ===== Test 2: GitHub health check verification =====
 test_case "GitHub operations preflight check implementation"
 
-# Verify it checks for GitHub secrets
-if grep -q 'github_app_id_file=' "$PROJECT_ROOT/kaseki-agent.sh" && grep -q 'Cannot read GitHub App ID' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Health check verifies GitHub App secrets\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check missing GitHub App secret verification\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+PREFLIGHT_TMP_DIR="$(mktemp -d /tmp/kaseki-github-preflight-exec.XXXXXX)"
+PREFLIGHT_LIB="$PREFLIGHT_TMP_DIR/github-preflight-functions.sh"
+PREFLIGHT_SECRETS_DIR="$PREFLIGHT_TMP_DIR/secrets"
+mkdir -p "$PREFLIGHT_SECRETS_DIR"
 
-# Verify it includes multiple checks (secrets, git, node, curl)
-check_count=$(grep -c 'health-check' "$PROJECT_ROOT/kaseki-agent.sh" || true)
-if [ "$check_count" -ge 5 ]; then
-  printf '%b✓%b Health check includes comprehensive validation\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check may be incomplete\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
-fi
+awk '
+  /^github_preflight_fail\(\)/ { emit=1 }
+  /^# must match host preflight\/API secret resolution contract\./ { emit=0 }
+  emit { print }
+' "$PROJECT_ROOT/kaseki-agent.sh" > "$PREFLIGHT_LIB"
 
-# Test 2c: Verify health check logs to expected file
-if grep -q 'health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Health check logs to expected file\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check logging configuration not found\n' "$RED" "$NC"
+if [ ! -s "$PREFLIGHT_LIB" ] || \
+   ! grep -q '^github_preflight_fail()' "$PREFLIGHT_LIB" || \
+   ! grep -q '^check_github_operations_health()' "$PREFLIGHT_LIB"; then
+  printf '%b✗%b Could not extract executable GitHub preflight functions\n' "$RED" "$NC"
   ((TESTS_FAILED++))
-fi
+else
+  printf '123456\n' > "$PREFLIGHT_SECRETS_DIR/github_app_id"
+  printf 'Iv1.testclient\n' > "$PREFLIGHT_SECRETS_DIR/github_app_client_id"
+  printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----test-----END RSA PRIVATE KEY-----' > "$PREFLIGHT_SECRETS_DIR/github_app_private_key"
 
-# Test 2d: Verify health check handles GitHub auth smoke test
-if grep -q 'KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK' "$PROJECT_ROOT/kaseki-agent.sh"; then
-  printf '%b✓%b Health check supports configurable GitHub auth smoke test\n' "$GREEN" "$NC"
-  ((TESTS_PASSED++))
-else
-  printf '%b✗%b Health check missing GitHub auth smoke test config\n' "$RED" "$NC"
-  ((TESTS_FAILED++))
+  run_github_preflight_case() {
+    local case_name="$1"
+    local tools_csv="$2"
+    local secrets_dir="$3"
+    local health_log="$PREFLIGHT_TMP_DIR/${case_name}.log"
+    local stdout_log="$PREFLIGHT_TMP_DIR/${case_name}.stdout"
+    local stderr_log="$PREFLIGHT_TMP_DIR/${case_name}.stderr"
+    local fake_bin="$PREFLIGHT_TMP_DIR/${case_name}-bin"
+    local helper_path="$PREFLIGHT_TMP_DIR/${case_name}-github-app-token"
+    mkdir -p "$fake_bin"
+
+    for tool in tee grep cat mktemp rm bash; do
+      if command -v "$tool" >/dev/null 2>&1; then
+        ln -sf "$(command -v "$tool")" "$fake_bin/$tool"
+      fi
+    done
+
+    case ",$tools_csv," in *",git,"*) ln -sf "$(command -v git)" "$fake_bin/git" ;; esac
+    case ",$tools_csv," in *",node,"*) ln -sf "$(command -v node)" "$fake_bin/node" ;; esac
+    case ",$tools_csv," in *",curl,"*) ln -sf "$(command -v curl)" "$fake_bin/curl" ;; esac
+
+    cat > "$helper_path" <<'EOF_HELPER'
+#!/usr/bin/env bash
+printf 'Usage: github-app-token <app-id> <private-key-file> <owner> <repo>\n'
+exit 1
+EOF_HELPER
+    chmod +x "$helper_path"
+
+    (
+      set +e
+      export PATH="$fake_bin"
+      export KASEKI_HEALTH_LOG="$health_log"
+      export KASEKI_SECRETS_DIR="$secrets_dir"
+      export KASEKI_GITHUB_APP_TOKEN_HELPER="$helper_path"
+      export KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+      unset GITHUB_APP_ID_FILE GITHUB_APP_CLIENT_ID_FILE GITHUB_APP_PRIVATE_KEY_FILE
+      hash -r
+
+      resolve_github_secret_file() {
+        printf '%s/%s' "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}" "$2"
+      }
+      log_github_private_key_metadata() { :; }
+      parse_github_app_token_helper_failure() { printf 'mock helper failure\t'; }
+
+      # shellcheck source=/dev/null
+      . "$PREFLIGHT_LIB"
+      check_github_operations_health >"$stdout_log" 2>"$stderr_log"
+    )
+  }
+
+  MISSING_SECRETS_DIR="$PREFLIGHT_TMP_DIR/missing-secrets"
+  mkdir -p "$MISSING_SECRETS_DIR"
+  MISSING_SECRETS_LOG="$PREFLIGHT_TMP_DIR/missing-secrets.log"
+  if ! run_github_preflight_case "missing-secrets" "git,node,curl" "$MISSING_SECRETS_DIR" && \
+     grep -q 'ERROR: Cannot read GitHub App ID' "$MISSING_SECRETS_LOG" && \
+     grep -q 'CLASSIFICATION: missing_github_app_id' "$MISSING_SECRETS_LOG" && \
+     grep -q 'REMEDIATION: Provide a readable GitHub App ID secret' "$MISSING_SECRETS_LOG"; then
+    printf '%b✓%b Preflight classifies missing GitHub secrets and prints remediation\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Preflight did not classify/remediate missing GitHub secrets\n' "$RED" "$NC"
+    [ -f "$MISSING_SECRETS_LOG" ] && cat "$MISSING_SECRETS_LOG"
+    ((TESTS_FAILED++))
+  fi
+
+  MISSING_GIT_LOG="$PREFLIGHT_TMP_DIR/missing-git.log"
+  if ! run_github_preflight_case "missing-git" "node,curl" "$PREFLIGHT_SECRETS_DIR" && \
+     grep -q 'ERROR: git command is not available' "$MISSING_GIT_LOG" && \
+     grep -q 'CLASSIFICATION: missing_git' "$MISSING_GIT_LOG" && \
+     grep -q 'REMEDIATION: Install git' "$MISSING_GIT_LOG"; then
+    printf '%b✓%b Preflight classifies missing git dependency and prints remediation\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Preflight did not classify/remediate missing git dependency\n' "$RED" "$NC"
+    [ -f "$MISSING_GIT_LOG" ] && cat "$MISSING_GIT_LOG"
+    ((TESTS_FAILED++))
+  fi
+
+  SUCCESS_LOG="$PREFLIGHT_TMP_DIR/success.log"
+  if run_github_preflight_case "success" "git,node,curl" "$PREFLIGHT_SECRETS_DIR" && \
+     grep -q 'github operations health check PASSED' "$SUCCESS_LOG" && \
+     ! grep -q 'CLASSIFICATION:' "$SUCCESS_LOG"; then
+    printf '%b✓%b Preflight succeeds when required secrets and dependencies are present\n' "$GREEN" "$NC"
+    ((TESTS_PASSED++))
+  else
+    printf '%b✗%b Preflight success path failed with required prerequisites present\n' "$RED" "$NC"
+    [ -f "$SUCCESS_LOG" ] && cat "$SUCCESS_LOG"
+    ((TESTS_FAILED++))
+  fi
 fi
+rm -rf "$PREFLIGHT_TMP_DIR"
 
 # ===== Test 3: Verify exit codes are specific (not generic "unexpected shell failure") =====
 test_case "Exit codes are properly classified"
@@ -360,12 +436,12 @@ export GITHUB_APP_PRIVATE_KEY_FILE="$TEST_TMP_DIR/secrets/nonexistent_github_app
 # Extract and execute the actual health check function from kaseki-agent.sh
 HEALTH_TEST_LIB="$TEST_TMP_DIR/health-check-lib.sh"
 awk '
-  /^check_github_operations_health\(\) \{/ {in_func=1}
-  in_func {print}
-  in_func && /^}/ {exit}
+  /^github_preflight_fail\(\)/ { emit=1 }
+  /^# must match host preflight\/API secret resolution contract\./ { emit=0 }
+  emit { print }
 ' "$PROJECT_ROOT/kaseki-agent.sh" > "$HEALTH_TEST_LIB"
 
-if [ ! -s "$HEALTH_TEST_LIB" ] || ! grep -q '^check_github_operations_health()' "$HEALTH_TEST_LIB"; then
+if [ ! -s "$HEALTH_TEST_LIB" ] || ! grep -q '^github_preflight_fail()' "$HEALTH_TEST_LIB" || ! grep -q '^check_github_operations_health()' "$HEALTH_TEST_LIB"; then
   printf '%b✗%b Failed to extract health check function from kaseki-agent.sh\n' "$RED" "$NC"
   rm -rf "$TEST_TMP_DIR"
   exit 1

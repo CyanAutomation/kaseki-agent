@@ -231,6 +231,8 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/pi-summary.json
 : > /results/scouting-events.jsonl
 : > /results/scouting-summary.json
+: > /results/scouting-validation-errors.jsonl
+: > /results/scouting-validation-summary.txt
 : > /results/goal-check-events.jsonl
 : > /results/goal-check-summary.json
 : > /results/goal-check-stderr.log
@@ -379,50 +381,116 @@ validate_scouting_artifact_with_node() {
   local validation_error_file="$3"
 
   node -e '
-const fs=require("node:fs");
-const input=process.argv[1];
-const output=process.argv[2];
-const errorLog=process.argv[3];
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const errorLog = process.argv[3];
+const jsonlLog = "/results/scouting-validation-errors.jsonl";
+
+function actualType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function appendValidationFailure(reasonCode, error) {
+  fs.appendFileSync(jsonlLog, JSON.stringify({
+    timestamp: new Date().toISOString(),
+    reason_code: reasonCode,
+    ...error,
+  }) + "\n");
+}
+
+function summarize(errors) {
+  const critical = errors.filter((error) => error.severity === "critical").length;
+  const warning = errors.filter((error) => error.severity === "warning").length;
+  const counts = [];
+  if (critical) counts.push(`${critical} critical`);
+  if (warning) counts.push(`${warning} warning`);
+  const fields = errors.slice(0, 2).map((error) => error.field).join(", ");
+  const suffix = errors.length > 2 ? `, +${errors.length - 2} more` : "";
+  return `${counts.join(", ")} scouting validation ${errors.length === 1 ? "error" : "errors"}: ${fields}${suffix}`;
+}
+
 let artifact;
 try {
-  artifact=JSON.parse(fs.readFileSync(input,"utf8"));
-} catch {
-  fs.writeFileSync(errorLog, JSON.stringify({ reason_code: "malformed_json", details: "scouting artifact failed JSON parsing" }) + "\n");
+  artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+} catch (err) {
+  const reasonCode = "malformed_json";
+  const error = {
+    field: "root",
+    expected: "exactly one valid JSON object",
+    actual: err && err.message ? String(err.message) : "JSON parse failed",
+    severity: "critical",
+    suggestion: "ensure exactly one valid JSON object is written to /results/scouting-candidate.json",
+  };
+  appendValidationFailure(reasonCode, error);
+  fs.writeFileSync(errorLog, JSON.stringify({
+    reason_code: reasonCode,
+    details: summarize([error]),
+    errors: [error],
+  }) + "\n");
   process.exit(1);
 }
-const arrayKeys=["requirements","relevant_files","observations","plan","validation","risks"];
-const invalid=[];
 
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") invalid.push("root");
-if (typeof artifact.task !== "string" || !artifact.task.trim()) invalid.push("task");
-for (const key of arrayKeys) if (!Array.isArray(artifact[key])) invalid.push(key);
-if (Array.isArray(artifact.relevant_files) && artifact.relevant_files.some((item) => !item || typeof item.path !== "string" || typeof item.reason !== "string")) invalid.push("relevant_files entries");
+const errors = [];
+const addError = (field, expected, actual, severity, suggestion) => {
+  errors.push({ field, expected, actual, severity, suggestion });
+};
+const arrayKeys = ["requirements", "relevant_files", "observations", "plan", "validation", "risks"];
 
-// Validate suggested_allowlist (optional but if present, must be valid)
-if (artifact.suggested_allowlist) {
-  if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
-    invalid.push("suggested_allowlist");
-  } else {
-    if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) invalid.push("suggested_allowlist.agent_patterns");
-    if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) invalid.push("suggested_allowlist.validation_patterns");
-    if (Array.isArray(artifact.suggested_allowlist.agent_patterns) && !artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.agent_patterns values");
-    if (Array.isArray(artifact.suggested_allowlist.validation_patterns) && !artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) invalid.push("suggested_allowlist.validation_patterns values");
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+  addError("root", "object", actualType(artifact), "critical", "Scouting artifact must be a JSON object, not an array/null/primitive");
+} else {
+  if (typeof artifact.task !== "string" || !artifact.task.trim()) {
+    addError("task", "non-empty string", typeof artifact.task === "string" ? "empty string" : actualType(artifact.task), "critical", "task must be a non-empty string describing the requested work");
+  }
+  for (const key of arrayKeys) {
+    if (!Array.isArray(artifact[key])) {
+      addError(key, "array", actualType(artifact[key]), "critical", `${key} must be an array in the scouting handoff`);
+    }
+  }
+  if (Array.isArray(artifact.relevant_files)) {
+    artifact.relevant_files.forEach((item, index) => {
+      if (!item || typeof item.path !== "string" || typeof item.reason !== "string") {
+        addError(`relevant_files[${index}]`, "object with string path and string reason", actualType(item), "warning", "Each relevant_files entry must include path and reason strings");
+      }
+    });
+  }
+
+  // Validate suggested_allowlist (optional but if present, must be valid)
+  if (artifact.suggested_allowlist) {
+    if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
+      addError("suggested_allowlist", "object", actualType(artifact.suggested_allowlist), "warning", "suggested_allowlist must be an object with agent_patterns and validation_patterns arrays");
+    } else {
+      if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
+        addError("suggested_allowlist.agent_patterns", "array of strings", actualType(artifact.suggested_allowlist.agent_patterns), "warning", "agent_patterns must be an array of glob pattern strings");
+      } else if (!artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) {
+        addError("suggested_allowlist.agent_patterns", "array of strings", "array with non-strings", "warning", "All agent_patterns entries must be strings");
+      }
+      if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
+        addError("suggested_allowlist.validation_patterns", "array of strings", actualType(artifact.suggested_allowlist.validation_patterns), "warning", "validation_patterns must be an array of glob pattern strings");
+      } else if (!artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) {
+        addError("suggested_allowlist.validation_patterns", "array of strings", "array with non-strings", "warning", "All validation_patterns entries must be strings");
+      }
+    }
   }
 }
-if (invalid.length) {
-  const hasTask = invalid.includes("task");
-  const onlyTaskMissing = hasTask && invalid.length === 1;
+
+if (errors.length) {
+  const onlyTaskMissing = errors.length === 1 && errors[0].field === "task";
   const reasonCode = onlyTaskMissing ? "missing_required_fields" : "schema_mismatch";
-  fs.writeFileSync(
-    errorLog,
-    JSON.stringify({ reason_code: reasonCode, details: `invalid scouting fields: ${invalid.join(", ")}` }) + "\n"
-  );
+  for (const error of errors) appendValidationFailure(reasonCode, error);
+  fs.writeFileSync(errorLog, JSON.stringify({
+    reason_code: reasonCode,
+    details: summarize(errors),
+    errors,
+  }) + "\n");
   process.exit(1);
 }
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
 ' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log
 }
-
 # Validate scouting artifact and emit structured reason code
 validate_scouting_artifact() {
   local candidate_artifact="$1"
@@ -435,13 +503,15 @@ validate_scouting_artifact() {
   : > "$validation_error_file"
   if [ ! -f "$candidate_artifact" ]; then
     reason_code="missing_file"
-    reason_details="scouting candidate artifact not found: $candidate_artifact"
+    reason_details="1 critical scouting validation error: scouting-candidate.json"
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const error={timestamp:new Date().toISOString(),reason_code:"missing_file",field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" 2>> /results/scouting-stderr.log || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
   fi
 
   printf '%s\n' "$reason_code" > "$reason_file"
+  printf '%s\n' "$reason_details" > /results/scouting-validation-summary.txt
   printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/scouting-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
@@ -526,6 +596,10 @@ write_metadata() {
   "goal_check_enabled": $([[ "$KASEKI_GOAL_CHECK" == "1" ]] && printf 'true' || printf 'false'),
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
+  "scouting_validation": {
+    "validation_errors_log": "scouting-validation-errors.jsonl",
+    "summary_file": "scouting-validation-summary.txt"
+  },
   "goal_check_validation": {
     "attempt_count": $GOAL_CHECK_ATTEMPTS,
     "validation_errors_log": "goal-check-validation-errors.jsonl",
@@ -728,8 +802,10 @@ Artifacts:
 - metadata.json
 - pi-summary.json
 - pi-events.jsonl
+- scouting-validation-errors.jsonl
 - goal-check.json
 - goal-check-attempts.jsonl
+- goal-check-validation-errors.jsonl
 - run-evaluation.json
 - pre-validation.log
 - pre-validation-timings.tsv
@@ -2399,7 +2475,8 @@ run_scouting_agent() {
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "/results/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
-    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting did not write a schema-valid JSON handoff to $SCOUTING_CANDIDATE_ARTIFACT" "exit"
+    scouting_validation_summary="$(cat /results/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
+    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_summary (full details: /results/scouting-validation-errors.jsonl)" "exit"
   fi
   scout_dirty_after="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
@@ -2914,36 +2991,34 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  # shellcheck disable=SC2016,SC1078,SC1079,SC2026
-  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
-    const fs = require(\"fs\");
-    const stdout = fs.readFileSync(0, 'utf8');
-    const stderr = process.env.TOKEN_HELPER_STDERR || '';
-    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
-    const sanitize = (value) => String(value || "")
-      .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
-      .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
-      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
-      .replace(/[\r\n\t]+/g, " ")
-      .replace(/ {2,}/g, " ")
-      .trim();
-    let error = "";
-    let status = "";
-    try {
-      const parsed = JSON.parse(stdout || "{}");
-      error = parsed.error || parsed.message || "";
-      const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
-      if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
-    } catch (_) {}
-    error = sanitize(error);
-    if (!error) error = sanitize(stderr);
-    if (!error) error = `github-app-token helper exited with code ${exitCode}`;
-    if (!status) {
-      const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
-      if (match) status = match[1];
-    }
-    process.stdout.write(`${error}\t${status}`);
-  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
+  TOKEN_HELPER_STDOUT="$helper_stdout" TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node <<'NODE' 2>/dev/null || printf 'github-app-token helper exited with code %s	' "$helper_exit_code"
+const stdout = process.env.TOKEN_HELPER_STDOUT || '';
+const stderr = process.env.TOKEN_HELPER_STDERR || '';
+const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
+const sanitize = (value) => String(value || '')
+  .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[redacted private key]')
+  .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted token]')
+  .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted jwt]')
+  .replace(/[\r\n\t]+/g, ' ')
+  .replace(/ {2,}/g, ' ')
+  .trim();
+let error = '';
+let status = '';
+try {
+  const parsed = JSON.parse(stdout || '{}');
+  error = parsed.error || parsed.message || '';
+  const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || '';
+  if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
+} catch (_) {}
+error = sanitize(error);
+if (!error) error = sanitize(stderr);
+if (!error) error = `github-app-token helper exited with code ${exitCode}`;
+if (!status) {
+  const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
+  if (match) status = match[1];
+}
+process.stdout.write(`${error}\t${status}`);
+NODE
 }
 
 
@@ -3061,10 +3136,36 @@ EOF_ASKPASS
   return 0
 }
 
+
+github_preflight_fail() {
+  local classification="$1"
+  local remediation="$2"
+  shift 2
+  local message
+  printf -v message "$@"
+  printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
+  printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
+  printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
+  return 1
+}
+
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
   local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
+  if ! declare -F github_preflight_fail >/dev/null 2>&1; then
+    github_preflight_fail() {
+      local classification="$1"
+      local remediation="$2"
+      shift 2
+      local message
+      printf -v message "$@"
+      printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
+      printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
+      printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
+      return 1
+    }
+  fi
   : > "$health_log"
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
@@ -3076,64 +3177,65 @@ check_github_operations_health() {
   github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   
   if ! [ -r "$github_app_id_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App ID from %s\n' "$github_app_id_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_id" "Provide a readable GitHub App ID secret via GITHUB_APP_ID_FILE or KASEKI_SECRETS_DIR/github_app_id." "Cannot read GitHub App ID from %s" "$github_app_id_file"
+    return $?
   fi
   if ! [ -r "$github_app_client_id_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App client ID from %s\n' "$github_app_client_id_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_client_id" "Provide a readable GitHub App client ID secret via GITHUB_APP_CLIENT_ID_FILE or KASEKI_SECRETS_DIR/github_app_client_id." "Cannot read GitHub App client ID from %s" "$github_app_client_id_file"
+    return $?
   fi
   if ! [ -r "$github_app_private_key_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App private key from %s\n' "$github_app_private_key_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_private_key" "Provide a readable GitHub App private key secret via GITHUB_APP_PRIVATE_KEY_FILE or KASEKI_SECRETS_DIR/github_app_private_key." "Cannot read GitHub App private key from %s" "$github_app_private_key_file"
+    return $?
   fi
   log_github_private_key_metadata "$github_app_private_key_file" "$health_log"
   printf '[health-check] ✓ GitHub App secrets are readable\n' | tee -a "$health_log"
   
   # Check 2: Verify git is available
   if ! git --version >/dev/null 2>&1; then
-    printf '[health-check] ERROR: git command is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_git" "Install git in the runtime image or ensure git is available on PATH before starting Kaseki." "git command is not available"
+    return $?
   fi
   printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
   
   # Check 3: Test Node.js github-app-token helper file exists and is executable
   local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
   if ! [ -x "$github_app_token_helper" ]; then
-    printf '[health-check] ERROR: github-app-token helper not found at %s\n' "$github_app_token_helper" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_token_helper" "Install or build the github-app-token helper and set KASEKI_GITHUB_APP_TOKEN_HELPER if it lives outside /usr/local/bin." "github-app-token helper not found at %s" "$github_app_token_helper"
+    return $?
   fi
   printf '[health-check] ✓ github-app-token helper file exists and is executable\n' | tee -a "$health_log"
   
   # Check 4: Test Node.js is available
   if ! command -v node >/dev/null 2>&1; then
-    printf '[health-check] ERROR: Node.js is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_node" "Install Node.js in the runtime image or ensure node is available on PATH before starting Kaseki." "Node.js is not available"
+    return $?
   fi
   printf '[health-check] ✓ Node.js is available\n' | tee -a "$health_log"
   
   # Check 5: Test Node.js JSON parsing
   local test_output
   test_output=$(printf '{"test":"value"}' | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.test);" 2>&1) || {
-    printf '[health-check] ERROR: Node.js JSON parsing failed: %s\n' "$test_output" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "node_json_parse_failed" "Verify the Node.js runtime is healthy and can execute inline scripts." "Node.js JSON parsing failed: %s" "$test_output"
+    return $?
   }
   if [ "$test_output" != "value" ]; then
-    printf '[health-check] ERROR: Node.js JSON parsing returned unexpected output: %s\n' "$test_output" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "node_json_parse_unexpected_output" "Verify the Node.js runtime is healthy and not shadowed by a wrapper on PATH." "Node.js JSON parsing returned unexpected output: %s" "$test_output"
+    return $?
   fi
   printf '[health-check] ✓ Node.js JSON parsing works\n' | tee -a "$health_log"
   
   # Check 6: Test github-app-token helper can start and resolve runtime imports
   local helper_probe_stdout_tmp helper_probe_stderr_tmp helper_probe_exit_code helper_probe_stdout helper_probe_stderr helper_probe_parse_result helper_probe_error
   helper_probe_stdout_tmp="$(mktemp /tmp/github-health-helper-probe-stdout.XXXXXX)" || {
-    printf '[health-check] ERROR: Failed to create helper load probe stdout temp file\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create helper load probe stdout temp file"
+    return $?
   }
   helper_probe_stderr_tmp="$(mktemp /tmp/github-health-helper-probe-stderr.XXXXXX)" || {
-    printf '[health-check] ERROR: Failed to create helper load probe stderr temp file\n' | tee -a "$health_log" >&2
+    github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create helper load probe stderr temp file"
+    local preflight_status=$?
     rm -f "$helper_probe_stdout_tmp"
-    return 1
+    return $preflight_status
   }
 
   "$github_app_token_helper" >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
@@ -3148,15 +3250,15 @@ check_github_operations_health() {
     if printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -Eq 'github-app-private-key(\.js)?'; then
       helper_probe_error='missing dependency github-app-private-key.js'
     fi
-    printf '[health-check] ERROR: github-app-token helper failed to load: %s\n' "$helper_probe_error" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "github_app_token_helper_load_failed" "Rebuild the runtime image or install the missing github-app-token helper dependencies." "github-app-token helper failed to load: %s" "$helper_probe_error"
+    return $?
   fi
   printf '[health-check] ✓ github-app-token helper can start and resolve imports\n' | tee -a "$health_log"
 
   # Check 7: Test curl is available
   if ! command -v curl >/dev/null 2>&1; then
-    printf '[health-check] ERROR: curl is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_curl" "Install curl in the runtime image or ensure curl is available on PATH before starting Kaseki." "curl is not available"
+    return $?
   fi
   printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
 
@@ -3173,18 +3275,19 @@ check_github_operations_health() {
       repo="$GITHUB_REPO_NAME"
       app_id="$(cat "$github_app_id_file" 2>/dev/null)" || app_id=""
       if [ -z "$app_id" ]; then
-        printf '[health-check] ERROR: Cannot read GitHub App ID for auth smoke test\n' | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "missing_github_app_id" "Ensure the GitHub App ID secret is readable and non-empty before enabling the auth smoke test." "Cannot read GitHub App ID for auth smoke test"
+        return $?
       fi
 
       token_stdout_tmp="$(mktemp /tmp/github-health-token-stdout.XXXXXX)" || {
-        printf '[health-check] ERROR: Failed to create token stdout temp file\n' | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create token stdout temp file"
+        return $?
       }
       token_stderr_tmp="$(mktemp /tmp/github-health-token-stderr.XXXXXX)" || {
-        printf '[health-check] ERROR: Failed to create token stderr temp file\n' | tee -a "$health_log" >&2
+        github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create token stderr temp file"
+        local preflight_status=$?
         rm -f "$token_stdout_tmp"
-        return 1
+        return $preflight_status
       }
 
       "$github_app_token_helper" "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
@@ -3196,8 +3299,8 @@ check_github_operations_health() {
       if [ "$token_exit_code" -ne 0 ]; then
         token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
         token_error="${token_parse_result%%$'\t'*}"
-        printf '[health-check] ERROR: GitHub App token generation failed for owner/repo: %s\n' "$token_error" | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "github_app_token_generation_failed" "Verify the GitHub App is installed on REPO_URL and the app ID/private key pair are valid." "GitHub App token generation failed for owner/repo: %s" "$token_error"
+        return $?
       fi
 
       printf '[health-check] ✓ GitHub App token generation works for owner/repo\n' | tee -a "$health_log"
