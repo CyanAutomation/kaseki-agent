@@ -118,6 +118,23 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'scouting-validation-errors.jsonl': {
+    name: 'scouting-validation-errors.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Structured scouting artifact validation failures with field-level expected/actual details and suggestions',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 8,
+    sizeHint: 'small',
+  },
+
+  'scouting-validation-summary.txt': {
+    name: 'scouting-validation-summary.txt',
+    contentType: 'text/plain',
+    description: 'Concise summary of the latest scouting artifact validation result',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
   'goal-check.json': {
     name: 'goal-check.json',
     contentType: 'application/json',
