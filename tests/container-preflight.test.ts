@@ -304,10 +304,12 @@ describe('ContainerPreflightDiagnostics', () => {
     test('fails with the exact unreadable secret set', () => {
       writeRequiredSecrets(fixture);
       const unreadableSecret = path.join(fixture.secretsDir, 'openrouter_api_key');
+      const originalAccessSync = fs.accessSync;
       jest.spyOn(fs, 'accessSync').mockImplementation((target, mode) => {
         if (target === unreadableSecret && mode === fs.constants.R_OK) {
           throw new Error('permission denied');
         }
+        return originalAccessSync(target, mode);
       });
 
       const check = getCheck(runDiagnostics(fixture), 'secrets-readable');
