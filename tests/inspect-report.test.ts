@@ -10,11 +10,22 @@ import { execSync } from 'node:child_process';
 
 describe('inspect-report generation', () => {
   let tempDir: string;
-  const severityKeywords = {
+  type Severity = 'critical' | 'warning' | 'info';
+
+  type ParsedFinding = {
+    ordinal: number;
+    text: string;
+    severity: Severity;
+    trigger: string;
+  };
+
+  const severityKeywords: Record<Severity, readonly string[]> = {
     critical: ['critical', 'vulnerability', 'leak', 'race condition', 'unauthorized'],
     warning: ['missing', 'performance', 'deprecated', 'memory leak', 'validation', 'needs improvement'],
     info: ['style', 'good', 'standards are met', 'architecture is sound'],
   } as const;
+
+  const findingTriggers = ['found', 'identified', 'discovered', 'analysis', 'observation', 'conclusion'];
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-inspect-test-'));
@@ -30,18 +41,65 @@ describe('inspect-report generation', () => {
     return fs.readFileSync(path.join(resultsDir, 'inspect-report.md'), 'utf8');
   }
 
-  function getFindings(report: string): string[] {
-    return report
-      .split('\n')
-      .filter(line => /^\d+\. /.test(line))
-      .map(line => line.replace(/^\d+\. /, '').trim());
+  function severityOf(finding: string): Severity {
+    const lower = finding.toLowerCase();
+    if (severityKeywords.warning.some(keyword => lower.includes(keyword))) return 'warning';
+    if (severityKeywords.critical.some(keyword => lower.includes(keyword))) return 'critical';
+    return 'info';
   }
 
-  function severityOf(finding: string): keyof typeof severityKeywords {
-    const lower = finding.toLowerCase();
-    if (severityKeywords.critical.some(keyword => lower.includes(keyword))) return 'critical';
-    if (severityKeywords.warning.some(keyword => lower.includes(keyword))) return 'warning';
-    return 'info';
+  function parseFindings(report: string): ParsedFinding[] {
+    return report
+      .split('\n')
+      .map((line): ParsedFinding | null => {
+        const match = line.match(/^(\d+)\. (.+)$/);
+        if (!match) return null;
+
+        const text = match[2].trim();
+        const trigger = findingTriggers.find(keyword => text.toLowerCase().includes(keyword));
+
+        return {
+          ordinal: Number(match[1]),
+          text,
+          severity: severityOf(text),
+          trigger: trigger ?? '',
+        };
+      })
+      .filter((finding): finding is ParsedFinding => finding !== null);
+  }
+
+  function findingTexts(report: string): string[] {
+    return parseFindings(report).map(finding => finding.text);
+  }
+
+  function countBySeverity(findings: ParsedFinding[]): Record<Severity, number> {
+    return findings.reduce<Record<Severity, number>>(
+      (acc, finding) => {
+        acc[finding.severity] += 1;
+        return acc;
+      },
+      { critical: 0, warning: 0, info: 0 }
+    );
+  }
+
+  function groupBySeverity(findings: ParsedFinding[]): Record<Severity, string[]> {
+    return findings.reduce<Record<Severity, string[]>>(
+      (acc, finding) => {
+        acc[finding.severity].push(finding.text);
+        return acc;
+      },
+      { critical: [], warning: [], info: [] }
+    );
+  }
+
+  function expectRequiredFindingFields(findings: ParsedFinding[]): void {
+    findings.forEach((finding, index) => {
+      expect(finding.ordinal).toBe(index + 1);
+      expect(finding.text.length).toBeGreaterThanOrEqual(12);
+      expect(finding.text).not.toMatch(/^\s*$/);
+      expect(finding.trigger).not.toBe('');
+      expect(['critical', 'warning', 'info']).toContain(finding.severity);
+    });
   }
 
   test('generates report with minimal artifacts', () => {
@@ -257,39 +315,25 @@ describe('inspect-report generation', () => {
 
     const report = runGenerateScript(tempDir);
 
-    // Semantic validation: should have exactly 10 findings (max limit)
-    // Semantic validation: should have exactly 10 findings (max limit)
-    // Semantic validation: should have exactly 10 findings (max limit)
-    const findings = getFindings(report);
-    expect(findings).toHaveLength(10);
+    const parsedFindings = parseFindings(report);
+    expect(parsedFindings).toHaveLength(10);
+    expectRequiredFindingFields(parsedFindings);
 
-    // Semantic validation: findings should contain expected key terms
-    expect(report).toContain('critical security vulnerability');
-    expect(report).toContain('performance bottleneck');
-    expect(report).toContain('missing error handling');
+    const findings = parsedFindings.map(finding => finding.text);
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.stringContaining('critical security vulnerability'),
+      expect.stringContaining('performance bottleneck'),
+      expect.stringContaining('missing error handling'),
+    ]));
+    expect(findings).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('race condition'),
+      expect.stringContaining('logging needs improvement'),
+      expect.stringContaining('overall architecture is sound'),
+    ]));
 
-    // Semantic validation: findings should be properly numbered
-    const findingMatches = report.match(/^\d+\. /gm) ?? [];
-    findingMatches.forEach((match, index) => {
-      const expectedNumber = index + 1;
-      expect(match).toBe(`${expectedNumber}. `);
-    });
-
-    // Semantic validation: findings should not contain duplicates
     const uniqueFindings = [...new Set(findings)];
     expect(findings).toHaveLength(uniqueFindings.length);
-
-    // Semantic validation: findings include expected severity distribution
-    const bySeverity = findings.reduce<Record<'critical' | 'warning' | 'info', number>>(
-      (acc, finding) => {
-        acc[severityOf(finding)] += 1;
-        return acc;
-      },
-      { critical: 0, warning: 0, info: 0 }
-    );
-    expect(bySeverity.critical).toBeGreaterThanOrEqual(3);
-    expect(bySeverity.warning).toBeGreaterThanOrEqual(3);
-    expect(bySeverity.info).toBeGreaterThanOrEqual(1);
+    expect(countBySeverity(parsedFindings)).toEqual({ critical: 1, warning: 4, info: 5 });
   });
 
   test('extracts findings with different severities and types', () => {
@@ -330,41 +374,27 @@ describe('inspect-report generation', () => {
 
     const report = runGenerateScript(tempDir);
 
-    // Semantic validation: should extract only relevant findings
-    // Semantic validation: should extract only relevant findings
-    const findings = getFindings(report);
-    expect(findings).toHaveLength(5); // Should extract 5 valid findings
+    const parsedFindings = parseFindings(report);
+    expect(parsedFindings).toHaveLength(5);
+    expectRequiredFindingFields(parsedFindings);
+    expect(countBySeverity(parsedFindings)).toEqual({ critical: 1, warning: 2, info: 2 });
 
-    // Semantic validation: should include severity-based findings
-    expect(report).toContain('critical security issue');
-    expect(report).toContain('performance problem');
-    expect(report).toContain('style inconsistency');
+    const grouped = groupBySeverity(parsedFindings);
+    expect(grouped.critical).toEqual([expect.stringContaining('critical security issue')]);
+    expect(grouped.warning).toEqual(expect.arrayContaining([
+      expect.stringContaining('performance problem'),
+      expect.stringContaining('documentation needs improvement'),
+    ]));
+    expect(grouped.info).toEqual(expect.arrayContaining([
+      expect.stringContaining('style inconsistency'),
+      expect.stringContaining('good test coverage'),
+    ]));
 
-    // Semantic validation: should exclude non-findings
-    expect(report).not.toContain('just regular conversation');
-    expect(report).not.toContain('thinking:');
-
-    // Semantic validation: should include positive findings
-    expect(report).toContain('good test coverage');
-
-    // Semantic validation: each extracted finding should have required fields/shape
-    findings.forEach((finding) => {
-      expect(finding.length).toBeGreaterThanOrEqual(12);
-      expect(finding).not.toMatch(/^\s*$/);
-      expect(finding.toLowerCase()).toMatch(/(found|identified|discovered|analysis|observation|conclusion)/);
-    });
-
-    // Semantic validation: representative grouping behavior by severity
-    const grouped = findings.reduce<Record<'critical' | 'warning' | 'info', string[]>>(
-      (acc, finding) => {
-        acc[severityOf(finding)].push(finding);
-        return acc;
-      },
-      { critical: [], warning: [], info: [] }
-    );
-    expect(grouped.critical.length).toBe(1);
-    expect(grouped.warning.length).toBeGreaterThanOrEqual(2);
-    expect(grouped.info.length).toBeGreaterThanOrEqual(1);
+    const findings = parsedFindings.map(finding => finding.text);
+    expect(findings).not.toEqual(expect.arrayContaining([
+      expect.stringContaining('just regular conversation'),
+      expect.stringContaining('thinking:'),
+    ]));
   });
 
   test('sanitizes and filters findings properly', () => {
@@ -401,17 +431,18 @@ describe('inspect-report generation', () => {
     expect(report).not.toContain('[thinking]');
     expect(report).not.toContain('[/thinking]');
     expect(report).not.toContain('confidential analysis');
+    expect(report).not.toContain('thinking: this internal thought should be removed');
 
     // Semantic validation: actual findings should be preserved
     expect(report).toContain('vulnerability in authentication system');
 
-    // Semantic validation: findings should have valid structure
-    // Semantic validation: findings should have valid structure
-    const findings = getFindings(report);
-    expect(findings).toHaveLength(4); // All 4 events should be extracted as findings
-    findings.forEach((finding) => {
-      expect(finding).not.toContain('sk-or-');
-      expect(finding).not.toContain('[thinking]');
+    const parsedFindings = parseFindings(report);
+    expect(parsedFindings).toHaveLength(3);
+    expectRequiredFindingFields(parsedFindings);
+    expect(countBySeverity(parsedFindings)).toEqual({ critical: 2, warning: 0, info: 1 });
+    parsedFindings.forEach((finding) => {
+      expect(finding.text).not.toContain('sk-or-');
+      expect(finding.text).not.toContain('[thinking]');
     });
   });
 
@@ -448,7 +479,7 @@ describe('inspect-report generation', () => {
     expect(report).toContain('missing error handling in file operations');
     expect(report).toContain('potential memory leak in event listeners');
     // Semantic validation: should have exactly 3 findings (the long one is not filtered)
-    const findings = getFindings(report);
+    const findings = findingTexts(report);
     expect(findings).toHaveLength(3);
   });
 
