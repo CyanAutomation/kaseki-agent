@@ -2914,36 +2914,34 @@ parse_github_app_token_helper_failure() {
   helper_stderr="$2"
   helper_exit_code="$3"
 
-  # shellcheck disable=SC2016,SC1078,SC1079,SC2026
-  printf '%s' "$helper_stdout" | TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node -e '
-    const fs = require(\"fs\");
-    const stdout = fs.readFileSync(0, 'utf8');
-    const stderr = process.env.TOKEN_HELPER_STDERR || '';
-    const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
-    const sanitize = (value) => String(value || "")
-      .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, "[redacted private key]")
-      .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted token]")
-      .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted jwt]")
-      .replace(/[\r\n\t]+/g, " ")
-      .replace(/ {2,}/g, " ")
-      .trim();
-    let error = "";
-    let status = "";
-    try {
-      const parsed = JSON.parse(stdout || "{}");
-      error = parsed.error || parsed.message || "";
-      const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || "";
-      if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
-    } catch (_) {}
-    error = sanitize(error);
-    if (!error) error = sanitize(stderr);
-    if (!error) error = `github-app-token helper exited with code ${exitCode}`;
-    if (!status) {
-      const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
-      if (match) status = match[1];
-    }
-    process.stdout.write(`${error}\t${status}`);
-  ' 2>/dev/null || printf 'github-app-token helper exited with code %s\t' "$helper_exit_code"
+  TOKEN_HELPER_STDOUT="$helper_stdout" TOKEN_HELPER_STDERR="$helper_stderr" TOKEN_HELPER_EXIT_CODE="$helper_exit_code" node <<'NODE' 2>/dev/null || printf 'github-app-token helper exited with code %s	' "$helper_exit_code"
+const stdout = process.env.TOKEN_HELPER_STDOUT || '';
+const stderr = process.env.TOKEN_HELPER_STDERR || '';
+const exitCode = process.env.TOKEN_HELPER_EXIT_CODE || 'unknown';
+const sanitize = (value) => String(value || '')
+  .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[redacted private key]')
+  .replace(/\b(?:gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[redacted token]')
+  .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted jwt]')
+  .replace(/[\r\n\t]+/g, ' ')
+  .replace(/ {2,}/g, ' ')
+  .trim();
+let error = '';
+let status = '';
+try {
+  const parsed = JSON.parse(stdout || '{}');
+  error = parsed.error || parsed.message || '';
+  const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || '';
+  if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
+} catch (_) {}
+error = sanitize(error);
+if (!error) error = sanitize(stderr);
+if (!error) error = `github-app-token helper exited with code ${exitCode}`;
+if (!status) {
+  const match = error.match(/(?:HTTP(?: status)?|status(?: code)?)[^0-9]{0,12}([1-5][0-9]{2})/i);
+  if (match) status = match[1];
+}
+process.stdout.write(`${error}\t${status}`);
+NODE
 }
 
 
@@ -3061,10 +3059,36 @@ EOF_ASKPASS
   return 0
 }
 
+
+github_preflight_fail() {
+  local classification="$1"
+  local remediation="$2"
+  shift 2
+  local message
+  printf -v message "$@"
+  printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
+  printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
+  printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
+  return 1
+}
+
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
   local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
+  if ! declare -F github_preflight_fail >/dev/null 2>&1; then
+    github_preflight_fail() {
+      local classification="$1"
+      local remediation="$2"
+      shift 2
+      local message
+      printf -v message "$@"
+      printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
+      printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
+      printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
+      return 1
+    }
+  fi
   : > "$health_log"
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
@@ -3076,64 +3100,65 @@ check_github_operations_health() {
   github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   
   if ! [ -r "$github_app_id_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App ID from %s\n' "$github_app_id_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_id" "Provide a readable GitHub App ID secret via GITHUB_APP_ID_FILE or KASEKI_SECRETS_DIR/github_app_id." "Cannot read GitHub App ID from %s" "$github_app_id_file"
+    return $?
   fi
   if ! [ -r "$github_app_client_id_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App client ID from %s\n' "$github_app_client_id_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_client_id" "Provide a readable GitHub App client ID secret via GITHUB_APP_CLIENT_ID_FILE or KASEKI_SECRETS_DIR/github_app_client_id." "Cannot read GitHub App client ID from %s" "$github_app_client_id_file"
+    return $?
   fi
   if ! [ -r "$github_app_private_key_file" ]; then
-    printf '[health-check] ERROR: Cannot read GitHub App private key from %s\n' "$github_app_private_key_file" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_private_key" "Provide a readable GitHub App private key secret via GITHUB_APP_PRIVATE_KEY_FILE or KASEKI_SECRETS_DIR/github_app_private_key." "Cannot read GitHub App private key from %s" "$github_app_private_key_file"
+    return $?
   fi
   log_github_private_key_metadata "$github_app_private_key_file" "$health_log"
   printf '[health-check] ✓ GitHub App secrets are readable\n' | tee -a "$health_log"
   
   # Check 2: Verify git is available
   if ! git --version >/dev/null 2>&1; then
-    printf '[health-check] ERROR: git command is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_git" "Install git in the runtime image or ensure git is available on PATH before starting Kaseki." "git command is not available"
+    return $?
   fi
   printf '[health-check] ✓ git is available\n' | tee -a "$health_log"
   
   # Check 3: Test Node.js github-app-token helper file exists and is executable
   local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
   if ! [ -x "$github_app_token_helper" ]; then
-    printf '[health-check] ERROR: github-app-token helper not found at %s\n' "$github_app_token_helper" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_github_app_token_helper" "Install or build the github-app-token helper and set KASEKI_GITHUB_APP_TOKEN_HELPER if it lives outside /usr/local/bin." "github-app-token helper not found at %s" "$github_app_token_helper"
+    return $?
   fi
   printf '[health-check] ✓ github-app-token helper file exists and is executable\n' | tee -a "$health_log"
   
   # Check 4: Test Node.js is available
   if ! command -v node >/dev/null 2>&1; then
-    printf '[health-check] ERROR: Node.js is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_node" "Install Node.js in the runtime image or ensure node is available on PATH before starting Kaseki." "Node.js is not available"
+    return $?
   fi
   printf '[health-check] ✓ Node.js is available\n' | tee -a "$health_log"
   
   # Check 5: Test Node.js JSON parsing
   local test_output
   test_output=$(printf '{"test":"value"}' | node -e "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.test);" 2>&1) || {
-    printf '[health-check] ERROR: Node.js JSON parsing failed: %s\n' "$test_output" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "node_json_parse_failed" "Verify the Node.js runtime is healthy and can execute inline scripts." "Node.js JSON parsing failed: %s" "$test_output"
+    return $?
   }
   if [ "$test_output" != "value" ]; then
-    printf '[health-check] ERROR: Node.js JSON parsing returned unexpected output: %s\n' "$test_output" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "node_json_parse_unexpected_output" "Verify the Node.js runtime is healthy and not shadowed by a wrapper on PATH." "Node.js JSON parsing returned unexpected output: %s" "$test_output"
+    return $?
   fi
   printf '[health-check] ✓ Node.js JSON parsing works\n' | tee -a "$health_log"
   
   # Check 6: Test github-app-token helper can start and resolve runtime imports
   local helper_probe_stdout_tmp helper_probe_stderr_tmp helper_probe_exit_code helper_probe_stdout helper_probe_stderr helper_probe_parse_result helper_probe_error
   helper_probe_stdout_tmp="$(mktemp /tmp/github-health-helper-probe-stdout.XXXXXX)" || {
-    printf '[health-check] ERROR: Failed to create helper load probe stdout temp file\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create helper load probe stdout temp file"
+    return $?
   }
   helper_probe_stderr_tmp="$(mktemp /tmp/github-health-helper-probe-stderr.XXXXXX)" || {
-    printf '[health-check] ERROR: Failed to create helper load probe stderr temp file\n' | tee -a "$health_log" >&2
+    github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create helper load probe stderr temp file"
+    local preflight_status=$?
     rm -f "$helper_probe_stdout_tmp"
-    return 1
+    return $preflight_status
   }
 
   "$github_app_token_helper" >"$helper_probe_stdout_tmp" 2>"$helper_probe_stderr_tmp"
@@ -3148,15 +3173,15 @@ check_github_operations_health() {
     if printf '%s\n%s' "$helper_probe_stdout" "$helper_probe_stderr" | grep -Eq 'github-app-private-key(\.js)?'; then
       helper_probe_error='missing dependency github-app-private-key.js'
     fi
-    printf '[health-check] ERROR: github-app-token helper failed to load: %s\n' "$helper_probe_error" | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "github_app_token_helper_load_failed" "Rebuild the runtime image or install the missing github-app-token helper dependencies." "github-app-token helper failed to load: %s" "$helper_probe_error"
+    return $?
   fi
   printf '[health-check] ✓ github-app-token helper can start and resolve imports\n' | tee -a "$health_log"
 
   # Check 7: Test curl is available
   if ! command -v curl >/dev/null 2>&1; then
-    printf '[health-check] ERROR: curl is not available\n' | tee -a "$health_log" >&2
-    return 1
+    github_preflight_fail "missing_curl" "Install curl in the runtime image or ensure curl is available on PATH before starting Kaseki." "curl is not available"
+    return $?
   fi
   printf '[health-check] ✓ curl is available\n' | tee -a "$health_log"
 
@@ -3173,18 +3198,19 @@ check_github_operations_health() {
       repo="$GITHUB_REPO_NAME"
       app_id="$(cat "$github_app_id_file" 2>/dev/null)" || app_id=""
       if [ -z "$app_id" ]; then
-        printf '[health-check] ERROR: Cannot read GitHub App ID for auth smoke test\n' | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "missing_github_app_id" "Ensure the GitHub App ID secret is readable and non-empty before enabling the auth smoke test." "Cannot read GitHub App ID for auth smoke test"
+        return $?
       fi
 
       token_stdout_tmp="$(mktemp /tmp/github-health-token-stdout.XXXXXX)" || {
-        printf '[health-check] ERROR: Failed to create token stdout temp file\n' | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create token stdout temp file"
+        return $?
       }
       token_stderr_tmp="$(mktemp /tmp/github-health-token-stderr.XXXXXX)" || {
-        printf '[health-check] ERROR: Failed to create token stderr temp file\n' | tee -a "$health_log" >&2
+        github_preflight_fail "tempfile_creation_failed" "Ensure /tmp is writable inside the runtime container." "Failed to create token stderr temp file"
+        local preflight_status=$?
         rm -f "$token_stdout_tmp"
-        return 1
+        return $preflight_status
       }
 
       "$github_app_token_helper" "$app_id" "$github_app_private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
@@ -3196,8 +3222,8 @@ check_github_operations_health() {
       if [ "$token_exit_code" -ne 0 ]; then
         token_parse_result="$(parse_github_app_token_helper_failure "$token_data" "$token_stderr" "$token_exit_code")"
         token_error="${token_parse_result%%$'\t'*}"
-        printf '[health-check] ERROR: GitHub App token generation failed for owner/repo: %s\n' "$token_error" | tee -a "$health_log" >&2
-        return 1
+        github_preflight_fail "github_app_token_generation_failed" "Verify the GitHub App is installed on REPO_URL and the app ID/private key pair are valid." "GitHub App token generation failed for owner/repo: %s" "$token_error"
+        return $?
       fi
 
       printf '[health-check] ✓ GitHub App token generation works for owner/repo\n' | tee -a "$health_log"
