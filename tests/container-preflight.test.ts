@@ -241,10 +241,12 @@ describe('ContainerPreflightDiagnostics', () => {
     });
 
     test('fails with the exact unreadable directory set', () => {
+      const originalAccessSync = fs.accessSync;
       jest.spyOn(fs, 'accessSync').mockImplementation((target, mode) => {
         if (target === fixture.runsDir && mode === fs.constants.R_OK) {
           throw new Error('permission denied');
         }
+        return originalAccessSync(target, mode);
       });
 
       const check = getCheck(runDiagnostics(fixture), 'setup-completeness');
