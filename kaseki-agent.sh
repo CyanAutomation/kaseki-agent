@@ -3005,7 +3005,8 @@ const sanitize = (value) => String(value || '')
 let error = '';
 let status = '';
 try {
-  const parsed = JSON.parse(stdout || '{}');
+  const structuredSource = stdout.trim().startsWith('{') ? stdout : stderr.trim().startsWith('{') ? stderr : '{}';
+  const parsed = JSON.parse(structuredSource);
   error = parsed.error || parsed.message || '';
   const candidateStatus = parsed.status || parsed.statusCode || parsed.http_status || parsed.httpStatus || '';
   if (/^[1-5][0-9]{2}$/.test(String(candidateStatus))) status = String(candidateStatus);
@@ -5460,6 +5461,14 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   github_app_private_key_file="$(resolve_github_secret_file "GITHUB_APP_PRIVATE_KEY_FILE" "github_app_private_key")"
   if [ -r "$github_app_id_file" ] && [ -r "$github_app_client_id_file" ] && [ -r "$github_app_private_key_file" ]; then
     run_github_operations
+    github_operations_exit=$?
+    if [ "$github_operations_exit" -ne 0 ]; then
+      if [ "$GITHUB_PUSH_EXIT" -eq 0 ] && [ "$GITHUB_PR_EXIT" -ne 0 ]; then
+        GITHUB_PUSH_EXIT="$GITHUB_PR_EXIT"
+      elif [ "$GITHUB_PUSH_EXIT" -eq 0 ]; then
+        GITHUB_PUSH_EXIT="$github_operations_exit"
+      fi
+    fi
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
     GITHUB_OPERATION_PHASE="secrets"
