@@ -2418,32 +2418,111 @@ is_transient_goal_setting_failure() {
 
 build_goal_setting_prompt() {
   cat <<EOF
-You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal.
+You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
 
-Reference: https://developers.openrouter.ai/docs/guides/model-selection
+Reference: https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex
 
-Guidelines for a high-quality goal:
-1. **Clarity**: Be specific and unambiguous. Avoid vague language like "fix", "improve", "handle better".
-2. **Measurability**: Include concrete success criteria (e.g., "all tests pass", "no TypeScript errors", "100% coverage on changed lines").
-3. **Context**: Explain why this task matters (business impact, technical debt, etc).
-4. **Constraints**: List any operational guardrails (e.g., "do not modify generated files", "preserve backward compatibility").
-5. **Scope**: Define what should and should NOT be changed.
+=== OPENAI BEST PRACTICES FOR WELL-FORMED GOALS ===
 
-Input task prompt:
+1. **EXPLICIT ANTI-PATTERNS ("DO NOT" CLAUSES)**
+   - Extract hard boundaries: what the agent MUST NOT modify, break, or change
+   - Distinguish from soft constraints (nice-to-have guardrails)
+   - Examples of strong anti-patterns:
+     ✓ "Do not modify generated files (src/generated/**)"
+     ✓ "Do not break existing API contracts"
+     ✓ "Do not change configuration file structure"
+
+2. **SMART SUCCESS CRITERIA** (not vague descriptions)
+   - Specific: "Fix parseRole() null-safety" (not "improve parseRole()")
+   - Measurable: "Add 5 edge-case tests" (not "better test coverage")
+   - Achievable: "2-3 files max" (not "refactor whole system")
+   - Relevant: Tied to task goal (not scope creep)
+   - Time-bound: Implicit in single-run batch (not "eventually")
+   
+3. **CONSTRAINT CATEGORIZATION**
+   - Separate constraints by type: Operational, Architectural, Technical, Business
+   - Prioritize them (critical vs. optional)
+   - Help agents sequence work correctly
+
+4. **CODEBASE CONTEXT SIGNALS**
+   - Tech stack hints (Node.js, TypeScript, test framework)
+   - Folder structure patterns (what goes where)
+   - Existing conventions and patterns observed in repo
+
+5. **EXAMPLE-DRIVEN GOALS**
+   - Include input/output examples if inferrable
+   - Show "before" and "after" for clarity
+   - Helps agents ground their understanding
+
+6. **REASONING TRANSPARENCY**
+   - Explain WHY constraints exist (not just list them)
+   - Help downstream agents make intelligent trade-offs
+   - Clarify scope boundaries with business context
+
+=== INPUT ANALYSIS ===
+
+User task prompt:
 $ORIGINAL_TASK_PROMPT
 
+Analyze this prompt for:
+- Implicit success criteria and constraints
+- Scope boundaries (what's IN scope vs. OUT of scope)
+- Anti-patterns (explicit "do NOT" rules)
+- Codebase conventions to preserve (if inferrable from prompt)
+- Technical vs. business drivers
+
+=== OUTPUT SCHEMA ===
+
 Output exactly one JSON object (no markdown, no code fences) with this shape:
+
 {
   "original_prompt": "the original user prompt",
-  "upgraded_goal": "a concise, upgraded goal statement (1-3 sentences)",
-  "key_requirements": ["requirement 1", "requirement 2"],
-  "success_criteria": ["criterion 1", "criterion 2"],
-  "potential_constraints": ["constraint 1", "constraint 2"],
-  "reasoning": "brief explanation of the upgrade",
-  "confidence": "high|medium|low"
+  "upgraded_goal": "concise goal (1-3 sentences), actionable for a coding agent",
+  "key_requirements": [
+    "requirement 1 (critical constraint or dependency)",
+    "requirement 2"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "specific, measurable criterion",
+      "smart_score": "high|medium|low",
+      "reasoning": "brief reason (e.g., clearly measurable, achievable in one run)"
+    }
+  ],
+  "anti_patterns": {
+    "do_not_modify": ["path/pattern1/**", "path/pattern2/**"],
+    "do_not_break": ["API contract", "backward compatibility"],
+    "must_preserve": ["error messages", "existing behavior"]
+  },
+  "constraints": {
+    "operational": ["e.g., max 3 files changed", "must not require migration"],
+    "architectural": ["e.g., respect service boundaries", "no new dependencies"],
+    "technical": ["e.g., must pass type checking", "no deprecated APIs"],
+    "business": ["e.g., maintain user-facing behavior", "no data loss"]
+  },
+  "examples": {
+    "before": "input/state before changes (if inferrable)",
+    "after": "expected output/state after changes (if inferrable)"
+  },
+  "quality_metrics": {
+    "clarity": "high|medium|low (how unambiguous is the goal?)",
+    "measurability": "high|medium|low (can agents tell when done?)",
+    "specificity": "high|medium|low (is scope well-bounded?)",
+    "scope_clarity": "high|medium|low (are boundaries clear?)",
+    "constraint_strength": "high|medium|low (are guardrails testable?)"
+  },
+  "reasoning": "explanation of upgrades made and key decisions",
+  "confidence": "high|medium|low (overall goal readiness)"
 }
 
-Be concise. The upgraded goal should be clear enough for a coding agent to understand and execute.
+=== GUIDELINES ===
+
+- Be concise but complete. This goal will drive all downstream agents.
+- Distinguish hard constraints (safety-critical) from soft preferences.
+- Include examples if inferrable from the prompt (helps agents avoid false starts).
+- Categorize constraints by type to aid downstream prioritization.
+- If confidence is low, explain what's ambiguous and what clarification would help.
+- Focus on goal quality over verbosity.
 EOF
 }
 
@@ -2496,35 +2575,139 @@ validate_goal_setting_artifact_with_node() {
     try {
       const artifact = require('$candidate_artifact');
       const errors = [];
+      const warnings = [];
 
-      // Required fields
+      // === REQUIRED CORE FIELDS ===
       if (!artifact.original_prompt || typeof artifact.original_prompt !== 'string') {
         errors.push('missing_or_invalid: original_prompt (must be non-empty string)');
       }
       if (!artifact.upgraded_goal || typeof artifact.upgraded_goal !== 'string') {
         errors.push('missing_or_invalid: upgraded_goal (must be non-empty string)');
       }
-      if (!Array.isArray(artifact.key_requirements)) {
-        errors.push('missing_or_invalid: key_requirements (must be array)');
-      }
-      if (!Array.isArray(artifact.success_criteria)) {
-        errors.push('missing_or_invalid: success_criteria (must be array)');
-      }
       if (!artifact.reasoning || typeof artifact.reasoning !== 'string') {
         errors.push('missing_or_invalid: reasoning (must be non-empty string)');
       }
-      
-      // Confidence field (if present, must be valid value)
+
+      // === REQUIRED ARRAYS ===
+      if (!Array.isArray(artifact.key_requirements)) {
+        errors.push('missing_or_invalid: key_requirements (must be array)');
+      } else if (artifact.key_requirements.length === 0) {
+        warnings.push('empty_key_requirements: at least one requirement recommended');
+      }
+
+      // === SUCCESS CRITERIA (NEW SMART VALIDATION) ===
+      if (!Array.isArray(artifact.success_criteria)) {
+        errors.push('missing_or_invalid: success_criteria (must be array)');
+      } else if (artifact.success_criteria.length === 0) {
+        warnings.push('empty_success_criteria: at least one criterion recommended');
+      } else {
+        // Validate each criterion for SMART properties
+        let weak_criteria = 0;
+        artifact.success_criteria.forEach((c, idx) => {
+          // Accept both old format (string) and new format (object with smart_score)
+          const criterion_text = typeof c === 'string' ? c : (c.criterion || '');
+          const smart_score = typeof c === 'object' ? c.smart_score : 'unknown';
+          
+          if (!criterion_text) {
+            errors.push(\`success_criteria[\${idx}]: criterion must be non-empty string or object with 'criterion' field\`);
+          } else if (smart_score === 'low') {
+            weak_criteria++;
+          }
+        });
+        if (weak_criteria > artifact.success_criteria.length / 2) {
+          warnings.push('weak_smart_criteria: >50% of criteria scored as low SMART quality');
+        }
+      }
+
+      // === ANTI-PATTERNS (NEW FIELD) ===
+      if (artifact.anti_patterns) {
+        if (typeof artifact.anti_patterns !== 'object') {
+          errors.push('invalid: anti_patterns must be object');
+        } else {
+          const valid_keys = ['do_not_modify', 'do_not_break', 'must_preserve'];
+          Object.keys(artifact.anti_patterns).forEach(key => {
+            if (!valid_keys.includes(key)) {
+              warnings.push(\`unexpected_anti_pattern_key: \${key} (expected: do_not_modify, do_not_break, must_preserve)\`);
+            }
+            if (!Array.isArray(artifact.anti_patterns[key])) {
+              errors.push(\`invalid: anti_patterns.\${key} must be array\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_anti_patterns: recommended to include explicit do-NOT clauses');
+      }
+
+      // === CONSTRAINTS BY CATEGORY (NEW FIELD) ===
+      if (artifact.constraints) {
+        if (typeof artifact.constraints !== 'object') {
+          errors.push('invalid: constraints must be object');
+        } else {
+          const valid_categories = ['operational', 'architectural', 'technical', 'business'];
+          Object.keys(artifact.constraints).forEach(cat => {
+            if (!valid_categories.includes(cat)) {
+              warnings.push(\`unexpected_constraint_category: \${cat}\`);
+            }
+            if (!Array.isArray(artifact.constraints[cat])) {
+              errors.push(\`invalid: constraints.\${cat} must be array\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_constraints: recommended to categorize constraints');
+      }
+
+      // === EXAMPLES (NEW FIELD) ===
+      if (artifact.examples) {
+        if (typeof artifact.examples !== 'object') {
+          errors.push('invalid: examples must be object');
+        } else if (!artifact.examples.before && !artifact.examples.after) {
+          warnings.push('empty_examples: before/after examples not provided (helpful for clarity)');
+        }
+      }
+
+      // === QUALITY METRICS (NEW FIELD) ===
+      if (artifact.quality_metrics) {
+        if (typeof artifact.quality_metrics !== 'object') {
+          errors.push('invalid: quality_metrics must be object');
+        } else {
+          const valid_metrics = ['clarity', 'measurability', 'specificity', 'scope_clarity', 'constraint_strength'];
+          const valid_scores = ['high', 'medium', 'low'];
+          Object.keys(artifact.quality_metrics).forEach(metric => {
+            if (!valid_metrics.includes(metric)) {
+              warnings.push(\`unexpected_quality_metric: \${metric}\`);
+            }
+            const score = artifact.quality_metrics[metric];
+            if (!valid_scores.includes(score)) {
+              errors.push(\`invalid: quality_metrics.\${metric} must be high|medium|low (got \${score})\`);
+            }
+          });
+        }
+      } else {
+        warnings.push('missing_quality_metrics: recommended 5-point quality scorecard');
+      }
+
+      // === CONFIDENCE FIELD ===
       if (artifact.confidence && !['high', 'medium', 'low'].includes(artifact.confidence)) {
         errors.push('invalid: confidence must be high|medium|low');
       }
 
-      if (errors.length > 0) {
-        console.log(JSON.stringify({status: 'invalid_fields', errors}));
-        process.exit(1);
+      // === LEGACY FIELD COMPATIBILITY ===
+      // Support old 'potential_constraints' field for backward compatibility
+      if (artifact.potential_constraints && !artifact.constraints) {
+        warnings.push('legacy_potential_constraints: use new constraints schema instead');
       }
 
-      console.log(JSON.stringify({status: 'valid'}));
+      // === BUILD RESULT ===
+      const result = {
+        status: errors.length > 0 ? 'invalid_fields' : 'valid',
+        errors,
+        warnings,
+        smart_quality: warnings.some(w => w.includes('SMART') || w.includes('smart')) ? 'low' : 'high'
+      };
+
+      console.log(JSON.stringify(result));
+      process.exit(errors.length > 0 ? 1 : 0);
     } catch (e) {
       console.log(JSON.stringify({status: 'error', message: e.message}));
       process.exit(1);
@@ -2548,6 +2731,16 @@ validate_goal_setting_artifact_with_node() {
     } >> /results/goal-setting-validation-errors.jsonl
     [ -n "$reason_file" ] && echo "missing_required_fields" > "$reason_file"
     return 1
+  fi
+
+  # Log warnings to optional file for inspection (non-blocking)
+  local warnings
+  warnings=$(echo "$validation_output" | jq -r '.warnings | @json' 2>/dev/null || echo "[]")
+  if [ "$warnings" != "[]" ] && [ -n "$warnings" ]; then
+    {
+      echo "goal-setting-warnings:"
+      echo "$warnings" | jq -r '.[]' 2>/dev/null || true
+    } >> /results/goal-setting-validation-notes.txt 2>/dev/null || true
   fi
 
   return 0

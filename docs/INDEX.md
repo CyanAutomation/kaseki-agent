@@ -32,6 +32,9 @@ Understand how kaseki-agent works.
 | [EXIT_CODES.md](EXIT_CODES.md) | Understand exit codes and what they mean |
 | [QUALITY_GATES.md](QUALITY_GATES.md) | Quality validation, allowlists, diff size limits |
 | [TASK_PROMPT_TEMPLATES.md](TASK_PROMPT_TEMPLATES.md) | Writing effective task prompts |
+| [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md) | Goal-setting phase: upgrade prompts into mature goals |
+| [GOAL_SETTING_IMPROVEMENTS.md](GOAL_SETTING_IMPROVEMENTS.md) | **New (May 2026):** OpenAI best practices improvements (SMART criteria, anti-patterns, feedback loops) |
+| [GOAL_SETTING_PRACTICAL_GUIDE.md](GOAL_SETTING_PRACTICAL_GUIDE.md) | **New:** Hands-on guide to leveraging goal-setting improvements |
 
 ### 🔧 Operations & Deployment
 
