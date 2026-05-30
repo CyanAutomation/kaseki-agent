@@ -2007,10 +2007,10 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
 
     // Emit data to both streams before timeout
     if (proc.stdout) {
-      proc.stdout.emit('data', Buffer.from('stdout content before timeout'));
+      proc.stdout.emit('data', Buffer.from('STDOUT_ONLY_BEFORE_TIMEOUT'));
     }
     if (proc.stderr) {
-      proc.stderr.emit('data', Buffer.from('stderr content before timeout'));
+      proc.stderr.emit('data', Buffer.from('STDERR_ONLY_BEFORE_TIMEOUT'));
     }
 
     // Trigger timeout
@@ -2024,13 +2024,17 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.failureClass).toBe('timeout');
     expect(job.exitCode).toBe(124);
 
-    // Verify failure artifacts were created
-    const stderrLogPath = path.join(
-      scheduler['config'].resultsDir,
-      job.id,
-      'stderr.log',
-    );
+    // Verify failure artifacts were created with stream content in the correct sections.
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
     expect(fs.existsSync(stderrLogPath)).toBe(true);
+    const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    const stderrSection = stderrLog.split('--- captured stdout tail ---')[0];
+    const stdoutSection = stderrLog.split('--- captured stdout tail ---')[1] || '';
+    expect(stderrSection).toContain('--- captured stderr tail ---');
+    expect(stderrSection).toContain('STDERR_ONLY_BEFORE_TIMEOUT');
+    expect(stderrSection).not.toContain('STDOUT_ONLY_BEFORE_TIMEOUT');
+    expect(stdoutSection).toContain('STDOUT_ONLY_BEFORE_TIMEOUT');
+    expect(stdoutSection).not.toContain('STDERR_ONLY_BEFORE_TIMEOUT');
   });
 
   test('stdout and stderr buffers remain separate across many alternating events', async () => {
@@ -2315,12 +2319,12 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.status).toBe('failed');
     expect(job.failureClass).toBe('timeout');
 
-    // Verify failure artifacts exist
-    const stderrLogPath = path.join(
-      scheduler['config'].resultsDir,
-      job.id,
-      'stderr.log',
-    );
+    // Verify failure artifacts include stderr-only output under the stderr section.
+    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
     expect(fs.existsSync(stderrLogPath)).toBe(true);
+    const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
+    expect(stderrLog).toContain('--- captured stderr tail ---');
+    expect(stderrLog).toContain('error output');
+    expect(stderrLog).not.toContain('--- captured stdout tail ---');
   });
 });
