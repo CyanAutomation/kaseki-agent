@@ -230,10 +230,12 @@ ensure_app_lib_fixtures() {
 }
 
 write_token_helper() {
-  local mode="$1"
+  local mode="$1" helper_path="${2:-/usr/local/bin/github-app-token}"
+  mkdir -p "$(dirname "$helper_path")"
   case "$mode" in
     structured_failure)
-      cat > /usr/local/bin/github-app-token <<'EOF_TOKEN_FAIL'
+      cat > "$helper_path" <<'EOF_TOKEN_FAIL'
+#!/usr/bin/env node
 if (process.argv.length <= 2) {
   console.log('Usage: github-app-token <app-id> <private-key-file> <owner> <repo>');
   process.exit(1);
@@ -243,16 +245,32 @@ process.exit(42);
 EOF_TOKEN_FAIL
       ;;
     success)
-      cat > /usr/local/bin/github-app-token <<'EOF_TOKEN_OK'
+      cat > "$helper_path" <<'EOF_TOKEN_OK'
+#!/usr/bin/env node
+const fs = require('node:fs');
 if (process.argv.length <= 2) {
   console.log('Usage: github-app-token <app-id> <private-key-file> <owner> <repo>');
   process.exit(1);
 }
+if (process.env.KASEKI_TEST_TOKEN_HELPER_LOG) {
+  fs.appendFileSync(process.env.KASEKI_TEST_TOKEN_HELPER_LOG, `${process.argv[1]} ${process.argv.slice(2).join(' ')}\n`);
+}
 console.log(JSON.stringify({ token: 'fixture-token' }));
 EOF_TOKEN_OK
       ;;
+    poison)
+      cat > "$helper_path" <<'EOF_TOKEN_POISON'
+#!/usr/bin/env node
+if (process.argv.length <= 2) {
+  console.log('Usage: github-app-token <app-id> <private-key-file> <owner> <repo>');
+  process.exit(1);
+}
+console.error(JSON.stringify({ error: 'default helper should not be used', status: 599 }));
+process.exit(43);
+EOF_TOKEN_POISON
+      ;;
   esac
-  chmod +x /usr/local/bin/github-app-token
+  chmod +x "$helper_path"
 }
 
 write_secrets() {
@@ -264,7 +282,7 @@ write_secrets() {
 }
 
 run_agent_fixture() {
-  local name="$1" token_mode="$2" curl_mode="${3:-none}" secrets_mode="${4:-present}"
+  local name="$1" token_mode="$2" curl_mode="${3:-none}" secrets_mode="${4:-present}" token_helper_path="${5:-/usr/local/bin/github-app-token}"
   local case_dir="$TEST_ROOT/$name"
   local source_repo="$case_dir/source-repo"
   local bin_dir="$case_dir/bin"
@@ -282,7 +300,10 @@ run_agent_fixture() {
     mkdir -p "$secrets_dir"
   fi
   if [ "$token_mode" != "missing" ]; then
-    write_token_helper "$token_mode"
+    write_token_helper "$token_mode" "$token_helper_path"
+    if [ "$token_helper_path" != "/usr/local/bin/github-app-token" ]; then
+      write_token_helper poison /usr/local/bin/github-app-token
+    fi
   else
     rm -f /usr/local/bin/github-app-token
   fi
@@ -302,6 +323,7 @@ run_agent_fixture() {
     export KASEKI_PRE_AGENT_VALIDATION=0
     export KASEKI_TS_PRE_CHECK=0
     export KASEKI_SCOUTING=0
+    export KASEKI_GOAL_SETTING=0
     export KASEKI_GOAL_CHECK=0
     export KASEKI_RUN_EVALUATION=0
     export KASEKI_VALIDATION_COMMANDS=none
@@ -309,6 +331,13 @@ run_agent_fixture() {
     export KASEKI_GIT_CACHE_MODE=off
     export KASEKI_PUBLISH_MODE=pr
     export KASEKI_GITHUB_PR_RETRIES=0
+    if [ "$token_helper_path" != "/usr/local/bin/github-app-token" ]; then
+      export KASEKI_GITHUB_APP_TOKEN_HELPER="$token_helper_path"
+      export KASEKI_TEST_TOKEN_HELPER_LOG="$case_dir/token-helper.log"
+    else
+      unset KASEKI_GITHUB_APP_TOKEN_HELPER
+      unset KASEKI_TEST_TOKEN_HELPER_LOG
+    fi
     bash "$PROJECT_ROOT/kaseki-agent.sh" >"$stdout_log" 2>"$stderr_log"
     printf '%s\n' "$?" > "$exit_file"
   )
@@ -336,6 +365,13 @@ assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_
 assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_error_message' "fixture helper refused installation token" "metadata records structured token helper message"
 assert_json_field_eq "$token_case/results/metadata.json" 'data.github_api_http_status' "401" "metadata records structured token helper HTTP status"
 assert_error_event_field_eq "$token_case/results/progress.jsonl" "github_app_token_failed" "detail" "GitHub App token generation failed (exit code 7)" "token helper failure emits expected terminal event detail"
+
+test_case "custom GitHub App token helper path is used for token generation"
+custom_helper_path="$TEST_ROOT/custom-token-helper/bin/github-app-token"
+custom_helper_case="$(run_agent_fixture custom-token-helper success api_failure present "$custom_helper_path")"
+assert_eq "9" "$(cat "$custom_helper_case/exit")" "custom token helper run reaches Pulls API failure instead of default helper failure"
+assert_file_contains "$custom_helper_case/token-helper.log" "^$custom_helper_path 123456 .*/github_app_private_key example fixture-repo$" "token generation invokes configured helper path with expected arguments"
+assert_file_contains "$custom_helper_case/results/git-push.log" 'GitHub API error \(HTTP 422\): .*Validation Failed: fixture duplicate pull request' "custom helper token is accepted before PR failure"
 
 test_case "GitHub Pulls API known payload failure"
 api_case="$(run_agent_fixture api-payload-failure success api_failure)"
