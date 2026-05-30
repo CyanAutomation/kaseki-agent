@@ -7,12 +7,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Job } from './kaseki-api-types';
-import { DEFAULT_JOB_INDEX_MAX_ENTRIES, KasekiApiConfig } from './kaseki-api-config';
+import {
+  DEFAULT_JOB_INDEX_MAX_ENTRIES,
+  KasekiApiConfig,
+} from './kaseki-api-config';
+import { createEventLogger, EventLogger } from './logger';
 
 /**
  * Persisted job format (with dates as ISO strings instead of Date objects).
  */
-export type PersistedJob = Omit<Job, 'createdAt' | 'startedAt' | 'completedAt' | 'timeout'> & {
+export type PersistedJob = Omit<
+  Job,
+  'createdAt' | 'startedAt' | 'completedAt' | 'timeout'
+> & {
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -37,6 +44,7 @@ export class JobPersistenceManager {
   private idLockPath: string;
   private indexLockPath: string;
   private config: KasekiApiConfig;
+  private logger: EventLogger;
   private jobs = new Map<string, Job>();
 
   constructor(config: KasekiApiConfig) {
@@ -45,25 +53,32 @@ export class JobPersistenceManager {
     this.nextIdPath = path.join(config.resultsDir, '.kaseki-api-next-id');
     this.idLockPath = path.join(config.resultsDir, '.kaseki-api-id.lock');
     this.indexLockPath = path.join(config.resultsDir, '.kaseki-api-jobs.lock');
+    this.logger = createEventLogger('job-persistence-manager');
   }
 
   /**
    * Load persisted jobs from index file.
    * Returns array of loaded jobs and queued jobs that should be restarted.
    */
-  loadPersistedJobs(): { jobs: Job[]; queuedJobs: Job[]; status: LoadPersistedJobsStatus } {
+  async loadPersistedJobs(): Promise<{
+    jobs: Job[];
+    queuedJobs: Job[];
+    status: LoadPersistedJobsStatus;
+  }> {
     const jobs: Job[] = [];
     const queuedJobs: Job[] = [];
     let status: LoadPersistedJobsStatus = 'loaded';
 
     try {
-      this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
         if (!fs.existsSync(this.indexPath)) {
           return;
         }
 
         try {
-          const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+          const parsed = JSON.parse(
+            fs.readFileSync(this.indexPath, 'utf-8'),
+          ) as { jobs?: PersistedJob[] };
           for (const persisted of parsed.jobs || []) {
             const job = this.deserializeJob(persisted);
             if (job.status === 'running') {
@@ -88,7 +103,10 @@ export class JobPersistenceManager {
       });
     } catch (error) {
       // Lock contention during startup is best-effort; a future persist/load cycle will reconcile state.
-      status = error instanceof LockAcquisitionError ? 'lock_contention' : 'read_error';
+      status =
+        error instanceof LockAcquisitionError
+          ? 'lock_contention'
+          : 'read_error';
     }
 
     return { jobs, queuedJobs, status };
@@ -98,9 +116,9 @@ export class JobPersistenceManager {
    * Persist all jobs to index file.
    * Merges with existing index, applies retention policy, and writes atomically.
    */
-  persistJobs(allJobs: Job[]): void {
+  async persistJobs(allJobs: Job[]): Promise<void> {
     try {
-      this.withSyncLock(this.indexLockPath, 'Kaseki jobs index', () => {
+      await this.withLock(this.indexLockPath, 'Kaseki jobs index', () => {
         fs.mkdirSync(this.config.resultsDir, { recursive: true });
         const current = this.readPersistedJobsIndex();
         const merged = this.mergePersistedJobs(
@@ -113,7 +131,9 @@ export class JobPersistenceManager {
           jobs: merged,
         };
         const tmpPath = `${this.indexPath}.tmp`;
-        const json = this.shouldWriteCompactIndex(merged) ? JSON.stringify(payload) : JSON.stringify(payload, null, 2);
+        const json = this.shouldWriteCompactIndex(merged)
+          ? JSON.stringify(payload)
+          : JSON.stringify(payload, null, 2);
         fs.writeFileSync(tmpPath, `${json}\n`, { mode: 0o600 });
         fs.renameSync(tmpPath, this.indexPath);
       });
@@ -141,7 +161,9 @@ export class JobPersistenceManager {
         nextId += 1;
       }
 
-      throw new Error(`Failed to allocate unique job ID after ${maxAttempts} attempts`);
+      throw new Error(
+        `Failed to allocate unique job ID after ${maxAttempts} attempts`,
+      );
     });
   }
 
@@ -176,7 +198,10 @@ export class JobPersistenceManager {
       startedAt: job.startedAt ? new Date(job.startedAt) : undefined,
       completedAt: job.completedAt ? new Date(job.completedAt) : undefined,
       resultDir: job.resultDir || this.getResultDir(job.id),
-      finalized: job.status === 'completed' || job.status === 'failed' ? true : job.finalized,
+      finalized:
+        job.status === 'completed' || job.status === 'failed'
+          ? true
+          : job.finalized,
     };
   }
 
@@ -188,7 +213,9 @@ export class JobPersistenceManager {
       return {};
     }
     try {
-      return JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as { jobs?: PersistedJob[] };
+      return JSON.parse(fs.readFileSync(this.indexPath, 'utf-8')) as {
+        jobs?: PersistedJob[];
+      };
     } catch {
       return {};
     }
@@ -197,7 +224,10 @@ export class JobPersistenceManager {
   /**
    * Merge existing persisted jobs with incoming jobs, applying retention policy.
    */
-  private mergePersistedJobs(existing: PersistedJob[], incoming: PersistedJob[]): PersistedJob[] {
+  private mergePersistedJobs(
+    existing: PersistedJob[],
+    incoming: PersistedJob[],
+  ): PersistedJob[] {
     const byId = new Map<string, PersistedJob>();
     for (const job of existing) {
       byId.set(job.id, job);
@@ -225,7 +255,9 @@ export class JobPersistenceManager {
       .sort((a, b) => this.comparePersistedJobsByTerminalRecency(a, b))
       .slice(0, this.getJobIndexMaxEntries());
 
-    return [...activeJobs, ...retainedTerminalJobs].sort((a, b) => this.comparePersistedJobsByCreatedAt(a, b));
+    return [...activeJobs, ...retainedTerminalJobs].sort((a, b) =>
+      this.comparePersistedJobsByCreatedAt(a, b),
+    );
   }
 
   /**
@@ -244,28 +276,42 @@ export class JobPersistenceManager {
   /**
    * Compare two persisted jobs by recency conflict resolution heuristics.
    */
-  private comparePersistedJobRecency(prev: PersistedJob, job: PersistedJob): number {
+  private comparePersistedJobRecency(
+    prev: PersistedJob,
+    job: PersistedJob,
+  ): number {
     const prevIsTerminal = this.isTerminalPersistedJob(prev);
     const jobIsTerminal = this.isTerminalPersistedJob(job);
     if (prevIsTerminal !== jobIsTerminal) {
       return jobIsTerminal ? 1 : -1;
     }
 
-    const recencyDiff = this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
+    const recencyDiff =
+      this.persistedJobRecencyScore(job) - this.persistedJobRecencyScore(prev);
     if (recencyDiff !== 0) {
       return recencyDiff;
     }
 
-    const diagnosticFields: ReadonlyArray<keyof PersistedJob> = ['failureClass', 'error', 'exitCode'];
+    const diagnosticFields: ReadonlyArray<keyof PersistedJob> = [
+      'failureClass',
+      'error',
+      'exitCode',
+    ];
     const diagnosticCount = (candidate: PersistedJob): number =>
-      diagnosticFields.reduce((count, field) => (candidate[field] !== undefined ? count + 1 : count), 0);
+      diagnosticFields.reduce(
+        (count, field) => (candidate[field] !== undefined ? count + 1 : count),
+        0,
+      );
     return diagnosticCount(job) - diagnosticCount(prev);
   }
 
   /**
    * Decide which of two persisted job versions is more recent.
    */
-  private selectMostRecentPersistedJob(prev: PersistedJob, job: PersistedJob): PersistedJob {
+  private selectMostRecentPersistedJob(
+    prev: PersistedJob,
+    job: PersistedJob,
+  ): PersistedJob {
     return this.comparePersistedJobRecency(prev, job) > 0 ? job : prev;
   }
 
@@ -279,8 +325,12 @@ export class JobPersistenceManager {
   /**
    * Compare persisted jobs by terminal recency (most recent first).
    */
-  private comparePersistedJobsByTerminalRecency(a: PersistedJob, b: PersistedJob): number {
-    const updatedDiff = this.persistedJobUpdatedAt(b) - this.persistedJobUpdatedAt(a);
+  private comparePersistedJobsByTerminalRecency(
+    a: PersistedJob,
+    b: PersistedJob,
+  ): number {
+    const updatedDiff =
+      this.persistedJobUpdatedAt(b) - this.persistedJobUpdatedAt(a);
     if (updatedDiff !== 0) {
       return updatedDiff;
     }
@@ -299,7 +349,10 @@ export class JobPersistenceManager {
   /**
    * Compare persisted jobs by creation time (newest first).
    */
-  private comparePersistedJobsByCreatedAt(a: PersistedJob, b: PersistedJob): number {
+  private comparePersistedJobsByCreatedAt(
+    a: PersistedJob,
+    b: PersistedJob,
+  ): number {
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   }
 
@@ -347,7 +400,9 @@ export class JobPersistenceManager {
       maxId = Math.max(maxId, this.parseInstanceNumber(id) ?? 0);
     }
     try {
-      for (const entry of fs.readdirSync(this.config.resultsDir, { withFileTypes: true })) {
+      for (const entry of fs.readdirSync(this.config.resultsDir, {
+        withFileTypes: true,
+      })) {
         if (entry.isDirectory()) {
           maxId = Math.max(maxId, this.parseInstanceNumber(entry.name) ?? 0);
         }
@@ -380,70 +435,54 @@ export class JobPersistenceManager {
   /**
    * Acquire a lock and execute a callback asynchronously.
    */
-  private async withLock<T>(lockPath: string, lockName: string, callback: () => Promise<T>): Promise<T> {
+  private async withLock<T>(
+    lockPath: string,
+    lockName: string,
+    callback: () => T | Promise<T>,
+  ): Promise<T> {
     fs.mkdirSync(this.config.resultsDir, { recursive: true });
-    let acquired = false;
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    const maxRetries = 100;
+    const retryDelayMs = 25;
+
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
       try {
         fs.mkdirSync(lockPath, { mode: 0o700 });
-        acquired = true;
-        break;
+        try {
+          return await callback();
+        } finally {
+          fs.rmSync(lockPath, { recursive: true, force: true });
+        }
       } catch (err) {
         const code = (err as NodeJS.ErrnoException).code;
         if (code !== 'EEXIST') {
           throw err;
         }
-        await new Promise((resolve) => setTimeout(resolve, 25));
+
+        this.logLockContention(lockName, lockPath, attempt + 1, maxRetries);
+        await this.delay(retryDelayMs);
       }
     }
 
-    if (!acquired) {
-      throw new LockAcquisitionError(lockName, lockPath);
-    }
+    throw new LockAcquisitionError(lockName, lockPath);
+  }
 
-    try {
-      return await callback();
-    } finally {
-      fs.rmSync(lockPath, { recursive: true, force: true });
+  private logLockContention(
+    lockName: string,
+    lockPath: string,
+    attempt: number,
+    maxRetries: number,
+  ): void {
+    if (attempt === 1 || attempt === maxRetries || attempt % 20 === 0) {
+      this.logger.event('job_persistence_lock_contention', {
+        lockName,
+        lockPath,
+        attempt,
+        maxRetries,
+      });
     }
   }
 
-  /**
-   * Acquire a lock and execute a callback synchronously.
-   */
-  private withSyncLock<T>(lockPath: string, lockName: string, callback: () => T): T {
-    fs.mkdirSync(this.config.resultsDir, { recursive: true });
-    let acquired = false;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      try {
-        fs.mkdirSync(lockPath, { mode: 0o700 });
-        acquired = true;
-        break;
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== 'EEXIST') {
-          throw err;
-        }
-        this.sleepSync(25);
-      }
-    }
-
-    if (!acquired) {
-      throw new LockAcquisitionError(lockName, lockPath);
-    }
-
-    try {
-      return callback();
-    } finally {
-      fs.rmSync(lockPath, { recursive: true, force: true });
-    }
-  }
-
-  private sleepSync(ms: number): void {
-    const start = Date.now();
-    while (Date.now() - start < ms) {
-    // Busy-wait loop - less ideal but doesn't block event loop completely
-    // For very short waits (25ms), this is acceptable
-    }
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

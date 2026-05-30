@@ -8,6 +8,7 @@ jest.mock('fs', () => {
     writeFileSync: jest.fn(actual.writeFileSync),
     renameSync: jest.fn(actual.renameSync),
     statSync: jest.fn(actual.statSync),
+    fstatSync: jest.fn(actual.fstatSync),
     unlinkSync: jest.fn(actual.unlinkSync),
     mkdirSync: jest.fn(actual.mkdirSync),
   };
@@ -21,6 +22,7 @@ type MockedFn<T extends (...args: any[]) => any> = jest.MockedFunction<T>;
 const writeFileSyncMock = fs.writeFileSync as MockedFn<typeof fs.writeFileSync>;
 const renameSyncMock = fs.renameSync as MockedFn<typeof fs.renameSync>;
 const statSyncMock = fs.statSync as MockedFn<typeof fs.statSync>;
+const fstatSyncMock = fs.fstatSync as MockedFn<typeof fs.fstatSync>;
 
 const realFs = jest.requireActual('fs') as typeof import('fs');
 
@@ -33,6 +35,7 @@ describe('file-helpers atomic write behavior', () => {
     writeFileSyncMock.mockImplementation(realFs.writeFileSync);
     renameSyncMock.mockImplementation(realFs.renameSync);
     statSyncMock.mockImplementation(realFs.statSync);
+    fstatSyncMock.mockImplementation(realFs.fstatSync);
   });
 
   afterEach(() => {
@@ -58,16 +61,16 @@ describe('file-helpers atomic write behavior', () => {
     const targetPath = path.join(tempDir, 'best-effort.log');
     realFs.writeFileSync(targetPath, '');
 
-    let statCalls = 0;
-    statSyncMock.mockImplementation(((...args: Parameters<typeof fs.statSync>) => {
-      statCalls += 1;
-      if (statCalls % 3 === 0) {
-        const error = new Error('intermittent stat failure') as NodeJS.ErrnoException;
+    let fstatCalls = 0;
+    fstatSyncMock.mockImplementation(((...args: Parameters<typeof fs.fstatSync>) => {
+      fstatCalls += 1;
+      if (fstatCalls % 3 === 0) {
+        const error = new Error('intermittent fstat failure') as NodeJS.ErrnoException;
         error.code = 'EIO';
         throw error;
       }
-      return realFs.statSync(...args);
-    }) as typeof fs.statSync);
+      return realFs.fstatSync(...args);
+    }) as typeof fs.fstatSync);
 
     const logSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -102,7 +105,7 @@ describe('file-helpers atomic write behavior', () => {
 
     expect(() => writeAtomic(targetPath, 'new-content')).toThrow(/rename collision/);
     expect(realFs.readFileSync(targetPath, 'utf-8')).toBe('original');
-    expect(realFs.existsSync(`${targetPath}.tmp`)).toBe(false);
+    expect(realFs.readdirSync(tempDir).filter((name) => name.startsWith(`${path.basename(targetPath)}.`) && name.endsWith('.tmp'))).toEqual([]);
   });
 
   test('interrupted: failure between temp write and rename cleans up temp and does not corrupt destination', () => {
@@ -117,16 +120,16 @@ describe('file-helpers atomic write behavior', () => {
 
     expect(() => writeAtomic(targetPath, 'new-value')).toThrow(/rename interrupted/);
     expect(realFs.readFileSync(targetPath, 'utf-8')).toBe('safe-existing-content');
-    expect(realFs.existsSync(`${targetPath}.tmp`)).toBe(false);
+    expect(realFs.readdirSync(tempDir).filter((name) => name.startsWith(`${path.basename(targetPath)}.`) && name.endsWith('.tmp'))).toEqual([]);
   });
 
-  test('recovery: stale temp files are recovered by overwrite and successful write', () => {
+  test('recovery: stale legacy temp files do not block successful write', () => {
     const targetPath = path.join(tempDir, 'recovery.txt');
     realFs.writeFileSync(targetPath, '');
     realFs.writeFileSync(`${targetPath}.tmp`, 'stale-data');
 
     expect(writeIfEmptyAtomic(targetPath, 'fresh-data')).toBe(true);
     expect(realFs.readFileSync(targetPath, 'utf-8')).toBe('fresh-data');
-    expect(realFs.existsSync(`${targetPath}.tmp`)).toBe(false);
+    expect(realFs.readFileSync(`${targetPath}.tmp`, 'utf-8')).toBe('stale-data');
   });
 });
