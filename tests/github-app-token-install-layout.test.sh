@@ -34,8 +34,8 @@ if [ "$status" -eq 0 ]; then
   exit 1
 fi
 
-if grep -q 'ERR_MODULE_NOT_FOUND' "$STDOUT_FILE" "$STDERR_FILE"; then
-  printf '✗ github-app-token failed because a runtime module was missing\n' >&2
+if grep -qE 'Cannot find module|ERR_MODULE_NOT_FOUND|github-utils\.js|host-secrets-reader\.js' "$STDOUT_FILE" "$STDERR_FILE"; then
+  printf '✗ github-app-token output referenced a missing runtime module or helper path\n' >&2
   cat "$STDOUT_FILE" >&2
   cat "$STDERR_FILE" >&2
   exit 1
