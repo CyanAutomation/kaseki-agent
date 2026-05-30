@@ -68,6 +68,70 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  test('writes lock owner metadata while lock is held', () => {
+    const store = new IdempotencyStore(resultsDir, 24);
+    const lockOwnerPath = path.join(resultsDir, '.kaseki-api-idempotency.lock', 'owner.json');
+
+    (store as any).withLock(() => {
+      const owner = JSON.parse(fs.readFileSync(lockOwnerPath, 'utf-8')) as {
+        pid?: number;
+        createdAt?: string;
+        token?: string;
+      };
+
+      expect(owner.pid).toBe(process.pid);
+      expect(typeof owner.createdAt).toBe('string');
+      expect(Number.isFinite(Date.parse(owner.createdAt!))).toBe(true);
+      expect(typeof owner.token).toBe('string');
+      expect(owner.token).toContain(`${process.pid}-`);
+    });
+
+    expect(fs.existsSync(path.dirname(lockOwnerPath))).toBe(false);
+    store.shutdown();
+  });
+
+  test('does not release a lock after owner token changes', () => {
+    const store = new IdempotencyStore(resultsDir, 24);
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const lockOwnerPath = path.join(lockPath, 'owner.json');
+
+    (store as any).acquireLock();
+    fs.writeFileSync(
+      lockOwnerPath,
+      JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString(), token: 'different-owner' }),
+      'utf-8'
+    );
+
+    (store as any).releaseLock();
+
+    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(lockOwnerPath, 'utf-8')).token).toBe('different-owner');
+
+    fs.rmSync(lockPath, { recursive: true, force: true });
+    store.shutdown();
+  });
+
+  test('does not remove an old lock owned by a live process', () => {
+    const store = new IdempotencyStore(resultsDir, 24);
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const lockOwnerPath = path.join(lockPath, 'owner.json');
+    const oldDate = new Date(Date.now() - 60000);
+
+    fs.mkdirSync(lockPath);
+    fs.writeFileSync(
+      lockOwnerPath,
+      JSON.stringify({ pid: process.pid, createdAt: oldDate.toISOString(), token: 'live-owner-token' }),
+      'utf-8'
+    );
+    fs.utimesSync(lockPath, oldDate, oldDate);
+
+    expect(() => (store as any).acquireLock()).toThrow('Failed to acquire lock after maximum retries');
+    expect(JSON.parse(fs.readFileSync(lockOwnerPath, 'utf-8')).token).toBe('live-owner-token');
+
+    fs.rmSync(lockPath, { recursive: true, force: true });
+    store.shutdown();
+  }, 10000);
+
   test('only one parallel claimer gets claimed for the same key', async () => {
     const workerPath = path.join(resultsDir, 'claim-worker.ts');
     fs.writeFileSync(
@@ -170,7 +234,7 @@ describe('IdempotencyStore persistence', () => {
         });
       });
 
-    await Promise.all([runWorker(), runWorker(), runWorker()]);
+    await Promise.all(Array.from({ length: 5 }, () => runWorker()));
     const overlaps = fs
       .readFileSync(overlapPath, 'utf-8')
       .split('\n')
