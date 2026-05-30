@@ -552,12 +552,85 @@ const controllerPage = String.raw`<!doctype html>
       }
       .health-check-status.ok::before { content: '✓'; color: var(--ok); }
       .health-check-status.bad::before { content: '✕'; color: var(--bad); }
+      /* Recent repos dropdown styles */
+      .repo-input-wrapper {
+        position: relative;
+      }
+      .recent-repos-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        max-height: 250px;
+        overflow-y: auto;
+        z-index: 100;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .recent-repos-dropdown.hidden {
+        display: none;
+      }
+      .recent-repos-dropdown.empty::before {
+        content: 'No recent repos';
+        display: block;
+        padding: var(--space-2) var(--space-3);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .recent-repo-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-2) var(--space-3);
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+        transition: background-color 0.15s;
+      }
+      .recent-repo-item:last-child {
+        border-bottom: none;
+      }
+      .recent-repo-item:hover {
+        background-color: var(--surface-high);
+      }
+      .recent-repo-item-text {
+        flex: 1;
+        min-width: 0;
+        font-size: 14px;
+        color: var(--ink);
+        word-break: break-all;
+        margin-right: var(--space-2);
+      }
+      .recent-repo-delete {
+        flex: 0 0 auto;
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 18px;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.15s;
+        min-height: auto;
+      }
+      .recent-repo-delete:hover {
+        color: var(--bad);
+      }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
         .response-panel { min-height: 40vh; }
         .health-checks-grid { grid-template-columns: repeat(2, 1fr); }
         main {
           grid-template-columns: minmax(0, 1fr);
+        }
+        .recent-repos-dropdown {
+          max-width: 100vw;
         }
       }
     </style>
@@ -630,9 +703,11 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset class="form-fields">
             <legend>Required information</legend>
             <div class="form-field">
-
               <label for="repo-url">Repository URL</label>
-              <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
+              <div class="repo-input-wrapper">
+                <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
+                <div id="recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
+              </div>
               <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
             </div>
             <div class="form-field">
@@ -728,6 +803,109 @@ const controllerPage = String.raw`<!doctype html>
           sessionStorage.removeItem('kasekiApiToken');
         }
       });
+
+      // Recent repos management
+      const recentReposKey = 'kasekiRecentRepos';
+      const repoUrlInput = document.querySelector('#repo-url');
+      const recentReposDropdown = document.querySelector('#recent-repos-dropdown');
+
+      function loadRecentRepos() {
+        try {
+          const stored = sessionStorage.getItem(recentReposKey);
+          return stored ? JSON.parse(stored) : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function saveRecentRepos(repos) {
+        sessionStorage.setItem(recentReposKey, JSON.stringify(repos));
+      }
+
+      function addRepoToRecent(url) {
+        if (!url || typeof url !== 'string') return;
+        const trimmed = url.trim();
+        if (!trimmed) return;
+        let repos = loadRecentRepos();
+        // Remove duplicate if exists
+        repos = repos.filter(r => r !== trimmed);
+        // Add to front (most recently used)
+        repos.unshift(trimmed);
+        // Keep only last 5
+        repos = repos.slice(0, 5);
+        saveRecentRepos(repos);
+        renderRecentReposDropdown();
+      }
+
+      function deleteRepoFromRecent(url) {
+        const repos = loadRecentRepos().filter(r => r !== url);
+        saveRecentRepos(repos);
+        renderRecentReposDropdown();
+      }
+
+      function renderRecentReposDropdown() {
+        const repos = loadRecentRepos();
+        recentReposDropdown.replaceChildren();
+        if (repos.length === 0) {
+          recentReposDropdown.classList.add('empty');
+          return;
+        }
+        recentReposDropdown.classList.remove('empty');
+        repos.forEach(repo => {
+          const item = document.createElement('div');
+          item.className = 'recent-repo-item';
+          item.role = 'option';
+          
+          const textSpan = document.createElement('span');
+          textSpan.className = 'recent-repo-item-text';
+          textSpan.textContent = repo;
+          textSpan.title = repo;
+          
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'recent-repo-delete';
+          deleteBtn.type = 'button';
+          deleteBtn.innerHTML = '×';
+          deleteBtn.title = 'Delete from recent';
+          deleteBtn.setAttribute('aria-label', 'Delete ' + repo + ' from recent repos');
+          deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteRepoFromRecent(repo);
+          });
+          
+          item.appendChild(textSpan);
+          item.appendChild(deleteBtn);
+          item.addEventListener('click', () => {
+            repoUrlInput.value = repo;
+            hideRecentReposDropdown();
+            repoUrlInput.focus();
+          });
+          
+          recentReposDropdown.appendChild(item);
+        });
+      }
+
+      function showRecentReposDropdown() {
+        recentReposDropdown.classList.remove('hidden');
+      }
+
+      function hideRecentReposDropdown() {
+        recentReposDropdown.classList.add('hidden');
+      }
+
+      // Event listeners for repo input
+      repoUrlInput.addEventListener('focus', () => {
+        showRecentReposDropdown();
+      });
+
+      repoUrlInput.addEventListener('blur', () => {
+        // Delay to allow click on dropdown items
+        setTimeout(() => {
+          hideRecentReposDropdown();
+        }, 150);
+      });
+
+      // Initialize recent repos on page load
+      renderRecentReposDropdown();
 
       function updateHeaderStatus(status) {
         if (!headerStatus) return;
@@ -1188,6 +1366,10 @@ const controllerPage = String.raw`<!doctype html>
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         if (!form.reportValidity()) return;
+        const repoUrl = String(repoUrlInput.value || '').trim();
+        if (repoUrl) {
+          addRepoToRecent(repoUrl);
+        }
         const button = document.querySelector('#submit');
         button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
