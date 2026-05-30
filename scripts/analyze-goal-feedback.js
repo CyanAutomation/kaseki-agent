@@ -2,20 +2,19 @@
 
 /**
  * Analyze goal-setting feedback across multiple runs
- * 
+ *
  * Usage:
  *   node analyze-goal-feedback.js [feedback_file]
- * 
+ *
  * Reads JSONL feedback entries and produces analysis report showing:
  * - Correlation between goal quality and success rate
  * - SMART dimension effectiveness
  * - Kaseki improvement suggestions by priority
- * 
+ *
  * Default: reads /results/goal-feedback.jsonl
  */
 
 const fs = require('fs');
-const path = require('path');
 
 function readFeedbackFile(filePath) {
   if (!fs.existsSync(filePath)) {
@@ -206,8 +205,8 @@ function main() {
   const args = process.argv.slice(2);
   const feedbackFile = args[0] || '/results/goal-feedback.jsonl';
 
-  console.log(`\n📊 Kaseki Goal-Setting Feedback Analysis`);
-  console.log(`=====================================\n`);
+  console.log('\n📊 Kaseki Goal-Setting Feedback Analysis');
+  console.log('=====================================\n');
   console.log(`Reading: ${feedbackFile}\n`);
 
   const entries = readFeedbackFile(feedbackFile);
@@ -240,7 +239,7 @@ function main() {
 
   // Correlation insights
   if (analysis.correlation_insights.length > 0) {
-    console.log(`🔗 Correlation Insights\n`);
+    console.log('🔗 Correlation Insights\n');
     for (const insight of analysis.correlation_insights) {
       console.log(`  • ${insight}`);
     }
@@ -249,9 +248,9 @@ function main() {
 
   // SMART analysis
   if (analysis.smart_analysis.total_criteria > 0) {
-    console.log(`✨ SMART Criteria Analysis\n`);
+    console.log('✨ SMART Criteria Analysis\n');
     console.log(`  Total criteria: ${analysis.smart_analysis.total_criteria}`);
-    console.log(`  Distribution:`);
+    console.log('  Distribution:');
     for (const [score, pct] of Object.entries(analysis.smart_analysis.distribution)) {
       console.log(`    ${score}: ${pct}`);
     }
@@ -261,12 +260,12 @@ function main() {
 
   // Recommendations
   if (analysis.recommendations.length > 0) {
-    console.log(`💡 Recommendations\n`);
+    console.log('💡 Recommendations\n');
     const highRecs = analysis.recommendations.filter((r) => r.priority === 'high');
     const mediumRecs = analysis.recommendations.filter((r) => r.priority === 'medium');
 
     if (highRecs.length > 0) {
-      console.log(`  ⚡ High Priority:`);
+      console.log('  ⚡ High Priority:');
       for (const rec of highRecs) {
         console.log(`    • [${rec.area}] ${rec.recommendation}`);
       }
@@ -274,7 +273,7 @@ function main() {
     }
 
     if (mediumRecs.length > 0) {
-      console.log(`  → Medium Priority:`);
+      console.log('  → Medium Priority:');
       for (const rec of mediumRecs) {
         console.log(`    • [${rec.area}] ${rec.recommendation}`);
       }
@@ -282,7 +281,7 @@ function main() {
     }
   }
 
-  console.log(`✅ Analysis complete\n`);
+  console.log('✅ Analysis complete\n');
 }
 
 main();

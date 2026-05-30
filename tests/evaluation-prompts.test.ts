@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
 
 /**
  * Tests for evaluation prompt enhancements
- * 
+ *
  * These tests verify that:
  * 1. Evaluation prompts include goal-setting context
  * 2. SMART framework is integrated into goal-check
