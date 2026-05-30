@@ -47,6 +47,16 @@ type TimeoutHandles = {
   isTimedOut?: () => boolean;
 };
 
+type StreamTailRef = {
+  current: Buffer<ArrayBufferLike>;
+};
+
+type ProcessStreamState = {
+  stdoutTailRef: StreamTailRef;
+  stderrTailRef: StreamTailRef;
+  onExit: (code: number) => void;
+};
+
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
@@ -439,7 +449,7 @@ export class JobScheduler {
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    streamState: { stdoutTailRef: { current: Buffer<ArrayBufferLike> }; stderrTailRef: { current: Buffer<ArrayBufferLike> }; onExit: (code: number) => void }
+    streamState: ProcessStreamState
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -535,8 +545,7 @@ export class JobScheduler {
     this.processExited.set(job.id, false);
     this.clearLiveProgressCache(job.id);
 
-    // Create shared mutable stream state object for live buffer references
-    // Create shared mutable stream state object for live buffer references
+    // Create shared mutable stream state object with independent stdout/stderr tail references.
     let timeoutHandles: TimeoutHandles & { isTimedOut: () => boolean };
     const streamState = {
       stdoutTailRef: { current: Buffer.alloc(0) },
@@ -553,7 +562,6 @@ export class JobScheduler {
     // Transition to RUNNING after successful spawn
     this.transitionState(job.id, JobExecutionState.STARTING, JobExecutionState.RUNNING);
 
-    // Configure timeout (extracted)
     // Configure timeout (extracted)
     timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
     job.timeout = timeoutHandles.timeoutHandle;
