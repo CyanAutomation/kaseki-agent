@@ -3126,7 +3126,7 @@ collect_goal_check_feedback() {
   fi
 
   # Use node script to collect feedback, append as JSONL
-  node "$SCRIPTS_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+  node "$SCRIPT_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
 }
 
 collect_run_evaluation_feedback() {
@@ -3141,7 +3141,7 @@ collect_run_evaluation_feedback() {
   fi
 
   # Use node script to collect feedback, append as JSONL
-  node "$SCRIPTS_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+  node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
 }
 
 
@@ -3153,7 +3153,7 @@ build_goal_check_prompt() {
   # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
   if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
     goal_setting_context="GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
-$(cat "$GOAL_SETTING_ARTIFACT" 2>/dev/null | head -200)
+$(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
 
 ---
 "
@@ -3416,7 +3416,7 @@ build_run_evaluation_prompt() {
   # Include goal-setting output for quality context (influences reviewer_confidence)
   if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
     goal_setting_context="GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
-$(cat "$GOAL_SETTING_ARTIFACT" 2>/dev/null | head -200)
+$(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
 
 ---
 "
