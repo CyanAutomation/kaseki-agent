@@ -39,8 +39,9 @@ export class FailureArtifactWriter {
       this.writeAnalysis(resultDir, job, now, cleanup, options?.lastStage);
       this.writeMetadata(resultDir, job, now);
       this.writeStderrLog(resultDir, job, options?.stdoutTail, options?.stderrTail);
-    } catch {
+    } catch (error) {
       // Best effort diagnostics; never mask the primary job failure.
+      logWriteError('write failure artifacts', resultDir, error, job.id);
     }
   }
 
@@ -60,7 +61,12 @@ export class FailureArtifactWriter {
     try {
       const written = writeIfEmptyAtomic(failurePath, content, { mode: 0o600 }, { jobId: job.id });
       if (!written) {
-        logWriteError('write failure.json', failurePath, 'File already exists and is non-empty', job.id);
+        logWriteError(
+          'write failure.json',
+          failurePath,
+          'File already exists, is non-empty, or another writer won the artifact race',
+          job.id
+        );
       }
     } catch (error) {
       logWriteError('write failure.json', failurePath, error, job.id);
@@ -82,7 +88,12 @@ export class FailureArtifactWriter {
     try {
       const written = writeIfEmptyAtomic(summaryPath, content, {}, { jobId: job.id });
       if (!written) {
-        logWriteError('write result-summary.md', summaryPath, 'File already exists and is non-empty', job.id);
+        logWriteError(
+          'write result-summary.md',
+          summaryPath,
+          'File already exists, is non-empty, or another writer won the artifact race',
+          job.id
+        );
       }
     } catch (error) {
       logWriteError('write result-summary.md', summaryPath, error, job.id);
@@ -116,7 +127,12 @@ export class FailureArtifactWriter {
     try {
       const written = writeIfEmptyAtomic(analysisPath, content, {}, { jobId: job.id });
       if (!written) {
-        logWriteError('write analysis.md', analysisPath, 'File already exists and is non-empty', job.id);
+        logWriteError(
+          'write analysis.md',
+          analysisPath,
+          'File already exists, is non-empty, or another writer won the artifact race',
+          job.id
+        );
       }
     } catch (error) {
       logWriteError('write analysis.md', analysisPath, error, job.id);
@@ -163,7 +179,12 @@ export class FailureArtifactWriter {
     try {
       const written = writeIfEmptyAtomic(metadataPath, content, { mode: 0o600 }, { jobId: job.id });
       if (!written) {
-        logWriteError('write metadata.json', metadataPath, 'File already exists and is non-empty', job.id);
+        logWriteError(
+          'write metadata.json',
+          metadataPath,
+          'File already exists, is non-empty, or another writer won the artifact race',
+          job.id
+        );
       }
     } catch (error) {
       logWriteError('write metadata.json', metadataPath, error, job.id);
@@ -195,7 +216,12 @@ export class FailureArtifactWriter {
     try {
       const written = writeIfEmptyAtomic(stderrPath, `${content}\n`, {}, { jobId: job.id });
       if (!written) {
-        logWriteError('write stderr.log', stderrPath, 'File already exists and is non-empty', job.id);
+        logWriteError(
+          'write stderr.log',
+          stderrPath,
+          'File already exists, is non-empty, or another writer won the artifact race',
+          job.id
+        );
       }
     } catch (error) {
       logWriteError('write stderr.log', stderrPath, error, job.id);

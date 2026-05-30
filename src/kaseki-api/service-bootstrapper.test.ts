@@ -39,23 +39,34 @@ describe('ServiceBootstrapper', () => {
       let mockedBootstrapServices!: typeof bootstrapServices;
       await jest.isolateModulesAsync(async () => {
         jest.doMock('../result-cache', () => ({
-          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: artifactGetOrLoad })),
+          ResultCache: jest
+            .fn()
+            .mockImplementation(() => ({ getOrLoad: artifactGetOrLoad })),
         }));
 
         jest.doMock('../webhook-manager', () => ({
-          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: webhookShutdown })),
+          WebhookManager: jest
+            .fn()
+            .mockImplementation(() => ({ shutdown: webhookShutdown })),
         }));
 
         jest.doMock('../idempotency-store', () => ({
-          IdempotencyStore: jest.fn().mockImplementation(() => ({ shutdown: idempotencyShutdown })),
+          IdempotencyStore: jest
+            .fn()
+            .mockImplementation(() => ({ shutdown: idempotencyShutdown })),
         }));
 
         jest.doMock('../pre-flight-validator', () => ({
-          PreFlightValidator: jest.fn().mockImplementation(() => ({ validate: preFlightValidate })),
+          PreFlightValidator: jest
+            .fn()
+            .mockImplementation(() => ({ validate: preFlightValidate })),
         }));
 
         jest.doMock('../job-scheduler', () => ({
-          JobScheduler: jest.fn().mockImplementation(() => ({ shutdown: schedulerShutdown })),
+          JobScheduler: jest.fn().mockImplementation(() => ({
+            ready: jest.fn().mockResolvedValue(undefined),
+            shutdown: schedulerShutdown,
+          })),
         }));
 
         const bootstrapper = await import('./service-bootstrapper');
@@ -63,19 +74,31 @@ describe('ServiceBootstrapper', () => {
       });
 
       if (!mockedBootstrapServices) {
-        throw new Error('Failed to load bootstrapServices from isolated module');
+        throw new Error(
+          'Failed to load bootstrapServices from isolated module',
+        );
       }
 
       const services = await mockedBootstrapServices(mockConfig);
 
-      await expect(services.artifactCache.getOrLoad('cache-key' as any)).resolves.toBe('cached-result');
-      await expect(services.preFlightValidator.validate({ repoUrl: 'https://example.com/repo.git', ref: 'main' } as any)).resolves.toEqual({ valid: true });
+      await expect(
+        services.artifactCache.getOrLoad('cache-key' as any),
+      ).resolves.toBe('cached-result');
+      await expect(
+        services.preFlightValidator.validate({
+          repoUrl: 'https://example.com/repo.git',
+          ref: 'main',
+        } as any),
+      ).resolves.toEqual({ valid: true });
       await expect(services.webhookManager.shutdown()).resolves.toBeUndefined();
       services.idempotencyStore.shutdown();
       services.scheduler.shutdown();
 
       expect(artifactGetOrLoad).toHaveBeenCalledWith('cache-key');
-      expect(preFlightValidate).toHaveBeenCalledWith({ repoUrl: 'https://example.com/repo.git', ref: 'main' });
+      expect(preFlightValidate).toHaveBeenCalledWith({
+        repoUrl: 'https://example.com/repo.git',
+        ref: 'main',
+      });
       expect(webhookShutdown).toHaveBeenCalledTimes(1);
       expect(idempotencyShutdown).toHaveBeenCalledTimes(1);
       expect(schedulerShutdown).toHaveBeenCalledTimes(1);
@@ -117,7 +140,10 @@ describe('ServiceBootstrapper', () => {
         jest.doMock('../job-scheduler', () => ({
           JobScheduler: jest.fn().mockImplementation(() => {
             initOrder.push('JobScheduler');
-            return { shutdown: jest.fn() };
+            return {
+              ready: jest.fn().mockResolvedValue(undefined),
+              shutdown: jest.fn(),
+            };
           }),
         }));
 
@@ -126,7 +152,9 @@ describe('ServiceBootstrapper', () => {
       });
 
       if (!mockedBootstrapServices) {
-        throw new Error('Failed to load bootstrapServices from isolated module');
+        throw new Error(
+          'Failed to load bootstrapServices from isolated module',
+        );
       }
       await mockedBootstrapServices(mockConfig);
 
@@ -149,11 +177,16 @@ describe('ServiceBootstrapper', () => {
       let mockedBootstrapServices!: typeof bootstrapServices;
       await jest.isolateModulesAsync(async () => {
         jest.doMock('../result-cache', () => ({
-          ResultCache: jest.fn().mockImplementation(() => ({ getOrLoad: jest.fn(), clearAll: cacheCleanupSpy })),
+          ResultCache: jest.fn().mockImplementation(() => ({
+            getOrLoad: jest.fn(),
+            clearAll: cacheCleanupSpy,
+          })),
         }));
 
         jest.doMock('../webhook-manager', () => ({
-          WebhookManager: jest.fn().mockImplementation(() => ({ shutdown: webhookShutdownSpy })),
+          WebhookManager: jest
+            .fn()
+            .mockImplementation(() => ({ shutdown: webhookShutdownSpy })),
         }));
 
         jest.doMock('../idempotency-store', () => ({
@@ -285,7 +318,7 @@ describe('ServiceBootstrapper', () => {
       });
 
       // Wait for the timeout to fire
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       expect(mockExit).toHaveBeenCalledWith(1);
     });
@@ -316,5 +349,4 @@ describe('ServiceBootstrapper', () => {
       expect(mockExit).toHaveBeenCalledWith(1);
     });
   });
-
 });
