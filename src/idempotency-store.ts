@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RunResponse } from './kaseki-api-types';
@@ -14,6 +15,12 @@ interface IdempotencyCacheEntry {
   requestTime: string; // ISO 8601
   responsePayload: RunResponse;
   expiresAt: number; // Unix timestamp
+}
+
+interface LockOwnerMetadata {
+  pid: number;
+  createdAt: string;
+  token: string;
 }
 
 interface PersistedIdempotencyEntry {
@@ -156,33 +163,27 @@ export class IdempotencyStore {
     let retries = 0;
 
     while (retries < maxRetries) {
-      const owner = {
-        pid: process.pid,
-        createdAt: new Date().toISOString(),
-        token: this.generateLockToken(),
-      };
-      const tempLockPath = `${this.lockPath}.${owner.token}.tmp`;
-      const tempOwnerPath = path.join(tempLockPath, 'owner.json');
+      const owner = this.createLockOwner();
 
       try {
-        fs.mkdirSync(tempLockPath);
-        fs.writeFileSync(tempOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
-        fs.renameSync(tempLockPath, this.lockPath);
+        fs.mkdirSync(this.lockPath);
+        fs.writeFileSync(this.lockOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
         this.activeLockToken = owner.token;
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        this.forceRemovePath(tempLockPath);
 
-        if (code === 'EEXIST' || code === 'ENOTEMPTY') {
+        if (code === 'EEXIST') {
           const ownerMetadata = this.readLockOwner();
-          const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
-          if (lockLooksStale) {
-            this.forceRemoveLockDir();
+          if (this.tryRemoveStaleLock(staleThresholdMs, ownerMetadata)) {
             continue;
           }
-        } else if (code !== 'ENOENT') {
-          throw error;
+        } else {
+          this.releasePartiallyAcquiredLock(owner.token);
+
+          if (code !== 'ENOENT') {
+            throw error;
+          }
         }
 
         this.sleepSync(5);
@@ -210,23 +211,60 @@ export class IdempotencyStore {
     }
   }
 
-  private readLockOwner(): { pid?: number; token?: string } | null {
+  private createLockOwner(): LockOwnerMetadata {
+    return {
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+      token: this.generateLockToken(),
+    };
+  }
+
+  private readLockOwner(): LockOwnerMetadata | null {
     try {
       const content = fs.readFileSync(this.lockOwnerPath, 'utf-8');
-      return JSON.parse(content) as { pid?: number; token?: string };
+      const owner = JSON.parse(content) as Partial<LockOwnerMetadata>;
+      if (typeof owner.pid !== 'number' || typeof owner.createdAt !== 'string' || typeof owner.token !== 'string') {
+        return null;
+      }
+
+      return owner as LockOwnerMetadata;
     } catch {
       return null;
     }
   }
 
-  private isLockStale(staleThresholdMs: number, ownerPid?: number): boolean {
+  private tryRemoveStaleLock(staleThresholdMs: number, observedOwner: LockOwnerMetadata | null): boolean {
+    if (!this.isLockStale(staleThresholdMs, observedOwner)) {
+      return false;
+    }
+
+    const currentOwner = this.readLockOwner();
+    if (observedOwner?.token && currentOwner?.token !== observedOwner.token) {
+      return false;
+    }
+
+    if (currentOwner?.pid && this.isProcessAlive(currentOwner.pid)) {
+      return false;
+    }
+
+    if (!currentOwner && observedOwner) {
+      return false;
+    }
+
+    this.forceRemoveLockDir();
+    return true;
+  }
+
+  private isLockStale(staleThresholdMs: number, ownerMetadata: LockOwnerMetadata | null): boolean {
     try {
       const stats = fs.statSync(this.lockPath);
-      const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
-      if (!exceedsAgeThreshold) {
+      const createdAtMs = ownerMetadata ? Date.parse(ownerMetadata.createdAt) : NaN;
+      const ageBasisMs = Number.isFinite(createdAtMs) ? Math.max(createdAtMs, stats.mtimeMs) : stats.mtimeMs;
+      if (Date.now() - ageBasisMs <= staleThresholdMs) {
         return false;
       }
-      return ownerPid ? !this.isProcessAlive(ownerPid) : true;
+
+      return ownerMetadata?.pid ? !this.isProcessAlive(ownerMetadata.pid) : true;
     } catch {
       return false;
     }
@@ -236,13 +274,23 @@ export class IdempotencyStore {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== 'ESRCH';
     }
   }
 
-  private forceRemovePath(targetPath: string): void {
-    fs.rmSync(targetPath, { recursive: true, force: true });
+  private releasePartiallyAcquiredLock(expectedToken: string): void {
+    const ownerMetadata = this.readLockOwner();
+    if (ownerMetadata && ownerMetadata.token !== expectedToken) {
+      return;
+    }
+
+    try {
+      fs.rmSync(this.lockOwnerPath, { force: true });
+      fs.rmdirSync(this.lockPath);
+    } catch {
+      // Ignore cleanup failures; the retry loop will treat the leftover lock as contended.
+    }
   }
 
   private forceRemoveLockDir(): void {
@@ -250,7 +298,7 @@ export class IdempotencyStore {
   }
 
   private generateLockToken(): string {
-    return `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    return `${process.pid}-${Date.now()}-${crypto.randomBytes(16).toString('hex')}`;
   }
 
   private sleepSync(ms: number): void {
