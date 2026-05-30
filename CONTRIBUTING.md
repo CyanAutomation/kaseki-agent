@@ -244,12 +244,14 @@ Kaseki uses two evaluation phases (goal-check and run-evaluation) to assess whet
 ### Understanding the Two Evaluation Phases
 
 **Goal-Check Phase**
+
 - Determines whether the coding agent successfully realized the original goal
 - Uses SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate requirements
 - Can trigger agent retries if verdict is "unmet"
 - Output: `goal-check.json` with `met: true|false` and evidence
 
 **Run-Evaluation Phase**
+
 - Task-agnostic assessment of overall process quality and Kaseki infrastructure
 - Assesses reviewer confidence, stage value, and process efficiency
 - Provides improvement suggestions for future runs
@@ -581,7 +583,7 @@ export class GithubAppCheck implements PreflightCheck { ... }
 
 **See [docs/DUPLICATION_AUDIT.md](docs/DUPLICATION_AUDIT.md)** for specific plugin targets (e.g., `pre-flight-validator`, `pi-event-filter`).
 
-## 11) PR checklist
+## 12) PR checklist
 
 Before opening/merging, include:
 
