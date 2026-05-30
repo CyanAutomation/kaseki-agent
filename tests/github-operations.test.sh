@@ -155,7 +155,6 @@ run_agent_case() {
     fail "$case_name exited with $run_exit, expected $expected_exit"
   fi
 
-  RUN_AGENT_CASE_DIR="$case_dir"
   RUN_AGENT_RESULTS_DIR="$results_dir"
   RUN_AGENT_LOG="$run_log"
 }
@@ -210,8 +209,12 @@ set +e
 "$HARNESS" retryable 403 permission_error > "$RESULTS_DIR/retry-403.out" 2>&1; retry_403_exit=$?
 "$HARNESS" retryable 422 validation_error > "$RESULTS_DIR/retry-422.out" 2>&1; retry_422_exit=$?
 set -e
-[ "$retry_429_exit" -eq 0 ] && [ "$retry_503_exit" -eq 0 ] && [ "$retry_curl_exit" -eq 0 ] || fail 'Transient GitHub PR failures should be retryable'
-[ "$retry_403_exit" -eq 1 ] && [ "$retry_422_exit" -eq 1 ] || fail 'Permanent GitHub PR failures should not be retryable'
+if ! { [ "$retry_429_exit" -eq 0 ] && [ "$retry_503_exit" -eq 0 ] && [ "$retry_curl_exit" -eq 0 ]; }; then
+  fail 'Transient GitHub PR failures should be retryable'
+fi
+if ! { [ "$retry_403_exit" -eq 1 ] && [ "$retry_422_exit" -eq 1 ]; }; then
+  fail 'Permanent GitHub PR failures should not be retryable'
+fi
 pass 'Retryability exit codes match transient/permanent contract'
 assert_file_contains "$RESULTS_DIR/retry-429.out" 'retryable' '429 retryability output is user-readable'
 assert_file_contains "$RESULTS_DIR/retry-403.out" 'not retryable' '403 retryability output is user-readable'

@@ -380,6 +380,7 @@ validate_scouting_artifact_with_node() {
   local final_artifact="$2"
   local validation_error_file="$3"
 
+  # shellcheck disable=SC2016
   node -e '
 const fs = require("node:fs");
 const input = process.argv[1];
@@ -504,6 +505,7 @@ validate_scouting_artifact() {
   if [ ! -f "$candidate_artifact" ]; then
     reason_code="missing_file"
     reason_details="1 critical scouting validation error: scouting-candidate.json"
+    # shellcheck disable=SC2016
     node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const error={timestamp:new Date().toISOString(),reason_code:"missing_file",field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" 2>> /results/scouting-stderr.log || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
@@ -3138,35 +3140,22 @@ EOF_ASKPASS
 }
 
 
-github_preflight_fail() {
-  local classification="$1"
-  local remediation="$2"
-  shift 2
-  local message
-  printf -v message "$@"
-  printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
-  printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
-  printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
-  return 1
-}
-
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
   local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
-  if ! declare -F github_preflight_fail >/dev/null 2>&1; then
-    github_preflight_fail() {
-      local classification="$1"
-      local remediation="$2"
-      shift 2
-      local message
-      printf -v message "$@"
-      printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
-      printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
-      printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
-      return 1
-    }
-  fi
+  github_preflight_fail() {
+    local classification="$1"
+    local remediation="$2"
+    shift 2
+    local message
+    # shellcheck disable=SC2059
+    printf -v message "$@"
+    printf '[health-check] ERROR: %s\n' "$message" | tee -a "$health_log" >&2
+    printf '[health-check] CLASSIFICATION: %s\n' "$classification" | tee -a "$health_log" >&2
+    printf '[health-check] REMEDIATION: %s\n' "$remediation" | tee -a "$health_log" >&2
+    return 1
+  }
   : > "$health_log"
   
   printf '[preflight] github operations health check started\n' | tee -a "$health_log"
