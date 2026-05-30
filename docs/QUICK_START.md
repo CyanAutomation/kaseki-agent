@@ -123,6 +123,73 @@ Check results: `ls -la /agents/kaseki-results/`
 
 ---
 
+## Goal-Setting Agent (Pre-Scouting Prompt Enhancement)
+
+**New in v2.7**: The goal-setting agent runs **before scouting** to upgrade your task prompt into a mature, specific goal.
+
+### What's Goal-Setting?
+
+The goal-setting agent:
+1. Reads your raw task prompt
+2. Analyzes for clarity, measurability, and scope
+3. Creates an **upgraded goal** with clear success criteria
+4. Returns a refined prompt that improves downstream agent performance
+
+**Example**:
+- **Your prompt**: "Fix the parser"
+- **Upgraded goal**: "Fix parseRole() to safely handle null/undefined values in FriendlyName field. Add test coverage for 5 edge cases. All tests must pass."
+
+### Enable Goal-Setting
+
+Goal-setting is **enabled by default**. To disable it:
+
+```bash
+export KASEKI_GOAL_SETTING=0
+./run-kaseki.sh
+```
+
+Or via API:
+```json
+{
+  "repoUrl": "https://github.com/user/repo",
+  "taskPrompt": "Your task prompt",
+  "goalSetting": {
+    "enabled": false
+  }
+}
+```
+
+### Fine-Tune Goal-Setting
+
+Use a different model or timeout:
+
+```bash
+export KASEKI_GOAL_SETTING_MODEL=openrouter/anthropic/claude-3-opus
+export KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
+./run-kaseki.sh
+```
+
+### Check Goal-Setting Results
+
+After a run:
+- `/results/goal-setting.json` — The upgraded goal with reasoning
+- `/results/goal-setting-events.jsonl` — Agent activity details
+
+Example output:
+```json
+{
+  "original_prompt": "Fix the parser bug",
+  "upgraded_goal": "Fix parseRole() to handle null FriendlyName safely.",
+  "key_requirements": ["Handle null values", "Preserve valid inputs"],
+  "success_criteria": ["All tests pass", "No TypeErrors"],
+  "confidence": "high"
+}
+```
+
+For detailed guidance, see [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md).
+
+---
+
 ## Scouting Agent & Allowlist Control
 
 **New in v2.6**: When you enable scouting, the agent automatically analyzes the task and generates allowlist patterns to narrow the scope of the main coding agent.

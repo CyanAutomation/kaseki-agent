@@ -107,6 +107,14 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Pre-coding Pi scouting controls'),
+  goalSetting: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable the pre-scouting goal-setting Pi agent (default: enabled, set to false to disable)'),
+      model: z.string().min(1).optional().describe('Optional Pi model override for goal-setting'),
+      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional goal-setting timeout in seconds'),
+    })
+    .optional()
+    .describe('Pre-scouting goal-setting agent controls'),
   goalCheck: z
     .object({
       enabled: z.boolean().optional().describe('Enable the post-validation goal-check Pi evaluator'),
@@ -151,6 +159,7 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['max_diff_bytes', 'maxDiffBytes'],
     ['validation_commands', 'validationCommands'],
     ['scouting_config', 'scouting'],
+    ['goal_setting', 'goalSetting'],
     ['goal_check', 'goalCheck'],
     ['run_evaluation', 'runEvaluation'],
     ['task_mode', 'taskMode'],
