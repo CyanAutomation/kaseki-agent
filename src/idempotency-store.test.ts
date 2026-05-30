@@ -83,6 +83,80 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  test('writes pid timestamp and token owner metadata while a lock is held', async () => {
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const ownerPath = path.join(lockPath, 'owner.json');
+    const store = new IdempotencyStore(resultsDir, 24);
+
+    await (store as any).withLock(() => {
+      expect(fs.existsSync(ownerPath)).toBe(true);
+      const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf-8')) as {
+        pid?: number;
+        createdAt?: string;
+        token?: string;
+      };
+
+      expect(owner.pid).toBe(process.pid);
+      expect(typeof owner.createdAt).toBe('string');
+      expect(Date.parse(owner.createdAt || '')).not.toBeNaN();
+      expect(typeof owner.token).toBe('string');
+      expect(owner.token).toContain(`${process.pid}-`);
+    });
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+    store.shutdown();
+  });
+
+  test('does not release a lock when the owner token was replaced', async () => {
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const ownerPath = path.join(lockPath, 'owner.json');
+    const store = new IdempotencyStore(resultsDir, 24);
+
+    await (store as any).withLock(() => {
+      fs.writeFileSync(
+        ownerPath,
+        JSON.stringify({
+          pid: process.pid,
+          createdAt: new Date().toISOString(),
+          token: 'replacement-owner-token',
+        }),
+        'utf-8',
+      );
+    });
+
+    expect(fs.existsSync(lockPath)).toBe(true);
+    const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf-8')) as {
+      token?: string;
+    };
+    expect(owner.token).toBe('replacement-owner-token');
+
+    fs.rmSync(lockPath, { recursive: true, force: true });
+    store.shutdown();
+  });
+
+  test('removes stale locks only after owner age and liveness checks pass', async () => {
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    const ownerPath = path.join(lockPath, 'owner.json');
+    fs.mkdirSync(lockPath, { mode: 0o700 });
+    fs.writeFileSync(
+      ownerPath,
+      JSON.stringify({
+        pid: 2147483647,
+        createdAt: new Date(Date.now() - 60_000).toISOString(),
+        token: 'stale-owner-token',
+      }),
+      'utf-8',
+    );
+
+    const store = new IdempotencyStore(resultsDir, 24);
+    await expect(store.claimOrGet('stale-key', 'stale-fp')).resolves.toEqual({
+      kind: 'claimed',
+    });
+
+    expect(fs.existsSync(lockPath)).toBe(false);
+    store.shutdown();
+  });
+
   test('only one parallel claimer gets claimed for the same key', async () => {
     const workerPath = path.join(resultsDir, 'claim-worker.ts');
     fs.writeFileSync(
@@ -171,7 +245,7 @@ describe('IdempotencyStore persistence', () => {
 
         fs.writeFileSync(markerPath, String(active + 1), 'utf-8');
         const start = Date.now();
-        while (Date.now() - start < 250) {
+        while (Date.now() - start < 600) {
           // Hold lock
         }
         const after = Number(fs.readFileSync(markerPath, 'utf-8'));
@@ -212,7 +286,7 @@ describe('IdempotencyStore persistence', () => {
         });
       });
 
-    await Promise.all([runWorker(), runWorker(), runWorker()]);
+    await Promise.all([runWorker(), runWorker(), runWorker(), runWorker()]);
     const overlaps = fs
       .readFileSync(overlapPath, 'utf-8')
       .split('\n')
