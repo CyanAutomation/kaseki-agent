@@ -157,6 +157,39 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  test('treats EPERM process liveness checks as dead on Windows only', () => {
+    const store = new IdempotencyStore(resultsDir, 24);
+    const originalKill = process.kill;
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      'platform',
+    );
+    const error = new Error('permission denied') as NodeJS.ErrnoException;
+    error.code = 'EPERM';
+
+    try {
+      process.kill = jest.fn(() => {
+        throw error;
+      }) as unknown as typeof process.kill;
+
+      Object.defineProperty(process, 'platform', {
+        value: 'linux',
+      });
+      expect((store as any).isProcessAlive(12345)).toBe(true);
+
+      Object.defineProperty(process, 'platform', {
+        value: 'win32',
+      });
+      expect((store as any).isProcessAlive(12345)).toBe(false);
+    } finally {
+      process.kill = originalKill;
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+      store.shutdown();
+    }
+  });
+
   test('only one parallel claimer gets claimed for the same key', async () => {
     const workerPath = path.join(resultsDir, 'claim-worker.ts');
     fs.writeFileSync(
