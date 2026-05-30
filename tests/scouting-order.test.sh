@@ -43,7 +43,11 @@ if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="\${*: -1}"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf 'goal-setting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  if printf '%s' "\$prompt" | grep -Fq 'Write exactly one JSON object to $RESULTS_DIR/goal-setting-candidate.json'; then
+    printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  else
+    printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"stdout only","reasoning":"test","key_requirements":[],"success_criteria":[]}'
+  fi
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
@@ -87,6 +91,8 @@ set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls were not goal-setting then scouting then coding then goal-check"
+[ -s "$RESULTS_DIR/goal-setting.json" ] || fail "goal-setting.json was not copied into results"
+[ ! -e "$RESULTS_DIR/goal-setting-candidate.json" ] || fail "goal-setting candidate artifact should be consumed after validation"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "scouting.json was not copied into results"
 grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "scouting stage timing missing"
 grep -q "$RESULTS_DIR/scouting.json" "$RESULTS_DIR/coding-prompt.txt" || fail "coding prompt did not mention scouting artifact"
