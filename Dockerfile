@@ -80,6 +80,7 @@ COPY kaseki-agent.sh /usr/local/bin/kaseki-agent
 COPY scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint
 
 # Setup and install binaries (consolidated: container scripts, lib copies, permissions, and global installs)
+# Keep github_app_helper_dependencies in sync with static relative imports in src/github-app-token.ts and src/github-utils.ts.
 RUN chmod +x \
       /app/scripts/kaseki-container-setup.sh \
       /app/scripts/kaseki-container-setup-remote.sh \
@@ -91,7 +92,7 @@ RUN chmod +x \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
     && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \
-    && mkdir -p /app/lib/lib \
+    && mkdir -p /app/lib/lib /app/lib/secrets \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
     && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
     && cp dist/event-aggregator.js /app/lib/event-aggregator.js \
@@ -107,10 +108,15 @@ RUN chmod +x \
     && cp dist/kaseki-cli-lib.js /app/kaseki-cli-lib.js \
     && cp dist/github-app-token.js /app/lib/github-app-token.js \
     && cp dist/github-app-private-key.js /app/lib/github-app-private-key.js \
+    && cp dist/github-utils.js /app/lib/github-utils.js \
+    && cp dist/logger.js /app/lib/logger.js \
+    && cp dist/secrets/host-secrets-reader.js /app/lib/secrets/host-secrets-reader.js \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
-    && mkdir -p /usr/local/bin/lib \
+    && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
+    && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
@@ -122,7 +128,6 @@ RUN chmod +x \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
-    && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && chmod 0755 \
@@ -196,14 +201,17 @@ COPY --from=runtime /app/node_modules ./node_modules
 # Image size trade-off (~50-80 MB) is acceptable given validation is core functionality.
 
 # Install global binaries and set up scripts (from runtime stage)
+# Keep github_app_helper_dependencies in sync with static relative imports in src/github-app-token.ts and src/github-utils.ts.
 RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
     && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \
-    && mkdir -p /usr/local/bin/lib \
+    && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
+    && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
     && install -m 0755 /app/lib/ansi-colors.js /usr/local/bin/ansi-colors.js \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
@@ -215,7 +223,6 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
-    && install -m 0755 /app/lib/github-app-private-key.js /usr/local/bin/github-app-private-key.js \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \
