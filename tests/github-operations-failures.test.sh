@@ -20,6 +20,7 @@ ORIGINAL_TOKEN_HELPER_BACKUP=""
 ORIGINAL_TOKEN_HELPER_PRESENT=0
 CREATED_APP_LIB_FIXTURES=()
 
+# shellcheck disable=SC2317
 cleanup() {
   if [ "$ORIGINAL_TOKEN_HELPER_PRESENT" -eq 1 ] && [ -n "$ORIGINAL_TOKEN_HELPER_BACKUP" ] && [ -f "$ORIGINAL_TOKEN_HELPER_BACKUP" ]; then
     cp "$ORIGINAL_TOKEN_HELPER_BACKUP" /usr/local/bin/github-app-token 2>/dev/null || true
@@ -75,6 +76,7 @@ assert_file_contains() {
 
 json_field() {
   local file="$1" expr="$2"
+  # shellcheck disable=SC2016
   node -e '
 const fs = require("node:fs");
 const [file, expr] = process.argv.slice(1);

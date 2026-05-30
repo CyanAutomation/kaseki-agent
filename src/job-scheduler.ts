@@ -52,16 +52,6 @@ type TimeoutHandles = {
   isTimedOut?: () => boolean;
 };
 
-type StreamTailRef = {
-  current: Buffer<ArrayBufferLike>;
-};
-
-type ProcessStreamState = {
-  stdoutTailRef: StreamTailRef;
-  stderrTailRef: StreamTailRef;
-  onExit: (code: number) => void;
-};
-
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
@@ -865,8 +855,8 @@ export class JobScheduler {
     const elapsed =
       job.completedAt && job.startedAt
         ? Math.round(
-            (job.completedAt.getTime() - job.startedAt.getTime()) / 1000,
-          )
+          (job.completedAt.getTime() - job.startedAt.getTime()) / 1000,
+        )
         : undefined;
 
     if (job.failureClass === 'cancelled') {
@@ -1211,7 +1201,7 @@ export class JobScheduler {
     pending: number;
     running: number;
     maxConcurrent: number;
-  } {
+    } {
     return {
       pending: this.queue.length,
       running: this.running.size,
