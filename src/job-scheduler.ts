@@ -52,6 +52,16 @@ type TimeoutHandles = {
   isTimedOut?: () => boolean;
 };
 
+type StreamTailRef = {
+  current: Buffer<ArrayBufferLike>;
+};
+
+type ProcessStreamState = {
+  stdoutTailRef: StreamTailRef;
+  stderrTailRef: StreamTailRef;
+  onExit: (code: number) => void;
+};
+
 /**
  * Job scheduler manages a FIFO queue of kaseki runs with concurrency control.
  */
@@ -616,8 +626,7 @@ export class JobScheduler {
     this.processExited.set(job.id, false);
     this.clearLiveProgressCache(job.id);
 
-    // Create shared mutable stream state object for live buffer references
-    // Create shared mutable stream state object for live buffer references
+    // Create shared mutable stream state object with independent stdout/stderr tail references.
     let timeoutHandles: TimeoutHandles & { isTimedOut: () => boolean };
     const streamState = {
       stdoutTailRef: { current: Buffer.alloc(0) },
@@ -648,12 +657,7 @@ export class JobScheduler {
     );
 
     // Configure timeout (extracted)
-    // Configure timeout (extracted)
-    timeoutHandles = this.configureJobTimeout(
-      job.id,
-      proc,
-      effectiveTimeoutSeconds,
-    );
+    timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
     job.timeout = timeoutHandles.timeoutHandle;
 
     // Attach process listeners with shared stream state
