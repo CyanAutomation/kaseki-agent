@@ -14,7 +14,6 @@
  *   }
  */
 
-
 import fs from 'fs';
 import { generateGitHubAppToken } from './github-utils';
 
@@ -37,7 +36,6 @@ async function main(): Promise<void> {
 
     // Output result as JSON
     console.log(JSON.stringify(tokenData));
-    
     if (tokenData.error) {
       process.exit(1);
     }
