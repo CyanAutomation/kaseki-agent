@@ -1,11 +1,11 @@
 /**
  * Goal-Setting Feedback Loop Infrastructure
- * 
+ *
  * Tracks goal-setting effectiveness by correlating:
  * - Goal quality metrics
  * - Agent behavior (scouting, coding, validation outcomes)
  * - Success/failure patterns
- * 
+ *
  * Enables long-term optimization: which goals lead to better agent performance?
  */
 

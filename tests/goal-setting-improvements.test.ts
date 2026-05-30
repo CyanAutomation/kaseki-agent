@@ -1,6 +1,6 @@
 /**
  * Goal-Setting Agent Improvements - Test Suite
- * 
+ *
  * Validates all 10 improvements:
  * 1. Anti-patterns extraction
  * 2. SMART criteria validation

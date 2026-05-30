@@ -1,6 +1,6 @@
 /**
  * Goal-Setting Agent Output Types
- * 
+ *
  * Following OpenAI best practices for well-formed goals:
  * https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex
  */
