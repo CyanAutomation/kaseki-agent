@@ -26,6 +26,7 @@ interface WebhookQueueEntry {
   deliveryAttempts: number;
   attempts: WebhookDeliveryAttempt[];
   nextRetryTime?: number; // Unix timestamp
+  inFlight?: boolean; // In-memory flag to prevent duplicate deliveries
 }
 
 interface PersistedWebhookQueueEntry {
@@ -128,24 +129,33 @@ export class WebhookManager extends EventEmitter {
       return;
     }
 
-    // Find next entry to deliver
+    // Find next entry to deliver (exclude entries already in flight)
     const now = Date.now();
     const entry = this.deliveryQueue.find((e) => {
       const lastAttempt = e.attempts[e.attempts.length - 1];
       const isCompleted = lastAttempt.status === 'success';
       const shouldRetry = e.nextRetryTime && e.nextRetryTime <= now;
       const exceedsMaxAttempts = e.deliveryAttempts >= (e.config.retryPolicy?.maxAttempts || 5);
-      return !isCompleted && shouldRetry && !exceedsMaxAttempts;
+      const isInFlight = e.inFlight === true;
+      return !isCompleted && shouldRetry && !exceedsMaxAttempts && !isInFlight;
     });
 
     if (!entry) {
       return;
     }
 
+    // Mark entry as in-flight before starting delivery
+    entry.inFlight = true;
     this.activeDeliveries++;
+    
     try {
       await this.deliverWebhook(entry);
     } finally {
+      // Clear in-flight status unless entry was removed from queue during delivery
+      const stillInQueue = this.deliveryQueue.includes(entry);
+      if (stillInQueue) {
+        entry.inFlight = false;
+      }
       this.activeDeliveries--;
     }
   }
@@ -154,6 +164,7 @@ export class WebhookManager extends EventEmitter {
    * Deliver a webhook with retry logic.
    */
   private async deliverWebhook(entry: WebhookQueueEntry): Promise<void> {
+    // Note: inFlight flag is set in processQueue() before this method is called
     const { config, payload, jobId } = entry;
     const signature = this.generateSignature(payload, config);
     const startTime = Date.now();
