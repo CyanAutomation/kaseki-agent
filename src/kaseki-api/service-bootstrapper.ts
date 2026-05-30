@@ -46,10 +46,13 @@ export interface ShutdownDeps {
  * @returns BootstrappedServices object with all initialized services
  * @throws Error with context if any service initialization fails
  */
-export async function bootstrapServices(config: KasekiApiConfig): Promise<BootstrappedServices> {
+export async function bootstrapServices(
+  config: KasekiApiConfig,
+): Promise<BootstrappedServices> {
   logger.info('Starting service bootstrap');
 
-  const cleanupTasks: Array<{ name: string; run: () => void | Promise<void> }> = [];
+  const cleanupTasks: Array<{ name: string; run: () => void | Promise<void> }> =
+    [];
 
   try {
     // 1. Create artifact cache (no dependencies)
@@ -91,6 +94,7 @@ export async function bootstrapServices(config: KasekiApiConfig): Promise<Bootst
     // 5. Create scheduler (depends on: config, webhookManager, artifactCache)
     logger.info('Initializing JobScheduler');
     const scheduler = new JobScheduler(config, webhookManager, artifactCache);
+    await scheduler.ready();
     logger.info('JobScheduler initialized');
 
     logger.info('Service bootstrap complete');
@@ -110,14 +114,19 @@ export async function bootstrapServices(config: KasekiApiConfig): Promise<Bootst
       } catch (cleanupErr) {
         logger.error('Failed bootstrap cleanup task', {
           service: task.name,
-          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          error:
+            cleanupErr instanceof Error
+              ? cleanupErr.message
+              : String(cleanupErr),
         });
       }
     }
 
     const errorMessage = err instanceof Error ? err.message : String(err);
     logger.error('Failed to bootstrap services', { error: errorMessage });
-    throw new Error(`Service bootstrap failed: ${errorMessage}`, { cause: err });
+    throw new Error(`Service bootstrap failed: ${errorMessage}`, {
+      cause: err,
+    });
   }
 }
 
@@ -149,7 +158,9 @@ export async function gracefulShutdown(deps: ShutdownDeps): Promise<void> {
   logger.info('Starting graceful shutdown', { timeoutMs: forceExitAfterMs });
 
   const hardTimeout = setTimeout(() => {
-    logger.error(`Graceful shutdown timeout after ${forceExitAfterMs}ms, forcing exit`);
+    logger.error(
+      `Graceful shutdown timeout after ${forceExitAfterMs}ms, forcing exit`,
+    );
     exit(1);
   }, forceExitAfterMs);
 

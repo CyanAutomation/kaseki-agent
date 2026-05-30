@@ -8,15 +8,15 @@ import { RunResponse } from './kaseki-api-types';
 describe('IdempotencyStore persistence', () => {
   let resultsDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resultsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-idempotency-'));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
-  test('restores exact fulfilled response payload across restart', () => {
+  test('restores exact fulfilled response payload across restart', async () => {
     const key = 'a-key';
     const fingerprint = 'fp-1';
     const response: RunResponse = {
@@ -29,18 +29,29 @@ describe('IdempotencyStore persistence', () => {
     };
 
     const store1 = new IdempotencyStore(resultsDir, 24);
-    expect(store1.claimOrGet(key, fingerprint)).toEqual({ kind: 'claimed' });
-    store1.storeResponse(key, response, fingerprint);
-    expect(store1.claimOrGet(key, fingerprint)).toEqual({ kind: 'fulfilled', response });
+    expect(await store1.claimOrGet(key, fingerprint)).toEqual({
+      kind: 'claimed',
+    });
+    await store1.storeResponse(key, response, fingerprint);
+    expect(await store1.claimOrGet(key, fingerprint)).toEqual({
+      kind: 'fulfilled',
+      response,
+    });
     store1.shutdown();
 
     const store2 = new IdempotencyStore(resultsDir, 24);
-    expect(store2.claimOrGet(key, fingerprint)).toEqual({ kind: 'fulfilled', response });
+    expect(await store2.claimOrGet(key, fingerprint)).toEqual({
+      kind: 'fulfilled',
+      response,
+    });
     store2.shutdown();
   });
 
-  test('supports older log lines without responsePayload fields', () => {
-    const persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
+  test('supports older log lines without responsePayload fields', async () => {
+    const persistencePath = path.join(
+      resultsDir,
+      '.kaseki-api-idempotency.jsonl',
+    );
     const legacyLine = {
       idempotencyKey: 'legacy-key',
       requestFingerprint: 'legacy-fp',
@@ -52,10 +63,14 @@ describe('IdempotencyStore persistence', () => {
       expiresAt: Date.now() + 24 * 3600 * 1000,
     };
 
-    fs.writeFileSync(persistencePath, `${JSON.stringify(legacyLine)}\n`, 'utf-8');
+    fs.writeFileSync(
+      persistencePath,
+      `${JSON.stringify(legacyLine)}\n`,
+      'utf-8',
+    );
 
     const store = new IdempotencyStore(resultsDir, 24);
-    expect(store.claimOrGet('legacy-key', 'legacy-fp')).toEqual({
+    expect(await store.claimOrGet('legacy-key', 'legacy-fp')).toEqual({
       kind: 'fulfilled',
       response: {
         id: 'kaseki-legacy',
@@ -74,18 +89,30 @@ describe('IdempotencyStore persistence', () => {
       workerPath,
       `
       import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
-      const [resultsDir, key, fingerprint] = process.argv.slice(2);
-      const store = new IdempotencyStore(resultsDir, 24);
-      const result = store.claimOrGet(key, fingerprint);
-      store.shutdown();
-      process.stdout.write(JSON.stringify(result));
+      void (async () => {
+        const [resultsDir, key, fingerprint] = process.argv.slice(2);
+        const store = new IdempotencyStore(resultsDir, 24);
+        const result = await store.claimOrGet(key, fingerprint);
+        store.shutdown();
+        process.stdout.write(JSON.stringify(result));
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
     `,
-      'utf-8'
+      'utf-8',
     );
 
     const claimFromProcess = (): Promise<{ kind: string }> =>
       new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, ['--import', 'tsx', workerPath, resultsDir, 'concurrent-key', 'same-fp']);
+        const child = spawn(process.execPath, [
+          '--import',
+          'tsx',
+          workerPath,
+          resultsDir,
+          'concurrent-key',
+          'same-fp',
+        ]);
         let stdout = '';
         let stderr = '';
 
@@ -109,7 +136,10 @@ describe('IdempotencyStore persistence', () => {
         });
       });
 
-    const [result1, result2] = await Promise.all([claimFromProcess(), claimFromProcess()]);
+    const [result1, result2] = await Promise.all([
+      claimFromProcess(),
+      claimFromProcess(),
+    ]);
     const kinds = [result1.kind, result2.kind].sort();
 
     expect(kinds).toEqual(['claimed', 'pending']);
@@ -129,10 +159,11 @@ describe('IdempotencyStore persistence', () => {
       import * as fs from 'fs';
       import { IdempotencyStore } from '${path.resolve('src/idempotency-store.ts').replace(/\\/g, '\\\\')}';
 
-      const [resultsDir, markerPath, overlapPath] = process.argv.slice(2);
-      const store = new IdempotencyStore(resultsDir, 24);
+      void (async () => {
+        const [resultsDir, markerPath, overlapPath] = process.argv.slice(2);
+        const store = new IdempotencyStore(resultsDir, 24);
 
-      (store as any).withLock(() => {
+        await (store as any).withLock(() => {
         const active = Number(fs.readFileSync(markerPath, 'utf-8'));
         if (active > 0) {
           fs.appendFileSync(overlapPath, 'overlap\\n', 'utf-8');
@@ -145,17 +176,28 @@ describe('IdempotencyStore persistence', () => {
         }
         const after = Number(fs.readFileSync(markerPath, 'utf-8'));
         fs.writeFileSync(markerPath, String(after - 1), 'utf-8');
-      });
+        });
 
-      store.shutdown();
-      process.stdout.write('done');
+        store.shutdown();
+        process.stdout.write('done');
+      })().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
     `,
-      'utf-8'
+      'utf-8',
     );
 
     const runWorker = (): Promise<void> =>
       new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, ['--import', 'tsx', workerPath, resultsDir, markerPath, overlapPath]);
+        const child = spawn(process.execPath, [
+          '--import',
+          'tsx',
+          workerPath,
+          resultsDir,
+          markerPath,
+          overlapPath,
+        ]);
         let stderr = '';
         child.stderr.on('data', (chunk) => {
           stderr += chunk.toString();
@@ -179,4 +221,34 @@ describe('IdempotencyStore persistence', () => {
 
     expect(overlaps).toEqual([]);
   }, 20000);
+
+  test('keeps the event loop responsive while waiting for the idempotency lock', async () => {
+    const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(
+      path.join(lockPath, 'owner.json'),
+      JSON.stringify({ pid: process.pid, token: 'test-holder' }),
+      'utf-8',
+    );
+
+    const store = new IdempotencyStore(resultsDir, 24);
+    let ticks = 0;
+    const interval = setInterval(() => {
+      ticks += 1;
+    }, 5);
+    const releaseLock = setTimeout(() => {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+    }, 75);
+
+    try {
+      await expect(
+        store.claimOrGet('responsive-key', 'responsive-fp'),
+      ).resolves.toEqual({ kind: 'claimed' });
+      expect(ticks).toBeGreaterThanOrEqual(5);
+    } finally {
+      clearInterval(interval);
+      clearTimeout(releaseLock);
+      store.shutdown();
+    }
+  });
 });

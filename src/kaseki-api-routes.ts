@@ -4,7 +4,11 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readHostSecret, getSecretLocations, resolveHostSecretPath } from './secrets/host-secrets-reader';
+import {
+  readHostSecret,
+  getSecretLocations,
+  resolveHostSecretPath,
+} from './secrets/host-secrets-reader';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
@@ -36,7 +40,8 @@ import { metricsRegistry } from './metrics';
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
-const TEMPLATE_REMEDIATION = 'Run scripts/kaseki-activate.sh --controller bootstrap.';
+const TEMPLATE_REMEDIATION =
+  'Run scripts/kaseki-activate.sh --controller bootstrap.';
 const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 15000;
 const DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS = 60_000;
 const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
@@ -56,10 +61,12 @@ function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
     return false;
   }
 
-  return remoteAddress === '::1' ||
+  return (
+    remoteAddress === '::1' ||
     remoteAddress === '127.0.0.1' ||
     remoteAddress === '::ffff:127.0.0.1' ||
-    remoteAddress.startsWith('127.');
+    remoteAddress.startsWith('127.')
+  );
 }
 
 interface TemplateHealthStatus {
@@ -102,26 +109,47 @@ interface GitRefResolution {
   stderrTail?: string;
 }
 
-function getTemplateCheckoutRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): string | undefined {
+function getTemplateCheckoutRef(
+  checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent',
+): string | undefined {
   return fs.existsSync(path.join(checkoutDir, '.git'))
     ? commandOutput('git', ['rev-parse', '--short', 'HEAD'], checkoutDir)
     : undefined;
 }
 
-function classifyGitRevParseFailure(stderr: string): GitRefResolution['errorKind'] {
+function classifyGitRevParseFailure(
+  stderr: string,
+): GitRefResolution['errorKind'] {
   const normalized = stderr.toLowerCase();
-  if (normalized.includes('permission denied') || normalized.includes('operation not permitted')) return 'permission-denied';
-  if (normalized.includes('not a git repository') || normalized.includes('no such file or directory')) return 'not-a-repo';
-  if (normalized.includes('command not found') || normalized.includes('not recognized as an internal or external command')) return 'git-missing';
+  if (
+    normalized.includes('permission denied') ||
+    normalized.includes('operation not permitted')
+  )
+    return 'permission-denied';
+  if (
+    normalized.includes('not a git repository') ||
+    normalized.includes('no such file or directory')
+  )
+    return 'not-a-repo';
+  if (
+    normalized.includes('command not found') ||
+    normalized.includes('not recognized as an internal or external command')
+  )
+    return 'git-missing';
   return 'unknown';
 }
 
-function sanitizeStderrTail(stderr?: string, lineCount = 6): string | undefined {
+function sanitizeStderrTail(
+  stderr?: string,
+  lineCount = 6,
+): string | undefined {
   const tail = tailTextByLines(String(stderr || ''), lineCount);
   return tail.length > 0 ? tail.replace(/[\r\n\t]+/g, ' ').trim() : undefined;
 }
 
-function getTemplateCheckoutFullRef(checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent'): GitRefResolution {
+function getTemplateCheckoutFullRef(
+  checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent',
+): GitRefResolution {
   const command = 'git rev-parse HEAD';
   const result = runGit(['rev-parse', 'HEAD'], checkoutDir);
   if (result.status === 0) {
@@ -147,7 +175,9 @@ function runGit(args: string[], cwd?: string): ReturnType<typeof spawnSync> {
 }
 
 function firstLsRemoteSha(output?: string | Buffer): string | undefined {
-  const line = String(output || '').split(/\r?\n/).find((value) => value.trim().length > 0);
+  const line = String(output || '')
+    .split(/\r?\n/)
+    .find((value) => value.trim().length > 0);
   return line?.trim().split(/\s+/)[0];
 }
 
@@ -176,14 +206,17 @@ function resolveCheckoutFreshness(
   }
 
   if (!localRef) {
-    const metadataFallbackAvailable = Boolean(metadataRef && /^[0-9a-f]{7,40}$/i.test(metadataRef));
-    const reason = localRefResolution.errorKind === 'permission-denied'
-      ? `permission denied while reading ${path.join(checkoutDir, '.git')}`
-      : localRefResolution.errorKind === 'git-missing'
-        ? 'git executable is unavailable'
-        : localRefResolution.errorKind === 'not-a-repo'
-          ? `${checkoutDir} does not contain readable git metadata`
-          : 'git metadata could not be read';
+    const metadataFallbackAvailable = Boolean(
+      metadataRef && /^[0-9a-f]{7,40}$/i.test(metadataRef),
+    );
+    const reason =
+      localRefResolution.errorKind === 'permission-denied'
+        ? `permission denied while reading ${path.join(checkoutDir, '.git')}`
+        : localRefResolution.errorKind === 'git-missing'
+          ? 'git executable is unavailable'
+          : localRefResolution.errorKind === 'not-a-repo'
+            ? `${checkoutDir} does not contain readable git metadata`
+            : 'git metadata could not be read';
     const diag = `Failed to resolve controller checkout revision via "${localRefResolution.command}" (${reason})${localRefResolution.stderrTail ? `; stderr tail: ${localRefResolution.stderrTail}` : ''}.`;
 
     if (metadataFallbackAvailable && metadataRef) {
@@ -193,7 +226,8 @@ function resolveCheckoutFreshness(
         checkoutDir,
         localRef: metadataRef,
         detail: `${diag} Using template metadata ref ${metadataRef.substring(0, 12)} as an informational fallback only.`,
-        remediation: 'Fix ownership/permissions on the controller checkout (.git) so freshness can be enforced against origin.',
+        remediation:
+          'Fix ownership/permissions on the controller checkout (.git) so freshness can be enforced against origin.',
       };
     }
 
@@ -202,7 +236,8 @@ function resolveCheckoutFreshness(
       stale: true,
       checkoutDir,
       detail: diag,
-      remediation: 'Fix ownership/permissions on the controller checkout and rerun scripts/kaseki-activate.sh --controller bootstrap.',
+      remediation:
+        'Fix ownership/permissions on the controller checkout and rerun scripts/kaseki-activate.sh --controller bootstrap.',
     };
   }
 
@@ -217,18 +252,28 @@ function resolveCheckoutFreshness(
     };
   }
 
-  const remoteUrl = commandOutput('git', ['config', '--get', 'remote.origin.url'], checkoutDir);
+  const remoteUrl = commandOutput(
+    'git',
+    ['config', '--get', 'remote.origin.url'],
+    checkoutDir,
+  );
   if (!remoteUrl) {
     return {
       ok: true,
       stale: false,
       checkoutDir,
       localRef,
-      detail: 'Checkout freshness skipped because no origin remote is configured.',
+      detail:
+        'Checkout freshness skipped because no origin remote is configured.',
     };
   }
 
-  const remoteResult = runGit(['ls-remote', remoteUrl, `refs/heads/${ref}`, ref]);
+  const remoteResult = runGit([
+    'ls-remote',
+    remoteUrl,
+    `refs/heads/${ref}`,
+    ref,
+  ]);
   const remoteRef = firstLsRemoteSha(remoteResult.stdout);
   if (remoteResult.status !== 0 || !remoteRef) {
     return {
@@ -238,7 +283,8 @@ function resolveCheckoutFreshness(
       localRef,
       remoteUrl,
       detail: `Checkout freshness could not resolve origin/${ref}; continuing with local checkout ${localRef.substring(0, 12)}.`,
-      remediation: 'Check network access to the origin remote if freshness warnings persist.',
+      remediation:
+        'Check network access to the origin remote if freshness warnings persist.',
     };
   }
 
@@ -254,7 +300,10 @@ function resolveCheckoutFreshness(
     };
   }
 
-  const ancestor = runGit(['merge-base', '--is-ancestor', localRef, remoteRef], checkoutDir);
+  const ancestor = runGit(
+    ['merge-base', '--is-ancestor', localRef, remoteRef],
+    checkoutDir,
+  );
   const relation = ancestor.status === 0 ? 'behind' : 'different from';
   return {
     ok: false,
@@ -272,12 +321,22 @@ function shouldBlockForFreshness(publishMode: string): boolean {
   if (process.env.KASEKI_ENFORCE_FRESHNESS === '0') {
     return false;
   }
-  return publishMode === 'pr' || publishMode === 'draft_pr' || publishMode === 'branch' || publishMode === 'auto';
+  return (
+    publishMode === 'pr' ||
+    publishMode === 'draft_pr' ||
+    publishMode === 'branch' ||
+    publishMode === 'auto'
+  );
 }
 
 function getTemplateDoctorTimeoutMs(): number {
-  const configured = Number.parseInt(process.env.KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS || '', 10);
-  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS;
+  const configured = Number.parseInt(
+    process.env.KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS || '',
+    10,
+  );
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS;
 }
 
 function tailTextByLines(content: string, lineCount: number): string {
@@ -289,7 +348,7 @@ function validateTemplateRunScript(
   templateDir: string,
   runScript: string,
   templateRef: string | undefined,
-  checkoutDir: string
+  checkoutDir: string,
 ): TemplateHealthStatus | null {
   if (!fs.existsSync(runScript)) {
     return {
@@ -309,9 +368,11 @@ function validateTemplateFiles(
   templateDir: string,
   runScript: string,
   templateRef: string | undefined,
-  checkoutDir: string
+  checkoutDir: string,
 ): TemplateHealthStatus | null {
-  const missingFiles = REQUIRED_TEMPLATE_FILES.filter((file) => !fs.existsSync(path.join(templateDir, file)));
+  const missingFiles = REQUIRED_TEMPLATE_FILES.filter(
+    (file) => !fs.existsSync(path.join(templateDir, file)),
+  );
   if (missingFiles.length > 0) {
     return {
       ok: false,
@@ -320,14 +381,19 @@ function validateTemplateFiles(
       checkoutDir,
       checkoutRef: templateRef,
       detail: `Template is incomplete at ${templateDir}; missing ${missingFiles.join(', ')}.`,
-      remediation: 'Run scripts/kaseki-activate.sh --controller bootstrap, or scripts/kaseki-setup-host.sh --fix before starting the API.',
+      remediation:
+        'Run scripts/kaseki-activate.sh --controller bootstrap, or scripts/kaseki-setup-host.sh --fix before starting the API.',
     };
   }
   return null;
 }
 
 function runTemplateDoctor(runScript: string, checkoutDir: string) {
-  const activateScript = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
+  const activateScript = path.join(
+    checkoutDir,
+    'scripts',
+    'kaseki-activate.sh',
+  );
   const doctorArgs = fs.existsSync(activateScript)
     ? ['bash', activateScript, '--json', 'doctor']
     : ['bash', runScript, '--doctor'];
@@ -345,16 +411,23 @@ function validateTemplateDoctor(
   templateDir: string,
   runScript: string,
   templateRef: string | undefined,
-  checkoutDir: string
+  checkoutDir: string,
 ): TemplateHealthStatus | null {
   const stderr = `${doctorResult.stderr || ''}${doctorResult.error ? `\n${doctorResult.error.message}` : ''}`;
-  const doctorStderrTail = tailTextByLines(stderr, TEMPLATE_DOCTOR_STDERR_TAIL_LINES);
-  const doctorArgs = fs.existsSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'))
+  const doctorStderrTail = tailTextByLines(
+    stderr,
+    TEMPLATE_DOCTOR_STDERR_TAIL_LINES,
+  );
+  const doctorArgs = fs.existsSync(
+    path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'),
+  )
     ? `${path.join(checkoutDir, 'scripts', 'kaseki-activate.sh')} --json doctor`
     : `${runScript} --doctor`;
 
   if (doctorResult.error || doctorResult.status !== 0) {
-    const timedOut = doctorResult.error?.message.toLowerCase().includes('timeout') || doctorResult.signal === 'SIGTERM';
+    const timedOut =
+      doctorResult.error?.message.toLowerCase().includes('timeout') ||
+      doctorResult.signal === 'SIGTERM';
     return {
       ok: false,
       templateDir,
@@ -374,26 +447,46 @@ function validateTemplateDoctor(
   return null;
 }
 
-function buildTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateHealthStatus {
+function buildTemplateHealthStatus(
+  templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
+): TemplateHealthStatus {
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
   const checkoutRef = getTemplateCheckoutRef(checkoutDir);
   const runScript = path.join(templateDir, 'run-kaseki.sh');
 
   // Check 1: Validate run script exists
-  let validation = validateTemplateRunScript(templateDir, runScript, checkoutRef, checkoutDir);
+  let validation = validateTemplateRunScript(
+    templateDir,
+    runScript,
+    checkoutRef,
+    checkoutDir,
+  );
   if (validation) return validation;
 
   // Check 2: Validate all required files exist
-  validation = validateTemplateFiles(templateDir, runScript, checkoutRef, checkoutDir);
+  validation = validateTemplateFiles(
+    templateDir,
+    runScript,
+    checkoutRef,
+    checkoutDir,
+  );
   if (validation) return validation;
 
   // Check 3: Run doctor check
   const doctorResult = runTemplateDoctor(runScript, checkoutDir);
-  validation = validateTemplateDoctor(doctorResult, templateDir, runScript, checkoutRef, checkoutDir);
+  validation = validateTemplateDoctor(
+    doctorResult,
+    templateDir,
+    runScript,
+    checkoutRef,
+    checkoutDir,
+  );
   if (validation) return validation;
 
   // All checks passed
-  const doctorArgs = fs.existsSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'))
+  const doctorArgs = fs.existsSync(
+    path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'),
+  )
     ? `${path.join(checkoutDir, 'scripts', 'kaseki-activate.sh')} --json doctor`
     : `${runScript} --doctor`;
 
@@ -415,15 +508,22 @@ function getTemplateHealthCacheTtlMs(): number {
   const raw = process.env.KASEKI_TEMPLATE_HEALTH_CACHE_TTL_MS;
   if (!raw) return DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS;
+  return Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS;
 }
 
-function getCachedTemplateHealthStatus(templateDir: string): TemplateHealthStatus | undefined {
+function getCachedTemplateHealthStatus(
+  templateDir: string,
+): TemplateHealthStatus | undefined {
   if (!templateHealthCache) return undefined;
   if (templateHealthCache.templateDir !== templateDir) {
     return undefined;
   }
-  if (Date.now() - templateHealthCache.checkedAt > getTemplateHealthCacheTtlMs()) {
+  if (
+    Date.now() - templateHealthCache.checkedAt >
+    getTemplateHealthCacheTtlMs()
+  ) {
     templateHealthCache = undefined;
     return undefined;
   }
@@ -441,15 +541,15 @@ function cacheTemplateHealthStatus(status: TemplateHealthStatus): void {
 function isTemplateDoctorTimeout(status: TemplateHealthStatus): boolean {
   return Boolean(
     status.doctorCommand &&
-    (
-      status.detail.toLowerCase().includes('timed out') ||
+    (status.detail.toLowerCase().includes('timed out') ||
       status.doctorStderrTail?.toLowerCase().includes('etimedout') ||
-      status.doctorSignal === 'SIGTERM'
-    )
+      status.doctorSignal === 'SIGTERM'),
   );
 }
 
-function getSubmissionTemplateHealthStatus(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): { status: TemplateHealthStatus; fromCache: boolean } {
+function getSubmissionTemplateHealthStatus(
+  templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
+): { status: TemplateHealthStatus; fromCache: boolean } {
   const cached = getCachedTemplateHealthStatus(templateDir);
   if (cached?.ok) {
     return { status: cached, fromCache: true };
@@ -476,7 +576,9 @@ interface TemplatePublishModeCompatibility {
   remediation?: string;
 }
 
-function readTemplateVersionMetadata(templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template'): TemplateVersionMetadata | undefined {
+function readTemplateVersionMetadata(
+  templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template',
+): TemplateVersionMetadata | undefined {
   const metadataPath = path.join(templateDir, '.kaseki-template-version');
   if (!fs.existsSync(metadataPath)) {
     return undefined;
@@ -487,8 +589,13 @@ function readTemplateVersionMetadata(templateDir = process.env.KASEKI_TEMPLATE_D
   if (!parsed || typeof parsed !== 'object') {
     throw new Error(`Template metadata is invalid: ${metadataPath}`);
   }
-  if (parsed.supportedPublishModes !== undefined && !Array.isArray(parsed.supportedPublishModes)) {
-    throw new Error(`Template metadata has invalid supportedPublishModes: ${metadataPath}`);
+  if (
+    parsed.supportedPublishModes !== undefined &&
+    !Array.isArray(parsed.supportedPublishModes)
+  ) {
+    throw new Error(
+      `Template metadata has invalid supportedPublishModes: ${metadataPath}`,
+    );
   }
   return parsed;
 }
@@ -508,7 +615,11 @@ function checkTemplatePublishModeCompatibility(
   }
 
   if (metadata.supportedPublishModes.includes(publishMode)) {
-    return { ok: true, metadataPath, supportedPublishModes: metadata.supportedPublishModes };
+    return {
+      ok: true,
+      metadataPath,
+      supportedPublishModes: metadata.supportedPublishModes,
+    };
   }
 
   return {
@@ -525,7 +636,9 @@ function stableStringify(value: unknown): string {
     return `[${value.map((item) => stableStringify(item)).join(',')}]`;
   }
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    const entries = Object.entries(value as Record<string, unknown>).sort(
+      ([a], [b]) => a.localeCompare(b),
+    );
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
   }
   return JSON.stringify(value);
@@ -534,7 +647,10 @@ function stableStringify(value: unknown): string {
 function buildRequestFingerprint(runRequest: Record<string, unknown>): string {
   const requestForFingerprint = { ...runRequest };
   delete requestForFingerprint.idempotencyKey;
-  return crypto.createHash('sha256').update(stableStringify(requestForFingerprint)).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(stableStringify(requestForFingerprint))
+    .digest('hex');
 }
 
 function readKasekiImage(templateDir = '/agents/kaseki-template'): string {
@@ -554,7 +670,13 @@ function readKasekiImage(templateDir = '/agents/kaseki-template'): string {
 }
 
 function inspectImageDigest(image: string): string | undefined {
-  return commandOutput('docker', ['image', 'inspect', image, '--format', '{{range .RepoDigests}}{{println .}}{{end}}'])
+  return commandOutput('docker', [
+    'image',
+    'inspect',
+    image,
+    '--format',
+    '{{range .RepoDigests}}{{println .}}{{end}}',
+  ])
     ?.split(/\r?\n/)
     .find((line) => line.trim().length > 0);
 }
@@ -564,7 +686,8 @@ export { classifyDockerFailure } from './lib/subprocess-helpers';
 
 function parseMountInfo(): Array<{ root: string; mountPoint: string }> {
   try {
-    const mountInfoPath = process.env.KASEKI_MOUNTINFO_PATH || '/proc/self/mountinfo';
+    const mountInfoPath =
+      process.env.KASEKI_MOUNTINFO_PATH || '/proc/self/mountinfo';
     const content = fs.readFileSync(mountInfoPath, 'utf-8');
     return content
       .split(/\r?\n/)
@@ -589,9 +712,11 @@ function checkDeletedBindMounts(paths: string[]): PreflightCheck {
     if (!root.includes('deleted')) {
       return false;
     }
-    return uniquePaths.some((targetPath) => (
-      targetPath === mount.mountPoint || targetPath.startsWith(`${mount.mountPoint}/`)
-    ));
+    return uniquePaths.some(
+      (targetPath) =>
+        targetPath === mount.mountPoint ||
+        targetPath.startsWith(`${mount.mountPoint}/`),
+    );
   });
 
   if (deletedMounts.length === 0) {
@@ -603,18 +728,26 @@ function checkDeletedBindMounts(paths: string[]): PreflightCheck {
   }
 
   const details = deletedMounts
-    .map((mount) => `${mount.mountPoint} is backed by deleted source ${mount.root}`)
+    .map(
+      (mount) =>
+        `${mount.mountPoint} is backed by deleted source ${mount.root}`,
+    )
     .join('; ');
 
   return {
     name: 'bind-mounts',
     ok: false,
     detail: details,
-    remediation: 'Run: sudo kaseki-agent host setup --fix --recreate-api. If the npm CLI is unavailable, run the packaged scripts/kaseki-setup-host.sh with KASEKI_HOST_SECRETS_DIR set to the host secrets directory.',
+    remediation:
+      'Run: sudo kaseki-agent host setup --fix --recreate-api. If the npm CLI is unavailable, run the packaged scripts/kaseki-setup-host.sh with KASEKI_HOST_SECRETS_DIR set to the host secrets directory.',
   };
 }
 
-function checkWritableDirectory(name: string, dirPath: string, remediation: string): PreflightCheck {
+function checkWritableDirectory(
+  name: string,
+  dirPath: string,
+  remediation: string,
+): PreflightCheck {
   try {
     fs.mkdirSync(dirPath, { recursive: true });
     fs.accessSync(dirPath, fs.constants.R_OK | fs.constants.W_OK);
@@ -636,7 +769,11 @@ function checkWritableDirectory(name: string, dirPath: string, remediation: stri
 function checkOpenRouterKey(): PreflightCheck {
   const keyValue = readHostSecret('openrouter_api_key');
   if (keyValue) {
-    return { name: 'openrouter-key', ok: true, detail: 'OpenRouter API key is available from host secrets.' };
+    return {
+      name: 'openrouter-key',
+      ok: true,
+      detail: 'OpenRouter API key is available from host secrets.',
+    };
   }
 
   const locations = getSecretLocations('openrouter_api_key');
@@ -670,7 +807,8 @@ function checkGitHubAppCredentials(): PreflightCheck {
     return {
       name: 'github-app',
       ok: false,
-      detail: 'GitHub App credentials are not configured; default PR creation cannot run.',
+      detail:
+        'GitHub App credentials are not configured; default PR creation cannot run.',
       remediation: [
         'Create one secret file per GitHub App credential:',
         `  github_app_id: ${idLocations.primary} or ${idLocations.secondary}`,
@@ -692,10 +830,12 @@ function checkGitHubAppCredentials(): PreflightCheck {
   }
 
   if (missing.length > 0) {
-    const secretLocations = missing.map((name) => {
-      const locations = getSecretLocations(name);
-      return `${name}: ${locations.primary} or ${locations.secondary}`;
-    }).join('; ');
+    const secretLocations = missing
+      .map((name) => {
+        const locations = getSecretLocations(name);
+        return `${name}: ${locations.primary} or ${locations.secondary}`;
+      })
+      .join('; ');
     return {
       name: 'github-app',
       ok: false,
@@ -708,15 +848,19 @@ function checkGitHubAppCredentials(): PreflightCheck {
       name: 'github-app',
       ok: false,
       detail: 'GitHub App ID is present but is not numeric.',
-      remediation: 'The github_app_id secret file must contain only the numeric GitHub App ID.',
+      remediation:
+        'The github_app_id secret file must contain only the numeric GitHub App ID.',
     };
   }
-  const privateKeyValidation = validateGitHubAppPrivateKey(privateKey as string);
+  const privateKeyValidation = validateGitHubAppPrivateKey(
+    privateKey as string,
+  );
   if (!privateKeyValidation.ok) {
     return {
       name: 'github-app',
       ok: false,
-      detail: privateKeyValidation.error || 'GitHub App private key is not valid.',
+      detail:
+        privateKeyValidation.error || 'GitHub App private key is not valid.',
       remediation: privateKeyValidation.remediation,
     };
   }
@@ -724,7 +868,8 @@ function checkGitHubAppCredentials(): PreflightCheck {
   return {
     name: 'github-app',
     ok: true,
-    detail: 'GitHub App credentials are readable and structurally valid for PR creation.',
+    detail:
+      'GitHub App credentials are readable and structurally valid for PR creation.',
   };
 }
 
@@ -733,9 +878,10 @@ function resolveWorkerHostSecretsDir(): string {
     return process.env.KASEKI_HOST_SECRETS_DIR;
   }
 
-  const secretFile = resolveHostSecretPath('openrouter_api_key')
-    || process.env.OPENROUTER_API_KEY_FILE
-    || '/run/secrets/kaseki/openrouter_api_key';
+  const secretFile =
+    resolveHostSecretPath('openrouter_api_key') ||
+    process.env.OPENROUTER_API_KEY_FILE ||
+    '/run/secrets/kaseki/openrouter_api_key';
   const secretsDir = path.dirname(secretFile);
   return resolveDockerBindSource(secretsDir) || secretsDir;
 }
@@ -749,24 +895,27 @@ function resolveDockerBindSource(containerPath: string): string | null {
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const containerName of [...new Set(containerCandidates)]) {
-    const result = execDockerCommand([
-      'inspect',
-      '--format',
-      '{{json .Mounts}}',
-      containerName,
-    ], 5000);
+    const result = execDockerCommand(
+      ['inspect', '--format', '{{json .Mounts}}', containerName],
+      5000,
+    );
 
     if (!result.ok || !result.stdout) {
       continue;
     }
 
     try {
-      const mounts = JSON.parse(result.stdout) as Array<{ Destination?: string; Source?: string; Type?: string }>;
-      const match = mounts.find((mount) =>
-        mount.Type === 'bind' &&
-        mount.Destination === containerPath &&
-        typeof mount.Source === 'string' &&
-        mount.Source.length > 0
+      const mounts = JSON.parse(result.stdout) as Array<{
+        Destination?: string;
+        Source?: string;
+        Type?: string;
+      }>;
+      const match = mounts.find(
+        (mount) =>
+          mount.Type === 'bind' &&
+          mount.Destination === containerPath &&
+          typeof mount.Source === 'string' &&
+          mount.Source.length > 0,
       );
       if (match?.Source) {
         return match.Source;
@@ -779,7 +928,9 @@ function resolveDockerBindSource(containerPath: string): string | null {
   return null;
 }
 
-function workerSmokeStartupSecretsRemediation(detail: string | undefined): string | undefined {
+function workerSmokeStartupSecretsRemediation(
+  detail: string | undefined,
+): string | undefined {
   if (!detail) {
     return undefined;
   }
@@ -798,9 +949,15 @@ function workerSmokeStartupSecretsRemediation(detail: string | undefined): strin
   return 'The API can read host secrets, but the nested worker smoke test did not receive the same files. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.';
 }
 
-function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): PreflightCheck {
+function checkWorkerSmokeTest(
+  config: KasekiApiConfig,
+  image: string,
+): PreflightCheck {
   const hostSecretsDir = resolveWorkerHostSecretsDir();
-  const smokeRoot = path.join(config.resultsDir, `.preflight-worker-${randomUUID()}`);
+  const smokeRoot = path.join(
+    config.resultsDir,
+    `.preflight-worker-${randomUUID()}`,
+  );
   const workspaceDir = path.join(smokeRoot, 'workspace');
   const resultsDir = path.join(smokeRoot, 'results');
   const cacheDir = path.join(smokeRoot, 'cache');
@@ -810,48 +967,55 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
     fs.mkdirSync(resultsDir, { recursive: true });
     fs.mkdirSync(cacheDir, { recursive: true });
 
-    const result = execDockerCommand([
-      'run',
-      '--rm',
-      '--read-only',
-      '--tmpfs',
-      '/tmp:rw,nosuid,nodev,size=64m',
-      '--security-opt',
-      'no-new-privileges:true',
-      '--cap-drop',
-      'ALL',
-      '-u',
-      `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
-      '-e',
-      'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
-      '-e',
-      'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
-      '-v',
-      `${workspaceDir}:/workspace:rw`,
-      '-v',
-      `${resultsDir}:/results:rw`,
-      '-v',
-      `${cacheDir}:/cache:rw`,
-      '-v',
-      `${hostSecretsDir}:/run/secrets/kaseki:ro`,
-      '--entrypoint',
-      '/scripts/startup-checks.sh',
-      image,
-      'worker',
-    ], 30000);
+    const result = execDockerCommand(
+      [
+        'run',
+        '--rm',
+        '--read-only',
+        '--tmpfs',
+        '/tmp:rw,nosuid,nodev,size=64m',
+        '--security-opt',
+        'no-new-privileges:true',
+        '--cap-drop',
+        'ALL',
+        '-u',
+        `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
+        '-e',
+        'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+        '-e',
+        'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
+        '-v',
+        `${workspaceDir}:/workspace:rw`,
+        '-v',
+        `${resultsDir}:/results:rw`,
+        '-v',
+        `${cacheDir}:/cache:rw`,
+        '-v',
+        `${hostSecretsDir}:/run/secrets/kaseki:ro`,
+        '--entrypoint',
+        '/scripts/startup-checks.sh',
+        image,
+        'worker',
+      ],
+      30000,
+    );
 
     if (result.ok) {
       return {
         name: 'worker-smoke',
         ok: true,
-        detail: 'Worker container can start with workspace, results, cache, and OpenRouter secret mounts.',
+        detail:
+          'Worker container can start with workspace, results, cache, and OpenRouter secret mounts.',
       };
     }
 
-    const startupSecretsRemediation = workerSmokeStartupSecretsRemediation(result.detail);
+    const startupSecretsRemediation = workerSmokeStartupSecretsRemediation(
+      result.detail,
+    );
     const classified = result.classification || {
       detail: result.detail || 'Worker container smoke test failed.',
-      remediation: 'Check worker bind mounts, file ownership, Docker socket access, and the OpenRouter secret file.',
+      remediation:
+        'Check worker bind mounts, file ownership, Docker socket access, and the OpenRouter secret file.',
     };
     return {
       name: 'worker-smoke',
@@ -864,7 +1028,8 @@ function checkWorkerSmokeTest(config: KasekiApiConfig, image: string): Preflight
       name: 'worker-smoke',
       ok: false,
       detail: `Worker smoke test could not prepare temporary directories: ${(err as Error).message}`,
-      remediation: 'Ensure KASEKI_RESULTS_DIR is writable by the API container user.',
+      remediation:
+        'Ensure KASEKI_RESULTS_DIR is writable by the API container user.',
     };
   } finally {
     fs.rmSync(smokeRoot, { recursive: true, force: true });
@@ -877,30 +1042,53 @@ function isGitHubAppReady(): boolean {
 }
 
 function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
-  const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  const templateDir =
+    process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
   const secretsDir = process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki';
   const image = readKasekiImage(templateDir);
-  const templateImageDigest = readFirstLine(path.join(templateDir, '.kaseki-image-digest')) || inspectImageDigest(image);
+  const templateImageDigest =
+    readFirstLine(path.join(templateDir, '.kaseki-image-digest')) ||
+    inspectImageDigest(image);
   const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
   const templateRef = getTemplateCheckoutRef(checkoutDir);
   const checks: PreflightCheck[] = [];
 
-  checks.push(checkDeletedBindMounts([config.resultsDir, templateDir, checkoutDir, secretsDir]));
+  checks.push(
+    checkDeletedBindMounts([
+      config.resultsDir,
+      templateDir,
+      checkoutDir,
+      secretsDir,
+    ]),
+  );
 
-  checks.push(checkWritableDirectory(
-    'results-dir',
-    config.resultsDir,
-    'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.'
-  ));
+  checks.push(
+    checkWritableDirectory(
+      'results-dir',
+      config.resultsDir,
+      'Create the results directory and make it writable by the API container user. If /api/preflight reports a deleted bind mount, recreate the API container.',
+    ),
+  );
 
   checks.push(checkOpenRouterKey());
   checks.push(checkGitHubAppCredentials());
 
-  const dockerVersion = execDockerCommand(['version', '--format', '{{.Client.Version}} -> {{.Server.Version}}']);
+  const dockerVersion = execDockerCommand([
+    'version',
+    '--format',
+    '{{.Client.Version}} -> {{.Server.Version}}',
+  ]);
   if (dockerVersion.ok) {
-    checks.push({ name: 'docker-daemon', ok: true, detail: dockerVersion.stdout });
+    checks.push({
+      name: 'docker-daemon',
+      ok: true,
+      detail: dockerVersion.stdout,
+    });
   } else {
-    const classified = dockerVersion.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
+    const classified = dockerVersion.classification || {
+      detail: 'Docker command failed',
+      remediation: 'Check Docker daemon',
+    };
     checks.push({ name: 'docker-daemon', ok: false, ...classified });
   }
 
@@ -908,32 +1096,52 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   let imageReady = false;
   if (imageInspect.ok) {
     imageReady = true;
-    checks.push({ name: 'docker-image', ok: true, detail: `Image is present: ${image}` });
+    checks.push({
+      name: 'docker-image',
+      ok: true,
+      detail: `Image is present: ${image}`,
+    });
   } else {
-    const classified = imageInspect.classification || { detail: 'Docker command failed', remediation: 'Check Docker daemon' };
-    const daemonFailed = checks.some((check) => check.name === 'docker-daemon' && !check.ok);
+    const classified = imageInspect.classification || {
+      detail: 'Docker command failed',
+      remediation: 'Check Docker daemon',
+    };
+    const daemonFailed = checks.some(
+      (check) => check.name === 'docker-daemon' && !check.ok,
+    );
     checks.push({
       name: 'docker-image',
       ok: false,
-      detail: daemonFailed ? classified.detail : `Docker image is not present locally: ${image}`,
-      remediation: daemonFailed ? classified.remediation : `Pull ${image} or set KASEKI_IMAGE to an available image.`,
+      detail: daemonFailed
+        ? classified.detail
+        : `Docker image is not present locally: ${image}`,
+      remediation: daemonFailed
+        ? classified.remediation
+        : `Pull ${image} or set KASEKI_IMAGE to an available image.`,
     });
   }
 
-  const canRunWorkerSmoke = imageReady && checks.some((check) => check.name === 'docker-daemon' && check.ok);
+  const canRunWorkerSmoke =
+    imageReady &&
+    checks.some((check) => check.name === 'docker-daemon' && check.ok);
   if (canRunWorkerSmoke) {
     checks.push(checkWorkerSmokeTest(config, image));
   } else {
     checks.push({
       name: 'worker-smoke',
       ok: false,
-      detail: 'Worker smoke test skipped because Docker daemon or image checks failed.',
+      detail:
+        'Worker smoke test skipped because Docker daemon or image checks failed.',
       remediation: 'Fix docker-daemon and docker-image preflight checks first.',
     });
   }
 
   const templateHealth = buildTemplateHealthStatus(templateDir);
-  const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
+  const freshness = resolveCheckoutFreshness(
+    checkoutDir,
+    process.env.KASEKI_REF || 'main',
+    templateDir,
+  );
   checks.push({
     name: 'template',
     ok: templateHealth.ok,
@@ -1067,7 +1275,7 @@ export function createApiRouter(
         res,
         401,
         'Unauthorized',
-        'Unauthenticated local mode only accepts loopback requests'
+        'Unauthenticated local mode only accepts loopback requests',
       );
     }
 
@@ -1077,7 +1285,12 @@ export function createApiRouter(
         path: req.path,
         reason: 'missing_or_invalid_header',
       });
-      return sendErrorResponse(res, 401, 'Unauthorized', 'Missing or invalid Authorization header');
+      return sendErrorResponse(
+        res,
+        401,
+        'Unauthorized',
+        'Missing or invalid Authorization header',
+      );
     }
 
     const token = authHeader.slice(7);
@@ -1118,9 +1331,13 @@ export function createApiRouter(
   /**
    * Extract: Validate publish mode has proper authentication.
    */
-  async function validatePublishModeAndAuth(publishMode: string): Promise<{ ok: boolean; error?: string }> {
+  async function validatePublishModeAndAuth(
+    publishMode: string,
+  ): Promise<{ ok: boolean; error?: string }> {
     if (
-      (publishMode === 'branch' || publishMode === 'pr' || publishMode === 'draft_pr') &&
+      (publishMode === 'branch' ||
+        publishMode === 'pr' ||
+        publishMode === 'draft_pr') &&
       !isGitHubAppReady()
     ) {
       return {
@@ -1135,11 +1352,17 @@ export function createApiRouter(
    * Extract: Validate checkout freshness for publishable runs.
    */
   async function validateCheckoutFreshness(
-    publishMode: string
+    publishMode: string,
   ): Promise<{ ok: boolean; response?: Record<string, unknown> }> {
-    const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
-    const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
-    const freshness = resolveCheckoutFreshness(checkoutDir, process.env.KASEKI_REF || 'main', templateDir);
+    const templateDir =
+      process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+    const checkoutDir =
+      process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+    const freshness = resolveCheckoutFreshness(
+      checkoutDir,
+      process.env.KASEKI_REF || 'main',
+      templateDir,
+    );
 
     if (shouldBlockForFreshness(publishMode) && freshness.stale) {
       return {
@@ -1163,13 +1386,17 @@ export function createApiRouter(
   /**
    * Extract: Validate template readiness and compatibility.
    */
-  async function validateTemplateReadiness(
-    publishMode: string
-  ): Promise<{ ok: boolean; statusCode?: number; response?: Record<string, unknown> }> {
-    const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
+  async function validateTemplateReadiness(publishMode: string): Promise<{
+    ok: boolean;
+    statusCode?: number;
+    response?: Record<string, unknown>;
+  }> {
+    const templateDir =
+      process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';
 
     // Check publish mode compatibility
-    const templateCompatibility = checkTemplatePublishModeCompatibility(publishMode);
+    const templateCompatibility =
+      checkTemplatePublishModeCompatibility(publishMode);
     if (!templateCompatibility.ok) {
       return {
         ok: false,
@@ -1188,7 +1415,8 @@ export function createApiRouter(
 
     // Check bootstrap status (unless skipped)
     if (process.env.KASEKI_SKIP_BOOTSTRAP_CHECK !== '1') {
-      const { status: templateHealth, fromCache: templateHealthFromCache } = getSubmissionTemplateHealthStatus(templateDir);
+      const { status: templateHealth, fromCache: templateHealthFromCache } =
+        getSubmissionTemplateHealthStatus(templateDir);
       if (!templateHealth.ok) {
         if (isTemplateDoctorTimeout(templateHealth)) {
           metricsRegistry.incAdmissionRejection('template-doctor-timeout');
@@ -1225,13 +1453,16 @@ export function createApiRouter(
    */
   async function handleIdempotency(
     idempotencyKey: string,
-    requestFingerprint: string
+    requestFingerprint: string,
   ): Promise<
     | { state: 'fresh' }
     | { state: 'fulfilled'; response: RunResponse; jobId: string }
     | { state: 'pending' }
   > {
-    const claimResult = idempotencyStore.claimOrGet(idempotencyKey, requestFingerprint);
+    const claimResult = await idempotencyStore.claimOrGet(
+      idempotencyKey,
+      requestFingerprint,
+    );
 
     if (claimResult.kind === 'fulfilled') {
       const currentJob = scheduler.getJob(claimResult.response.id);
@@ -1286,21 +1517,31 @@ export function createApiRouter(
       runRequest.publishMode = effectivePublishMode;
 
       // 1. Validate publish mode and authentication
-      const authValidation = await validatePublishModeAndAuth(effectivePublishMode);
+      const authValidation =
+        await validatePublishModeAndAuth(effectivePublishMode);
       if (!authValidation.ok) {
-        return sendErrorResponse(res, 400, 'Bad Request', authValidation.error!);
+        return sendErrorResponse(
+          res,
+          400,
+          'Bad Request',
+          authValidation.error!,
+        );
       }
 
       // 2. Validate checkout freshness
-      const freshnessValidation = await validateCheckoutFreshness(effectivePublishMode);
+      const freshnessValidation =
+        await validateCheckoutFreshness(effectivePublishMode);
       if (!freshnessValidation.ok) {
         return res.status(409).json(freshnessValidation.response);
       }
 
       // 3. Validate template readiness
-      const templateValidation = await validateTemplateReadiness(effectivePublishMode);
+      const templateValidation =
+        await validateTemplateReadiness(effectivePublishMode);
       if (!templateValidation.ok) {
-        return res.status(templateValidation.statusCode || 400).json(templateValidation.response);
+        return res
+          .status(templateValidation.statusCode || 400)
+          .json(templateValidation.response);
       }
 
       // 4. Normalize task mode
@@ -1308,9 +1549,14 @@ export function createApiRouter(
 
       // 5. Handle idempotency
       const idempotencyKey = runRequest.idempotencyKey || randomUUID();
-      const requestFingerprint = buildRequestFingerprint(runRequest as Record<string, unknown>);
+      const requestFingerprint = buildRequestFingerprint(
+        runRequest as Record<string, unknown>,
+      );
 
-      const idempotencyResult = await handleIdempotency(idempotencyKey, requestFingerprint);
+      const idempotencyResult = await handleIdempotency(
+        idempotencyKey,
+        requestFingerprint,
+      );
       if (idempotencyResult.state === 'fulfilled') {
         logger.event('api_idempotent_resubmission', {
           jobId: idempotencyResult.jobId,
@@ -1319,7 +1565,12 @@ export function createApiRouter(
         return res.status(200).json(idempotencyResult.response); // 200 OK, not 202
       }
       if (idempotencyResult.state === 'pending') {
-        return sendErrorResponse(res, 409, 'Conflict', 'Request with this idempotency key is already being processed');
+        return sendErrorResponse(
+          res,
+          409,
+          'Conflict',
+          'Request with this idempotency key is already being processed',
+        );
       }
 
       // Log request
@@ -1341,13 +1592,19 @@ export function createApiRouter(
       const response = buildRunResponse(job);
 
       // Store in idempotency cache
-      idempotencyStore.storeResponse(idempotencyKey, response, requestFingerprint);
+      await idempotencyStore.storeResponse(
+        idempotencyKey,
+        response,
+        requestFingerprint,
+      );
 
       res.status(202).json(response); // 202 Accepted
     } catch (err: unknown) {
       if (err instanceof Error && 'errors' in err) {
         // Zod validation error
-        const details = (err as any).errors.map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`).join('; ');
+        const details = (err as any).errors
+          .map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`)
+          .join('; ');
         logger.event('api_validation_error', {
           path: '/runs',
           details,
@@ -1370,14 +1627,24 @@ export function createApiRouter(
       const { url, secret } = req.body;
 
       if (!url || typeof url !== 'string') {
-        return sendErrorResponse(res, 400, 'Bad Request', 'Webhook URL is required');
+        return sendErrorResponse(
+          res,
+          400,
+          'Bad Request',
+          'Webhook URL is required',
+        );
       }
 
       // Validate URL format
       try {
         new URL(url);
       } catch {
-        return sendErrorResponse(res, 400, 'Bad Request', 'Invalid webhook URL format');
+        return sendErrorResponse(
+          res,
+          400,
+          'Bad Request',
+          'Invalid webhook URL format',
+        );
       }
 
       // Send test webhook
@@ -1398,7 +1665,10 @@ export function createApiRouter(
         let signature: string | null = null;
         if (secret && typeof secret === 'string') {
           const body = JSON.stringify(testPayload);
-          signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+          signature = crypto
+            .createHmac('sha256', secret)
+            .update(body)
+            .digest('hex');
         }
 
         const response = await fetch(url, {
@@ -1466,7 +1736,9 @@ export function createApiRouter(
     } catch (err: unknown) {
       if (err instanceof Error && 'errors' in err) {
         // Zod validation error
-        const details = (err as any).errors.map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`).join('; ');
+        const details = (err as any).errors
+          .map((e: any) => `${(e.path as string[]).join('.')}: ${e.message}`)
+          .join('; ');
         logger.event('api_validation_error', {
           path: '/validate',
           details,

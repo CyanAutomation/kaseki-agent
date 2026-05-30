@@ -3,7 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import { Job, RunRequest, WebhookEventType, WebhookPayload } from './kaseki-api-types';
+import {
+  Job,
+  RunRequest,
+  WebhookEventType,
+  WebhookPayload,
+} from './kaseki-api-types';
 import { KasekiApiConfig } from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
@@ -68,27 +73,31 @@ export class JobScheduler {
   private failureArtifactWriter: FailureArtifactWriter;
   private artifactCache?: Pick<ResultCache, 'clearForJob'>;
   private persistenceManager: JobPersistenceManager;
+  private initializationPromise: Promise<void>;
   private static readonly SHUTDOWN_GRACE_MS = 5000;
 
-  constructor(config: KasekiApiConfig, webhookManager: WebhookManager, artifactCache?: Pick<ResultCache, 'clearForJob'>) {
+  constructor(
+    config: KasekiApiConfig,
+    webhookManager: WebhookManager,
+    artifactCache?: Pick<ResultCache, 'clearForJob'>,
+  ) {
     this.config = config;
     this.logger = createEventLogger('job-scheduler');
     this.webhookManager = webhookManager;
     this.failureArtifactWriter = new FailureArtifactWriter(config.resultsDir);
     this.artifactCache = artifactCache;
     this.persistenceManager = new JobPersistenceManager(config);
-    this.loadPersistedJobs();
-    this.persistJobs();
-    this.processQueue();
-    metricsRegistry.setQueuePending(this.queue.length);
-    metricsRegistry.setRunningJobs(this.running.size);
+    this.initializationPromise = this.initializeFromPersistence();
   }
 
   /**
    * Submit a new job to the queue.
    */
   async submitJob(request: RunRequest): Promise<Job> {
-    const instanceId = await this.persistenceManager.generateInstanceId(Array.from(this.jobs.keys()));
+    await this.ready();
+    const instanceId = await this.persistenceManager.generateInstanceId(
+      Array.from(this.jobs.keys()),
+    );
 
     // Generate tracing IDs if not provided
     const correlationId = request.tracing?.correlationId || randomUUID();
@@ -107,7 +116,7 @@ export class JobScheduler {
 
     this.jobs.set(instanceId, job);
     this.queue.push(job);
-    this.persistJobs();
+    await this.persistJobs();
 
     // Emit webhook event for job submission
     if (job.webhookConfig) {
@@ -119,7 +128,11 @@ export class JobScheduler {
           status: 'queued',
         },
       };
-      this.webhookManager.enqueueWebhook(instanceId, payload, job.webhookConfig);
+      this.webhookManager.enqueueWebhook(
+        instanceId,
+        payload,
+        job.webhookConfig,
+      );
     }
 
     this.processQueue();
@@ -152,7 +165,9 @@ export class JobScheduler {
    * `jobIndexMaxEntries` terminal records, while their artifacts remain on disk.
    */
   listJobs(): Job[] {
-    return Array.from(this.jobs.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return Array.from(this.jobs.values()).sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
   }
 
   /**
@@ -180,7 +195,7 @@ export class JobScheduler {
       clearRunArtifactMetadataCache(job.id, job.resultDir);
       this.clearArtifactContentCache(job.id);
       this.clearLiveProgressCache(job.id);
-      this.persistJobs();
+      void this.persistJobs();
 
       // Emit webhook event for cancellation
       if (job.webhookConfig) {
@@ -236,7 +251,10 @@ export class JobScheduler {
    * Process the queue, respecting max concurrent limit.
    */
   private processQueue(): void {
-    while (this.queue.length > 0 && this.running.size < this.config.maxConcurrentRuns) {
+    while (
+      this.queue.length > 0 &&
+      this.running.size < this.config.maxConcurrentRuns
+    ) {
       const job = this.queue.shift();
       if (job) {
         this.executeJob(job);
@@ -251,7 +269,10 @@ export class JobScheduler {
    * Build the environment variables for a job execution.
    * Extracted to reduce executeJob complexity and enable isolated testing.
    */
-  private buildProcessEnvironment(job: Job, effectiveTimeoutSeconds: number): NodeJS.ProcessEnv {
+  private buildProcessEnvironment(
+    job: Job,
+    effectiveTimeoutSeconds: number,
+  ): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       // run-kaseki.sh owns creation of the per-instance result directory and
@@ -260,7 +281,9 @@ export class JobScheduler {
       KASEKI_LOG_DIR: this.config.resultsDir,
       KASEKI_TASK_MODE: job.request.taskMode || this.config.defaultTaskMode,
       KASEKI_PUBLISH_MODE: job.request.publishMode || 'pr',
-      KASEKI_MAX_DIFF_BYTES: String(job.request.maxDiffBytes || this.config.maxDiffBytes),
+      KASEKI_MAX_DIFF_BYTES: String(
+        job.request.maxDiffBytes || this.config.maxDiffBytes,
+      ),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
     };
 
@@ -286,9 +309,13 @@ export class JobScheduler {
    * Configure startup check mode environment variables.
    */
   private setupStartupCheckMode(job: Job, env: NodeJS.ProcessEnv): void {
-    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    const validationCommands =
+      job.request.validationCommands ?? job.request.validation?.commands;
     const startupCheckMode =
-      job.request.startupCheckMode || (job.request.startupCheck && validationCommands ? 'baseline-validation' : 'boot');
+      job.request.startupCheckMode ||
+      (job.request.startupCheck && validationCommands
+        ? 'baseline-validation'
+        : 'boot');
 
     if (job.request.startupCheck) {
       env.KASEKI_DRY_RUN = '1';
@@ -311,7 +338,8 @@ export class JobScheduler {
    * Configure validation commands in environment.
    */
   private setupValidationCommands(job: Job, env: NodeJS.ProcessEnv): void {
-    const validationCommands = job.request.validationCommands ?? job.request.validation?.commands;
+    const validationCommands =
+      job.request.validationCommands ?? job.request.validation?.commands;
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
     }
@@ -321,7 +349,8 @@ export class JobScheduler {
    * Configure changed files allowlist in environment.
    */
   private setupChangedFilesAllowlist(job: Job, env: NodeJS.ProcessEnv): void {
-    const changedFilesAllowlist = job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
+    const changedFilesAllowlist =
+      job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
     if (changedFilesAllowlist) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
     }
@@ -338,31 +367,41 @@ export class JobScheduler {
       env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
     }
     if (job.request.scouting?.timeoutSeconds) {
-      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(job.request.scouting.timeoutSeconds);
+      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(
+        job.request.scouting.timeoutSeconds,
+      );
     }
     if (job.request.goalCheck?.enabled !== undefined) {
       env.KASEKI_GOAL_CHECK = job.request.goalCheck.enabled ? '1' : '0';
     }
     if (job.request.goalCheck?.maxRetries !== undefined) {
-      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(job.request.goalCheck.maxRetries);
+      env.KASEKI_GOAL_CHECK_MAX_RETRIES = String(
+        job.request.goalCheck.maxRetries,
+      );
     }
     if (job.request.goalCheck?.model) {
       env.KASEKI_GOAL_CHECK_MODEL = job.request.goalCheck.model;
     }
     if (job.request.goalCheck?.timeoutSeconds) {
-      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(job.request.goalCheck.timeoutSeconds);
+      env.KASEKI_GOAL_CHECK_TIMEOUT_SECONDS = String(
+        job.request.goalCheck.timeoutSeconds,
+      );
     }
     const taskMode = job.request.taskMode || this.config.defaultTaskMode;
     const publishMode = job.request.publishMode || 'pr';
-    const defaultRunEvaluation = publishMode === 'pr' || publishMode === 'draft_pr'
-      ? taskMode !== 'inspect' && !job.request.startupCheck
-      : false;
-    env.KASEKI_RUN_EVALUATION = (job.request.runEvaluation?.enabled ?? defaultRunEvaluation) ? '1' : '0';
+    const defaultRunEvaluation =
+      publishMode === 'pr' || publishMode === 'draft_pr'
+        ? taskMode !== 'inspect' && !job.request.startupCheck
+        : false;
+    env.KASEKI_RUN_EVALUATION =
+      (job.request.runEvaluation?.enabled ?? defaultRunEvaluation) ? '1' : '0';
     if (job.request.runEvaluation?.model) {
       env.KASEKI_RUN_EVALUATION_MODEL = job.request.runEvaluation.model;
     }
     if (job.request.runEvaluation?.timeoutSeconds) {
-      env.KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS = String(job.request.runEvaluation.timeoutSeconds);
+      env.KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS = String(
+        job.request.runEvaluation.timeoutSeconds,
+      );
     }
   }
 
@@ -377,7 +416,9 @@ export class JobScheduler {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
       env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
-      env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled ? '1' : '0';
+      env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled
+        ? '1'
+        : '0';
     }
   }
 
@@ -389,7 +430,7 @@ export class JobScheduler {
   private configureJobTimeout(
     jobId: string,
     proc: ChildProcess,
-    effectiveTimeoutSeconds: number
+    effectiveTimeoutSeconds: number,
   ): TimeoutHandles & { isTimedOut: () => boolean } {
     let hasTimedOut = false;
 
@@ -398,7 +439,11 @@ export class JobScheduler {
         return; // Already timed out, prevent double-kill
       }
       hasTimedOut = true;
-      this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.TIMED_OUT);
+      this.transitionState(
+        jobId,
+        JobExecutionState.RUNNING,
+        JobExecutionState.TIMED_OUT,
+      );
 
       proc.kill('SIGTERM');
 
@@ -439,16 +484,28 @@ export class JobScheduler {
     jobId: string,
     job: Job,
     proc: ChildProcess,
-    streamState: { stdoutTailRef: { current: Buffer<ArrayBufferLike> }; stderrTailRef: { current: Buffer<ArrayBufferLike> }; onExit: (code: number) => void }
+    streamState: {
+      stdoutTailRef: { current: Buffer<ArrayBufferLike> };
+      stderrTailRef: { current: Buffer<ArrayBufferLike> };
+      onExit: (code: number) => void;
+    },
   ): void {
     proc.stdout?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      streamState.stdoutTailRef.current = this.appendBoundedTail(streamState.stdoutTailRef.current, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stdoutTailRef.current = this.appendBoundedTail(
+        streamState.stdoutTailRef.current,
+        incoming,
+        JobScheduler.STREAM_TAIL_LIMIT_BYTES,
+      );
     });
 
     proc.stderr?.on('data', (chunk: Buffer | string) => {
       const incoming = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      streamState.stderrTailRef.current = this.appendBoundedTail(streamState.stderrTailRef.current, incoming, JobScheduler.STREAM_TAIL_LIMIT_BYTES);
+      streamState.stderrTailRef.current = this.appendBoundedTail(
+        streamState.stderrTailRef.current,
+        incoming,
+        JobScheduler.STREAM_TAIL_LIMIT_BYTES,
+      );
     });
 
     proc.on('exit', (code) => {
@@ -456,7 +513,11 @@ export class JobScheduler {
       if (job.finalized) {
         return;
       }
-      this.transitionState(jobId, JobExecutionState.RUNNING, JobExecutionState.EXITED);
+      this.transitionState(
+        jobId,
+        JobExecutionState.RUNNING,
+        JobExecutionState.EXITED,
+      );
       streamState.onExit(code ?? -1);
     });
 
@@ -465,7 +526,11 @@ export class JobScheduler {
       if (job.finalized) {
         return;
       }
-      this.transitionState(jobId, JobExecutionState.STARTING, JobExecutionState.FAILED);
+      this.transitionState(
+        jobId,
+        JobExecutionState.STARTING,
+        JobExecutionState.FAILED,
+      );
       const errorMsg = `Failed to spawn process: ${err.message}`;
       this.logger.event('job_failed', {
         jobId,
@@ -481,11 +546,16 @@ export class JobScheduler {
   }
 
   private executeJob(job: Job): void {
-    const effectiveTimeoutSeconds = job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
+    const effectiveTimeoutSeconds =
+      job.request.timeoutSeconds ?? this.config.agentTimeoutSeconds;
 
     // Initialize job state
     this.clearLiveProgressCache(job.id);
-    this.transitionState(job.id, JobExecutionState.IDLE, JobExecutionState.STARTING);
+    this.transitionState(
+      job.id,
+      JobExecutionState.IDLE,
+      JobExecutionState.STARTING,
+    );
     job.status = 'running';
     job.startedAt = new Date();
     job.effectiveTimeoutSeconds = effectiveTimeoutSeconds;
@@ -526,10 +596,21 @@ export class JobScheduler {
     }
 
     // Spawn process
-    const proc = spawn('bash', [activateScript, '--controller', 'run', job.request.repoUrl, job.request.ref, job.id], {
-      env,
-      stdio: 'pipe',
-    });
+    const proc = spawn(
+      'bash',
+      [
+        activateScript,
+        '--controller',
+        'run',
+        job.request.repoUrl,
+        job.request.ref,
+        job.id,
+      ],
+      {
+        env,
+        stdio: 'pipe',
+      },
+    );
 
     this.processes.set(job.id, proc);
     this.processExited.set(job.id, false);
@@ -542,20 +623,37 @@ export class JobScheduler {
       stdoutTailRef: { current: Buffer.alloc(0) },
       stderrTailRef: { current: Buffer.alloc(0) },
       onExit: (code: number) => {
-        const isTimedOut = timeoutHandles.isTimedOut ? timeoutHandles.isTimedOut() : false;
-        this.handleProcessExit(job, code, isTimedOut, streamState.stdoutTailRef.current, streamState.stderrTailRef.current, timeoutHandles);
+        const isTimedOut = timeoutHandles.isTimedOut
+          ? timeoutHandles.isTimedOut()
+          : false;
+        this.handleProcessExit(
+          job,
+          code,
+          isTimedOut,
+          streamState.stdoutTailRef.current,
+          streamState.stderrTailRef.current,
+          timeoutHandles,
+        );
       },
     };
 
     job.processId = proc.pid;
-    this.persistJobs();
+    void this.persistJobs();
 
     // Transition to RUNNING after successful spawn
-    this.transitionState(job.id, JobExecutionState.STARTING, JobExecutionState.RUNNING);
+    this.transitionState(
+      job.id,
+      JobExecutionState.STARTING,
+      JobExecutionState.RUNNING,
+    );
 
     // Configure timeout (extracted)
     // Configure timeout (extracted)
-    timeoutHandles = this.configureJobTimeout(job.id, proc, effectiveTimeoutSeconds);
+    timeoutHandles = this.configureJobTimeout(
+      job.id,
+      proc,
+      effectiveTimeoutSeconds,
+    );
     job.timeout = timeoutHandles.timeoutHandle;
 
     // Attach process listeners with shared stream state
@@ -572,7 +670,7 @@ export class JobScheduler {
     isTimedOut: boolean,
     stdoutTail: Buffer<ArrayBufferLike>,
     stderrTail: Buffer<ArrayBufferLike>,
-    timeoutHandles: TimeoutHandles
+    timeoutHandles: TimeoutHandles,
   ): void {
     // Clean up timeout handles
     timeoutHandles.cleanup();
@@ -592,36 +690,60 @@ export class JobScheduler {
         jobId: job.id,
         failureClass: 'timeout',
         exitCode: 124,
-        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        durationSeconds:
+          Math.round(
+            (updates.completedAt as Date).getTime() -
+              (job.startedAt?.getTime() || 0),
+          ) / 1000,
       });
     } else if (code === 0) {
       updates.status = 'completed';
-      this.transitionState(job.id, JobExecutionState.EXITED, JobExecutionState.COMPLETED);
+      this.transitionState(
+        job.id,
+        JobExecutionState.EXITED,
+        JobExecutionState.COMPLETED,
+      );
       this.logger.event('job_completed', {
         jobId: job.id,
         exitCode: code,
-        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        durationSeconds:
+          Math.round(
+            (updates.completedAt as Date).getTime() -
+              (job.startedAt?.getTime() || 0),
+          ) / 1000,
       });
     } else {
       updates.status = 'failed';
-      this.transitionState(job.id, JobExecutionState.EXITED, JobExecutionState.FAILED);
+      this.transitionState(
+        job.id,
+        JobExecutionState.EXITED,
+        JobExecutionState.FAILED,
+      );
       this.parseFailureFromResults(job);
       this.writeControllerBootstrapLogs(job, stdoutTail, stderrTail);
       this.failureArtifactWriter.writeFailureArtifacts(
         job,
-        { attempted: false, ok: false, detail: 'Worker failed before complete diagnostics.' },
+        {
+          attempted: false,
+          ok: false,
+          detail: 'Worker failed before complete diagnostics.',
+        },
         {
           stdoutTail,
           stderrTail,
           lastStage: 'worker_exit',
-        }
+        },
       );
       this.logger.event('job_failed', {
         jobId: job.id,
         exitCode: code,
         failureClass: job.failureClass,
         error: job.error,
-        durationSeconds: Math.round((updates.completedAt as Date).getTime() - (job.startedAt?.getTime() || 0)) / 1000,
+        durationSeconds:
+          Math.round(
+            (updates.completedAt as Date).getTime() -
+              (job.startedAt?.getTime() || 0),
+          ) / 1000,
       });
     }
 
@@ -630,7 +752,11 @@ export class JobScheduler {
 
     if (isTimedOut) {
       const cleanup = this.cleanupContainer(job.id);
-      this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, { stdoutTail, stderrTail, lastStage: 'timeout' });
+      this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, {
+        stdoutTail,
+        stderrTail,
+        lastStage: 'timeout',
+      });
     }
   }
 
@@ -642,8 +768,13 @@ export class JobScheduler {
    * Transition job execution state with logging.
    * Prevents invalid state transitions and logs state changes for debugging.
    */
-  private transitionState(jobId: string, fromState: JobExecutionState, toState: JobExecutionState): void {
-    const currentState = this.executionState.get(jobId) || JobExecutionState.IDLE;
+  private transitionState(
+    jobId: string,
+    fromState: JobExecutionState,
+    toState: JobExecutionState,
+  ): void {
+    const currentState =
+      this.executionState.get(jobId) || JobExecutionState.IDLE;
 
     // Log state transitions for debugging
     if (currentState !== fromState) {
@@ -728,7 +859,11 @@ export class JobScheduler {
     }
 
     const elapsed =
-      job.completedAt && job.startedAt ? Math.round((job.completedAt.getTime() - job.startedAt.getTime()) / 1000) : undefined;
+      job.completedAt && job.startedAt
+        ? Math.round(
+            (job.completedAt.getTime() - job.startedAt.getTime()) / 1000,
+          )
+        : undefined;
 
     if (job.failureClass === 'cancelled') {
       const payload: WebhookPayload = {
@@ -780,12 +915,15 @@ export class JobScheduler {
   private appendBoundedTail(
     currentTail: Buffer<ArrayBufferLike>,
     incoming: Buffer<ArrayBufferLike>,
-    limitBytes: number
+    limitBytes: number,
   ): Buffer<ArrayBufferLike> {
     if (incoming.length >= limitBytes) {
       return incoming.subarray(incoming.length - limitBytes);
     }
-    const combined = currentTail.length > 0 ? Buffer.concat([currentTail, incoming]) : incoming;
+    const combined =
+      currentTail.length > 0
+        ? Buffer.concat([currentTail, incoming])
+        : incoming;
     if (combined.length <= limitBytes) {
       return combined;
     }
@@ -795,7 +933,7 @@ export class JobScheduler {
   private writeControllerBootstrapLogs(
     job: Job,
     stdoutTail: Buffer<ArrayBufferLike>,
-    stderrTail: Buffer<ArrayBufferLike>
+    stderrTail: Buffer<ArrayBufferLike>,
   ): void {
     const resultDir = this.getResultDir(job.id);
     const stderrPath = path.join(resultDir, 'stderr.log');
@@ -828,7 +966,10 @@ export class JobScheduler {
    */
   private parseFailureFromResults(job: Job): void {
     try {
-      const metadataPath = path.join(this.getResultDir(job.id), 'metadata.json');
+      const metadataPath = path.join(
+        this.getResultDir(job.id),
+        'metadata.json',
+      );
       if (fs.existsSync(metadataPath)) {
         const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
         if (metadata.failure) {
@@ -857,7 +998,9 @@ export class JobScheduler {
       job.completedAt = new Date();
     }
     if (job.startedAt && job.completedAt) {
-      metricsRegistry.observeRunDuration((job.completedAt.getTime() - job.startedAt.getTime()) / 1000);
+      metricsRegistry.observeRunDuration(
+        (job.completedAt.getTime() - job.startedAt.getTime()) / 1000,
+      );
     }
     if (job.status === 'completed') {
       metricsRegistry.incRunSuccess();
@@ -881,14 +1024,18 @@ export class JobScheduler {
     clearRunArtifactMetadataCache(job.id, job.resultDir);
     this.clearArtifactContentCache(job.id);
     this.clearLiveProgressCache(job.id);
-    this.persistJobs();
+    void this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);
   }
 
   private cleanupContainer(id: string): CleanupResult {
     if (!/^kaseki-\d+$/.test(id)) {
-      return { attempted: false, ok: false, detail: 'Invalid Kaseki container id.' };
+      return {
+        attempted: false,
+        ok: false,
+        detail: 'Invalid Kaseki container id.',
+      };
     }
     const result = execSubprocess('docker', ['rm', '-f', id]);
     return {
@@ -902,7 +1049,12 @@ export class JobScheduler {
     if (!/^kaseki-\d+$/.test(id)) {
       return null;
     }
-    const result = execSubprocess('docker', ['logs', '--tail', String(lines), id]);
+    const result = execSubprocess('docker', [
+      'logs',
+      '--tail',
+      String(lines),
+      id,
+    ]);
     const output = [result.stdout || '', result.stderr || ''].join('');
     return output.trim().length > 0 ? output : null;
   }
@@ -933,7 +1085,9 @@ export class JobScheduler {
     return tail > 0 ? events.slice(-tail) : [];
   }
 
-  private parseLiveProgressEvents(output: string): Array<Record<string, unknown>> {
+  private parseLiveProgressEvents(
+    output: string,
+  ): Array<Record<string, unknown>> {
     const events: Array<Record<string, unknown>> = [];
     for (const line of output.split(/\r?\n/)) {
       const match = /^\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
@@ -949,7 +1103,9 @@ export class JobScheduler {
     return events;
   }
 
-  private getCachedLiveProgressEvents(cacheKey: string): Array<Record<string, unknown>> | undefined {
+  private getCachedLiveProgressEvents(
+    cacheKey: string,
+  ): Array<Record<string, unknown>> | undefined {
     const cached = this.liveProgressCache.get(cacheKey);
     if (!cached) {
       return undefined;
@@ -961,7 +1117,10 @@ export class JobScheduler {
     return cached.events;
   }
 
-  private cacheLiveProgressEvents(cacheKey: string, events: Array<Record<string, unknown>>): void {
+  private cacheLiveProgressEvents(
+    cacheKey: string,
+    events: Array<Record<string, unknown>>,
+  ): void {
     this.liveProgressCache.set(cacheKey, {
       events,
       expiresAt: Date.now() + this.getLiveProgressCacheTtlMs(),
@@ -1001,8 +1160,21 @@ export class JobScheduler {
     return this.persistenceManager.getResultDir(id);
   }
 
-  private loadPersistedJobs(): void {
-    const { jobs, queuedJobs, status } = this.persistenceManager.loadPersistedJobs();
+  async ready(): Promise<void> {
+    await this.initializationPromise;
+  }
+
+  private async initializeFromPersistence(): Promise<void> {
+    await this.loadPersistedJobs();
+    await this.persistJobs();
+    this.processQueue();
+    metricsRegistry.setQueuePending(this.queue.length);
+    metricsRegistry.setRunningJobs(this.running.size);
+  }
+
+  private async loadPersistedJobs(): Promise<void> {
+    const { jobs, queuedJobs, status } =
+      await this.persistenceManager.loadPersistedJobs();
     for (const job of jobs) {
       this.jobs.set(job.id, job);
     }
@@ -1024,14 +1196,18 @@ export class JobScheduler {
     }
   }
 
-  private persistJobs(): void {
-    this.persistenceManager.persistJobs(Array.from(this.jobs.values()));
+  private async persistJobs(): Promise<void> {
+    await this.persistenceManager.persistJobs(Array.from(this.jobs.values()));
   }
 
   /**
    * Get queue status.
    */
-  getQueueStatus(): { pending: number; running: number; maxConcurrent: number } {
+  getQueueStatus(): {
+    pending: number;
+    running: number;
+    maxConcurrent: number;
+  } {
     return {
       pending: this.queue.length,
       running: this.running.size,
@@ -1043,7 +1219,10 @@ export class JobScheduler {
     const reasons: string[] = [];
     try {
       fs.mkdirSync(this.config.resultsDir, { recursive: true });
-      fs.accessSync(this.config.resultsDir, fs.constants.R_OK | fs.constants.W_OK);
+      fs.accessSync(
+        this.config.resultsDir,
+        fs.constants.R_OK | fs.constants.W_OK,
+      );
     } catch (error) {
       reasons.push(`results_dir_unwritable:${(error as Error).message}`);
     }
@@ -1052,7 +1231,10 @@ export class JobScheduler {
     }
     try {
       const status = this.getQueueStatus();
-      if (!Number.isFinite(status.pending) || !Number.isFinite(status.running)) {
+      if (
+        !Number.isFinite(status.pending) ||
+        !Number.isFinite(status.running)
+      ) {
         reasons.push('scheduler_status_invalid');
       }
     } catch {
@@ -1115,6 +1297,6 @@ export class JobScheduler {
 
     this.queue = [];
     this.liveProgressCache.clear();
-    this.persistJobs();
+    void this.persistJobs();
   }
 }
