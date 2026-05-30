@@ -5215,6 +5215,7 @@ run_github_operations() {
   # Generate GitHub App installation token
   GITHUB_OPERATION_PHASE="token_generation"
   printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
+  local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
   local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
   token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
   token_stderr_tmp="$(mktemp /tmp/github-app-token-stderr.XXXXXX)" || {
@@ -5222,7 +5223,7 @@ run_github_operations() {
     rm -f "$token_stdout_tmp"
     return 7
   }
-  node /usr/local/bin/github-app-token "$app_id" "$private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
+  node "$github_app_token_helper" "$app_id" "$private_key_file" "$owner" "$repo" >"$token_stdout_tmp" 2>"$token_stderr_tmp"
   token_exit_code=$?
   token_data="$(cat "$token_stdout_tmp" 2>/dev/null || true)"
   token_stderr="$(cat "$token_stderr_tmp" 2>/dev/null || true)"
