@@ -10,8 +10,11 @@ describe('JobPersistenceManager', () => {
   let config: KasekiApiConfig;
   let manager: JobPersistenceManager;
 
-  beforeEach(() => {
-    tempDir = path.join('/tmp', `test-kaseki-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  beforeEach(async () => {
+    tempDir = path.join(
+      '/tmp',
+      `test-kaseki-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     fs.mkdirSync(tempDir, { recursive: true });
 
     config = {
@@ -31,20 +34,20 @@ describe('JobPersistenceManager', () => {
     manager = new JobPersistenceManager(config);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
   describe('loadPersistedJobs', () => {
-    it('should return empty arrays when no jobs are persisted', () => {
-      const result = manager.loadPersistedJobs();
+    it('should return empty arrays when no jobs are persisted', async () => {
+      const result = await manager.loadPersistedJobs();
       expect(result.jobs).toEqual([]);
       expect(result.queuedJobs).toEqual([]);
     });
 
-    it('should load persisted jobs from index file', () => {
+    it('should load persisted jobs from index file', async () => {
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -64,13 +67,13 @@ describe('JobPersistenceManager', () => {
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
 
-      const result = manager.loadPersistedJobs();
+      const result = await manager.loadPersistedJobs();
       expect(result.jobs).toHaveLength(1);
       expect(result.jobs[0].id).toBe('kaseki-1');
       expect(result.jobs[0].createdAt).toBeInstanceOf(Date);
     });
 
-    it('should mark running jobs as failed if API restarted', () => {
+    it('should mark running jobs as failed if API restarted', async () => {
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'running',
@@ -88,13 +91,13 @@ describe('JobPersistenceManager', () => {
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
 
-      const result = manager.loadPersistedJobs();
+      const result = await manager.loadPersistedJobs();
       expect(result.jobs[0].status).toBe('failed');
       expect(result.jobs[0].exitCode).toBe(143);
       expect(result.jobs[0].failureClass).toBe('api_restart');
     });
 
-    it('should return queued jobs separately', () => {
+    it('should return queued jobs separately', async () => {
       const queuedJob: PersistedJob = {
         id: 'kaseki-1',
         status: 'queued',
@@ -109,14 +112,18 @@ describe('JobPersistenceManager', () => {
       };
 
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
-      fs.writeFileSync(indexPath, JSON.stringify({ jobs: [queuedJob] }), 'utf-8');
+      fs.writeFileSync(
+        indexPath,
+        JSON.stringify({ jobs: [queuedJob] }),
+        'utf-8',
+      );
 
-      const result = manager.loadPersistedJobs();
+      const result = await manager.loadPersistedJobs();
       expect(result.queuedJobs).toHaveLength(1);
       expect(result.queuedJobs[0].id).toBe('kaseki-1');
     });
 
-    it('retries sync lock acquisition during initial contention and eventually loads jobs', () => {
+    it('retries sync lock acquisition during initial contention and eventually loads jobs', async () => {
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -141,17 +148,56 @@ describe('JobPersistenceManager', () => {
         `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockPath)}, { recursive: true, force: true }), 50)`,
       ]);
 
-      const result = manager.loadPersistedJobs();
-      releaseProc.on('exit', () => {});
+      const result = await manager.loadPersistedJobs();
+      releaseProc.on('exit', async () => {});
       releaseProc.unref();
       expect(releaseProc.pid).toBeGreaterThan(0);
       expect(result.status).toBe('loaded');
       expect(result.jobs).toHaveLength(1);
     });
+
+    it('keeps the event loop responsive while waiting for the jobs index lock', async () => {
+      const job: PersistedJob = {
+        id: 'kaseki-1',
+        status: 'completed',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+        },
+        createdAt: '2026-05-11T12:00:00Z',
+        resultDir: manager.getResultDir('kaseki-1'),
+        finalized: true,
+        correlationId: 'corr-1',
+        requestId: 'req-1',
+      };
+
+      const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
+      const lockPath = path.join(tempDir, '.kaseki-api-jobs.lock');
+      fs.writeFileSync(indexPath, JSON.stringify({ jobs: [job] }), 'utf-8');
+      fs.mkdirSync(lockPath, { recursive: true });
+
+      let ticks = 0;
+      const interval = setInterval(() => {
+        ticks += 1;
+      }, 5);
+      const releaseLock = setTimeout(() => {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+      }, 75);
+
+      try {
+        const result = await manager.loadPersistedJobs();
+        expect(result.status).toBe('loaded');
+        expect(result.jobs).toHaveLength(1);
+        expect(ticks).toBeGreaterThanOrEqual(5);
+      } finally {
+        clearInterval(interval);
+        clearTimeout(releaseLock);
+      }
+    });
   });
 
   describe('persistJobs', () => {
-    it('should persist jobs to index file', () => {
+    it('should persist jobs to index file', async () => {
       const job: Job = {
         id: 'kaseki-1',
         status: 'completed',
@@ -168,7 +214,7 @@ describe('JobPersistenceManager', () => {
         finalized: true,
       };
 
-      manager.persistJobs([job]);
+      await manager.persistJobs([job]);
 
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       expect(fs.existsSync(indexPath)).toBe(true);
@@ -179,7 +225,7 @@ describe('JobPersistenceManager', () => {
       expect(typeof content.jobs[0].createdAt).toBe('string');
     });
 
-    it('should apply retention policy to terminal jobs', () => {
+    it('should apply retention policy to terminal jobs', async () => {
       const maxEntries = 5;
       config.jobIndexMaxEntries = maxEntries;
       manager = new JobPersistenceManager(config);
@@ -193,14 +239,16 @@ describe('JobPersistenceManager', () => {
             repoUrl: 'https://github.com/test/repo',
             ref: 'main',
           },
-          createdAt: new Date(`2026-05-${String(i).padStart(2, '0')}T12:00:00Z`),
+          createdAt: new Date(
+            `2026-05-${String(i).padStart(2, '0')}T12:00:00Z`,
+          ),
           resultDir: manager.getResultDir(`kaseki-${i}`),
           correlationId: `corr-${i}`,
           requestId: `req-${i}`,
         });
       }
 
-      manager.persistJobs(jobs);
+      await manager.persistJobs(jobs);
 
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
       const content = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
@@ -211,17 +259,22 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('persistJobs conflict resolution', () => {
-    const baseRequest = { repoUrl: 'https://github.com/test/repo', ref: 'main' };
+    const baseRequest = {
+      repoUrl: 'https://github.com/test/repo',
+      ref: 'main',
+    };
 
     const readPersistedJob = (id: string): PersistedJob => {
       const indexPath = path.join(tempDir, '.kaseki-api-jobs.json');
-      const content = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as { jobs: PersistedJob[] };
+      const content = JSON.parse(fs.readFileSync(indexPath, 'utf-8')) as {
+        jobs: PersistedJob[];
+      };
       const found = content.jobs.find((job) => job.id === id);
       expect(found).toBeDefined();
       return found as PersistedJob;
     };
 
-    it('prefers newer startedAt for running jobs when completedAt is missing', () => {
+    it('prefers newer startedAt for running jobs when completedAt is missing', async () => {
       const id = 'kaseki-conflict-running';
       const oldRunning: PersistedJob = {
         id,
@@ -233,7 +286,11 @@ describe('JobPersistenceManager', () => {
         correlationId: 'corr-old',
         requestId: 'req-old',
       };
-      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [oldRunning] }), 'utf-8');
+      fs.writeFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [oldRunning] }),
+        'utf-8',
+      );
 
       const newerRunning: Job = {
         id,
@@ -246,13 +303,13 @@ describe('JobPersistenceManager', () => {
         requestId: 'req-new',
       };
 
-      manager.persistJobs([newerRunning]);
+      await manager.persistJobs([newerRunning]);
       const merged = readPersistedJob(id);
       expect(merged.startedAt).toBe('2026-05-11T12:03:00.000Z');
       expect(merged.requestId).toBe('req-new');
     });
 
-    it('prefers running over queued for equal timestamp signals', () => {
+    it('prefers running over queued for equal timestamp signals', async () => {
       const id = 'kaseki-conflict-queued-running';
       const queued: PersistedJob = {
         id,
@@ -263,7 +320,11 @@ describe('JobPersistenceManager', () => {
         correlationId: 'corr-queued',
         requestId: 'req-queued',
       };
-      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [queued] }), 'utf-8');
+      fs.writeFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [queued] }),
+        'utf-8',
+      );
 
       const running: Job = {
         id,
@@ -276,13 +337,13 @@ describe('JobPersistenceManager', () => {
         requestId: 'req-running',
       };
 
-      manager.persistJobs([running]);
+      await manager.persistJobs([running]);
       const merged = readPersistedJob(id);
       expect(merged.status).toBe('running');
       expect(merged.requestId).toBe('req-running');
     });
 
-    it('prefers terminal over non-terminal when recency signals tie', () => {
+    it('prefers terminal over non-terminal when recency signals tie', async () => {
       const id = 'kaseki-conflict-terminal';
       const running: PersistedJob = {
         id,
@@ -294,7 +355,11 @@ describe('JobPersistenceManager', () => {
         correlationId: 'corr-running',
         requestId: 'req-running',
       };
-      fs.writeFileSync(path.join(tempDir, '.kaseki-api-jobs.json'), JSON.stringify({ jobs: [running] }), 'utf-8');
+      fs.writeFileSync(
+        path.join(tempDir, '.kaseki-api-jobs.json'),
+        JSON.stringify({ jobs: [running] }),
+        'utf-8',
+      );
 
       const failed: Job = {
         id,
@@ -308,7 +373,7 @@ describe('JobPersistenceManager', () => {
         finalized: true,
       };
 
-      manager.persistJobs([failed]);
+      await manager.persistJobs([failed]);
       const merged = readPersistedJob(id);
       expect(merged.status).toBe('failed');
       expect(merged.requestId).toBe('req-failed');
@@ -346,7 +411,7 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('getResultDir', () => {
-    it('should return correct path for job', () => {
+    it('should return correct path for job', async () => {
       const resultDir = manager.getResultDir('kaseki-1');
       expect(resultDir).toBe(path.join(tempDir, 'kaseki-1'));
     });
@@ -377,10 +442,10 @@ describe('JobPersistenceManager', () => {
       };
 
       // Simulate concurrent persists
-      manager.persistJobs([job1]);
-      manager.persistJobs([job1, job2]);
+      await manager.persistJobs([job1]);
+      await manager.persistJobs([job1, job2]);
 
-      const result = manager.loadPersistedJobs();
+      const result = await manager.loadPersistedJobs();
       expect(result.jobs.length).toBeGreaterThanOrEqual(1);
     });
   });

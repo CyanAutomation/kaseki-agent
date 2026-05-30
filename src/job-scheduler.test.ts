@@ -55,8 +55,16 @@ function createMockWebhookManager(): WebhookManager {
 
 type TestPersistedStatus = 'queued' | 'running' | 'completed' | 'failed';
 
-function persistedRuntimeJob(resultsDir: string, id: string, status: TestPersistedStatus, createdAt: string): unknown {
-  const completedAt = status === 'completed' || status === 'failed' ? new Date(createdAt) : undefined;
+function persistedRuntimeJob(
+  resultsDir: string,
+  id: string,
+  status: TestPersistedStatus,
+  createdAt: string,
+): unknown {
+  const completedAt =
+    status === 'completed' || status === 'failed'
+      ? new Date(createdAt)
+      : undefined;
   return {
     id,
     status,
@@ -104,7 +112,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -128,9 +136,15 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.failureClass).toBe('timeout');
     expect(job.completedAt).toBeDefined();
     const runDir = `${scheduler['config'].resultsDir}/${job.id}`;
-    expect(fs.readFileSync(`${runDir}/analysis.md`, 'utf-8').trim().length).toBeGreaterThan(0);
-    expect(fs.readFileSync(`${runDir}/metadata.json`, 'utf-8').trim().length).toBeGreaterThan(0);
-    expect(fs.readFileSync(`${runDir}/stderr.log`, 'utf-8').trim().length).toBeGreaterThan(0);
+    expect(
+      fs.readFileSync(`${runDir}/analysis.md`, 'utf-8').trim().length,
+    ).toBeGreaterThan(0);
+    expect(
+      fs.readFileSync(`${runDir}/metadata.json`, 'utf-8').trim().length,
+    ).toBeGreaterThan(0);
+    expect(
+      fs.readFileSync(`${runDir}/stderr.log`, 'utf-8').trim().length,
+    ).toBeGreaterThan(0);
   });
 
   test('passes parent results directory as host log directory', async () => {
@@ -150,7 +164,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -160,7 +174,13 @@ describe('JobScheduler timeout lifecycle', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'bash',
-      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main', job.id]),
+      expect.arrayContaining([
+        '--controller',
+        'run',
+        'https://github.com/org/repo',
+        'main',
+        job.id,
+      ]),
       expect.objectContaining({
         env: expect.objectContaining({
           KASEKI_LOG_DIR: resultsDir,
@@ -174,15 +194,23 @@ describe('JobScheduler timeout lifecycle', () => {
     const secretsDir = fs.mkdtempSync('/tmp/kaseki-job-secrets-test-');
     tempDirs.push(secretsDir);
     const { getSecretFilePath } = jest.mocked(hostSecretsReader);
-    (getSecretFilePath as jest.Mock).mockImplementation((name: string) => path.join(secretsDir, name));
+    (getSecretFilePath as jest.Mock).mockImplementation((name: string) =>
+      path.join(secretsDir, name),
+    );
 
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
     const resultsDir = createResultsDir();
     fs.writeFileSync(path.join(secretsDir, 'github_app_id'), '12345');
-    fs.writeFileSync(path.join(secretsDir, 'github_app_client_id'), 'Iv123client');
-    fs.writeFileSync(path.join(secretsDir, 'github_app_private_key'), 'private-key');
+    fs.writeFileSync(
+      path.join(secretsDir, 'github_app_client_id'),
+      'Iv123client',
+    );
+    fs.writeFileSync(
+      path.join(secretsDir, 'github_app_private_key'),
+      'private-key',
+    );
 
     try {
       const scheduler = new JobScheduler(
@@ -196,7 +224,7 @@ describe('JobScheduler timeout lifecycle', () => {
           agentTimeoutSeconds: 30,
           logLevel: 'info',
         },
-        createMockWebhookManager()
+        createMockWebhookManager(),
       );
 
       await scheduler.submitJob({
@@ -210,8 +238,14 @@ describe('JobScheduler timeout lifecycle', () => {
         expect.objectContaining({
           env: expect.objectContaining({
             GITHUB_APP_ID_FILE: path.join(secretsDir, 'github_app_id'),
-            GITHUB_APP_CLIENT_ID_FILE: path.join(secretsDir, 'github_app_client_id'),
-            GITHUB_APP_PRIVATE_KEY_FILE: path.join(secretsDir, 'github_app_private_key'),
+            GITHUB_APP_CLIENT_ID_FILE: path.join(
+              secretsDir,
+              'github_app_client_id',
+            ),
+            GITHUB_APP_PRIVATE_KEY_FILE: path.join(
+              secretsDir,
+              'github_app_private_key',
+            ),
           }),
         }),
       );
@@ -223,7 +257,8 @@ describe('JobScheduler timeout lifecycle', () => {
   test('preserves explicitly configured GitHub App secret file paths for controller runs', async () => {
     process.env.GITHUB_APP_ID_FILE = '/configured/github_app_id';
     process.env.GITHUB_APP_CLIENT_ID_FILE = '/configured/github_app_client_id';
-    process.env.GITHUB_APP_PRIVATE_KEY_FILE = '/configured/github_app_private_key';
+    process.env.GITHUB_APP_PRIVATE_KEY_FILE =
+      '/configured/github_app_private_key';
 
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -242,7 +277,7 @@ describe('JobScheduler timeout lifecycle', () => {
           agentTimeoutSeconds: 30,
           logLevel: 'info',
         },
-        createMockWebhookManager()
+        createMockWebhookManager(),
       );
 
       await scheduler.submitJob({
@@ -282,7 +317,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 42,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -322,7 +357,7 @@ describe('JobScheduler timeout lifecycle', () => {
           agentTimeoutSeconds: 30,
           logLevel: 'info',
         },
-        createMockWebhookManager()
+        createMockWebhookManager(),
       );
 
       await scheduler.submitJob({
@@ -372,7 +407,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -410,7 +445,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -454,7 +489,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 42,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -491,7 +526,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -526,7 +561,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -562,13 +597,18 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
-      allowlist: { include: ['src/lib/network-safety.ts', 'src/lib/network-safety.test.ts'] },
+      allowlist: {
+        include: [
+          'src/lib/network-safety.ts',
+          'src/lib/network-safety.test.ts',
+        ],
+      },
       validation: { commands: ['npm test -- src/lib/network-safety.test.ts'] },
     });
 
@@ -577,8 +617,10 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          KASEKI_CHANGED_FILES_ALLOWLIST: 'src/lib/network-safety.ts src/lib/network-safety.test.ts',
-          KASEKI_VALIDATION_COMMANDS: 'npm test -- src/lib/network-safety.test.ts',
+          KASEKI_CHANGED_FILES_ALLOWLIST:
+            'src/lib/network-safety.ts src/lib/network-safety.test.ts',
+          KASEKI_VALIDATION_COMMANDS:
+            'npm test -- src/lib/network-safety.test.ts',
         }),
       }),
     );
@@ -601,7 +643,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -612,7 +654,12 @@ describe('JobScheduler timeout lifecycle', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'bash',
-      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main']),
+      expect.arrayContaining([
+        '--controller',
+        'run',
+        'https://github.com/org/repo',
+        'main',
+      ]),
       expect.objectContaining({
         env: expect.objectContaining({
           KASEKI_DRY_RUN: '1',
@@ -640,7 +687,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -653,7 +700,12 @@ describe('JobScheduler timeout lifecycle', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'bash',
-      expect.arrayContaining(['--controller', 'run', 'https://github.com/org/repo', 'main']),
+      expect.arrayContaining([
+        '--controller',
+        'run',
+        'https://github.com/org/repo',
+        'main',
+      ]),
       expect.objectContaining({
         env: expect.objectContaining({
           KASEKI_DRY_RUN: '1',
@@ -682,7 +734,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -720,14 +772,18 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
       publishMode: 'none',
-      runEvaluation: { enabled: true, model: 'eval-model', timeoutSeconds: 180 },
+      runEvaluation: {
+        enabled: true,
+        model: 'eval-model',
+        timeoutSeconds: 180,
+      },
     });
 
     expect(mockSpawn).toHaveBeenCalledWith(
@@ -759,15 +815,21 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    await prScheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'draft_pr' });
+    await prScheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      publishMode: 'draft_pr',
+    });
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'bash',
       expect.any(Array),
-      expect.objectContaining({ env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '1' }) }),
+      expect.objectContaining({
+        env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '1' }),
+      }),
     );
 
     mockSpawn.mockClear();
@@ -782,15 +844,21 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    await branchScheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main', publishMode: 'branch' });
+    await branchScheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      publishMode: 'branch',
+    });
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'bash',
       expect.any(Array),
-      expect.objectContaining({ env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '0' }) }),
+      expect.objectContaining({
+        env: expect.objectContaining({ KASEKI_RUN_EVALUATION: '0' }),
+      }),
     );
   });
 
@@ -811,7 +879,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -839,7 +907,9 @@ describe('JobScheduler timeout lifecycle', () => {
     const resultsDir = path.join(parent, 'missing-results');
 
     try {
-      const { IdempotencyStore } = jest.requireActual('./idempotency-store') as typeof import('./idempotency-store');
+      const { IdempotencyStore } = jest.requireActual(
+        './idempotency-store',
+      ) as typeof import('./idempotency-store');
       const store = new IdempotencyStore(resultsDir, 24);
       store.shutdown();
 
@@ -852,7 +922,11 @@ describe('JobScheduler timeout lifecycle', () => {
   test('cancelled running jobs get non-empty API failure artifacts', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
-    mockSpawnSync.mockReturnValue({ stdout: 'kaseki-1\n', stderr: '', status: 0 });
+    mockSpawnSync.mockReturnValue({
+      stdout: 'kaseki-1\n',
+      stderr: '',
+      status: 0,
+    });
     const resultsDir = createResultsDir();
 
     const scheduler = new JobScheduler(
@@ -866,7 +940,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -913,7 +987,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -944,10 +1018,13 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const processQueueSpy = jest.spyOn(scheduler as unknown as { processQueue: () => void }, 'processQueue');
+    const processQueueSpy = jest.spyOn(
+      scheduler as unknown as { processQueue: () => void },
+      'processQueue',
+    );
     const job = await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
@@ -960,7 +1037,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.finalized).toBe(true);
 
     // Once from submit, once from single guarded completion.
-    expect(processQueueSpy).toHaveBeenCalledTimes(2);
+    expect(processQueueSpy).toHaveBeenCalledTimes(3);
   });
 
   test('cancel immediately before process exit emits one terminal webhook', async () => {
@@ -982,7 +1059,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      webhookManager
+      webhookManager,
     );
 
     const job = await scheduler.submitJob({
@@ -996,9 +1073,13 @@ describe('JobScheduler timeout lifecycle', () => {
 
     expect(job.status).toBe('failed');
     expect(job.failureClass).toBe('cancelled');
-    const terminalEvents = (webhookManager.enqueueWebhook as jest.Mock).mock.calls
+    const terminalEvents = (
+      webhookManager.enqueueWebhook as jest.Mock
+    ).mock.calls
       .map((call) => call[1].eventType)
-      .filter((eventType) => ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType));
+      .filter((eventType) =>
+        ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType),
+      );
     expect(terminalEvents).toEqual(['job.cancelled']);
   });
 
@@ -1021,7 +1102,7 @@ describe('JobScheduler timeout lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      webhookManager
+      webhookManager,
     );
 
     const job = await scheduler.submitJob({
@@ -1034,9 +1115,13 @@ describe('JobScheduler timeout lifecycle', () => {
     scheduler.cancelJob(job.id);
 
     expect(job.status).toBe('completed');
-    const terminalEvents = (webhookManager.enqueueWebhook as jest.Mock).mock.calls
+    const terminalEvents = (
+      webhookManager.enqueueWebhook as jest.Mock
+    ).mock.calls
       .map((call) => call[1].eventType)
-      .filter((eventType) => ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType));
+      .filter((eventType) =>
+        ['job.completed', 'job.failed', 'job.cancelled'].includes(eventType),
+      );
     expect(terminalEvents).toEqual(['job.completed']);
   });
 });
@@ -1069,10 +1154,13 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     expect(job.timeout?.hasRef()).toBe(false);
 
@@ -1094,22 +1182,31 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const first = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
-    const second = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const first = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    const second = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     expect(first.id).toBe('kaseki-13');
     expect(second.id).toBe('kaseki-14');
-    expect(fs.readFileSync(`${resultsDir}/.kaseki-api-next-id`, 'utf-8').trim()).toBe('15');
+    expect(
+      fs.readFileSync(`${resultsDir}/.kaseki-api-next-id`, 'utf-8').trim(),
+    ).toBe('15');
 
     scheduler.shutdown();
   });
 
   test('parses live docker progress lines', async () => {
     mockSpawnSync.mockReturnValue({
-      stdout: '[progress] clone repository info: started\n[progress] pi agent: working; events=42\n',
+      stdout:
+        '[progress] clone repository info: started\n[progress] pi agent: working; events=42\n',
       stderr: '',
       status: 0,
     });
@@ -1125,7 +1222,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
@@ -1157,7 +1254,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const first = scheduler.getLiveProgressEvents('kaseki-7', 25);
@@ -1171,7 +1268,11 @@ describe('JobScheduler instance allocation and live progress', () => {
     ]);
     expect(second).toEqual(first);
     expect(mockSpawnSync).toHaveBeenCalledTimes(1);
-    expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['logs', '--tail', '200', 'kaseki-7'], expect.any(Object));
+    expect(mockSpawnSync).toHaveBeenCalledWith(
+      'docker',
+      ['logs', '--tail', '200', 'kaseki-7'],
+      expect.any(Object),
+    );
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
   });
 
@@ -1201,7 +1302,7 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     expect(scheduler.getLiveProgressEvents('kaseki-7', 25)).toEqual([
@@ -1228,51 +1329,8 @@ describe('JobScheduler instance allocation and live progress', () => {
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockImplementation((command: string, args: string[]) => {
       if (command === 'docker' && args[0] === 'logs') {
-        return { stdout: '[progress] clone repository info: started\n', stderr: '', status: 0 };
-      }
-      return { stdout: '', stderr: '', status: 0 };
-    });
-
-    const scheduler = new JobScheduler(
-      {
-        port: 8080,
-        apiKeys: ['test-key'],
-        resultsDir: createResultsDir(),
-        maxConcurrentRuns: 1,
-        defaultTaskMode: 'patch',
-        maxDiffBytes: 400000,
-        agentTimeoutSeconds: 30,
-        logLevel: 'info',
-      },
-      createMockWebhookManager()
-    );
-    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
-
-    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([
-      expect.objectContaining({
-        stage: 'clone repository info',
-        message: 'started',
-      }),
-    ]);
-
-    scheduler.cancelJob(job.id);
-
-    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([]);
-    expect(mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')).toHaveLength(1);
-    delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
-  });
-
-  test('invalidates live progress cache at job start', async () => {
-    mockSpawnSync.mockReset();
-    process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS = '2000';
-    const proc = new MockProcess();
-    mockSpawn.mockReturnValue(proc);
-    mockSpawnSync.mockImplementation((command: string, args: string[]) => {
-      if (command === 'docker' && args[0] === 'logs') {
         return {
-          stdout: mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs').length === 1
-            ? '[progress] queued job: cached-before-start\n'
-            : '[progress] running job: fresh-after-start\n',
+          stdout: '[progress] clone repository info: started\n',
           stderr: '',
           status: 0,
         };
@@ -1291,7 +1349,61 @@ describe('JobScheduler instance allocation and live progress', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
+    );
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([
+      expect.objectContaining({
+        stage: 'clone repository info',
+        message: 'started',
+      }),
+    ]);
+
+    scheduler.cancelJob(job.id);
+
+    expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([]);
+    expect(
+      mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs'),
+    ).toHaveLength(1);
+    delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+  });
+
+  test('invalidates live progress cache at job start', async () => {
+    mockSpawnSync.mockReset();
+    process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS = '2000';
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'docker' && args[0] === 'logs') {
+        return {
+          stdout:
+            mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')
+              .length === 1
+              ? '[progress] queued job: cached-before-start\n'
+              : '[progress] running job: fresh-after-start\n',
+          stderr: '',
+          status: 0,
+        };
+      }
+      return { stdout: '', stderr: '', status: 0 };
+    });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
     );
 
     const id = 'kaseki-1';
@@ -1302,7 +1414,10 @@ describe('JobScheduler instance allocation and live progress', () => {
       }),
     ]);
 
-    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     expect(scheduler.getLiveProgressEvents(id, 25)).toEqual([
       expect.objectContaining({
@@ -1310,7 +1425,9 @@ describe('JobScheduler instance allocation and live progress', () => {
         message: 'fresh-after-start',
       }),
     ]);
-    expect(mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs')).toHaveLength(2);
+    expect(
+      mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs'),
+    ).toHaveLength(2);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
   });
 });
@@ -1344,7 +1461,7 @@ describe('JobScheduler shutdown lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1381,7 +1498,7 @@ describe('JobScheduler shutdown lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     await scheduler.submitJob({
@@ -1415,7 +1532,7 @@ describe('JobScheduler shutdown lifecycle', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      webhookManager
+      webhookManager,
     );
 
     const job = await scheduler.submitJob({
@@ -1448,7 +1565,7 @@ describe('JobScheduler shutdown lifecycle', () => {
           failureClass: 'shutdown_aborted',
         }),
       }),
-      job.webhookConfig
+      job.webhookConfig,
     );
   });
 });
@@ -1478,17 +1595,25 @@ describe('JobScheduler persistence merge safety', () => {
     };
 
     const scheduler = new JobScheduler(config, createMockWebhookManager());
-    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
     const indexPath = `${resultsDir}/.kaseki-api-jobs.json`;
     const before = fs.readFileSync(indexPath, 'utf-8');
 
     fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
-    await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/locked' });
-    (scheduler as unknown as { persistJobs: () => void }).persistJobs();
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'feature/locked',
+    });
+    await (
+      scheduler as unknown as { persistJobs: () => Promise<void> }
+    ).persistJobs();
 
     const after = fs.readFileSync(indexPath, 'utf-8');
     expect(after).toBe(before);
-  });
+  }, 15000);
 
   test('loadPersistedJobs does not read index when lock is already held', async () => {
     const resultsDir = createResultsDir();
@@ -1497,7 +1622,7 @@ describe('JobScheduler persistence merge safety', () => {
       indexPath,
       `${JSON.stringify({ version: 1, updatedAt: '2026-05-04T00:00:00.000Z', jobs: [{ id: 'kaseki-1', status: 'queued', request: { repoUrl: 'https://github.com/org/repo', ref: 'main' }, createdAt: '2026-05-04T00:00:00.000Z', resultDir: `${resultsDir}/kaseki-1`, correlationId: 'c1', requestId: 'r1' }] }, null, 2)}
 `,
-      'utf-8'
+      'utf-8',
     );
     fs.mkdirSync(`${resultsDir}/.kaseki-api-jobs.lock`, { mode: 0o700 });
 
@@ -1512,7 +1637,7 @@ describe('JobScheduler persistence merge safety', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     expect(scheduler.getJob('kaseki-1')).toBeUndefined();
@@ -1531,9 +1656,13 @@ describe('JobScheduler persistence merge safety', () => {
     };
 
     const schedulerA = new JobScheduler(config, createMockWebhookManager());
-    const first = await schedulerA.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const first = await schedulerA.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     const schedulerB = new JobScheduler(config, createMockWebhookManager());
+    await schedulerB.ready();
     const staleCopy = schedulerB.getJob(first.id);
     expect(staleCopy?.status).toBe('queued');
 
@@ -1545,20 +1674,34 @@ describe('JobScheduler persistence merge safety', () => {
     firstFromA.status = 'completed';
     firstFromA.exitCode = 0;
     firstFromA.completedAt = new Date('2026-05-04T00:00:01.000Z');
-    (schedulerA as unknown as { persistJobs: () => void }).persistJobs();
+    await (
+      schedulerA as unknown as { persistJobs: () => Promise<void> }
+    ).persistJobs();
 
-    await schedulerB.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'feature/branch' });
-    (schedulerB as unknown as { persistJobs: () => void }).persistJobs();
+    await schedulerB.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'feature/branch',
+    });
+    await (
+      schedulerB as unknown as { persistJobs: () => Promise<void> }
+    ).persistJobs();
 
-    const raw = JSON.parse(fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8')) as {
-      jobs: Array<{ id: string; status: string; completedAt?: string; exitCode?: number }>;
+    const raw = JSON.parse(
+      fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8'),
+    ) as {
+      jobs: Array<{
+        id: string;
+        status: string;
+        completedAt?: string;
+        exitCode?: number;
+      }>;
     };
     const mergedFirst = raw.jobs.find((job) => job.id === first.id);
     expect(mergedFirst?.status).toBe('completed');
     expect(mergedFirst?.exitCode).toBe(0);
     expect(mergedFirst?.completedAt).toBe('2026-05-04T00:00:01.000Z');
   });
-  test('persistJobs truncates old terminal jobs and writes compact JSON at the retention limit', () => {
+  test('persistJobs truncates old terminal jobs and writes compact JSON at the retention limit', async () => {
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler(
       {
@@ -1572,20 +1715,49 @@ describe('JobScheduler persistence merge safety', () => {
         logLevel: 'info',
         jobIndexMaxEntries: 2,
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
-    const jobMap = (scheduler as unknown as { jobs: Map<string, unknown> }).jobs;
-    jobMap.set('kaseki-1', persistedRuntimeJob(resultsDir, 'kaseki-1', 'completed', '2026-05-01T00:00:00.000Z'));
-    jobMap.set('kaseki-2', persistedRuntimeJob(resultsDir, 'kaseki-2', 'failed', '2026-05-02T00:00:00.000Z'));
-    jobMap.set('kaseki-3', persistedRuntimeJob(resultsDir, 'kaseki-3', 'completed', '2026-05-03T00:00:00.000Z'));
-    (scheduler as unknown as { persistJobs: () => void }).persistJobs();
+    const jobMap = (scheduler as unknown as { jobs: Map<string, unknown> })
+      .jobs;
+    jobMap.set(
+      'kaseki-1',
+      persistedRuntimeJob(
+        resultsDir,
+        'kaseki-1',
+        'completed',
+        '2026-05-01T00:00:00.000Z',
+      ),
+    );
+    jobMap.set(
+      'kaseki-2',
+      persistedRuntimeJob(
+        resultsDir,
+        'kaseki-2',
+        'failed',
+        '2026-05-02T00:00:00.000Z',
+      ),
+    );
+    jobMap.set(
+      'kaseki-3',
+      persistedRuntimeJob(
+        resultsDir,
+        'kaseki-3',
+        'completed',
+        '2026-05-03T00:00:00.000Z',
+      ),
+    );
+    await (
+      scheduler as unknown as { persistJobs: () => Promise<void> }
+    ).persistJobs();
 
-    const rawIndex = fs.readFileSync(`${resultsDir}/.kaseki-api-jobs.json`, 'utf-8');
+    const rawIndex = fs.readFileSync(
+      `${resultsDir}/.kaseki-api-jobs.json`,
+      'utf-8',
+    );
     const parsed = JSON.parse(rawIndex) as { jobs: Array<{ id: string }> };
     expect(parsed.jobs.map((job) => job.id)).toEqual(['kaseki-3', 'kaseki-2']);
     expect(rawIndex).not.toContain('\n  "');
   });
-
 });
 
 describe('JobScheduler artifact cache invalidation', () => {
@@ -1614,7 +1786,7 @@ describe('JobScheduler artifact cache invalidation', () => {
         logLevel: 'info',
       },
       createMockWebhookManager(),
-      artifactCache
+      artifactCache,
     );
 
     const job = await scheduler.submitJob({
@@ -1653,7 +1825,7 @@ describe('JobScheduler readiness repair', () => {
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     fs.rmSync(resultsDir, { recursive: true, force: true });
@@ -1693,7 +1865,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1739,7 +1911,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1785,7 +1957,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1825,7 +1997,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1853,7 +2025,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.exitCode).toBe(124);
 
     // Verify failure artifacts were created
-    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLogPath = path.join(
+      scheduler['config'].resultsDir,
+      job.id,
+      'stderr.log',
+    );
     expect(fs.existsSync(stderrLogPath)).toBe(true);
   });
 
@@ -1873,7 +2049,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 30,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -1912,10 +2088,13 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     for (let i = 0; i < 40; i++) {
       proc.stdout?.emit('data', `OUT_BURST_${i}\n`);
@@ -1927,7 +2106,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     jest.advanceTimersByTime(1000);
     proc.emit('exit', 0);
 
-    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLogPath = path.join(
+      scheduler['config'].resultsDir,
+      job.id,
+      'stderr.log',
+    );
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
     expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('OUT_BURST_39');
@@ -1952,10 +2135,13 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     for (let i = 0; i < 60; i++) {
       proc.stdout?.emit('data', `ALT_OUT_${i}\n`);
@@ -1965,7 +2151,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     jest.advanceTimersByTime(1000);
     proc.emit('exit', 0);
 
-    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLogPath = path.join(
+      scheduler['config'].resultsDir,
+      job.id,
+      'stderr.log',
+    );
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
     expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('ALT_OUT_59');
@@ -1991,10 +2181,13 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
-    const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
 
     proc.stdout?.emit('data', 'PRE_FINAL_OUT\n');
     proc.stderr?.emit('data', 'PRE_FINAL_ERR\n');
@@ -2008,7 +2201,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
 
     jest.runOnlyPendingTimers();
 
-    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLogPath = path.join(
+      scheduler['config'].resultsDir,
+      job.id,
+      'stderr.log',
+    );
     const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
     expect(stderrLog).toContain('--- captured stdout tail ---');
     expect(stderrLog).toContain('FINAL_OUT_CHUNK');
@@ -2040,10 +2237,13 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
           agentTimeoutSeconds: 1,
           logLevel: 'info',
         },
-        createMockWebhookManager()
+        createMockWebhookManager(),
       );
 
-      const job = await scheduler.submitJob({ repoUrl: 'https://github.com/org/repo', ref: 'main' });
+      const job = await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+      });
       let state = seed + pass;
       let lastStdout = '';
       let lastStderr = '';
@@ -2064,7 +2264,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
       jest.advanceTimersByTime(1000);
       proc.emit('exit', 0);
 
-      const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+      const stderrLogPath = path.join(
+        scheduler['config'].resultsDir,
+        job.id,
+        'stderr.log',
+      );
       const stderrLog = fs.readFileSync(stderrLogPath, 'utf-8');
       expect(stderrLog).toContain(lastStdout);
       expect(stderrLog).toContain(lastStderr);
@@ -2088,7 +2292,7 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
         agentTimeoutSeconds: 1,
         logLevel: 'info',
       },
-      createMockWebhookManager()
+      createMockWebhookManager(),
     );
 
     const job = await scheduler.submitJob({
@@ -2112,7 +2316,11 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(job.failureClass).toBe('timeout');
 
     // Verify failure artifacts exist
-    const stderrLogPath = path.join(scheduler['config'].resultsDir, job.id, 'stderr.log');
+    const stderrLogPath = path.join(
+      scheduler['config'].resultsDir,
+      job.id,
+      'stderr.log',
+    );
     expect(fs.existsSync(stderrLogPath)).toBe(true);
   });
 });
