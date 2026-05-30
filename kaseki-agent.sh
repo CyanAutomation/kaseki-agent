@@ -2425,6 +2425,8 @@ build_goal_setting_prompt() {
   cat <<EOF
 You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
 
+- Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT.
+
 Reference: https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex
 
 === OPENAI BEST PRACTICES FOR WELL-FORMED GOALS ===
@@ -2478,7 +2480,7 @@ Analyze this prompt for:
 
 === OUTPUT SCHEMA ===
 
-Output exactly one JSON object (no markdown, no code fences) with this shape:
+Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, no code fences) with this shape:
 
 {
   "original_prompt": "the original user prompt",
