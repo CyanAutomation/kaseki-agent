@@ -51,7 +51,10 @@ export class IdempotencyStore {
 
   constructor(resultsDir: string, ttlHours: number = 24) {
     fs.mkdirSync(resultsDir, { recursive: true });
-    this.persistencePath = path.join(resultsDir, '.kaseki-api-idempotency.jsonl');
+    this.persistencePath = path.join(
+      resultsDir,
+      '.kaseki-api-idempotency.jsonl',
+    );
     this.lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     this.lockOwnerPath = path.join(this.lockPath, 'owner.json');
     this.logger = createEventLogger('idempotency-store');
@@ -63,7 +66,10 @@ export class IdempotencyStore {
   /**
    * Check if idempotency key has been seen before and return cached response.
    */
-  claimOrGet(idempotencyKey: string, requestFingerprint: string): ClaimResult {
+  async claimOrGet(
+    idempotencyKey: string,
+    requestFingerprint: string,
+  ): Promise<ClaimResult> {
     return this.withLock(() => {
       this.loadFromDisk();
       const entry = this.cache.get(idempotencyKey);
@@ -88,7 +94,9 @@ export class IdempotencyStore {
       }
 
       if (entry.requestFingerprint !== requestFingerprint) {
-        throw new Error('Idempotency key has already been used with a different request payload');
+        throw new Error(
+          'Idempotency key has already been used with a different request payload',
+        );
       }
 
       if (entry.state === 'pending') {
@@ -98,7 +106,9 @@ export class IdempotencyStore {
       this.logger.event('idempotency_cache_hit', {
         idempotencyKey,
         jobId: entry.jobId,
-        ageSeconds: Math.round((Date.now() - new Date(entry.requestTime).getTime()) / 1000),
+        ageSeconds: Math.round(
+          (Date.now() - new Date(entry.requestTime).getTime()) / 1000,
+        ),
       });
 
       return { kind: 'fulfilled', response: entry.responsePayload };
@@ -108,27 +118,31 @@ export class IdempotencyStore {
   /**
    * Store a new idempotency entry.
    */
-  storeResponse(idempotencyKey: string, response: RunResponse, requestFingerprint: string): void {
-    this.withLock(() => {
+  async storeResponse(
+    idempotencyKey: string,
+    response: RunResponse,
+    requestFingerprint: string,
+  ): Promise<void> {
+    await this.withLock(() => {
       this.loadFromDisk();
       const existing = this.cache.get(idempotencyKey);
       const entry: IdempotencyCacheEntry = existing
         ? {
-          ...existing,
-          requestFingerprint,
-          state: 'fulfilled',
-          jobId: response.id,
-          responsePayload: response,
-        }
+            ...existing,
+            requestFingerprint,
+            state: 'fulfilled',
+            jobId: response.id,
+            responsePayload: response,
+          }
         : {
-          idempotencyKey,
-          requestFingerprint,
-          state: 'fulfilled',
-          jobId: response.id,
-          requestTime: new Date().toISOString(),
-          responsePayload: response,
-          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-        };
+            idempotencyKey,
+            requestFingerprint,
+            state: 'fulfilled',
+            jobId: response.id,
+            requestTime: new Date().toISOString(),
+            responsePayload: response,
+            expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+          };
 
       this.cache.set(idempotencyKey, entry);
       this.persistToDisk(entry);
@@ -141,16 +155,16 @@ export class IdempotencyStore {
     });
   }
 
-  private withLock<T>(fn: () => T): T {
-    this.acquireLock();
+  private async withLock<T>(fn: () => T | Promise<T>): Promise<T> {
+    await this.acquireLock();
     try {
-      return fn();
+      return await fn();
     } finally {
       this.releaseLock();
     }
   }
 
-  private acquireLock(): void {
+  private async acquireLock(): Promise<void> {
     const maxRetries = 600; // 3 seconds total (600 * 5ms)
     const staleThresholdMs = 30000; // 30 seconds
     let retries = 0;
@@ -161,22 +175,24 @@ export class IdempotencyStore {
         createdAt: new Date().toISOString(),
         token: this.generateLockToken(),
       };
-      const tempLockPath = `${this.lockPath}.${owner.token}.tmp`;
-      const tempOwnerPath = path.join(tempLockPath, 'owner.json');
-
       try {
-        fs.mkdirSync(tempLockPath);
-        fs.writeFileSync(tempOwnerPath, JSON.stringify(owner), { encoding: 'utf-8', flag: 'wx' });
-        fs.renameSync(tempLockPath, this.lockPath);
+        fs.mkdirSync(this.lockPath, { mode: 0o700 });
+        fs.writeFileSync(this.lockOwnerPath, JSON.stringify(owner), {
+          encoding: 'utf-8',
+          flag: 'wx',
+        });
         this.activeLockToken = owner.token;
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        this.forceRemovePath(tempLockPath);
+        this.releasePartiallyAcquiredLock(owner.token);
 
         if (code === 'EEXIST' || code === 'ENOTEMPTY') {
           const ownerMetadata = this.readLockOwner();
-          const lockLooksStale = this.isLockStale(staleThresholdMs, ownerMetadata?.pid);
+          const lockLooksStale = this.isLockStale(
+            staleThresholdMs,
+            ownerMetadata?.pid,
+          );
           if (lockLooksStale) {
             this.forceRemoveLockDir();
             continue;
@@ -185,7 +201,8 @@ export class IdempotencyStore {
           throw error;
         }
 
-        this.sleepSync(5);
+        this.logLockContention(retries + 1, maxRetries);
+        await this.delay(5);
         retries++;
       }
     }
@@ -241,8 +258,11 @@ export class IdempotencyStore {
     }
   }
 
-  private forceRemovePath(targetPath: string): void {
-    fs.rmSync(targetPath, { recursive: true, force: true });
+  private releasePartiallyAcquiredLock(token: string): void {
+    const ownerMetadata = this.readLockOwner();
+    if (ownerMetadata?.token === token) {
+      this.forceRemoveLockDir();
+    }
   }
 
   private forceRemoveLockDir(): void {
@@ -253,11 +273,18 @@ export class IdempotencyStore {
     return `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
   }
 
-  private sleepSync(ms: number): void {
-    const start = Date.now();
-    while (Date.now() - start < ms) {
-      // Busy wait
+  private logLockContention(attempt: number, maxRetries: number): void {
+    if (attempt === 1 || attempt === maxRetries || attempt % 100 === 0) {
+      this.logger.event('idempotency_lock_contention', {
+        lockPath: this.lockPath,
+        attempt,
+        maxRetries,
+      });
     }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -308,7 +335,13 @@ export class IdempotencyStore {
       try {
         const bytesToRead = stats.size - this.lastReadPosition;
         const buffer = Buffer.alloc(bytesToRead);
-        fs.readSync(fileDescriptor, buffer, 0, bytesToRead, this.lastReadPosition);
+        fs.readSync(
+          fileDescriptor,
+          buffer,
+          0,
+          bytesToRead,
+          this.lastReadPosition,
+        );
         this.lastReadPosition = stats.size;
 
         const content = this.readRemainder + buffer.toString('utf-8');
@@ -409,11 +442,15 @@ export class IdempotencyStore {
               requestTime: entry.requestTime,
               responsePayload: entry.responsePayload,
               expiresAt: entry.expiresAt,
-            })
+            }),
           );
         }
 
-        fs.writeFileSync(this.persistencePath, validEntries.join('\n') + (validEntries.length > 0 ? '\n' : ''), 'utf-8');
+        fs.writeFileSync(
+          this.persistencePath,
+          validEntries.join('\n') + (validEntries.length > 0 ? '\n' : ''),
+          'utf-8',
+        );
 
         this.logger.event('idempotency_cleanup', {
           removedEntries: removedCount,
