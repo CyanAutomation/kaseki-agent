@@ -5,7 +5,7 @@
  *
  * This script ensures that all binaries compiled from TypeScript source files
  * can resolve their dependencies at runtime. It:
- * 1. Scans critical binaries (pi-progress-stream, pi-event-filter, kaseki-report)
+ * 1. Scans critical binaries (pi-progress-stream, pi-event-filter, kaseki-report, github-app-token)
  * 2. Parses their imports and builds a dependency graph
  * 3. Verifies all imports resolve to actual files in dist/
  * 4. Detects missing modules that should be copied to /app/lib/
@@ -44,8 +44,8 @@ function log(color, prefix, message) {
 function extractImports(fileContent) {
   const imports = new Set();
 
-  // ES6 import statements: import ... from '...'
-  const importRegex = /import\s+(?:{[^}]*}|[^}]*from\s+)?['"]([^'"]+)['"]/g;
+  // ES6 import statements: import ... from '...' and side-effect imports: import '...'
+  const importRegex = /import\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
   let match;
 
   while ((match = importRegex.exec(fileContent)) !== null) {
@@ -158,6 +158,7 @@ function main() {
     { source: 'pi-event-filter.ts', output: 'pi-event-filter.js', name: 'kaseki-pi-event-filter' },
     { source: 'pi-progress-stream.ts', output: 'pi-progress-stream.js', name: 'kaseki-pi-progress-stream' },
     { source: 'kaseki-report.ts', output: 'kaseki-report.js', name: 'kaseki-report' },
+    { source: 'github-app-token.ts', output: 'github-app-token.js', name: 'github-app-token' },
   ];
 
   console.log(`\n${colors.bold}Validating Module Imports for Kaseki Agent${colors.reset}\n`);
@@ -169,6 +170,7 @@ function main() {
 
   for (const binary of criticalBinaries) {
     const sourceFile = path.resolve(srcDir, binary.source);
+    let binaryHasErrors = false;
 
     log(colors.blue, '→', `Validating ${colors.bold}${binary.name}${colors.reset}...`);
 
@@ -197,19 +199,23 @@ function main() {
         result.missingImports.push(depPath);
         log(colors.red, '    ✗', `Missing dependency: ${path.relative(srcDir, depPath)}`);
         hasErrors = true;
+        binaryHasErrors = true;
       } else if (depInfo.missingImports && depInfo.missingImports.length > 0) {
         depInfo.missingImports.forEach((imp) => {
           result.errors.push(`${path.relative(srcDir, depPath)} imports missing module: ${imp}`);
           log(colors.red, '    ✗', `Transitive import failure in ${path.basename(depPath)}: ${imp}`);
           hasErrors = true;
+          binaryHasErrors = true;
         });
       } else {
         result.imports.push(path.relative(srcDir, depPath));
       }
     }
 
-    if (!hasErrors && result.imports.length > 0) {
-      log(colors.green, '  ✓', `All ${result.imports.length} dependencies resolved`);
+    if (!binaryHasErrors && result.imports.length > 0) {
+      const resolvedImports = result.imports.sort();
+      log(colors.green, '  ✓', `All ${resolvedImports.length} dependencies resolved`);
+      log(colors.green, '    ↳', `Transitive imports: ${resolvedImports.join(', ')}`);
     }
 
     validationResults.push(result);
@@ -224,7 +230,10 @@ function main() {
     'instance-state-derivation.js',
     'instance-metadata-reader.js',
     'github-app-token.js',
+    'github-utils.js',
     'github-app-private-key.js',
+    'logger.js',
+    'secrets/host-secrets-reader.js',
   ];
 
   log(colors.blue, '→', 'Checking for required utility files...');
