@@ -89,7 +89,8 @@ for expected in \
   '/agents/kaseki-template/run-kaseki.sh --doctor'
 do
   if ! printf '%s\n' "$output" | grep -Fq "$expected"; then
-    printf 'Expected doctor output to contain: %s\nOutput:\n%s\n' "$expected" "$output" >&2
+    printf 'FAIL: Expected doctor output to contain: "%s"\n' "$expected" >&2
+    printf 'ACTUAL OUTPUT:\n---\n%s\n---\n' "$output" >&2
     exit 1
   fi
 done
