@@ -33,6 +33,7 @@ import { createArtifactRoutes } from './routes/artifact-routes';
 import { createWebhookRoutes } from './routes/webhook-routes';
 import { createHealthRoutes } from './routes/health-routes';
 import { createImprovementRoutes } from './routes/improvement-routes';
+import { createGitHubIssuesRoutes } from './routes/github-issues-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
@@ -1759,6 +1760,7 @@ export function createApiRouter(
   router.use(createArtifactRoutes(scheduler, config, artifactCache));
   router.use(createImprovementRoutes(scheduler, config));
   router.use(createWebhookRoutes());
+  router.use(createGitHubIssuesRoutes());
 
   return router;
 }
