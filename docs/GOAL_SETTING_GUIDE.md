@@ -21,7 +21,11 @@ According to [OpenAI's Codex guidance](https://developers.openai.com/cookbook/ex
 3. **Preventing scope creep** — Clear constraints prevent unintended changes
 4. **Improving validation** — Post-goal-check evaluation becomes more accurate
 
-**📖 See Also**: [Goal-Setting Improvements Guide](./GOAL_SETTING_IMPROVEMENTS.md) for details on enhanced goal quality scoring, anti-pattern extraction, SMART criteria validation, and feedback loop infrastructure.
+**📖 See Also**:
+
+- [Goal-Setting Improvements Guide](./GOAL_SETTING_IMPROVEMENTS.md) — Enhanced goal quality scoring, anti-pattern extraction, SMART criteria validation, and feedback loop infrastructure
+- [Evaluation Best Practices](./EVALUATION_BEST_PRACTICES.md) — How goal-check and run-evaluation phases leverage goal-setting output to produce high-quality verdicts grounded in OpenAI best practices
+- [Feedback Loop Integration](./FEEDBACK_LOOP_INTEGRATION.md) — How evaluation verdicts feed back into goal quality scoring and Kaseki process improvements
 
 ## What Makes a Good Goal?
 

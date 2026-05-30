@@ -3113,48 +3113,158 @@ snapshot_attempt_artifacts() {
   done
 }
 
+collect_goal_check_feedback() {
+  local instance_name="$1"
+  local goal_setting_path="$GOAL_SETTING_ARTIFACT"
+  local goal_check_path="/results/goal-check.json"
+  local metadata_path="/results/metadata.json"
+  local feedback_file="/results/goal-feedback.jsonl"
+
+  # Only collect if goal-check succeeded and artifacts exist
+  if [ "$GOAL_CHECK_EXIT" -ne 0 ] || [ ! -f "$goal_check_path" ]; then
+    return 0
+  fi
+
+  # Use node script to collect feedback, append as JSONL
+  node "$SCRIPTS_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+}
+
+collect_run_evaluation_feedback() {
+  local instance_name="$1"
+  local run_evaluation_path="/results/run-evaluation.json"
+  local metadata_path="/results/metadata.json"
+  local feedback_file="/results/kaseki-improvements.jsonl"
+
+  # Only collect if run-evaluation succeeded and artifacts exist
+  if [ ! -f "$run_evaluation_path" ] || [ "$RUN_EVALUATION_EXIT" -ne 0 ]; then
+    return 0
+  fi
+
+  # Use node script to collect feedback, append as JSONL
+  node "$SCRIPTS_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+}
+
+
 build_goal_check_prompt() {
-  local validation_tail progress_tail
+  local validation_tail progress_tail goal_setting_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
   progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+  
+  # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+  if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+    goal_setting_context="GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
+$(cat "$GOAL_SETTING_ARTIFACT" 2>/dev/null | head -200)
+
+---
+"
+  else
+    goal_setting_context=""
+  fi
+
   cat <<EOF
 You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
 
-Evaluate whether the coding agent's current repository changes realized the objective from the scouting report.
+Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
 
-Inputs you must inspect:
-- Original task prompt below.
-- Scouting report JSON: $SCOUTING_ARTIFACT
-- Current changed files: /results/changed-files.txt
-- Current diff: /results/git.diff
-- Current validation outcomes: /results/validation-timings.tsv and /results/validation.log
-- Current coding-agent events summary: /results/pi-summary.json and /results/pi-events.jsonl
+## Your Task
 
-Rules:
+Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.
+
+## Inputs to Inspect
+
+**Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
+- Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+- Quality metrics, SMART criteria, anti-patterns, constraints
+
+**Agent Artifacts** (use to verify requirements were met):
+- Scouting report: $SCOUTING_ARTIFACT
+- Changed files: /results/changed-files.txt
+- Git diff: /results/git.diff
+- Validation outcomes: /results/validation-timings.tsv and /results/validation.log
+- Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
+
+## Evaluation Framework: SMART Criteria Check
+
+1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+2. **Measurable**: Are requirements verifiable via test results, diff inspection, or validation logs?
+3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
+4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
+5. **Time-bound**: Completed in this single run (not postponed to future attempts)?
+
+For each dimension, provide evidence by citing specific file locations, test names, or validation results.
+
+## Evidence Requirements
+
+Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:
+
+✅ Good evidence:
+- "parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')"
+- "5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs"
+- "All 127 tests pass in validation.log (previously 125)"
+
+❌ Poor evidence:
+- "The parser was fixed"
+- "Tests were added"
+- "Code looks good"
+
+## Confidence Grounding
+
+Map your confidence to evidence strength:
+
+- **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥2 clear unmet dimensions with actionable fix)
+- **medium**: 2-3 evidence items + 3-4 SMART dimensions + some uncertainty
+- **low**: <2 evidence items OR <3 SMART dimensions OR unclear path to fix
+
+## Retry Prompt Guidance (if met=false)
+
+If goal is not met, your retry_prompt MUST:
+1. Name the specific unmet SMART dimension(s)
+2. Reference what the agent did accomplish (so it doesn't re-do work)
+3. Provide actionable next steps (not just "try again")
+
+Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test coverage is incomplete. Add tests for the 2 missing cases: unicode symbols and 100+ char names. Then run npm test to verify all 127 tests pass."
+
+## Rules
+
 - Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
 - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
-- Decide whether the scouting requirements were realized, not whether the implementation is stylistically perfect.
-- If the goal is not met, write a concrete retry_prompt for the next coding attempt.
+- Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
+- If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
 
-Required JSON shape:
+## Required JSON Output
+
 {
-  "met": true,
-  "confidence": "high",
-  "summary": "brief verdict",
-  "evidence": ["specific evidence that supports the verdict"],
-  "missing": ["specific unmet requirements; empty when met"],
-  "retry_prompt": "specific repair instructions for the coding agent; empty when met",
-  "validation_notes": ["validation commands/results considered"]
+  "met": true or false,
+  "confidence": "high", "medium", or "low",
+  "summary": "1-2 sentence verdict with key finding",
+  "evidence": [
+    "specific, verifiable evidence item 1 with file/line references",
+    "specific, verifiable evidence item 2",
+    "... (3+ items for high confidence)"
+  ],
+  "missing": [
+    "unmet requirement 1 (empty array if met=true)",
+    "unmet requirement 2"
+  ],
+  "retry_prompt": "actionable repair instructions; empty if met=true",
+  "validation_notes": [
+    "validation command 1: outcome",
+    "validation command 2: outcome"
+  ]
 }
 
-Original task prompt:
+## Context
+
+$goal_setting_context
+
+Original task prompt (for reference):
 $TASK_PROMPT
 
-Validation log tail:
+Validation log tail (last 80 lines):
 $validation_tail
 
-Progress log tail:
+Progress log tail (last 80 lines):
 $progress_tail
 EOF
 }
@@ -3294,7 +3404,7 @@ fs.appendFileSync("/results/goal-check-attempts.jsonl", JSON.stringify(artifact)
 }
 
 build_run_evaluation_prompt() {
-  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
   progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
   stage_timings="$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)"
@@ -3302,71 +3412,215 @@ build_run_evaluation_prompt() {
   restoration_report="$(tail -80 /results/restoration-report.md 2>/dev/null || true)"
   metadata_text="$(cat /results/metadata.json 2>/dev/null || true)"
   draft_pr_body="$(build_pr_body)"
+  
+  # Include goal-setting output for quality context (influences reviewer_confidence)
+  if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+    goal_setting_context="GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
+$(cat "$GOAL_SETTING_ARTIFACT" 2>/dev/null | head -200)
+
+---
+"
+  else
+    goal_setting_context=""
+  fi
+
   cat <<EOF
 You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
 
-Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process value, stage efficiency, and opportunities for Kaseki to improve. Do not duplicate the goal-check evaluator; use its artifact as one input.
+Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.
 
-Inputs you must inspect:
-- Original task prompt below.
+## Your Task
+
+This is NOT another goal-check. The goal-check evaluator already determined if the goal was met. Your job is to assess:
+1. **Reviewer Confidence**: Can humans trust this PR without exhaustive manual review?
+2. **Process Value**: Which stages added value? Which could be streamlined?
+3. **Kaseki Improvements**: What should the Kaseki system optimize for next time?
+4. **Task Completion**: Did the agent realize the specific goal? (score 1-5)
+
+## Inputs to Use
+
+**Goal Quality Context** (influences reviewer_confidence assessment):
+- Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+- Quality metrics, SMART criteria, anti-patterns
+
+**Agent Artifacts** (verify goal was realized):
+- Goal-check verdict: /results/goal-check.json
 - Scouting report: /results/scouting.json
-- Goal-check verdict: /results/goal-check.json and /results/goal-check-attempts.jsonl
 - Changed files: /results/changed-files.txt
-- Diff and status: /results/git.diff and /results/git.status
+- Git diff and status: /results/git.diff, /results/git.status
 - Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
 - Stage timings: /results/stage-timings.tsv
 - Progress log: /results/progress.log
 - Metadata: /results/metadata.json
-- Restoration report and dependency cache log when present
-- Draft PR body below
 
-Rules:
+## Evaluation Framework
+
+### 1. Reviewer Confidence Grounding
+
+Reviewer confidence should account for goal quality. Poor goals = harder to assess = lower confidence.
+
+**High reviewer_confidence** (80%+ trust for merge):
+- Goal quality ≥80 (high clarity, measurability, specificity)
+- Goal-check: met=true with high confidence
+- Validation: all pass (or failures are pre-existing)
+- Diff: ≤200 lines, ≤3 files
+- No warnings from evaluators
+
+**Medium reviewer_confidence** (50-79% trust; recommend review):
+- Goal quality 60-79 (medium quality)
+- OR Goal-check: met=true but medium confidence
+- OR Validation: mostly pass with 1-2 minor failures
+- OR Diff: 200-500 lines, ≤5 files
+
+**Low reviewer_confidence** (<50% trust; require manual review):
+- Goal quality <60 (low clarity/measurability)
+- OR Goal-check: unmet or low confidence
+- OR Validation: failures (excluding pre-existing)
+- OR Diff: >500 lines or >5 files
+- OR Contradictory signals
+
+Always account for goal quality. A low-quality goal makes success harder to assess.
+
+### 2. Task Completion Score (1-5)
+
+Use SMART framework from goal-setting:
+
+- **5**: All SMART dimensions verified: specific requirements met, measurable criteria pass, achievable in one run, relevant to goal, time-bound (no pending work)
+- **4**: 4/5 SMART dimensions clear; one minor dimension unclear
+- **3**: 3/5 SMART dimensions met; some uncertainty remains
+- **2**: 2/5 dimensions; major requirements unclear or unmet
+- **1**: <2 dimensions met; goal largely unrealized
+
+Reference specific goal-setting quality metrics (clarity, measurability, specificity) in your reasoning.
+
+### 3. Stage Value Assessment (NOT effort, but VALUE)
+
+For each stage, assess whether it contributed signal to the outcome:
+
+**High value**: Stage identified/resolved critical requirement, prevented bug, or shaped agent focus
+- Example: "Scouting discovered edge case in null handling; coding directly addressed it"
+- Example: "Goal-check found unmet test requirement; agent could retry successfully"
+
+**Medium value**: Stage provided baseline context without major direction change
+- Example: "Validation confirmed no regressions"
+- Example: "Scouting listed requirements; all were addressed as expected"
+
+**Low value**: Stage produced minimal new signals or could be optimized
+- Example: "Scouting repeated information already in goal-setting"
+- Example: "Validation ran successfully but didn't catch anything unexpected"
+
+Stages (assess value, not effort):
+- goal-setting: Did it upgrade the goal meaningfully? (compare quality metrics)
+- scouting: Did research uncover critical information? Or confirm expected?
+- coding: Did agent implement efficiently? Or require retries?
+- validation: Did validation catch issues? Or all pass as expected?
+- goal-check: Did verdict provide clear signal? Or was it uncertain?
+
+### 4. Kaseki Improvement Opportunities
+
+Suggestions should be SPECIFIC and ACTIONABLE:
+
+✅ Good improvement:
+{
+  "category": "goal_setting",
+  "priority": "high",
+  "suggestion": "Goal quality was 'medium' (specificity=low). Upgrades should emphasize scope clarity: clearly separate 'fix parseRole()' from 'refactor error handling' if both are needed."
+}
+
+❌ Poor improvement:
+{
+  "category": "general",
+  "priority": "medium",
+  "suggestion": "Do better"
+}
+
+Categories:
+- goal_setting: Goal-setting agent or prompt improvements
+- scouting: Scouting research or codebase context
+- coding: Coding agent performance or configuration
+- validation: Validation commands or testing framework
+- goal_check: Goal-check evaluation logic
+- run_evaluation: Run-evaluation (this phase) quality
+- process: Overall pipeline design
+
+Priorities:
+- HIGH: Unblocks failures or improves success >10%
+- MEDIUM: Improves efficiency/UX; 5-10% estimated gain
+- LOW: Nice-to-have; <5% impact
+
+### 5. Human Review Focus (2-4 items max)
+
+What should humans manually review?
+
+✅ Good:
+- "The retry logic for null input may have side effects on callers; check parseRole(null) call sites"
+- "New dependencies added (vitest-mock-extended, faker); verify these are acceptable"
+
+❌ Poor:
+- "Make sure it works"
+- "Review everything"
+
+Focus on things Kaseki didn't already verify (goal-check, validation).
+
+### 6. PR Summary (1-2 sentences, human-ready)
+
+Summarize the actual changes and their impact, NOT the original task.
+
+✅ Good: "Added null-safety to parseRole() with 5 edge-case tests. All validation passes."
+❌ Poor: "Fixed the parser bug"
+
+## Required JSON Output
+
+{
+  "overall_assessment": "good" or excellent/mixed/poor/unknown,
+  "reviewer_confidence": "high" or medium/low,
+  "task_completion_score": 4,
+  "summary": "1-2 sentence verdict accounting for goal quality and evaluator confidence",
+  "human_review_focus": ["item 1", "item 2"],
+  "stage_value": [
+    {"stage": "goal-setting", "value": "high", "reason": "upgraded vague prompt to specific SMART criteria"},
+    {"stage": "scouting", "value": "medium", "reason": "confirmed expected requirements; no surprises"}
+  ],
+  "efficiency_findings": ["observation 1", "observation 2"],
+  "kaseki_improvement_opportunities": [
+    {"category": "goal_setting", "priority": "high", "suggestion": "..."}
+  ],
+  "pr_summary": "1-2 sentence summary of actual changes",
+  "warnings": ["warning 1 if any"]
+}
+
+## Rules
+
 - Do not edit repository files, git state, dependencies, generated artifacts other than $RUN_EVALUATION_CANDIDATE_ARTIFACT, or secrets.
 - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Write exactly one JSON object to $RUN_EVALUATION_CANDIDATE_ARTIFACT.
 - Treat this evaluation as annotate-only. Do not recommend blocking the PR.
+- Use goal-setting quality metrics to ground your confidence. Low-quality goals = lower reviewer_confidence even if goal-check passed.
 
-Required JSON shape:
-{
-  "overall_assessment": "good",
-  "reviewer_confidence": "high",
-  "task_completion_score": 4,
-  "summary": "brief verdict",
-  "human_review_focus": ["specific item humans should review"],
-  "stage_value": [{"stage": "goal check", "value": "high", "reason": "brief reason"}],
-  "efficiency_findings": ["brief process observation"],
-  "kaseki_improvement_opportunities": [{"category": "validation", "priority": "medium", "suggestion": "brief suggestion"}],
-  "pr_summary": "one or two sentence PR-ready summary",
-  "warnings": []
-}
+## Context
 
-Allowed enum values:
-- overall_assessment: excellent, good, mixed, poor, unknown
-- reviewer_confidence: high, medium, low
-- stage_value.value: high, medium, low, unknown
-- kaseki_improvement_opportunities.priority: high, medium, low
-- task_completion_score: integer from 1 to 5
+$goal_setting_context
 
-Original task prompt:
+Original task prompt (for reference):
 $TASK_PROMPT
 
-Current metadata:
+Metadata:
 $metadata_text
 
 Stage timings:
 $stage_timings
 
-Validation log tail:
+Validation log tail (last 80 lines):
 $validation_tail
 
-Progress log tail:
+Progress log tail (last 80 lines):
 $progress_tail
 
-Dependency cache log tail:
+Dependency cache log tail (last 80 lines):
 $dependency_cache
 
-Restoration report tail:
+Restoration report tail (last 80 lines):
 $restoration_report
 
 Draft PR body:
@@ -5936,6 +6190,7 @@ if [ "$STATUS" -ne 0 ] || [ "$PI_EXIT" -ne 0 ] || [ "$QUALITY_EXIT" -ne 0 ] || [
 fi
 
 run_goal_check "$coding_attempt"
+collect_goal_check_feedback "$INSTANCE_NAME"
 snapshot_attempt_artifacts "$coding_attempt"
 
 if [ "$KASEKI_GOAL_CHECK" != "1" ] || [ ! -s "$SCOUTING_ARTIFACT" ] || [ "$GOAL_CHECK_MET" = "true" ]; then
@@ -5984,6 +6239,7 @@ fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 run_run_evaluation
+collect_run_evaluation_feedback "$INSTANCE_NAME"
 
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()
