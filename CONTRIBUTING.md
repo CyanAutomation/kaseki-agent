@@ -237,7 +237,63 @@ Before opening a pull request that adds a test credential:
 - [docs/SECRET_SCAN_ALLOWLIST.md](docs/SECRET_SCAN_ALLOWLIST.md) — Detailed allowlist documentation
 - [CLAUDE.md](CLAUDE.md#Quality-Gates-and-Exit-Codes) — Quality gates and exit codes
 
-## 6) Running the local containerized flow
+## 6) Evaluation Best Practices
+
+Kaseki uses two evaluation phases (goal-check and run-evaluation) to assess whether agents met goals and provide process feedback. Contributors should be familiar with evaluation best practices to ensure these phases work well.
+
+### Understanding the Two Evaluation Phases
+
+**Goal-Check Phase**
+- Determines whether the coding agent successfully realized the original goal
+- Uses SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate requirements
+- Can trigger agent retries if verdict is "unmet"
+- Output: `goal-check.json` with `met: true|false` and evidence
+
+**Run-Evaluation Phase**
+- Task-agnostic assessment of overall process quality and Kaseki infrastructure
+- Assesses reviewer confidence, stage value, and process efficiency
+- Provides improvement suggestions for future runs
+- Output: `run-evaluation.json` with overall assessment and kaseki improvements
+
+### Contributing to Evaluation Quality
+
+When changing goal-setting, scouting, or validation logic:
+
+1. **Consider impact on evaluators** — Goal-check and run-evaluation use outputs from earlier stages. If you change what those stages output, evaluators may have less context.
+
+2. **Update evaluation prompts if needed** — The prompts in `kaseki-agent.sh` (`build_goal_check_prompt()` and `build_run_evaluation_prompt()`) are carefully crafted. If you add new artifacts or change output format, update both prompts to include the new context.
+
+3. **Follow evaluation best practices** — See [docs/EVALUATION_BEST_PRACTICES.md](docs/EVALUATION_BEST_PRACTICES.md) for:
+   - SMART criteria framework
+   - Evidence requirements (specific, verifiable)
+   - Confidence grounding guidance
+   - Anti-patterns to avoid
+
+4. **Test evaluation prompt changes** — Run `npm run test:unit -- tests/evaluation-prompts.test.ts` to verify:
+   - Prompts include required context
+   - JSON schemas are valid
+   - Feedback collection is integrated
+
+### Feedback Loop Integration
+
+Evaluation verdicts feed back into goal-setting quality scoring:
+
+- **Goal-check feedback** — Used to measure if goal quality predicts success
+- **Run-evaluation suggestions** — Drive Kaseki infrastructure improvements
+
+See [docs/FEEDBACK_LOOP_INTEGRATION.md](docs/FEEDBACK_LOOP_INTEGRATION.md) for the complete feedback loop architecture.
+
+### PR checklist for evaluation changes
+
+Before opening a pull request affecting evaluation phases:
+
+- [ ] Read [docs/EVALUATION_BEST_PRACTICES.md](docs/EVALUATION_BEST_PRACTICES.md)
+- [ ] If changing goal-setting/scouting/validation outputs, update evaluation prompts
+- [ ] Run `npm run test:unit -- tests/evaluation-prompts.test.ts` and confirm all pass
+- [ ] If adding new artifacts, verify both evaluation prompts reference them
+- [ ] Document why the change improves evaluation accuracy
+
+## 7) Running the local containerized flow
 
 Use either the published image or a local build, then run `./run-kaseki.sh` from this repo root.
 
@@ -260,7 +316,7 @@ KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key>
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.
 
-## 7) Release Process and Conventional Commits
+## 8) Release Process and Conventional Commits
 
 Kaseki Agent releases are **automated via semantic-release**. Version bumps, changelog updates, and GitHub Releases are generated automatically from commit messages using the **conventional commits** format.
 
@@ -369,7 +425,7 @@ If a commit message doesn't follow the format, it will **not trigger a version b
 
 Once you're comfortable with the format, encourage your team to adopt it systematically (optional: use `commitlint` + `husky` hooks for enforcement in future phases).
 
-## 8) Validating changed-file allowlist and max diff limits
+## 9) Validating changed-file allowlist and max diff limits
 
 The container runner enforces quality gates using:
 
@@ -384,7 +440,7 @@ Contributors must validate that any change to defaults or behavior preserves the
 
 A failed allowlist or diff-size check should be treated as a real regression unless intentionally changed and documented.
 
-## 9) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
+## 10) Diagnosing failures with `/agents/kaseki-results/kaseki-N`
 
 When a run fails, inspect artifacts in this order:
 
@@ -400,7 +456,7 @@ When a run fails, inspect artifacts in this order:
 
 Tip: If quality or validation failures are ambiguous, compare `git.status` + `git.diff` with `TASK_PROMPT` constraints first.
 
-## 10) Refactoring, Deprecation, and Code Health
+## 11) Refactoring, Deprecation, and Code Health
 
 This codebase actively manages **technical debt** through refactoring, code duplication elimination, and churn reduction. Contributors should follow these patterns to keep the codebase maintainable as it grows.
 
