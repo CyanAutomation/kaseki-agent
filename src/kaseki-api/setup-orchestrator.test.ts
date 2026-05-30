@@ -107,6 +107,10 @@ describe('SetupOrchestrator', () => {
         'lib/pi-progress-stream.js',
         'lib/kaseki-report.js',
         'lib/github-app-token.js',
+        'lib/github-app-private-key.js',
+        'lib/github-utils.js',
+        'lib/logger.js',
+        'lib/secrets/host-secrets-reader.js',
       ];
 
       for (const entry of entries) {
