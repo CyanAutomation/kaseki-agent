@@ -2789,7 +2789,7 @@ run_goal_setting_agent() {
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "/results/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat /results/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
-    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: /results/goal-setting-validation-errors.jsonl)" "exit"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: /results/goal-setting-validation-errors.jsonl)" "continue"
   fi
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
@@ -2799,9 +2799,7 @@ run_goal_setting_agent() {
   record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
   
   if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
-    STATUS="$GOAL_SETTING_EXIT"
-    FAILED_COMMAND="pi goal-setting agent"
-    emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT" "exit"
+    emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT; continuing with original TASK_PROMPT" "continue"
     return 1
   fi
   
@@ -2813,11 +2811,14 @@ run_goal_setting_agent() {
 
 run_goal_setting_agent_with_retry() {
   local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
+  local pre_goal_setting_status pre_goal_setting_failed_command
 
   max_attempts=2
   attempt=1
   goal_setting_last_exit=0
   goal_setting_last_stderr=""
+  pre_goal_setting_status="$STATUS"
+  pre_goal_setting_failed_command="$FAILED_COMMAND"
 
   # Initialize goal-setting retry tracking env vars
   export KASEKI_GOAL_SETTING_ATTEMPTS=0
@@ -2853,6 +2854,8 @@ run_goal_setting_agent_with_retry() {
         fi
       fi
       
+      STATUS="$pre_goal_setting_status"
+      FAILED_COMMAND="$pre_goal_setting_failed_command"
       return 0
     fi
 
@@ -2871,7 +2874,10 @@ run_goal_setting_agent_with_retry() {
       printf '[Goal-Setting Phase] Deterministic failure (exit %d), not retrying\n' "$goal_setting_last_exit"
       export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
       export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
-      # Fall through to use original TASK_PROMPT
+      # Fall through to use original TASK_PROMPT without letting optional failures
+      # affect the final run status.
+      STATUS="$pre_goal_setting_status"
+      FAILED_COMMAND="$pre_goal_setting_failed_command"
       return 0
     fi
 
@@ -2882,6 +2888,8 @@ run_goal_setting_agent_with_retry() {
   export KASEKI_GOAL_SETTING_ATTEMPTS=$max_attempts
   export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
   printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d), using original TASK_PROMPT\n' "$goal_setting_last_exit"
+  STATUS="$pre_goal_setting_status"
+  FAILED_COMMAND="$pre_goal_setting_failed_command"
   return 0
 }
 
