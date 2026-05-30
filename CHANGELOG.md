@@ -4,6 +4,27 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.56.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.55.1...v1.56.0) (2026-05-30)
+
+
+### Bug Fixes
+
+* Correct script path variable and improve console output formatting in feedback analysis scripts ([c18d1b0](https://github.com/CyanAutomation/kaseki-agent/commit/c18d1b05044da0ccc83e8b37712533c2a7319c94))
+* make lock acquisition waits async ([17dd780](https://github.com/CyanAutomation/kaseki-agent/commit/17dd780205f4bf5461505d77ae1c49cb441a2ee5))
+* Pre-validation during scouting mostly exists, but cl... (kaseki-76) ([#453](https://github.com/CyanAutomation/kaseki-agent/issues/453)) ([0670244](https://github.com/CyanAutomation/kaseki-agent/commit/06702447b16e34f18183334e43113be29a43ee5d))
+* Refactor job scheduler and idempotency store for improved readability; update API version to 1.55.1; enhance test scripts with shellcheck directives ([5ddcdf3](https://github.com/CyanAutomation/kaseki-agent/commit/5ddcdf3d56159220e57465d21a9e4f8b28a190a7))
+
+
+### Features
+
+* Add evaluation enhancements rollout checklist and update contributing guidelines ([4a29e84](https://github.com/CyanAutomation/kaseki-agent/commit/4a29e84068e2d23ad56a79c32c93f8b896b71bd0))
+* Add practical guide for goal-setting improvements and implement feedback infrastructure ([5b22562](https://github.com/CyanAutomation/kaseki-agent/commit/5b22562f14080f2bec892d858021af55d9aa9f4a))
+* Enhance goal-setting feedback loop with additional metrics and improve test output clarity ([50c7047](https://github.com/CyanAutomation/kaseki-agent/commit/50c7047f18029c2110283b672a7baf2197d0f5f8))
+* Implement feedback loop integration for Kaseki agent evaluations ([2c1e205](https://github.com/CyanAutomation/kaseki-agent/commit/2c1e205d64c145e72e3f0a9ed39d0066f3bbf31d))
+* Implement GitHub issues fetching functionality and enhance GitHub App token generation ([a52bae0](https://github.com/CyanAutomation/kaseki-agent/commit/a52bae083693b137217ef8301969620f703c539d))
+* Implement recent repositories dropdown in web interface; add functionality to manage recent repo URLs ([3a437dd](https://github.com/CyanAutomation/kaseki-agent/commit/3a437dd7480e018c045532314e9dbefb770f4836))
+* Introduce goal-setting agent for pre-scouting prompt enhancement; add configuration options and documentation ([4445250](https://github.com/CyanAutomation/kaseki-agent/commit/4445250b749b920e367e2eb5abe5a7d54b46d469))
+
 ## [1.55.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.55.0...v1.55.1) (2026-05-27)
 
 
