@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { RunResponse } from './kaseki-api-types';
@@ -14,6 +15,12 @@ interface IdempotencyCacheEntry {
   requestTime: string; // ISO 8601
   responsePayload: RunResponse;
   expiresAt: number; // Unix timestamp
+}
+
+interface LockOwnerMetadata {
+  pid: number;
+  createdAt: string;
+  token: string;
 }
 
 interface PersistedIdempotencyEntry {
@@ -42,7 +49,7 @@ export class IdempotencyStore {
   private persistencePath: string;
   private lockPath: string;
   private lockOwnerPath: string;
-  private activeLockToken: string | null = null;
+  private activeLockOwner: LockOwnerMetadata | null = null;
   private logger: EventLogger;
   private ttlHours: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -128,21 +135,21 @@ export class IdempotencyStore {
       const existing = this.cache.get(idempotencyKey);
       const entry: IdempotencyCacheEntry = existing
         ? {
-            ...existing,
-            requestFingerprint,
-            state: 'fulfilled',
-            jobId: response.id,
-            responsePayload: response,
-          }
+          ...existing,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          responsePayload: response,
+        }
         : {
-            idempotencyKey,
-            requestFingerprint,
-            state: 'fulfilled',
-            jobId: response.id,
-            requestTime: new Date().toISOString(),
-            responsePayload: response,
-            expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
-          };
+          idempotencyKey,
+          requestFingerprint,
+          state: 'fulfilled',
+          jobId: response.id,
+          requestTime: new Date().toISOString(),
+          responsePayload: response,
+          expiresAt: Date.now() + this.ttlHours * 3600 * 1000,
+        };
 
       this.cache.set(idempotencyKey, entry);
       this.persistToDisk(entry);
@@ -170,18 +177,21 @@ export class IdempotencyStore {
     let retries = 0;
 
     while (retries < maxRetries) {
-      const owner = {
-        pid: process.pid,
-        createdAt: new Date().toISOString(),
-        token: this.generateLockToken(),
-      };
+      const owner = this.createLockOwner();
       try {
+        // Atomic mkdir gives us the same exclusive-create property as an
+        // open(..., 'wx') lock file while still leaving room for owner metadata.
         fs.mkdirSync(this.lockPath, { mode: 0o700 });
-        fs.writeFileSync(this.lockOwnerPath, JSON.stringify(owner), {
-          encoding: 'utf-8',
-          flag: 'wx',
-        });
-        this.activeLockToken = owner.token;
+        try {
+          fs.writeFileSync(this.lockOwnerPath, JSON.stringify(owner), {
+            encoding: 'utf-8',
+            flag: 'wx',
+          });
+        } catch (ownerWriteError) {
+          this.releasePartiallyAcquiredLock(owner.token, true);
+          throw ownerWriteError;
+        }
+        this.activeLockOwner = owner;
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
@@ -189,13 +199,10 @@ export class IdempotencyStore {
 
         if (code === 'EEXIST' || code === 'ENOTEMPTY') {
           const ownerMetadata = this.readLockOwner();
-          const lockLooksStale = this.isLockStale(
-            staleThresholdMs,
-            ownerMetadata?.pid,
-          );
-          if (lockLooksStale) {
-            this.forceRemoveLockDir();
-            continue;
+          if (this.isLockStale(this.lockPath, staleThresholdMs, ownerMetadata)) {
+            if (this.removeStaleLock(ownerMetadata, staleThresholdMs)) {
+              continue;
+            }
           }
         } else if (code !== 'ENOENT') {
           throw error;
@@ -211,9 +218,14 @@ export class IdempotencyStore {
   }
 
   private releaseLock(): void {
+    const activeLockOwner = this.activeLockOwner;
+    if (!activeLockOwner) {
+      return;
+    }
+
     const ownerMetadata = this.readLockOwner();
-    if (!ownerMetadata || ownerMetadata.token !== this.activeLockToken) {
-      this.activeLockToken = null;
+    if (!ownerMetadata || ownerMetadata.token !== activeLockOwner.token) {
+      this.activeLockOwner = null;
       return;
     }
 
@@ -223,27 +235,44 @@ export class IdempotencyStore {
     } catch {
       // Ignore lock release failures.
     } finally {
-      this.activeLockToken = null;
+      this.activeLockOwner = null;
     }
   }
 
-  private readLockOwner(): { pid?: number; token?: string } | null {
+  private readLockOwner(lockOwnerPath = this.lockOwnerPath): LockOwnerMetadata | null {
     try {
-      const content = fs.readFileSync(this.lockOwnerPath, 'utf-8');
-      return JSON.parse(content) as { pid?: number; token?: string };
+      const content = fs.readFileSync(lockOwnerPath, 'utf-8');
+      const parsed = JSON.parse(content) as Partial<LockOwnerMetadata>;
+      if (
+        typeof parsed.pid !== 'number' ||
+        typeof parsed.createdAt !== 'string' ||
+        typeof parsed.token !== 'string'
+      ) {
+        return null;
+      }
+      return parsed as LockOwnerMetadata;
     } catch {
       return null;
     }
   }
 
-  private isLockStale(staleThresholdMs: number, ownerPid?: number): boolean {
+  private isLockStale(
+    lockPath: string,
+    staleThresholdMs: number,
+    ownerMetadata: LockOwnerMetadata | null,
+  ): boolean {
     try {
-      const stats = fs.statSync(this.lockPath);
-      const exceedsAgeThreshold = Date.now() - stats.mtimeMs > staleThresholdMs;
-      if (!exceedsAgeThreshold) {
+      const createdAtMs = ownerMetadata
+        ? Date.parse(ownerMetadata.createdAt)
+        : Number.NaN;
+      const lockAgeMs = Number.isFinite(createdAtMs)
+        ? Date.now() - createdAtMs
+        : Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (lockAgeMs <= staleThresholdMs) {
         return false;
       }
-      return ownerPid ? !this.isProcessAlive(ownerPid) : true;
+
+      return ownerMetadata?.pid ? !this.isProcessAlive(ownerMetadata.pid) : true;
     } catch {
       return false;
     }
@@ -253,24 +282,98 @@ export class IdempotencyStore {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return code === 'EPERM';
     }
   }
 
-  private releasePartiallyAcquiredLock(token: string): void {
+  private releasePartiallyAcquiredLock(
+    token: string,
+    allowEmptyOwnerlessDirectory = false,
+  ): void {
     const ownerMetadata = this.readLockOwner();
     if (ownerMetadata?.token === token) {
-      this.forceRemoveLockDir();
+      this.forceRemoveLockDir(this.lockPath);
+      return;
+    }
+
+    if (allowEmptyOwnerlessDirectory && !ownerMetadata) {
+      try {
+        fs.rmdirSync(this.lockPath);
+      } catch {
+        // Ignore cleanup races; acquisition retry/stale handling will recover.
+      }
     }
   }
 
-  private forceRemoveLockDir(): void {
-    fs.rmSync(this.lockPath, { recursive: true, force: true });
+  private removeStaleLock(
+    ownerMetadata: LockOwnerMetadata | null,
+    staleThresholdMs: number,
+  ): boolean {
+    const quarantinePath = `${this.lockPath}.stale-${process.pid}-${Date.now()}-${this.generateLockToken()}`;
+    try {
+      fs.renameSync(this.lockPath, quarantinePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return false;
+      }
+      if (code === 'EEXIST') {
+        return false;
+      }
+      throw error;
+    }
+
+    const quarantinedOwnerPath = path.join(quarantinePath, 'owner.json');
+    const quarantinedOwner = this.readLockOwner(quarantinedOwnerPath);
+    const ownerTokenMatches = ownerMetadata?.token
+      ? quarantinedOwner?.token === ownerMetadata.token
+      : quarantinedOwner === null;
+    const stillStale = this.isLockStale(
+      quarantinePath,
+      staleThresholdMs,
+      quarantinedOwner,
+    );
+
+    if (!ownerTokenMatches || !stillStale) {
+      this.restoreQuarantinedLock(quarantinePath);
+      return false;
+    }
+
+    this.forceRemoveLockDir(quarantinePath);
+    this.logger.event('idempotency_stale_lock_removed', {
+      lockPath: this.lockPath,
+      ownerPid: quarantinedOwner?.pid,
+      ownerCreatedAt: quarantinedOwner?.createdAt,
+    });
+    return true;
+  }
+
+  private restoreQuarantinedLock(quarantinePath: string): void {
+    try {
+      fs.renameSync(quarantinePath, this.lockPath);
+    } catch {
+      // If another process acquired the canonical lock path first, leave the
+      // quarantined directory in place so this process never removes a lock it
+      // could not verify as stale and owned by the observed token.
+    }
+  }
+
+  private forceRemoveLockDir(lockPath: string): void {
+    fs.rmSync(lockPath, { recursive: true, force: true });
+  }
+
+  private createLockOwner(): LockOwnerMetadata {
+    return {
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+      token: this.generateLockToken(),
+    };
   }
 
   private generateLockToken(): string {
-    return `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    return `${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
   }
 
   private logLockContention(attempt: number, maxRetries: number): void {
