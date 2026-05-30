@@ -2390,9 +2390,30 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.rmSync(checkoutDir, { recursive: true, force: true });
   });
 
+  const requiredTemplateFixtureFiles = [
+    'run-kaseki.sh',
+    'kaseki-agent.sh',
+    'scripts/kaseki-activate.sh',
+    'scripts/kaseki-preflight.sh',
+    'lib/pi-event-filter.js',
+    'lib/pi-progress-stream.js',
+    'lib/kaseki-report.js',
+    'lib/github-app-token.js',
+    'lib/github-app-private-key.js',
+    'lib/github-utils.js',
+    'lib/logger.js',
+    'lib/secrets/host-secrets-reader.js',
+  ] as const;
+
   function writeRunKasekiDoctor(exitCode: number, stderr: string): void {
     fs.mkdirSync(path.join(templateDir, 'scripts'), { recursive: true });
     fs.mkdirSync(path.join(templateDir, 'lib'), { recursive: true });
+    fs.mkdirSync(path.join(templateDir, 'lib', 'secrets'), { recursive: true });
+
+    for (const fixtureFile of requiredTemplateFixtureFiles) {
+      fs.writeFileSync(path.join(templateDir, fixtureFile), 'export {};\n');
+    }
+
     const scriptPath = path.join(templateDir, 'run-kaseki.sh');
     fs.writeFileSync(
       scriptPath,
@@ -2402,10 +2423,6 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.writeFileSync(path.join(templateDir, 'kaseki-agent.sh'), '#!/usr/bin/env bash\n');
     fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-activate.sh'), '#!/usr/bin/env bash\n');
     fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-preflight.sh'), '#!/usr/bin/env bash\n');
-    fs.writeFileSync(path.join(templateDir, 'lib', 'pi-event-filter.js'), 'export {};\n');
-    fs.writeFileSync(path.join(templateDir, 'lib', 'pi-progress-stream.js'), 'export {};\n');
-    fs.writeFileSync(path.join(templateDir, 'lib', 'kaseki-report.js'), 'export {};\n');
-    fs.writeFileSync(path.join(templateDir, 'lib', 'github-app-token.js'), 'export {};\n');
   }
 
   function writeCheckoutActivateDoctor(exitCode: number, stderr: string): string {
