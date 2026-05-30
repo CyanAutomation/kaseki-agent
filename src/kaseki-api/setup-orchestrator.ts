@@ -14,6 +14,10 @@ const TEMPLATE_FALLBACK_ENTRIES = [
   'lib/pi-progress-stream.js',
   'lib/kaseki-report.js',
   'lib/github-app-token.js',
+  'lib/github-app-private-key.js',
+  'lib/github-utils.js',
+  'lib/logger.js',
+  'lib/secrets/host-secrets-reader.js',
 ] as const;
 
 /** Context returned after successful setup initialization */
