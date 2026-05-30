@@ -284,6 +284,10 @@ export class IdempotencyStore {
       return true;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === 'win32') {
+        return false;
+      }
+
       return code === 'EPERM';
     }
   }
