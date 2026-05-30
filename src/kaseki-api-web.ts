@@ -622,6 +622,80 @@ const controllerPage = String.raw`<!doctype html>
       .recent-repo-delete:hover {
         color: var(--bad);
       }
+      /* Issues tab styling */
+      .issues-form {
+        display: grid;
+        gap: var(--space-3);
+      }
+      .issues-input-group {
+        display: flex;
+        gap: var(--space-2);
+      }
+      .issues-input-group input {
+        flex: 1;
+        min-width: 300px;
+      }
+      .issues-list-container {
+        display: grid;
+        gap: var(--space-3);
+        max-height: 500px;
+        overflow-y: auto;
+        padding: var(--space-2);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        min-height: 100px;
+      }
+      .issues-list-empty {
+        text-align: center;
+        color: var(--muted);
+        padding: var(--space-3);
+      }
+      .issues-list-item {
+        padding: var(--space-2) var(--space-3);
+        background: var(--surface-high);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .issues-list-item:hover {
+        background: var(--surface-highest);
+        border-color: var(--focus);
+        color: var(--focus-text);
+      }
+      .issues-list-item-number {
+        font-weight: 600;
+        color: var(--focus);
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+      .issues-list-item-title {
+        margin-top: var(--space-1);
+        font-weight: 500;
+      }
+      .issues-list-item-meta {
+        margin-top: var(--space-1);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .issues-loading {
+        text-align: center;
+        color: var(--muted);
+        padding: var(--space-3);
+        animation: pulse 1.5s infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      .issues-error {
+        color: var(--bad);
+        background: var(--bad-bg);
+        padding: var(--space-2) var(--space-3);
+        border-radius: 4px;
+        border: 1px solid var(--bad);
+      }
       @media (max-width: 767px) {
         .action-row.run-actions > .run { order: 1; }
         .response-panel { min-height: 40vh; }
@@ -647,6 +721,7 @@ const controllerPage = String.raw`<!doctype html>
       <section class="panel stack" aria-labelledby="tabs-heading">
         <div class="tabs-nav" role="tablist" aria-label="Console tabs">
           <button class="tab-button active" data-tab="health" role="tab" aria-selected="true" aria-controls="health-tab">Health</button>
+          <button class="tab-button" data-tab="issues" role="tab" aria-selected="false" aria-controls="issues-tab">Issues</button>
           <button class="tab-button" data-tab="submit" role="tab" aria-selected="false" aria-controls="submit-tab">Submit Task</button>
         </div>
         <div id="health-tab" class="tab-content" role="tabpanel" aria-labelledby="health-heading">
@@ -745,6 +820,27 @@ const controllerPage = String.raw`<!doctype html>
             </div>
           </fieldset>
         </form>
+        </div>
+        <div id="issues-tab" class="tab-content hidden" role="tabpanel" aria-labelledby="issues-heading" hidden aria-hidden="true">
+          <div>
+            <h2 id="issues-heading">Load GitHub Issues</h2>
+            <p>Fetch recent issues from a GitHub repository and populate the task prompt with an issue's details.</p>
+          </div>
+          <form class="issues-form" id="issues-form">
+            <div class="form-field">
+              <label for="issues-repo-url">Repository URL</label>
+              <div class="issues-input-group">
+                <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" />
+                <button class="run" id="load-issues-btn" type="button">Load Issues</button>
+              </div>
+              <p class="field-error" id="issues-error" aria-live="polite" style="display: none;"></p>
+            </div>
+          </form>
+          <div id="issues-container">
+            <div class="issues-list-container" id="issues-list">
+              <div class="issues-list-empty">Enter a repository URL and click "Load Issues" to begin</div>
+            </div>
+          </div>
         </div>
       </section>
       <section class="panel stack" aria-labelledby="responses-heading">
@@ -1394,6 +1490,114 @@ const controllerPage = String.raw`<!doctype html>
             button.disabled = false;
           });
       });
+      
+      // Issues tab handlers
+      const issuesRepoUrlInput = document.querySelector('#issues-repo-url');
+      const loadIssuesBtn = document.querySelector('#load-issues-btn');
+      const issuesList = document.querySelector('#issues-list');
+      const issuesError = document.querySelector('#issues-error');
+      const taskPrompt = document.querySelector('#task-prompt');
+      const submitTab = document.querySelector('[data-tab="submit"]');
+
+      loadIssuesBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const repoUrl = issuesRepoUrlInput.value.trim();
+        
+        if (!repoUrl) {
+          showIssuesError('Please enter a repository URL');
+          return;
+        }
+
+        loadIssuesBtn.disabled = true;
+        issuesList.innerHTML = '<div class="issues-loading">Loading issues...</div>';
+        issuesError.style.display = 'none';
+
+        try {
+          const token = getApiToken();
+          const response = await fetch('/api/github-issues', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+            },
+            body: JSON.stringify({ repoUrl }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            let errorMessage = 'Failed to fetch issues';
+            try {
+              const jsonError = JSON.parse(errorData);
+              if (jsonError.error) errorMessage = jsonError.error;
+            } catch {
+              errorMessage = errorData || 'HTTP ' + response.status;
+            }
+            showIssuesError(errorMessage);
+            issuesList.innerHTML = '<div class="issues-list-empty">No issues found</div>';
+            return;
+          }
+
+          const issues = await response.json();
+          if (!Array.isArray(issues) || issues.length === 0) {
+            issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "kaseki-agent"</div>';
+            return;
+          }
+
+          issuesList.replaceChildren();
+          issues.forEach(issue => {
+            const item = document.createElement('div');
+            item.className = 'issues-list-item';
+            item.role = 'option';
+            
+            const numberEl = document.createElement('div');
+            numberEl.className = 'issues-list-item-number';
+            numberEl.textContent = '#' + issue.number;
+            
+            const titleEl = document.createElement('div');
+            titleEl.className = 'issues-list-item-title';
+            titleEl.textContent = issue.title;
+            
+            const createdDate = new Date(issue.created_at);
+            const daysAgo = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+            const metaEl = document.createElement('div');
+            metaEl.className = 'issues-list-item-meta';
+            metaEl.textContent = daysAgo === 0 ? 'Today' : daysAgo + ' days ago';
+            
+            item.append(numberEl, titleEl, metaEl);
+            item.addEventListener('click', () => {
+              // Populate task prompt with issue body
+              const body = issue.body || '(No description)';
+              taskPrompt.value = body;
+              // Switch to Submit Task tab
+              submitTab.click();
+              // Scroll to task prompt
+              taskPrompt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+            
+            issuesList.appendChild(item);
+          });
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          showIssuesError('Error: ' + errorMsg);
+          issuesList.innerHTML = '<div class="issues-list-empty">Failed to load issues</div>';
+        } finally {
+          loadIssuesBtn.disabled = false;
+        }
+      });
+
+      function showIssuesError(message) {
+        issuesError.textContent = message;
+        issuesError.style.display = 'block';
+      }
+
+      // Pre-fill issues repo URL with current task repo if available
+      repoUrlInput.addEventListener('change', () => {
+        const repoUrl = repoUrlInput.value.trim();
+        if (repoUrl && !issuesRepoUrlInput.value) {
+          issuesRepoUrlInput.value = repoUrl;
+        }
+      });
+
       loadRunsList({ preserveOutput: true });
     </script>
   </body>
