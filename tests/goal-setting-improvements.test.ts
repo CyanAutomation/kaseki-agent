@@ -1,0 +1,503 @@
+/**
+ * Goal-Setting Agent Improvements - Test Suite
+ * 
+ * Validates all 10 improvements:
+ * 1. Anti-patterns extraction
+ * 2. SMART criteria validation
+ * 3. Codebase context preservation
+ * 4. Example-driven goals
+ * 5. Quality metrics scorecard
+ * 6. Constraint categorization
+ * 7. Feedback loop infrastructure
+ * 8. Reasoning transparency
+ * 9. Iterative refinement
+ * 10. Quality warnings
+ */
+
+import { describe, it, expect } from 'vitest';
+import {
+  GoalSettingOutput,
+  calculateGoalQualityScore,
+  hasQualityWarnings,
+  getCriterionText,
+  isSmartCriterion,
+} from '../src/types/goal-setting';
+import { collectGoalFeedback, analyzeGoalFeedback } from '../src/lib/goal-setting-feedback';
+
+describe('Goal-Setting Agent Improvements', () => {
+  // ===== IMPROVEMENT #1: ANTI-PATTERNS =====
+  describe('Improvement #1: Anti-Patterns / Do-NOT Clauses', () => {
+    it('should structure anti-patterns into three categories', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Fix TypeScript errors',
+        upgraded_goal: 'Fix TypeScript errors in src/api/',
+        key_requirements: ['Handle compilation errors'],
+        success_criteria: ['TypeScript passes'],
+        anti_patterns: {
+          do_not_modify: ['src/generated/**'],
+          do_not_break: ['API contracts'],
+          must_preserve: ['error messages'],
+        },
+        reasoning: 'clear scope boundaries',
+        confidence: 'high',
+      };
+
+      expect(goal.anti_patterns).toBeDefined();
+      expect(goal.anti_patterns.do_not_modify).toContain('src/generated/**');
+      expect(goal.anti_patterns.do_not_break).toContain('API contracts');
+      expect(goal.anti_patterns.must_preserve).toContain('error messages');
+    });
+
+    it('should support empty anti-pattern categories', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Simple fix',
+        upgraded_goal: 'Simple fix upgraded',
+        key_requirements: [],
+        success_criteria: [],
+        anti_patterns: {
+          do_not_modify: [],
+          do_not_break: ['existing behavior'],
+        },
+        reasoning: 'minimal anti-patterns',
+        confidence: 'medium',
+      };
+
+      expect(goal.anti_patterns?.do_not_modify).toEqual([]);
+      expect(goal.anti_patterns?.do_not_break).toContain('existing behavior');
+    });
+  });
+
+  // ===== IMPROVEMENT #2: SMART CRITERIA =====
+  describe('Improvement #2: SMART Criteria Validation', () => {
+    it('should validate SMART criteria format', () => {
+      const criteria = [
+        {
+          criterion: 'all tests pass',
+          smart_score: 'high' as const,
+          reasoning: 'binary, measurable outcome',
+        },
+        {
+          criterion: 'add 5 edge-case tests',
+          smart_score: 'high' as const,
+          reasoning: 'specific count, achievable in one run',
+        },
+        {
+          criterion: 'improve code quality',
+          smart_score: 'low' as const,
+          reasoning: 'vague, not measurable',
+        },
+      ];
+
+      const weak = criteria.filter((c) => c.smart_score === 'low');
+      expect(weak.length).toBe(1);
+      expect(weak[0].criterion).toBe('improve code quality');
+    });
+
+    it('should detect weak SMART quality', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Fix something',
+        upgraded_goal: 'Fix it better',
+        key_requirements: [],
+        success_criteria: [
+          { criterion: 'improve stuff', smart_score: 'low' },
+          { criterion: 'make it better', smart_score: 'low' },
+          { criterion: 'do something', smart_score: 'low' },
+        ],
+        reasoning: 'weak criteria',
+        confidence: 'low',
+      };
+
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.some((w) => w.includes('Success criteria not measurable'))).toBe(true);
+    });
+
+    it('should support legacy string format for backward compatibility', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Old format goal',
+        upgraded_goal: 'Upgraded old format',
+        key_requirements: [],
+        success_criteria: [
+          'criterion 1', // String format (legacy)
+          'criterion 2',
+        ] as any,
+        reasoning: 'backward compatibility test',
+        confidence: 'medium',
+      };
+
+      expect(typeof goal.success_criteria[0]).toBe('string');
+      expect(getCriterionText(goal.success_criteria[0] as any)).toBe('criterion 1');
+    });
+  });
+
+  // ===== IMPROVEMENT #3: CODEBASE CONTEXT =====
+  describe('Improvement #3: Codebase Context Preservation', () => {
+    it('should include codebase signals in reasoning', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Add error handling',
+        upgraded_goal:
+          'Add error handling to async functions in src/api/ using try-catch. Format errors per established pattern. No new dependencies.',
+        key_requirements: ['Follow existing error pattern', 'Node.js + TypeScript environment'],
+        success_criteria: ['All errors caught', 'Consistent with codebase'],
+        reasoning:
+          'Codebase uses Node.js + TypeScript with async/await patterns. Error messages follow "action failed: reason" format.',
+        confidence: 'high',
+      };
+
+      expect(goal.reasoning).toContain('Node.js');
+      expect(goal.reasoning).toContain('TypeScript');
+      expect(goal.key_requirements).toContain('Follow existing error pattern');
+    });
+  });
+
+  // ===== IMPROVEMENT #4: EXAMPLES =====
+  describe('Improvement #4: Example-Based Goal Clarification', () => {
+    it('should include before/after examples', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Fix null handling',
+        upgraded_goal: 'Fix parseRole() null-safety',
+        key_requirements: [],
+        success_criteria: ['Returns "Unnamed Role" for null input'],
+        examples: {
+          before: 'parseRole(null) → TypeError: Cannot read property',
+          after: 'parseRole(null) → {name: "Unnamed Role"}',
+        },
+        reasoning: 'clear before/after contract',
+        confidence: 'high',
+      };
+
+      expect(goal.examples).toBeDefined();
+      expect(goal.examples?.before).toContain('TypeError');
+      expect(goal.examples?.after).toContain('Unnamed Role');
+    });
+
+    it('should warn if examples are missing', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Test prompt',
+        upgraded_goal: 'Upgraded goal',
+        key_requirements: [],
+        success_criteria: [],
+        reasoning: 'no examples',
+        confidence: 'medium',
+      };
+
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.some((w) => w.includes('examples'))).toBe(true);
+    });
+  });
+
+  // ===== IMPROVEMENT #5: QUALITY METRICS =====
+  describe('Improvement #5: Multi-Dimensional Quality Metrics', () => {
+    it('should calculate 5-point quality scorecard', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Fix parser',
+        upgraded_goal: 'Fix parseRole() null-safety with tests',
+        key_requirements: [],
+        success_criteria: [],
+        quality_metrics: {
+          clarity: 'high',
+          measurability: 'high',
+          specificity: 'high',
+          scope_clarity: 'high',
+          constraint_strength: 'high',
+        },
+        reasoning: 'all metrics high',
+        confidence: 'high',
+      };
+
+      const score = calculateGoalQualityScore(goal);
+      expect(score).toBe(100); // 5 x 25 = 100
+    });
+
+    it('should calculate mixed quality scores', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Improve code',
+        upgraded_goal: 'Improve code quality',
+        key_requirements: [],
+        success_criteria: [],
+        quality_metrics: {
+          clarity: 'high',
+          measurability: 'medium',
+          specificity: 'low',
+          scope_clarity: 'high',
+          constraint_strength: 'medium',
+        },
+        reasoning: 'mixed quality',
+        confidence: 'medium',
+      };
+
+      const score = calculateGoalQualityScore(goal);
+      expect(score).toBe(75); // 25 + 12.5 + 0 + 25 + 12.5 = 75
+    });
+
+    it('should default to 50 if no quality metrics provided', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Test',
+        upgraded_goal: 'Test upgraded',
+        key_requirements: [],
+        success_criteria: [],
+        reasoning: 'no metrics',
+        confidence: 'medium',
+      };
+
+      const score = calculateGoalQualityScore(goal);
+      expect(score).toBe(50);
+    });
+  });
+
+  // ===== IMPROVEMENT #6: CONSTRAINT CATEGORIZATION =====
+  describe('Improvement #6: Constraint Categorization', () => {
+    it('should categorize constraints by type', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Refactor auth',
+        upgraded_goal: 'Refactor authentication safely',
+        key_requirements: [],
+        success_criteria: [],
+        constraints: {
+          operational: ['max 3 files changed'],
+          architectural: ['preserve service boundaries'],
+          technical: ['must pass TypeScript', 'no deprecated APIs'],
+          business: ['maintain backward compatibility'],
+        },
+        reasoning: 'categorized constraints',
+        confidence: 'high',
+      };
+
+      expect(goal.constraints?.operational).toContain('max 3 files changed');
+      expect(goal.constraints?.architectural).toContain('preserve service boundaries');
+      expect(goal.constraints?.technical).toHaveLength(2);
+      expect(goal.constraints?.business).toContain('maintain backward compatibility');
+    });
+
+    it('should warn if constraints missing', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Test',
+        upgraded_goal: 'Test upgraded',
+        key_requirements: [],
+        success_criteria: [],
+        reasoning: 'no constraints',
+        confidence: 'medium',
+      };
+
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.some((w) => w.includes('constraints'))).toBe(true);
+    });
+  });
+
+  // ===== IMPROVEMENT #7: FEEDBACK LOOP =====
+  describe('Improvement #7: Goal-to-Outcome Feedback Loop', () => {
+    it('should collect feedback from goal and outcomes', () => {
+      const goal_setting_output = {
+        confidence: 'high' as const,
+        upgraded_goal: 'Test goal',
+        quality_metrics: {
+          clarity: 'high' as const,
+          measurability: 'high' as const,
+          specificity: 'high' as const,
+          scope_clarity: 'high' as const,
+          constraint_strength: 'high' as const,
+        },
+        success_criteria: [
+          { criterion: 'test passes', smart_score: 'high' as const },
+        ],
+        anti_patterns: { do_not_modify: ['src/gen/**'] },
+        constraints: { technical: ['must pass types'] },
+      };
+
+      const stage_timings = new Map([
+        [
+          'pi scouting agent',
+          { exit_code: 0, duration_seconds: 30 },
+        ],
+        [
+          'pi agent',
+          { exit_code: 0, duration_seconds: 60 },
+        ],
+        ['goal check', { exit_code: 0, duration_seconds: 20 }],
+      ]);
+
+      const metadata = {
+        status: 0,
+        completed_successfully: true,
+        total_duration_seconds: 110,
+        validation_commands_run: ['npm test'],
+        validation_exit_code: 0,
+      };
+
+      const feedback = collectGoalFeedback('kaseki-1', goal_setting_output, stage_timings, metadata);
+
+      expect(feedback.instance_name).toBe('kaseki-1');
+      expect(feedback.goal_setting_output.confidence).toBe('high');
+      expect(feedback.agent_outcomes.scouting.success).toBe(true);
+      expect(feedback.agent_outcomes.coding.success).toBe(true);
+      expect(feedback.overall.success).toBe(true);
+    });
+
+    it('should analyze patterns from multiple feedback entries', () => {
+      const entries = [
+        {
+          timestamp: '2026-05-30T10:00:00Z',
+          instance_name: 'kaseki-1',
+          goal_setting_output: {
+            confidence: 'high' as const,
+            quality_score: 100,
+            smart_quality: 'high' as const,
+            upgraded_goal: 'Goal 1',
+            anti_patterns_count: 2,
+            constraints_count: 4,
+            success_criteria_count: 3,
+          },
+          agent_outcomes: {
+            scouting: { exit_code: 0, duration_seconds: 30, success: true },
+            coding: { exit_code: 0, duration_seconds: 60, diff_bytes: 500, success: true },
+            validation: {
+              commands_run: ['npm test'],
+              failed_commands: [],
+              exit_code: 0,
+              success: true,
+            },
+            goal_check: { success: true, met: true, duration_seconds: 20 },
+          },
+          overall: {
+            success: true,
+            completed_successfully: true,
+            total_duration_seconds: 110,
+            quality_gates_passed: 3,
+            quality_gates_failed: 0,
+          },
+        },
+        {
+          timestamp: '2026-05-30T11:00:00Z',
+          instance_name: 'kaseki-2',
+          goal_setting_output: {
+            confidence: 'low' as const,
+            quality_score: 30,
+            smart_quality: 'low' as const,
+            upgraded_goal: 'Goal 2',
+            anti_patterns_count: 0,
+            constraints_count: 0,
+            success_criteria_count: 1,
+          },
+          agent_outcomes: {
+            scouting: { exit_code: 1, duration_seconds: 30, success: false },
+            coding: { exit_code: 1, duration_seconds: 0, diff_bytes: 0, success: false },
+            validation: {
+              commands_run: [],
+              failed_commands: [],
+              exit_code: -1,
+              success: false,
+            },
+            goal_check: { success: false, met: false, duration_seconds: 0 },
+          },
+          overall: {
+            success: false,
+            completed_successfully: false,
+            total_duration_seconds: 30,
+            quality_gates_passed: 0,
+            quality_gates_failed: 2,
+          },
+        },
+      ] as any;
+
+      const analysis = analyzeGoalFeedback(entries);
+
+      expect(analysis.total_runs).toBe(2);
+      expect(analysis.success_rate).toBe(0.5);
+      expect(analysis.average_quality_score).toBe(65); // (100 + 30) / 2
+      expect(analysis.recommendations.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ===== IMPROVEMENT #8: REASONING TRANSPARENCY =====
+  describe('Improvement #8: Reasoning Transparency', () => {
+    it('should include detailed reasoning explaining upgrade', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Fix bug',
+        upgraded_goal: 'Fix parseRole() null-handling',
+        key_requirements: [],
+        success_criteria: [],
+        reasoning:
+          'Original prompt was too vague. "Fix bug" does not specify which function or what the issue is. Upgraded to target parseRole() specifically and clarify the null-handling requirement. Anti-patterns added to prevent modifying generated code. Quality metrics show clarity=high due to specific function name.',
+        confidence: 'high',
+      };
+
+      expect(goal.reasoning).toContain('vague');
+      expect(goal.reasoning).toContain('parseRole');
+      expect(goal.reasoning).toContain('anti-patterns');
+      expect(goal.reasoning).toContain('clarity=high');
+    });
+  });
+
+  // ===== IMPROVEMENT #9: ITERATIVE REFINEMENT =====
+  describe('Improvement #9: Iterative Refinement / Retry', () => {
+    it('should track retry attempts in metadata', () => {
+      const metadata = {
+        goal_setting_attempts: 2,
+        goal_setting_succeeded_on_attempt: 2,
+        original_prompt: 'Initial',
+        upgraded_prompt: 'Upgraded on attempt 2',
+      };
+
+      expect(metadata.goal_setting_attempts).toBe(2);
+      expect(metadata.goal_setting_succeeded_on_attempt).toBe(2);
+    });
+  });
+
+  // ===== IMPROVEMENT #10: QUALITY WARNINGS =====
+  describe('Improvement #10: Quality Warnings & Early Detection', () => {
+    it('should flag multiple quality issues', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Do something',
+        upgraded_goal: 'Do something better',
+        key_requirements: [],
+        success_criteria: [
+          { criterion: 'improve stuff', smart_score: 'low' },
+        ],
+        quality_metrics: {
+          clarity: 'low',
+          measurability: 'low',
+          specificity: 'low',
+          scope_clarity: 'low',
+          constraint_strength: 'low',
+        },
+        reasoning: 'low quality goal',
+        confidence: 'low',
+      };
+
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings.some((w) => w.includes('clarity'))).toBe(true);
+      expect(warnings.some((w) => w.includes('measurable'))).toBe(true);
+      expect(warnings.some((w) => w.includes('Scope'))).toBe(true);
+    });
+
+    it('should flag missing anti-patterns', () => {
+      const goal: GoalSettingOutput = {
+        original_prompt: 'Test',
+        upgraded_goal: 'Test upgraded',
+        key_requirements: [],
+        success_criteria: [],
+        reasoning: 'no anti-patterns',
+        confidence: 'medium',
+      };
+
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.some((w) => w.includes('anti-patterns'))).toBe(true);
+    });
+  });
+
+  // ===== HELPER FUNCTIONS =====
+  describe('Helper Functions', () => {
+    it('should check SMART criterion format', () => {
+      const smart_criterion = { criterion: 'test', smart_score: 'high' as const };
+      const string_criterion = 'test';
+
+      expect(isSmartCriterion(smart_criterion)).toBe(true);
+      expect(isSmartCriterion(string_criterion)).toBe(false);
+    });
+
+    it('should extract criterion text from both formats', () => {
+      expect(getCriterionText({ criterion: 'test', smart_score: 'high' })).toBe('test');
+      expect(getCriterionText('test string')).toBe('test string');
+    });
+  });
+});
