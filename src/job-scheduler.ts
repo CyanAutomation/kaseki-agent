@@ -357,7 +357,7 @@ export class JobScheduler {
   }
 
   /**
-   * Configure scouting and goal-check environment variables.
+   * Configure scouting, goal-setting, and goal-check environment variables.
    */
   private setupScoutingAndGoalCheckEnv(job: Job, env: NodeJS.ProcessEnv): void {
     if (job.request.scouting?.enabled !== undefined) {
@@ -369,6 +369,18 @@ export class JobScheduler {
     if (job.request.scouting?.timeoutSeconds) {
       env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(
         job.request.scouting.timeoutSeconds,
+      );
+    }
+    // Goal-setting is enabled by default unless explicitly disabled
+    if (job.request.goalSetting?.enabled !== undefined) {
+      env.KASEKI_GOAL_SETTING = job.request.goalSetting.enabled ? '1' : '0';
+    }
+    if (job.request.goalSetting?.model) {
+      env.KASEKI_GOAL_SETTING_MODEL = job.request.goalSetting.model;
+    }
+    if (job.request.goalSetting?.timeoutSeconds) {
+      env.KASEKI_GOAL_SETTING_TIMEOUT_SECONDS = String(
+        job.request.goalSetting.timeoutSeconds,
       );
     }
     if (job.request.goalCheck?.enabled !== undefined) {

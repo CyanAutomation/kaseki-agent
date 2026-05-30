@@ -25,6 +25,9 @@ KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
+KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
+KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
+KASEKI_GOAL_SETTING_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
 KASEKI_GOAL_CHECK="${KASEKI_GOAL_CHECK:-$KASEKI_SCOUTING}"
 KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
@@ -70,6 +73,12 @@ SCOUTING_DURATION_SECONDS=0
 SCOUTING_ACTUAL_MODEL="unknown"
 KASEKI_SCOUTING_ATTEMPTS=1
 KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+GOAL_SETTING_EXIT=0
+GOAL_SETTING_DURATION_SECONDS=0
+GOAL_SETTING_ACTUAL_MODEL="unknown"
+KASEKI_GOAL_SETTING_ATTEMPTS=1
+KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+ORIGINAL_TASK_PROMPT="$TASK_PROMPT"
 GOAL_CHECK_EXIT=0
 GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
@@ -120,10 +129,13 @@ STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
+GOAL_SETTING_RAW_EVENTS="/tmp/pi-goal-setting-events.raw.jsonl"
 GOAL_CHECK_RAW_EVENTS="/tmp/pi-goal-check-events.raw.jsonl"
 RUN_EVALUATION_RAW_EVENTS="/tmp/pi-run-evaluation-events.raw.jsonl"
 SCOUTING_ARTIFACT="/results/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
+GOAL_SETTING_ARTIFACT="/results/goal-setting.json"
+GOAL_SETTING_CANDIDATE_ARTIFACT="/results/goal-setting-candidate.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
 RUN_EVALUATION_ARTIFACT="/results/run-evaluation.json"
 RUN_EVALUATION_CANDIDATE_ARTIFACT="/results/run-evaluation-candidate.json"
@@ -2349,6 +2361,328 @@ $memory_section
 $scouting_section
 $retry_section
 EOF
+}
+
+is_transient_goal_setting_failure() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # First, check if we have an explicit validation reason code from our helper
+  if [ -f /results/goal-setting-validation-reason.txt ]; then
+    local reason_code
+    reason_code=$(cat /results/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    case "$reason_code" in
+      valid)
+        return 1
+        ;;
+      schema_mismatch|malformed_json|missing_required_fields|empty_goal)
+        # Deterministic failures - do not retry
+        return 1
+        ;;
+    esac
+  fi
+
+  # Exit code 124 = timeout (transient, retryable)
+  if [ "$exit_code" -eq 124 ]; then
+    return 0
+  fi
+
+  # Exit code 86 = local validation failure (deterministic, not retryable)
+  if [ "$exit_code" -eq 86 ]; then
+    return 1
+  fi
+
+  # Exit code 2 = missing config/API key (not retryable)
+  if [ "$exit_code" -eq 2 ]; then
+    return 1
+  fi
+
+  # Check for deterministic schema/validation errors first
+  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
+    return 1  # Deterministic (do not retry)
+  fi
+
+  # Check for Pi CLI errors in stderr (transient LLM/network issues)
+  if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
+    return 0  # Transient (retry)
+  fi
+
+  # Pi non-zero exit (transient, could be model unavailability)
+  if [ "$exit_code" -ne 0 ]; then
+    return 0  # Transient (retry)
+  fi
+
+  # Exit code 0 but validation failed = deterministic
+  return 1
+}
+
+build_goal_setting_prompt() {
+  cat <<EOF
+You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal.
+
+Reference: https://developers.openrouter.ai/docs/guides/model-selection
+
+Guidelines for a high-quality goal:
+1. **Clarity**: Be specific and unambiguous. Avoid vague language like "fix", "improve", "handle better".
+2. **Measurability**: Include concrete success criteria (e.g., "all tests pass", "no TypeScript errors", "100% coverage on changed lines").
+3. **Context**: Explain why this task matters (business impact, technical debt, etc).
+4. **Constraints**: List any operational guardrails (e.g., "do not modify generated files", "preserve backward compatibility").
+5. **Scope**: Define what should and should NOT be changed.
+
+Input task prompt:
+$ORIGINAL_TASK_PROMPT
+
+Output exactly one JSON object (no markdown, no code fences) with this shape:
+{
+  "original_prompt": "the original user prompt",
+  "upgraded_goal": "a concise, upgraded goal statement (1-3 sentences)",
+  "key_requirements": ["requirement 1", "requirement 2"],
+  "success_criteria": ["criterion 1", "criterion 2"],
+  "potential_constraints": ["constraint 1", "constraint 2"],
+  "reasoning": "brief explanation of the upgrade",
+  "confidence": "high|medium|low"
+}
+
+Be concise. The upgraded goal should be clear enough for a coding agent to understand and execute.
+EOF
+}
+
+validate_goal_setting_artifact() {
+  local candidate_artifact="$1"
+  local final_artifact="$2"
+  local reason_file="$3"
+
+  if ! [ -f "$candidate_artifact" ]; then
+    {
+      echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"candidate artifact file not found\", \"file\": \"$candidate_artifact\"}"
+    } >> /results/goal-setting-validation-errors.jsonl
+    [ -n "$reason_file" ] && echo "missing_file" > "$reason_file"
+    echo "Goal-setting artifact file missing: $candidate_artifact" > /results/goal-setting-validation-summary.txt
+    return 1
+  fi
+
+  local json_content
+  json_content=$(cat "$candidate_artifact" 2>/dev/null || true)
+
+  # Try to parse as JSON
+  if ! echo "$json_content" | jq . >/dev/null 2>&1; then
+    {
+      echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"malformed_json\", \"preview\": \"$(echo "$json_content" | head -c 200)\"}"
+    } >> /results/goal-setting-validation-errors.jsonl
+    [ -n "$reason_file" ] && echo "malformed_json" > "$reason_file"
+    echo "Goal-setting artifact is not valid JSON" > /results/goal-setting-validation-summary.txt
+    return 1
+  fi
+
+  # Validate with Node.js
+  if ! validate_goal_setting_artifact_with_node "$candidate_artifact" "$reason_file"; then
+    cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
+    echo "Goal-setting artifact failed Node.js validation" > /results/goal-setting-validation-summary.txt
+    return 1
+  fi
+
+  # Success: move candidate to final artifact
+  mv "$candidate_artifact" "$final_artifact" 2>/dev/null || cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
+  [ -n "$reason_file" ] && echo "valid" > "$reason_file"
+  return 0
+}
+
+validate_goal_setting_artifact_with_node() {
+  local candidate_artifact="$1"
+  local reason_file="$2"
+
+  local validation_output
+  validation_output=$(node -e "
+    try {
+      const artifact = require('$candidate_artifact');
+      const errors = [];
+
+      // Required fields
+      if (!artifact.original_prompt || typeof artifact.original_prompt !== 'string') {
+        errors.push('missing_or_invalid: original_prompt (must be non-empty string)');
+      }
+      if (!artifact.upgraded_goal || typeof artifact.upgraded_goal !== 'string') {
+        errors.push('missing_or_invalid: upgraded_goal (must be non-empty string)');
+      }
+      if (!Array.isArray(artifact.key_requirements)) {
+        errors.push('missing_or_invalid: key_requirements (must be array)');
+      }
+      if (!Array.isArray(artifact.success_criteria)) {
+        errors.push('missing_or_invalid: success_criteria (must be array)');
+      }
+      if (!artifact.reasoning || typeof artifact.reasoning !== 'string') {
+        errors.push('missing_or_invalid: reasoning (must be non-empty string)');
+      }
+      
+      // Confidence field (if present, must be valid value)
+      if (artifact.confidence && !['high', 'medium', 'low'].includes(artifact.confidence)) {
+        errors.push('invalid: confidence must be high|medium|low');
+      }
+
+      if (errors.length > 0) {
+        console.log(JSON.stringify({status: 'invalid_fields', errors}));
+        process.exit(1);
+      }
+
+      console.log(JSON.stringify({status: 'valid'}));
+    } catch (e) {
+      console.log(JSON.stringify({status: 'error', message: e.message}));
+      process.exit(1);
+    }
+  " 2>&1)
+
+  if ! echo "$validation_output" | jq . >/dev/null 2>&1; then
+    {
+      echo "{\"step\": \"node_validation\", \"status\": \"failure\", \"reason\": \"node_error\", \"output\": \"$validation_output\"}"
+    } >> /results/goal-setting-validation-errors.jsonl
+    [ -n "$reason_file" ] && echo "schema_mismatch" > "$reason_file"
+    return 1
+  fi
+
+  local status
+  status=$(echo "$validation_output" | jq -r '.status' 2>/dev/null || echo "error")
+
+  if [ "$status" != "valid" ]; then
+    {
+      echo "$validation_output"
+    } >> /results/goal-setting-validation-errors.jsonl
+    [ -n "$reason_file" ] && echo "missing_required_fields" > "$reason_file"
+    return 1
+  fi
+
+  return 0
+}
+
+run_goal_setting_agent() {
+  local goal_setting_prompt goal_setting_start goal_setting_stderr_capture
+
+  printf '\n==> pi goal-setting agent\n'
+  set_current_stage "pi goal-setting agent"
+  
+  if [ "$KASEKI_GOAL_SETTING" = "0" ]; then
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a /results/goal-setting-stderr.log
+    record_stage_timing "pi goal-setting agent" 0 0 "skipped_by_config"
+    return 0
+  fi
+  
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a /results/goal-setting-stderr.log
+    record_stage_timing "pi goal-setting agent" 0 0 "dry_run=true"
+    return 0
+  fi
+
+  goal_setting_prompt="$(build_goal_setting_prompt)"
+  goal_setting_start="$(date +%s)"
+  
+  set +e
+  OPENROUTER_API_KEY="$openrouter_api_key" \
+    timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
+    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
+    2> >(tee -a /results/goal-setting-stderr.log >&2) \
+    | tee "$GOAL_SETTING_RAW_EVENTS" \
+    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+  GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
+  GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
+  unset goal_setting_prompt
+  set +e
+
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "/results/goal-setting-validation-reason.txt"; then
+    GOAL_SETTING_EXIT=86
+    goal_setting_validation_summary="$(cat /results/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: /results/goal-setting-validation-errors.jsonl)" "exit"
+  fi
+  
+  rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" /results/goal-setting-events.jsonl /results/goal-setting-summary.json 2>> /results/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" /results/goal-setting-events.raw.jsonl 2>/dev/null || true
+  GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  
+  record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
+  
+  if [ "$GOAL_SETTING_EXIT" -ne 0 ]; then
+    STATUS="$GOAL_SETTING_EXIT"
+    FAILED_COMMAND="pi goal-setting agent"
+    emit_error_event "pi_goal_setting_failed" "Goal-setting agent exited before scouting: $GOAL_SETTING_EXIT" "exit"
+    return 1
+  fi
+  
+  emit_progress "pi goal-setting agent" "wrote goal-setting artifact"
+  rm -f /results/goal-setting-validation-reason.txt 2>/dev/null || true
+  
+  return 0
+}
+
+run_goal_setting_agent_with_retry() {
+  local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
+
+  max_attempts=2
+  attempt=1
+  goal_setting_last_exit=0
+  goal_setting_last_stderr=""
+
+  # Initialize goal-setting retry tracking env vars
+  export KASEKI_GOAL_SETTING_ATTEMPTS=0
+  export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    printf '[Goal-Setting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+
+    # Capture stderr for failure classification
+    goal_setting_stderr_capture="/tmp/goal-setting-stderr-$attempt.log"
+    set +e
+    run_goal_setting_agent 2>"$goal_setting_stderr_capture"
+    goal_setting_last_exit=$?
+    set -e
+
+    # Append stderr to results for logging
+    cat "$goal_setting_stderr_capture" >> /results/goal-setting-stderr.log 2>/dev/null || true
+    goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
+    rm -f "$goal_setting_stderr_capture"
+
+    # Success on any attempt
+    if [ "$goal_setting_last_exit" -eq 0 ]; then
+      export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
+      export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      
+      # Extract upgraded goal and replace TASK_PROMPT
+      if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+        local upgraded_goal
+        upgraded_goal="$(node -e 'try { const a=require("'"$GOAL_SETTING_ARTIFACT"'"); console.log(a.upgraded_goal || ""); } catch { console.log(""); }' 2>/dev/null || true)"
+        if [ -n "$upgraded_goal" ]; then
+          export TASK_PROMPT="$upgraded_goal"
+          printf '[Goal-Setting Phase] Upgraded TASK_PROMPT\n'
+        fi
+      fi
+      
+      return 0
+    fi
+
+    # Check if this is a transient failure worth retrying
+    if is_transient_goal_setting_failure "$goal_setting_last_exit" "$goal_setting_last_stderr"; then
+      if [ "$attempt" -lt "$max_attempts" ]; then
+        printf '[Goal-Setting Phase] Transient failure detected (exit %d), retrying immediately...\n' "$goal_setting_last_exit"
+        attempt=$((attempt + 1))
+        # Reset goal-setting artifacts for retry
+        rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
+        rm -f /results/goal-setting-validation-reason.txt 2>/dev/null || true
+        continue
+      fi
+    else
+      # Deterministic failure - do not retry
+      printf '[Goal-Setting Phase] Deterministic failure (exit %d), not retrying\n' "$goal_setting_last_exit"
+      export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
+      export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+      # Fall through to use original TASK_PROMPT
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  # Max attempts exhausted - use original TASK_PROMPT
+  export KASEKI_GOAL_SETTING_ATTEMPTS=$max_attempts
+  export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
+  printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d), using original TASK_PROMPT\n' "$goal_setting_last_exit"
+  return 0
 }
 
 is_transient_scouting_failure() {
@@ -5034,6 +5368,15 @@ fi
 
 PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 printf 'Pi version: %s\n' "$PI_VERSION"
+
+# Goal-setting agent runs first (before scouting) to upgrade the user prompt into a mature goal
+if [ "$KASEKI_GOAL_SETTING" = "1" ]; then
+  if ! run_goal_setting_agent_with_retry; then
+    # Goal-setting failure is non-fatal; continue with original TASK_PROMPT
+    printf 'Goal-setting agent failed or was skipped; continuing with original TASK_PROMPT\n'
+  fi
+fi
+
 if ! run_scouting_agent_with_retry; then
   exit 0
 fi

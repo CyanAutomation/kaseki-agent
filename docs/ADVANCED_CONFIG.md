@@ -249,6 +249,115 @@ Variables controlling what code the agent operates on.
 
 Variables controlling validation and quality gates.
 
+### Goal-Setting Agent (v2.7+)
+
+**Pre-scouting prompt enhancement phase**
+
+The goal-setting agent runs **before scouting** to upgrade your task prompt into a mature, specific goal with clear success criteria. This improves downstream agent performance by setting expectations upfront.
+
+**Configuration Variables**:
+
+#### `KASEKI_GOAL_SETTING`
+
+- **Type**: `boolean`
+- **Default**: `1` (enabled)
+- **Options**: `0` (disabled), `1` (enabled)
+- **Description**: Enable/disable the goal-setting phase
+- **Behavior**:
+  - Goal-setting runs before scouting if enabled
+  - If goal-setting fails (transient error), it retries once
+  - If goal-setting fails deterministically, original prompt is used (graceful fallback)
+  - Upgraded goal replaces original `TASK_PROMPT` for downstream agents
+- **Example**:
+
+  ```bash
+  # Enable (default)
+  KASEKI_GOAL_SETTING=1
+
+  # Disable to use original prompt directly
+  KASEKI_GOAL_SETTING=0
+  ```
+
+#### `KASEKI_GOAL_SETTING_MODEL`
+
+- **Type**: `string`
+- **Default**: Same as `KASEKI_SCOUTING_MODEL`
+- **Description**: Optional Pi model override for goal-setting phase
+- **Use case**: Use a more capable model for goal-setting while keeping scouting/coding cheaper
+- **Example**:
+
+  ```bash
+  export KASEKI_GOAL_SETTING_MODEL=openrouter/anthropic/claude-3-opus
+  export KASEKI_SCOUTING_MODEL=openrouter/free
+  export KASEKI_MODEL=openrouter/free
+  ```
+
+#### `KASEKI_GOAL_SETTING_TIMEOUT_SECONDS`
+
+- **Type**: `number` (integer, positive)
+- **Default**: `300` (5 minutes)
+- **Description**: Maximum time for goal-setting phase
+- **Recommendations**:
+  - `300` (5 min) — typical
+  - `600` (10 min) — if using slower models
+  - `120` (2 min) — if using very fast models
+- **Example**:
+
+  ```bash
+  KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
+  ```
+
+**API Request Example**:
+
+```json
+{
+  "taskPrompt": "Fix the parser bug",
+  "goalSetting": {
+    "enabled": true,
+    "model": "openrouter/anthropic/claude-3-opus",
+    "timeoutSeconds": 300
+  }
+}
+```
+
+**Output Artifacts**:
+
+- `/results/goal-setting.json` — Upgraded goal with reasoning and success criteria
+- `/results/goal-setting-events.jsonl` — Agent activity and token usage
+- `/results/goal-setting-summary.json` — Concise metrics
+
+**Example goal-setting.json**:
+
+```json
+{
+  "original_prompt": "Fix the parser",
+  "upgraded_goal": "Fix parseRole() to safely handle null/undefined FriendlyName values. Add test coverage for 5 edge cases.",
+  "key_requirements": [
+    "Handle null/undefined safely",
+    "Preserve existing behavior for valid inputs",
+    "Add test cases"
+  ],
+  "success_criteria": [
+    "All existing tests pass",
+    "New edge case tests added and passing",
+    "No TypeErrors on null FriendlyName"
+  ],
+  "reasoning": "Original prompt was vague about what 'fix' means. Upgraded goal clarifies the specific issue and measurable success criteria.",
+  "confidence": "high"
+}
+```
+
+**Best Practices**:
+
+- ✅ **Be specific**: "Fix authentication edge cases" → "Add rate limiting to login endpoint to prevent brute-force attacks"
+- ✅ **Define success**: Include test coverage, performance targets, or validation criteria
+- ✅ **Set scope**: Explicitly say what should and shouldn't be changed
+- ❌ **Avoid vague verbs**: Don't just say "fix", "improve", or "handle"
+
+For detailed guidance, see [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md).
+
+---
+
 ### Scouting Agent & Allowlist Control (v2.6+)
 
 **Automatic allowlist management via scouting research phase**
