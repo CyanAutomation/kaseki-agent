@@ -243,7 +243,7 @@ verify_template() {
   local target="$1"
   local missing=0
   local required
-  for required in run-kaseki.sh kaseki kaseki-agent.sh scripts/kaseki-preflight.sh lib/pi-event-filter.js lib/pi-progress-stream.js lib/kaseki-report.js lib/github-app-token.js; do
+  for required in run-kaseki.sh kaseki kaseki-agent.sh scripts/kaseki-preflight.sh lib/pi-event-filter.js lib/pi-progress-stream.js lib/kaseki-report.js lib/github-app-token.js lib/github-app-private-key.js lib/github-utils.js lib/logger.js lib/secrets/host-secrets-reader.js; do
     if [ ! -f "$target/$required" ]; then
       printf 'Missing deployed template file: %s\n' "$required" >&2
       missing=1

@@ -55,6 +55,10 @@ const REQUIRED_TEMPLATE_FILES = [
   'lib/pi-progress-stream.js',
   'lib/kaseki-report.js',
   'lib/github-app-token.js',
+  'lib/github-app-private-key.js',
+  'lib/github-utils.js',
+  'lib/logger.js',
+  'lib/secrets/host-secrets-reader.js',
 ] as const;
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
