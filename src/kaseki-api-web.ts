@@ -10,58 +10,253 @@ const controllerPage = String.raw`<!doctype html>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
     <style>
+      /* ====================================================================
+         KASEKI TASK CONSOLE — CSS ARCHITECTURE
+         ====================================================================
+         
+         OVERVIEW:
+         This stylesheet implements a complete dark-theme design system for the
+         Kaseki task console. All styling is done via vanilla CSS with custom
+         properties (CSS variables). No preprocessor or framework dependencies.
+         
+         ORGANIZATION:
+         The CSS is organized in the following order:
+         1. :root — All design tokens (colors, sizing, typography, effects)
+         2. Base styles — Global resets and defaults (* and body)
+         3. Header — Main navigation and branding
+         4. Status indicators — Running/idle/done/failed states
+         5. Main layout — Grid structure and content areas
+         6. Typography — Headings, paragraphs, text styling
+         7. Panels & cards — Container components
+         8. Form fields — Inputs, textareas, selects, buttons
+         9. Layout utilities — Grid/flex helper classes
+         10. Summary cards — Key metrics display
+         11. Run links & actions — Task control buttons
+         12. Response panel — Output display area
+         13. Tabs — Tab navigation and content switching
+         14. Health checks — Health status buttons
+         15. Dropdowns — Repo selection and similar
+         16. Issues tab — GitHub issues browser
+         17. Animations — Keyframe definitions
+         18. Responsive — Media query breakpoints (768px desktop, 480px tablet)
+         
+         KEY DESIGN DECISIONS:
+         • No shadows; depth via tonal layering (surface hierarchy)
+         • Cyan primary action color for high contrast on dark background
+         • 8px spacing base unit for consistent rhythm
+         • Material Design focus pattern (underline on inputs)
+         • Mobile-first responsive approach
+         • All hardcoded values extracted to CSS variables
+         
+         NAMING CONVENTIONS:
+         CSS Variables: --category-subcategory-modifier
+           Examples: --color-text, --font-size-md, --space-2
+           
+         Classes: lowercase-hyphenated (e.g., .response-panel, .health-check-button)
+           Modifiers use dot notation (e.g., .button.run, .status-indicator.running)
+         
+         HOW TO MODIFY:
+         1. Change colors: Update --color-* in :root
+         2. Adjust spacing: Modify --space-* variables  
+         3. Change fonts: Update --font-* variables
+         4. Modify components: Find the component section and update its CSS
+         5. Never hardcode pixel values; use CSS variables instead
+         
+         RESPONSIVE STRATEGY:
+         • Default (mobile): Single column, compact spacing
+         • 480px+ (tablet): Better grids and spacing
+         • 768px+ (desktop): 2-column layout with side panel
+         • Touch targets: minimum 44px on mobile devices
+         
+         ==================================================================== */
       :root {
         color-scheme: dark;
 
-        /* Surfaces — tonal layering, no drop shadows */
-        --bg:              #10141a;
-        --surface-low:     #181c22;
-        --surface:         #1c2026;
-        --surface-high:    #262a31;
-        --surface-highest: #31353c;
+        /* ===== DESIGN SYSTEM PHILOSOPHY ===== */
+        /* This design system uses CSS custom properties organized by category.
+           Naming convention: --category-subcategory-modifier (e.g., --color-text-muted)
+           All hardcoded values have been extracted into variables for consistency and
+           maintainability. To modify the theme, adjust variables below instead of
+           specific CSS rules. */
 
-        /* Text */
-        --ink:   #dfe2eb;
-        --muted: #bac9cc;
+        /* ===== COLOR SYSTEM ===== */
+        /* The color system uses tonal layering (background → surface-low → surface →
+           surface-high → surface-highest) creating visual depth without shadows.
+           Primary action uses cyan (#00daf3) for high contrast on dark backgrounds.
+           Status colors (ok=green, bad=red) are reserved for state indication only. */
+        /* Surfaces — tonal layering */
+        --color-bg:              #10141a;
+        --color-surface-low:     #181c22;
+        --color-surface:         #1c2026;
+        --color-surface-high:    #262a31;
+        --color-surface-highest: #31353c;
 
-        /* Borders */
-        --line:        #3b494c;
-        --line-strong: #849396;
+        /* Text hierarchy */
+        --color-text:            #dfe2eb;
+        --color-text-muted:      #bac9cc;
 
-        /* Cyan — primary action */
-        --focus:        #00daf3;
-        --focus-bright: #00e5ff;
-        --focus-text:   #c3f5ff;
+        /* Borders & lines */
+        --color-border:        #3b494c;
+        --color-border-strong: #849396;
 
-        /* Status */
-        --ok:      #2ff801;
-        --ok-text: #d7ffc5;
-        --bad:     #ffb4ab;
-        --bad-bg:  #93000a;
+        /* Primary action — Cyan */
+        --color-focus:        #00daf3;
+        --color-focus-bright: #00e5ff;
+        --color-focus-text:   #c3f5ff;
 
-        /* Spacing */
+        /* Status — Success */
+        --color-ok:      #2ff801;
+        --color-ok-text: #d7ffc5;
+
+        /* Status — Error */
+        --color-bad:    #ffb4ab;
+        --color-bad-bg: #93000a;
+
+        /* Color alpha variants for overlays */
+        --color-focus-overlay-15: color-mix(in srgb, var(--color-focus) 15%, transparent);
+        --color-focus-overlay-20: color-mix(in srgb, var(--color-focus) 20%, transparent);
+        --color-ok-overlay-15: color-mix(in srgb, var(--color-ok) 15%, transparent);
+        --color-bad-overlay-15: color-mix(in srgb, var(--color-bad) 15%, transparent);
+        --color-bad-overlay-20: color-mix(in srgb, var(--color-bad) 20%, transparent);
+        --color-text-muted-overlay-15: color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+
+        /* ===== TYPOGRAPHY ===== */
+        /* Font families */
+        --font-ui:   'Hanken Grotesk', system-ui, sans-serif;
+        --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+        /* Font sizes — responsive scale */
+        --font-size-xs:    11px;
+        --font-size-sm:    12px;
+        --font-size-base:  13px;
+        --font-size-md:    14px;
+        --font-size-lg:    16px;
+        --font-size-xl:    17px;
+        --font-size-2xl:   20px;
+        --font-size-3xl:   24px;
+
+        /* Font weights */
+        --font-weight-normal:  400;
+        --font-weight-medium:  500;
+        --font-weight-semibold: 600;
+        --font-weight-bold:    700;
+
+        /* Line heights */
+        --line-height-tight:  1.3;
+        --line-height-snug:   1.35;
+        --line-height-normal: 1.4;
+        --line-height-relaxed: 1.5;
+        --line-height-loose:  1.6;
+
+        /* Letter spacing */
+        --letter-spacing-tight: -0.02em;
+        --letter-spacing-normal: 0;
+        --letter-spacing-wide: 0.05em;
+
+        /* ===== SPACING ===== */
+        /* Spacing scale: 8px base unit (--space-1) incremented by 4px each level.
+           Used consistently for padding, margins, and gaps throughout the interface. */
         --space-1: 8px;
         --space-2: 12px;
         --space-3: 16px;
         --space-4: 24px;
-        --control-gap: var(--space-2);
-        --control-min-height: 42px;
-        --control-pad: var(--space-2) var(--space-3);
 
-        /* Fonts */
-        --font-ui:   'Hanken Grotesk', system-ui, sans-serif;
-        --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+        /* Component spacing */
+        --control-gap: var(--space-2);
+        --control-pad: var(--space-2) var(--space-3);
+        --control-pad-compact: var(--space-1) var(--space-2);
+
+        /* ===== SIZING ===== */
+        /* Control heights: 42px is standard for buttons/inputs; 44px is mobile touch target minimum. */
+        --control-min-height: 42px;
+        --control-min-height-compact: 24px;
+        --icon-size: 20px;
+        --icon-size-sm: 6px;
+        --touch-target-min: 44px;
+
+        /* ===== EFFECTS ===== */
+        /* Border radius */
+        --radius-sm: 4px;
+        --radius-md: 8px;
+        --radius-lg: 12px;
+        --radius-full: 9999px;
+
+        /* Shadows */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+        --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+        /* Transitions & animations */
+        /* Animation strategy: fast transitions (0.15s) for hover/focus states,
+           slightly slower (0.2s) for content changes. Easing keeps interactions
+           responsive without feeling sluggish. */
+        --transition-fast: 0.15s;
+        --transition-base: 0.2s;
+        --transition-easing: ease;
+        --transition-fast-easing: ease;
+
+        --animation-duration-spin: 1s;
+        --animation-duration-pulse: 1s;
+        --animation-duration-pulse-slow: 1.5s;
+        --animation-easing-spin: linear;
+        --animation-easing-pulse: ease-in-out;
+        --animation-easing-pulse-slow: infinite;
+
+        /* Opacity values */
+        --opacity-disabled: 0.5;
+        --opacity-pulse-min: 0.4;
+
+        /* ===== LAYOUT ===== */
+        /* Responsive strategy: mobile-first (single column), medium screens (768px+) get
+           two-column layout with side panel. Desktop (1024px+) preserves 2-column layout
+           with adjusted spacing. */
+        --max-content-width: 1260px;
+        --content-pad-mobile: var(--space-3);
+        --content-pad-desktop: clamp(var(--space-3), 4vw, 48px);
+        --header-pad-desktop: clamp(var(--space-3), 2vw, 24px);
+
+        /* Dropdowns & modals */
+        --dropdown-max-height: 250px;
+        --panel-max-height: 500px;
+        --mobile-viewport-height: 40vh;
+
+        /* Z-index scale */
+        --z-dropdown: 100;
+        --z-modal: 200;
+        --z-tooltip: 300;
+
+        /* Min/max widths for inputs and containers */
+        --input-min-width: 200px;
+        --input-max-width: 300px;
+        --card-min-width: 140px;
+
+        /* ===== COMPONENT SIZING ===== */
+        /* Standard component heights for consistent visual hierarchy */
+        --card-min-height: 76px;
+        --panel-min-height: 300px;
+        --health-check-height: 80px;
+        --textarea-min-height: 140px;
+        --state-indicator-height: 22px;
+
+        /* Input padding (consistent across text inputs, textareas, buttons) */
+        --input-padding: 10px 11px;
       }
-      * { box-sizing: border-box; letter-spacing: 0; }
+      /* ===== BASE STYLES ===== */
+      /* Reset and normalize. All elements use border-box sizing for predictable layouts.
+         Body inherits typography from font-ui via CSS custom properties. */
+      * { box-sizing: border-box; letter-spacing: var(--letter-spacing-normal); }
       body {
         margin: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font: 16px/1.5 var(--font-ui);
+        background: var(--color-bg);
+        color: var(--color-text);
+        font: var(--font-size-lg)/var(--line-height-relaxed) var(--font-ui);
       }
+      /* ===== HEADER ===== */
+      /* Main application header with branding and API token input.
+         Uses flexbox for horizontal layout; status indicator positioned on right. */
       .header-bar {
-        background: var(--surface-low);
-        border-bottom: 1px solid var(--line);
+        background: var(--color-surface-low);
+        border-bottom: 1px solid var(--color-border);
         padding: var(--space-3) var(--space-3);
         display: flex;
         align-items: center;
@@ -72,10 +267,10 @@ const controllerPage = String.raw`<!doctype html>
         margin: 0;
         font-size: clamp(18px, 3vw, 24px);
         font-family: var(--font-ui);
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        line-height: 1.3;
-        color: var(--focus-text);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-tight);
+        line-height: var(--line-height-tight);
+        color: var(--color-focus-text);
       }
       .header-bar-title {
         display: flex;
@@ -83,215 +278,253 @@ const controllerPage = String.raw`<!doctype html>
         gap: var(--space-2);
       }
       .header-token-input {
-        min-width: 200px;
-        max-width: 300px;
+        min-width: var(--input-min-width);
+        max-width: var(--input-max-width);
         width: auto;
-        background: var(--surface-highest);
+        background: var(--color-surface-highest);
         border: none;
-        border-bottom: 1px solid var(--line-strong);
-        border-radius: 4px 4px 0 0;
-        color: var(--ink);
+        border-bottom: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        color: var(--color-text);
         font-family: var(--font-ui);
-        font-size: 14px;
-        padding: 10px 11px;
+        font-size: var(--font-size-md);
+        padding: var(--input-padding);
         min-height: var(--control-min-height);
+        transition: border-color var(--transition-fast) var(--transition-easing);
       }
       .header-token-input:focus {
         outline: none;
-        border-bottom: 2px solid var(--focus);
+        border-bottom: 2px solid var(--color-focus);
       }
-      .header-token-input::placeholder { color: var(--muted); }
+      .header-token-input::placeholder { color: var(--color-text-muted); }
       @media (max-width: 767px) {
         .header-token-input {
           min-width: 160px;
           max-width: 100%;
         }
       }
+      /* ===== STATUS INDICATOR ===== */
       .status-indicator {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 2px 8px;
-        border-radius: 9999px;
+        gap: var(--space-1);
+        padding: var(--control-pad-compact);
+        border-radius: var(--radius-full);
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
-        background: color-mix(in srgb, var(--muted) 15%, transparent);
-        color: var(--muted);
+        background: var(--color-text-muted-overlay-15);
+        color: var(--color-text-muted);
         flex-shrink: 0;
       }
       .status-indicator::before {
         content: '';
         display: inline-block;
-        width: 6px;
-        height: 6px;
+        width: var(--icon-size-sm);
+        height: var(--icon-size-sm);
         border-radius: 50%;
         background: currentColor;
         flex-shrink: 0;
       }
       .status-indicator::after { content: 'Idle'; }
       .status-indicator.running {
-        background: color-mix(in srgb, var(--focus) 15%, transparent);
-        color: var(--focus-bright);
+        background: var(--color-focus-overlay-15);
+        color: var(--color-focus-bright);
       }
       .status-indicator.running::after { content: 'Running'; }
-      .status-indicator.running::before { animation: pulse 1s ease-in-out infinite; }
+      .status-indicator.running::before { animation: pulse-indicator var(--animation-duration-pulse) var(--animation-easing-pulse) infinite; }
       .status-indicator.completed {
-        background: color-mix(in srgb, var(--ok) 15%, transparent);
-        color: var(--ok);
+        background: var(--color-ok-overlay-15);
+        color: var(--color-ok);
       }
       .status-indicator.completed::after { content: 'Done'; }
       .status-indicator.failed {
-        background: color-mix(in srgb, var(--bad) 20%, transparent);
-        color: var(--bad);
+        background: var(--color-bad-overlay-20);
+        color: var(--color-bad);
       }
       .status-indicator.failed::after { content: 'Failed'; }
-      @keyframes pulse {
+      @keyframes pulse-indicator {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
+        50% { opacity: var(--opacity-pulse-min); }
       }
+      /* ===== MAIN LAYOUT ===== */
       main {
         display: grid;
         gap: var(--space-4);
         grid-template-columns: minmax(0, 1fr);
         margin: 0 auto;
-        max-width: 1260px;
-        padding: var(--space-3);
+        max-width: var(--max-content-width);
+        padding: var(--content-pad-mobile);
       }
       h1, h2 { margin: 0; }
       h2 {
         font-family: var(--font-ui);
         font-size: clamp(17px, 2.2vw, 20px);
-        font-weight: 600;
-        line-height: 1.4;
-        color: var(--ink);
+        font-weight: var(--font-weight-semibold);
+        line-height: var(--line-height-normal);
+        color: var(--color-text);
       }
-      p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: var(--space-1) 0 0; }
+      p { 
+        color: var(--color-text-muted);
+        font-size: var(--font-size-sm);
+        line-height: var(--line-height-relaxed);
+        margin: var(--space-1) 0 0;
+      }
+      /* ===== PANELS & CARDS ===== */
       .panel {
-        background: var(--surface-low);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-surface-low);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         padding: var(--space-4);
       }
       header, form, .stack, fieldset { display: grid; gap: var(--space-3); }
       .stack { gap: var(--space-4); }
       section.panel { display: grid; gap: var(--space-3); align-content: start; }
       fieldset {
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         margin: 0;
         padding: var(--space-3);
       }
       legend {
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
-        color: var(--muted);
+        color: var(--color-text-muted);
         padding: 0 var(--space-1);
       }
+      /* ===== FORM FIELDS ===== */
+      /* Input, textarea, select styling uses Material Design focus pattern:
+         - Underline border on default state (--color-border-strong)
+         - Focus increases border-bottom to 2px (--color-focus)
+         - Padding is consistent (--input-padding) across all input types
+         - Placeholder text uses muted color for contrast
+         - Textarea has fixed min-height; resize: vertical allows user adjustment */
       .form-fields { display: grid; gap: var(--space-3); }
       .form-field { display: grid; gap: var(--space-1); }
       .form-field > label {
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
-        color: var(--muted);
-        line-height: 1.35;
+        color: var(--color-text-muted);
+        line-height: var(--line-height-snug);
       }
-      .field-helper { color: var(--muted); font-family: var(--font-ui); font-size: 13px; line-height: 1.5; }
-      .field-error { color: var(--bad); font-family: var(--font-ui); font-size: 13px; line-height: 1.4; min-height: 1em; }
+      .field-helper { 
+        color: var(--color-text-muted);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        line-height: var(--line-height-relaxed);
+      }
+      .field-error { 
+        color: var(--color-bad);
+        font-family: var(--font-ui);
+        font-size: 13px;
+        line-height: var(--line-height-normal);
+        min-height: 1em;
+      }
       input, textarea, select, button {
         box-sizing: border-box;
         color: inherit;
         font: inherit;
       }
       input, textarea, select {
-        background: var(--surface-highest);
+        background: var(--color-surface-highest);
         border: none;
-        border-bottom: 1px solid var(--line-strong);
-        border-radius: 4px 4px 0 0;
-        color: var(--ink);
+        border-bottom: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        color: var(--color-text);
         font-family: var(--font-ui);
-        font-size: 14px;
+        font-size: var(--font-size-md);
         min-height: var(--control-min-height);
-        padding: 10px 11px;
+        padding: var(--input-padding);
         width: 100%;
+        transition: border-color var(--transition-fast) var(--transition-easing);
       }
-      input::placeholder, textarea::placeholder { color: var(--muted); }
-      textarea { min-height: 140px; resize: vertical; }
+      input::placeholder, textarea::placeholder { color: var(--color-text-muted); }
+      textarea { min-height: var(--textarea-min-height); resize: vertical; }
       input:focus, textarea:focus, select:focus {
         outline: none;
-        border-bottom: 2px solid var(--focus);
+        border-bottom: 2px solid var(--color-focus);
       }
       button:focus {
-        outline: 2px solid var(--focus);
+        outline: 2px solid var(--color-focus);
         outline-offset: 2px;
       }
+      /* ===== LAYOUT UTILITIES ===== */
+      /* Grid utility classes for flexible layouts. Most use CSS Grid with
+         auto-fit columns that collapse on mobile. Gap is consistent (--control-gap).
+         Check class combines flex + grid for checkbox/label pairs. */
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { display: grid; gap: var(--control-gap); }
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { grid-template-columns: minmax(0, 1fr); }
       .check {
         align-items: center;
         display: flex;
         gap: var(--space-1);
-        font-weight: 500;
+        font-weight: var(--font-weight-medium);
         min-height: var(--control-min-height);
       }
-      .check input { flex: 0 0 20px; height: 20px; margin: 0; width: 20px; }
-      .check-copy { display: grid; gap: 2px; }
-      .check-label { color: var(--ink); font-size: 14px; font-weight: 550; line-height: 1.35; }
-      .check-helper { color: var(--muted); font-size: 14px; line-height: 1.5; }
+      .check input { flex: 0 0 var(--icon-size); height: var(--icon-size); margin: 0; width: var(--icon-size); }
+      .check-copy { display: grid; gap: var(--space-1); }
+      .check-label { color: var(--color-text); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); line-height: var(--line-height-snug); }
+      .check-helper { color: var(--color-text-muted); font-size: var(--font-size-md); line-height: var(--line-height-relaxed); }
       .action-row { align-items: end; }
       .action-row > button, .run-status > button { width: 100%; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
       .summary-grid {
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(var(--card-min-width), 1fr));
       }
       .summary-card {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         display: grid;
-        gap: 4px;
-        min-height: 76px;
+        gap: var(--space-1);
+        min-height: var(--card-min-height);
         padding: var(--space-2);
       }
       .summary-label {
-        color: var(--muted);
+        color: var(--color-text-muted);
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
       }
       .summary-value {
-        color: var(--ink);
+        color: var(--color-text);
         font-family: var(--font-mono);
-        font-size: 16px;
-        font-weight: 700;
+        font-size: var(--font-size-lg);
+        font-weight: var(--font-weight-bold);
         overflow-wrap: anywhere;
       }
-      .summary-value.ok { color: var(--ok); }
-      .summary-value.bad { color: var(--bad); }
+      /* ===== STATE UTILITIES ===== */
+      /* Color-coded state classes for status indication:  
+         .ok → success (green)
+         .bad → failure (red)
+         Applied to .summary-value, #state for flexible reuse. */
+      .summary-value.ok { color: var(--color-ok); }
+      .summary-value.bad { color: var(--color-bad); }
       .summary-details {
-        color: var(--muted);
+        color: var(--color-text-muted);
         font-family: var(--font-mono);
-        font-size: 12px;
-        font-weight: 400;
-        line-height: 1.4;
-        margin-top: 4px;
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-normal);
+        line-height: var(--line-height-normal);
+        margin-top: var(--space-1);
         word-break: break-word;
         overflow-wrap: break-word;
       }
+      /* ===== RUN LINKS & CARDS ===== */
       .run-links {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         display: grid;
         gap: var(--space-2);
         padding: var(--space-3);
@@ -301,94 +534,107 @@ const controllerPage = String.raw`<!doctype html>
       .link-grid a {
         align-items: center;
         background: transparent;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        color: var(--ink);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text);
         display: inline-flex;
         font-family: var(--font-ui);
-        font-weight: 600;
+        font-weight: var(--font-weight-semibold);
         justify-content: center;
         min-height: var(--control-min-height);
         padding: var(--control-pad);
         text-decoration: none;
-        transition: border-color 0.15s, color 0.15s;
+        transition: border-color var(--transition-fast) var(--transition-easing), color var(--transition-fast) var(--transition-easing);
       }
       .link-grid a:hover {
-        border-color: var(--focus);
-        color: var(--focus-text);
+        border-color: var(--color-focus);
+        color: var(--color-focus-text);
       }
       .panel-section-label {
         display: block;
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
-        color: var(--muted);
+        color: var(--color-text-muted);
       }
+      /* ===== BUTTONS ===== */
+      /* Button system uses three variants via CSS classes:  
+         1. Default (secondary): transparent bg, border-based (uses --color-border)
+         2. .secondary: same as default; explicit class for clarity
+         3. .run: solid cyan bg for primary actions (submit, execute tasks)
+         Hover states maintain affordance; disabled uses opacity. All buttons
+         use consistent padding (--control-pad) and min-height. */
       button {
         background: transparent;
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        color: var(--ink);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text);
         cursor: pointer;
         font-family: var(--font-ui);
-        font-size: 14px;
-        font-weight: 600;
+        font-size: var(--font-size-md);
+        font-weight: var(--font-weight-semibold);
         min-height: var(--control-min-height);
         padding: var(--control-pad);
-        transition: border-color 0.15s, color 0.15s, background 0.15s;
+        transition: border-color var(--transition-fast) var(--transition-easing), color var(--transition-fast) var(--transition-easing), background var(--transition-fast) var(--transition-easing);
       }
       button:hover:not(:disabled) {
-        border-color: var(--focus);
-        color: var(--focus-text);
+        border-color: var(--color-focus);
+        color: var(--color-focus-text);
       }
       button.secondary {
         background: transparent;
-        color: var(--ink);
-        border-color: var(--line);
+        color: var(--color-text);
+        border-color: var(--color-border);
       }
       button.secondary:hover:not(:disabled) {
-        border-color: var(--focus);
-        color: var(--focus-text);
+        border-color: var(--color-focus);
+        color: var(--color-focus-text);
       }
       button.run {
-        background: var(--focus-bright);
-        border-color: var(--focus-bright);
+        background: var(--color-focus-bright);
+        border-color: var(--color-focus-bright);
         color: #00363d;
-        font-weight: 700;
+        font-weight: var(--font-weight-bold);
       }
       button.run:hover:not(:disabled) {
-        background: var(--focus-text);
-        border-color: var(--focus-text);
+        background: var(--color-focus-text);
+        border-color: var(--color-focus-text);
         color: #001f24;
       }
-      button:disabled { cursor: wait; opacity: .5; }
+      button:disabled { cursor: wait; opacity: var(--opacity-disabled); }
       .toolbar-button { }
       .toolbar-button-no-wrap { white-space: nowrap; }
+      /* ===== RESPONSE PANEL ===== */
+      /* Three-tier grid layout for task results:
+         1. Meta row: Status label and metadata (auto height)
+         2. Summary row: Key metrics in responsive grid (auto height)
+         3. Log area: Scrollable monospace output (flexible height)
+         Panel uses monospace font for code/structured data. */
       .response-panel {
-        background: var(--bg);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-bg);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         display: grid;
         grid-template-rows: auto auto minmax(0, 1fr);
-        min-height: 300px;
+        min-height: var(--panel-min-height);
         overflow: hidden;
       }
       .response-meta {
-        border-bottom: 1px solid var(--line);
-        color: var(--muted);
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-text-muted);
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
         margin: 0;
         padding: var(--space-2) var(--space-3);
       }
       .response-summary {
-        background: var(--surface-low);
-        border-bottom: 1px solid var(--line);
+        background: var(--color-surface-low);
+        border-bottom: 1px solid var(--color-border);
         display: grid;
         gap: var(--space-2);
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -397,30 +643,30 @@ const controllerPage = String.raw`<!doctype html>
       .response-summary[hidden] { display: none; }
       .response-summary-item {
         display: grid;
-        gap: 2px;
+        gap: var(--space-1);
         min-width: 0;
       }
       .response-summary-label {
-        color: var(--muted);
+        color: var(--color-text-muted);
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
       }
       .response-summary-value {
-        color: var(--ink);
+        color: var(--color-text);
         font-family: var(--font-mono);
-        font-size: 13px;
-        font-weight: 700;
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-bold);
         overflow-wrap: anywhere;
       }
       .response-log {
         align-self: start;
-        color: var(--ink);
+        color: var(--color-text);
         font-family: var(--font-mono);
-        font-size: 13px;
-        line-height: 1.6;
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-loose);
         margin: 0;
         min-height: 0;
         overflow: auto;
@@ -428,22 +674,23 @@ const controllerPage = String.raw`<!doctype html>
         white-space: pre-wrap;
         word-break: break-word;
       }
-      .response-log.empty { color: var(--muted); }
+      .response-log.empty { color: var(--color-text-muted); }
       #state {
-        color: var(--muted);
+        color: var(--color-text-muted);
         font-family: var(--font-mono);
-        font-size: 12px;
-        min-height: 22px;
+        font-size: var(--font-size-sm);
+        min-height: var(--state-indicator-height);
       }
-      #state.ok { color: var(--ok); }
-      #state.bad { color: var(--bad); }
+      #state.ok { color: var(--color-ok); }
+      #state.bad { color: var(--color-bad); }
+      /* ===== RESPONSIVE MEDIA QUERIES ===== */
       @media (min-width: 768px) {
         .header-bar {
-          padding: clamp(var(--space-3), 2vw, 24px) clamp(var(--space-3), 4vw, 48px);
+          padding: var(--header-pad-desktop) var(--content-pad-desktop);
         }
         main {
           grid-template-columns: minmax(320px, 560px) minmax(320px, 1fr);
-          padding: clamp(var(--space-3), 4vw, 48px);
+          padding: var(--content-pad-desktop);
         }
         .grid, .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .action-row {
@@ -453,38 +700,42 @@ const controllerPage = String.raw`<!doctype html>
         .action-row.controller-actions { justify-content: start; }
         .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
       }
+      /* ===== TABS ===== */
+      /* Tab navigation uses flex layout with bottom-border active indicator.
+         Tab content hidden via .hidden class; only active tab displays.
+         Buttons in tabs have minimal padding and no min-height (compact style). */
       .tabs-nav {
         display: flex;
         gap: 0;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--color-border);
         margin-bottom: var(--space-3);
       }
       .tabs-nav button {
         background: transparent;
         border: none;
         border-bottom: 2px solid transparent;
-        color: var(--muted);
+        color: var(--color-text-muted);
         cursor: pointer;
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
         padding: var(--space-2) var(--space-3);
         margin-bottom: -1px;
         min-height: auto;
-        transition: color 0.15s, border-color 0.15s;
+        transition: color var(--transition-fast) var(--transition-easing), border-color var(--transition-fast) var(--transition-easing);
       }
       .tabs-nav button:hover:not(:disabled) {
-        color: var(--ink);
+        color: var(--color-text);
         border-color: transparent;
       }
       .tabs-nav button.active {
-        color: var(--focus-text);
-        border-bottom-color: var(--focus);
+        color: var(--color-focus-text);
+        border-bottom-color: var(--color-focus);
       }
       .tabs-nav button:focus {
-        outline: 2px solid var(--focus);
+        outline: 2px solid var(--color-focus);
         outline-offset: 2px;
       }
       .tab-content {
@@ -493,67 +744,76 @@ const controllerPage = String.raw`<!doctype html>
         height: auto;
       }
       .tab-content.hidden { display: none; }
+      /* ===== HEALTH CHECKS ===== */
+      /* Health check buttons are larger (--health-check-height) for emphasis.
+         Status shown via spinning icon (⟳) for pending, ✓ for ok, ✕ for bad.
+         Icons use currentColor to inherit button text color on state change. */
       .health-checks-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(var(--card-min-width), 1fr));
         gap: var(--space-3);
       }
       .health-check-button {
-        background: var(--surface);
-        color: var(--ink);
+        background: var(--color-surface);
+        color: var(--color-text);
         padding: var(--space-3);
-        border-radius: 4px;
-        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
         cursor: pointer;
         font-family: var(--font-ui);
-        font-size: 14px;
-        font-weight: 600;
-        min-height: 80px;
+        font-size: var(--font-size-md);
+        font-weight: var(--font-weight-semibold);
+        min-height: var(--health-check-height);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: var(--space-1);
-        transition: border-color 0.15s, color 0.15s;
+        transition: border-color var(--transition-fast) var(--transition-easing), color var(--transition-fast) var(--transition-easing);
       }
       .health-check-button:hover:not(:disabled) {
-        border-color: var(--focus);
-        color: var(--focus-text);
+        border-color: var(--color-focus);
+        color: var(--color-focus-text);
       }
-      .health-check-button:disabled { opacity: 0.5; cursor: wait; }
+      .health-check-button:disabled { opacity: var(--opacity-disabled); cursor: wait; }
       .health-check-button:focus {
-        outline: 2px solid var(--focus);
+        outline: 2px solid var(--color-focus);
         outline-offset: 1px;
       }
       .hc-label {
         font-family: var(--font-mono);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
+        letter-spacing: var(--letter-spacing-wide);
         text-transform: uppercase;
       }
       .health-check-status {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 20px;
-        height: 20px;
+        width: var(--icon-size);
+        height: var(--icon-size);
         font-family: var(--font-mono);
-        font-size: 13px;
+        font-size: var(--font-size-base);
       }
       .health-check-status.spinner::after {
         content: '⟳';
         display: inline-block;
-        animation: spin 1s linear infinite;
-        color: var(--focus);
+        animation: spin-icon var(--animation-duration-spin) var(--animation-easing-spin) infinite;
+        color: var(--color-focus);
       }
-      @keyframes spin {
+      @keyframes spin-icon {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
       }
-      .health-check-status.ok::before { content: '✓'; color: var(--ok); }
-      .health-check-status.bad::before { content: '✕'; color: var(--bad); }
-      /* Recent repos dropdown styles */
+      .health-check-status.ok::before { content: '✓'; color: var(--color-ok); }
+      .health-check-status.bad::before { content: '✕'; color: var(--color-bad); }
+      /* ===== DROPDOWNS ===== */
+      /* Recent repos dropdown uses absolute positioning relative to input wrapper.
+         Positioned below input (top: 100%), inherits input width.
+         Uses box-shadow (--shadow-lg) for elevation. Z-index: 100 ensures
+         dropdown appears above page content. Keyboard navigation supported via
+         role=option and arrow key handling in JavaScript. */
       .repo-input-wrapper {
         position: relative;
       }
@@ -562,14 +822,14 @@ const controllerPage = String.raw`<!doctype html>
         top: 100%;
         left: 0;
         right: 0;
-        background: var(--surface);
-        border: 1px solid var(--line);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
         border-top: none;
-        border-radius: 0 0 4px 4px;
-        max-height: 250px;
+        border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+        max-height: var(--dropdown-max-height);
         overflow-y: auto;
-        z-index: 100;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: var(--z-dropdown);
+        box-shadow: var(--shadow-lg);
       }
       .recent-repos-dropdown.hidden {
         display: none;
@@ -578,29 +838,29 @@ const controllerPage = String.raw`<!doctype html>
         content: 'No recent repos';
         display: block;
         padding: var(--space-2) var(--space-3);
-        color: var(--muted);
-        font-size: 13px;
+        color: var(--color-text-muted);
+        font-size: var(--font-size-base);
       }
       .recent-repo-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
         padding: var(--space-2) var(--space-3);
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1px solid var(--color-border);
         cursor: pointer;
-        transition: background-color 0.15s;
+        transition: background-color var(--transition-fast) var(--transition-easing);
       }
       .recent-repo-item:last-child {
         border-bottom: none;
       }
       .recent-repo-item:hover {
-        background-color: var(--surface-high);
+        background-color: var(--color-surface-high);
       }
       .recent-repo-item-text {
         flex: 1;
         min-width: 0;
-        font-size: 14px;
-        color: var(--ink);
+        font-size: var(--font-size-base);
+        color: var(--color-text);
         word-break: break-all;
         margin-right: var(--space-2);
       }
@@ -608,7 +868,7 @@ const controllerPage = String.raw`<!doctype html>
         flex: 0 0 auto;
         background: none;
         border: none;
-        color: var(--muted);
+        color: var(--color-text-muted);
         cursor: pointer;
         font-size: 18px;
         padding: 0;
@@ -617,13 +877,16 @@ const controllerPage = String.raw`<!doctype html>
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: color 0.15s;
+        transition: color var(--transition-fast) var(--transition-easing);
         min-height: auto;
       }
       .recent-repo-delete:hover {
-        color: var(--bad);
+        color: var(--color-bad);
       }
-      /* Issues tab styling */
+      /* ===== ISSUES TAB ===== */
+      /* GitHub issues list uses grid layout for flexible item sizing.
+         Items highlight on hover with color shift. Issue number is cyan (--color-focus)
+         for visual distinction. Loading state uses pulsing animation (--animation-duration-pulse-slow). */
       .issues-form {
         display: grid;
         gap: var(--space-3);
@@ -639,74 +902,120 @@ const controllerPage = String.raw`<!doctype html>
       .issues-list-container {
         display: grid;
         gap: var(--space-3);
-        max-height: 500px;
+        max-height: var(--panel-max-height);
         overflow-y: auto;
         padding: var(--space-2);
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         min-height: 100px;
       }
       .issues-list-empty {
         text-align: center;
-        color: var(--muted);
+        color: var(--color-text-muted);
         padding: var(--space-3);
       }
       .issues-list-item {
         padding: var(--space-2) var(--space-3);
-        background: var(--surface-high);
-        border: 1px solid var(--line);
-        border-radius: 4px;
+        background: var(--color-surface-high);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all var(--transition-base) var(--transition-easing);
       }
       .issues-list-item:hover {
-        background: var(--surface-highest);
-        border-color: var(--focus);
-        color: var(--focus-text);
+        background: var(--color-surface-highest);
+        border-color: var(--color-focus);
+        color: var(--color-focus-text);
       }
       .issues-list-item-number {
-        font-weight: 600;
-        color: var(--focus);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-focus);
         font-family: var(--font-mono);
-        font-size: 12px;
+        font-size: var(--font-size-sm);
       }
       .issues-list-item-title {
         margin-top: var(--space-1);
-        font-weight: 500;
+        font-weight: var(--font-weight-medium);
       }
       .issues-list-item-meta {
         margin-top: var(--space-1);
-        font-size: 12px;
-        color: var(--muted);
+        font-size: var(--font-size-sm);
+        color: var(--color-text-muted);
       }
       .issues-loading {
         text-align: center;
-        color: var(--muted);
+        color: var(--color-text-muted);
         padding: var(--space-3);
-        animation: pulse 1.5s infinite;
+        animation: pulse-loader var(--animation-duration-pulse-slow) var(--animation-easing-pulse-slow);
       }
-      @keyframes pulse {
+      @keyframes pulse-loader {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.5; }
       }
       .issues-error {
-        color: var(--bad);
-        background: var(--bad-bg);
+        color: var(--color-bad);
+        background: var(--color-bad-bg);
         padding: var(--space-2) var(--space-3);
-        border-radius: 4px;
-        border: 1px solid var(--bad);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-bad);
       }
+      /* ===== MOBILE RESPONSIVE ===== */
       @media (max-width: 767px) {
+        /* Ensure touch targets meet minimum 44px height on mobile */
+        button, input, textarea, select { min-height: var(--touch-target-min); }
+        .health-check-button { min-height: var(--touch-target-min); }
+        
+        /* Stack actions vertically on mobile */
         .action-row.run-actions > .run { order: 1; }
-        .response-panel { min-height: 40vh; }
+        
+        /* Responsive panel heights */
+        .response-panel { min-height: var(--mobile-viewport-height); }
+        
+        /* Health checks grid */
         .health-checks-grid { grid-template-columns: repeat(2, 1fr); }
-        main {
-          grid-template-columns: minmax(0, 1fr);
-        }
-        .recent-repos-dropdown {
-          max-width: 100vw;
-        }
+        
+        /* Single column main layout */
+        main { grid-template-columns: minmax(0, 1fr); }
+        
+        /* Dropdown viewport constraint */
+        .recent-repos-dropdown { max-width: 100vw; }
+        
+        /* Improve button spacing */
+        .action-row { gap: var(--space-2); }
+      }
+      /* ===== TABLET RESPONSIVE (480px - 767px) ===== */
+      @media (min-width: 480px) and (max-width: 767px) {
+        /* Optimize spacing for tablet */
+        main { padding: var(--space-3); }
+        .panel { padding: var(--space-3); }
+        
+        /* Better grid on tablet */
+        .health-checks-grid { grid-template-columns: repeat(3, 1fr); }
+        
+        /* Tab navigation improvement */
+        .tabs-nav button { padding: var(--space-2) var(--space-2); }
+      }
+      /* ===== ULTRA-MOBILE RESPONSIVE (max 480px) ===== */
+      @media (max-width: 480px) {
+        /* Compact padding for small screens */
+        main { padding: var(--space-2); }
+        .panel { padding: var(--space-2); }
+        
+        /* Single column health checks */
+        .health-checks-grid { grid-template-columns: 1fr; }
+        
+        /* Full width form inputs */
+        .issues-input-group input { min-width: auto; }
+        
+        /* Limit issues list height on mobile */
+        .issues-list-container { max-height: var(--panel-max-height); }
+        
+        /* Stack summary grid */
+        .summary-grid { grid-template-columns: 1fr; }
+        
+        /* Improve button visibility on mobile */
+        button { font-size: var(--font-size-md); }
       }
     </style>
   </head>
