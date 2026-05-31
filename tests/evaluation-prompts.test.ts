@@ -230,12 +230,16 @@ describe('Evaluation Prompt Enhancements', () => {
           },
         });
       } finally {
-        for (const [filePath, content] of backups) {
-          if (content === null) {
-            fs.rmSync(filePath, { force: true });
-          } else {
-            fs.writeFileSync(filePath, content);
+        try {
+          for (const [filePath, content] of backups) {
+            if (content === null) {
+              fs.rmSync(filePath, { force: true });
+            } else {
+              fs.writeFileSync(filePath, content);
+            }
           }
+        } catch (error) {
+          // Ignore restoration errors to ensure tmpDir cleanup
         }
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
