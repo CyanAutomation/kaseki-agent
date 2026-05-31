@@ -2788,13 +2788,14 @@ validate_goal_setting_artifact() {
   local candidate_artifact="$1"
   local final_artifact="$2"
   local reason_file="$3"
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
 
   if ! [ -f "$candidate_artifact" ]; then
     {
       echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"candidate artifact file not found\", \"file\": \"$candidate_artifact\"}"
-    } >> /results/goal-setting-validation-errors.jsonl
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
     [ -n "$reason_file" ] && echo "missing_file" > "$reason_file"
-    echo "Goal-setting artifact file missing: $candidate_artifact" > /results/goal-setting-validation-summary.txt
+    echo "Goal-setting artifact file missing: $candidate_artifact" > "$results_dir/goal-setting-validation-summary.txt"
     return 1
   fi
 
@@ -2805,16 +2806,16 @@ validate_goal_setting_artifact() {
   if ! echo "$json_content" | jq . >/dev/null 2>&1; then
     {
       echo "{\"step\": \"parse\", \"status\": \"failure\", \"reason\": \"malformed_json\", \"preview\": \"$(echo "$json_content" | head -c 200)\"}"
-    } >> /results/goal-setting-validation-errors.jsonl
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
     [ -n "$reason_file" ] && echo "malformed_json" > "$reason_file"
-    echo "Goal-setting artifact is not valid JSON" > /results/goal-setting-validation-summary.txt
+    echo "Goal-setting artifact is not valid JSON" > "$results_dir/goal-setting-validation-summary.txt"
     return 1
   fi
 
   # Validate with Node.js
   if ! validate_goal_setting_artifact_with_node "$candidate_artifact" "$reason_file"; then
     cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
-    echo "Goal-setting artifact failed Node.js validation" > /results/goal-setting-validation-summary.txt
+    echo "Goal-setting artifact failed Node.js validation" > "$results_dir/goal-setting-validation-summary.txt"
     return 1
   fi
 
@@ -2827,6 +2828,7 @@ validate_goal_setting_artifact() {
 validate_goal_setting_artifact_with_node() {
   local candidate_artifact="$1"
   local reason_file="$2"
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
 
   local validation_output
   validation_output=$(node -e "
@@ -2975,7 +2977,7 @@ validate_goal_setting_artifact_with_node() {
   if ! echo "$validation_output" | jq . >/dev/null 2>&1; then
     {
       echo "{\"step\": \"node_validation\", \"status\": \"failure\", \"reason\": \"node_error\", \"output\": \"$validation_output\"}"
-    } >> /results/goal-setting-validation-errors.jsonl
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
     [ -n "$reason_file" ] && echo "schema_mismatch" > "$reason_file"
     return 1
   fi
@@ -2986,7 +2988,7 @@ validate_goal_setting_artifact_with_node() {
   if [ "$status" != "valid" ]; then
     {
       echo "$validation_output"
-    } >> /results/goal-setting-validation-errors.jsonl
+    } >> "$results_dir/goal-setting-validation-errors.jsonl"
     [ -n "$reason_file" ] && echo "missing_required_fields" > "$reason_file"
     return 1
   fi
@@ -2998,7 +3000,7 @@ validate_goal_setting_artifact_with_node() {
     {
       echo "goal-setting-warnings:"
       echo "$warnings" | jq -r '.[]' 2>/dev/null || true
-    } >> /results/goal-setting-validation-notes.txt 2>/dev/null || true
+    } >> "$results_dir/goal-setting-validation-notes.txt" 2>/dev/null || true
   fi
 
   return 0
