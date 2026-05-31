@@ -2212,6 +2212,115 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('running status with metadata stages and finished progress events returns taskProgressPercent', async () => {
+    const jobId = 'kaseki-running-status-task-progress-metadata';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobDir, 'metadata.json'),
+      JSON.stringify({ stages: ['clone repository', 'pre-agent validation', 'pi coding agent', 'validation'] }),
+    );
+    fs.writeFileSync(
+      path.join(jobDir, 'progress.jsonl'),
+      [
+        { stage: 'clone repository', status: 'finished', detail: 'finished with exit 0', timestamp: '2026-05-05T00:00:00.000Z' },
+        { stage: 'pre-agent validation', status: 'finished', detail: 'finished with exit 0', timestamp: '2026-05-05T00:00:01.000Z' },
+      ].map((event) => JSON.stringify(event)).join('\n'),
+    );
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'running',
+        createdAt: new Date(),
+        resultDir: jobDir,
+      },
+    }) as any;
+    scheduler.getLiveProgressEvents = jest.fn(() => []);
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.taskProgressPercent).toBe(50);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('running status with live progress but no progress.jsonl returns bounded taskProgressPercent', async () => {
+    const jobId = 'kaseki-running-status-task-progress-live';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'running',
+        createdAt: new Date(),
+        resultDir: jobDir,
+      },
+    }) as any;
+    scheduler.getLiveProgressEvents = jest.fn(() => [
+      { stage: 'pi coding agent', message: 'coding', timestamp: '2026-05-05T00:00:02.000Z' },
+    ]);
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(typeof body.taskProgressPercent).toBe('number');
+      expect(body.taskProgressPercent).toBeGreaterThanOrEqual(0);
+      expect(body.taskProgressPercent).toBeLessThanOrEqual(100);
+      expect(body.taskProgressPercent).toBeLessThan(100);
+      expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 1);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('malformed progress events do not break the status response', async () => {
+    const jobId = 'kaseki-running-status-task-progress-malformed';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobDir, 'progress.jsonl'),
+      '{not-json}\n' + JSON.stringify({ stage: { name: 'clone repository' }, status: 'finished' }) + '\n',
+    );
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'running',
+        createdAt: new Date(),
+        resultDir: jobDir,
+      },
+    }) as any;
+    scheduler.getLiveProgressEvents = jest.fn(() => []);
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.status).toBe('running');
+      expect(body.taskProgressPercent).toBe(0);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('failed run inlines result-summary.md content in status response', async () => {
     const jobId = 'kaseki-failed-inline-summary';
     const jobDir = path.join(resultsDir, jobId);
