@@ -230,7 +230,11 @@ describe('Evaluation Prompt Enhancements', () => {
       const functionStart = scriptContent.indexOf('collect_run_evaluation_feedback() {');
       expect(functionStart).toBeGreaterThanOrEqual(0);
 
-      const functionEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
+      const functionEnd = scriptContent.indexOf('\n}\n\nconst', functionStart);
+      if (functionEnd === -1) {
+        const altEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
+        expect(altEnd).toBeGreaterThan(functionStart);
+      }
       expect(functionEnd).toBeGreaterThan(functionStart);
       const collectRunEvaluationFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
 
