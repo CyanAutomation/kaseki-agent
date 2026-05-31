@@ -53,25 +53,59 @@ const extractShellFunctionBlock = (scriptSource: string, startFunction: string, 
 describe('Goal-Setting Agent Improvements', () => {
   // ===== IMPROVEMENT #1: ANTI-PATTERNS =====
   describe('Improvement #1: Anti-Patterns / Do-NOT Clauses', () => {
-    it('should structure anti-patterns into three categories', () => {
-      const goal: GoalSettingOutput = {
+    it('should validate supported anti-pattern categories and report missing or malformed input', () => {
+      const baseGoal = {
         original_prompt: 'Fix TypeScript errors',
         upgraded_goal: 'Fix TypeScript errors in src/api/',
         key_requirements: ['Handle compilation errors'],
         success_criteria: ['TypeScript passes'],
+        reasoning: 'clear scope boundaries',
+        confidence: 'high',
+      } satisfies Omit<GoalSettingOutput, 'anti_patterns'>;
+
+      const goal = parseGoalSettingOutput({
+        ...baseGoal,
         anti_patterns: {
           do_not_modify: ['src/generated/**'],
           do_not_break: ['API contracts'],
           must_preserve: ['error messages'],
         },
-        reasoning: 'clear scope boundaries',
-        confidence: 'high',
-      };
+      });
 
-      expect(goal.anti_patterns).toBeDefined();
-      expect(goal.anti_patterns.do_not_modify).toContain('src/generated/**');
-      expect(goal.anti_patterns.do_not_break).toContain('API contracts');
-      expect(goal.anti_patterns.must_preserve).toContain('error messages');
+      expect(goal.anti_patterns).toEqual({
+        do_not_modify: ['src/generated/**'],
+        do_not_break: ['API contracts'],
+        must_preserve: ['error messages'],
+      });
+      expect(isGoalSettingOutput(goal)).toBe(true);
+
+      const partialAntiPatterns = parseGoalSettingOutput({
+        ...baseGoal,
+        anti_patterns: {
+          do_not_break: ['API contracts'],
+        },
+      });
+
+      expect(partialAntiPatterns.anti_patterns).toEqual({
+        do_not_break: ['API contracts'],
+      });
+      expect(hasQualityWarnings(partialAntiPatterns)).not.toContain(
+        'No explicit anti-patterns defined - recommended for safety',
+      );
+
+      const missingAntiPatterns = parseGoalSettingOutput(baseGoal);
+      expect(hasQualityWarnings(missingAntiPatterns)).toContain(
+        'No explicit anti-patterns defined - recommended for safety',
+      );
+
+      expect(
+        GoalSettingOutputSchema.safeParse({
+          ...baseGoal,
+          anti_patterns: {
+            do_not_modify: 'src/generated/**',
+          },
+        }).success,
+      ).toBe(false);
     });
 
     it('should support empty anti-pattern categories', () => {
