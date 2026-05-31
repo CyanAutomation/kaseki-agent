@@ -10,13 +10,13 @@ cleanup_trailing_whitespace_for_changed_files() {
   : >> "$log_file" 2>/dev/null || true
 
   while IFS= read -r -d '' file; do
-    [ -n "$file" ] || continue
-
-    case "$file" in
-      .git/*|*/.git/*|node_modules/*|*/node_modules/*|dist/*|*/dist/*|coverage/*|*/coverage/*|.coverage/*|*/.coverage/*|htmlcov/*|*/htmlcov/*)
-        printf 'Skipping excluded path: %s\n' "$file" | tee -a "$log_file"
-    bash "$SCRIPT_DIR/cleanup-trailing-whitespace.sh"
-        continue
+EXCLUDE_PATTERNS=(
+  "\.min\.js$"
+  "\.min\.css$"
+  "package-lock\.json$"
+  "yarn\.lock$"
+  "pnpm-lock\.yaml$"
+)
         ;;
       package-lock.json|npm-shrinkwrap.json|yarn.lock|pnpm-lock.yaml|bun.lockb|bun.lock|Cargo.lock|Pipfile.lock|poetry.lock|composer.lock|Gemfile.lock|go.sum)
         printf 'Skipping lockfile: %s\n' "$file" | tee -a "$log_file"
