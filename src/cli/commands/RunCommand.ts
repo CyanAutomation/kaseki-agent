@@ -109,6 +109,14 @@ export class RunCommand extends BaseCommand {
       request.validationCommands = validationCommands;
     }
 
+    const autoLintCleanup = this.configManager.get<{ enabled?: boolean; commands?: string[] }>(
+      'validation.autoLintCleanup',
+      {},
+    );
+    if (autoLintCleanup.enabled !== undefined || (autoLintCleanup.commands?.length ?? 0) > 0) {
+      request.autoLintCleanup = autoLintCleanup;
+    }
+
     const taskMode = this.configManager.get<'patch' | 'inspect'>('repo.task_mode', 'patch');
     if (taskMode) {
       request.taskMode = taskMode;

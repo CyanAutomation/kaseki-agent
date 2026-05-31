@@ -245,6 +245,8 @@ describe('OpenAPI Schema Builders', () => {
       // Array fields
       expect(properties.changedFilesAllowlist.type).toBe('array');
       expect(properties.validationCommands.type).toBe('array');
+      expect(properties.autoLintCleanup.type).toBe('object');
+      expect(properties.validation.type).toBe('object');
 
       // Integer fields
       expect(properties.maxDiffBytes.type).toBe('integer');
@@ -312,6 +314,16 @@ describe('OpenAPI Schema Builders', () => {
       expect(checkMode).toContain('boot');
       expect(checkMode).toContain('baseline-validation');
     });
+  });
+
+  it('autoLintCleanup should expose enabled and command controls', () => {
+    const schema = buildRunRequestSchema() as JsonSchemaObject;
+    const autoLintCleanup = schema.properties?.autoLintCleanup as JsonSchemaObject;
+    const properties = autoLintCleanup.properties as Record<string, JsonSchemaObject>;
+
+    expect(properties.enabled).toMatchObject({ type: 'boolean' });
+    expect(properties.commands).toMatchObject({ type: 'array' });
+    expect(properties.commands.items).toMatchObject({ type: 'string' });
   });
 
   describe('Numeric Constraint Validation', () => {

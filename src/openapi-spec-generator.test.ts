@@ -188,6 +188,7 @@ const expectedSchemas: SchemaContract[] = [
       timeoutSeconds: { type: 'integer', minimum: 60, maximum: 10800 },
       changedFilesAllowlist: { type: 'array' },
       validationCommands: { type: 'array' },
+      autoLintCleanup: { type: 'object' },
       idempotencyKey: { type: 'string', format: 'uuid' },
       startupCheck: { type: 'boolean' },
     },
@@ -477,6 +478,7 @@ describe('OpenAPI Spec Generator', () => {
       const runRequest = getSchemas(spec).RunRequest;
       expect(getProperty(runRequest, ['changedFilesAllowlist']).items).toMatchObject({ type: 'string' });
       expect(getProperty(runRequest, ['validationCommands']).items).toMatchObject({ type: 'string' });
+      expect(getProperty(runRequest, ['autoLintCleanup', 'commands']).items).toMatchObject({ type: 'string' });
 
       const webhookConfig = getSchemas(spec).WebhookConfig;
       expect(getProperty(webhookConfig, ['events']).items).toMatchObject({ type: 'string' });

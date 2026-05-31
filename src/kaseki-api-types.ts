@@ -93,9 +93,23 @@ const RunRequestShape = z.object({
     .describe('Controller-friendly allowlist alias'),
   maxDiffBytes: z.number().int().positive().optional().describe('Max diff size in bytes'),
   validationCommands: z.array(z.string()).optional().describe('Validation commands to run'),
+  autoLintCleanup: z
+    .object({
+      enabled: z.boolean().optional().describe('Enable automatic lint cleanup before final quality checks'),
+      commands: z.array(z.string()).optional().describe('Cleanup commands to run before final quality checks'),
+    })
+    .optional()
+    .describe('Automatic lint cleanup controls'),
   validation: z
     .object({
       commands: z.array(z.string()).optional().describe('Alias for validationCommands'),
+      autoLintCleanup: z
+        .object({
+          enabled: z.boolean().optional().describe('Enable automatic lint cleanup before final quality checks'),
+          commands: z.array(z.string()).optional().describe('Cleanup commands to run before final quality checks'),
+        })
+        .optional()
+        .describe('Alias for autoLintCleanup'),
     })
     .optional()
     .describe('Controller-friendly validation alias'),
@@ -158,6 +172,7 @@ function normalizeRunRequestAliases(input: unknown): unknown {
     ['changed_files_allowlist', 'changedFilesAllowlist'],
     ['max_diff_bytes', 'maxDiffBytes'],
     ['validation_commands', 'validationCommands'],
+    ['auto_lint_cleanup', 'autoLintCleanup'],
     ['scouting_config', 'scouting'],
     ['goal_setting', 'goalSetting'],
     ['goal_check', 'goalCheck'],

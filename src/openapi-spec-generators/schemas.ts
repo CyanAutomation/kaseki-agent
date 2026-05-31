@@ -44,6 +44,40 @@ export function buildRunRequestSchema(): Record<string, unknown> {
         items: { type: 'string' },
         description: 'Validation commands to run',
       },
+      autoLintCleanup: {
+        type: 'object',
+        description: 'Automatic lint cleanup controls',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'Enable automatic lint cleanup before final quality checks',
+          },
+          commands: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Cleanup commands to run before final quality checks',
+          },
+        },
+      },
+      validation: {
+        type: 'object',
+        description: 'Controller-friendly validation aliases',
+        properties: {
+          commands: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Alias for validationCommands',
+          },
+          autoLintCleanup: {
+            type: 'object',
+            description: 'Alias for autoLintCleanup',
+            properties: {
+              enabled: { type: 'boolean' },
+              commands: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
       scouting: {
         type: 'object',
         description: 'Pre-coding Pi scouting controls',
