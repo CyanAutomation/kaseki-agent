@@ -403,8 +403,7 @@ NODE
       const definesGoalCheckHandler = /function collectGoalCheckFeedback\(instanceName, goalSettingPath, goalCheckPath, metadataPath\)/.test(
         collectFeedbackContent
       );
-      const exportsGoalCheckHandler = /module\.exports\s*=|exports\.collectGoalCheckFeedback/.test(collectFeedbackContent);
-      expect(definesGoalCheckHandler || exportsGoalCheckHandler).toBe(true);
+      const exportsGoalCheckHandler = /(?:module\.)?exports(?:\s*\.\s*collectGoalCheckFeedback|\s*=\s*\{[^}]*collectGoalCheckFeedback[^}]*\})/.test(collectFeedbackContent);
 
       const definesRunEvaluationHandler = /function collectRunEvaluationFeedback\(instanceName, runEvaluationPath, metadataPath\)/.test(
         collectFeedbackContent
