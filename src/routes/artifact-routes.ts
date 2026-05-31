@@ -4,61 +4,15 @@ import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { ResultCache } from '../result-cache';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { ArtifactResponse, RunArtifactsResponse, ArtifactAvailability, RunEvaluationRenderedResponse } from '../kaseki-api-types';
+import { ArtifactResponse, RunArtifactsResponse, RunEvaluationRenderedResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
+import { isTerminalJobStatus, isArtifactAvailable, getArtifactStatus, getArtifactUnavailableReason, getSafeFileStats } from '../lib/artifact-availability';
 
 // All artifacts from the metadata registry
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
-
-function isTerminalJobStatus(status: 'queued' | 'running' | 'completed' | 'failed'): boolean {
-  return status === 'completed' || status === 'failed';
-}
-
-/**
- * Check if an artifact is available based on job status.
- * - ON_FAILURE artifacts only available if job.status === 'failed'
- * - ON_SUCCESS artifacts only available if job.status === 'completed'
- * - ALWAYS artifacts always available for terminal jobs
- * - CONDITIONAL artifacts require existence check on disk
- */
-function isArtifactAvailable(
-  artifactName: string,
-  jobStatus: 'queued' | 'running' | 'completed' | 'failed',
-  fileExists: boolean,
-  fileSize: number
-): boolean {
-  if (!isTerminalJobStatus(jobStatus)) {
-    return false;
-  }
-
-  const metadata = ARTIFACT_METADATA_REGISTRY[artifactName];
-  if (!metadata) {
-    return false;
-  }
-
-  // File must exist and have content
-  if (!fileExists || fileSize === 0) {
-    return false;
-  }
-
-  // Check availability rules
-  switch (metadata.availability) {
-  case ArtifactAvailability.ALWAYS:
-    return true;
-  case ArtifactAvailability.ON_FAILURE:
-    return jobStatus === 'failed';
-  case ArtifactAvailability.ON_SUCCESS:
-    return jobStatus === 'completed';
-  case ArtifactAvailability.CONDITIONAL:
-    // For conditional artifacts, availability depends on file existence
-    return true;
-  default:
-    return false;
-  }
-}
 
 function artifactContentType(fileName: string): string {
   const metadata = ARTIFACT_METADATA_REGISTRY[fileName];
@@ -220,36 +174,17 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       );
     }
 
-    const metadata = ARTIFACT_METADATA_REGISTRY[fileName];
-    if (!metadata) {
-      return sendErrorResponse(res, 400, 'Bad Request', `Unknown artifact: ${fileName}`);
-    }
-
-    // Check availability based on job status
     try {
+      // Determine artifact availability
       const filePath = path.join(config.resultsDir, job.id, fileName);
-      let fileExists = false;
-      let fileSize = 0;
-      let fileStat: fs.Stats | undefined;
-      try {
-        fileStat = fs.statSync(filePath);
-        fileExists = fileStat.isFile();
-        fileSize = fileExists ? fileStat.size : 0;
-      } catch {
-        // Availability handling below returns a client-facing not-available response.
-      }
-      const available = isArtifactAvailable(fileName, job.status, fileExists, fileSize);
+      const fileStats = getSafeFileStats(filePath);
+      const status = getArtifactStatus(fileName, job.status, fileStats.exists, fileStats.size);
 
-      if (!available) {
-        const reason =
-          metadata.availability === ArtifactAvailability.ON_FAILURE
-            ? `Artifact only available for failed runs: ${fileName}`
-            : `Artifact not available in current state: ${fileName}`;
-        return sendErrorResponse(res, 400, 'Bad Request', reason);
-      }
-
-      if (!fileExists || fileSize === 0) {
-        return sendErrorResponse(res, 404, 'Not Found', `Artifact not found or empty: ${fileName}`);
+      // Handle non-available artifacts
+      if (status !== 'available') {
+        const reason = getArtifactUnavailableReason(status, fileName);
+        const statusCode = status === 'pending' ? 202 : 400;
+        return sendErrorResponse(res, statusCode, 'Bad Request', reason);
       }
 
       const contentType = artifactContentType(fileName);
@@ -263,10 +198,11 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       const response: ArtifactResponse = {
         file: fileName,
         contentType,
-        size: fileStat?.size ?? fileSize,
+        size: fileStats.size,
         content,
       };
 
+      // Handle format transformation (rendered JSON)
       if (format !== undefined) {
         if (format !== 'rendered') {
           return sendErrorResponse(res, 400, 'Bad Request', `Unsupported format: ${format}. Supported: rendered`);
@@ -292,6 +228,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         return res.json(rendered);
       }
 
+      // Return raw artifact response
       res.setHeader('Content-Type', contentType);
       res.json(response);
     } catch (err) {

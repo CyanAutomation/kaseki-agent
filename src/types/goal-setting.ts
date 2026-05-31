@@ -139,3 +139,68 @@ export function parseGoalSettingOutput(output: unknown): GoalSettingOutput {
 export function isGoalSettingOutput(output: unknown): output is GoalSettingOutput {
   return GoalSettingOutputSchema.safeParse(output).success;
 }
+
+/**
+ * Type guard: Check if criterion is SmartCriterion (object) vs string.
+ */
+export function isSmartCriterion(value: unknown): value is SmartCriterion {
+  return SmartCriterionSchema.safeParse(value).success;
+}
+
+/**
+ * Calculate numeric goal quality score from GoalSettingOutput or QualityMetrics.
+ * Scoring: high=20, medium=10, low=0 points per dimension (0-100 scale).
+ * Returns 50 (midpoint) if no quality metrics provided.
+ */
+export function calculateGoalQualityScore(goal: GoalSettingOutput | QualityMetrics): number {
+  // Extract metrics from GoalSettingOutput or use directly if QualityMetrics
+  const metrics: QualityMetrics | undefined =
+    'quality_metrics' in goal && goal.quality_metrics
+      ? goal.quality_metrics
+      : 'clarity' in goal
+        ? (goal as QualityMetrics)
+        : undefined;
+
+  if (!metrics) return 50; // Default midpoint score
+
+  const scoreMap: Record<'high' | 'medium' | 'low', number> = {
+    high: 20,
+    medium: 10,
+    low: 0,
+  };
+
+  return (
+    scoreMap[metrics.clarity] +
+    scoreMap[metrics.measurability] +
+    scoreMap[metrics.specificity] +
+    scoreMap[metrics.scope_clarity] +
+    scoreMap[metrics.constraint_strength]
+  );
+}
+
+/**
+ * Collect quality warnings from a goal output.
+ * Returns array of dimension names that scored 'low'.
+ */
+export function hasQualityWarnings(goal: GoalSettingOutput): string[] {
+  if (!goal.quality_metrics) return [];
+
+  const warnings: string[] = [];
+  const metrics = goal.quality_metrics;
+
+  if (metrics.clarity === 'low') warnings.push('clarity');
+  if (metrics.measurability === 'low') warnings.push('measurability');
+  if (metrics.specificity === 'low') warnings.push('specificity');
+  if (metrics.scope_clarity === 'low') warnings.push('scope_clarity');
+  if (metrics.constraint_strength === 'low') warnings.push('constraint_strength');
+
+  return warnings;
+}
+
+/**
+ * Extract criterion text from SuccessCriterion union.
+ * If string, returns as-is. If SmartCriterion object, returns criterion field.
+ */
+export function getCriterionText(criterion: SuccessCriterion): string {
+  return typeof criterion === 'string' ? criterion : criterion.criterion;
+}
