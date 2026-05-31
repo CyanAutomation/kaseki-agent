@@ -27,6 +27,7 @@ const StatusResponseSchema = z.object({
   exitCode: z.number().optional(),
   elapsedSeconds: z.number().optional(),
   timeoutRiskPercent: z.number().optional(),
+  taskProgressPercent: z.number().optional(),
   correlationId: z.string().optional(),
   requestId: z.string().optional(),
   resultDir: z.string().optional(),

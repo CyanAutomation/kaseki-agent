@@ -15,6 +15,7 @@ const StatusResponseSchema = z.object({
   }).optional(),
   elapsedSeconds: z.number().optional(),
   timeoutRiskPercent: z.number().optional(),
+  taskProgressPercent: z.number().optional(),
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
   validationFailureReason: z.string().optional(),
