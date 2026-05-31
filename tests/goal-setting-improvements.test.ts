@@ -22,10 +22,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   GoalSettingOutput,
+  GoalSettingOutputSchema,
   calculateGoalQualityScore,
   hasQualityWarnings,
   getCriterionText,
+  isGoalSettingOutput,
   isSmartCriterion,
+  parseGoalSettingOutput,
 } from '../src/types/goal-setting';
 import { collectGoalFeedback, analyzeGoalFeedback } from '../src/lib/goal-setting-feedback';
 
@@ -175,10 +178,10 @@ describe('Goal-Setting Agent Improvements', () => {
   // ===== IMPROVEMENT #4: EXAMPLES =====
   describe('Improvement #4: Example-Based Goal Clarification', () => {
     it('should include before/after examples', () => {
-      const goal: GoalSettingOutput = {
+      const goalSettingArtifact = {
         original_prompt: 'Fix null handling',
         upgraded_goal: 'Fix parseRole() null-safety',
-        key_requirements: [],
+        key_requirements: ['preserve non-null role behavior'],
         success_criteria: ['Returns "Unnamed Role" for null input'],
         examples: {
           before: 'parseRole(null) → TypeError: Cannot read property',
@@ -188,9 +191,38 @@ describe('Goal-Setting Agent Improvements', () => {
         confidence: 'high',
       };
 
-      expect(goal.examples).toBeDefined();
-      expect(goal.examples?.before).toContain('TypeError');
-      expect(goal.examples?.after).toContain('Unnamed Role');
+      const schemaResult = GoalSettingOutputSchema.safeParse(goalSettingArtifact);
+      expect(schemaResult.success).toBe(true);
+
+      const parsedGoal = parseGoalSettingOutput(goalSettingArtifact);
+      expect(isGoalSettingOutput(parsedGoal)).toBe(true);
+      expect(parsedGoal.examples).toEqual({
+        before: 'parseRole(null) → TypeError: Cannot read property',
+        after: 'parseRole(null) → {name: "Unnamed Role"}',
+      });
+
+      const feedback = collectGoalFeedback(
+        'kaseki-examples',
+        parsedGoal,
+        new Map([
+          ['pi scouting agent', { exit_code: 0, duration_seconds: 5 }],
+          ['pi agent', { exit_code: 0, duration_seconds: 10 }],
+          ['goal check', { exit_code: 0, duration_seconds: 3 }],
+        ]),
+        {
+          status: 0,
+          completed_successfully: true,
+          total_duration_seconds: 18,
+          validation_commands_run: ['npm test -- parseRole'],
+          validation_exit_code: 0,
+        },
+      );
+
+      expect(feedback.goal_setting_output.has_examples).toBe(true);
+
+      const analysis = analyzeGoalFeedback([feedback]);
+      expect(analysis.patterns.with_examples_success_rate).toBe(1);
+      expect(analysis.patterns.without_examples_success_rate).toBe(0);
     });
 
     it('should warn if examples are missing', () => {
