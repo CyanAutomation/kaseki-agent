@@ -408,7 +408,7 @@ NODE
       const definesRunEvaluationHandler = /function collectRunEvaluationFeedback\(instanceName, runEvaluationPath, metadataPath\)/.test(
         collectFeedbackContent
       );
-      const exportsRunEvaluationHandler = /module\.exports\s*=|exports\.collectRunEvaluationFeedback/.test(collectFeedbackContent);
+      const exportsRunEvaluationHandler = /(?:module\.)?exports(?:\s*\.\s*collectRunEvaluationFeedback|\s*=\s*\{[^}]*collectRunEvaluationFeedback[^}]*\})/.test(collectFeedbackContent);
       expect(definesRunEvaluationHandler || exportsRunEvaluationHandler).toBe(true);
 
       expect(collectFeedbackContent).toContain("phase === 'goal-check'");
