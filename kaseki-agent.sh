@@ -1984,30 +1984,18 @@ auto_lint_cleanup_enabled_for_mode() {
 }
 
 run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
-  local file changed_count=0 cleaned_count=0 skipped_count=0
-  while IFS= read -r -d '' file; do
-    [ -n "$file" ] || continue
-    if ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
-      skipped_count=$((skipped_count + 1))
-      continue
-    fi
-    if ! [ -f "$file" ]; then
-      skipped_count=$((skipped_count + 1))
-      continue
-    fi
-    if ! { LC_ALL=C grep -Iq . -- "$file" || ! [ -s "$file" ]; }; then
-      printf 'Skipping likely binary file: %s\n' "$file"
-      skipped_count=$((skipped_count + 1))
-      continue
-    fi
-    changed_count=$((changed_count + 1))
-    if grep -q '[[:blank:]]$' -- "$file" 2>/dev/null; then
-      perl -pi -e 's/[ \t]+$//' -- "$file"
-      cleaned_count=$((cleaned_count + 1))
-      printf 'Cleaned trailing whitespace: %s\n' "$file"
-    fi
-  done < <(git diff --name-only -z --diff-filter=ACMRT -- . 2>/dev/null || true)
-  printf 'Trailing-whitespace cleanup inspected %s tracked changed text file(s), cleaned %s, skipped %s.\n' "$changed_count" "$cleaned_count" "$skipped_count"
+  local script_dir helper_script
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  helper_script="$script_dir/scripts/cleanup-trailing-whitespace.sh"
+  if [ -r "$helper_script" ]; then
+    # shellcheck source=scripts/cleanup-trailing-whitespace.sh
+    . "$helper_script"
+    cleanup_trailing_whitespace_for_changed_files
+    return $?
+  fi
+
+  printf 'ERROR: trailing whitespace cleanup helper is missing: %s\n' "$helper_script"
+  return 1
 }
 
 collect_changed_file_set() {
