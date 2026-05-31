@@ -414,21 +414,108 @@ describe('Goal-Setting Agent Improvements', () => {
 
   // ===== IMPROVEMENT #8: REASONING TRANSPARENCY =====
   describe('Improvement #8: Reasoning Transparency', () => {
-    it('should include detailed reasoning explaining upgrade', () => {
-      const goal: GoalSettingOutput = {
-        original_prompt: 'Fix bug',
-        upgraded_goal: 'Fix parseRole() null-handling',
-        key_requirements: [],
-        success_criteria: [],
-        reasoning:
-          'Original prompt was too vague. "Fix bug" does not specify which function or what the issue is. Upgraded to target parseRole() specifically and clarify the null-handling requirement. Anti-patterns added to prevent modifying generated code. Quality metrics show clarity=high due to specific function name.',
-        confidence: 'high',
-      };
+    it('should validate and preserve actionable reasoning through the production artifact validator', () => {
+      const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+      const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-validator-'));
 
-      expect(goal.reasoning).toContain('vague');
-      expect(goal.reasoning).toContain('parseRole');
-      expect(goal.reasoning).toContain('anti-patterns');
-      expect(goal.reasoning).toContain('clarity=high');
+      try {
+        const resultsDir = join(tempDir, 'results');
+        const candidateArtifact = join(resultsDir, 'goal-setting-candidate.json');
+        const finalArtifact = join(resultsDir, 'goal-setting.json');
+        const reasonFile = join(resultsDir, 'goal-setting-validation-reason.txt');
+        const invalidCandidateArtifact = join(resultsDir, 'goal-setting-candidate-invalid.json');
+        const invalidFinalArtifact = join(resultsDir, 'goal-setting-invalid.json');
+        const invalidReasonFile = join(resultsDir, 'goal-setting-validation-reason-invalid.txt');
+        const validationRunner = join(tempDir, 'validate-goal-setting-artifact.sh');
+
+        mkdirSync(resultsDir, { recursive: true });
+
+        const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8');
+        const validationStart = scriptSource.indexOf('validate_goal_setting_artifact() {');
+        const validationEnd = scriptSource.indexOf('run_goal_setting_agent() {', validationStart);
+        expect(validationStart).toBeGreaterThanOrEqual(0);
+        expect(validationEnd).toBeGreaterThan(validationStart);
+
+        const validationFunctions = scriptSource
+          .slice(validationStart, validationEnd)
+          .replaceAll('/results', resultsDir);
+        writeFileSync(
+          validationRunner,
+          `#!/usr/bin/env bash
+set -euo pipefail
+${validationFunctions}
+validate_goal_setting_artifact "$1" "$2" "$3"
+`,
+          { mode: 0o755 },
+        );
+
+        const reasoning =
+          'Upgrade narrows an ambiguous parser bug report into a bounded change: update parseRole() null handling, add regression coverage, and preserve generated files plus public error messages so downstream agents know which trade-offs are safe.';
+        const successCriterionReasoning =
+          'The criterion is actionable because it names parseRole(), the null-input scenario, and the exact test command that proves completion.';
+        const artifact = {
+          original_prompt: 'Fix bug',
+          upgraded_goal:
+            'Fix parseRole() null handling by returning the documented guest role for null input, with focused regression tests and no generated-file edits.',
+          key_requirements: [
+            'Update parseRole() behavior only for null or missing role input',
+            'Add a regression test that exercises the null-input path',
+          ],
+          success_criteria: [
+            {
+              criterion: 'npm test -- parseRole passes with a null-input regression case',
+              smart_score: 'high',
+              reasoning: successCriterionReasoning,
+            },
+          ],
+          anti_patterns: {
+            do_not_modify: ['src/generated/**'],
+            do_not_break: ['public parseRole() return contract for non-null roles'],
+            must_preserve: ['existing error message text for invalid role values'],
+          },
+          constraints: {
+            operational: ['keep the change scoped to parser code and parser tests'],
+            architectural: ['do not introduce new dependencies'],
+            technical: ['preserve TypeScript strict-mode compatibility'],
+            business: ['avoid changing user-visible role labels except for the null fallback'],
+          },
+          examples: {
+            before: 'parseRole(null) throws before downstream defaulting can run',
+            after: "parseRole(null) returns the documented guest role and parseRole('admin') remains unchanged",
+          },
+          quality_metrics: {
+            clarity: 'high',
+            measurability: 'high',
+            specificity: 'high',
+            scope_clarity: 'high',
+            constraint_strength: 'high',
+          },
+          reasoning,
+          confidence: 'high',
+        };
+
+        writeFileSync(candidateArtifact, JSON.stringify(artifact));
+        execFileSync('bash', [validationRunner, candidateArtifact, finalArtifact, reasonFile]);
+
+        const validatedArtifact = JSON.parse(readFileSync(finalArtifact, 'utf8')) as typeof artifact;
+        expect(readFileSync(reasonFile, 'utf8').trim()).toBe('valid');
+        expect(validatedArtifact.reasoning).toBe(reasoning);
+        expect(validatedArtifact.success_criteria[0].reasoning).toBe(successCriterionReasoning);
+
+        const invalidArtifact = { ...artifact, reasoning: '' };
+        writeFileSync(invalidCandidateArtifact, JSON.stringify(invalidArtifact));
+        expect(() =>
+          execFileSync('bash', [validationRunner, invalidCandidateArtifact, invalidFinalArtifact, invalidReasonFile], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }),
+        ).toThrow();
+
+        const validationErrors = readFileSync(join(resultsDir, 'goal-setting-validation-errors.jsonl'), 'utf8');
+        expect(validationErrors).toContain('missing_or_invalid: reasoning (must be non-empty string)');
+        expect(readFileSync(invalidReasonFile, 'utf8').trim()).toBe('missing_required_fields');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
