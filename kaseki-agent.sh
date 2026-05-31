@@ -2010,10 +2010,101 @@ run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
   printf 'Trailing-whitespace cleanup inspected %s tracked changed text file(s), cleaned %s, skipped %s.\n' "$changed_count" "$cleaned_count" "$skipped_count"
 }
 
+collect_changed_file_set() {
+  local output_file="$1"
+  : > "$output_file"
+  if [ ! -d /workspace/repo/.git ]; then
+    return 0
+  fi
+
+  {
+    git -C /workspace/repo diff --name-only -- . 2>/dev/null || true
+    git -C /workspace/repo diff --name-only --cached -- . 2>/dev/null || true
+    git -C /workspace/repo ls-files --others --exclude-standard 2>/dev/null || true
+  } | sed '/^$/d' | LC_ALL=C sort -u > "$output_file"
+}
+
+restore_cleanup_disallowed_changes() {
+  local disallowed_file="$1"
+  local changed_file
+  [ -s "$disallowed_file" ] || return 0
+
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    printf 'Restoring cleanup-created file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+    emit_event "auto_lint_cleanup_file_restored" "file=$changed_file" "reason=not_in_cleanup_allowlist"
+    git -C /workspace/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+    git -C /workspace/repo clean -f -- "$changed_file" 2>/dev/null || true
+  done < "$disallowed_file"
+}
+
+check_auto_lint_cleanup_allowlist() {
+  local before_file="$1"
+  local after_file="$2"
+  local cleanup_created_file="/results/auto-lint-cleanup-created-files.txt"
+  local disallowed_file="/results/auto-lint-cleanup-disallowed-files.txt"
+  local post_restore_file="/results/auto-lint-cleanup-post-restore-files.txt"
+  local allowlist_patterns allowlist_regex changed_file disallowed_count unrestored_count
+
+  : > "$cleanup_created_file"
+  : > "$disallowed_file"
+  : > "$post_restore_file"
+  if [ ! -d /workspace/repo/.git ]; then
+    return 0
+  fi
+
+  comm -13 "$before_file" "$after_file" > "$cleanup_created_file" || true
+  [ -s "$cleanup_created_file" ] || return 0
+
+  allowlist_patterns="$(merge_allowlists "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" "${KASEKI_VALIDATION_ALLOWLIST:-}")"
+  allowlist_regex="$(build_allowlist_regex "$allowlist_patterns")"
+
+  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+    [ -z "$changed_file" ] && continue
+    if [ -n "$allowlist_regex" ] && printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+      emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=true" "file=$changed_file"
+    else
+      printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+      printf '%s\n' "$changed_file" >> "$disallowed_file"
+      emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=false" "file=$changed_file"
+    fi
+  done < "$cleanup_created_file"
+
+  disallowed_count="$(wc -l < "$disallowed_file" | tr -d ' ')"
+  disallowed_count="${disallowed_count:-0}"
+  [ "$disallowed_count" -gt 0 ] || return 0
+
+  if [ "${KASEKI_RESTORE_DISALLOWED_CHANGES:-}" = "1" ]; then
+    restore_cleanup_disallowed_changes "$disallowed_file"
+    collect_changed_file_set "$post_restore_file"
+    unrestored_count=0
+    while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+      [ -z "$changed_file" ] && continue
+      if grep -Fxq -- "$changed_file" "$post_restore_file"; then
+        printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+        unrestored_count=$((unrestored_count + 1))
+      fi
+    done < "$disallowed_file"
+    if [ "$unrestored_count" -eq 0 ]; then
+      printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+      emit_event "auto_lint_cleanup_allowlist_restoration_complete" "restored=$disallowed_count" "unrestored=0"
+      collect_git_artifacts
+      return 0
+    fi
+  fi
+
+  AUTO_LINT_CLEANUP_EXIT=7
+  QUALITY_EXIT=7
+  QUALITY_FAILURE_REASON="auto_lint_cleanup_allowlist: $disallowed_count cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST"
+  printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+  emit_error_event "auto_lint_cleanup_allowlist_failed" "$QUALITY_FAILURE_REASON" "continue"
+  return 1
+}
+
 run_auto_lint_cleanup() {
   local stage_label="auto lint cleanup"
   local stage_start cleanup_start cleanup_end duration command trimmed missing_npm_script
-  local command_exit pipefail_was_enabled
+  local command_exit pipefail_was_enabled cleanup_before_file cleanup_after_file
   local -a cleanup_commands
 
   AUTO_LINT_CLEANUP_EXIT=0
@@ -2021,6 +2112,7 @@ run_auto_lint_cleanup() {
   printf '\n==> %s\n' "$stage_label"
   set_current_stage "$stage_label"
   emit_progress "$stage_label" "started"
+  emit_event "auto_lint_cleanup_started" "commands=${KASEKI_AUTO_LINT_CLEANUP_COMMANDS:-}"
   stage_start="$(date +%s)"
 
   if ! auto_lint_cleanup_enabled_for_mode; then
@@ -2037,6 +2129,7 @@ run_auto_lint_cleanup() {
       printf 'Auto lint cleanup skipped.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
       record_stage_timing "$stage_label" 0 0 "skipped"
     fi
+    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=skipped"
     emit_progress "$stage_label" "skipped"
     return 0
   fi
@@ -2044,6 +2137,7 @@ run_auto_lint_cleanup() {
   if [ -z "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" ] || [ "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" = "none" ]; then
     printf 'Auto lint cleanup skipped because commands=%s.\n' "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS:-<empty>}" | tee -a "$AUTO_LINT_CLEANUP_LOG"
     record_stage_timing "$stage_label" 0 0 "skipped_by_commands"
+    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=skipped"
     emit_progress "$stage_label" "skipped"
     return 0
   fi
@@ -2053,9 +2147,14 @@ run_auto_lint_cleanup() {
     printf 'ERROR: Working directory /workspace/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
     printf 'workspace_missing\t%s\t0\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
     record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
+    emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=failed" "reason=directory_missing"
     emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
     return 0
   fi
+
+  cleanup_before_file="/results/auto-lint-cleanup-before-files.txt"
+  cleanup_after_file="/results/auto-lint-cleanup-after-files.txt"
+  collect_changed_file_set "$cleanup_before_file"
 
   set +e
   IFS=';' read -r -a cleanup_commands <<< "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"
@@ -2079,7 +2178,6 @@ run_auto_lint_cleanup() {
     fi
     set -o pipefail
     {
-    {
       printf '\n==> %s\n' "$trimmed"
       unset OPENROUTER_API_KEY
       if [ "$trimmed" = "__kaseki_trailing_whitespace_cleanup__" ]; then
@@ -2090,13 +2188,9 @@ run_auto_lint_cleanup() {
         command_exit=$?
       fi
       printf 'exit_code=%s\n' "$command_exit"
+      exit "$command_exit"
     } 2>&1 | tee -a "$AUTO_LINT_CLEANUP_LOG"
-    # Use the captured command_exit instead of PIPESTATUS[0]
-    if [ "$pipefail_was_enabled" -eq 1 ]; then
-      set -o pipefail
-    else
-      set +o pipefail
-    fi
+    command_exit="${PIPESTATUS[0]}"
     if [ "$pipefail_was_enabled" -eq 1 ]; then
       set -o pipefail
     else
@@ -2113,7 +2207,11 @@ run_auto_lint_cleanup() {
   done
   set +e
 
+  collect_changed_file_set "$cleanup_after_file"
+  check_auto_lint_cleanup_allowlist "$cleanup_before_file" "$cleanup_after_file" || true
+
   record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
+  emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
   emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
   return 0
 }
