@@ -12,6 +12,79 @@ import type { ResultCache } from '../result-cache';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
 
+type ProgressEventLike = {
+  stage?: unknown;
+  status?: unknown;
+  detail?: unknown;
+};
+
+const BASE_ORCHESTRATOR_STAGES = [
+  'clone repository',
+  'agent setup',
+  'pi coding agent',
+  'collect agent diff',
+  'quality checks',
+  'validation',
+  'secret scan',
+  'complete',
+] as const;
+
+function normalizeStageName(stage: unknown): string | undefined {
+  return typeof stage === 'string' && stage.trim().length > 0 ? stage.trim() : undefined;
+}
+
+function isFinishedProgressEvent(event: ProgressEventLike): boolean {
+  return event.status === 'finished' || (typeof event.detail === 'string' && event.detail.includes('finished'));
+}
+
+function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
+  const request = job.request ?? ({} as Job['request']);
+  const taskMode = request.taskMode || config.defaultTaskMode;
+  const publishMode = request.publishMode || 'pr';
+  const startupCheck = request.startupCheck === true;
+  const dryRun = startupCheck;
+  const githubAppEnabled = publishMode !== 'none';
+  const preAgentValidation = taskMode === 'inspect' ? false : true;
+  const scoutingEnabled = taskMode === 'inspect' ? request.scouting?.enabled === true : request.scouting?.enabled ?? true;
+  const goalCheckEnabled = taskMode === 'inspect'
+    ? request.goalCheck?.enabled === true
+    : request.goalCheck?.enabled ?? scoutingEnabled;
+  const defaultRunEvaluation = (publishMode === 'pr' || publishMode === 'draft_pr') && taskMode !== 'inspect' && !startupCheck;
+  const runEvaluationEnabled = taskMode === 'inspect'
+    ? request.runEvaluation?.enabled === true
+    : request.runEvaluation?.enabled ?? defaultRunEvaluation;
+  const autoLintCleanup = request.autoLintCleanup ?? request.validation?.autoLintCleanup;
+  const autoLintCleanupEnabled = taskMode === 'inspect' && autoLintCleanup?.enabled === undefined
+    ? false
+    : autoLintCleanup?.enabled ?? true;
+
+  const stages: string[] = [];
+  stages.push('clone repository');
+  if (preAgentValidation) {
+    stages.push('pre-agent validation');
+  }
+  if (scoutingEnabled) {
+    stages.push('pi scouting agent', 'derive allowlist from scouting');
+  }
+  if (goalCheckEnabled) {
+    stages.push('goal check');
+  }
+  if (runEvaluationEnabled) {
+    stages.push('run evaluation');
+  }
+  stages.push('agent setup', 'pi coding agent');
+  if (autoLintCleanupEnabled && !dryRun) {
+    stages.push('auto lint cleanup');
+  }
+  stages.push('collect agent diff', 'quality checks', 'validation', 'secret scan');
+  if (!dryRun && githubAppEnabled) {
+    stages.push('github operations');
+  }
+  stages.push('complete');
+
+  return stages.length > 0 ? stages : [...BASE_ORCHESTRATOR_STAGES];
+}
+
 /**
  * Builds StatusResponse objects with timing, progress, and artifact information.
  * Encapsulates complex response building logic from status routes.
@@ -162,10 +235,25 @@ export class StatusResponseBuilder {
       const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
       const metadata = this.readMetadata(runDir);
       const progressFile = path.join(runDir, 'progress.jsonl');
+      const orchestratorStages = deriveOrchestratorStages(job, this.config);
+      const orchestratorStageSet = new Set(orchestratorStages);
 
-      // Read progress events to identify stages and their completion status
-      let allStages = new Set<string>();
+      const observedStages = new Set<string>();
       const finishedStages = new Set<string>();
+      let currentStage: string | undefined = normalizeStageName(job.currentStage) ?? normalizeStageName(response.progress?.stage);
+
+      const ingestEvent = (event: ProgressEventLike): void => {
+        const stage = normalizeStageName(event.stage);
+        if (!stage) {
+          return;
+        }
+
+        observedStages.add(stage);
+        currentStage = stage;
+        if (isFinishedProgressEvent(event)) {
+          finishedStages.add(stage);
+        }
+      };
 
       if (fs.existsSync(progressFile)) {
         try {
@@ -174,41 +262,58 @@ export class StatusResponseBuilder {
 
           for (const line of lines) {
             try {
-              const event = JSON.parse(line);
-              if (event.stage && typeof event.stage === 'string') {
-                allStages.add(event.stage);
-                // Count a stage as completed if we see any "finished" status for it
-                if ((event.status === 'finished' || event.detail?.includes('finished')) && !finishedStages.has(event.stage)) {
-                  finishedStages.add(event.stage);
-                }
-              }
+              ingestEvent(JSON.parse(line) as ProgressEventLike);
             } catch {
               // Skip malformed JSON lines
             }
           }
         } catch {
-          // If reading progress.jsonl fails, continue with allStages set
-          // We'll use metadata.stages if available
+          // If reading progress.jsonl fails, continue with metadata or live progress fallbacks.
+        }
+      } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
+        try {
+          const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
+          const lastEvent = liveEvents[liveEvents.length - 1] as ProgressEventLike | undefined;
+          if (lastEvent) {
+            ingestEvent(lastEvent);
+          }
+        } catch {
+          // Ignore live progress errors; status remains resilient.
         }
       }
 
-      // Use stages from metadata if available (preferred for terminal states)
+      // Use stages from metadata if available. This is the authoritative denominator once populated.
       let totalStages = 0;
-      if (metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0) {
+      let denominatorStages: string[] = [];
+      const hasMetadataStages = metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0;
+      if (hasMetadataStages) {
+        denominatorStages = metadata.stages.map(normalizeStageName).filter((stage: string | undefined): stage is string => Boolean(stage));
         totalStages = metadata.stages.length;
-      } else if (allStages.size > 0) {
-        // Fallback: use stages observed in progress.jsonl (for running state)
-        totalStages = allStages.size;
       } else {
-        // No stages found anywhere
+        // Fallback to the canonical orchestrator phase list derived from the same run configuration.
+        // Do not use only observed progress events as the denominator; early events would otherwise report 100%.
+        denominatorStages = orchestratorStages;
+        totalStages = denominatorStages.length;
+      }
+
+      if (totalStages <= 0) {
         response.taskProgressPercent = undefined;
         return;
       }
 
-      let completedStages = finishedStages.size;
+      let completedStages = Array.from(finishedStages).filter(stage => denominatorStages.includes(stage)).length;
+      const currentStageIndex = currentStage && denominatorStages.length > 0 ? denominatorStages.indexOf(currentStage) : -1;
+      if (currentStageIndex >= 0) {
+        completedStages = Math.max(completedStages, currentStageIndex);
+        if (currentStage && finishedStages.has(currentStage)) {
+          completedStages = Math.max(completedStages, currentStageIndex + 1);
+        }
+      } else if (!hasMetadataStages && observedStages.size > 0) {
+        const knownObservedStageCount = Array.from(observedStages).filter(stage => orchestratorStageSet.has(stage)).length;
+        completedStages = Math.max(completedStages, Math.min(knownObservedStageCount, totalStages - 1));
+      }
 
-      // Validate: completedStages should never exceed totalStages
-      // This prevents edge cases where the calculation could exceed 100%
+      // Validate: completedStages should never exceed totalStages.
       if (completedStages > totalStages) {
         if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
           console.warn(
@@ -218,7 +323,6 @@ export class StatusResponseBuilder {
         completedStages = totalStages;
       }
 
-      // Calculate percentage: completed / total, with explicit bounds (0-100)
       const rawPercent = totalStages > 0 ? (completedStages / totalStages) * 100 : 0;
       response.taskProgressPercent = Math.min(100, Math.max(0, Math.round(rawPercent)));
 
@@ -228,8 +332,7 @@ export class StatusResponseBuilder {
         );
       }
     } catch (error) {
-      // If any error occurs, skip task progress calculation
-      // Log the error for debugging 1000% issues
+      // If any error occurs, skip task progress calculation.
       if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
         console.error(`[TaskProgressInfo] Error calculating progress for ${job.id}:`, error);
       }
