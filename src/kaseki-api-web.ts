@@ -661,6 +661,9 @@ const controllerPage = String.raw`<!doctype html>
         font-weight: var(--font-weight-bold);
         overflow-wrap: anywhere;
       }
+      .response-summary-item.full-width {
+        grid-column: 1 / -1;
+      }
       .response-log {
         align-self: start;
         color: var(--color-text);
@@ -1569,17 +1572,16 @@ const controllerPage = String.raw`<!doctype html>
               : stripControlSequences(payload.progress.stage);
             items.push(['Response progress stage', progressStageName]);
           }
-          if (payload.progress && typeof payload.progress.message === 'string') {
-            const progressMessage = stripControlSequences(payload.progress.message);
-            if (progressMessage) {
-              items.push(['Progress message', progressMessage]);
-            }
-          }
           if (typeof payload.taskProgressPercent === 'number') {
             items.push(['Progress (%)', payload.taskProgressPercent + '%']);
           }
         }
-        responseSummary.hidden = items.length === 0;
+        let progressMessage = null;
+        if (payload && typeof payload === 'object' && payload.progress && typeof payload.progress.message === 'string') {
+          const msg = stripControlSequences(payload.progress.message);
+          if (msg) progressMessage = msg;
+        }
+        responseSummary.hidden = items.length === 0 && !progressMessage;
         items.forEach(([label, value]) => {
           const item = document.createElement('div');
           item.className = 'response-summary-item';
@@ -1592,6 +1594,18 @@ const controllerPage = String.raw`<!doctype html>
           item.append(labelEl, valueEl);
           responseSummary.appendChild(item);
         });
+        if (progressMessage) {
+          const item = document.createElement('div');
+          item.className = 'response-summary-item full-width';
+          const labelEl = document.createElement('span');
+          labelEl.className = 'response-summary-label';
+          labelEl.textContent = 'Progress message';
+          const valueEl = document.createElement('span');
+          valueEl.className = 'response-summary-value';
+          valueEl.textContent = progressMessage;
+          item.append(labelEl, valueEl);
+          responseSummary.appendChild(item);
+        }
       }
 
       function responseStatusLabel(response, payload) {
