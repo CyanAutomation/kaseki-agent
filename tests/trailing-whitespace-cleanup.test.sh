@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER="$ROOT_DIR/scripts/cleanup-trailing-whitespace.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
-
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
 
