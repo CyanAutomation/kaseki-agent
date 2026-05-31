@@ -225,9 +225,116 @@ describe('Evaluation Prompt Enhancements', () => {
       }
     });
 
-    it('should have collect_run_evaluation_feedback function', () => {
+    it('should collect run-evaluation feedback from the schema-valid artifact contract', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      expect(scriptContent).toContain('collect_run_evaluation_feedback');
+      const functionStart = scriptContent.indexOf('collect_run_evaluation_feedback() {');
+      expect(functionStart).toBeGreaterThanOrEqual(0);
+
+      const functionEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
+      expect(functionEnd).toBeGreaterThan(functionStart);
+      const collectRunEvaluationFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
+
+      const runEvaluationFunctionStart = scriptContent.indexOf('run_run_evaluation() {');
+      expect(runEvaluationFunctionStart).toBeGreaterThanOrEqual(0);
+      const runEvaluationFunctionEnd = scriptContent.indexOf('\n}\n\n\nparse_github_repo_url()', runEvaluationFunctionStart);
+      expect(runEvaluationFunctionEnd).toBeGreaterThan(runEvaluationFunctionStart);
+      const runEvaluationFunction = scriptContent.slice(runEvaluationFunctionStart, runEvaluationFunctionEnd + 3);
+
+      expect(collectRunEvaluationFeedbackFunction).toContain('local run_evaluation_path="/results/run-evaluation.json"');
+      expect(collectRunEvaluationFeedbackFunction).toContain('local feedback_file="/results/kaseki-improvements.jsonl"');
+      expect(collectRunEvaluationFeedbackFunction).toContain('node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"');
+      expect(runEvaluationFunction).toContain('"$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT"');
+      expect(runEvaluationFunction).toContain('artifact.overall_assessment');
+      expect(runEvaluationFunction).toContain('artifact.reviewer_confidence');
+      expect(runEvaluationFunction).toContain('artifact.task_completion_score');
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-evaluation-feedback-contract-'));
+      const fakeBin = path.join(tmpDir, 'bin');
+      const nodeArgsLog = path.join(tmpDir, 'node-args.log');
+      const resultsDir = path.join(tmpDir, 'results');
+      const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
+      const isolatedFunction = collectRunEvaluationFeedbackFunction.replaceAll('/results/', `${resultsDir}/`);
+
+      try {
+        fs.mkdirSync(fakeBin, { recursive: true });
+        fs.mkdirSync(resultsDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(fakeBin, 'node'),
+          `#!/usr/bin/env bash
+printf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}
+${JSON.stringify(process.execPath)} - "$@" <<'NODE'
+const fs = require('fs');
+const [, phase, instanceName, runEvaluationPath, metadataPath] = process.argv.slice(2);
+const runEvaluation = JSON.parse(fs.readFileSync(runEvaluationPath, 'utf8'));
+const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+console.log(JSON.stringify({
+  instance_name: instanceName,
+  phase: phase.replace('-', '_'),
+  assessment: {
+    overall_assessment: runEvaluation.overall_assessment || 'unknown',
+    reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
+    task_completion_score: runEvaluation.task_completion_score || 0,
+  },
+  outcomes: {
+    validation_passed: metadata.validation_passed === true,
+    coding_attempts: metadata.coding_attempts || 1,
+    goal_check_met: metadata.goal_check_met === true,
+  },
+}));
+NODE
+`,
+          { mode: 0o755 }
+        );
+        fs.writeFileSync(path.join(resultsDir, 'run-evaluation.json'), JSON.stringify({
+          overall_assessment: 'good',
+          reviewer_confidence: 'high',
+          task_completion_score: 4,
+          summary: 'The task was completed with strong evidence.',
+          pr_summary: 'Adds the requested behavioral assertion.',
+          human_review_focus: ['Confirm test coverage intent'],
+          efficiency_findings: ['No repeated collection work'],
+          warnings: [],
+          stage_value: [{ stage: 'evaluation', value: 'high', reason: 'Captures evaluator output' }],
+          kaseki_improvement_opportunities: [{ category: 'evaluation', priority: 'medium', suggestion: 'Keep contract tests behavioral' }],
+        }));
+        fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({
+          validation_passed: true,
+          coding_attempts: 1,
+          goal_check_met: true,
+          total_duration_seconds: 42,
+        }));
+
+        const fixture = `set -euo pipefail\n${isolatedFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(path.dirname(collectFeedbackPath))}\nRUN_EVALUATION_EXIT=0\ncollect_run_evaluation_feedback contract-instance\n`;
+        execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+
+        const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
+        expect(nodeArgs).toEqual([
+          collectFeedbackPath,
+          'run-evaluation',
+          'contract-instance',
+          path.join(resultsDir, 'run-evaluation.json'),
+          path.join(resultsDir, 'metadata.json'),
+        ]);
+
+        const feedbackLines = fs.readFileSync(path.join(resultsDir, 'kaseki-improvements.jsonl'), 'utf8').trim().split('\n');
+        expect(feedbackLines).toHaveLength(1);
+        const feedback = JSON.parse(feedbackLines[0]);
+        expect(feedback).toMatchObject({
+          phase: 'run_evaluation',
+          assessment: {
+            overall_assessment: 'good',
+            reviewer_confidence: 'high',
+            task_completion_score: 4,
+          },
+          outcomes: {
+            validation_passed: true,
+            coding_attempts: 1,
+            goal_check_met: true,
+          },
+        });
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('should call collect_goal_check_feedback after goal-check', () => {
