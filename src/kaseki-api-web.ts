@@ -1017,6 +1017,158 @@ const controllerPage = String.raw`<!doctype html>
         /* Improve button visibility on mobile */
         button { font-size: var(--font-size-md); }
       }
+      /* ===== MODAL STYLES ===== */
+      .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        animation: fadeIn var(--transition-fast) var(--transition-easing);
+      }
+      .modal-backdrop[hidden] { display: none; }
+      .modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border-strong);
+        border-radius: var(--radius-md);
+        width: 90vw;
+        max-width: 800px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        z-index: 1000;
+        animation: slideUp var(--transition-fast) var(--transition-easing);
+      }
+      .modal[hidden] { display: none; }
+      .modal-content {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-3);
+        border-bottom: 1px solid var(--color-border);
+        flex-shrink: 0;
+      }
+      .modal-title {
+        margin: 0;
+        font-family: var(--font-stack);
+        font-size: var(--font-size-lg);
+        font-weight: var(--font-weight-bold);
+        color: var(--color-text);
+      }
+      .modal-close {
+        background: transparent;
+        border: none;
+        color: var(--color-text-muted);
+        cursor: pointer;
+        font-size: 24px;
+        padding: 0;
+        min-height: auto;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color var(--transition-fast) var(--transition-easing);
+      }
+      .modal-close:hover {
+        color: var(--color-text);
+      }
+      .modal-body {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        flex: 1;
+      }
+      .modal-tabs-container {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        flex: 1;
+      }
+      .tab-content {
+        display: none;
+        overflow: auto;
+        min-height: 0;
+      }
+      .tab-content.active {
+        display: block;
+      }
+      .modal-output {
+        margin: 0;
+        padding: var(--space-3);
+        color: var(--color-text);
+        font-family: var(--font-mono);
+        font-size: var(--font-size-base);
+        line-height: var(--line-height-loose);
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--color-bg);
+        min-height: 200px;
+      }
+      .artifacts-content {
+        padding: var(--space-3);
+        background: var(--color-bg);
+        min-height: 200px;
+        overflow: auto;
+      }
+      .artifacts-list {
+        display: grid;
+        gap: var(--space-2);
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      }
+      .artifact-item {
+        padding: var(--space-2);
+        background: var(--color-surface-low);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        text-align: center;
+        cursor: pointer;
+        transition: all var(--transition-fast) var(--transition-easing);
+      }
+      .artifact-item:hover {
+        background: var(--color-surface-high);
+        border-color: var(--color-border-strong);
+      }
+      .artifact-item-name {
+        color: var(--color-text);
+        font-family: var(--font-mono);
+        font-size: var(--font-size-sm);
+        word-break: break-word;
+      }
+      .artifact-item-size {
+        color: var(--color-text-muted);
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        margin-top: var(--space-1);
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes slideUp {
+        from { transform: translate(-50%, -45%); opacity: 0; }
+        to { transform: translate(-50%, -50%); opacity: 1; }
+      }
+      @media (max-width: 600px) {
+        .modal {
+          width: 95vw;
+          max-height: 90vh;
+        }
+      }
     </style>
   </head>
   <body>
@@ -1151,10 +1303,7 @@ const controllerPage = String.raw`<!doctype html>
         <div class="run-links" id="run-links" hidden>
           <strong class="panel-section-label">Run follow-through</strong>
           <div class="link-grid">
-            <button class="secondary toolbar-button-no-wrap" data-run-action="status" type="button">Status</button>
-            <button class="secondary toolbar-button-no-wrap" data-run-action="events" type="button">Events</button>
-            <button class="secondary toolbar-button-no-wrap" data-run-action="stdout" type="button">Stdout</button>
-            <button class="secondary toolbar-button-no-wrap" data-run-action="artifacts" type="button">Artifacts</button>
+            <button class="secondary toolbar-button-no-wrap" id="full-results-btn" type="button">Full Results</button>
           </div>
           <div class="recommended-artifacts" id="recommended-artifacts" hidden>
             <span class="summary-label">Recommended artifacts</span>
@@ -1168,6 +1317,38 @@ const controllerPage = String.raw`<!doctype html>
         </div>
       </section>
     </main>
+    <!-- Full Results Modal -->
+    <div class="modal-backdrop" id="modal-backdrop" hidden></div>
+    <div class="modal" id="full-results-modal" hidden>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">Full Results</h3>
+          <button class="modal-close" id="modal-close-btn" type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="tabs-nav">
+            <button class="tab-btn active" data-tab="status" type="button">Status</button>
+            <button class="tab-btn" data-tab="events" type="button">Events</button>
+            <button class="tab-btn" data-tab="stdout" type="button">Stdout</button>
+            <button class="tab-btn" data-tab="artifacts" type="button">Artifacts</button>
+          </div>
+          <div class="modal-tabs-container">
+            <div class="tab-content active" id="tab-status" data-tab="status">
+              <pre class="modal-output" id="status-output"></pre>
+            </div>
+            <div class="tab-content" id="tab-events" data-tab="events">
+              <pre class="modal-output" id="events-output"></pre>
+            </div>
+            <div class="tab-content" id="tab-stdout" data-tab="stdout">
+              <pre class="modal-output" id="stdout-output"></pre>
+            </div>
+            <div class="tab-content" id="tab-artifacts" data-tab="artifacts">
+              <div class="artifacts-content" id="artifacts-output"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script>
       const form = document.querySelector('#run-form');
       const output = document.querySelector('#output');
@@ -1181,6 +1362,18 @@ const controllerPage = String.raw`<!doctype html>
       const recommendedArtifactLinks = document.querySelector('#recommended-artifact-links');
       const headerStatus = document.querySelector('#header-status');
       const runsList = document.querySelector('#runs-list');
+      
+      // Modal elements
+      const fullResultsBtn = document.querySelector('#full-results-btn');
+      const modalBackdrop = document.querySelector('#modal-backdrop');
+      const fullResultsModal = document.querySelector('#full-results-modal');
+      const modalCloseBtn = document.querySelector('#modal-close-btn');
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      const modalTabsContainer = document.querySelector('.modal-tabs-container');
+      
+      // Modal state
+      let modalTabCache = {};
+      
       let pollTimer = null;
       let activeRunView = 'status';
 
@@ -1727,26 +1920,168 @@ const controllerPage = String.raw`<!doctype html>
         run(event.currentTarget, runUrl(runId, '/status'), { auth: true });
       });
 
-      document.querySelectorAll('[data-run-action]').forEach((button) => {
-        button.addEventListener('click', (event) => {
-          const runId = runIdInput.value.trim();
-          if (!runId) {
-            setOutputMetadata('idle');
-            setResponseSummary(null);
-            setOutputBody('Submit a run or enter a run ID first.');
-            setState('Run action needs a run ID.', 'bad');
-            return;
-          }
-          const action = event.currentTarget.dataset.runAction;
-          activeRunView = action;
+      function closeModal() {
+        fullResultsModal.hidden = true;
+        modalBackdrop.hidden = true;
+        modalTabCache = {};
+      }
+
+      function openModal() {
+        fullResultsModal.hidden = false;
+        modalBackdrop.hidden = false;
+        // Load and display Status tab initially
+        loadModalTab('status');
+      }
+
+      async function loadModalTab(tabName) {
+        if (modalTabCache[tabName]) {
+          displayModalTab(tabName);
+          return;
+        }
+        
+        const runId = runIdInput.value.trim();
+        if (!runId) {
+          setOutputMetadata('idle');
+          setResponseSummary(null);
+          setOutputBody('Submit a run or enter a run ID first.');
+          setState('Modal needs a run ID.', 'bad');
+          return;
+        }
+
+        const tabOutputEl = document.querySelector('#' + tabName + '-output');
+        if (!tabOutputEl) return;
+        
+        tabOutputEl.textContent = 'Loading...';
+        
+        try {
           const paths = {
             status: runUrl(runId, '/status'),
             events: runUrl(runId, '/events?tail=50'),
             stdout: runUrl(runId, '/logs/stdout?tail=lines&lines=200'),
             artifacts: runUrl(runId, '/artifacts'),
           };
-          run(event.currentTarget, paths[action], { auth: true });
+          
+          const result = await apiRequest(paths[tabName], { auth: true });
+          
+          if (tabName === 'artifacts') {
+            // Format artifacts as a grid of links
+            const artifactsResponse = result.payload;
+            modalTabCache[tabName] = artifactsResponse;
+            displayArtifactsTab(runId, artifactsResponse);
+          } else {
+            // Format as JSON for status, events, and stdout
+            const content = tabName === 'stdout' 
+              ? result.payload 
+              : JSON.stringify(result.payload, null, 2);
+            modalTabCache[tabName] = content;
+            displayModalTab(tabName);
+          }
+        } catch (error) {
+          tabOutputEl.textContent = 'Error loading tab: ' + (error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      function displayModalTab(tabName) {
+        const tabOutputEl = document.querySelector('#' + tabName + '-output');
+        if (!tabOutputEl) return;
+        
+        const content = modalTabCache[tabName];
+        if (tabName === 'artifacts') {
+          // Artifacts are displayed in displayArtifactsTab
+          return;
+        }
+        
+        tabOutputEl.textContent = content || '';
+      }
+
+      function displayArtifactsTab(runId, artifactsResponse) {
+        const artifactsOutputEl = document.querySelector('#artifacts-output');
+        if (!artifactsOutputEl) return;
+        
+        artifactsOutputEl.innerHTML = '';
+        
+        const artifacts = artifactsResponse && Array.isArray(artifactsResponse.artifacts)
+          ? artifactsResponse.artifacts
+          : [];
+        
+        if (artifacts.length === 0) {
+          artifactsOutputEl.textContent = 'No artifacts available.';
+          return;
+        }
+        
+        const listDiv = document.createElement('div');
+        listDiv.className = 'artifacts-list';
+        
+        artifacts.forEach((artifact) => {
+          if (!artifact.available) return;
+          
+          const item = document.createElement('button');
+          item.className = 'artifact-item';
+          item.type = 'button';
+          
+          const nameSpan = document.createElement('div');
+          nameSpan.className = 'artifact-item-name';
+          nameSpan.textContent = artifact.name;
+          
+          const sizeSpan = document.createElement('div');
+          sizeSpan.className = 'artifact-item-size';
+          sizeSpan.textContent = artifact.size ? '(' + artifact.size + ')' : '';
+          
+          item.appendChild(nameSpan);
+          if (artifact.size) item.appendChild(sizeSpan);
+          
+          item.addEventListener('click', () => {
+            window.location.href = artifactUrl(runId, artifact.name);
+          });
+          
+          listDiv.appendChild(item);
         });
+        
+        artifactsOutputEl.appendChild(listDiv);
+      }
+
+      fullResultsBtn.addEventListener('click', () => {
+        openModal();
+      });
+
+      modalCloseBtn.addEventListener('click', () => {
+        closeModal();
+      });
+
+      modalBackdrop.addEventListener('click', () => {
+        closeModal();
+      });
+
+      // Prevent closing modal when clicking inside it
+      fullResultsModal.addEventListener('click', (event) => {
+        event.stopPropagation();
+      });
+
+      // Tab switching in modal
+      tabButtons.forEach((button) => {
+        button.addEventListener('click', (event) => {
+          const tabName = event.currentTarget.dataset.tab;
+          
+          // Update active button
+          tabButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+          });
+          
+          // Update active tab content
+          document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.classList.toggle('active', tab.id === 'tab-' + tabName);
+          });
+          
+          // Load tab content
+          loadModalTab(tabName);
+        });
+      });
+
+      // Keyboard escape to close modal
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !fullResultsModal.hidden) {
+          closeModal();
+        }
       });
 
       document.querySelector('#refresh-runs').addEventListener('click', (event) => {
