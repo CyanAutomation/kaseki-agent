@@ -894,6 +894,9 @@ const controllerPage = String.raw`<!doctype html>
         display: grid;
         gap: var(--space-3);
       }
+      .issues-repo-input-wrapper {
+        position: relative;
+      }
       .issues-input-group {
         display: flex;
         gap: var(--space-2);
@@ -1285,9 +1288,12 @@ const controllerPage = String.raw`<!doctype html>
           <form class="issues-form" id="issues-form">
             <div class="form-field">
               <label for="issues-repo-url">Repository URL</label>
-              <div class="issues-input-group">
-                <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" />
-                <button class="run" id="load-issues-btn" type="button">Load Issues</button>
+              <div class="issues-repo-input-wrapper">
+                <div class="issues-input-group">
+                  <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" />
+                  <button class="run" id="load-issues-btn" type="button">Load Issues</button>
+                </div>
+                <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
               <p class="field-error" id="issues-error" aria-live="polite" style="display: none;"></p>
             </div>
@@ -1401,6 +1407,8 @@ const controllerPage = String.raw`<!doctype html>
       const recentReposKey = 'kasekiRecentRepos';
       const repoUrlInput = document.querySelector('#repo-url');
       const recentReposDropdown = document.querySelector('#recent-repos-dropdown');
+      const issuesRepoUrlInput = document.querySelector('#issues-repo-url');
+      const issuesRecentReposDropdown = document.querySelector('#issues-recent-repos-dropdown');
 
       function loadRecentRepos() {
         try {
@@ -1436,24 +1444,24 @@ const controllerPage = String.raw`<!doctype html>
         renderRecentReposDropdown();
       }
 
-      function renderRecentReposDropdown() {
+      function renderDropdownInto(dropdown, targetInput) {
         const repos = loadRecentRepos();
-        recentReposDropdown.replaceChildren();
+        dropdown.replaceChildren();
         if (repos.length === 0) {
-          recentReposDropdown.classList.add('empty');
+          dropdown.classList.add('empty');
           return;
         }
-        recentReposDropdown.classList.remove('empty');
+        dropdown.classList.remove('empty');
         repos.forEach(repo => {
           const item = document.createElement('div');
           item.className = 'recent-repo-item';
           item.role = 'option';
-          
+
           const textSpan = document.createElement('span');
           textSpan.className = 'recent-repo-item-text';
           textSpan.textContent = repo;
           textSpan.title = repo;
-          
+
           const deleteBtn = document.createElement('button');
           deleteBtn.className = 'recent-repo-delete';
           deleteBtn.type = 'button';
@@ -1464,36 +1472,53 @@ const controllerPage = String.raw`<!doctype html>
             e.stopPropagation();
             deleteRepoFromRecent(repo);
           });
-          
+
           item.appendChild(textSpan);
           item.appendChild(deleteBtn);
           item.addEventListener('click', () => {
-            repoUrlInput.value = repo;
-            hideRecentReposDropdown();
-            repoUrlInput.focus();
+            targetInput.value = repo;
+            hideRecentReposDropdown(dropdown);
+            targetInput.focus();
           });
-          
-          recentReposDropdown.appendChild(item);
+
+          dropdown.appendChild(item);
         });
       }
 
-      function showRecentReposDropdown() {
-        recentReposDropdown.classList.remove('hidden');
+      function renderRecentReposDropdown() {
+        renderDropdownInto(recentReposDropdown, repoUrlInput);
+        renderDropdownInto(issuesRecentReposDropdown, issuesRepoUrlInput);
       }
 
-      function hideRecentReposDropdown() {
-        recentReposDropdown.classList.add('hidden');
+      function showRecentReposDropdown(dropdown) {
+        dropdown.classList.remove('hidden');
       }
 
-      // Event listeners for repo input
+      function hideRecentReposDropdown(dropdown) {
+        dropdown.classList.add('hidden');
+      }
+
+      // Event listeners for Submit Task repo input
       repoUrlInput.addEventListener('focus', () => {
-        showRecentReposDropdown();
+        showRecentReposDropdown(recentReposDropdown);
       });
 
       repoUrlInput.addEventListener('blur', () => {
         // Delay to allow click on dropdown items
         setTimeout(() => {
-          hideRecentReposDropdown();
+          hideRecentReposDropdown(recentReposDropdown);
+        }, 150);
+      });
+
+      // Event listeners for Issues repo input
+      issuesRepoUrlInput.addEventListener('focus', () => {
+        showRecentReposDropdown(issuesRecentReposDropdown);
+      });
+
+      issuesRepoUrlInput.addEventListener('blur', () => {
+        // Delay to allow click on dropdown items
+        setTimeout(() => {
+          hideRecentReposDropdown(issuesRecentReposDropdown);
         }, 150);
       });
 
@@ -2150,7 +2175,6 @@ const controllerPage = String.raw`<!doctype html>
       });
       
       // Issues tab handlers
-      const issuesRepoUrlInput = document.querySelector('#issues-repo-url');
       const loadIssuesBtn = document.querySelector('#load-issues-btn');
       const issuesList = document.querySelector('#issues-list');
       const issuesError = document.querySelector('#issues-error');
@@ -2202,6 +2226,7 @@ const controllerPage = String.raw`<!doctype html>
           }
 
           issuesList.replaceChildren();
+          addRepoToRecent(repoUrl);
           issues.forEach(issue => {
             const item = document.createElement('div');
             item.className = 'issues-list-item';
