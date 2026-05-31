@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TEST_DIR=$(mktemp -d)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HELPER="$REPO_ROOT/scripts/cleanup-trailing-whitespace.sh"
+TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
-cd "$TEST_DIR"
-trap 'rm -rf "$TMP_DIR"' EXIT
-TEST_DIR=$(mktemp -d)
-trap 'rm -rf "$TEST_DIR"' EXIT
+
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
 
@@ -20,30 +19,31 @@ assert_contains() {
     fail "$label: expected to find '$pattern'"
   fi
 }
-SCRIPT_PATH="../../scripts/cleanup-trailing-whitespace.sh"
-if [[ ! -x "$SCRIPT_PATH" ]]; then
-  echo "Error: Cleanup script not found or not executable at $SCRIPT_PATH" >&2
+
+if [[ ! -x "$HELPER" ]]; then
+  printf 'Error: Cleanup script not found or not executable at %s\n' "$HELPER" >&2
   exit 1
 fi
 
-bash "$SCRIPT_PATH"
-cd "$TMP_DIR"
+cd "$TEST_DIR"
 git init --initial-branch=main -q
 git config user.email test@kaseki.local
 git config user.name 'Test User'
 
-mkdir -p src docs
+mkdir -p src docs scripts
 printf 'const value = 1;\n' > src/app.ts
 printf 'clean docs\n' > docs/guide.md
 printf 'unchanged with spaces   \n' > docs/unchanged.md
 printf 'remove me\n' > docs/deleted.md
 printf 'opaque\n' > data.custom
+printf 'function min() { return 1; }\n' > src/app.min.js
+printf '{"lockfileVersion": 3}\n' > package-lock.json
 python3 - <<'PY'
 from pathlib import Path
 Path('image.png').write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00')
 PY
 
-git add src/app.ts docs/guide.md docs/unchanged.md docs/deleted.md data.custom image.png
+git add src/app.ts docs/guide.md docs/unchanged.md docs/deleted.md data.custom src/app.min.js package-lock.json image.png
 git commit -q -m initial
 
 unchanged_before="$(git hash-object docs/unchanged.md)"
@@ -51,14 +51,19 @@ unchanged_before="$(git hash-object docs/unchanged.md)"
 printf 'const value = 2;  \nconst other = 3;\t\n' > src/app.ts
 printf 'changed docs   \n' > docs/guide.md
 printf 'new text with spaces   \n' > data.custom
+printf 'function min() { return 2; }   \n' > src/app.min.js
+printf '{"lockfileVersion": 3}   \n' > package-lock.json
 python3 - <<'PY'
 from pathlib import Path
 Path('image.png').write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00binary-change\x00')
 PY
 rm docs/deleted.md
 
-export AUTO_LINT_CLEANUP_LOG="$TMP_DIR/auto-lint-cleanup.log"
-bash "$HELPER" > "$TMP_DIR/helper.out"
+export AUTO_LINT_CLEANUP_LOG="$TEST_DIR/auto-lint-cleanup.log"
+(
+  cd scripts
+  bash "$HELPER"
+) > "$TEST_DIR/helper.out"
 
 if grep -Eq '[[:blank:]]$' src/app.ts docs/guide.md; then
   fail 'changed .ts and .md files should have trailing whitespace removed'
@@ -70,9 +75,17 @@ unchanged_after="$(git hash-object docs/unchanged.md)"
 [ "$unchanged_before" = "$unchanged_after" ] || fail 'unchanged file should not be rewritten'
 pass 'unchanged file is not rewritten'
 
+if grep -Eq '[[:blank:]]$' src/app.min.js package-lock.json; then
+  pass 'generated and lock files are skipped and left unchanged'
+else
+  fail 'generated and lock files should not be cleaned'
+fi
+
 assert_contains "$AUTO_LINT_CLEANUP_LOG" 'Cleaned trailing whitespace: src/app.ts' 'logs cleaned TypeScript path'
 assert_contains "$AUTO_LINT_CLEANUP_LOG" 'Cleaned trailing whitespace: docs/guide.md' 'logs cleaned Markdown path'
 assert_contains "$AUTO_LINT_CLEANUP_LOG" 'Skipping binary diff: image.png' 'binary files are skipped'
+assert_contains "$AUTO_LINT_CLEANUP_LOG" 'Skipping generated or lockfile: src/app.min.js' 'minified files are skipped'
+assert_contains "$AUTO_LINT_CLEANUP_LOG" 'Skipping generated or lockfile: package-lock.json' 'lockfiles are skipped'
 
 if [ -e docs/deleted.md ]; then
   fail 'deleted file should remain deleted'
