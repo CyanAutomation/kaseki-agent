@@ -14,6 +14,11 @@
  * 10. Quality warnings
  */
 
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   GoalSettingOutput,
@@ -429,16 +434,141 @@ describe('Goal-Setting Agent Improvements', () => {
 
   // ===== IMPROVEMENT #9: ITERATIVE REFINEMENT =====
   describe('Improvement #9: Iterative Refinement / Retry', () => {
-    it('should track retry attempts in metadata', () => {
-      const metadata = {
-        goal_setting_attempts: 2,
-        goal_setting_succeeded_on_attempt: 2,
-        original_prompt: 'Initial',
-        upgraded_prompt: 'Upgraded on attempt 2',
-      };
+    it('should persist and interpret retry attempts from an actual goal-setting retry', () => {
+      const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+      const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-retry-'));
 
-      expect(metadata.goal_setting_attempts).toBe(2);
-      expect(metadata.goal_setting_succeeded_on_attempt).toBe(2);
+      try {
+        const fakeRepo = join(tempDir, 'fake-repo');
+        const fakeBin = join(tempDir, 'bin');
+        const resultsDir = join(tempDir, 'results');
+        const workspaceRepo = join(tempDir, 'repo');
+        const appLib = join(tempDir, 'app', 'lib');
+        const scriptsDir = join(tempDir, 'scripts');
+        const piCalls = join(tempDir, 'pi-calls.log');
+        const piState = join(tempDir, 'pi-goal-setting-attempt');
+        const modifiedScript = join(tempDir, 'kaseki-agent-modified.sh');
+
+        mkdirSync(join(fakeRepo, 'deps', 'fake-dep'), { recursive: true });
+        mkdirSync(fakeBin, { recursive: true });
+        mkdirSync(resultsDir, { recursive: true });
+        mkdirSync(workspaceRepo, { recursive: true });
+        mkdirSync(appLib, { recursive: true });
+        mkdirSync(scriptsDir, { recursive: true });
+        writeFileSync(piCalls, '');
+        writeFileSync(join(appLib, 'event-aggregator.js'), '');
+        writeFileSync(join(appLib, 'timestamp-tracker.js'), '');
+        writeFileSync(join(appLib, 'progress-stream-utils.js'), '');
+        copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
+
+        const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8')
+          .replaceAll('/workspace/repo', workspaceRepo)
+          .replaceAll('/results', resultsDir)
+          .replaceAll('/app/lib', appLib);
+        writeFileSync(modifiedScript, scriptSource, { mode: 0o755 });
+
+        writeFileSync(
+          join(fakeRepo, 'package.json'),
+          JSON.stringify({
+            name: 'fake-goal-retry-repo',
+            version: '1.0.0',
+            private: true,
+            scripts: { check: 'exit 0' },
+            dependencies: { 'fake-dep': 'file:deps/fake-dep' },
+          }),
+        );
+        writeFileSync(join(fakeRepo, 'deps', 'fake-dep', 'package.json'), JSON.stringify({ name: 'fake-dep', version: '1.0.0', private: true }));
+        writeFileSync(
+          join(fakeRepo, 'package-lock.json'),
+          JSON.stringify({
+            name: 'fake-goal-retry-repo',
+            version: '1.0.0',
+            lockfileVersion: 3,
+            requires: true,
+            packages: {
+              '': { name: 'fake-goal-retry-repo', version: '1.0.0', dependencies: { 'fake-dep': 'file:deps/fake-dep' } },
+              'deps/fake-dep': { version: '1.0.0' },
+              'node_modules/fake-dep': { resolved: 'deps/fake-dep', link: true },
+            },
+          }),
+        );
+        execFileSync('git', ['-C', fakeRepo, 'init', '-q', '-b', 'main']);
+        execFileSync('git', ['-C', fakeRepo, 'add', 'package.json', 'package-lock.json', 'deps/fake-dep/package.json']);
+        execFileSync('git', ['-C', fakeRepo, '-c', 'user.email=kaseki-test@example.invalid', '-c', 'user.name=Kaseki Test', 'commit', '-q', '-m', 'initial']);
+
+        writeFileSync(join(fakeBin, 'pi'), `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+prompt="\${*: -1}"
+if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+  printf 'goal-setting\n' >> "${piCalls}"
+  attempt=1
+  if [ -f "${piState}" ]; then attempt=$(( $(cat "${piState}") + 1 )); fi
+  printf '%s\n' "$attempt" > "${piState}"
+  if [ "$attempt" -eq 1 ]; then
+    echo 'api error: upstream timeout' >&2
+    exit 1
+  fi
+  cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
+{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
+JSON
+elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+  printf 'scouting\n' >> "${piCalls}"
+  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "${resultsDir}/scouting-candidate.json"
+elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  printf 'goal-check\n' >> "${piCalls}"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "${resultsDir}/goal-check-candidate.json"
+else
+  printf 'coding\n' >> "${piCalls}"
+  printf '%s' "$prompt" > "${resultsDir}/coding-prompt.txt"
+fi
+printf '{"type":"message","model":"test-model"}\n'
+`, { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'kaseki-pi-progress-stream'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'kaseki-pi-event-filter'), '#!/usr/bin/env bash\ncat "$1" > "$2"\nprintf \'{"selected_model":"test-model"}\\n\' > "$3"\n', { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'timeout'), '#!/usr/bin/env bash\nshift 2\n"$@"\n', { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'validation-output-filter'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nexit 0\n', { mode: 0o755 });
+
+        execFileSync('bash', [modifiedScript], {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            REPO_URL: fakeRepo,
+            GIT_REF: 'main',
+            TASK_PROMPT: 'retry original prompt',
+            OPENROUTER_API_KEY: 'test',
+            GITHUB_APP_ENABLED: '0',
+            KASEKI_GIT_CACHE_MODE: 'off',
+            KASEKI_DEPENDENCY_CACHE_DIR: join(tempDir, 'dependency-cache'),
+            KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: join(tempDir, 'image-cache'),
+            KASEKI_PRE_AGENT_VALIDATION_COMMANDS: 'npm run check',
+            KASEKI_VALIDATION_COMMANDS: ':',
+            KASEKI_ALLOW_EMPTY_DIFF: '1',
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: 10 * 1024 * 1024,
+        });
+
+        const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
+        expect(piCallOrder).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding', 'goal-check']);
+
+        const metadata = JSON.parse(readFileSync(join(resultsDir, 'metadata.json'), 'utf8')) as {
+          goal_setting_attempts: number;
+          goal_setting_succeeded_on_attempt: number | null;
+          goal_setting_exit_code: number;
+          exit_code: number;
+        };
+        expect(metadata.exit_code).toBe(0);
+        expect(metadata.goal_setting_exit_code).toBe(0);
+        expect(metadata.goal_setting_attempts).toBe(2);
+        expect(metadata.goal_setting_succeeded_on_attempt).toBe(2);
+
+        const codingPrompt = readFileSync(join(resultsDir, 'coding-prompt.txt'), 'utf8');
+        expect(codingPrompt).toContain('retry-upgraded prompt from attempt two');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
