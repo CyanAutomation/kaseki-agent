@@ -28,8 +28,8 @@ EXCLUDE_PATTERNS=(
     if ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
       printf 'Skipping untracked file: %s\n' "$file" | tee -a "$log_file"
       skipped_count=$((skipped_count + 1))
-      continue
-    fi
+  find . -type f -name "*.js" -o -name "*.ts" -o -name "*.json" -o -name "*.sh" -o -name "*.md" | \
+    grep -vE "(\.min\.js$|\.min\.css$|package-lock\.json$|yarn\.lock$|pnpm-lock\.yaml$)" | \
     if ! [ -f "$file" ]; then
 find . -type f \( \
     -name "*.sh" -o \
