@@ -329,10 +329,69 @@ describe('OpenAPI Path Builders', () => {
   });
 
   describe('buildAllPaths with missing schemas', () => {
-    it('should handle empty error schema', () => {
-      const paths = buildAllPaths({}, requestSchema, responseSchema);
-      expect(paths).toBeDefined();
-      expect(Object.keys(paths).length).toBeGreaterThan(0);
+    it('should preserve error responses with empty error schema as an OpenAPI any-type fallback', () => {
+      const emptyErrorSchema = {};
+      const paths = buildAllPaths(emptyErrorSchema, requestSchema, responseSchema);
+      const expectedErrorResponsesByOperation: Record<string, Record<string, string[]>> = {
+        '/ready': { get: ['503'] },
+        '/api/metrics': { get: ['401'] },
+        '/api/preflight': { get: ['401'] },
+        '/api/validate': { post: ['400', '401'] },
+        '/api/runs': { get: ['401'], post: ['400', '401'] },
+        '/api/runs/{id}/status': { get: ['401', '404'] },
+        '/api/runs/{id}/cancel': { post: ['401', '404'] },
+        '/api/runs/{id}/progress': { get: ['401', '404'] },
+        '/api/runs/{id}/logs/{logtype}': { get: ['401', '404'] },
+        '/api/runs/{id}/artifacts': { get: ['401', '404'] },
+        '/api/results/{id}/{file}': { get: ['401', '404', '422'] },
+        '/api/runs/{id}/analysis': { get: ['401', '404'] },
+        '/api/improvements': { get: ['401'] },
+        '/api/webhooks/test': { post: ['400', '401'] },
+      };
+
+      Object.entries(expectedErrorResponsesByOperation).forEach(([path, methods]) => {
+        Object.entries(methods).forEach(([method, statuses]) => {
+          const operation = (paths[path] as Record<string, any>)[method];
+
+          const fallbackStatuses = Object.entries(operation.responses)
+            .filter(([, response]: [string, any]) =>
+              Object.keys(response.content?.['application/json']?.schema || {}).length === 0
+            )
+            .map(([status]) => status)
+            .sort();
+
+          expect(operation).toBeDefined();
+          expect(fallbackStatuses).toEqual(statuses);
+          statuses.forEach((status) => {
+            expect(operation.responses[status].content).toEqual({
+              'application/json': {
+                schema: emptyErrorSchema,
+              },
+            });
+          });
+        });
+      });
+
+      const publicRoutes = {
+        '/health': { get: ['200'] },
+        '/ready': { get: ['200', '503'] },
+      };
+      Object.entries(publicRoutes).forEach(([path, methods]) => {
+        Object.entries(methods).forEach(([method, statuses]) => {
+          const operation = (paths[path] as Record<string, any>)[method];
+
+          expect(operation.security).toBeUndefined();
+          expect(typeof operation.operationId).toBe('string');
+          expect(operation.tags.length).toBeGreaterThan(0);
+          expect(Object.keys(operation.responses).sort()).toEqual(statuses);
+          statuses.forEach((status) => {
+            const response = operation.responses[status];
+
+            expect(typeof response.description).toBe('string');
+            expect(response.content?.['application/json']?.schema).toBeDefined();
+          });
+        });
+      });
     });
 
     it('should handle empty request schema', () => {
