@@ -183,7 +183,7 @@ function emitMessageSummary(event: PiEvent): void {
   if (event.message?.content) {
     const content = event.message.content;
     const contentText = Array.isArray(content)
-      ? content.map((c: any) => (c.text || c.content || '').substring(0, 50)).join(' ')
+      ? content.map((c: any) => (c.text || c.content || '')).join(' ')
       : String(content).substring(0, 200);
 
     // Try to extract topic first (more concise)
@@ -193,7 +193,7 @@ function emitMessageSummary(event: PiEvent): void {
         detail = topic;
       } else {
         // Fallback to truncated content
-        detail = truncate(contentText, 60);
+        detail = truncate(contentText, 200);
       }
     }
   }
