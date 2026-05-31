@@ -189,20 +189,48 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('POST /api/runs should define the trigger run contract', () => {
+    it('request body routes should define precise required JSON contracts', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const validatePath = paths['/api/validate'] as Record<string, any>;
       const runsPath = paths['/api/runs'] as Record<string, any>;
-
-      expect(Object.keys(runsPath)).toEqual(expect.arrayContaining(['post']));
-      expect(runsPath.post.operationId).toBe('triggerRun');
-      expect(runsPath.post.requestBody).toEqual({
+      const webhookTestPath = paths['/api/webhooks/test'] as Record<string, any>;
+      const expectedRunRequestBody = {
         required: true,
         content: {
           'application/json': {
             schema: requestSchema,
           },
         },
+      };
+
+      expect(validatePath.post.operationId).toBe('validateTask');
+      expect(validatePath.post.requestBody).toEqual(expectedRunRequestBody);
+      expect(runsPath.post.operationId).toBe('triggerRun');
+      expect(runsPath.post.requestBody).toEqual(expectedRunRequestBody);
+      expect(webhookTestPath.post.operationId).toBe('testWebhook');
+      expect(webhookTestPath.post.requestBody).toEqual({
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['url'],
+              properties: {
+                url: { type: 'string', format: 'uri' },
+                secret: { type: 'string' },
+              },
+            },
+          },
+        },
       });
+    });
+
+    it('POST /api/runs should define the trigger run responses', () => {
+      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const runsPath = paths['/api/runs'] as Record<string, any>;
+
+      expect(Object.keys(runsPath)).toEqual(expect.arrayContaining(['post']));
+      expect(runsPath.post.operationId).toBe('triggerRun');
       expect(runsPath.post.responses).toEqual(
         expect.objectContaining({
           '202': expect.objectContaining({
@@ -354,9 +382,10 @@ describe('OpenAPI Path Builders', () => {
           const operation = (paths[path] as Record<string, any>)[method];
 
           const fallbackStatuses = Object.entries(operation.responses)
-            .filter(([, response]: [string, any]) =>
-              Object.keys(response.content?.['application/json']?.schema || {}).length === 0
-            )
+            .filter(([, response]: [string, any]) => {
+              const jsonSchema = response.content?.['application/json']?.schema;
+              return jsonSchema !== undefined && Object.keys(jsonSchema).length === 0;
+            })
             .map(([status]) => status)
             .sort();
 
@@ -394,10 +423,10 @@ describe('OpenAPI Path Builders', () => {
       });
     });
 
-    it('should handle empty request schema', () => {
-      const paths = buildAllPaths(errorSchema, {}, responseSchema);
-      expect(paths).toBeDefined();
-      expect(Object.keys(paths).length).toBeGreaterThan(0);
+    it('should reject an empty request schema for routes requiring buildRunRequestSchema output', () => {
+      expect(() => buildAllPaths(errorSchema, {}, responseSchema)).toThrow(
+        'buildAllPaths requires runRequestSchema from buildRunRequestSchema()'
+      );
     });
 
     it('should handle empty response schema', () => {

@@ -974,6 +974,23 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
   };
 }
 
+function assertRunRequestSchema(runRequestSchema: Record<string, unknown>): void {
+  const properties = runRequestSchema.properties as Record<string, unknown> | undefined;
+  const repoUrl = properties?.repoUrl as Record<string, unknown> | undefined;
+  const required = runRequestSchema.required;
+
+  if (
+    runRequestSchema.type !== 'object' ||
+    !Array.isArray(required) ||
+    !required.includes('repoUrl') ||
+    !properties ||
+    repoUrl?.type !== 'string' ||
+    repoUrl?.format !== 'uri'
+  ) {
+    throw new Error('buildAllPaths requires runRequestSchema from buildRunRequestSchema()');
+  }
+}
+
 /**
  * Build all paths/endpoints for the OpenAPI spec.
  * Aggregates all endpoint builders organized by feature area.
@@ -983,6 +1000,8 @@ export function buildAllPaths(
   runRequestSchema: Record<string, unknown>,
   runResponseSchema: Record<string, unknown>
 ): Record<string, unknown> {
+  assertRunRequestSchema(runRequestSchema);
+
   return {
     ...buildHealthCheckPaths(errorResponseSchema),
     ...buildServiceInfoPaths(errorResponseSchema, runRequestSchema),
