@@ -363,5 +363,211 @@ invalid json line
       const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
       expect(result).toEqual([]);
     });
+
+    test('should not generate goal quality recommendation when high/low counts missing', () => {
+      const stats = {
+        high: undefined,
+        low: undefined,
+      };
+      const correlationNotes: string[] = [];
+      const smartAnalysis = { distribution: {} };
+
+      const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
+      expect(result.find((r: any) => r.area === 'goal_quality')).toBeUndefined();
+    });
+
+    test('should not generate goal quality recommendation when success difference is small', () => {
+      const stats = {
+        high: { count: 20, success_rate: '70.0' },
+        low: { count: 20, success_rate: '60.0' }, // Only 10% difference, threshold is 20%
+      };
+      const correlationNotes: string[] = [];
+      const smartAnalysis = { distribution: {} };
+
+      const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
+      expect(result.find((r: any) => r.area === 'goal_quality')).toBeUndefined();
+    });
+
+    test('should not generate SMART criteria recommendation when low < 20%', () => {
+      const stats = {};
+      const correlationNotes: string[] = [];
+      const smartAnalysis = {
+        distribution: { high: '60.0%', low: '15.0%', medium: '25.0%' },
+      };
+
+      const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
+      expect(result.find((r: any) => r.area === 'smart_criteria')).toBeUndefined();
+    });
+  });
+
+  // ===== Integration Tests =====
+  describe('analyzeGoalFeedback integration', () => {
+    test('should produce complete analysis with recommendations for realistic dataset', () => {
+      const entries: GoalCheckEntry[] = [
+        // High-quality, successful runs
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 95, smart_criteria: [{ smart_score: 'high' }, { smart_score: 'high' }] },
+          correlation: { success: true },
+          goal_check_verdict: { met: true, confidence: 'high', evidenceCount: 8, missingCount: 0 },
+          outcomes: { coding_attempts: 1 },
+        },
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 88, smart_criteria: [{ smart_score: 'high' }, { smart_score: 'medium' }] },
+          correlation: { success: true },
+          goal_check_verdict: { met: true, confidence: 'high', evidenceCount: 7, missingCount: 1 },
+          outcomes: { coding_attempts: 1 },
+        },
+        // Medium-quality, mixed results
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 72, smart_criteria: [{ smart_score: 'medium' }, { smart_score: 'low' }] },
+          correlation: { success: true },
+          goal_check_verdict: { met: true, confidence: 'medium', evidenceCount: 5, missingCount: 2 },
+          outcomes: { coding_attempts: 2 },
+        },
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 68, smart_criteria: [{ smart_score: 'medium' }] },
+          correlation: { success: false },
+          goal_check_verdict: { met: false, confidence: 'medium', evidenceCount: 4, missingCount: 3 },
+          outcomes: { coding_attempts: 3 },
+        },
+        // Low-quality, failing runs
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 45, smart_criteria: [{ smart_score: 'low' }] },
+          correlation: { success: false },
+          goal_check_verdict: { met: false, confidence: 'low', evidenceCount: 2, missingCount: 5 },
+          outcomes: { coding_attempts: 4 },
+        },
+      ];
+
+      const result = analyzeGoalFeedback(entries);
+
+      expect(result.total_runs).toBe(5);
+      expect(result.quality_buckets?.high?.count).toBe(2);
+      expect(result.quality_buckets?.medium?.count).toBe(2);
+      expect(result.quality_buckets?.low?.count).toBe(1);
+
+      expect(result.correlation_insights).toBeDefined();
+      expect(result.correlation_insights.length).toBeGreaterThan(0);
+
+      expect(result.smart_analysis?.total_criteria).toBe(8);
+      expect(result.smart_analysis?.distribution).toBeDefined();
+
+      expect(result.recommendations).toBeDefined();
+      expect(result.recommendations.length).toBeGreaterThan(0);
+    });
+
+    test('should calculate correct success rates across quality buckets', () => {
+      const entries: GoalCheckEntry[] = [
+        // High bucket: 3 attempts, 2 successes = 66.7%
+        { phase: 'goal_check', goal_quality: { score: 90 }, correlation: { success: true } },
+        { phase: 'goal_check', goal_quality: { score: 87 }, correlation: { success: true } },
+        { phase: 'goal_check', goal_quality: { score: 85 }, correlation: { success: false } },
+        // Low bucket: 2 attempts, 0 successes = 0%
+        { phase: 'goal_check', goal_quality: { score: 50 }, correlation: { success: false } },
+        { phase: 'goal_check', goal_quality: { score: 30 }, correlation: { success: false } },
+      ];
+
+      const result = analyzeGoalFeedback(entries);
+
+      const highSuccessRate = parseFloat((result.quality_buckets?.high?.success_rate as string) || '0');
+      const lowSuccessRate = parseFloat((result.quality_buckets?.low?.success_rate as string) || '0');
+
+      expect(highSuccessRate).toBeCloseTo(66.7, 0);
+      expect(lowSuccessRate).toBe(0);
+    });
+
+    test('should handle verdicts that sometimes match correlation', () => {
+      const entries: GoalCheckEntry[] = [
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 85 },
+          correlation: { success: true },
+          goal_check_verdict: { met: true },
+        },
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 85 },
+          correlation: { success: true },
+          goal_check_verdict: { met: true },
+        },
+        {
+          phase: 'goal_check',
+          goal_quality: { score: 85 },
+          correlation: { success: false },
+          goal_check_verdict: { met: true }, // Verdict wrong!
+        },
+      ];
+
+      const result = analyzeCorrelations(entries);
+      const verdictNote = result.find((n: string) => n.includes('verdict_met_rate'));
+      expect(verdictNote).toBeUndefined(); // Only reports when > 0.85 accuracy
+    });
+
+    test('should accumulate attempt counts across buckets', () => {
+      const entries: GoalCheckEntry[] = [
+        { phase: 'goal_check', goal_quality: { score: 90 }, outcomes: { coding_attempts: 1 } },
+        { phase: 'goal_check', goal_quality: { score: 88 }, outcomes: { coding_attempts: 2 } },
+        { phase: 'goal_check', goal_quality: { score: 50 }, outcomes: { coding_attempts: 5 } },
+      ];
+
+      const result = analyzeGoalFeedback(entries);
+
+      const highAttempts = parseFloat((result.quality_buckets?.high?.avg_completion_attempts as string) || '0');
+      const lowAttempts = parseFloat((result.quality_buckets?.low?.avg_completion_attempts as string) || '0');
+
+      expect(highAttempts).toBeCloseTo(1.5, 0); // (1+2)/2
+      expect(lowAttempts).toBe(5);
+    });
+  });
+
+  // ===== Edge Cases =====
+  describe('edge cases and error handling', () => {
+    test('readFeedbackFile should handle large files gracefully', () => {
+      const testFile = path.join(testDir, 'large.jsonl');
+      const entries = Array.from({ length: 1000 }, (_, __) => ({
+        phase: 'goal_check',
+        goal_quality: { score: Math.random() * 100 },
+      }));
+      fs.writeFileSync(testFile, entries.map((e) => JSON.stringify(e)).join('\n'));
+
+      const result = readFeedbackFile(testFile);
+      expect(result).toHaveLength(1000);
+    });
+
+    test('analyzeGoalFeedback should handle undefined fields gracefully', () => {
+      const entries: GoalCheckEntry[] = [
+        { phase: 'goal_check' }, // Missing goal_quality
+        { phase: 'goal_check', goal_quality: {} }, // Empty goal_quality
+        { phase: 'goal_check', goal_quality: { score: 75 }, correlation: {} }, // Missing correlation.success
+      ];
+
+      const result = analyzeGoalFeedback(entries);
+      expect(result.total_runs).toBe(3);
+      expect(result.quality_buckets?.low?.count).toBeGreaterThan(0); // Score defaults to 0
+    });
+
+    test('analyzeCorrelations should handle zero-division gracefully', () => {
+      const entries: GoalCheckEntry[] = []; // Empty array
+      const result = analyzeCorrelations(entries);
+      expect(result).toEqual(expect.any(Array));
+      expect(result[result.length - 1]).toMatch(/Evaluator effort/); // Last note shows effort with zeros
+    });
+
+    test('generateRecommendations should handle undefined stats fields', () => {
+      const stats = {
+        high: undefined,
+        medium: { count: 10, success_rate: '50.0' },
+      };
+      const correlationNotes: string[] = [];
+      const smartAnalysis = { distribution: {} };
+
+      const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
+      expect(Array.isArray(result)).toBe(true);
+    });
   });
 });
