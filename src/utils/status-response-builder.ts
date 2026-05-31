@@ -236,101 +236,27 @@ export class StatusResponseBuilder {
       const metadata = this.readMetadata(runDir);
       const progressFile = path.join(runDir, 'progress.jsonl');
       const orchestratorStages = deriveOrchestratorStages(job, this.config);
-      const orchestratorStageSet = new Set(orchestratorStages);
 
-      const observedStages = new Set<string>();
-      const finishedStages = new Set<string>();
-      let currentStage: string | undefined = normalizeStageName(job.currentStage) ?? normalizeStageName(response.progress?.stage);
+      const { observedStages, finishedStages, currentStage } = this.processProgressEvents(progressFile, job, response);
 
-      const ingestEvent = (event: ProgressEventLike): void => {
-        const stage = normalizeStageName(event.stage);
-        if (!stage) {
-          return;
-        }
-
-        observedStages.add(stage);
-        currentStage = stage;
-        if (isFinishedProgressEvent(event)) {
-          finishedStages.add(stage);
-        }
-      };
-
-      if (fs.existsSync(progressFile)) {
-        try {
-          const content = fs.readFileSync(progressFile, 'utf-8');
-          const lines = content.split('\n').filter(line => line.trim());
-
-          for (const line of lines) {
-            try {
-              ingestEvent(JSON.parse(line) as ProgressEventLike);
-            } catch {
-              // Skip malformed JSON lines
-            }
-          }
-        } catch {
-          // If reading progress.jsonl fails, continue with metadata or live progress fallbacks.
-        }
-      } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
-        try {
-          const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
-          const lastEvent = liveEvents[liveEvents.length - 1] as ProgressEventLike | undefined;
-          if (lastEvent) {
-            ingestEvent(lastEvent);
-          }
-        } catch {
-          // Ignore live progress errors; status remains resilient.
-        }
-      }
-
-      // Use stages from metadata if available. This is the authoritative denominator once populated.
-      let totalStages = 0;
-      let denominatorStages: string[] = [];
-      const hasMetadataStages = metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0;
-      if (hasMetadataStages) {
-        denominatorStages = metadata.stages.map(normalizeStageName).filter((stage: string | undefined): stage is string => Boolean(stage));
-        totalStages = metadata.stages.length;
-      } else {
-        // Fallback to the canonical orchestrator phase list derived from the same run configuration.
-        // Do not use only observed progress events as the denominator; early events would otherwise report 100%.
-        denominatorStages = orchestratorStages;
-        totalStages = denominatorStages.length;
-      }
+      const { denominatorStages, totalStages } = this.determineStageDenominator(metadata, orchestratorStages);
 
       if (totalStages <= 0) {
         response.taskProgressPercent = undefined;
         return;
       }
 
-      let completedStages = Array.from(finishedStages).filter(stage => denominatorStages.includes(stage)).length;
-      const currentStageIndex = currentStage && denominatorStages.length > 0 ? denominatorStages.indexOf(currentStage) : -1;
-      if (currentStageIndex >= 0) {
-        completedStages = Math.max(completedStages, currentStageIndex);
-        if (currentStage && finishedStages.has(currentStage)) {
-          completedStages = Math.max(completedStages, currentStageIndex + 1);
-        }
-      } else if (!hasMetadataStages && observedStages.size > 0) {
-        const knownObservedStageCount = Array.from(observedStages).filter(stage => orchestratorStageSet.has(stage)).length;
-        completedStages = Math.max(completedStages, Math.min(knownObservedStageCount, totalStages - 1));
-      }
+      const completedStages = this.calculateCompletedStages(
+        finishedStages,
+        denominatorStages,
+        currentStage,
+        observedStages,
+        orchestratorStages,
+        metadata,
+        totalStages
+      );
 
-      // Validate: completedStages should never exceed totalStages.
-      if (completedStages > totalStages) {
-        if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
-          console.warn(
-            `[TaskProgressInfo] Warning: completedStages (${completedStages}) > totalStages (${totalStages}) for ${job.id}. Clamping to totalStages.`
-          );
-        }
-        completedStages = totalStages;
-      }
-
-      const rawPercent = totalStages > 0 ? (completedStages / totalStages) * 100 : 0;
-      response.taskProgressPercent = Math.min(100, Math.max(0, Math.round(rawPercent)));
-
-      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
-        console.log(
-          `[TaskProgressInfo] ${job.id}: ${completedStages}/${totalStages} stages = ${response.taskProgressPercent}%`
-        );
-      }
+      response.taskProgressPercent = this.normalizeProgressPercent(completedStages, totalStages, job.id);
     } catch (error) {
       // If any error occurs, skip task progress calculation.
       if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
@@ -338,6 +264,130 @@ export class StatusResponseBuilder {
       }
       response.taskProgressPercent = undefined;
     }
+  }
+
+  /**
+   * Process progress events from file or live scheduler.
+   * Returns observed and finished stages plus current stage.
+   */
+  private processProgressEvents(
+    progressFile: string,
+    job: Job,
+    response: StatusResponse
+  ): { observedStages: Set<string>; finishedStages: Set<string>; currentStage: string | undefined } {
+    const observedStages = new Set<string>();
+    const finishedStages = new Set<string>();
+    let currentStage: string | undefined = normalizeStageName(job.currentStage) ?? normalizeStageName(response.progress?.stage);
+
+    const ingestEvent = (event: ProgressEventLike): void => {
+      const stage = normalizeStageName(event.stage);
+      if (!stage) {
+        return;
+      }
+      observedStages.add(stage);
+      currentStage = stage;
+      if (isFinishedProgressEvent(event)) {
+        finishedStages.add(stage);
+      }
+    };
+
+    if (fs.existsSync(progressFile)) {
+      try {
+        const content = fs.readFileSync(progressFile, 'utf-8');
+        const lines = content.split('\n').filter(line => line.trim());
+        for (const line of lines) {
+          try {
+            ingestEvent(JSON.parse(line) as ProgressEventLike);
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      } catch {
+        // If reading progress.jsonl fails, continue with live progress fallback
+      }
+    } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
+      try {
+        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
+        const lastEvent = liveEvents[liveEvents.length - 1] as ProgressEventLike | undefined;
+        if (lastEvent) {
+          ingestEvent(lastEvent);
+        }
+      } catch {
+        // Ignore live progress errors; status remains resilient
+      }
+    }
+
+    return { observedStages, finishedStages, currentStage };
+  }
+
+  /**
+   * Determine the authoritative list of stages (denominator) and total count.
+   */
+  private determineStageDenominator(
+    metadata: any,
+    orchestratorStages: string[]
+  ): { denominatorStages: string[]; totalStages: number } {
+    const hasMetadataStages = metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0;
+    if (hasMetadataStages) {
+      const denominatorStages = metadata.stages
+        .map(normalizeStageName)
+        .filter((stage: string | undefined): stage is string => Boolean(stage));
+      return { denominatorStages, totalStages: metadata.stages.length };
+    }
+
+    // Fallback to orchestrator stages
+    return { denominatorStages: orchestratorStages, totalStages: orchestratorStages.length };
+  }
+
+  /**
+   * Calculate how many stages have been completed based on observed and finished stages.
+   */
+  private calculateCompletedStages(
+    finishedStages: Set<string>,
+    denominatorStages: string[],
+    currentStage: string | undefined,
+    observedStages: Set<string>,
+    orchestratorStages: string[],
+    metadata: any,
+    totalStages: number
+  ): number {
+    let completedStages = Array.from(finishedStages).filter(stage => denominatorStages.includes(stage)).length;
+
+    const currentStageIndex = currentStage && denominatorStages.length > 0 ? denominatorStages.indexOf(currentStage) : -1;
+    if (currentStageIndex >= 0) {
+      completedStages = Math.max(completedStages, currentStageIndex);
+      if (currentStage && finishedStages.has(currentStage)) {
+        completedStages = Math.max(completedStages, currentStageIndex + 1);
+      }
+    } else if (!metadata.stages && observedStages.size > 0) {
+      const orchestratorStageSet = new Set(orchestratorStages);
+      const knownObservedStageCount = Array.from(observedStages).filter(stage => orchestratorStageSet.has(stage)).length;
+      completedStages = Math.max(completedStages, Math.min(knownObservedStageCount, totalStages - 1));
+    }
+
+    // Clamp to not exceed totalStages
+    if (completedStages > totalStages) {
+      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
+        console.warn(`[TaskProgressInfo] Warning: completedStages (${completedStages}) > totalStages (${totalStages}). Clamping.`);
+      }
+      completedStages = totalStages;
+    }
+
+    return completedStages;
+  }
+
+  /**
+   * Normalize completed/total stages into a percentage (0-100).
+   */
+  private normalizeProgressPercent(completedStages: number, totalStages: number, jobId: string): number {
+    const rawPercent = totalStages > 0 ? (completedStages / totalStages) * 100 : 0;
+    const normalized = Math.min(100, Math.max(0, Math.round(rawPercent)));
+
+    if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
+      console.log(`[TaskProgressInfo] ${jobId}: ${completedStages}/${totalStages} stages = ${normalized}%`);
+    }
+
+    return normalized;
   }
 
   private readMetadata(runDir: string): any {
