@@ -51,6 +51,20 @@ cat > "$REPO_MEMORY_FILE" <<'MEMORY'
 MEMORY
 
 prompt="$(build_agent_prompt)"
+for required_guardrail in \
+  'Do not run git add, git commit, git push, gh, hub, or create pull requests.' \
+  'Do not run npm install, npm ci, yarn install, pnpm install, or package-manager commands that modify lockfiles.' \
+  'Before finishing, fix minor formatting issues in files you edited' \
+  'Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.'; do
+  if ! grep -q "$required_guardrail" <<< "$prompt"; then
+    printf 'Expected guarded prompt to include guardrail: %s\n' "$required_guardrail" >&2
+    exit 1
+  fi
+done
+if ! grep -q 'without broad unrelated rewrites' <<< "$prompt"; then
+  printf 'Expected formatting guardrail to remain scoped against unrelated rewrites.\n' >&2
+  exit 1
+fi
 if ! grep -q 'Prior repository context (opt-in cache' <<< "$prompt"; then
   printf 'Expected build_agent_prompt to append labeled repository memory.\n' >&2
   exit 1
