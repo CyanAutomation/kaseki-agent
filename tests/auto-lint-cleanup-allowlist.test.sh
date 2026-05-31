@@ -39,22 +39,19 @@ emit_event() {
 
 emit_error_event() { emit_event "$@"; }
 collect_git_artifacts() { printf 'collect_git_artifacts\n' >> "$TMP_DIR/results/events.log"; }
-test_check_allowlist_rejects_disallowed() {
-    source "$KASEKI_AGENT"
 
-    export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
-    local cleanup_files="build/generated.txt
-docs/extra.md"
+# Load only the helpers under test, while redirecting their container-only
+# absolute paths into this test's temporary workspace.
+eval "$(awk '
+  /^collect_changed_file_set\(\)/ { emit=1 }
+  /^run_auto_lint_cleanup\(\)/ { emit=0 }
+  emit { print }
+' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
 
-    # Should FAIL (return 1) because files are outside allowlist
-    if check_auto_lint_cleanup_allowlist "$cleanup_files"; then
-        echo "FAIL: check_auto_lint_cleanup_allowlist should reject disallowed files"
-        return 1
-    fi
-    echo "PASS: check_auto_lint_cleanup_allowlist correctly rejects disallowed files"
-}
+mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
 : > "$TMP_DIR/results/quality.log"
 : > "$TMP_DIR/results/auto-lint-cleanup.log"
+: > "$TMP_DIR/results/events.log"
 AUTO_LINT_CLEANUP_LOG="$TMP_DIR/results/auto-lint-cleanup.log"
 
 cd "$TMP_DIR/repo"
@@ -89,20 +86,21 @@ esac
 
 # The same disallowed cleanup-created file is restored and does not fail the
 # stage when restoration is enabled.
-printf '\n▶️  Test 3: cleanup-phase file creation WITH allowlist\n'
-rm -f "$CLEANUP_TEST_FILE"
-CLEANUP_ALLOWLIST="generated/*.txt" npm run lint-validate -- --fail-on-cleanup-created
-QUALITY_EXIT=$?
-[ "$QUALITY_EXIT" -eq 0 ] || fail "expected QUALITY_EXIT=0 for allowlisted file, got $QUALITY_EXIT"
+QUALITY_EXIT=0
+AUTO_LINT_CLEANUP_EXIT=0
+QUALITY_FAILURE_REASON=""
 KASEKI_RESTORE_DISALLOWED_CHANGES=1
+rm -f generated.log
 collect_changed_file_set "$TMP_DIR/results/before-restore.txt"
 printf 'generated\n' > generated.log
 collect_changed_file_set "$TMP_DIR/results/after-restore.txt"
 
-printf '\n▶️  Test 4: cleanup-phase file creation with MISMATCHED allowlist\n'
-rm -f "$CLEANUP_TEST_FILE"
-CLEANUP_ALLOWLIST="different/*.log" npm run lint-validate -- --fail-on-cleanup-created && QUALITY_EXIT=$? || QUALITY_EXIT=$?
-[ "$QUALITY_EXIT" -eq 1 ] || fail "expected QUALITY_EXIT=1 for non-allowlisted file, got $QUALITY_EXIT"
+if check_auto_lint_cleanup_allowlist "$TMP_DIR/results/before-restore.txt" "$TMP_DIR/results/after-restore.txt"; then
+  pass 'cleanup allowlist restores disallowed cleanup-created files when enabled'
+else
+  fail 'cleanup allowlist should restore disallowed cleanup-created files when enabled'
+fi
+[ "$QUALITY_EXIT" -eq 0 ] || fail "expected QUALITY_EXIT=0 after restoration, got $QUALITY_EXIT"
 [ ! -e generated.log ] || fail 'disallowed cleanup-created file should be removed by restoration'
 if grep -Fq 'auto_lint_cleanup_allowlist_restoration_complete restored=1 unrestored=0' "$TMP_DIR/results/events.log"; then
   pass 'cleanup allowlist restoration emits a completion event'
@@ -116,6 +114,7 @@ AUTO_LINT_CLEANUP_EXIT=0
 QUALITY_FAILURE_REASON=""
 KASEKI_RESTORE_DISALLOWED_CHANGES=0
 KASEKI_VALIDATION_ALLOWLIST='generated.log'
+rm -f generated.log
 collect_changed_file_set "$TMP_DIR/results/before-validation-allowlist.txt"
 printf 'generated\n' > generated.log
 collect_changed_file_set "$TMP_DIR/results/after-validation-allowlist.txt"
