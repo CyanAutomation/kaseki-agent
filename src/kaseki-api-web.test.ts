@@ -45,7 +45,9 @@ describe('kaseki API web console', () => {
       expect(body).toContain('Response status');
       expect(body).toContain('Response elapsed time');
       expect(body).toContain('Response progress stage');
-      expect(body).toContain('Task Progress');
+      expect(body).toContain('Progress message');
+      expect(body).toContain('Progress (%)');
+      expect(body).not.toContain('Task Progress');
       expect(body).toContain("apiRequest('/api/runs', { auth: true, preserveOutput: options && options.preserveOutput })");
       expect(body).toContain("apiRequest(runUrl(runId, '/artifacts'), { auth: true, preserveOutput: true })");
       expect(body).toContain('function stripControlSequences(value)');
