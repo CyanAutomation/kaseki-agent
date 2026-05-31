@@ -1380,7 +1380,10 @@ const controllerPage = String.raw`<!doctype html>
             items.push(['Response elapsed time', elapsed]);
           }
           if (payload.progress && typeof payload.progress.stage === 'string') {
-            items.push(['Response progress stage', stripControlSequences(payload.progress.stage)]);
+            const progressStageName = payload.progress.displayName 
+              ? stripControlSequences(payload.progress.displayName)
+              : stripControlSequences(payload.progress.stage);
+            items.push(['Response progress stage', progressStageName]);
           }
           if (payload.progress && typeof payload.progress.message === 'string') {
             const progressMessage = stripControlSequences(payload.progress.message);
@@ -1434,7 +1437,7 @@ const controllerPage = String.raw`<!doctype html>
           detailsEl.innerHTML = '';
           return;
         }
-        const stage = progress.stage ? stripControlSequences(progress.stage) : '';
+        const stage = progress.displayName ? stripControlSequences(progress.displayName) : (progress.stage ? stripControlSequences(progress.stage) : '');
         const message = progress.message ? stripControlSequences(progress.message) : '';
         const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
         const parts = [stage, message, percent].filter(Boolean);

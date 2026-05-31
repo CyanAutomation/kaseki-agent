@@ -2104,6 +2104,7 @@ describe('kaseki-api-routes status artifact hints', () => {
       const body = (await response.json()) as any;
       expect(body.progress).toEqual({
         stage: 'pi coding agent',
+        displayName: 'Kaseki — Crafting',
         percentComplete: 42,
         message: 'pi coding agent',
         updatedAt: '2026-05-05T00:00:00.000Z',

@@ -391,6 +391,7 @@ describe('progress-normalizer', () => {
       // client-visible through the progress/events log endpoints.
       expect(structured).toEqual({
         stage: 'pi coding agent',
+        displayName: 'Kaseki — Crafting',
         message: 'working; events=5, tool starts=2, tool ends=1',
         percentComplete: 45,
         updatedAt: '2026-05-05T10:00:00.000Z',
@@ -421,6 +422,7 @@ describe('progress-normalizer', () => {
 
       expect(structured).toEqual({
         stage: 'pi coding agent',
+        displayName: 'Kaseki — Crafting',
         message: 'working; events=1079, tool starts=8, tool ends=8',
         percentComplete: undefined,
         updatedAt: '2026-05-07T12:56:25.853Z',

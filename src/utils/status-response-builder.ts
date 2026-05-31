@@ -45,6 +45,7 @@ function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
   const dryRun = startupCheck;
   const githubAppEnabled = publishMode !== 'none';
   const preAgentValidation = taskMode === 'inspect' ? false : true;
+  const goalSettingEnabled = taskMode === 'inspect' ? request.goalSetting?.enabled === true : request.goalSetting?.enabled ?? true;
   const scoutingEnabled = taskMode === 'inspect' ? request.scouting?.enabled === true : request.scouting?.enabled ?? true;
   const goalCheckEnabled = taskMode === 'inspect'
     ? request.goalCheck?.enabled === true
@@ -62,6 +63,9 @@ function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
   stages.push('clone repository');
   if (preAgentValidation) {
     stages.push('pre-agent validation');
+  }
+  if (goalSettingEnabled) {
+    stages.push('pi goal-setting agent');
   }
   if (scoutingEnabled) {
     stages.push('pi scouting agent', 'derive allowlist from scouting');
