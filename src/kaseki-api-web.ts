@@ -421,13 +421,14 @@ const controllerPage = String.raw`<!doctype html>
         font-size: 13px;
         line-height: var(--line-height-relaxed);
       }
-      .field-error { 
+      .field-error {
         color: var(--color-bad);
         font-family: var(--font-ui);
         font-size: 13px;
         line-height: var(--line-height-normal);
         min-height: 1em;
       }
+      .field-error[hidden] { display: none; }
       input, textarea, select, button {
         box-sizing: border-box;
         color: inherit;
@@ -1068,7 +1069,7 @@ const controllerPage = String.raw`<!doctype html>
       }
       .modal-title {
         margin: 0;
-        font-family: var(--font-stack);
+        font-family: var(--font-ui);
         font-size: var(--font-size-lg);
         font-weight: var(--font-weight-bold);
         color: var(--color-text);
@@ -1295,7 +1296,7 @@ const controllerPage = String.raw`<!doctype html>
                 </div>
                 <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
-              <p class="field-error" id="issues-error" aria-live="polite" style="display: none;"></p>
+              <p class="field-error" id="issues-error" aria-live="polite" hidden></p>
             </div>
           </form>
           <div id="issues-container">
@@ -1328,10 +1329,10 @@ const controllerPage = String.raw`<!doctype html>
     </main>
     <!-- Full Results Modal -->
     <div class="modal-backdrop" id="modal-backdrop" hidden></div>
-    <div class="modal" id="full-results-modal" hidden>
+    <div class="modal" id="full-results-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title-heading" hidden>
       <div class="modal-content">
         <div class="modal-header">
-          <h3 class="modal-title">Full Results</h3>
+          <h3 class="modal-title" id="modal-title-heading">Full Results</h3>
           <button class="modal-close" id="modal-close-btn" type="button" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
@@ -1377,6 +1378,8 @@ const controllerPage = String.raw`<!doctype html>
       const modalBackdrop = document.querySelector('#modal-backdrop');
       const fullResultsModal = document.querySelector('#full-results-modal');
       const modalCloseBtn = document.querySelector('#modal-close-btn');
+      const modalTitleEl = document.querySelector('#modal-title-heading');
+      let modalOpener = null;
       const tabButtons = document.querySelectorAll('.tab-btn');
       const modalTabsContainer = document.querySelector('.modal-tabs-container');
       
@@ -1475,10 +1478,17 @@ const controllerPage = String.raw`<!doctype html>
 
           item.appendChild(textSpan);
           item.appendChild(deleteBtn);
+          item.setAttribute('tabindex', '0');
           item.addEventListener('click', () => {
             targetInput.value = repo;
             hideRecentReposDropdown(dropdown);
             targetInput.focus();
+          });
+          item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              item.click();
+            }
           });
 
           dropdown.appendChild(item);
@@ -1963,12 +1973,17 @@ const controllerPage = String.raw`<!doctype html>
         fullResultsModal.hidden = true;
         modalBackdrop.hidden = true;
         modalTabCache = {};
+        modalTitleEl.textContent = 'Full Results';
+        if (modalOpener) { modalOpener.focus(); modalOpener = null; }
       }
 
       function openModal() {
+        modalOpener = document.activeElement;
+        const runId = runIdInput.value.trim();
+        modalTitleEl.textContent = runId ? 'Full Results — ' + runId : 'Full Results';
         fullResultsModal.hidden = false;
         modalBackdrop.hidden = false;
-        // Load and display Status tab initially
+        modalCloseBtn.focus();
         loadModalTab('status');
       }
 
@@ -2192,7 +2207,7 @@ const controllerPage = String.raw`<!doctype html>
 
         loadIssuesBtn.disabled = true;
         issuesList.innerHTML = '<div class="issues-loading">Loading issues...</div>';
-        issuesError.style.display = 'none';
+        issuesError.hidden = true;
 
         try {
           const token = getApiToken();
@@ -2270,7 +2285,7 @@ const controllerPage = String.raw`<!doctype html>
 
       function showIssuesError(message) {
         issuesError.textContent = message;
-        issuesError.style.display = 'block';
+        issuesError.hidden = false;
       }
 
       // Pre-fill issues repo URL with current task repo if available
