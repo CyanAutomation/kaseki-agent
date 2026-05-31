@@ -388,7 +388,7 @@ describe('OpenAPI Path Builders', () => {
             const response = operation.responses[status];
 
             expect(typeof response.description).toBe('string');
-            expect(response.content['application/json'].schema).toBeDefined();
+            expect(response.content?.['application/json']?.schema).toBeDefined();
           });
         });
       });
