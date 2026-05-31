@@ -4,6 +4,23 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.58.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.57.0...v1.58.0) (2026-05-31)
+
+
+### Bug Fixes
+
+* set KASEKI_SCOUTING environment variable to disable scouting during inspection tasks ([9648e35](https://github.com/CyanAutomation/kaseki-agent/commit/9648e35d510664df6548d071722752117647d4d8))
+* update message summary to include full content without truncation ([4b2f754](https://github.com/CyanAutomation/kaseki-agent/commit/4b2f754866ee8f2f5437f25695eea64fef1d567f))
+* update test to check for correct data-tab attribute for artifacts ([2a08647](https://github.com/CyanAutomation/kaseki-agent/commit/2a086475b96d3c4167eca45d08153ba1ed364c80))
+
+
+### Features
+
+* enhance issues input with recent repositories dropdown functionality ([c8ab616](https://github.com/CyanAutomation/kaseki-agent/commit/c8ab616f7704ac8a29131ac7eabb4c9afa2f8fef))
+* enhance response summary to include progress message with full-width styling ([df8b42c](https://github.com/CyanAutomation/kaseki-agent/commit/df8b42cddafba92b65aeb1e9ac9a5b99ddc26e0c))
+* implement full results modal with tabbed navigation for status, events, stdout, and artifacts ([7f4200e](https://github.com/CyanAutomation/kaseki-agent/commit/7f4200e7c986de580e020e6b19f2811a8aec66cb))
+* introduce display names for progress stages and enhance structured progress handling ([127ebd2](https://github.com/CyanAutomation/kaseki-agent/commit/127ebd20ac7b77162950eb34493d7d4a07055631))
+
 # [1.57.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.56.2...v1.57.0) (2026-05-31)
 
 
