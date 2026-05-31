@@ -1030,7 +1030,7 @@ describe('JobScheduler timeout lifecycle', () => {
     }
   });
 
-  test('cancelled running jobs get non-empty API failure artifacts', async () => {
+  test('cancelled running jobs write failure artifacts after process exit', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({
@@ -1059,6 +1059,9 @@ describe('JobScheduler timeout lifecycle', () => {
       ref: 'main',
     });
 
+    proc.stdout.emit('data', Buffer.from('cancel stdout tail'));
+    proc.stderr.emit('data', Buffer.from('cancel stderr tail'));
+
     scheduler.cancelJob(job.id);
 
     const failurePath = `${resultsDir}/${job.id}/failure.json`;
@@ -1066,11 +1069,18 @@ describe('JobScheduler timeout lifecycle', () => {
     const analysisPath = `${resultsDir}/${job.id}/analysis.md`;
     const metadataPath = `${resultsDir}/${job.id}/metadata.json`;
     const stderrPath = `${resultsDir}/${job.id}/stderr.log`;
+
+    expect(fs.existsSync(failurePath)).toBe(false);
+
+    proc.emit('exit', null);
+
     expect(fs.statSync(failurePath).size).toBeGreaterThan(0);
     expect(fs.statSync(summaryPath).size).toBeGreaterThan(0);
     expect(fs.statSync(analysisPath).size).toBeGreaterThan(0);
     expect(fs.statSync(metadataPath).size).toBeGreaterThan(0);
     expect(fs.statSync(stderrPath).size).toBeGreaterThan(0);
+    expect(fs.readFileSync(stderrPath, 'utf-8')).toContain('cancel stderr tail');
+    expect(fs.readFileSync(stderrPath, 'utf-8')).toContain('cancel stdout tail');
     expect(JSON.parse(fs.readFileSync(failurePath, 'utf-8'))).toMatchObject({
       failureClass: 'cancelled',
       exitCode: 143,
@@ -1080,6 +1090,39 @@ describe('JobScheduler timeout lifecycle', () => {
         ok: true,
       },
     });
+  });
+
+  test('cancelled running jobs escalate to SIGKILL when process hangs', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    const job = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    scheduler.cancelJob(job.id);
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
+
+    jest.advanceTimersByTime(5000);
+
+    expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
   test('timeout escalates to SIGKILL when process hangs', async () => {
