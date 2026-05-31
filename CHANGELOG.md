@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.56.0...v1.56.1) (2026-05-31)
+
+
+### Bug Fixes
+
+* Webhook delivery can race and send the same event mu... (kaseki-79) ([#484](https://github.com/CyanAutomation/kaseki-agent/issues/484)) ([48d5177](https://github.com/CyanAutomation/kaseki-agent/commit/48d5177e1842cb733d4cce5b275876807c122466))
+
 # [1.56.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.55.1...v1.56.0) (2026-05-30)
 
 
