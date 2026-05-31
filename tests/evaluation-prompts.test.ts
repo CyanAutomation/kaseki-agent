@@ -386,21 +386,69 @@ NODE
   });
 
   describe('Analysis Scripts', () => {
-    it('should have collect-feedback.js script', () => {
+    it('collect-feedback.js should satisfy the feedback collection contract', () => {
       const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
       expect(fs.existsSync(collectFeedbackPath)).toBe(true);
+
+      const collectFeedbackContent = fs.readFileSync(collectFeedbackPath, 'utf8');
+      const shellContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+
+      expect(collectFeedbackContent).toMatch(
+        /node collect-feedback\.js goal-check <instance_name> <goal_setting_json> <goal_check_json> <metadata_json>/
+      );
+      expect(collectFeedbackContent).toMatch(
+        /node collect-feedback\.js run-evaluation <instance_name> <run_evaluation_json> <metadata_json>/
+      );
+
+      const definesGoalCheckHandler = /function collectGoalCheckFeedback\(instanceName, goalSettingPath, goalCheckPath, metadataPath\)/.test(
+        collectFeedbackContent
+      );
+      const exportsGoalCheckHandler = /module\.exports\s*=|exports\.collectGoalCheckFeedback/.test(collectFeedbackContent);
+      expect(definesGoalCheckHandler || exportsGoalCheckHandler).toBe(true);
+
+      const definesRunEvaluationHandler = /function collectRunEvaluationFeedback\(instanceName, runEvaluationPath, metadataPath\)/.test(
+        collectFeedbackContent
+      );
+      const exportsRunEvaluationHandler = /module\.exports\s*=|exports\.collectRunEvaluationFeedback/.test(collectFeedbackContent);
+      expect(definesRunEvaluationHandler || exportsRunEvaluationHandler).toBe(true);
+
+      expect(collectFeedbackContent).toContain("phase === 'goal-check'");
+      expect(collectFeedbackContent).toContain('collectGoalCheckFeedback(instanceName, args[2], args[3], args[4])');
+      expect(collectFeedbackContent).toContain("phase === 'run-evaluation'");
+      expect(collectFeedbackContent).toContain('collectRunEvaluationFeedback(instanceName, args[2], args[3])');
+
+      [
+        'quality_metrics',
+        'quality_score',
+        'success_criteria',
+        'met',
+        'confidence',
+        'evidence',
+        'missing',
+        'overall_assessment',
+        'reviewer_confidence',
+        'task_completion_score',
+        'stage_value',
+        'kaseki_improvement_opportunities',
+        'validation_passed',
+        'coding_attempts',
+        'total_duration_seconds',
+        'goal_check_met',
+      ].forEach((fieldName) => {
+        expect(collectFeedbackContent).toContain(fieldName);
+      });
+
+      expect(shellContent).toContain(
+        'node "$SCRIPT_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path"'
+      );
+      expect(shellContent).toContain(
+        'node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"'
+      );
     });
 
     it('should have analyze-goal-feedback.js script', () => {
       const analyzePath = path.join(__dirname, '..', '..', 'scripts', 'analyze-goal-feedback.js');
       expect(fs.existsSync(analyzePath)).toBe(true);
-    });
-
-    it('collect-feedback.js should export goal-check and run-evaluation handlers', () => {
-      const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
-      const content = fs.readFileSync(collectFeedbackPath, 'utf8');
-      expect(content).toContain('collectGoalCheckFeedback');
-      expect(content).toContain('collectRunEvaluationFeedback');
     });
   });
 
