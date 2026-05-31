@@ -156,7 +156,7 @@ function emit(stage: string, message: string, extra: Record<string, any> = {}): 
   }
 }
 
-function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void {
+function maybeHeartbeat(force: boolean = false): void {
   const now = Date.now();
   if (!force && now - lastHeartbeat < 15000) {
     return;
@@ -167,13 +167,6 @@ function maybeHeartbeat(force: boolean = false, reason: string = 'events'): void
   if (toolBatchAggregator.shouldFlush()) {
     toolBatchAggregator.flush();
   }
-
-  const elapsed = formatElapsed(startTime);
-  const message = `${ANSI_COLORS.DIM}Time Check = ${elapsed} (elapsed)${ANSI_COLORS.RESET}`;
-
-  emit('pi agent', message, {
-    reason,
-  });
 }
 
 /**
@@ -214,7 +207,7 @@ function emitMessageSummary(event: PiEvent): void {
 emit('pi agent', 'started');
 const heartbeatTimer = setInterval(() => {
   if (streamOpen) {
-    maybeHeartbeat(true, 'timer');
+    maybeHeartbeat(true);
   }
 }, 30000);
 
@@ -287,7 +280,7 @@ rl.on('close', () => {
 
   // Flush any pending tool batches
   toolBatchAggregator.flush();
-  maybeHeartbeat(true, 'close');
+  maybeHeartbeat(true);
 
   const finalElapsed = formatElapsed(startTime);
   emit('pi agent', `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`, {
