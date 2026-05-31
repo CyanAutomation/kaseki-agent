@@ -2608,6 +2608,7 @@ Operational guardrails:
 - Do not run git add, git commit, git push, gh, hub, or create pull requests. Kaseki owns commit, push, and PR creation after validation passes.
 - Do not run npm install, npm ci, yarn install, pnpm install, or package-manager commands that modify lockfiles. Kaseki owns dependency setup and validation.
 - Keep edits limited to the requested source and test files. If a tool or command changes unrelated files, restore those unrelated files before finishing.
+- Before finishing, fix minor formatting issues in files you edited, such as trailing whitespace and obvious lint/format inconsistencies, without broad unrelated rewrites.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 
 Task:
