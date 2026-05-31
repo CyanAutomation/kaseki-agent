@@ -39,17 +39,20 @@ emit_event() {
 
 emit_error_event() { emit_event "$@"; }
 collect_git_artifacts() { printf 'collect_git_artifacts\n' >> "$TMP_DIR/results/events.log"; }
+test_check_allowlist_rejects_disallowed() {
+    source "$KASEKI_AGENT"
 
-# Load cleanup allowlist helpers while redirecting container-only absolute paths
-# into this test's temporary workspace.
-eval "$(awk '
-  /^collect_changed_file_set\(\)/ { emit=1 }
-  /^run_auto_lint_cleanup\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
+    export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
+    local cleanup_files="build/generated.txt
+docs/extra.md"
 
-mkdir -p "$TMP_DIR/results" "$TMP_DIR/repo"
-: > "$TMP_DIR/results/events.log"
+    # Should FAIL (return 1) because files are outside allowlist
+    if check_auto_lint_cleanup_allowlist "$cleanup_files"; then
+        echo "FAIL: check_auto_lint_cleanup_allowlist should reject disallowed files"
+        return 1
+    fi
+    echo "PASS: check_auto_lint_cleanup_allowlist correctly rejects disallowed files"
+}
 : > "$TMP_DIR/results/quality.log"
 : > "$TMP_DIR/results/auto-lint-cleanup.log"
 AUTO_LINT_CLEANUP_LOG="$TMP_DIR/results/auto-lint-cleanup.log"
