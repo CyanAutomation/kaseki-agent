@@ -178,8 +178,9 @@ describe('Evaluation Prompt Enhancements', () => {
         { mode: 0o755 }
       );
 
-      fs.mkdirSync(resultsDir, { recursive: true });
-      for (const file of managedResults) {
+      try {
+        fs.mkdirSync(resultsDir, { recursive: true });
+        for (const file of managedResults) {
         const filePath = path.join(resultsDir, file);
         backups.set(filePath, fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null);
       }
