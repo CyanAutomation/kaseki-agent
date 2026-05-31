@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Goal-Setting Agent Output Types
  *
@@ -9,6 +11,12 @@
  * SMART criterion with quality score
  * Specific, Measurable, Achievable, Relevant, Time-bound
  */
+export const SmartCriterionSchema = z.object({
+  criterion: z.string(),
+  smart_score: z.enum(['high', 'medium', 'low']),
+  reasoning: z.string().optional(),
+});
+
 export interface SmartCriterion {
   criterion: string;
   smart_score: 'high' | 'medium' | 'low';
@@ -18,11 +26,19 @@ export interface SmartCriterion {
 /**
  * Success criteria - can be string (legacy) or SmartCriterion (recommended)
  */
+export const SuccessCriterionSchema = z.union([z.string(), SmartCriterionSchema]);
+
 export type SuccessCriterion = string | SmartCriterion;
 
 /**
  * Anti-patterns and hard boundaries
  */
+export const AntiPatternsSchema = z.object({
+  do_not_modify: z.array(z.string()).optional(),
+  do_not_break: z.array(z.string()).optional(),
+  must_preserve: z.array(z.string()).optional(),
+});
+
 export interface AntiPatterns {
   do_not_modify?: string[];
   do_not_break?: string[];
@@ -32,6 +48,13 @@ export interface AntiPatterns {
 /**
  * Categorized constraints
  */
+export const CategorizedConstraintsSchema = z.object({
+  operational: z.array(z.string()).optional(),
+  architectural: z.array(z.string()).optional(),
+  technical: z.array(z.string()).optional(),
+  business: z.array(z.string()).optional(),
+});
+
 export interface CategorizedConstraints {
   operational?: string[];
   architectural?: string[];
@@ -42,6 +65,11 @@ export interface CategorizedConstraints {
 /**
  * Example-driven goals for clarity
  */
+export const GoalExamplesSchema = z.object({
+  before: z.string().optional(),
+  after: z.string().optional(),
+});
+
 export interface GoalExamples {
   before?: string;
   after?: string;
@@ -50,6 +78,16 @@ export interface GoalExamples {
 /**
  * 5-point quality scorecard for goal maturity
  */
+const QualityLevelSchema = z.enum(['high', 'medium', 'low']);
+
+export const QualityMetricsSchema = z.object({
+  clarity: QualityLevelSchema,
+  measurability: QualityLevelSchema,
+  specificity: QualityLevelSchema,
+  scope_clarity: QualityLevelSchema,
+  constraint_strength: QualityLevelSchema,
+});
+
 export interface QualityMetrics {
   clarity: 'high' | 'medium' | 'low';
   measurability: 'high' | 'medium' | 'low';
@@ -62,6 +100,19 @@ export interface QualityMetrics {
  * Complete goal-setting output
  * Produced by the goal-setting agent and used to upgrade TASK_PROMPT
  */
+export const GoalSettingOutputSchema = z.object({
+  original_prompt: z.string(),
+  upgraded_goal: z.string(),
+  key_requirements: z.array(z.string()),
+  success_criteria: z.array(SuccessCriterionSchema),
+  anti_patterns: AntiPatternsSchema.optional(),
+  constraints: CategorizedConstraintsSchema.optional(),
+  examples: GoalExamplesSchema.optional(),
+  quality_metrics: QualityMetricsSchema.optional(),
+  reasoning: z.string(),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
+
 export interface GoalSettingOutput {
   original_prompt: string;
   upgraded_goal: string;
@@ -73,6 +124,20 @@ export interface GoalSettingOutput {
   quality_metrics?: QualityMetrics;
   reasoning: string;
   confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Parse and validate runtime goal-setting output.
+ */
+export function parseGoalSettingOutput(output: unknown): GoalSettingOutput {
+  return GoalSettingOutputSchema.parse(output);
+}
+
+/**
+ * Runtime type guard for goal-setting output.
+ */
+export function isGoalSettingOutput(output: unknown): output is GoalSettingOutput {
+  return GoalSettingOutputSchema.safeParse(output).success;
 }
 
 /**
@@ -128,6 +193,10 @@ export function hasQualityWarnings(output: GoalSettingOutput): string[] {
 
   if (!output.anti_patterns || Object.keys(output.anti_patterns).length === 0) {
     warnings.push('No explicit anti-patterns defined - recommended for safety');
+  }
+
+  if (!output.constraints || Object.keys(output.constraints).length === 0) {
+    warnings.push('No constraints provided - recommended for scope control');
   }
 
   if (!output.examples) {

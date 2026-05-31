@@ -20,6 +20,7 @@ export interface GoalFeedbackEntry {
     anti_patterns_count: number;
     constraints_count: number;
     success_criteria_count: number;
+    has_examples: boolean;
   };
   agent_outcomes: {
     scouting: {
@@ -93,6 +94,7 @@ export function collectGoalFeedback(
       anti_patterns_count: countAntiPatterns(goal_setting_output),
       constraints_count: countConstraints(goal_setting_output),
       success_criteria_count: (goal_setting_output.success_criteria || []).length,
+      has_examples: hasGoalExamples(goal_setting_output),
     },
     agent_outcomes: {
       scouting: extractStageOutcome(stage_timings, 'pi scouting agent'),
@@ -147,6 +149,11 @@ function countAntiPatterns(output: any): number {
 function countConstraints(output: any): number {
   if (!output.constraints) return 0;
   return (Object.values(output.constraints) as any[]).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+}
+
+function hasGoalExamples(output: any): boolean {
+  if (!output.examples || typeof output.examples !== 'object') return false;
+  return typeof output.examples.before === 'string' || typeof output.examples.after === 'string';
 }
 
 function extractStageOutcome(
@@ -233,6 +240,8 @@ export function analyzeGoalFeedback(entries: GoalFeedbackEntry[]): GoalFeedbackA
   const low_quality = entries.filter((e) => e.goal_setting_output.quality_score < 50);
   const with_anti_patterns = entries.filter((e) => e.goal_setting_output.anti_patterns_count > 0);
   const without_anti_patterns = entries.filter((e) => e.goal_setting_output.anti_patterns_count === 0);
+  const with_examples = entries.filter((e) => e.goal_setting_output.has_examples);
+  const without_examples = entries.filter((e) => !e.goal_setting_output.has_examples);
 
   const recommendations: string[] = [];
   const improvements_suggested: string[] = [];
@@ -285,8 +294,14 @@ export function analyzeGoalFeedback(entries: GoalFeedbackEntry[]): GoalFeedbackA
         without_anti_patterns.length > 0
           ? without_anti_patterns.filter((e) => e.overall.success).length / without_anti_patterns.length
           : 0,
-      with_examples_success_rate: 0, // TODO: Implement when examples tracking added
-      without_examples_success_rate: 0, // TODO: Implement when examples tracking added
+      with_examples_success_rate:
+        with_examples.length > 0
+          ? with_examples.filter((e) => e.overall.success).length / with_examples.length
+          : 0,
+      without_examples_success_rate:
+        without_examples.length > 0
+          ? without_examples.filter((e) => e.overall.success).length / without_examples.length
+          : 0,
     },
     recommendations,
     improvements_suggested,
