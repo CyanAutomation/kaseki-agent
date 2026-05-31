@@ -231,6 +231,9 @@ export class StatusResponseBuilder {
   }
 
   private addTaskProgressInfo(response: StatusResponse, job: Job): void {
+    if (job.status === 'queued') {
+      return;
+    }
     try {
       const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
       const metadata = this.readMetadata(runDir);

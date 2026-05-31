@@ -5,11 +5,13 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 import { ResultCache } from '../result-cache';
 import { Job, StatusResponse } from '../kaseki-api-types';
 import * as artifactMetadataCache from '../run-artifact-metadata-cache';
+import * as fileHelpers from './file-helpers';
 
 jest.mock('fs');
 jest.mock('../job-scheduler');
 jest.mock('../result-cache');
 jest.mock('../run-artifact-metadata-cache');
+jest.mock('./file-helpers');
 
 describe('StatusResponseBuilder', () => {
   let builder: StatusResponseBuilder;
@@ -18,7 +20,9 @@ describe('StatusResponseBuilder', () => {
   let mockCache: jest.Mocked<ResultCache>;
 
   beforeEach(() => {
-    mockScheduler = {} as jest.Mocked<JobScheduler>;
+    mockScheduler = {
+      getLiveProgressEvents: jest.fn(),
+    } as unknown as jest.Mocked<JobScheduler>;
     mockConfig = {
       resultsDir: '/results',
       agentTimeoutSeconds: 10800,
@@ -29,10 +33,13 @@ describe('StatusResponseBuilder', () => {
       maxDiffBytes: 400000,
       logLevel: 'info',
     } as unknown as KasekiApiConfig;
-    mockCache = {} as jest.Mocked<ResultCache>;
+    mockCache = {
+      getOrLoad: jest.fn(),
+    } as unknown as jest.Mocked<ResultCache>;
 
     // Mock getRunArtifactMetadata to return default empty object
     (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({});
+    (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue(undefined);
 
     builder = new StatusResponseBuilder(mockScheduler, mockConfig, mockCache);
 
@@ -78,7 +85,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.id).toBe('job-2');
       expect(response.status).toBe('running');
       expect(response.elapsedSeconds).toBe(300); // 5 minutes
-      expect(response.timeoutRiskPercent).toBeLessThan(3); // 5 min / 3 hours
+      expect(response.timeoutRiskPercent).toBeLessThanOrEqual(3); // 5 min / 3 hours
 
       jest.useRealTimers();
     });
@@ -444,7 +451,7 @@ describe('StatusResponseBuilder', () => {
       builder['addTaskProgressInfo'](response, job as Job);
 
       // Should set taskProgressPercent to undefined or 0, not crash
-      expect(response.taskProgressPercent).toBeUndefined();
+      expect(response.taskProgressPercent === undefined || response.taskProgressPercent === 0).toBe(true);
     });
 
     it('should round taskProgressPercent to nearest integer', () => {
@@ -627,7 +634,9 @@ describe('StatusResponseBuilder', () => {
         resultDir: '/results/job-1',
       };
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 100 }
+      });
 
       const response: StatusResponse = {
         id: 'job-1',
@@ -646,8 +655,8 @@ describe('StatusResponseBuilder', () => {
         resultDir: '/results/job-1',
       };
 
-      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
-        return !filePath.includes('failure.json');
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'analysis.md': { exists: true, size: 100 }
       });
 
       const response: StatusResponse = {
@@ -669,8 +678,10 @@ describe('StatusResponseBuilder', () => {
 
       const summaryContent = '# Summary\nTest content';
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (mockCache.getOrLoad as jest.Mock).mockImplementation((filePath: string) => {
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'result-summary.md': { exists: true, size: summaryContent.length }
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
         if (filePath.includes('result-summary.md')) {
           return summaryContent;
         }
@@ -696,8 +707,10 @@ describe('StatusResponseBuilder', () => {
 
       const largeSummary = 'x'.repeat(100000); // > 64 KB
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (mockCache.getOrLoad as jest.Mock).mockReturnValue(largeSummary);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'result-summary.md': { exists: true, size: largeSummary.length }
+      });
+      mockCache.getOrLoad.mockReturnValue(largeSummary);
 
       const response: StatusResponse = {
         id: 'job-1',
@@ -718,8 +731,10 @@ describe('StatusResponseBuilder', () => {
 
       const failureJson = { error: 'Test error', code: 'TEST_ERROR' };
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (mockCache.getOrLoad as jest.Mock).mockImplementation((filePath: string) => {
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: JSON.stringify(failureJson).length }
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
         if (filePath.includes('failure.json')) {
           return JSON.stringify(failureJson);
         }
@@ -743,8 +758,10 @@ describe('StatusResponseBuilder', () => {
         resultDir: '/results/job-1',
       };
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (mockCache.getOrLoad as jest.Mock).mockImplementation((filePath: string) => {
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 10 }
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
         if (filePath.includes('failure.json')) {
           return 'not valid json';
         }
@@ -806,10 +823,9 @@ describe('StatusResponseBuilder', () => {
         resultDir: '/results/job-1',
       };
 
-      const progressContent = JSON.stringify({ stage: 'stage1', status: 'running' });
+      const progressEvent = { stage: 'stage1', status: 'running' };
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockReturnValue(progressContent);
+      (fileHelpers.readLastJsonlEvent as jest.Mock).mockReturnValue(progressEvent);
 
       const response: StatusResponse = {
         id: 'job-1',

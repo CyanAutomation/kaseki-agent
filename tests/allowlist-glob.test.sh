@@ -9,8 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 matches_allowlist() {
   local allowlist="$1" file="$2" regex
-  KASEKI_CHANGED_FILES_ALLOWLIST="$allowlist"
-  regex="$(build_allowlist_regex)"
+  regex="$(build_allowlist_regex "$allowlist")"
   [ -n "$regex" ] && printf '%s\n' "$file" | grep -Eq "^(${regex})$"
 }
 
