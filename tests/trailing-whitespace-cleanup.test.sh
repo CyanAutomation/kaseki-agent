@@ -20,7 +20,13 @@ assert_contains() {
     fail "$label: expected to find '$pattern'"
   fi
 }
+SCRIPT_PATH="../../scripts/cleanup-trailing-whitespace.sh"
+if [[ ! -x "$SCRIPT_PATH" ]]; then
+  echo "Error: Cleanup script not found or not executable at $SCRIPT_PATH" >&2
+  exit 1
+fi
 
+bash "$SCRIPT_PATH"
 cd "$TMP_DIR"
 git init --initial-branch=main -q
 git config user.email test@kaseki.local
