@@ -29,6 +29,24 @@ import {
 } from '../src/types/goal-setting';
 import { collectGoalFeedback, analyzeGoalFeedback } from '../src/lib/goal-setting-feedback';
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const extractShellFunctionBlock = (scriptSource: string, startFunction: string, endFunction: string) => {
+  const lines = scriptSource.split('\n');
+  const startPattern = new RegExp(`^${escapeRegExp(startFunction)}\\(\\) \\{$`);
+  const endPattern = new RegExp(`^${escapeRegExp(endFunction)}\\(\\) \\{$`);
+  const startLineIndexes = lines.flatMap((line, index) => (startPattern.test(line) ? [index] : []));
+
+  expect(startLineIndexes, `${startFunction} must have exactly one top-level declaration`).toHaveLength(1);
+
+  const startLineIndex = startLineIndexes[0];
+  const endLineIndex = lines.findIndex((line, index) => index > startLineIndex && endPattern.test(line));
+
+  expect(endLineIndex, `${endFunction} must be the next verified top-level boundary`).toBeGreaterThan(startLineIndex);
+
+  return lines.slice(startLineIndex, endLineIndex).join('\n');
+};
+
 describe('Goal-Setting Agent Improvements', () => {
   // ===== IMPROVEMENT #1: ANTI-PATTERNS =====
   describe('Improvement #1: Anti-Patterns / Do-NOT Clauses', () => {
@@ -431,23 +449,22 @@ describe('Goal-Setting Agent Improvements', () => {
         mkdirSync(resultsDir, { recursive: true });
 
         const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8');
-        const validationStart = scriptSource.indexOf('validate_goal_setting_artifact() {');
-        const validationEnd = scriptSource.indexOf('run_goal_setting_agent() {', validationStart);
-        expect(validationStart).toBeGreaterThanOrEqual(0);
-        expect(validationEnd).toBeGreaterThan(validationStart);
-
-        const validationFunctions = scriptSource
-          .slice(validationStart, validationEnd)
-          .replaceAll('/results', resultsDir);
+        const validationFunctions = extractShellFunctionBlock(
+          scriptSource,
+          'validate_goal_setting_artifact',
+          'run_goal_setting_agent',
+        );
         writeFileSync(
           validationRunner,
           `#!/usr/bin/env bash
 set -euo pipefail
+export KASEKI_RESULTS_DIR=${JSON.stringify(resultsDir)}
 ${validationFunctions}
 validate_goal_setting_artifact "$1" "$2" "$3"
 `,
           { mode: 0o755 },
         );
+        execFileSync('bash', ['-n', validationRunner]);
 
         const reasoning =
           'Upgrade narrows an ambiguous parser bug report into a bounded change: update parseRole() null handling, add regression coverage, and preserve generated files plus public error messages so downstream agents know which trade-offs are safe.';
