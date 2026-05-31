@@ -88,23 +88,74 @@ function asObjectArray(value: unknown): Array<Record<string, unknown>> {
   return value.map((entry) => (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : { value: entry }));
 }
 
+/**
+ * Extract assessment section from parsed evaluation.
+ * Handles multiple field name variants: overall, overall_assessment, overallAssessment.
+ */
+function extractOverallAssessment(parsed: Record<string, unknown>): Record<string, unknown> | undefined {
+  const assessment = parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment;
+  return assessment ? { assessment } : undefined;
+}
+
+/**
+ * Extract problem section from parsed evaluation.
+ * Handles variants: problem, issues, problems.
+ */
+function extractProblems(parsed: Record<string, unknown>): string[] {
+  return asStringArray(parsed.problem ?? parsed.issues ?? parsed.problems);
+}
+
+/**
+ * Extract solution section from parsed evaluation.
+ * Handles variants: solution, what_was_fixed, whatWasFixed, fixes.
+ */
+function extractSolutions(parsed: Record<string, unknown>): string[] {
+  return asStringArray(parsed.solution ?? parsed.what_was_fixed ?? parsed.whatWasFixed ?? parsed.fixes);
+}
+
+/**
+ * Extract human review recommendations from parsed evaluation.
+ * Handles variants: human_review_recommendations, humanReviewRecommendations, human_review_focus.
+ */
+function extractHumanReviewRecommendations(parsed: Record<string, unknown>): string[] {
+  return asStringArray(parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus);
+}
+
+/**
+ * Extract improvement opportunities from parsed evaluation.
+ * Handles variants: opportunities, kaseki_improvement_opportunities, improvement_opportunities, improvementOpportunities.
+ */
+function extractOpportunities(parsed: Record<string, unknown>): Array<Record<string, unknown>> {
+  return asObjectArray(
+    parsed.opportunities ?? parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities
+  );
+}
+
+/**
+ * Build markdown content from evaluation sections.
+ */
+function buildMarkdownContent(sections: { summary: string[]; problem: string[]; solution: string[]; humanReview: string[] }): string | undefined {
+  const parts = [
+    sections.summary.length ? `## Summary\n${sections.summary.map((line) => `- ${line}`).join('\n')}` : '',
+    sections.problem.length ? `## Problem\n${sections.problem.map((line) => `- ${line}`).join('\n')}` : '',
+    sections.solution.length ? `## Solution\n${sections.solution.map((line) => `- ${line}`).join('\n')}` : '',
+    sections.humanReview.length ? `## Human review\n${sections.humanReview.map((line) => `- ${line}`).join('\n')}` : '',
+  ];
+  const filtered = parts.filter(Boolean);
+  return filtered.length > 0 ? filtered.join('\n\n') : undefined;
+}
+
 function renderRunEvaluationPayload(parsed: Record<string, unknown>, includeMarkdown: boolean): RunEvaluationRenderedResponse {
   const sections = {
-    overall: (parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment)
-      ? { assessment: parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment }
-      : undefined,
+    overall: extractOverallAssessment(parsed),
     summary: asStringArray(parsed.summary),
-    problem: asStringArray(parsed.problem ?? parsed.issues ?? parsed.problems),
-    solution: asStringArray(parsed.solution ?? parsed.what_was_fixed ?? parsed.whatWasFixed ?? parsed.fixes),
-    humanReview: asStringArray(
-      parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus
-    ),
+    problem: extractProblems(parsed),
+    solution: extractSolutions(parsed),
+    humanReview: extractHumanReviewRecommendations(parsed),
     stages: asObjectArray(parsed.stages ?? parsed.stage_by_stage_evaluation ?? parsed.stageByStageEvaluation),
     efficiency: asObjectArray(parsed.efficiency ?? parsed.efficiency_findings ?? parsed.efficiencyFindings),
     validation: asObjectArray(parsed.validation ?? parsed.validation_outcome ?? parsed.validationOutcome),
-    opportunities: asObjectArray(
-      parsed.opportunities ?? parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities
-    ),
+    opportunities: extractOpportunities(parsed),
     warnings: asObjectArray(parsed.warnings),
     metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
       ? parsed.metadata as Record<string, unknown>
@@ -112,12 +163,7 @@ function renderRunEvaluationPayload(parsed: Record<string, unknown>, includeMark
   };
 
   const markdown = includeMarkdown
-    ? [
-      sections.summary.length ? `## Summary\n${sections.summary.map((line) => `- ${line}`).join('\n')}` : '',
-      sections.problem.length ? `## Problem\n${sections.problem.map((line) => `- ${line}`).join('\n')}` : '',
-      sections.solution.length ? `## Solution\n${sections.solution.map((line) => `- ${line}`).join('\n')}` : '',
-      sections.humanReview.length ? `## Human review\n${sections.humanReview.map((line) => `- ${line}`).join('\n')}` : '',
-    ].filter(Boolean).join('\n\n')
+    ? buildMarkdownContent({ summary: sections.summary, problem: sections.problem, solution: sections.solution, humanReview: sections.humanReview })
     : undefined;
 
   return {

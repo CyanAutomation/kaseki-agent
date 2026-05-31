@@ -79,29 +79,26 @@ cat /results/goal-setting-validation-notes.txt
 
 ---
 
-## 3. Interpreting Quality Metrics (0-100 Score)
+## 3. Interpreting Quality Metrics
 
-Use the helper function to check goal quality:
+Check the `quality_metrics` object from the goal-setting output to evaluate goal maturity:
 
 ```typescript
-import { calculateGoalQualityScore, hasQualityWarnings } from './src/types/goal-setting';
-
 const goal = JSON.parse(fs.readFileSync('/results/goal-setting.json'));
-const score = calculateGoalQualityScore(goal); // 0-100
+const metrics = goal.quality_metrics;
 
-console.log(`Goal Quality: ${score}/100`);
-
-if (score < 50) {
-  console.warn('⚠️  Low-quality goal detected:');
-  hasQualityWarnings(goal).forEach(w => console.warn(`  - ${w}`));
-}
+// Check quality levels
+console.log(`Clarity: ${metrics.clarity}`);
+console.log(`Measurability: ${metrics.measurability}`);
+console.log(`Specificity: ${metrics.specificity}`);
+console.log(`Scope Clarity: ${metrics.scope_clarity}`);
+console.log(`Constraint Strength: ${metrics.constraint_strength}`);
 ```
 
-**Score Interpretation**:
-- **90-100**: Excellent. Agent should succeed.
-- **75-89**: Good. Most likely to succeed.
-- **50-74**: Fair. Some ambiguity remains.
-- **< 50**: Poor. High failure risk. Consider retrying with better prompt.
+**Quality Interpretation**:
+- **High**: Excellent quality. Agent should succeed.
+- **Medium**: Good quality. Most likely to succeed.
+- **Low**: Poor quality. High failure risk. Consider retrying with better prompt.
 
 ---
 
@@ -398,12 +395,12 @@ Track these over time:
 - [ ] Review `/results/goal-setting.json` after each run
 - [ ] Check `quality_metrics` for weak areas
 - [ ] Validate `anti_patterns` are enforced downstream
-- [ ] Use `calculateGoalQualityScore()` to track trends
+- [ ] Track quality_metrics across runs for trends
 - [ ] Monitor `success_criteria` SMART scores
 - [ ] Collect `GoalFeedbackEntry` data across runs
 - [ ] Analyze patterns with `analyzeGoalFeedback()`
-- [ ] Alert if goal quality drops below 50
-- [ ] Iterate on input prompts based on warnings
+- [ ] Alert if any quality_metrics are "low"
+- [ ] Iterate on input prompts based on feedback
 - [ ] Track correlation: goal quality → agent success
 
 ---
