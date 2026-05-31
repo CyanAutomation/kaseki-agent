@@ -1984,7 +1984,7 @@ auto_lint_cleanup_enabled_for_mode() {
 }
 
 run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
-  local helper_script app_root fallback_root
+  local helper_script app_root
   # Use KASEKI_APP_ROOT if set (container context), otherwise try to resolve from script location
   app_root="${KASEKI_APP_ROOT:-}"
   if [ -z "$app_root" ]; then

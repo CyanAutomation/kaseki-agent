@@ -40,15 +40,20 @@ export function getArtifactStatus(
   fileExists: boolean,
   fileSize: number
 ): ArtifactStatus {
-  // Non-terminal jobs: artifacts are pending
-  if (!isTerminalJobStatus(jobStatus)) {
-    return 'pending';
-  }
-
   // Get artifact metadata
   const metadata = ARTIFACT_METADATA_REGISTRY[artifactName];
   if (!metadata) {
     return 'not-found';
+  }
+
+  // For non-terminal jobs, check if artifact is restricted to specific job states
+  if (!isTerminalJobStatus(jobStatus)) {
+    // If artifact requires a specific terminal state, it's not available yet
+    if (metadata.availability === ArtifactAvailability.ON_FAILURE || metadata.availability === ArtifactAvailability.ON_SUCCESS) {
+      return 'not-available-yet';
+    }
+    // Otherwise, it's pending (general artifacts available on all jobs)
+    return 'pending';
   }
 
   // File must exist and have content for any availability
