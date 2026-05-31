@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.58.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.1...v1.58.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* scope tab content selectors to main and modal-tabs-container for improved specificity ([8438a57](https://github.com/CyanAutomation/kaseki-agent/commit/8438a5739acfbeb0d12a39e0ff7f89097aa60ea2))
+
 ## [1.58.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.0...v1.58.1) (2026-05-31)
 
 
