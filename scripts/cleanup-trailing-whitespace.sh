@@ -15,7 +15,7 @@ cleanup_trailing_whitespace_for_changed_files() {
     case "$file" in
       .git/*|*/.git/*|node_modules/*|*/node_modules/*|dist/*|*/dist/*|coverage/*|*/coverage/*|.coverage/*|*/.coverage/*|htmlcov/*|*/htmlcov/*)
         printf 'Skipping excluded path: %s\n' "$file" | tee -a "$log_file"
-        skipped_count=$((skipped_count + 1))
+    bash "$SCRIPT_DIR/cleanup-trailing-whitespace.sh"
         continue
         ;;
       package-lock.json|npm-shrinkwrap.json|yarn.lock|pnpm-lock.yaml|bun.lockb|bun.lock|Cargo.lock|Pipfile.lock|poetry.lock|composer.lock|Gemfile.lock|go.sum)
