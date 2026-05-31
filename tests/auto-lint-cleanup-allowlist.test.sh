@@ -98,10 +98,10 @@ collect_changed_file_set "$TMP_DIR/results/before-restore.txt"
 printf 'generated\n' > generated.log
 collect_changed_file_set "$TMP_DIR/results/after-restore.txt"
 
-if ! check_auto_lint_cleanup_allowlist "$TMP_DIR/results/before-restore.txt" "$TMP_DIR/results/after-restore.txt"; then
-  fail 'cleanup allowlist should pass after restoring a disallowed cleanup-created file'
-fi
-[ "$QUALITY_EXIT" -eq 0 ] || fail "expected QUALITY_EXIT=0 after restore, got $QUALITY_EXIT"
+printf '\n▶️  Test 4: cleanup-phase file creation with MISMATCHED allowlist\n'
+rm -f "$CLEANUP_TEST_FILE"
+CLEANUP_ALLOWLIST="different/*.log" npm run lint-validate -- --fail-on-cleanup-created && QUALITY_EXIT=$? || QUALITY_EXIT=$?
+[ "$QUALITY_EXIT" -eq 1 ] || fail "expected QUALITY_EXIT=1 for non-allowlisted file, got $QUALITY_EXIT"
 [ ! -e generated.log ] || fail 'disallowed cleanup-created file should be removed by restoration'
 if grep -Fq 'auto_lint_cleanup_allowlist_restoration_complete restored=1 unrestored=0' "$TMP_DIR/results/events.log"; then
   pass 'cleanup allowlist restoration emits a completion event'
