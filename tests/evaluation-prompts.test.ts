@@ -165,27 +165,19 @@ describe('Evaluation Prompt Enhancements', () => {
       const nodeArgsLog = path.join(tmpDir, 'node-args.log');
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
       const resultsDir = path.join(tmpDir, 'results');
-      const managedResults = ['goal-check.json', 'metadata.json', 'goal-feedback.jsonl'];
-      const backups = new Map<string, string | null>();
-
-      fs.mkdirSync(fakeBin, { recursive: true });
-      fs.mkdirSync(fakeScriptsDir, { recursive: true });
-      fs.writeFileSync(path.join(fakeScriptsDir, 'collect-feedback.js'), '// fixture path only\n');
-      fs.writeFileSync(goalSettingPath, JSON.stringify({ quality_score: 91, success_criteria: ['specific', 'measurable'] }));
-      fs.writeFileSync(
-        path.join(fakeBin, 'node'),
-        `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}\nprintf '%s\\n' '{"phase":"goal_check","goal_check_verdict":{"met":true,"confidence":"high","evidenceCount":2,"missingCount":1},"goal_quality":{"score":91,"smart_criteria_count":2}}'\n`,
-        { mode: 0o755 }
-      );
 
       try {
+        fs.mkdirSync(fakeBin, { recursive: true });
+        fs.mkdirSync(fakeScriptsDir, { recursive: true });
         fs.mkdirSync(resultsDir, { recursive: true });
-        for (const file of managedResults) {
-        const filePath = path.join(resultsDir, file);
-        backups.set(filePath, fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null);
-      }
+        fs.writeFileSync(path.join(fakeScriptsDir, 'collect-feedback.js'), '// fixture path only\n');
+        fs.writeFileSync(goalSettingPath, JSON.stringify({ quality_score: 91, success_criteria: ['specific', 'measurable'] }));
+        fs.writeFileSync(
+          path.join(fakeBin, 'node'),
+          `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}\nprintf '%s\\n' '{"phase":"goal_check","goal_check_verdict":{"met":true,"confidence":"high","evidenceCount":2,"missingCount":1},"goal_quality":{"score":91,"smart_criteria_count":2}}'\n`,
+          { mode: 0o755 }
+        );
 
-      try {
         fs.writeFileSync(path.join(resultsDir, 'goal-check.json'), JSON.stringify({
           met: true,
           confidence: 'high',
@@ -198,9 +190,8 @@ describe('Evaluation Prompt Enhancements', () => {
           coding_attempts: 1,
           goal_check_met: true,
         }));
-        fs.rmSync(path.join(resultsDir, 'goal-feedback.jsonl'), { force: true });
 
-        const fixture = `set -euo pipefail\n${collectGoalCheckFeedbackFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(fakeScriptsDir)}\nGOAL_SETTING_ARTIFACT=${JSON.stringify(goalSettingPath)}\nGOAL_CHECK_EXIT=0\ncollect_goal_check_feedback contract-instance\n`;
+        const fixture = `set -euo pipefail\n${collectGoalCheckFeedbackFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(fakeScriptsDir)}\nGOAL_SETTING_ARTIFACT=${JSON.stringify(goalSettingPath)}\nGOAL_CHECK_EXIT=0\nKASEKI_RESULTS_DIR=${JSON.stringify(resultsDir)}\ncollect_goal_check_feedback contract-instance\n`;
         execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
 
         const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
@@ -209,8 +200,8 @@ describe('Evaluation Prompt Enhancements', () => {
           'goal-check',
           'contract-instance',
           goalSettingPath,
-          '/results/goal-check.json',
-          '/results/metadata.json',
+          path.join(resultsDir, 'goal-check.json'),
+          path.join(resultsDir, 'metadata.json'),
         ]);
 
         const feedbackLines = fs.readFileSync(path.join(resultsDir, 'goal-feedback.jsonl'), 'utf8').trim().split('\n');
@@ -230,17 +221,6 @@ describe('Evaluation Prompt Enhancements', () => {
           },
         });
       } finally {
-        try {
-          for (const [filePath, content] of backups) {
-            if (content === null) {
-              fs.rmSync(filePath, { force: true });
-            } else {
-              fs.writeFileSync(filePath, content);
-            }
-          }
-        } catch (error) {
-          // Ignore restoration errors to ensure tmpDir cleanup
-        }
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });
