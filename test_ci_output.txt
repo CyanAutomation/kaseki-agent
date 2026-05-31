@@ -6,3 +6,90 @@
 > @cyanautomation/kaseki-agent@1.57.0 build
 > tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
 
+✓ Added .js extensions to imports in dist/
+
+> @cyanautomation/kaseki-agent@1.57.0 generate:openapi
+> node scripts/generate-openapi-spec.js
+
+Generating OpenAPI 3.1 specification...
+✓ OpenAPI spec generated successfully
+  Output: /workspaces/kaseki-agent/kaseki-openapi.json
+  Size: 86.79 KB
+  Endpoints: 15
+  Schemas: 6
+
+> @cyanautomation/kaseki-agent@1.57.0 check:dist-dynamic-imports
+> node dist/check-dist-dynamic-imports.js
+
+✓ No extensionless relative dynamic imports found in dist/
+
+> @cyanautomation/kaseki-agent@1.57.0 type-check
+> tsc --noEmit -p tsconfig.json
+
+To /tmp/kaseki-routes-remote-AW9Qr4
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-zavUT8'...
+done.
+To /tmp/kaseki-routes-remote-AW9Qr4
+   74973e6..19a46b1  main -> main
+
+[kaseki-report.test] runtime_ms=13.99
+
+Test Suites: 54 passed, 54 total
+Tests:       1048 passed, 1048 total
+Snapshots:   0 total
+Time:        45.861 s, estimated 47 s
+Ran all test suites.
+
+[allowlist summary] Restored: 0 files; Kept: 1 files (coverage: 100%)
+✓ restore_disallowed_changes summarizes 0 restored / 1 kept with coverage under set -u
+✓ restore_disallowed_changes emits completion event with computed coverage
+✓ Docker image installs /usr/local/bin/kaseki-agent directly from repository kaseki-agent.sh
+
+✅ restore_disallowed_changes tests passed
+Auto lint cleanup created changed file outside allowlist: generated.log
+ERROR: auto_lint_cleanup_allowlist: 1 cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST
+✓ cleanup allowlist failure uses the expected quality failure reason
+Auto lint cleanup created changed file outside allowlist: generated.log
+Restoring cleanup-created file outside allowlist: generated.log
+Removing generated.log
+Auto lint cleanup restored 1 cleanup-created file(s) outside allowlist.
+✓ cleanup allowlist restores disallowed cleanup-created files when enabled
+✓ cleanup allowlist restoration emits a completion event
+✓ cleanup allowlist accepts files covered by KASEKI_VALIDATION_ALLOWLIST
+
+✅ auto-lint cleanup allowlist tests passed
+✓ changed .ts and .md files have trailing whitespace removed
+✓ unchanged file is not rewritten
+✓ generated and lock files are skipped and left unchanged
+✓ logs cleaned TypeScript path
+✓ logs cleaned Markdown path
+✓ binary files are skipped
+✓ minified files are skipped
+✓ lockfiles are skipped
+✓ deleted files are skipped
+✓ allowlist-disallowed changed text file is reported and left unchanged
+✓ allowlist-disallowed changed file is reported
+
+✅ trailing whitespace cleanup tests passed
+Dependency cache status: hardlink restore fallback to copy (reason=hardlink_failed).
+✓ hardlink restore falls back to copy when cp -al fails
+Dependency cache status: hardlink restore fallback to copy (reason=hardlink_cross_device).
+✓ hardlink EXDEV stderr uses normalized fallback logging without raw cp noise
+✓ cache publication materializes a real directory from symlinked node_modules
+Dependency cache prune: removing oldest entry /tmp/tmp.yzeWref4sq/prune-cache/npm/lock-old/node-24/flags-a (size=57344 max=50000)
+✓ dependency cache pruning removes oldest entries and writes metrics
+✓ no optional install flags
+✓ one optional install flag (omit dev)
+✓ one optional install flag (ignore scripts)
+✓ both optional install flags
+✅ Repository memory tests passed
+✓ PASS: pre-agent validation order
+PASS: scouting order
+Test 1: helper arg validation + structured failures
+Test 1b: helper private-key normalization + validation failures
+Test 2: helper token-generation flow with stubbed GitHub API
+Test 3/4: run-kaseki metadata + credential artifact handling
+All behavior-focused GitHub App tests passed
+✓ github-app-token reports structured private-key errors from installed layout
+✓ health check fails when github-app-token cannot resolve runtime imports
