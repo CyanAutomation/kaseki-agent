@@ -335,26 +335,65 @@ describe('Goal-Setting Agent Improvements', () => {
 
   // ===== IMPROVEMENT #6: CONSTRAINT CATEGORIZATION =====
   describe('Improvement #6: Constraint Categorization', () => {
-    it('should categorize constraints by type', () => {
-      const goal: GoalSettingOutput = {
+    it('should count categorized constraints in feedback and suppress missing-constraint warnings', () => {
+      const goal = parseGoalSettingOutput({
         original_prompt: 'Refactor auth',
-        upgraded_goal: 'Refactor authentication safely',
-        key_requirements: [],
-        success_criteria: [],
+        upgraded_goal: 'Refactor authentication safely while keeping public behavior stable',
+        key_requirements: ['Keep authentication behavior stable'],
+        success_criteria: [
+          {
+            criterion: 'Authentication tests pass after the refactor',
+            smart_score: 'high',
+          },
+        ],
+        anti_patterns: {
+          do_not_modify: ['src/generated/**'],
+        },
         constraints: {
           operational: ['max 3 files changed'],
           architectural: ['preserve service boundaries'],
           technical: ['must pass TypeScript', 'no deprecated APIs'],
           business: ['maintain backward compatibility'],
         },
-        reasoning: 'categorized constraints',
+        examples: {
+          before: 'Auth service owns login flow',
+          after: 'Auth service still owns login flow',
+        },
+        quality_metrics: {
+          clarity: 'high',
+          measurability: 'high',
+          specificity: 'high',
+          scope_clarity: 'high',
+          constraint_strength: 'high',
+        },
+        reasoning: 'categorized constraints give downstream agents scoped operational, architectural, technical, and business boundaries',
         confidence: 'high',
-      };
+      });
 
-      expect(goal.constraints?.operational).toContain('max 3 files changed');
-      expect(goal.constraints?.architectural).toContain('preserve service boundaries');
-      expect(goal.constraints?.technical).toHaveLength(2);
-      expect(goal.constraints?.business).toContain('maintain backward compatibility');
+      const warnings = hasQualityWarnings(goal);
+      expect(warnings.some((warning) => warning.includes('No constraints provided'))).toBe(false);
+
+      const feedback = collectGoalFeedback(
+        'constraint-categorization',
+        goal,
+        new Map([
+          ['pi scouting agent', { exit_code: 0, duration_seconds: 1 }],
+          ['pi agent', { exit_code: 0, duration_seconds: 2 }],
+          ['goal check', { exit_code: 0, duration_seconds: 1 }],
+        ]),
+        {
+          status: 0,
+          completed_successfully: true,
+          total_duration_seconds: 4,
+          validation_exit_code: 0,
+          validation_commands_run: ['npm run type-check'],
+          validation_failed_commands: [],
+        },
+      );
+
+      expect(feedback.goal_setting_output.constraints_count).toBe(5);
+      expect(feedback.goal_setting_output.quality_score).toBe(125);
+      expect(feedback.overall.success).toBe(true);
     });
 
     it('should warn if constraints missing', () => {
