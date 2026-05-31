@@ -337,7 +337,6 @@ export async function generateGitHubAppToken(
     return tokenData;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Failed to generate GitHub App token: ${errorMessage}`);
     return {
       error: errorMessage,
     };
