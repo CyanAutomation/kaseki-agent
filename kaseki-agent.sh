@@ -3377,9 +3377,10 @@ snapshot_attempt_artifacts() {
 collect_goal_check_feedback() {
   local instance_name="$1"
   local goal_setting_path="$GOAL_SETTING_ARTIFACT"
-  local goal_check_path="/results/goal-check.json"
-  local metadata_path="/results/metadata.json"
-  local feedback_file="/results/goal-feedback.jsonl"
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local goal_check_path="$results_dir/goal-check.json"
+  local metadata_path="$results_dir/metadata.json"
+  local feedback_file="$results_dir/goal-feedback.jsonl"
 
   # Only collect if goal-check succeeded and artifacts exist
   if [ "$GOAL_CHECK_EXIT" -ne 0 ] || [ ! -f "$goal_check_path" ]; then
