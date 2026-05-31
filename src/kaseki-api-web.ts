@@ -1901,7 +1901,7 @@ const controllerPage = String.raw`<!doctype html>
             b.classList.toggle('active', active);
             b.setAttribute('aria-selected', active ? 'true' : 'false');
           });
-          document.querySelectorAll('.tab-content').forEach(content => {
+          document.querySelectorAll('main .tab-content').forEach(content => {
             const contentTabName = content.id.replace('-tab', '');
             const active = contentTabName === tabName;
             content.classList.toggle('hidden', !active);
@@ -2107,7 +2107,7 @@ const controllerPage = String.raw`<!doctype html>
           });
           
           // Update active tab content
-          document.querySelectorAll('.tab-content').forEach(tab => {
+          document.querySelectorAll('.modal-tabs-container .tab-content').forEach(tab => {
             tab.classList.toggle('active', tab.id === 'tab-' + tabName);
           });
           
