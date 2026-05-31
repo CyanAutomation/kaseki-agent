@@ -1111,15 +1111,6 @@ const controllerPage = String.raw`<!doctype html>
               </select>
               <p class="field-helper">Patch: require code changes. Inspect: read-only analysis (skips pre-validation for speed).</p>
             </div>
-            <div class="form-field">
-              <div class="check">
-                <input name="scouting" type="checkbox" checked>
-                <div class="check-copy">
-                  <label class="check-label">Enable scouting mode</label>
-                  <div class="check-helper">Allow the agent to explore beyond the specified scope (experimental).</div>
-                </div>
-              </div>
-            </div>
           </fieldset>
           <fieldset>
             <legend>Run actions</legend>
@@ -1577,7 +1568,6 @@ const controllerPage = String.raw`<!doctype html>
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
           taskMode: String(data.get('taskMode') || 'patch'),
         };
-        body.scouting = { enabled: data.get('scouting') === 'on' };
         return body;
       }
 
