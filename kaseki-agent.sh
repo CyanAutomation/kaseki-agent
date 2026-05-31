@@ -13,6 +13,9 @@ KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test}"
+KASEKI_AUTO_LINT_CLEANUP_EXPLICIT="${KASEKI_AUTO_LINT_CLEANUP+x}"
+KASEKI_AUTO_LINT_CLEANUP="${KASEKI_AUTO_LINT_CLEANUP:-1}"
+KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run lint:fix;npm run format;__kaseki_trailing_whitespace_cleanup__}"
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
@@ -100,6 +103,8 @@ PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
 PRE_VALIDATION_FAILURE_REASON=""
 PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+AUTO_LINT_CLEANUP_EXIT=0
+AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
 TS_PRE_CHECK_EXIT=0
 TS_PRE_CHECK_DURATION_SECONDS=0
 TS_PRE_CHECK_TIMESTAMP=""
@@ -107,6 +112,8 @@ FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 VALIDATION_RAW_LOG="/results/validation-raw.log"
 PRE_VALIDATION_RAW_LOG="/results/pre-validation-raw.log"
+AUTO_LINT_CLEANUP_LOG="/results/auto-lint-cleanup.log"
+AUTO_LINT_CLEANUP_TIMINGS_FILE="/results/auto-lint-cleanup-timings.tsv"
 FILTER_DIAGNOSTICS_LOG="/results/filter-diagnostics.log"
 VALIDATION_ENV_LOG="/results/validation-env.log"
 PRE_VALIDATION_ENV_LOG="/results/pre-validation-env.log"
@@ -258,6 +265,8 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
 : > "$PRE_VALIDATION_ENV_LOG"
+: > "$AUTO_LINT_CLEANUP_LOG"
+: > "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
 : > /results/quality.log
 : > /results/secret-scan.log
 : > /results/git-push.log
@@ -737,6 +746,9 @@ build_stages_array() {
   
   stages+=("agent setup")
   stages+=("pi coding agent")
+  if [[ "$KASEKI_AUTO_LINT_CLEANUP" == "1" ]]; then
+    stages+=("auto lint cleanup")
+  fi
   stages+=("collect agent diff")
   stages+=("quality checks")
   stages+=("validation")
@@ -805,6 +817,7 @@ $(if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$GOAL_
 $(if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$PRE_VALIDATION_FAILURE_REASON"; fi)
 - Pre-agent validation failure detail: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-none}
 $(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pre-agent validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
+- Auto lint cleanup: $([ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && printf 'passed/skipped' || printf 'failed') ($AUTO_LINT_CLEANUP_EXIT)
 - Validation: $validation_status ($VALIDATION_EXIT)
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
@@ -830,6 +843,8 @@ Artifacts:
 - pre-validation-timings.tsv
 - validation.log
 - validation-timings.tsv
+- auto-lint-cleanup.log
+- auto-lint-cleanup-timings.tsv
 - stage-timings.tsv
 - dependency-cache.log
 - git.diff
@@ -1821,17 +1836,22 @@ missing_npm_script_for_validation_command() {
   return 0
 }
 
-record_skipped_validation_command() {
+record_skipped_npm_script_command() {
   local command="$1"
   local script_name="$2"
   local duration_seconds="$3"
   local log_file="${4:-/results/validation.log}"
   local timings_file="${5:-$VALIDATION_TIMINGS_FILE}"
+  local skip_label="${6:-skipped}"
   {
     printf '\n==> %s\n' "$command"
-    printf 'skipped: package.json does not define npm script "%s"\n' "$script_name"
+    printf '%s: package.json does not define npm script "%s"\n' "$skip_label" "$script_name"
   } 2>&1 | tee -a "$log_file"
   printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
+}
+
+record_skipped_validation_command() {
+  record_skipped_npm_script_command "$1" "$2" "$3" "${4:-/results/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
 }
 
 has_typescript_project() {
@@ -1952,6 +1972,150 @@ append_validation_failure_tail() {
     printf '\n[DIAGNOSTICS] Raw validation output tail (last 80 lines):\n'
     tail -80 "$raw_log" 2>/dev/null || printf '<failed to read raw validation log>\n'
   } | tee -a "$visible_log" "$quality_log" >/dev/null
+}
+
+auto_lint_cleanup_enabled_for_mode() {
+  [ "$KASEKI_AUTO_LINT_CLEANUP" = "1" ] || return 1
+  [ "$KASEKI_DRY_RUN" != "1" ] || return 1
+  if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ -z "$KASEKI_AUTO_LINT_CLEANUP_EXPLICIT" ]; then
+    return 1
+  fi
+  return 0
+}
+
+run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
+  local file changed_count=0 cleaned_count=0 skipped_count=0
+  while IFS= read -r -d '' file; do
+    [ -n "$file" ] || continue
+    if ! git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+      skipped_count=$((skipped_count + 1))
+      continue
+    fi
+    if ! [ -f "$file" ]; then
+      skipped_count=$((skipped_count + 1))
+      continue
+    fi
+    if ! { LC_ALL=C grep -Iq . -- "$file" || ! [ -s "$file" ]; }; then
+      printf 'Skipping likely binary file: %s\n' "$file"
+      skipped_count=$((skipped_count + 1))
+      continue
+    fi
+    changed_count=$((changed_count + 1))
+    if grep -q '[[:blank:]]$' -- "$file" 2>/dev/null; then
+      perl -pi -e 's/[ \t]+$//' -- "$file"
+      cleaned_count=$((cleaned_count + 1))
+      printf 'Cleaned trailing whitespace: %s\n' "$file"
+    fi
+  done < <(git diff --name-only -z --diff-filter=ACMRT -- . 2>/dev/null || true)
+  printf 'Trailing-whitespace cleanup inspected %s tracked changed text file(s), cleaned %s, skipped %s.\n' "$changed_count" "$cleaned_count" "$skipped_count"
+}
+
+run_auto_lint_cleanup() {
+  local stage_label="auto lint cleanup"
+  local stage_start cleanup_start cleanup_end duration command trimmed missing_npm_script
+  local command_exit pipefail_was_enabled
+  local -a cleanup_commands
+
+  AUTO_LINT_CLEANUP_EXIT=0
+  AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
+  printf '\n==> %s\n' "$stage_label"
+  set_current_stage "$stage_label"
+  emit_progress "$stage_label" "started"
+  stage_start="$(date +%s)"
+
+  if ! auto_lint_cleanup_enabled_for_mode; then
+    if [ "$KASEKI_AUTO_LINT_CLEANUP" != "1" ]; then
+      printf 'Auto lint cleanup skipped because KASEKI_AUTO_LINT_CLEANUP=%s.\n' "$KASEKI_AUTO_LINT_CLEANUP" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      record_stage_timing "$stage_label" 0 0 "skipped_by_config"
+    elif [ "$KASEKI_DRY_RUN" = "1" ]; then
+      printf 'Auto lint cleanup skipped in dry-run mode.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      record_stage_timing "$stage_label" 0 0 "dry_run=true"
+    elif [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+      printf 'Auto lint cleanup skipped for inspect mode. Set KASEKI_AUTO_LINT_CLEANUP=1 explicitly to enable.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      record_stage_timing "$stage_label" 0 0 "skipped_inspect_mode"
+    else
+      printf 'Auto lint cleanup skipped.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      record_stage_timing "$stage_label" 0 0 "skipped"
+    fi
+    emit_progress "$stage_label" "skipped"
+    return 0
+  fi
+
+  if [ -z "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" ] || [ "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" = "none" ]; then
+    printf 'Auto lint cleanup skipped because commands=%s.\n' "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS:-<empty>}" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    record_stage_timing "$stage_label" 0 0 "skipped_by_commands"
+    emit_progress "$stage_label" "skipped"
+    return 0
+  fi
+
+  if ! [ -d /workspace/repo ]; then
+    AUTO_LINT_CLEANUP_EXIT=1
+    printf 'ERROR: Working directory /workspace/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    printf 'workspace_missing\t%s\t0\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+    record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
+    emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
+    return 0
+  fi
+
+  set +e
+  IFS=';' read -r -a cleanup_commands <<< "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS"
+  for command in "${cleanup_commands[@]}"; do
+    trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
+    [ -z "$trimmed" ] && continue
+    cleanup_start="$(date +%s)"
+    if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
+      cleanup_end="$(date +%s)"
+      duration=$((cleanup_end - cleanup_start))
+      record_skipped_npm_script_command "$trimmed" "$missing_npm_script" "$duration" "$AUTO_LINT_CLEANUP_LOG" "$AUTO_LINT_CLEANUP_TIMINGS_FILE" "skipped cleanup"
+      emit_event "auto_lint_cleanup_command_skipped" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
+      continue
+    fi
+
+    AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=$((AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED + 1))
+    emit_event "auto_lint_cleanup_command_started" "command=$trimmed"
+    pipefail_was_enabled=0
+    if set -o | grep -q '^pipefail[[:space:]]*on'; then
+      pipefail_was_enabled=1
+    fi
+    set -o pipefail
+    {
+    {
+      printf '\n==> %s\n' "$trimmed"
+      unset OPENROUTER_API_KEY
+      if [ "$trimmed" = "__kaseki_trailing_whitespace_cleanup__" ]; then
+        run_trailing_whitespace_cleanup_for_changed_tracked_text_files
+        command_exit=$?
+      else
+        bash -c "$trimmed"
+        command_exit=$?
+      fi
+      printf 'exit_code=%s\n' "$command_exit"
+    } 2>&1 | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    # Use the captured command_exit instead of PIPESTATUS[0]
+    if [ "$pipefail_was_enabled" -eq 1 ]; then
+      set -o pipefail
+    else
+      set +o pipefail
+    fi
+    if [ "$pipefail_was_enabled" -eq 1 ]; then
+      set -o pipefail
+    else
+      set +o pipefail
+    fi
+    cleanup_end="$(date +%s)"
+    duration=$((cleanup_end - cleanup_start))
+    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+    emit_event "auto_lint_cleanup_command_finished" "command=$trimmed" "exit_code=$command_exit" "duration_seconds=$duration"
+    if [ "$command_exit" -ne 0 ] && [ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ]; then
+      AUTO_LINT_CLEANUP_EXIT="$command_exit"
+      emit_error_event "auto_lint_cleanup_command_failed" "Auto lint cleanup command failed: $trimmed (exit $command_exit)" "continue"
+    fi
+  done
+  set +e
+
+  record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
+  emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
+  return 0
 }
 
 run_validation_commands() {
@@ -6078,6 +6242,16 @@ if [ "$KASEKI_DRY_RUN" != "1" ]; then
     STATUS="$PI_EXIT"
     FAILED_COMMAND="pi coding agent"
     emit_error_event "pi_agent_failed" "Coding agent exited with non-zero code: $PI_EXIT" "exit"
+  fi
+fi
+
+if [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
+  run_auto_lint_cleanup
+else
+  if [ "$PI_EXIT" -ne 0 ]; then
+    printf 'Auto lint cleanup skipped because pi coding agent failed with exit %s.\n' "$PI_EXIT" >> "$AUTO_LINT_CLEANUP_LOG"
+  elif [ "$STATUS" -ne 0 ]; then
+    printf 'Auto lint cleanup skipped because status is already %s.\n' "$STATUS" >> "$AUTO_LINT_CLEANUP_LOG"
   fi
 fi
 
