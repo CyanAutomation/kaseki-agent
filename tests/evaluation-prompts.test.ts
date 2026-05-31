@@ -164,7 +164,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const fakeScriptsDir = path.join(tmpDir, 'scripts');
       const nodeArgsLog = path.join(tmpDir, 'node-args.log');
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
-      const resultsDir = '/results';
+      const resultsDir = path.join(tmpDir, 'results');
       const managedResults = ['goal-check.json', 'metadata.json', 'goal-feedback.jsonl'];
       const backups = new Map<string, string | null>();
 
