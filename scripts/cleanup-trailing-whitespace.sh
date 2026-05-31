@@ -90,7 +90,7 @@ cleanup_trailing_whitespace_for_changed_files() {
         return 1
       fi
     fi
-  done < <(git -C "$repo_root" diff --name-only -z --diff-filter=ACMRT -- . 2>/dev/null || true)
+  done < <(git -C "$repo_root" diff --name-only -z --diff-filter=ACMRT 2>/dev/null || true)
 
   printf 'Trailing-whitespace cleanup inspected %s tracked changed text file(s), cleaned %s, skipped %s.\n' "$changed_count" "$cleaned_count" "$skipped_count" | tee -a "$log_file"
 }
