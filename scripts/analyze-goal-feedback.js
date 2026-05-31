@@ -284,4 +284,18 @@ function main() {
   console.log('✅ Analysis complete\n');
 }
 
-main();
+// Export functions for testing
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    readFeedbackFile,
+    analyzeGoalFeedback,
+    analyzeCorrelations,
+    analyzeSmartDimensions,
+    generateRecommendations,
+  };
+}
+
+// Run main only when executed directly, not when imported for testing
+if (require.main === module) {
+  main();
+}

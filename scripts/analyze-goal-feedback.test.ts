@@ -2,10 +2,10 @@
  * Tests for analyze-goal-feedback.js
  *
  * Coverage targets:
- * - readFeedbackFile: happy path, missing file, parse errors
- * - analyzeGoalFeedback: empty entries, with entries, quality bucketing
- * - analyzeCorrelations: quality-to-success correlation, confidence calibration, evidence analysis
- * - analyzeSmartDimensions: smart score distribution
+ * - readFeedbackFile: happy path, missing file, parse errors, malformed JSONL
+ * - analyzeGoalFeedback: empty entries, quality bucketing (high/medium/low), success rates
+ * - analyzeCorrelations: quality-to-success signal, evaluator calibration, evidence counting
+ * - analyzeSmartDimensions: SMART score distribution, edge cases
  * - generateRecommendations: high/medium priority recommendations
  */
 
@@ -13,9 +13,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-// Type definitions
+// Dynamically require the actual script (CommonJS)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const script = require('./analyze-goal-feedback.js');
+
+const {
+  readFeedbackFile,
+  analyzeGoalFeedback,
+  analyzeCorrelations,
+  analyzeSmartDimensions,
+  generateRecommendations,
+} = script;
+
+// Type definitions for test clarity
 interface SmartCriterion {
-  smart_score?: string;
+  smart_score?: 'high' | 'medium' | 'low';
 }
 
 interface GoalCheckEntry {
@@ -29,7 +41,7 @@ interface GoalCheckEntry {
   };
   goal_check_verdict?: {
     met?: boolean;
-    confidence?: string;
+    confidence?: 'high' | 'medium' | 'low';
     evidenceCount?: number;
     missingCount?: number;
   };
@@ -38,221 +50,6 @@ interface GoalCheckEntry {
   };
 }
 
-// Inline implementations for testing
-function readFeedbackFile(filePath: string): GoalCheckEntry[] {
-  if (!fs.existsSync(filePath)) {
-    return [];
-  }
-
-  const lines = fs.readFileSync(filePath, 'utf8').split('\n').filter((line) => line.trim());
-  const entries: GoalCheckEntry[] = [];
-
-  for (const line of lines) {
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // Skip invalid JSON lines
-    }
-  }
-
-  return entries;
-}
-
-function analyzeCorrelations(entries: GoalCheckEntry[]): string[] {
-  const notes: string[] = [];
-
-  const highQualitySuccessRate =
-    entries
-      .filter((e) => (e.goal_quality?.score || 0) >= 85)
-      .reduce((sum, e) => sum + (e.correlation?.success ? 1 : 0), 0) /
-    Math.max(
-      1,
-      entries.filter((e) => (e.goal_quality?.score || 0) >= 85).length
-    );
-
-  const lowQualitySuccessRate =
-    entries
-      .filter((e) => (e.goal_quality?.score || 0) < 60)
-      .reduce((sum, e) => sum + (e.correlation?.success ? 1 : 0), 0) /
-    Math.max(1, entries.filter((e) => (e.goal_quality?.score || 0) < 60).length);
-
-  if (highQualitySuccessRate > lowQualitySuccessRate + 0.2) {
-    notes.push(
-      `Strong signal: High-quality goals (≥85) have ${(highQualitySuccessRate * 100).toFixed(0)}% success vs ${(lowQualitySuccessRate * 100).toFixed(0)}% for low-quality (<60)`
-    );
-  }
-
-  const highConfidenceCorrect =
-    entries
-      .filter((e) => e.goal_check_verdict?.confidence === 'high')
-      .reduce(
-        (sum, e) =>
-          sum +
-          (e.goal_check_verdict?.met === e.correlation?.success ? 1 : 0),
-        0
-      ) /
-    Math.max(1, entries.filter((e) => e.goal_check_verdict?.confidence === 'high').length);
-
-  if (highConfidenceCorrect > 0.85) {
-    notes.push(
-      `Evaluator calibration good: High-confidence verdicts are ${(highConfidenceCorrect * 100).toFixed(0)}% accurate`
-    );
-  }
-
-  const avgEvidenceCount =
-    entries.reduce((sum, e) => sum + (e.goal_check_verdict?.evidenceCount || 0), 0) /
-    entries.length;
-  const avgMissingCount =
-    entries.reduce((sum, e) => sum + (e.goal_check_verdict?.missingCount || 0), 0) /
-    entries.length;
-
-  notes.push(
-    `Evaluator effort: avg ${avgEvidenceCount.toFixed(1)} evidence items, ${avgMissingCount.toFixed(1)} missing items per verdict`
-  );
-
-  return notes;
-}
-
-function analyzeSmartDimensions(entries: GoalCheckEntry[]): Record<string, unknown> {
-  const smartCounts: Record<string, number> = {};
-  let totalCriteria = 0;
-
-  for (const entry of entries) {
-    const smartCriteria = entry.goal_quality?.smart_criteria || [];
-    totalCriteria += smartCriteria.length;
-
-    for (const criterion of smartCriteria) {
-      const score = criterion.smart_score || 'unknown';
-      smartCounts[score] = (smartCounts[score] || 0) + 1;
-    }
-  }
-
-  const smartDistribution: Record<string, string> = {};
-  for (const [score, count] of Object.entries(smartCounts)) {
-    smartDistribution[score] = ((count / totalCriteria) * 100).toFixed(1) + '%';
-  }
-
-  return {
-    total_criteria: totalCriteria,
-    distribution: smartDistribution,
-    insight:
-      totalCriteria > 0
-        ? `${smartCounts.high || 0} high-quality SMART criteria, ${smartCounts.low || 0} low-quality`
-        : 'No SMART criteria data',
-  };
-}
-
-function generateRecommendations(
-  stats: Record<string, any>,
-  correlationNotes: string[],
-  smartAnalysis: Record<string, any>
-): Array<{
-  priority: string;
-  area: string;
-  recommendation: string;
-}> {
-  const recs: Array<{ priority: string; area: string; recommendation: string }> = [];
-
-  const highCount = stats.high?.count || 0;
-  const lowCount = stats.low?.count || 0;
-  if (highCount > 0 && lowCount > 0) {
-    const highSuccess = parseFloat(stats.high?.success_rate || 0);
-    const lowSuccess = parseFloat(stats.low?.success_rate || 0);
-    if (highSuccess > lowSuccess + 20) {
-      recs.push({
-        priority: 'high',
-        area: 'goal_quality',
-        recommendation: `High-quality goals have ${highSuccess.toFixed(0)}% vs ${lowSuccess.toFixed(0)}% success for low-quality. Invest in goal-setting phase—ROI is clear.`,
-      });
-    }
-  }
-
-  if (correlationNotes[1]) {
-    recs.push({
-      priority: 'high',
-      area: 'evaluator_quality',
-      recommendation: correlationNotes[1],
-    });
-  }
-
-  if (smartAnalysis.distribution?.high || smartAnalysis.distribution?.low) {
-    const lowPercent = parseFloat(smartAnalysis.distribution?.low || 0);
-    if (lowPercent > 20) {
-      recs.push({
-        priority: 'medium',
-        area: 'smart_criteria',
-        recommendation: `${lowPercent.toFixed(0)}% of SMART criteria score low. Goal-setting should emphasize measurability and specificity.`,
-      });
-    }
-  }
-
-  return recs;
-}
-
-function analyzeGoalFeedback(entries: GoalCheckEntry[]): Record<string, unknown> {
-  if (entries.length === 0) {
-    return {
-      total_runs: 0,
-      message: 'No feedback entries to analyze',
-    };
-  }
-
-  const goalCheckEntries = entries.filter((e) => e.phase === 'goal_check');
-
-  if (goalCheckEntries.length === 0) {
-    return {
-      total_runs: 0,
-      message: 'No goal-check feedback entries found',
-    };
-  }
-
-  const buckets = {
-    high: { min: 85, max: 100, entries: [] as GoalCheckEntry[] },
-    medium: { min: 60, max: 84, entries: [] as GoalCheckEntry[] },
-    low: { min: 0, max: 59, entries: [] as GoalCheckEntry[] },
-  };
-
-  for (const entry of goalCheckEntries) {
-    const score = entry.goal_quality?.score || 0;
-    if (score >= buckets.high.min) buckets.high.entries.push(entry);
-    else if (score >= buckets.medium.min) buckets.medium.entries.push(entry);
-    else buckets.low.entries.push(entry);
-  }
-
-  const stats: Record<string, any> = {};
-  for (const [key, bucket] of Object.entries(buckets)) {
-    if (bucket.entries.length === 0) continue;
-
-    const successCount = bucket.entries.filter((e) => e.correlation?.success === true).length;
-    const verdictMetCount = bucket.entries.filter((e) => e.goal_check_verdict?.met === true)
-      .length;
-
-    stats[key] = {
-      count: bucket.entries.length,
-      success_rate: ((successCount / bucket.entries.length) * 100).toFixed(1),
-      verdict_met_rate: ((verdictMetCount / bucket.entries.length) * 100).toFixed(1),
-      avg_quality_score: (bucket.entries.reduce((sum, e) => sum + (e.goal_quality?.score || 0), 0) /
-        bucket.entries.length).toFixed(1),
-      avg_completion_attempts: (bucket.entries.reduce(
-        (sum, e) => sum + (e.outcomes?.coding_attempts || 1),
-        0
-      ) / bucket.entries.length).toFixed(1),
-    };
-  }
-
-  const correlationNotes = analyzeCorrelations(goalCheckEntries);
-  const smartAnalysis = analyzeSmartDimensions(goalCheckEntries);
-
-  return {
-    total_runs: goalCheckEntries.length,
-    quality_buckets: stats,
-    correlation_insights: correlationNotes,
-    smart_analysis: smartAnalysis,
-    recommendations: generateRecommendations(stats, correlationNotes, smartAnalysis),
-  };
-}
-
-// Jest test suite
 describe('analyze-goal-feedback', () => {
   let testDir: string;
 
@@ -266,15 +63,16 @@ describe('analyze-goal-feedback', () => {
     }
   });
 
+  // ===== readFeedbackFile Tests =====
   describe('readFeedbackFile', () => {
     test('should return empty array for missing file', () => {
-      const result = readFeedbackFile('/nonexistent/file.jsonl');
+      const result = readFeedbackFile(path.join(testDir, 'nonexistent.jsonl'));
       expect(result).toEqual([]);
     });
 
-    test('should read valid JSONL entries', () => {
+    test('should read valid JSONL entries from file', () => {
       const testFile = path.join(testDir, 'feedback.jsonl');
-      const entries = [
+      const entries: GoalCheckEntry[] = [
         { phase: 'goal_check', goal_quality: { score: 90 } },
         { phase: 'validation', goal_quality: { score: 80 } },
       ];
@@ -283,158 +81,215 @@ describe('analyze-goal-feedback', () => {
       const result = readFeedbackFile(testFile);
       expect(result).toHaveLength(2);
       expect(result[0].phase).toBe('goal_check');
+      expect(result[1].goal_quality?.score).toBe(80);
     });
 
-    test('should skip invalid JSON lines', () => {
+    test('should skip malformed JSON lines', () => {
       const testFile = path.join(testDir, 'feedback.jsonl');
-      const content = `{"phase":"goal_check"}\ninvalid json\n{"phase":"validation"}`;
+      const content = `{"phase":"goal_check","goal_quality":{"score":90}}
+invalid json line
+{"phase":"validation","goal_quality":{"score":80}}
+{broken:json}
+{"phase":"goal_check","goal_quality":{"score":85}}`;
       fs.writeFileSync(testFile, content);
 
       const result = readFeedbackFile(testFile);
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
+      expect(result[0].goal_quality?.score).toBe(90);
+      expect(result[1].goal_quality?.score).toBe(80);
+      expect(result[2].goal_quality?.score).toBe(85);
+    });
+
+    test('should handle empty file', () => {
+      const testFile = path.join(testDir, 'empty.jsonl');
+      fs.writeFileSync(testFile, '');
+
+      const result = readFeedbackFile(testFile);
+      expect(result).toEqual([]);
+    });
+
+    test('should handle file with only whitespace', () => {
+      const testFile = path.join(testDir, 'whitespace.jsonl');
+      fs.writeFileSync(testFile, '\n\n  \n\t\n');
+
+      const result = readFeedbackFile(testFile);
+      expect(result).toEqual([]);
     });
   });
 
+  // ===== analyzeGoalFeedback Tests =====
   describe('analyzeGoalFeedback', () => {
-    test('should return zero message for empty entries', () => {
+    test('should return message for empty entries', () => {
       const result = analyzeGoalFeedback([]);
       expect(result.total_runs).toBe(0);
       expect(result.message).toBe('No feedback entries to analyze');
     });
 
-    test('should return zero message when no goal-check entries', () => {
-      const entries = [{ phase: 'validation' } as GoalCheckEntry];
+    test('should return message if no goal_check phase entries', () => {
+      const entries: GoalCheckEntry[] = [
+        { phase: 'validation', goal_quality: { score: 90 } },
+        { phase: 'execution', goal_quality: { score: 80 } },
+      ];
+
       const result = analyzeGoalFeedback(entries);
       expect(result.total_runs).toBe(0);
       expect(result.message).toBe('No goal-check feedback entries found');
     });
 
-    test('should bucket entries by quality score', () => {
+    test('should bucket entries by quality score (high/medium/low)', () => {
       const entries: GoalCheckEntry[] = [
         {
           phase: 'goal_check',
           goal_quality: { score: 95 },
           correlation: { success: true },
           goal_check_verdict: { met: true },
-          outcomes: { coding_attempts: 1 },
         },
         {
           phase: 'goal_check',
-          goal_quality: { score: 70 },
+          goal_quality: { score: 75 },
           correlation: { success: true },
           goal_check_verdict: { met: true },
-          outcomes: { coding_attempts: 2 },
         },
         {
           phase: 'goal_check',
-          goal_quality: { score: 40 },
+          goal_quality: { score: 50 },
           correlation: { success: false },
           goal_check_verdict: { met: false },
-          outcomes: { coding_attempts: 3 },
         },
       ];
 
       const result = analyzeGoalFeedback(entries);
       expect(result.total_runs).toBe(3);
-      const buckets = result.quality_buckets as Record<string, any>;
-      expect(buckets.high.count).toBe(1);
-      expect(buckets.medium.count).toBe(1);
-      expect(buckets.low.count).toBe(1);
+      expect(result.quality_buckets?.high?.count).toBe(1);
+      expect(result.quality_buckets?.medium?.count).toBe(1);
+      expect(result.quality_buckets?.low?.count).toBe(1);
     });
 
-    test('should calculate success rates correctly', () => {
+    test('should calculate success rate per bucket', () => {
       const entries: GoalCheckEntry[] = [
-        {
-          phase: 'goal_check',
-          goal_quality: { score: 90 },
-          correlation: { success: true },
-          goal_check_verdict: { met: true },
-          outcomes: { coding_attempts: 1 },
-        },
-        {
-          phase: 'goal_check',
-          goal_quality: { score: 90 },
-          correlation: { success: true },
-          goal_check_verdict: { met: true },
-          outcomes: { coding_attempts: 1 },
-        },
+        { phase: 'goal_check', goal_quality: { score: 90 }, correlation: { success: true } },
+        { phase: 'goal_check', goal_quality: { score: 88 }, correlation: { success: true } },
+        { phase: 'goal_check', goal_quality: { score: 50 }, correlation: { success: false } },
       ];
 
       const result = analyzeGoalFeedback(entries);
-      const buckets = result.quality_buckets as Record<string, any>;
-      expect(buckets.high.success_rate).toBe('100.0');
+      expect(result.quality_buckets?.high?.success_rate).toBe('100.0');
+      expect(result.quality_buckets?.low?.success_rate).toBe('0.0');
+    });
+
+    test('should calculate average quality score per bucket', () => {
+      const entries: GoalCheckEntry[] = [
+        { phase: 'goal_check', goal_quality: { score: 90 } },
+        { phase: 'goal_check', goal_quality: { score: 87 } },
+        { phase: 'goal_check', goal_quality: { score: 50 } },
+      ];
+
+      const result = analyzeGoalFeedback(entries);
+      const highAvg = parseFloat((result.quality_buckets?.high?.avg_quality_score as string) || '0');
+      expect(highAvg).toBeGreaterThan(87); // Average of 90 and 87
     });
   });
 
+  // ===== analyzeCorrelations Tests =====
   describe('analyzeCorrelations', () => {
-    test('should detect strong signal for high vs low quality', () => {
+    test('should detect high-quality goal success signal', () => {
       const entries: GoalCheckEntry[] = [
-        {
-          goal_quality: { score: 90 },
-          correlation: { success: true },
-          goal_check_verdict: { confidence: 'high', evidenceCount: 3, missingCount: 0 },
-        },
-        {
-          goal_quality: { score: 90 },
-          correlation: { success: true },
-          goal_check_verdict: { confidence: 'high', evidenceCount: 3, missingCount: 0 },
-        },
-        {
-          goal_quality: { score: 40 },
-          correlation: { success: false },
-          goal_check_verdict: { confidence: 'low', evidenceCount: 1, missingCount: 2 },
-        },
-        {
-          goal_quality: { score: 40 },
-          correlation: { success: false },
-          goal_check_verdict: { confidence: 'low', evidenceCount: 1, missingCount: 2 },
-        },
+        { goal_quality: { score: 90 }, correlation: { success: true } },
+        { goal_quality: { score: 88 }, correlation: { success: true } },
+        { goal_quality: { score: 50 }, correlation: { success: false } },
+        { goal_quality: { score: 40 }, correlation: { success: false } },
       ];
 
       const result = analyzeCorrelations(entries);
-      expect(result.length).toBeGreaterThan(0);
-      expect(result[0]).toContain('Strong signal');
+      const signalNote = result.find((n: string) => n.includes('Strong signal'));
+      expect(signalNote).toBeDefined();
+      expect(signalNote).toMatch(/High-quality goals/);
     });
 
-    test('should evaluate confidence calibration', () => {
+    test('should measure evaluator calibration accuracy', () => {
       const entries: GoalCheckEntry[] = [
         {
-          goal_quality: { score: 90 },
-          goal_check_verdict: { confidence: 'high', met: true, evidenceCount: 3, missingCount: 0 },
+          goal_check_verdict: { confidence: 'high', met: true },
           correlation: { success: true },
         },
         {
-          goal_quality: { score: 90 },
-          goal_check_verdict: { confidence: 'high', met: true, evidenceCount: 3, missingCount: 0 },
+          goal_check_verdict: { confidence: 'high', met: false },
+          correlation: { success: false },
+        },
+        {
+          goal_check_verdict: { confidence: 'high', met: true },
           correlation: { success: true },
         },
       ];
 
       const result = analyzeCorrelations(entries);
-      expect(result.some((note) => note.includes('Evaluator calibration'))).toBe(true);
+      const calibrationNote = result.find((n: string) => n.includes('calibration'));
+      expect(calibrationNote).toBeDefined();
+      expect(calibrationNote).toMatch(/\d+% accurate/);
     });
 
-    test('should include effort metrics', () => {
+    test('should compute average evidence and missing item counts', () => {
       const entries: GoalCheckEntry[] = [
-        {
-          goal_quality: { score: 80 },
-          goal_check_verdict: {
-            confidence: 'high',
-            evidenceCount: 3,
-            missingCount: 1,
-            met: true,
-          },
-          correlation: { success: true },
-        },
+        { goal_check_verdict: { evidenceCount: 5, missingCount: 2 } },
+        { goal_check_verdict: { evidenceCount: 7, missingCount: 1 } },
+        { goal_check_verdict: { evidenceCount: 3, missingCount: 3 } },
       ];
 
       const result = analyzeCorrelations(entries);
-      expect(result.some((note) => note.includes('Evaluator effort'))).toBe(true);
+      const effortNote = result.find((n: string) => n.includes('Evaluator effort'));
+      expect(effortNote).toBeDefined();
+      expect(effortNote).toMatch(/avg \d+\.\d evidence items/);
+      expect(effortNote).toMatch(/\d+\.\d missing items/);
+    });
+
+    test('should return notes array for empty entries', () => {
+      const entries: GoalCheckEntry[] = [];
+      const result = analyzeCorrelations(entries);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBeGreaterThan(0); // Should have effort note with zeros
     });
   });
 
+  // ===== analyzeSmartDimensions Tests =====
   describe('analyzeSmartDimensions', () => {
-    test('should calculate SMART score distribution', () => {
+    test('should distribute SMART scores (high/medium/low percentages)', () => {
+      const entries: GoalCheckEntry[] = [
+        {
+          goal_quality: {
+            smart_criteria: [
+              { smart_score: 'high' },
+              { smart_score: 'high' },
+              { smart_score: 'medium' },
+            ],
+          },
+        },
+        {
+          goal_quality: {
+            smart_criteria: [{ smart_score: 'low' }, { smart_score: 'high' }],
+          },
+        },
+      ];
+
+      const result = analyzeSmartDimensions(entries);
+      expect(result.total_criteria).toBe(5);
+      expect(result.distribution?.high).toBe('60.0%');
+      expect(result.distribution?.medium).toBe('20.0%');
+      expect(result.distribution?.low).toBe('20.0%');
+    });
+
+    test('should handle entries with no SMART criteria', () => {
+      const entries: GoalCheckEntry[] = [
+        { goal_quality: { smart_criteria: [] } },
+        { goal_quality: {} },
+        {},
+      ];
+
+      const result = analyzeSmartDimensions(entries);
+      expect(result.total_criteria).toBe(0);
+      expect(result.insight).toBe('No SMART criteria data');
+    });
+
+    test('should provide insight summary', () => {
       const entries: GoalCheckEntry[] = [
         {
           goal_quality: {
@@ -445,82 +300,65 @@ describe('analyze-goal-feedback', () => {
             ],
           },
         },
-        {
-          goal_quality: {
-            smart_criteria: [{ smart_score: 'medium' }],
-          },
-        },
       ];
 
       const result = analyzeSmartDimensions(entries);
-      expect(result.total_criteria).toBe(4);
-      expect((result.distribution as Record<string, string>).high).toBe('50.0%');
-      expect((result.distribution as Record<string, string>).low).toBe('25.0%');
-    });
-
-    test('should handle entries with no SMART criteria', () => {
-      const entries: GoalCheckEntry[] = [{ goal_quality: {} }];
-      const result = analyzeSmartDimensions(entries);
-      expect(result.total_criteria).toBe(0);
-      expect((result.insight as string)).toContain('No SMART criteria data');
+      expect(result.insight).toMatch(/\d+ high-quality.*\d+ low-quality/);
     });
   });
 
+  // ===== generateRecommendations Tests =====
   describe('generateRecommendations', () => {
-    test('should recommend high priority for quality gap', () => {
+    test('should generate high-priority goal quality recommendation when strong signal', () => {
       const stats = {
-        high: { success_rate: '90.0', count: 10 },
-        low: { success_rate: '50.0', count: 10 },
+        high: { count: 50, success_rate: '85.0' },
+        low: { count: 50, success_rate: '45.0' },
       };
       const correlationNotes: string[] = [];
       const smartAnalysis = { distribution: {} };
 
       const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
-      expect(result).toContainEqual(
-        expect.objectContaining({
-          priority: 'high',
-          area: 'goal_quality',
-        })
-      );
+      const qualityRec = result.find((r: any) => r.area === 'goal_quality');
+      expect(qualityRec?.priority).toBe('high');
+      expect(qualityRec?.recommendation).toMatch(/Invest in goal-setting phase/);
     });
 
-    test('should recommend evaluator quality from correlation', () => {
-      const stats = { high: { count: 5 }, low: { count: 5 } };
-      const correlationNotes = [
-        'Note 1',
-        'Evaluator calibration good: High-confidence verdicts are 95% accurate',
+    test('should generate high-priority evaluator quality recommendation', () => {
+      const stats = {};
+      const correlationNotes: string[] = [
+        'Some insight',
+        'Evaluator calibration good: High-confidence verdicts are 90% accurate',
       ];
       const smartAnalysis = { distribution: {} };
 
       const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
-      expect(result).toContainEqual(
-        expect.objectContaining({
-          priority: 'high',
-          area: 'evaluator_quality',
-        })
-      );
+      const evaluatorRec = result.find((r: any) => r.area === 'evaluator_quality');
+      expect(evaluatorRec?.priority).toBe('high');
+      expect(evaluatorRec?.recommendation).toMatch(/calibration/);
     });
 
-    test('should recommend SMART dimension focus when low quality', () => {
-      const stats = { high: { count: 5 }, low: { count: 5 } };
+    test('should generate medium-priority SMART criteria recommendation when >20% low', () => {
+      const stats = {};
       const correlationNotes: string[] = [];
       const smartAnalysis = {
-        distribution: { high: '30.0%', low: '50.0%' },
+        distribution: { high: '50.0%', low: '30.0%', medium: '20.0%' },
       };
 
       const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
-      expect(result).toContainEqual(
-        expect.objectContaining({
-          priority: 'medium',
-          area: 'smart_criteria',
-        })
-      );
+      const smartRec = result.find((r: any) => r.area === 'smart_criteria');
+      expect(smartRec?.priority).toBe('medium');
+      expect(smartRec?.recommendation).toMatch(/measurability and specificity/);
     });
 
-    test('should return empty array when no recommendations apply', () => {
-      const stats = { high: { success_rate: '60.0', count: 5 } };
+    test('should return empty array when no recommendations triggered', () => {
+      const stats = {
+        high: { count: 0 },
+        low: { count: 0 },
+      };
       const correlationNotes: string[] = [];
-      const smartAnalysis = { distribution: { high: '80.0%' } };
+      const smartAnalysis = {
+        distribution: { high: '100.0%', low: '0.0%' },
+      };
 
       const result = generateRecommendations(stats, correlationNotes, smartAnalysis);
       expect(result).toEqual([]);
