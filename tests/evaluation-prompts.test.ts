@@ -312,7 +312,11 @@ NODE
         }));
 
         const fixture = `set -euo pipefail\n${isolatedFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(path.dirname(collectFeedbackPath))}\nRUN_EVALUATION_EXIT=0\ncollect_run_evaluation_feedback contract-instance\n`;
-        execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+        try {
+          execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+        } catch (error: any) {
+          throw new Error(`Bash script execution failed: ${error.message}\nStderr: ${error.stderr || 'N/A'}`);
+        }
 
         const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
         expect(nodeArgs).toEqual([
