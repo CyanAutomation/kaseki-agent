@@ -1105,12 +1105,12 @@ const controllerPage = String.raw`<!doctype html>
         overflow: hidden;
         flex: 1;
       }
-      .tab-content {
+      .modal-tabs-container .tab-content {
         display: none;
         overflow: auto;
         min-height: 0;
       }
-      .tab-content.active {
+      .modal-tabs-container .tab-content.active {
         display: block;
       }
       .modal-output {
