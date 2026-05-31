@@ -355,7 +355,7 @@ describe('OpenAPI Path Builders', () => {
 
           const fallbackStatuses = Object.entries(operation.responses)
             .filter(([, response]: [string, any]) =>
-              response.content?.['application/json']?.schema === emptyErrorSchema
+              Object.keys(response.content?.['application/json']?.schema || {}).length === 0
             )
             .map(([status]) => status)
             .sort();
