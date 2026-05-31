@@ -175,100 +175,6 @@ export function captureException(error: unknown, context?: Record<string, unknow
 }
 
 /**
- * Add a breadcrumb for debugging.
- * Breadcrumbs are automatically captured for HTTP requests and other events.
- *
- * @param message - Breadcrumb message
- * @param category - Breadcrumb category (e.g., 'auth', 'validation', 'database')
- * @param level - Severity level
- * @param data - Additional data
- */
-export function addBreadcrumb(
-  message: string,
-  category: string,
-  level: Sentry.SeverityLevel = 'info',
-  data?: Record<string, unknown>
-): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  Sentry.addBreadcrumb({
-    message,
-    category,
-    level,
-    data,
-  });
-}
-
-/**
- * Set user context for error reporting.
- *
- * @param userId - Unique identifier for the user/client
- * @param email - User email (optional)
- * @param username - Username (optional)
- * @param ipAddress - IP address (optional)
- */
-export function setUserContext(
-  userId: string,
-  { email, username, ipAddress }: { email?: string; username?: string; ipAddress?: string } = {}
-): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  Sentry.setUser({
-    id: userId,
-    email,
-    username,
-    ip_address: ipAddress,
-  });
-}
-
-/**
- * Clear user context (e.g., on logout).
- */
-export function clearUserContext(): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  Sentry.setUser(null);
-}
-
-/**
- * Set tags for error context and filtering.
- * Tags are indexed and can be used for filtering in the Sentry dashboard.
- *
- * @param tags - Object with tag key-value pairs
- */
-export function setTags(tags: Record<string, string>): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  Object.entries(tags).forEach(([key, value]) => {
-    Sentry.setTag(key, value);
-  });
-}
-
-/**
- * Set extra context data.
- * Extra data is not indexed and should be used for large data objects.
- *
- * @param context - Object with context data
- */
-export function setExtraContext(context: Record<string, unknown>): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  Object.entries(context).forEach(([key, value]) => {
-    Sentry.setExtra(key, value);
-  });
-}
-
-/**
  * Flush pending events to Sentry.
  * Should be called during graceful shutdown to ensure all events are sent.
  *
@@ -281,11 +187,4 @@ export async function flushSentry(timeoutMs: number = 2000): Promise<boolean> {
   }
 
   return Sentry.close(timeoutMs);
-}
-
-/**
- * Check if Sentry is initialized and enabled.
- */
-export function isSentryEnabled(): boolean {
-  return isInitialized;
 }

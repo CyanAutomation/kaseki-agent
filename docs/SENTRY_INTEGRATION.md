@@ -136,7 +136,7 @@ The Sentry integration is built into the API service. Errors are automatically c
 If you're integrating kaseki-agent into your own code:
 
 ```typescript
-import { captureException, addBreadcrumb } from '@cyanautomation/kaseki-agent';
+import { captureException } from '@cyanautomation/kaseki-agent';
 
 try {
   // Your code
@@ -147,9 +147,6 @@ try {
     jobId: 'kaseki-123',
   });
 }
-
-// Add debugging info
-addBreadcrumb('Task started', 'task', 'info', { jobId: 'kaseki-123' });
 ```
 
 See [src/sentry-integration.ts](../src/sentry-integration.ts) for full API.
@@ -347,42 +344,6 @@ Options:
 - Unlimited
 
 ## Advanced Usage
-
-### Custom Context
-
-Track additional metadata with errors:
-
-```typescript
-import { setTags, setExtraContext } from '@cyanautomation/kaseki-agent';
-
-setTags({
-  component: 'api-routes',
-  repository: 'cyanautomation/crudmapper',
-});
-
-setExtraContext({
-  jobId: 'kaseki-123',
-  taskType: 'parser-fix',
-  agentModel: 'openai/gpt-4',
-});
-```
-
-### User Identification
-
-Track which users/clients trigger errors:
-
-```typescript
-import { setUserContext } from '@cyanautomation/kaseki-agent';
-
-// On request with API key
-setUserContext('api-client-xyz', {
-  username: 'service-account-1',
-  ipAddress: req.ip,
-});
-
-// On logout
-clearUserContext();
-```
 
 ### Source Maps
 
