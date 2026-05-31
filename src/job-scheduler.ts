@@ -230,23 +230,23 @@ export class JobScheduler {
     const proc = this.processes.get(id);
     if (proc) {
       proc.kill('SIGTERM');
-      
-      // Force kill after grace period if process doesn't exit
-      const forceKillHandle = setTimeout(() => {
-        if (!this.processExited.get(id)) {
-          proc.kill('SIGKILL');
-        }
-        this.shutdownKillTimers.delete(id);
-      }, JobScheduler.SHUTDOWN_GRACE_MS);
-      
-      this.unrefTimer(forceKillHandle);
-      this.shutdownKillTimers.set(id, forceKillHandle);
+
+      if (!this.shutdownKillTimers.has(id)) {
+        // Force kill after grace period if process doesn't exit.
+        const forceKillHandle = setTimeout(() => {
+          if (!this.processExited.get(id)) {
+            proc.kill('SIGKILL');
+          }
+          this.shutdownKillTimers.delete(id);
+        }, JobScheduler.SHUTDOWN_GRACE_MS);
+
+        this.unrefTimer(forceKillHandle);
+        this.shutdownKillTimers.set(id, forceKillHandle);
+      }
     }
 
-    // Write failure artifacts immediately but don't finalize the job yet
-    // This ensures artifacts are available while keeping the job in running set
-    const cleanup = this.cleanupContainer(id);
-    this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
+    // Cleanup operations are handled by the process exit handler, which has
+    // access to stdout/stderr tails for complete diagnostics.
     clearRunArtifactMetadataCache(job.id, job.resultDir);
     this.clearArtifactContentCache(job.id);
     this.clearLiveProgressCache(job.id);
