@@ -177,7 +177,7 @@ const controllerPage = String.raw`<!doctype html>
       }
       header, form, .stack, fieldset { display: grid; gap: var(--space-3); }
       .stack { gap: var(--space-4); }
-      section.panel { display: grid; gap: var(--space-3); }
+      section.panel { display: grid; gap: var(--space-3); align-content: start; }
       fieldset {
         border: 1px solid var(--line);
         border-radius: 4px;
@@ -490,6 +490,7 @@ const controllerPage = String.raw`<!doctype html>
       .tab-content {
         display: grid;
         gap: var(--space-3);
+        height: auto;
       }
       .tab-content.hidden { display: none; }
       .health-checks-grid {
