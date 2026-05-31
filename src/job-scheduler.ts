@@ -220,23 +220,39 @@ export class JobScheduler {
       return job;
     }
 
+    // For running jobs, mark as cancelled but keep in running set
+    // until the process actually exits to prevent race conditions
+    job.status = 'failed';
+    job.exitCode = 143;
+    job.failureClass = 'cancelled';
+    job.error = 'Job cancelled by API request';
+
     const proc = this.processes.get(id);
     if (proc) {
       proc.kill('SIGTERM');
+      
+      // Force kill after grace period if process doesn't exit
+      const forceKillHandle = setTimeout(() => {
+        if (!this.processExited.get(id)) {
+          proc.kill('SIGKILL');
+        }
+        this.shutdownKillTimers.delete(id);
+      }, JobScheduler.SHUTDOWN_GRACE_MS);
+      
+      this.unrefTimer(forceKillHandle);
+      this.shutdownKillTimers.set(id, forceKillHandle);
     }
+
+    // Write failure artifacts immediately but don't finalize the job yet
+    // This ensures artifacts are available while keeping the job in running set
     const cleanup = this.cleanupContainer(id);
-    const updates: Partial<Job> = {
-      status: 'failed',
-      exitCode: 143,
-      failureClass: 'cancelled',
-      error: 'Job cancelled by API request',
-      completedAt,
-    };
-    this.finalizeJobIfNeeded(job, updates);
     this.failureArtifactWriter.writeFailureArtifacts(job, cleanup);
     clearRunArtifactMetadataCache(job.id, job.resultDir);
     this.clearArtifactContentCache(job.id);
     this.clearLiveProgressCache(job.id);
+
+    // Note: Don't call finalizeJobIfNeeded() here - let the process exit handler
+    // handle the actual removal from running set to prevent race conditions
 
     this.logger.event('job_cancelled', {
       jobId: id,
@@ -702,7 +718,31 @@ export class JobScheduler {
       exitCode: code ?? -1,
     };
 
-    if (isTimedOut) {
+    // Handle cancelled jobs - they were marked as cancelled in cancelJob()
+    if (job.failureClass === 'cancelled') {
+      // Job was already marked as cancelled, just ensure completion status
+      updates.status = 'failed';
+      updates.exitCode = 143; // SIGTERM + 1
+      updates.error = job.error || 'Job cancelled by API request';
+
+      this.logger.event('job_cancelled_completed', {
+        jobId: job.id,
+        processId: job.processId,
+        durationSeconds:
+          Math.round(
+            (updates.completedAt as Date).getTime() -
+              (job.startedAt?.getTime() || 0),
+          ) / 1000,
+      });
+
+      // Write failure artifacts for cancelled jobs
+      const cleanup = this.cleanupContainer(job.id);
+      this.failureArtifactWriter.writeFailureArtifacts(job, cleanup, {
+        stdoutTail,
+        stderrTail,
+        lastStage: 'cancelled',
+      });
+    } else if (isTimedOut) {
       metricsRegistry.incTimeout();
       updates.status = 'failed';
       updates.exitCode = 124;
@@ -871,6 +911,7 @@ export class JobScheduler {
       job.resultDir = updates.resultDir;
     }
 
+    // Emit terminal webhook for all jobs (cancelled jobs will emit JOB_CANCELLED here)
     this.emitTerminalWebhook(job);
     this.completeJob(job);
   }
@@ -896,6 +937,7 @@ export class JobScheduler {
           status: 'failed',
           failureClass: 'cancelled',
           error: job.error,
+          elapsed,
         },
       };
       this.webhookManager.enqueueWebhook(job.id, payload, job.webhookConfig);
