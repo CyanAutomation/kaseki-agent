@@ -9,10 +9,16 @@ import {
 describe('ConfigManager', () => {
   let configManager: ConfigManager;
   let originalInlineSecretEnv: Record<string, string | undefined>;
+  let originalCleanupEnv: Record<string, string | undefined>;
 
   beforeEach(async () => {
     originalInlineSecretEnv = snapshotEnv(INLINE_SECRET_ENV_VARS);
+    originalCleanupEnv = snapshotEnv([
+      'KASEKI_AUTO_LINT_CLEANUP',
+      'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+    ]);
     clearEnv(INLINE_SECRET_ENV_VARS);
+    clearEnv(['KASEKI_AUTO_LINT_CLEANUP', 'KASEKI_AUTO_LINT_CLEANUP_COMMANDS']);
 
     configManager = new ConfigManager();
     // Load to initialize config with defaults
@@ -21,6 +27,31 @@ describe('ConfigManager', () => {
 
   afterEach(() => {
     restoreEnv(originalInlineSecretEnv);
+    restoreEnv(originalCleanupEnv);
+  });
+
+  test('defaults automatic lint cleanup to enabled with no custom commands', () => {
+    expect(configManager.get('validation.autoLintCleanup')).toEqual({
+      enabled: true,
+      commands: [],
+    });
+  });
+
+  test('parses automatic lint cleanup environment controls', async () => {
+    process.env.KASEKI_AUTO_LINT_CLEANUP = 'false';
+    process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS = 'npm run lint:fix; npm run format';
+
+    try {
+      const manager = new ConfigManager();
+      await manager.load();
+
+      expect(manager.get('validation.autoLintCleanup')).toEqual({
+        enabled: false,
+        commands: ['npm run lint:fix', 'npm run format'],
+      });
+    } finally {
+      clearEnv(['KASEKI_AUTO_LINT_CLEANUP', 'KASEKI_AUTO_LINT_CLEANUP_COMMANDS']);
+    }
   });
 
   test('should reject inline OPENROUTER_API_KEY secret variable', async () => {
