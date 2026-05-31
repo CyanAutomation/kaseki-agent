@@ -720,7 +720,7 @@ describe('JobScheduler timeout lifecycle', () => {
       validation: {
         autoLintCleanup: {
           enabled: true,
-          commands: ['npm run lint:fix', 'npm run format'],
+          commands: ['npm run lint:fix'],
         },
       },
     });
@@ -731,7 +731,7 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           KASEKI_AUTO_LINT_CLEANUP: '1',
-          KASEKI_AUTO_LINT_CLEANUP_COMMANDS: 'npm run lint:fix;npm run format',
+          KASEKI_AUTO_LINT_CLEANUP_COMMANDS: 'npm run lint:fix',
         }),
       }),
     );

@@ -15,7 +15,7 @@ KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test}"
 KASEKI_AUTO_LINT_CLEANUP_EXPLICIT="${KASEKI_AUTO_LINT_CLEANUP+x}"
 KASEKI_AUTO_LINT_CLEANUP="${KASEKI_AUTO_LINT_CLEANUP:-1}"
-KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run lint:fix;npm run format;__kaseki_trailing_whitespace_cleanup__}"
+KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run lint:fix;__kaseki_trailing_whitespace_cleanup__}"
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
@@ -1984,9 +1984,19 @@ auto_lint_cleanup_enabled_for_mode() {
 }
 
 run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
-  local script_dir helper_script
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  helper_script="$script_dir/scripts/cleanup-trailing-whitespace.sh"
+  local helper_script app_root fallback_root
+  # Use KASEKI_APP_ROOT if set (container context), otherwise try to resolve from script location
+  app_root="${KASEKI_APP_ROOT:-}"
+  if [ -z "$app_root" ]; then
+    # Fallback: try relative to script location (for host execution)
+    app_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ "$app_root" = "/usr/local/bin" ] || [ "$app_root" = "/usr/bin" ]; then
+      # Script is in a bin directory; prefer /app/scripts if it exists
+      app_root="/app"
+    fi
+  fi
+  helper_script="$app_root/scripts/cleanup-trailing-whitespace.sh"
+  
   if [ -r "$helper_script" ]; then
     # shellcheck source=scripts/cleanup-trailing-whitespace.sh
     . "$helper_script"
@@ -1994,7 +2004,7 @@ run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
     return $?
   fi
 
-  printf 'ERROR: trailing whitespace cleanup helper is missing: %s\n' "$helper_script"
+  printf 'ERROR: trailing whitespace cleanup helper is missing: %s (KASEKI_APP_ROOT=%s)\n' "$helper_script" "${KASEKI_APP_ROOT:-<unset>}"
   return 1
 }
 
@@ -6388,8 +6398,8 @@ if [ -n "$allowlist_regex" ]; then
   done < /results/changed-files.txt
 fi
 
-if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && (p.scripts.format || p.scripts['format:check']) ? 0 : 1)" 2>/dev/null; then
-  format_command="$(node -e "const p=require('./package.json'); console.log(p.scripts['format:check'] ? 'npm run format:check' : 'npm run format -- --check')" 2>/dev/null)"
+if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['format:check'] ? 0 : 1)" 2>/dev/null; then
+  format_command="npm run format:check"
   printf '%s\n' "$format_command" >> /results/format-check-command.txt
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"

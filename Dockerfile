@@ -48,6 +48,7 @@ ENV HOME=/tmp/kaseki-home \
     NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm_config_cache=/tmp/npm-cache \
     PI_CODING_AGENT_DIR=/tmp/pi-agent \
+    KASEKI_APP_ROOT=/app \
     PI_TELEMETRY=0 \
     PI_SKIP_VERSION_CHECK=1 \
     CI=true
