@@ -240,7 +240,10 @@ describe('Evaluation Prompt Enhancements', () => {
 
       const runEvaluationFunctionStart = scriptContent.indexOf('run_run_evaluation() {');
       expect(runEvaluationFunctionStart).toBeGreaterThanOrEqual(0);
-      const runEvaluationFunctionEnd = scriptContent.indexOf('\n}\n\n\nparse_github_repo_url()', runEvaluationFunctionStart);
+      const runEvaluationFunctionEnd = scriptContent.indexOf('\n}\n\n', runEvaluationFunctionStart);
+      if (runEvaluationFunctionEnd === -1 || runEvaluationFunctionEnd <= runEvaluationFunctionStart) {
+        throw new Error('Could not find end of run_run_evaluation function');
+      }
       expect(runEvaluationFunctionEnd).toBeGreaterThan(runEvaluationFunctionStart);
       const runEvaluationFunction = scriptContent.slice(runEvaluationFunctionStart, runEvaluationFunctionEnd + 3);
 
