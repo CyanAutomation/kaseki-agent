@@ -321,6 +321,10 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'number',
         description: 'Percentage of timeout used (0-100+); values >85 indicate imminent timeout',
       },
+      taskProgressPercent: {
+        type: 'number',
+        description: 'Overall orchestrator phase progress percentage, 0-100',
+      },
       exitCode: {
         type: 'integer',
         description: 'Exit code (only if completed)',

@@ -20,6 +20,7 @@ type JsonSchemaObject = {
   items?: JsonSchemaObject;
   example?: string;
   default?: string;
+  description?: string;
 };
 
 describe('OpenAPI Schema Builders', () => {
@@ -229,6 +230,11 @@ describe('OpenAPI Schema Builders', () => {
         type: 'string',
         enum: ['queued', 'running', 'completed', 'failed'],
       });
+      expect(properties.taskProgressPercent).toMatchObject({
+        type: 'number',
+        description: 'Overall orchestrator phase progress percentage, 0-100',
+      });
+      expect(statusResponse.required).not.toContain('taskProgressPercent');
     });
   });
 
