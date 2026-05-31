@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.56.1...v1.56.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* defer cancelled job artifact writes and add SIGKILL escalation on cancel ([#497](https://github.com/CyanAutomation/kaseki-agent/issues/497)) ([1e93584](https://github.com/CyanAutomation/kaseki-agent/commit/1e935843e48b288e3379378009e013fe4dd87c45))
+* defer cancelled job artifacts until exit ([a8e59f9](https://github.com/CyanAutomation/kaseki-agent/commit/a8e59f9ce248cbaba01b85d6afeebd144aa0ed2d))
+* the race condition in JobScheduler.cancelJob() where... (kaseki-82) ([#496](https://github.com/CyanAutomation/kaseki-agent/issues/496)) ([7b40a7c](https://github.com/CyanAutomation/kaseki-agent/commit/7b40a7c3af0ad5b63e77f0c0cc6fe87926c96083))
+
 ## [1.56.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.56.0...v1.56.1) (2026-05-31)
 
 
