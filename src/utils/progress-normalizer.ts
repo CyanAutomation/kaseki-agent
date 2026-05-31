@@ -1,4 +1,5 @@
 import { StructuredProgress } from '../kaseki-api-types';
+import { getPhaseDisplayName } from './phase-names';
 
 const SHELL_DIAGNOSTIC_PATTERN = /\/[^\s:]+(?:\/[^\s:]+)*:\s+line\s+\d+:\s+.*$/;
 const GIT_CLONE_STDERR_PATTERN = /Cloning into '[^']+'\.\.\.$/;
@@ -61,6 +62,7 @@ export function toStructuredProgress(
 
   return {
     stage,
+    displayName: getPhaseDisplayName(stage),
     percentComplete,
     message: message || stage,
     updatedAt,
