@@ -32,7 +32,7 @@ describe('kaseki API web console', () => {
       expect(body).toContain('/api/runs');
       expect(body).toContain('name="taskMode"');
       expect(body).toContain('id="cancel-run"');
-      expect(body).toContain('data-run-action="artifacts"');
+      expect(body).toContain('data-tab="artifacts"');
       expect(body).toContain('id="recommended-artifacts"');
       expect(body).toContain('id="runs-list"');
       expect(body).toContain('id="response-summary"');
