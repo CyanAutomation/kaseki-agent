@@ -318,7 +318,12 @@ NODE
           throw new Error(`Bash script execution failed: ${error.message}\nStderr: ${error.stderr || 'N/A'}`);
         }
 
-        const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
+        let nodeArgs: string[];
+        try {
+          nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
+        } catch (error: any) {
+          throw new Error(`Failed to read node args log: ${error.message}`);
+        }
         expect(nodeArgs).toEqual([
           collectFeedbackPath,
           'run-evaluation',
@@ -327,9 +332,19 @@ NODE
           path.join(resultsDir, 'metadata.json'),
         ]);
 
-        const feedbackLines = fs.readFileSync(path.join(resultsDir, 'kaseki-improvements.jsonl'), 'utf8').trim().split('\n');
+        let feedbackLines: string[];
+        try {
+          feedbackLines = fs.readFileSync(path.join(resultsDir, 'kaseki-improvements.jsonl'), 'utf8').trim().split('\n');
+        } catch (error: any) {
+          throw new Error(`Failed to read feedback file: ${error.message}`);
+        }
         expect(feedbackLines).toHaveLength(1);
-        const feedback = JSON.parse(feedbackLines[0]);
+        let feedback: any;
+        try {
+          feedback = JSON.parse(feedbackLines[0]);
+        } catch (error: any) {
+          throw new Error(`Failed to parse feedback JSON: ${error.message}\nContent: ${feedbackLines[0]}`);
+        }
         expect(feedback).toMatchObject({
           phase: 'run_evaluation',
           assessment: {
