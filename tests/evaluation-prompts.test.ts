@@ -260,7 +260,10 @@ describe('Evaluation Prompt Enhancements', () => {
       const nodeArgsLog = path.join(tmpDir, 'node-args.log');
       const resultsDir = path.join(tmpDir, 'results');
       const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
-      const isolatedFunction = collectRunEvaluationFeedbackFunction.replaceAll('/results/', `${resultsDir}/`);
+      const isolatedFunction = collectRunEvaluationFeedbackFunction
+        .replace(/local run_evaluation_path="\/results\/run-evaluation.json"/, `local run_evaluation_path="${resultsDir}/run-evaluation.json"`)
+        .replace(/local feedback_file="\/results\/kaseki-improvements.jsonl"/, `local feedback_file="${resultsDir}/kaseki-improvements.jsonl"`)
+        .replace(/local metadata_path="\/results\/metadata.json"/, `local metadata_path="${resultsDir}/metadata.json"`);
 
       try {
         fs.mkdirSync(fakeBin, { recursive: true });
