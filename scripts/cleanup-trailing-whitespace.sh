@@ -31,16 +31,15 @@ cleanup_trailing_whitespace_for_changed_files() {
       continue
     fi
     if ! [ -f "$file" ]; then
-      printf 'Skipping deleted or non-regular file: %s\n' "$file" | tee -a "$log_file"
-      skipped_count=$((skipped_count + 1))
-      continue
-    fi
-
-    size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
-    size="${size:-0}"
-    case "$size" in (*[!0-9]*|'') size=0 ;; esac
-    if [ "$size" -gt "$max_bytes" ]; then
-      printf 'Skipping large file (%s bytes): %s\n' "$size" "$file" | tee -a "$log_file"
+find . -type f \( \
+    -name "*.sh" -o \
+    -name "*.js" -o \
+    -name "*.ts" -o \
+    -name "*.json" -o \
+    -name "*.md" -o \
+    -name "*.yml" -o \
+    -name "*.yaml" \
+\) ! -path "*/node_modules/*" ! -path "*/.git/*" -print0 | xargs -0 -r sed -i 's/[[:space:]]*$//'
       skipped_count=$((skipped_count + 1))
       continue
     fi
