@@ -1493,10 +1493,6 @@ export function createApiRouter(
    */
   function normalizeTaskMode(runRequest: RunRequest): void {
     if (runRequest.taskMode === 'inspect') {
-      runRequest.scouting = {
-        ...runRequest.scouting,
-        enabled: runRequest.scouting?.enabled ?? false,
-      };
       runRequest.goalCheck = {
         ...runRequest.goalCheck,
         enabled: runRequest.goalCheck?.enabled ?? false,

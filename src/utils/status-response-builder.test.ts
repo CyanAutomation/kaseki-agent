@@ -434,7 +434,6 @@ describe('StatusResponseBuilder', () => {
           ref: 'main',
           taskMode: 'inspect',
           publishMode: 'none',
-          scouting: { enabled: false },
           goalCheck: { enabled: false },
           runEvaluation: { enabled: false },
           autoLintCleanup: { enabled: false },

@@ -341,15 +341,6 @@ describe('OpenAPI Schema Builders', () => {
       expect(timeoutSeconds.maximum).toBe(10800);
       expect(timeoutSeconds.type).toBe('integer');
     });
-
-    it('scouting timeoutSeconds should also enforce 60-10800 range', () => {
-      const schema = buildRunRequestSchema() as JsonSchemaObject;
-      const scouting = schema.properties?.scouting as JsonSchemaObject;
-      const scoutingTimeout = scouting.properties?.timeoutSeconds as JsonSchemaObject;
-
-      expect(scoutingTimeout.minimum).toBe(60);
-      expect(scoutingTimeout.maximum).toBe(10800);
-    });
   });
 
   describe('Required vs Optional Fields', () => {
@@ -460,20 +451,6 @@ describe('OpenAPI Schema Builders', () => {
   });
 
   describe('Nested Object Structure', () => {
-    it('scouting object should have enabled, model, and timeoutSeconds properties', () => {
-      const schema = buildRunRequestSchema() as JsonSchemaObject;
-      const scouting = schema.properties?.scouting as JsonSchemaObject;
-      const scoutingProps = scouting.properties as Record<string, JsonSchemaObject>;
-
-      expect(scoutingProps.enabled).toMatchObject({ type: 'boolean' });
-      expect(scoutingProps.model).toMatchObject({ type: 'string' });
-      expect(scoutingProps.timeoutSeconds).toMatchObject({
-        type: 'integer',
-        minimum: 60,
-        maximum: 10800,
-      });
-    });
-
     it('goalCheck object should have enabled, maxRetries, model, and timeoutSeconds properties', () => {
       const schema = buildRunRequestSchema() as JsonSchemaObject;
       const goalCheck = schema.properties?.goalCheck as JsonSchemaObject;

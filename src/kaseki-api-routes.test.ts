@@ -566,7 +566,7 @@ describe('kaseki-api-routes template readiness gate', () => {
     }
   });
 
-  test('POST /api/runs admits inspect runs with goal check and scouting disabled by default', async () => {
+  test('POST /api/runs admits inspect runs with goal check disabled by default', async () => {
     process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
     const scheduler = createMockScheduler();
     scheduler.submitJob.mockImplementation(async (request) => ({
@@ -603,7 +603,6 @@ describe('kaseki-api-routes template readiness gate', () => {
       expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
         taskMode: 'inspect',
         publishMode: 'none',
-        scouting: { enabled: false },
         goalCheck: { enabled: false },
       }));
     } finally {

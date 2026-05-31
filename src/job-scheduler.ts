@@ -390,19 +390,11 @@ export class JobScheduler {
 
   /**
    * Configure scouting, goal-setting, and goal-check environment variables.
+   * Scouting is always enabled by default.
    */
   private setupScoutingAndGoalCheckEnv(job: Job, env: NodeJS.ProcessEnv): void {
-    if (job.request.scouting?.enabled !== undefined) {
-      env.KASEKI_SCOUTING = job.request.scouting.enabled ? '1' : '0';
-    }
-    if (job.request.scouting?.model) {
-      env.KASEKI_SCOUTING_MODEL = job.request.scouting.model;
-    }
-    if (job.request.scouting?.timeoutSeconds) {
-      env.KASEKI_SCOUTING_TIMEOUT_SECONDS = String(
-        job.request.scouting.timeoutSeconds,
-      );
-    }
+    // Scouting is always enabled for patch mode runs
+    env.KASEKI_SCOUTING = '1';
     // Goal-setting is enabled by default unless explicitly disabled
     if (job.request.goalSetting?.enabled !== undefined) {
       env.KASEKI_GOAL_SETTING = job.request.goalSetting.enabled ? '1' : '0';
@@ -458,7 +450,6 @@ export class JobScheduler {
     }
     if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
-      env.KASEKI_SCOUTING = job.request.scouting?.enabled ? '1' : '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
       env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled
         ? '1'

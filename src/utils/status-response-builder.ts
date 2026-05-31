@@ -46,7 +46,7 @@ function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
   const githubAppEnabled = publishMode !== 'none';
   const preAgentValidation = taskMode === 'inspect' ? false : true;
   const goalSettingEnabled = taskMode === 'inspect' ? request.goalSetting?.enabled === true : request.goalSetting?.enabled ?? true;
-  const scoutingEnabled = taskMode === 'inspect' ? request.scouting?.enabled === true : request.scouting?.enabled ?? true;
+  const scoutingEnabled = taskMode === 'inspect' ? false : true;
   const goalCheckEnabled = taskMode === 'inspect'
     ? request.goalCheck?.enabled === true
     : request.goalCheck?.enabled ?? scoutingEnabled;

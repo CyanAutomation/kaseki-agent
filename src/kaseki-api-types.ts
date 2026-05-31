@@ -113,14 +113,6 @@ const RunRequestShape = z.object({
     })
     .optional()
     .describe('Controller-friendly validation alias'),
-  scouting: z
-    .object({
-      enabled: z.boolean().optional().describe('Enable the pre-coding Pi scouting phase'),
-      model: z.string().min(1).optional().describe('Optional Pi model override for scouting'),
-      timeoutSeconds: z.number().int().min(60).max(10800).optional().describe('Optional scouting timeout in seconds'),
-    })
-    .optional()
-    .describe('Pre-coding Pi scouting controls'),
   goalSetting: z
     .object({
       enabled: z.boolean().optional().describe('Enable the pre-scouting goal-setting Pi agent (default: enabled, set to false to disable)'),

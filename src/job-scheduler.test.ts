@@ -829,7 +829,7 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
-  test('passes scouting request controls to the worker environment', async () => {
+  test('always enables scouting in the worker environment', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
     mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
@@ -851,7 +851,6 @@ describe('JobScheduler timeout lifecycle', () => {
     await scheduler.submitJob({
       repoUrl: 'https://github.com/org/repo',
       ref: 'main',
-      scouting: { enabled: false, model: 'scout-model', timeoutSeconds: 120 },
     });
 
     expect(mockSpawn).toHaveBeenCalledWith(
@@ -859,9 +858,7 @@ describe('JobScheduler timeout lifecycle', () => {
       expect.any(Array),
       expect.objectContaining({
         env: expect.objectContaining({
-          KASEKI_SCOUTING: '0',
-          KASEKI_SCOUTING_MODEL: 'scout-model',
-          KASEKI_SCOUTING_TIMEOUT_SECONDS: '120',
+          KASEKI_SCOUTING: '1',
         }),
       }),
     );
