@@ -2079,18 +2079,24 @@ run_auto_lint_cleanup() {
     fi
     set -o pipefail
     {
+    {
       printf '\n==> %s\n' "$trimmed"
       unset OPENROUTER_API_KEY
       if [ "$trimmed" = "__kaseki_trailing_whitespace_cleanup__" ]; then
         run_trailing_whitespace_cleanup_for_changed_tracked_text_files
+        command_exit=$?
       else
         bash -c "$trimmed"
+        command_exit=$?
       fi
-      command_exit=$?
       printf 'exit_code=%s\n' "$command_exit"
-      exit "$command_exit"
     } 2>&1 | tee -a "$AUTO_LINT_CLEANUP_LOG"
-    command_exit="${PIPESTATUS[0]:-1}"
+    # Use the captured command_exit instead of PIPESTATUS[0]
+    if [ "$pipefail_was_enabled" -eq 1 ]; then
+      set -o pipefail
+    else
+      set +o pipefail
+    fi
     if [ "$pipefail_was_enabled" -eq 1 ]; then
       set -o pipefail
     else
