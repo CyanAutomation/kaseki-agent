@@ -98,6 +98,6 @@ cleanup_trailing_whitespace_for_changed_files() {
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || pwd)"
-  cd "$repo_root"
+  cd "$repo_root" || exit 1
   cleanup_trailing_whitespace_for_changed_files "$@"
 fi
