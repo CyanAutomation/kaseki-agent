@@ -147,7 +147,7 @@ export class WebhookManager extends EventEmitter {
     // Mark entry as in-flight before starting delivery
     entry.inFlight = true;
     this.activeDeliveries++;
-    
+
     try {
       await this.deliverWebhook(entry);
     } finally {
