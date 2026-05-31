@@ -89,10 +89,11 @@ esac
 
 # The same disallowed cleanup-created file is restored and does not fail the
 # stage when restoration is enabled.
-git clean -f -q -- generated.log
-QUALITY_EXIT=0
-AUTO_LINT_CLEANUP_EXIT=0
-QUALITY_FAILURE_REASON=""
+printf '\n▶️  Test 3: cleanup-phase file creation WITH allowlist\n'
+rm -f "$CLEANUP_TEST_FILE"
+CLEANUP_ALLOWLIST="generated/*.txt" npm run lint-validate -- --fail-on-cleanup-created
+QUALITY_EXIT=$?
+[ "$QUALITY_EXIT" -eq 0 ] || fail "expected QUALITY_EXIT=0 for allowlisted file, got $QUALITY_EXIT"
 KASEKI_RESTORE_DISALLOWED_CHANGES=1
 collect_changed_file_set "$TMP_DIR/results/before-restore.txt"
 printf 'generated\n' > generated.log
