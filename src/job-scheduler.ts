@@ -450,6 +450,7 @@ export class JobScheduler {
     }
     if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
+      env.KASEKI_SCOUTING = '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
       env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled
         ? '1'
