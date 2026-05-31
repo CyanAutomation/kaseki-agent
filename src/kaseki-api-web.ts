@@ -1065,15 +1065,21 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.status === 'string') {
             items.push(['Response status', stripControlSequences(payload.status)]);
           }
-          if (typeof payload.taskProgressPercent === 'number') {
-            items.push(['Task Progress', payload.taskProgressPercent + '%']);
-          }
           const elapsed = formatElapsedSeconds(payload.elapsedSeconds);
           if (elapsed) {
             items.push(['Response elapsed time', elapsed]);
           }
           if (payload.progress && typeof payload.progress.stage === 'string') {
             items.push(['Response progress stage', stripControlSequences(payload.progress.stage)]);
+          }
+          if (payload.progress && typeof payload.progress.message === 'string') {
+            const progressMessage = stripControlSequences(payload.progress.message);
+            if (progressMessage) {
+              items.push(['Progress message', progressMessage]);
+            }
+          }
+          if (typeof payload.taskProgressPercent === 'number') {
+            items.push(['Progress (%)', payload.taskProgressPercent + '%']);
           }
         }
         responseSummary.hidden = items.length === 0;
