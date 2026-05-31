@@ -404,6 +404,7 @@ NODE
         collectFeedbackContent
       );
       const exportsGoalCheckHandler = /(?:module\.)?exports(?:\s*\.\s*collectGoalCheckFeedback|\s*=\s*\{[^}]*collectGoalCheckFeedback[^}]*\})/.test(collectFeedbackContent);
+      expect(definesGoalCheckHandler || exportsGoalCheckHandler).toBe(true);
 
       const definesRunEvaluationHandler = /function collectRunEvaluationFeedback\(instanceName, runEvaluationPath, metadataPath\)/.test(
         collectFeedbackContent
