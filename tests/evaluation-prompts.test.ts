@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { execFileSync } from 'child_process';
 
 /**
  * Tests for evaluation prompt enhancements
@@ -142,9 +144,105 @@ describe('Evaluation Prompt Enhancements', () => {
   });
 
   describe('Feedback Collection Integration', () => {
-    it('should have collect_goal_check_feedback function', () => {
+    it('should collect goal-check feedback with the expected artifact contract', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      expect(scriptContent).toContain('collect_goal_check_feedback');
+      const functionStart = scriptContent.indexOf('collect_goal_check_feedback() {');
+      expect(functionStart).toBeGreaterThanOrEqual(0);
+
+      const functionEnd = scriptContent.indexOf('\n}\n\ncollect_run_evaluation_feedback()', functionStart);
+      expect(functionEnd).toBeGreaterThan(functionStart);
+      const collectGoalCheckFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
+
+      const lines = scriptContent.split('\n').map((line) => line.trim());
+      const runGoalCheckLine = lines.findIndex((line) => line === 'run_goal_check "$coding_attempt"');
+      expect(runGoalCheckLine).toBeGreaterThanOrEqual(0);
+      const nextCommand = lines.slice(runGoalCheckLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
+      expect(nextCommand).toBe('collect_goal_check_feedback "$INSTANCE_NAME"');
+
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-feedback-contract-'));
+      const fakeBin = path.join(tmpDir, 'bin');
+      const fakeScriptsDir = path.join(tmpDir, 'scripts');
+      const nodeArgsLog = path.join(tmpDir, 'node-args.log');
+      const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
+      const resultsDir = path.join(tmpDir, 'results');
+      const managedResults = ['goal-check.json', 'metadata.json', 'goal-feedback.jsonl'];
+      const backups = new Map<string, string | null>();
+
+      fs.mkdirSync(fakeBin, { recursive: true });
+      fs.mkdirSync(fakeScriptsDir, { recursive: true });
+      fs.writeFileSync(path.join(fakeScriptsDir, 'collect-feedback.js'), '// fixture path only\n');
+      fs.writeFileSync(goalSettingPath, JSON.stringify({ quality_score: 91, success_criteria: ['specific', 'measurable'] }));
+      fs.writeFileSync(
+        path.join(fakeBin, 'node'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}\nprintf '%s\\n' '{"phase":"goal_check","goal_check_verdict":{"met":true,"confidence":"high","evidenceCount":2,"missingCount":1},"goal_quality":{"score":91,"smart_criteria_count":2}}'\n`,
+        { mode: 0o755 }
+      );
+
+      try {
+        fs.mkdirSync(resultsDir, { recursive: true });
+        for (const file of managedResults) {
+        const filePath = path.join(resultsDir, file);
+        backups.set(filePath, fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null);
+      }
+
+      try {
+        fs.writeFileSync(path.join(resultsDir, 'goal-check.json'), JSON.stringify({
+          met: true,
+          confidence: 'high',
+          evidence: [{ file: 'src/example.ts', line: 12 }, { file: 'tests/example.test.ts', line: 4 }],
+          missing: [{ requirement: 'none' }],
+          summary: 'Goal met',
+        }));
+        fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({
+          validation_passed: true,
+          coding_attempts: 1,
+          goal_check_met: true,
+        }));
+        fs.rmSync(path.join(resultsDir, 'goal-feedback.jsonl'), { force: true });
+
+        const fixture = `set -euo pipefail\n${collectGoalCheckFeedbackFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(fakeScriptsDir)}\nGOAL_SETTING_ARTIFACT=${JSON.stringify(goalSettingPath)}\nGOAL_CHECK_EXIT=0\ncollect_goal_check_feedback contract-instance\n`;
+        execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+
+        const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
+        expect(nodeArgs).toEqual([
+          path.join(fakeScriptsDir, 'collect-feedback.js'),
+          'goal-check',
+          'contract-instance',
+          goalSettingPath,
+          '/results/goal-check.json',
+          '/results/metadata.json',
+        ]);
+
+        const feedbackLines = fs.readFileSync(path.join(resultsDir, 'goal-feedback.jsonl'), 'utf8').trim().split('\n');
+        expect(feedbackLines).toHaveLength(1);
+        const feedback = JSON.parse(feedbackLines[0]);
+        expect(feedback).toMatchObject({
+          phase: 'goal_check',
+          goal_check_verdict: {
+            met: true,
+            confidence: 'high',
+            evidenceCount: 2,
+            missingCount: 1,
+          },
+          goal_quality: {
+            score: 91,
+            smart_criteria_count: 2,
+          },
+        });
+      } finally {
+        try {
+          for (const [filePath, content] of backups) {
+            if (content === null) {
+              fs.rmSync(filePath, { force: true });
+            } else {
+              fs.writeFileSync(filePath, content);
+            }
+          }
+        } catch (error) {
+          // Ignore restoration errors to ensure tmpDir cleanup
+        }
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('should have collect_run_evaluation_feedback function', () => {
@@ -154,11 +252,11 @@ describe('Evaluation Prompt Enhancements', () => {
 
     it('should call collect_goal_check_feedback after goal-check', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const mainLoop = scriptContent.substring(
-        scriptContent.indexOf('run_goal_check "$coding_attempt"'),
-        scriptContent.indexOf('run_goal_check "$coding_attempt"') + 500
-      );
-      expect(mainLoop).toContain('collect_goal_check_feedback');
+      const lines = scriptContent.split('\n').map((line) => line.trim());
+      const runGoalCheckLine = lines.findIndex((line) => line === 'run_goal_check "$coding_attempt"');
+      expect(runGoalCheckLine).toBeGreaterThanOrEqual(0);
+      const nextCommand = lines.slice(runGoalCheckLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
+      expect(nextCommand).toBe('collect_goal_check_feedback "$INSTANCE_NAME"');
     });
 
     it('should call collect_run_evaluation_feedback after run-evaluation', () => {
