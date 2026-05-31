@@ -298,6 +298,7 @@ export class JobScheduler {
     this.populateGitHubAppEnv(env);
     this.setupStartupCheckMode(job, env);
     this.setupValidationCommands(job, env);
+    this.setupAutoLintCleanup(job, env);
     this.setupChangedFilesAllowlist(job, env);
     this.setupScoutingAndGoalCheckEnv(job, env);
     this.setupTaskPrompt(job, env);
@@ -342,6 +343,21 @@ export class JobScheduler {
       job.request.validationCommands ?? job.request.validation?.commands;
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
+    }
+  }
+
+  /**
+   * Configure automatic lint cleanup in environment.
+   */
+  private setupAutoLintCleanup(job: Job, env: NodeJS.ProcessEnv): void {
+    const autoLintCleanup =
+      job.request.autoLintCleanup ?? job.request.validation?.autoLintCleanup;
+
+    if (autoLintCleanup?.enabled !== undefined) {
+      env.KASEKI_AUTO_LINT_CLEANUP = autoLintCleanup.enabled ? '1' : '0';
+    }
+    if (autoLintCleanup?.commands && autoLintCleanup.commands.length > 0) {
+      env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS = autoLintCleanup.commands.join(';');
     }
   }
 

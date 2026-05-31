@@ -83,11 +83,15 @@ describe('JobScheduler timeout lifecycle', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     secretValueCache.clear();
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   afterEach(() => {
     secretValueCache.clear();
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
     delete process.env.GITHUB_APP_ID_FILE;
     delete process.env.GITHUB_APP_CLIENT_ID_FILE;
     delete process.env.GITHUB_APP_PRIVATE_KEY_FILE;
@@ -626,6 +630,113 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('does not set auto lint cleanup env vars when request omits cleanup controls', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+
+    const env = mockSpawn.mock.calls.at(-1)?.[2]?.env as NodeJS.ProcessEnv;
+    expect(env.KASEKI_AUTO_LINT_CLEANUP).toBeUndefined();
+    expect(env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS).toBeUndefined();
+  });
+
+  test('passes explicit auto lint cleanup disablement to worker env', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      autoLintCleanup: { enabled: false },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_AUTO_LINT_CLEANUP: '0',
+        }),
+      }),
+    );
+  });
+
+  test('passes custom auto lint cleanup commands to worker env', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      validation: {
+        autoLintCleanup: {
+          enabled: true,
+          commands: ['npm run lint:fix', 'npm run format'],
+        },
+      },
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_AUTO_LINT_CLEANUP: '1',
+          KASEKI_AUTO_LINT_CLEANUP_COMMANDS: 'npm run lint:fix;npm run format',
+        }),
+      }),
+    );
+  });
+
   test('startup check requests run the worker in dry-run inspect mode', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
@@ -1135,6 +1246,8 @@ describe('JobScheduler instance allocation and live progress', () => {
   afterEach(() => {
     secretValueCache.clear();
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
     cleanupResultsDirs();
   });
 
@@ -1274,6 +1387,8 @@ describe('JobScheduler instance allocation and live progress', () => {
       expect.any(Object),
     );
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   test('refreshes live docker progress cache entries after TTL expiry', async () => {
@@ -1320,6 +1435,8 @@ describe('JobScheduler instance allocation and live progress', () => {
     ]);
     expect(mockSpawnSync).toHaveBeenCalledTimes(2);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   test('returns no live progress events immediately after transition to terminal state', async () => {
@@ -1370,6 +1487,8 @@ describe('JobScheduler instance allocation and live progress', () => {
       mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs'),
     ).toHaveLength(1);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   test('invalidates live progress cache at job start', async () => {
@@ -1429,6 +1548,8 @@ describe('JobScheduler instance allocation and live progress', () => {
       mockSpawnSync.mock.calls.filter((call) => call[1]?.[0] === 'logs'),
     ).toHaveLength(2);
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 });
 
@@ -1437,6 +1558,8 @@ describe('JobScheduler shutdown lifecycle', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     secretValueCache.clear();
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   afterEach(() => {
@@ -1840,11 +1963,15 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     jest.useFakeTimers();
     jest.clearAllMocks();
     secretValueCache.clear();
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
   afterEach(() => {
     secretValueCache.clear();
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP;
+    delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
     jest.useRealTimers();
     cleanupResultsDirs();
   });

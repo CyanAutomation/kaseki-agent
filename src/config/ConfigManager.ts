@@ -17,6 +17,10 @@ import { createLogger } from '../logger';
 
 const logger = createLogger('config');
 
+function parseBooleanEnv(value: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 /**
  * Full configuration schema with validation
  */
@@ -55,6 +59,10 @@ const ConfigSchema = z.object({
     restore_disallowed_changes: z.boolean().optional(),
     max_diff_bytes: z.number().int().positive().optional(),
     allow_empty_diff: z.boolean().optional(),
+    autoLintCleanup: z.object({
+      enabled: z.boolean().optional(),
+      commands: z.array(z.string()).optional(),
+    }).partial().optional(),
   }).partial(),
 
   // Dependency caching
@@ -145,6 +153,10 @@ const DEFAULT_CONFIG: Config = {
     restore_disallowed_changes: true,
     max_diff_bytes: 400000,
     allow_empty_diff: false,
+    autoLintCleanup: {
+      enabled: true,
+      commands: [],
+    },
   },
   caching: {
     dependency_cache_dir: '/workspace/.kaseki-cache',
@@ -339,6 +351,23 @@ export class ConfigManager {
       KASEKI_MAX_DIFF_BYTES: (v) => {
         if (!this.config.validation) this.config.validation = {};
         this.config.validation.max_diff_bytes = parseInt(v, 10);
+      },
+      KASEKI_AUTO_LINT_CLEANUP: (v) => {
+        if (!this.config.validation) this.config.validation = {};
+        if (!this.config.validation.autoLintCleanup) {
+          this.config.validation.autoLintCleanup = {};
+        }
+        this.config.validation.autoLintCleanup.enabled = parseBooleanEnv(v);
+      },
+      KASEKI_AUTO_LINT_CLEANUP_COMMANDS: (v) => {
+        if (!this.config.validation) this.config.validation = {};
+        if (!this.config.validation.autoLintCleanup) {
+          this.config.validation.autoLintCleanup = {};
+        }
+        this.config.validation.autoLintCleanup.commands = v
+          .split(';')
+          .map((c) => c.trim())
+          .filter(Boolean);
       },
 
       // Docker
