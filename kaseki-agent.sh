@@ -149,6 +149,7 @@ GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
 RUN_EVALUATION_ARTIFACT="/results/run-evaluation.json"
 RUN_EVALUATION_CANDIDATE_ARTIFACT="/results/run-evaluation-candidate.json"
 TEST_IMPACT_WARNINGS_ARTIFACT="/results/test-impact-warnings.log"
+EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="/results/expectation-mismatch-warnings.jsonl"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
 KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
@@ -267,6 +268,7 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/run-evaluation-stderr.log
 : > /results/run-evaluation.json
 : > "$TEST_IMPACT_WARNINGS_ARTIFACT"
+: > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
 : > /results/validation.log
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
@@ -1112,6 +1114,33 @@ run_static_test_impact_check() {
     "detail=$warning_detail"
   printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a /results/progress.log
   return 0
+}
+
+
+run_expectation_mismatch_detector() {
+  local detector_script
+  detector_script="$SCRIPT_DIR/scripts/detect-expectation-mismatches.js"
+  if [ ! -f "$detector_script" ] && [ -f /app/scripts/detect-expectation-mismatches.js ]; then
+    detector_script="/app/scripts/detect-expectation-mismatches.js"
+  fi
+
+  : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
+  if [ ! -s /results/git.diff ]; then
+    printf '[expectation-mismatch] skipped: /results/git.diff is empty\n' >> /results/progress.log
+    return 0
+  fi
+  if [ ! -f "$detector_script" ]; then
+    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a /results/progress.log
+    return 0
+  fi
+
+  if ! node "$detector_script" \
+    --repo /workspace/repo \
+    --diff /results/git.diff \
+    --output "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT" \
+    --progress /results/progress.log; then
+    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a /results/progress.log
+  fi
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -6750,6 +6779,7 @@ fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
 run_static_test_impact_check
+run_expectation_mismatch_detector
 
 pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
