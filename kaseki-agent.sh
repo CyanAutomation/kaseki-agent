@@ -3618,45 +3618,75 @@ const input = process.argv[1];
 const output = process.argv[2];
 const attempt = Number(process.argv[3]);
 const errors = [];
-const artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+let artifactText;
+let artifact;
+try {
+  artifactText = fs.readFileSync(input, "utf8");
+} catch (error) {
+  const validationError = {
+    timestamp: new Date().toISOString(),
+    attempt,
+    field: "artifact",
+    expected: "readable JSON file",
+    actual: error && error.message ? error.message : String(error),
+    severity: "critical",
+    suggestion: "Goal-check agent must write exactly one JSON object to " + input
+  };
+  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(validationError) + "\n");
+  throw new Error("goal-check artifact unreadable: " + validationError.actual);
+}
+try {
+  artifact = JSON.parse(artifactText);
+} catch (error) {
+  const validationError = {
+    timestamp: new Date().toISOString(),
+    attempt,
+    field: "root",
+    expected: "valid JSON object",
+    actual: error && error.message ? error.message : String(error),
+    severity: "critical"
+  };
+  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(validationError) + "\n");
+  throw new Error("goal-check artifact invalid JSON: " + validationError.actual);
+}
 
 // Root object validation
 if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
   errors.push({field: "root", expected: "object", actual: typeof artifact, severity: "critical", suggestion: "Goal check must return a JSON object (not array/null/primitive)"});
-}
-
-// Core boolean field validation
-if (typeof artifact.met !== "boolean") {
-  errors.push({field: "met", expected: "boolean", actual: typeof artifact.met, severity: "critical", suggestion: "met must be true or false"});
-}
-
-// Confidence enum validation  
-if (!["low", "medium", "high"].includes(artifact.confidence)) {
-  errors.push({field: "confidence", expected: "low|medium|high", actual: artifact.confidence || "missing", severity: "critical", suggestion: "confidence must be one of: low, medium, high (case-sensitive)"});
-}
-
-// Summary validation: must be non-empty string
-if (typeof artifact.summary !== "string") {
-  errors.push({field: "summary", expected: "non-empty string", actual: typeof artifact.summary, severity: "critical", suggestion: "summary must be a string describing the goal check result"});
-} else if (artifact.summary.trim().length === 0) {
-  errors.push({field: "summary", expected: "non-empty string", actual: "empty string", severity: "critical", suggestion: "summary cannot be empty; provide at least a brief verdict description"});
-}
-
-// Retry prompt validation: only required if met=false (RELAXED constraint)
-if (artifact.met === false) {
-  if (typeof artifact.retry_prompt !== "string") {
-    errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: typeof artifact.retry_prompt, severity: "critical", suggestion: "When met=false, retry_prompt must be a string with guidance for the next attempt"});
-  } else if (artifact.retry_prompt.trim().length === 0) {
-    errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: "empty string", severity: "critical", suggestion: "retry_prompt cannot be empty when met=false; provide clear guidance for the next attempt"});
+} else {
+  // Core boolean field validation
+  if (typeof artifact.met !== "boolean") {
+    errors.push({field: "met", expected: "boolean", actual: typeof artifact.met, severity: "critical", suggestion: "met must be true or false"});
   }
-}
 
-// Arrays validation
-for (const key of ["evidence", "missing", "validation_notes"]) {
-  if (!Array.isArray(artifact[key])) {
-    errors.push({field: key, expected: "array of strings", actual: Array.isArray(artifact[key]) ? "array" : typeof artifact[key], severity: "warning", suggestion: key + " should be an array of strings"});
-  } else if (!artifact[key].every((v) => typeof v === "string")) {
-    errors.push({field: key, expected: "array of strings", actual: "array with non-strings", severity: "warning", suggestion: "All elements in " + key + " must be strings"});
+  // Confidence enum validation
+  if (!["low", "medium", "high"].includes(artifact.confidence)) {
+    errors.push({field: "confidence", expected: "low|medium|high", actual: artifact.confidence || "missing", severity: "critical", suggestion: "confidence must be one of: low, medium, high (case-sensitive)"});
+  }
+
+  // Summary validation: must be non-empty string
+  if (typeof artifact.summary !== "string") {
+    errors.push({field: "summary", expected: "non-empty string", actual: typeof artifact.summary, severity: "critical", suggestion: "summary must be a string describing the goal check result"});
+  } else if (artifact.summary.trim().length === 0) {
+    errors.push({field: "summary", expected: "non-empty string", actual: "empty string", severity: "critical", suggestion: "summary cannot be empty; provide at least a brief verdict description"});
+  }
+
+  // Retry prompt validation: only required if met=false (RELAXED constraint)
+  if (artifact.met === false) {
+    if (typeof artifact.retry_prompt !== "string") {
+      errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: typeof artifact.retry_prompt, severity: "critical", suggestion: "When met=false, retry_prompt must be a string with guidance for the next attempt"});
+    } else if (artifact.retry_prompt.trim().length === 0) {
+      errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: "empty string", severity: "critical", suggestion: "retry_prompt cannot be empty when met=false; provide clear guidance for the next attempt"});
+    }
+  }
+
+  // Arrays validation
+  for (const key of ["evidence", "missing", "validation_notes"]) {
+    if (!Array.isArray(artifact[key])) {
+      errors.push({field: key, expected: "array of strings", actual: Array.isArray(artifact[key]) ? "array" : typeof artifact[key], severity: "warning", suggestion: key + " should be an array of strings"});
+    } else if (!artifact[key].every((v) => typeof v === "string")) {
+      errors.push({field: key, expected: "array of strings", actual: "array with non-strings", severity: "warning", suggestion: "All elements in " + key + " must be strings"});
+    }
   }
 }
 
