@@ -5,6 +5,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="$ROOT_DIR/kaseki-agent.sh"
+if [[ ! -f "$SCRIPT_PATH" ]]; then
+  echo "Error: kaseki-agent.sh not found at $SCRIPT_PATH" >&2
+  exit 1
+fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -39,7 +44,7 @@ eval "$(awk '
   /^run_auto_lint_cleanup\(\)/ { cleanup=1 }
   /^run_validation_commands\(\)/ { cleanup=0 }
   cleanup { print }
-' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
+' "$SCRIPT_PATH" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
 
 auto_lint_cleanup_enabled_for_mode() { [ "$KASEKI_AUTO_LINT_CLEANUP" = "1" ] && [ "$KASEKI_DRY_RUN" != "1" ]; }
 collect_changed_file_set() { : > "$1"; }
@@ -103,6 +108,24 @@ assert_file_contains 'cleanup timings classify missing cleanup command' $'npm ru
 assert_file_contains 'cleanup timings include missing cleanup classification' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
 assert_file_contains 'events classify skipped lint:fix' 'auto_lint_cleanup_command_skipped command=npm run lint:fix reason=missing_cleanup_command' "$TMP_DIR/results/events.log"
 assert_file_contains 'finished event reports warning classification' 'auto_lint_cleanup_finished exit_code=0 result=warning classification=missing_cleanup_command attempted_commands=0 skipped_commands=1' "$TMP_DIR/results/events.log"
+
+reset_workspace
+cat > package.json <<'JSON'
+{
+  "scripts": {
+    "test": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
+KASEKI_AUTO_LINT_CLEANUP_COMMANDS='false;npm run lint:fix'
+run_auto_lint_cleanup
+
+assert_equals 'failed cleanup followed by missing script preserves exit' '1' "$AUTO_LINT_CLEANUP_EXIT"
+assert_equals 'failed cleanup followed by missing script preserves result' 'failed' "$AUTO_LINT_CLEANUP_RESULT"
+assert_equals 'failed cleanup followed by missing script preserves classification' 'lint_fix_error' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+assert_equals 'failed cleanup followed by missing script records skipped command' '1' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
+assert_file_contains 'finished event preserves earlier failure classification' 'auto_lint_cleanup_finished exit_code=1 result=failed classification=lint_fix_error attempted_commands=1 skipped_commands=1' "$TMP_DIR/results/events.log"
 
 reset_workspace
 KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
