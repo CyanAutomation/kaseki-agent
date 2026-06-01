@@ -173,6 +173,19 @@ describe('Evaluation Prompt Enhancements', () => {
       expect(agentSection).toContain('expectation strings');
       expect(agentSection).toContain('progress/event fields');
     });
+
+    it('should enforce test impact in scouting artifact validation', () => {
+      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+      const validationSection = scriptContent.substring(
+        scriptContent.indexOf('validate_scouting_artifact_with_node()'),
+        scriptContent.indexOf('validate_scouting_artifact()')
+      );
+
+      expect(validationSection).toContain('"test_impact"');
+      expect(validationSection).toContain('Array.isArray(artifact.test_impact)');
+      expect(validationSection).toContain('test_impact[${index}]');
+      expect(validationSection).toContain('"critical"');
+    });
   });
 
   describe('Feedback Collection Integration', () => {
