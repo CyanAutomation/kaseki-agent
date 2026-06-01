@@ -9,7 +9,9 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # shellcheck source=../scripts/allowlist-helper.sh
-. "$ROOT_DIR/scripts/allowlist-helper.sh"
+source "${SCRIPT_DIR}/../kaseki-agent.sh"
+export API_KEY="test-api-key"
+export VALIDATION_ENDPOINT=""
 
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
