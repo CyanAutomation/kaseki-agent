@@ -352,9 +352,8 @@ export class StatusResponseBuilder {
       const mappedStage = mapOrchestratorStage(originalStage);
 
       // Update current stage with the mapped name for progress calculation
-      if (currentStage === originalStage || currentStage === undefined) {
-        currentStage = mappedStage;
-      }
+      // Update current stage with the mapped name for progress calculation
+      currentStage = mappedStage;
 
       if (isFinishedProgressEvent(event)) {
         finishedStages.add(mappedStage);
