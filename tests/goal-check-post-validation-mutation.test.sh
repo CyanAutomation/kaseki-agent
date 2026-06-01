@@ -90,9 +90,19 @@ run_exit=$?
 set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "expected a second goal-check after validation mutated the diff"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check\ngoal-check' ] || fail "expected exactly two goal-check calls after coding"
 grep -q 'Validation commands changed the final git diff; re-running goal check' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing post-validation goal-check rerun log"
 grep -q '^generated.txt$' "$RESULTS_DIR/changed-files.txt" || fail "validation-generated file was not present in final changed files"
-[ "$(grep -c '^goal check[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv")" -eq 2 ] || fail "expected two successful goal-check timing entries"
+
+goal_check_count="$(grep -c '^goal check[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.tsv")"
+[ "$goal_check_count" -eq 2 ] || fail "expected two successful goal-check timing entries, got $goal_check_count"
+pre_validation_goal_check_line="$(awk 'BEGIN { validation_line=0 } /^validation[[:space:]]/ { validation_line=NR } /^goal check[[:space:]]0[[:space:]]/ && validation_line == 0 { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
+validation_line="$(awk '/^validation[[:space:]]/ { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
+post_validation_goal_check_line="$(awk 'BEGIN { validation_line=0 } /^validation[[:space:]]/ { validation_line=NR } /^goal check[[:space:]]0[[:space:]]/ && validation_line > 0 { print NR; exit }' "$RESULTS_DIR/stage-timings.tsv")"
+[ -n "$pre_validation_goal_check_line" ] || fail "missing pre-validation goal-check timing entry"
+[ -n "$validation_line" ] || fail "missing validation timing entry"
+[ -n "$post_validation_goal_check_line" ] || fail "missing post-validation goal-check timing entry"
+[ "$pre_validation_goal_check_line" -lt "$validation_line" ] || fail "expected first goal-check before validation"
+[ "$validation_line" -lt "$post_validation_goal_check_line" ] || fail "expected second goal-check after validation"
 
 echo "PASS: $TEST_NAME"
