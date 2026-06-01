@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Regression test: missing goal-check artifacts produce structured validation errors without Node ENOENT stacks.
+# Regression test: schema-invalid goal-check artifacts produce structured validation errors.
 set -uo pipefail
 
-TEST_NAME="goal-check missing artifact validation"
+TEST_NAME="goal-check schema-invalid artifact validation"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 FAKE_REPO="$TMP_DIR/fake-repo"
@@ -33,10 +33,10 @@ MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT" || fail "failed to prepare modified kaseki-agent.sh"
 chmod +x "$MODIFIED_SCRIPT" || fail "failed to make modified kaseki-agent.sh executable"
 
-printf '%s\n' '{"name":"fake-goal-check-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json" || fail "failed to write fake package.json"
+printf '%s\n' '{"name":"fake-goal-check-schema-invalid-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json" || fail "failed to write fake package.json"
 printf '%s\n' '{"name":"fake-dep","version":"1.0.0","private":true}' > "$FAKE_REPO/deps/fake-dep/package.json" || fail "failed to write fake dependency package.json"
 cat > "$FAKE_REPO/package-lock.json" <<'JSON' || fail "failed to write fake package-lock.json"
-{"name":"fake-goal-check-repo","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"fake-goal-check-repo","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}
+{"name":"fake-goal-check-schema-invalid-repo","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"fake-goal-check-schema-invalid-repo","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}
 JSON
 git -C "$FAKE_REPO" init -q -b main || fail "failed to initialize fake git repo"
 git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json || fail "failed to stage fake repo files"
@@ -54,8 +54,7 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  # Intentionally print non-JSON assistant text and exit successfully without creating goal-check-candidate.json.
-  printf '%s\n' 'goal-check verdict: looks good, but no JSON artifact was written'
+  printf '%s\n' '{"met":"yes","confidence":"certain","summary":"","evidence":["checked",7],"missing":"none","retry_prompt":false,"validation_notes":{}}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -90,27 +89,24 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
 run_exit=$?
 
 [ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the missing goal-check artifact"
+[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the schema-invalid goal-check artifact"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
-[ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "missing_file" ] || fail "expected missing_file reason"
-grep -q 'goal-check-candidate.json' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
+[ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "schema_mismatch" ] || fail "expected schema_mismatch reason"
+grep -q 'goal-check validation error' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
 grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check validation did not preserve exit 86"
-node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
+node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" <<'NODE' || fail "goal-check validation error log did not capture schema validation failure"
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
-if (lines.length !== 1) throw new Error(`expected exactly one JSONL entry, got ${lines.length}`);
-const entry = JSON.parse(lines[0]);
-if (entry.field !== 'goal-check-candidate.json') throw new Error(`expected field goal-check-candidate.json, got ${entry.field}`);
-if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) throw new Error(`expected file at ${process.argv[3]}/goal-check-candidate.json, got ${entry.expected}`);
-if (!String(entry.actual).includes('missing: ')) throw new Error(`actual did not describe missing file: ${entry.actual}`);
-if (entry.severity !== 'critical') throw new Error(`expected critical severity, got ${entry.severity}`);
-if (!/goal-check Pi writes exactly one valid JSON object/.test(String(entry.suggestion))) throw new Error(`suggestion was not targeted: ${entry.suggestion}`);
+if (lines.length < 4) throw new Error(`expected multiple schema JSONL entries, got ${lines.length}`);
+const entries = lines.map((line) => JSON.parse(line));
+const byField = new Map(entries.map((entry) => [entry.field, entry]));
+for (const field of ['met', 'confidence', 'summary', 'retry_prompt', 'evidence', 'missing', 'validation_notes']) {
+  if (!byField.has(field)) throw new Error(`missing schema error for ${field}`);
+}
+if (byField.get('met').expected !== 'boolean') throw new Error(`met expected mismatch: ${byField.get('met').expected}`);
+if (byField.get('confidence').expected !== 'low|medium|high') throw new Error(`confidence expected mismatch: ${byField.get('confidence').expected}`);
+if (byField.get('summary').severity !== 'critical') throw new Error(`summary severity mismatch: ${byField.get('summary').severity}`);
 NODE
 
-grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "missing goal-check artifact error event"
-grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
-if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
-  ! grep -Eq 'ENOENT|Error: goal-check artifact unreadable|node:internal|at .*readFileSync' "$RESULTS_DIR/goal-check-stderr.log" || fail "goal-check stderr contained raw Node missing-file stack"
-fi
-[ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should remain absent after validation failure"
+[ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should be consumed after schema validation failure"
 echo "PASS: $TEST_NAME"
