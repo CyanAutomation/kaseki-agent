@@ -457,7 +457,7 @@ const errors = [];
 const addError = (field, expected, actual, severity, suggestion) => {
   errors.push({ field, expected, actual, severity, suggestion });
 };
-const arrayKeys = ["requirements", "relevant_files", "observations", "plan", "validation", "risks"];
+const arrayKeys = ["requirements", "relevant_files", "observations", "plan", "validation", "risks", "test_impact"];
 
 if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
   addError("root", "object", actualType(artifact), "critical", "Scouting artifact must be a JSON object, not an array/null/primitive");
@@ -474,6 +474,13 @@ if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
     artifact.relevant_files.forEach((item, index) => {
       if (!item || typeof item.path !== "string" || typeof item.reason !== "string") {
         addError(`relevant_files[${index}]`, "object with string path and string reason", actualType(item), "warning", "Each relevant_files entry must include path and reason strings");
+      }
+    });
+  }
+  if (Array.isArray(artifact.test_impact)) {
+    artifact.test_impact.forEach((item, index) => {
+      if (!item || typeof item.path !== "string" || !item.path.trim() || typeof item.reason !== "string" || !item.reason.trim()) {
+        addError(`test_impact[${index}]`, "object with non-empty string path and non-empty string reason", actualType(item), "critical", "Each test_impact entry must include the impacted test path and expectation reason strings");
       }
     });
   }
