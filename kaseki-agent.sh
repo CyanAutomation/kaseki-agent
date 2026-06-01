@@ -351,31 +351,25 @@ run_node_subprocess() {
   return 0
 }
 
-# Safely encode value as JSON string; fallback to empty string if node unavailable
+# Safely encode values as JSON using jq, which is required for this script.
 json_encode() {
-  if ! command -v node &>/dev/null; then
-    printf '""' # Return empty JSON string if node is unavailable
-    return 1
-  fi
-  local output
-  output=$(node -e 'const chunks=[]; process.stdin.on("data", c => chunks.push(c)); process.stdin.on("end", () => process.stdout.write(JSON.stringify(Buffer.concat(chunks).toString().replace(/\n$/, ""))));' 2>&1)
-  local exit_code=$?
-  if [ $exit_code -eq 0 ] && [ -n "$output" ]; then
-    printf '%s' "$output"
-  else
-    # Log error and return empty JSON string as fallback
-    printf 'warning: json_encode failed (exit %d): %s\n' "$exit_code" "$output" >&2
-    printf '""'
-    return 1
-  fi
+  jq -Rs .
 }
 
 json_array() {
-  if ! command -v node &>/dev/null; then
-    printf '[]' # Return empty JSON array if node is unavailable
-    return 1
-  fi
-  node -e 'process.stdout.write(JSON.stringify(process.argv.slice(1)));' -- "$@" 2>&1 || printf '[]'
+  jq -cn --args '$ARGS.positional' "$@"
+}
+
+json_object_from_pairs() {
+  jq -cn '$ARGS.positional
+    | map(capture("^(?<key>[^=]*)=(?<value>(.|\n)*)$"))
+    | reduce .[] as $item ({}; if $item.key == "" then . else .[$item.key] = $item.value end)' --args "$@"
+}
+
+append_jsonl_object() {
+  local output_file="$1"
+  shift
+  json_object_from_pairs "$@" >> "$output_file"
 }
 
 # Validate that a variable contains only numeric digits (for use before arithmetic)
@@ -545,45 +539,25 @@ emit_progress() {
   local stage="$1"
   local detail="$2"
   local status="${3:-info}"
-  local now
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"timestamp":%s,"component":%s,"stage":%s,"status":%s,"instance":%s,"detail":%s}\n' \
-    "$(printf '%s' "$now" | json_encode)" \
-    "$(printf '%s' "kaseki-agent" | json_encode)" \
-    "$(printf '%s' "$stage" | json_encode)" \
-    "$(printf '%s' "$status" | json_encode)" \
-    "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
-    "$(printf '%s' "$detail" | json_encode)" >> /results/progress.jsonl
+  append_jsonl_object /results/progress.jsonl \
+    "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "component=kaseki-agent" \
+    "stage=$stage" \
+    "status=$status" \
+    "instance=$INSTANCE_NAME" \
+    "detail=$detail"
   printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a /results/progress.log
 }
 
 emit_event() {
   local event_type="$1"
   shift
-  local detail_json="{}"
-  if [ $# -gt 0 ]; then
-    # Build detail object from key=value pairs
-    local -a pairs=("$@")
-    detail_json="{"
-    for i in "${!pairs[@]}"; do
-      local pair="${pairs[$i]}"
-      local key="${pair%%=*}"
-      local value="${pair#*=}"
-      if [ "$i" -gt 0 ]; then
-        detail_json="${detail_json},"
-      fi
-      detail_json="${detail_json}$(printf '%s' "$key" | json_encode):$(printf '%s' "$value" | json_encode)"
-    done
-    detail_json="${detail_json}}"
-  fi
-  local now
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"timestamp":%s,"component":%s,"event_type":%s,"instance":%s,%s}\n' \
-    "$(printf '%s' "$now" | json_encode)" \
-    "$(printf '%s' "kaseki-agent" | json_encode)" \
-    "$(printf '%s' "$event_type" | json_encode)" \
-    "$(printf '%s' "$INSTANCE_NAME" | json_encode)" \
-    "$(printf '%s' "$detail_json" | sed 's/^{\(.*\)}$/\1/')" >> /results/progress.jsonl
+  append_jsonl_object /results/progress.jsonl \
+    "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "component=kaseki-agent" \
+    "event_type=$event_type" \
+    "instance=$INSTANCE_NAME" \
+    "$@"
 }
 
 emit_error_event() {
@@ -6195,19 +6169,16 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
       export KASEKI_CHANGED_FILES_ALLOWLIST="$merged_agent_allowlist"
       export KASEKI_VALIDATION_ALLOWLIST="$merged_validation_allowlist"
       
-      # Log merge decisions
-      {
-        printf '{\n'
-        printf '  "timestamp": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        printf '  "event": "allowlist_merge",\n'
-        printf '  "scouting_agent_patterns": "%s",\n' "$(printf '%s' "$scouting_agent_patterns" | sed 's/"/\\"/g')"
-        printf '  "user_agent_patterns": "%s",\n' "$(printf '%s' "$user_agent_patterns" | sed 's/"/\\"/g')"
-        printf '  "merged_agent_allowlist": "%s",\n' "$(printf '%s' "$merged_agent_allowlist" | sed 's/"/\\"/g')"
-        printf '  "scouting_validation_patterns": "%s",\n' "$(printf '%s' "$scouting_validation_patterns" | sed 's/"/\\"/g')"
-        printf '  "user_validation_patterns": "%s",\n' "$(printf '%s' "$user_validation_patterns" | sed 's/"/\\"/g')"
-        printf '  "merged_validation_allowlist": "%s"\n' "$(printf '%s' "$merged_validation_allowlist" | sed 's/"/\\"/g')"
-        printf '}\n'
-      } | tee -a /results/metadata.jsonl
+      # Log merge decisions with structured JSON construction so pattern text is escaped safely.
+      append_jsonl_object /results/metadata.jsonl \
+        "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "event=allowlist_merge" \
+        "scouting_agent_patterns=$scouting_agent_patterns" \
+        "user_agent_patterns=$user_agent_patterns" \
+        "merged_agent_allowlist=$merged_agent_allowlist" \
+        "scouting_validation_patterns=$scouting_validation_patterns" \
+        "user_validation_patterns=$user_validation_patterns" \
+        "merged_validation_allowlist=$merged_validation_allowlist"
       
       allowlist_merge_status="merged"
       
