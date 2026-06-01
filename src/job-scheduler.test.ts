@@ -1378,13 +1378,276 @@ describe('JobScheduler instance allocation and live progress', () => {
       createMockWebhookManager(),
     );
 
-    expect(scheduler.getLiveProgressEvents('kaseki-7', 1)).toEqual([
+    const events = scheduler.getLiveProgressEvents('kaseki-7', 2);
+    expect(events).toHaveLength(2);
+
+    // First event should be shell format with status extracted
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'clone repository',
+        status: 'info',
+        message: 'started',
+      })
+    );
+
+    // Second event should be Pi stream format (backward compatibility)
+    expect(events[1]).toEqual(
       expect.objectContaining({
         source: 'docker-logs',
         stage: 'pi agent',
         message: 'working; events=42',
-      }),
-    ]);
+      })
+    );
+  });
+
+  test('parses various shell progress formats correctly', () => {
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    // Test shell format with different status values
+    const shellOutput = `
+[progress] clone repository info: started
+[progress] install dependencies started: installing npm packages
+[progress] run tests finished: all tests passed
+[progress] deploy error: connection failed
+[progress] build repository info: compiling source
+    `;
+
+    const events = (scheduler as any).parseLiveProgressEvents(shellOutput);
+    expect(events).toHaveLength(5);
+
+    // Test info status
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'clone repository',
+        status: 'info',
+        message: 'started',
+      })
+    );
+
+    // Test started status
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'install dependencies',
+        status: 'started',
+        message: 'installing npm packages',
+      })
+    );
+
+    // Test finished status
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'run tests',
+        status: 'finished',
+        message: 'all tests passed',
+      })
+    );
+
+    // Test error status
+    expect(events[3]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'deploy',
+        status: 'error',
+        message: 'connection failed',
+      })
+    );
+
+    // Test another info status with different stage name
+    expect(events[4]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'build repository',
+        status: 'info',
+        message: 'compiling source',
+      })
+    );
+  });
+
+  test('maintains backward compatibility with Pi stream format', () => {
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    // Test Pi stream format (should work exactly as before)
+    const piOutput = `
+[progress] pi agent: working; events=42
+[progress] kaseki controller: analyzing results
+[progress] webhook publisher: publishing PR
+    `;
+
+    const events = (scheduler as any).parseLiveProgressEvents(piOutput);
+    expect(events).toHaveLength(3);
+
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'pi agent',
+        message: 'working; events=42',
+      })
+    );
+
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'kaseki controller',
+        message: 'analyzing results',
+      })
+    );
+
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'webhook publisher',
+        message: 'publishing PR',
+      })
+    );
+  });
+
+  test('handles mixed shell and Pi stream formats', () => {
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    // Test mixed formats
+    const mixedOutput = `
+[progress] clone repository info: started
+[progress] pi agent: working; events=5
+[progress] run validation finished: validation passed
+[progress] kaseki controller: generating report
+    `;
+
+    const events = (scheduler as any).parseLiveProgressEvents(mixedOutput);
+    expect(events).toHaveLength(4);
+
+    // Shell format with status
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'clone repository',
+        status: 'info',
+        message: 'started',
+      })
+    );
+
+    // Pi stream format (no status)
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'pi agent',
+        message: 'working; events=5',
+      })
+    );
+
+    // Shell format with different status
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'run validation',
+        status: 'finished',
+        message: 'validation passed',
+      })
+    );
+
+    // Pi stream format again
+    expect(events[3]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'kaseki controller',
+        message: 'generating report',
+      })
+    );
+  });
+
+  test('ignores non-progress lines', () => {
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir: createResultsDir(),
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    // Test with non-progress lines mixed in
+    const output = `
+[progress] clone repository info: started
+This is a regular log line
+[progress] install dependencies started: installing
+Another regular line
+[progress] run tests finished: completed
+    `;
+
+    const events = (scheduler as any).parseLiveProgressEvents(output);
+    expect(events).toHaveLength(3);
+
+    // Only progress lines should be parsed
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'clone repository',
+        status: 'info',
+        message: 'started',
+      })
+    );
+
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'install dependencies',
+        status: 'started',
+        message: 'installing',
+      })
+    );
+
+    expect(events[2]).toEqual(
+      expect.objectContaining({
+        source: 'docker-logs',
+        stage: 'run tests',
+        status: 'finished',
+        message: 'completed',
+      })
+    );
   });
 
   test('reuses fresh live docker progress cache entries', async () => {
