@@ -24,6 +24,7 @@ const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-attempts.jsonl',
 ] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
+const INLINE_ARTIFACT_LIMIT_BYTES = 65536;
 
 type ProgressEventLike = {
   stage?: unknown;
@@ -203,6 +204,8 @@ export class StatusResponseBuilder {
     const metadata = getRunArtifactMetadata(job.id, runDir, artifactFiles, true);
     const isAvailable = (fileName: string): boolean =>
       metadata[fileName]?.exists === true && metadata[fileName].size > 0;
+    const isSmallAvailable = (fileName: string): boolean =>
+      isAvailable(fileName) && metadata[fileName].size <= INLINE_ARTIFACT_LIMIT_BYTES;
     const keyFileAvailability = STATUS_KEY_FILES.reduce(
       (acc, fileName) => {
         acc[fileName] = isAvailable(fileName);
@@ -229,7 +232,7 @@ export class StatusResponseBuilder {
       // Always try to load result-summary.md for terminal jobs
       const summaryPath = path.join(runDir, 'result-summary.md');
       const summaryContent = this.readSmallTerminalArtifact(summaryPath);
-      if (summaryContent && summaryContent.length <= 65536) { // Max 64 KB inline
+      if (summaryContent && summaryContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) { // Max 64 KB inline
         response.resultSummaryContent = summaryContent;
       }
 
@@ -237,11 +240,19 @@ export class StatusResponseBuilder {
       if (job.status === 'failed') {
         const failurePath = path.join(runDir, 'failure.json');
         const failureContent = this.readSmallTerminalArtifact(failurePath);
-        if (failureContent && failureContent.length <= 65536) { // Max 64 KB inline
+        if (failureContent && failureContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) { // Max 64 KB inline
           try {
             response.failureJsonContent = JSON.parse(failureContent);
           } catch {
             // If JSON parse fails, skip inlining
+          }
+        }
+
+        if (includeGoalCheckDiagnostics && isSmallAvailable('goal-check-validation-errors.jsonl')) {
+          const validationErrorsPath = path.join(runDir, 'goal-check-validation-errors.jsonl');
+          const validationErrorsContent = this.readSmallTerminalArtifact(validationErrorsPath);
+          if (validationErrorsContent && validationErrorsContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) {
+            this.addGoalCheckValidationErrorsContent(response, validationErrorsContent);
           }
         }
       }
@@ -252,12 +263,12 @@ export class StatusResponseBuilder {
     if (job.status === 'failed') {
       const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = includeGoalCheckDiagnostics
         ? [
-            'goal-check-validation-errors.jsonl',
-            'goal-check-stderr.log',
-            'failure.json',
-            'analysis.md',
-            'result-summary.md',
-          ]
+          'goal-check-validation-errors.jsonl',
+          'goal-check-stderr.log',
+          'failure.json',
+          'analysis.md',
+          'result-summary.md',
+        ]
         : ['failure.json', 'analysis.md', 'result-summary.md'];
 
       response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
@@ -437,6 +448,28 @@ export class StatusResponseBuilder {
       // Ignore metadata read errors
     }
     return {};
+  }
+
+  private addGoalCheckValidationErrorsContent(response: StatusResponse, content: string): void {
+    try {
+      const parsedErrors = content
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => JSON.parse(line) as unknown);
+
+      if (parsedErrors.every(this.isRecord)) {
+        response.goalCheckValidationErrorsContent = parsedErrors;
+        return;
+      }
+    } catch {
+      // Fall through to bounded raw content fallback.
+    }
+
+    response.goalCheckValidationErrorsRawContent = content.slice(0, INLINE_ARTIFACT_LIMIT_BYTES);
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private readSmallTerminalArtifact(filePath: string): string | null {
