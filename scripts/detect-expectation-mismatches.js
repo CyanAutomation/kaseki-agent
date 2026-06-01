@@ -82,7 +82,7 @@ function extractStringLiterals(line) {
   }
   return literals;
 }
-      if (/\.lit$/.test(baseActualName)) {
+
 function extractRegexFragments(line) {
   const fragments = [];
   const regexRe = /(?<![\w)$\]])\/((?:\\.|[^/\\\n]){3,})\/[dgimsuvy]*/g;
