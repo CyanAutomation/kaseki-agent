@@ -48,7 +48,7 @@ if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"INVALID UPGRADED GOAL SHOULD NOT BE USED","reasoning":"test","key_requirements":"not-an-array","success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
-  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
+  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
