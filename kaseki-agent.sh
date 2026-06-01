@@ -2791,7 +2791,8 @@ build_agent_prompt() {
     scouting_section="
 Scouting artifact:
 - A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
-- Read that artifact before coding. Treat it as planning input, then verify important details against the current repository."
+- Read that artifact before coding. Treat it as planning input, then verify important details against the current repository.
+- If you change parser logic, output format, naming conventions, serializers, or progress/event fields, read the scouting test_impact files and update the related tests and expectation strings so parser/output/naming behavior changes remain covered."
   fi
   if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
     retry_section="
@@ -3427,11 +3428,16 @@ The JSON object must be concise and useful to the coding agent. Use this shape:
   "plan": ["ordered coding steps"],
   "validation": ["focused commands or checks to run"],
   "risks": ["uncertainties, edge cases, or assumptions"],
+  "test_impact": [{"path": "src/job-scheduler.test.ts", "reason": "progress stage expectations"}],
   "suggested_allowlist": {
     "agent_patterns": ["glob patterns for files the coding agent should modify"],
     "validation_patterns": ["glob patterns for files validation commands may touch"]
   }
 }
+
+Guidelines for test_impact:
+- Always include test_impact. Use an empty array only when no likely affected tests or expectation strings can be identified.
+- When the task touches parsing logic, output format, naming conventions, serializers, or progress/event fields, identify likely affected test files and the expectation strings or snapshots/assertions they contain so parser/output/naming changes trigger related test updates.
 
 Guidelines for suggested_allowlist:
 - agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".

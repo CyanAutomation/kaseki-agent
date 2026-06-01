@@ -143,6 +143,38 @@ describe('Evaluation Prompt Enhancements', () => {
     });
   });
 
+  describe('Scouting and Coding Prompt Test Impact Guidance', () => {
+    it('should require scouting JSON test impact for parser and output contract changes', () => {
+      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+      const scoutingSection = scriptContent.substring(
+        scriptContent.indexOf('build_scouting_prompt()'),
+        scriptContent.indexOf('run_scouting_agent()')
+      );
+
+      expect(scoutingSection).toContain('"test_impact"');
+      expect(scoutingSection).toContain('parsing logic');
+      expect(scoutingSection).toContain('output format');
+      expect(scoutingSection).toContain('naming conventions');
+      expect(scoutingSection).toContain('expectation strings');
+      expect(scoutingSection).toContain('progress/event fields');
+    });
+
+    it('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
+      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+      const agentSection = scriptContent.substring(
+        scriptContent.indexOf('build_agent_prompt()'),
+        scriptContent.indexOf('is_transient_goal_setting_failure()')
+      );
+
+      expect(agentSection).toContain('test_impact files');
+      expect(agentSection).toContain('parser logic');
+      expect(agentSection).toContain('output format');
+      expect(agentSection).toContain('naming conventions');
+      expect(agentSection).toContain('expectation strings');
+      expect(agentSection).toContain('progress/event fields');
+    });
+  });
+
   describe('Feedback Collection Integration', () => {
     it('should collect goal-check feedback with the expected artifact contract', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
