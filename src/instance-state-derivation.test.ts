@@ -7,6 +7,7 @@ import {
   resolveInstanceStage,
   classifyFailure,
   extractValidationFailureReason,
+  extractValidationAllowlistFailureReason,
   extractQualityFailureReason,
   extractGoalCheckFailureReason,
 } from './instance-state-derivation';
@@ -227,6 +228,34 @@ describe('instance-state-derivation', () => {
         validation_failure_reason: '   ',
       });
       expect(reason).toBeNull();
+    });
+
+    it('should fall back to validation allowlist failure reason', () => {
+      const reason = extractValidationFailureReason({
+        validation_allowlist_failure_reason: 'validation_allowlist_check: 1 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST',
+      });
+      expect(reason).toBe('validation_allowlist_check: 1 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST');
+    });
+
+    it('should prefer command validation failure reason over allowlist reason', () => {
+      const reason = extractValidationFailureReason({
+        validation_failure_reason: 'validation_command_failed: npm test (exit 1)',
+        validation_allowlist_failure_reason: 'validation_allowlist_check: 1 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST',
+      });
+      expect(reason).toBe('validation_command_failed: npm test (exit 1)');
+    });
+  });
+
+  describe('extractValidationAllowlistFailureReason', () => {
+    it('should return a trimmed dedicated validation allowlist failure reason', () => {
+      const reason = extractValidationAllowlistFailureReason({
+        validation_allowlist_failure_reason: '  validation_allowlist_check: 2 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST  ',
+      });
+      expect(reason).toBe('validation_allowlist_check: 2 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST');
+    });
+
+    it('should return null when validation_allowlist_failure_reason is empty', () => {
+      expect(extractValidationAllowlistFailureReason({ validation_allowlist_failure_reason: ' ' })).toBeNull();
     });
   });
 

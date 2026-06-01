@@ -103,11 +103,19 @@ export function resolveInstanceStage(
  * Extract validation failure reason from metadata.
  * Returns the reason if validation failed, otherwise null.
  */
+export function extractValidationAllowlistFailureReason(metadata: Metadata = {}): string | null {
+  const reason = typeof metadata.validation_allowlist_failure_reason === 'string'
+    ? metadata.validation_allowlist_failure_reason.trim()
+    : '';
+  return reason.length > 0 ? reason : null;
+}
+
 export function extractValidationFailureReason(metadata: Metadata = {}): string | null {
   const reason = typeof metadata.validation_failure_reason === 'string'
     ? metadata.validation_failure_reason.trim()
     : '';
-  return reason.length > 0 ? reason : null;
+  if (reason.length > 0) return reason;
+  return extractValidationAllowlistFailureReason(metadata);
 }
 
 /**
