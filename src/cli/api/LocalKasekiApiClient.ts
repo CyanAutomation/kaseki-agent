@@ -21,6 +21,7 @@ const StatusResponseSchema = z.object({
   validationFailureReason: z.string().optional(),
   validationAllowlistFailureReason: z.string().optional(),
   qualityFailureReason: z.string().optional(),
+  goalCheckFailureReason: z.string().optional(),
   error: z.string().optional(),
   resultDir: z.string().optional(),
   correlationId: z.string().optional(),
@@ -34,6 +35,7 @@ const StatusResponseSchema = z.object({
     failureJson: z.boolean(),
     stderrLog: z.boolean(),
     availableFiles: z.array(z.string()),
+    diagnosticFiles: z.array(z.string()).optional(),
   }).optional(),
   diagnosticEntryPoint: z.enum(['failure.json', 'analysis.md', 'result-summary.md']).optional(),
 });

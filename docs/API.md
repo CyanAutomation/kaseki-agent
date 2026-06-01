@@ -433,6 +433,7 @@ For non-running jobs, `progress` is omitted.
   "timeoutRiskPercent": 41,
   "exitCode": 1,
   "failureClass": "validation",
+  "goalCheckFailureReason": "goal_check_artifact_invalid",
   "resultDir": "/agents/kaseki-results/kaseki-42",
   "resultSummaryContent": "# Kaseki Result: kaseki-42\n\n- Status: failed\n- Failed command: npm run test\n- Requested model: openrouter/free\n- Validation: failed (1)\n- Quality checks: passed\n",
   "failureJsonContent": {
@@ -458,7 +459,8 @@ For non-running jobs, `progress` is omitted.
       "result-summary.md",
       "failure.json",
       "stderr.log"
-    ]
+    ],
+    "diagnosticFiles": []
   },
   "diagnosticEntryPoint": "failure.json"
 }
@@ -468,6 +470,7 @@ For non-running jobs, `progress` is omitted.
 
 - `resultSummaryContent` — Inline markdown summary (always for terminal jobs, ≤64 KB)
 - `failureJsonContent` — Inline structured failure details (only for failed runs, ≤64 KB)
+- `goalCheckFailureReason` — Goal-check failure reason when a goal-check evaluator failed or rejected the run
 
 These optional fields eliminate the need for separate API calls to fetch critical diagnostic content. Controllers can immediately access failure reasons without calling `/api/results/:id/result-summary.md` and `/api/results/:id/failure.json`.
 
@@ -478,6 +481,7 @@ For backward compatibility, the response still includes:
 - `artifacts` — Hint object showing which artifacts are available
 - `diagnosticEntryPoint` — Recommended artifact to examine first
 - `availableFiles` — Array of file names available for download
+- `diagnosticFiles` — Optional array of additional diagnostic artifact files recommended for the current failure reason (for example, goal-check validation logs when `goalCheckFailureReason` is `goal_check_artifact_invalid`)
 
 **Status Values:**
 
