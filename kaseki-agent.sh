@@ -107,6 +107,10 @@ PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
 AUTO_LINT_CLEANUP_EXIT=0
 AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
+AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=0
+AUTO_LINT_CLEANUP_RESULT="not_run"
+AUTO_LINT_CLEANUP_CLASSIFICATION="not_run"
+AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION=""
 TS_PRE_CHECK_EXIT=0
 TS_PRE_CHECK_DURATION_SECONDS=0
 TS_PRE_CHECK_TIMESTAMP=""
@@ -812,6 +816,12 @@ write_metadata() {
   "validation_stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
   "pre_validation_commands_attempted": $PRE_VALIDATION_COMMANDS_ATTEMPTED,
   "validation_commands_attempted": $VALIDATION_COMMANDS_ATTEMPTED,
+  "auto_lint_cleanup_exit_code": $AUTO_LINT_CLEANUP_EXIT,
+  "auto_lint_cleanup_result": $(printf '%s' "$AUTO_LINT_CLEANUP_RESULT" | json_encode),
+  "auto_lint_cleanup_classification": $(printf '%s' "$AUTO_LINT_CLEANUP_CLASSIFICATION" | json_encode),
+  "auto_lint_cleanup_failure_classification": $(printf '%s' "$AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION" | json_encode),
+  "auto_lint_cleanup_commands_attempted": $AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED,
+  "auto_lint_cleanup_commands_skipped": $AUTO_LINT_CLEANUP_COMMANDS_SKIPPED,
   "quality_exit_code": $QUALITY_EXIT,
   "secret_scan_exit_code": $SECRET_SCAN_EXIT,
   "github_push_exit_code": $GITHUB_PUSH_EXIT,
@@ -970,7 +980,9 @@ $(if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$GOAL_
 $(if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$PRE_VALIDATION_FAILURE_REASON"; fi)
 - Pre-agent validation failure detail: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-none}
 $(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pre-agent validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
-- Auto lint cleanup: $([ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && printf 'passed/skipped' || printf 'failed') ($AUTO_LINT_CLEANUP_EXIT)
+- Auto lint cleanup: ${AUTO_LINT_CLEANUP_RESULT:-$([ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && printf 'passed/skipped' || printf 'failed')} ($AUTO_LINT_CLEANUP_EXIT)
+  - Classification: ${AUTO_LINT_CLEANUP_CLASSIFICATION:-unknown}
+  - Commands attempted/skipped: ${AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED:-0}/${AUTO_LINT_CLEANUP_COMMANDS_SKIPPED:-0}
 - Validation: $validation_status ($VALIDATION_EXIT)
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 $(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist reason: %s\n' "$VALIDATION_ALLOWLIST_FAILURE_REASON"; fi)
@@ -2097,11 +2109,34 @@ record_skipped_npm_script_command() {
   local log_file="${4:-/results/validation.log}"
   local timings_file="${5:-$VALIDATION_TIMINGS_FILE}"
   local skip_label="${6:-skipped}"
+  local classification="${7:-}"
   {
     printf '\n==> %s\n' "$command"
     printf '%s: package.json does not define npm script "%s"\n' "$skip_label" "$script_name"
+    if [ -n "$classification" ]; then
+      printf 'classification=%s\n' "$classification"
+    fi
   } 2>&1 | tee -a "$log_file"
-  printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
+  if [ -n "$classification" ]; then
+    printf '%s\tskipped\t%s\tmissing_npm_script=%s\tclassification=%s\n' "$command" "$duration_seconds" "$script_name" "$classification" >> "$timings_file"
+  else
+    printf '%s\tskipped\t%s\tmissing_npm_script=%s\n' "$command" "$duration_seconds" "$script_name" >> "$timings_file"
+  fi
+}
+
+
+classify_auto_lint_cleanup_command_exit() {
+  local command_exit="$1"
+  local missing_script="${2:-}"
+  if [ -n "$missing_script" ]; then
+    printf 'missing_cleanup_command'
+  elif [ "$command_exit" -eq 127 ]; then
+    printf 'command_not_found'
+  elif [ "$command_exit" -eq 0 ]; then
+    printf 'passed'
+  else
+    printf 'lint_fix_error'
+  fi
 }
 
 record_skipped_validation_command() {
@@ -2377,6 +2412,9 @@ check_auto_lint_cleanup_allowlist() {
   fi
 
   AUTO_LINT_CLEANUP_EXIT=7
+  AUTO_LINT_CLEANUP_RESULT="failed"
+  AUTO_LINT_CLEANUP_CLASSIFICATION="cleanup_allowlist_failed"
+  AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="cleanup_allowlist_failed"
   QUALITY_EXIT=7
   QUALITY_FAILURE_REASON="auto_lint_cleanup_allowlist: $disallowed_count cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST"
   printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
@@ -2387,11 +2425,15 @@ check_auto_lint_cleanup_allowlist() {
 run_auto_lint_cleanup() {
   local stage_label="auto lint cleanup"
   local stage_start cleanup_start cleanup_end duration command trimmed missing_npm_script
-  local command_exit pipefail_was_enabled cleanup_before_file cleanup_after_file
+  local command_exit command_classification pipefail_was_enabled cleanup_before_file cleanup_after_file
   local -a cleanup_commands
 
   AUTO_LINT_CLEANUP_EXIT=0
   AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
+  AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=0
+  AUTO_LINT_CLEANUP_RESULT="passed"
+  AUTO_LINT_CLEANUP_CLASSIFICATION="passed"
+  AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION=""
   printf '\n==> %s\n' "$stage_label"
   set_current_stage "$stage_label"
   emit_progress "$stage_label" "started"
@@ -2401,36 +2443,49 @@ run_auto_lint_cleanup() {
   if ! auto_lint_cleanup_enabled_for_mode; then
     if [ "$KASEKI_AUTO_LINT_CLEANUP" != "1" ]; then
       printf 'Auto lint cleanup skipped because KASEKI_AUTO_LINT_CLEANUP=%s.\n' "$KASEKI_AUTO_LINT_CLEANUP" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      AUTO_LINT_CLEANUP_RESULT="skipped"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="skipped_by_config"
       record_stage_timing "$stage_label" 0 0 "skipped_by_config"
     elif [ "$KASEKI_DRY_RUN" = "1" ]; then
       printf 'Auto lint cleanup skipped in dry-run mode.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      AUTO_LINT_CLEANUP_RESULT="skipped"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="dry_run"
       record_stage_timing "$stage_label" 0 0 "dry_run=true"
     elif [ "$KASEKI_TASK_MODE" = "inspect" ]; then
       printf 'Auto lint cleanup skipped for inspect mode. Set KASEKI_AUTO_LINT_CLEANUP=1 explicitly to enable.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      AUTO_LINT_CLEANUP_RESULT="skipped"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="skipped_inspect_mode"
       record_stage_timing "$stage_label" 0 0 "skipped_inspect_mode"
     else
       printf 'Auto lint cleanup skipped.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+      AUTO_LINT_CLEANUP_RESULT="skipped"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="skipped"
       record_stage_timing "$stage_label" 0 0 "skipped"
     fi
-    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=skipped"
+    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=$AUTO_LINT_CLEANUP_RESULT" "classification=$AUTO_LINT_CLEANUP_CLASSIFICATION"
     emit_progress "$stage_label" "skipped"
     return 0
   fi
 
   if [ -z "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" ] || [ "$KASEKI_AUTO_LINT_CLEANUP_COMMANDS" = "none" ]; then
     printf 'Auto lint cleanup skipped because commands=%s.\n' "${KASEKI_AUTO_LINT_CLEANUP_COMMANDS:-<empty>}" | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    AUTO_LINT_CLEANUP_RESULT="skipped"
+    AUTO_LINT_CLEANUP_CLASSIFICATION="skipped_by_commands"
     record_stage_timing "$stage_label" 0 0 "skipped_by_commands"
-    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=skipped"
+    emit_event "auto_lint_cleanup_finished" "exit_code=0" "result=$AUTO_LINT_CLEANUP_RESULT" "classification=$AUTO_LINT_CLEANUP_CLASSIFICATION"
     emit_progress "$stage_label" "skipped"
     return 0
   fi
 
   if ! [ -d /workspace/repo ]; then
     AUTO_LINT_CLEANUP_EXIT=1
+    AUTO_LINT_CLEANUP_RESULT="failed"
+    AUTO_LINT_CLEANUP_CLASSIFICATION="directory_missing"
+    AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="directory_missing"
     printf 'ERROR: Working directory /workspace/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
-    printf 'workspace_missing\t%s\t0\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-    record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing"
-    emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=failed" "reason=directory_missing"
+    printf 'workspace_missing\t%s\t0\tclassification=directory_missing\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+    record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing classification=directory_missing"
+    emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=failed" "classification=directory_missing" "reason=directory_missing"
     emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
     return 0
   fi
@@ -2445,11 +2500,15 @@ run_auto_lint_cleanup() {
     trimmed="$(printf '%s' "$command" | sed 's/^ *//; s/ *$//')"
     [ -z "$trimmed" ] && continue
     cleanup_start="$(date +%s)"
-    if missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
+    if [ "${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}" = "1" ] && missing_npm_script="$(missing_npm_script_for_validation_command "$trimmed")"; then
       cleanup_end="$(date +%s)"
       duration=$((cleanup_end - cleanup_start))
-      record_skipped_npm_script_command "$trimmed" "$missing_npm_script" "$duration" "$AUTO_LINT_CLEANUP_LOG" "$AUTO_LINT_CLEANUP_TIMINGS_FILE" "skipped cleanup"
-      emit_event "auto_lint_cleanup_command_skipped" "command=$trimmed" "reason=missing_npm_script" "script=$missing_npm_script" "duration_seconds=$duration"
+      command_classification="$(classify_auto_lint_cleanup_command_exit 0 "$missing_npm_script")"
+      AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=$((AUTO_LINT_CLEANUP_COMMANDS_SKIPPED + 1))
+      AUTO_LINT_CLEANUP_RESULT="warning"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="$command_classification"
+      record_skipped_npm_script_command "$trimmed" "$missing_npm_script" "$duration" "$AUTO_LINT_CLEANUP_LOG" "$AUTO_LINT_CLEANUP_TIMINGS_FILE" "skipped cleanup" "$command_classification"
+      emit_event "auto_lint_cleanup_command_skipped" "command=$trimmed" "reason=$command_classification" "script=$missing_npm_script" "classification=$command_classification" "duration_seconds=$duration"
       continue
     fi
 
@@ -2481,11 +2540,18 @@ run_auto_lint_cleanup() {
     fi
     cleanup_end="$(date +%s)"
     duration=$((cleanup_end - cleanup_start))
-    printf '%s\t%s\t%s\n' "$trimmed" "$command_exit" "$duration" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-    emit_event "auto_lint_cleanup_command_finished" "command=$trimmed" "exit_code=$command_exit" "duration_seconds=$duration"
+    command_classification="$(classify_auto_lint_cleanup_command_exit "$command_exit")"
+    printf '%s\t%s\t%s\tclassification=%s\n' "$trimmed" "$command_exit" "$duration" "$command_classification" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
+    if [ "$command_exit" -eq 127 ]; then
+      printf 'classification=%s\n' "$command_classification" | tee -a "$AUTO_LINT_CLEANUP_LOG" >/dev/null
+    fi
+    emit_event "auto_lint_cleanup_command_finished" "command=$trimmed" "exit_code=$command_exit" "classification=$command_classification" "duration_seconds=$duration"
     if [ "$command_exit" -ne 0 ] && [ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ]; then
       AUTO_LINT_CLEANUP_EXIT="$command_exit"
-      emit_error_event "auto_lint_cleanup_command_failed" "Auto lint cleanup command failed: $trimmed (exit $command_exit)" "continue"
+      AUTO_LINT_CLEANUP_RESULT="failed"
+      AUTO_LINT_CLEANUP_CLASSIFICATION="$command_classification"
+      AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="$command_classification"
+      emit_error_event "auto_lint_cleanup_command_failed" "Auto lint cleanup command failed: $trimmed (exit $command_exit, classification=$command_classification)" "continue"
     fi
   done
   set +e
@@ -2493,8 +2559,13 @@ run_auto_lint_cleanup() {
   collect_changed_file_set "$cleanup_after_file"
   check_auto_lint_cleanup_allowlist "$cleanup_before_file" "$cleanup_after_file" || true
 
-  record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
-  emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
+  if [ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && [ "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED" -eq 0 ]; then
+    AUTO_LINT_CLEANUP_RESULT="passed"
+    AUTO_LINT_CLEANUP_CLASSIFICATION="passed"
+  fi
+
+  record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED skipped_commands=$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED classification=$AUTO_LINT_CLEANUP_CLASSIFICATION"
+  emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=$AUTO_LINT_CLEANUP_RESULT" "classification=$AUTO_LINT_CLEANUP_CLASSIFICATION" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED" "skipped_commands=$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
   emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
   return 0
 }
