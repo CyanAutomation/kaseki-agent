@@ -83,7 +83,7 @@ set +e
 env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspect then code" \
   OPENROUTER_API_KEY=test GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off \
   KASEKI_DEPENDENCY_CACHE_DIR="$TMP_DIR/dependency-cache" KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$TMP_DIR/image-cache" \
-  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS="printf validation-generated > generated.txt" \
+  KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" KASEKI_VALIDATION_COMMANDS="printf validation-generated > generated.txt || exit 1" \
   KASEKI_VALIDATION_ALLOWLIST="generated.txt" KASEKI_ALLOW_EMPTY_DIFF=1 \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
