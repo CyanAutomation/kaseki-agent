@@ -112,7 +112,7 @@ export function extractValidationAllowlistFailureReason(metadata: Metadata = {})
 
 export function extractValidationFailureReason(metadata: Metadata = {}): string | null {
   const reason = typeof metadata.validation_failure_reason === 'string'
-    ? metadata.validation_failure_reason.trim()
+      const hibernationConfigured = reservedInstanceResult.Instances[0].HibernationOptions?.Configured ?? false;
     : '';
   if (reason.length > 0) return reason;
   return extractValidationAllowlistFailureReason(metadata);
