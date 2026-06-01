@@ -604,7 +604,15 @@ const controllerPage = String.raw`<!doctype html>
         border-color: var(--color-focus-text);
         color: #001f24;
       }
-      button:disabled { cursor: wait; opacity: var(--opacity-disabled); }
+      button:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
+      #submit:disabled { background-color: #666; border-color: #666; color: #aaa; }
+      #submit:enabled { cursor: pointer; }
+      .validation-badge {
+        margin-left: 6px;
+        color: #00d084;
+        font-weight: var(--font-weight-bold);
+        font-size: 0.9em;
+      }
       .toolbar-button { }
       .toolbar-button-no-wrap { white-space: nowrap; }
       /* ===== RESPONSE PANEL ===== */
@@ -1274,8 +1282,8 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset>
             <legend>Run actions</legend>
             <div class="action-row run-actions">
-            <button class="secondary" id="validate" type="button">Validate task</button>
-            <button class="run" id="submit" type="submit">Start run</button>
+            <button class="secondary" id="validate" type="button">Validate task <span id="validation-badge" class="validation-badge" style="display: none;">✓</span></button>
+            <button class="run" id="submit" type="submit" disabled title="Please validate task first">Start run</button>
             <button class="secondary" id="cancel-run" type="button">Cancel run</button>
             </div>
           </fieldset>
@@ -1388,6 +1396,10 @@ const controllerPage = String.raw`<!doctype html>
       
       let pollTimer = null;
       let activeRunView = 'status';
+      
+      // Validation state
+      let validationState = { isValid: false, lastValidated: null, checks: [] };
+      const validationStateKey = 'kasekiValidationState';
 
       function getApiToken() {
         return headerTokenInput.value.trim();
@@ -1951,9 +1963,121 @@ const controllerPage = String.raw`<!doctype html>
         });
       });
 
+      // Validation state management functions
+      function setValidationState(isValid, checks = []) {
+        validationState = { isValid, checks, lastValidated: new Date().toISOString() };
+        sessionStorage.setItem(validationStateKey, JSON.stringify(validationState));
+        updateSubmitButtonState();
+        updateValidationBadge();
+      }
+
+      function getValidationState() {
+        const stored = sessionStorage.getItem(validationStateKey);
+        if (stored) {
+          try {
+            validationState = JSON.parse(stored);
+          } catch {
+            validationState = { isValid: false, lastValidated: null, checks: [] };
+          }
+        }
+        return validationState;
+      }
+
+      function resetValidationState() {
+        validationState = { isValid: false, lastValidated: null, checks: [] };
+        sessionStorage.removeItem(validationStateKey);
+        updateSubmitButtonState();
+        updateValidationBadge();
+      }
+
+      function updateSubmitButtonState() {
+        const submitBtn = document.querySelector('#submit');
+        if (validationState.isValid) {
+          submitBtn.disabled = false;
+          submitBtn.setAttribute('title', 'Submit the task');
+          submitBtn.setAttribute('aria-disabled', 'false');
+        } else {
+          submitBtn.disabled = true;
+          submitBtn.setAttribute('title', 'Please validate task first');
+          submitBtn.setAttribute('aria-disabled', 'true');
+        }
+      }
+
+      function updateValidationBadge() {
+        const badge = document.querySelector('#validation-badge');
+        if (validationState.isValid) {
+          badge.style.display = 'inline';
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+
+      function attachFormChangeListeners() {
+        const repoUrlInput = document.querySelector('#repo-url');
+        const taskPromptInput = document.querySelector('#task-prompt');
+        const changedFilesAllowlist = document.querySelector('[name="changedFilesAllowlist"]');
+        const validationAllowlist = document.querySelector('[name="validationAllowlist"]');
+
+        const formFields = [repoUrlInput, taskPromptInput, changedFilesAllowlist, validationAllowlist].filter(Boolean);
+        formFields.forEach((field) => {
+          field.addEventListener('input', () => {
+            resetValidationState();
+          });
+        });
+      }
+
+      // Restore validation state on page load
+      getValidationState();
+      updateSubmitButtonState();
+      updateValidationBadge();
+      attachFormChangeListeners();
+
       document.querySelector('#validate').addEventListener('click', (event) => {
         if (!form.reportValidity()) return;
-        run(event.currentTarget, '/api/validate', { method: 'POST', auth: true, body: requestBody() });
+        const button = event.currentTarget;
+        button.disabled = true;
+        setOutputMetadata('running');
+        setState('Validating task...');
+        apiRequest('/api/validate', { method: 'POST', auth: true, body: requestBody() })
+          .then(({ payload, response }) => {
+            if (response.ok && payload && payload.isValid === true) {
+              setValidationState(true, payload.checks || []);
+              setOutputMetadata('ok');
+              setState('Validation passed!', 'ok');
+              setResponseSummary(payload);
+              setOutputBody(JSON.stringify({
+                status: 'Validation successful',
+                checks: payload.checks,
+                estimatedDurationSeconds: payload.estimatedDurationSeconds,
+              }, null, 2));
+            } else if (response.ok && payload && payload.isValid === false) {
+              resetValidationState();
+              setOutputMetadata('failed');
+              setState('Validation failed', 'bad');
+              setResponseSummary(payload);
+              const failedChecks = (payload.checks || []).filter((c) => c.status === 'fail');
+              setOutputBody(JSON.stringify({
+                status: 'Validation failed',
+                failedChecks,
+                errors: payload.errors || [],
+                warnings: payload.warnings || [],
+              }, null, 2));
+            } else {
+              resetValidationState();
+              setOutputMetadata('failed');
+              setState('Validation error', 'bad');
+              setOutputBody(JSON.stringify(payload || { error: 'Unknown error' }, null, 2));
+            }
+          })
+          .catch((error) => {
+            resetValidationState();
+            setOutputMetadata('failed');
+            setState('Validation failed', 'bad');
+            setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
+          })
+          .finally(() => {
+            button.disabled = false;
+          });
       });
 
       document.querySelector('#status-check').addEventListener('click', (event) => {
@@ -2160,6 +2284,16 @@ const controllerPage = String.raw`<!doctype html>
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         if (!form.reportValidity()) return;
+        
+        // Check validation state before allowing submission
+        if (!validationState.isValid) {
+          setOutputMetadata('failed');
+          setResponseSummary(null);
+          setOutputBody('Task validation is required before starting a run. Please click "Validate task" first and ensure all checks pass.');
+          setState('Validation required', 'bad');
+          return;
+        }
+        
         const repoUrl = String(repoUrlInput.value || '').trim();
         if (repoUrl) {
           addRepoToRecent(repoUrl);
