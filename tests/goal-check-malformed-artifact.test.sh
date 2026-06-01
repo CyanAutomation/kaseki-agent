@@ -91,6 +91,8 @@ run_exit=$?
 [ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the malformed goal-check artifact"
 [ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
+[ "$(cat "$RESULTS_DIR/goal-check-validation-reason.txt")" = "malformed_json" ] || fail "expected malformed_json reason"
+grep -q 'goal-check validation error' "$RESULTS_DIR/goal-check-validation-summary.txt" || fail "missing goal-check validation summary"
 grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check validation did not preserve exit 86"
 node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" <<'NODE' || fail "goal-check validation error log did not capture parse failure"
 const fs = require('node:fs');
