@@ -17,7 +17,9 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() {
   echo "FAIL: $TEST_NAME: $*" >&2
-  [ ! -f "$RUN_LOG" ] || tail -100 "$RUN_LOG" >&2
+  if [ -f "$RUN_LOG" ] && [ -s "$RUN_LOG" ]; then
+    tail -100 "$RUN_LOG" >&2 || true
+  fi
   exit 1
 }
 
