@@ -19,6 +19,7 @@ const StatusResponseSchema = z.object({
   exitCode: z.number().optional(),
   failureClass: z.string().optional(),
   validationFailureReason: z.string().optional(),
+  validationAllowlistFailureReason: z.string().optional(),
   qualityFailureReason: z.string().optional(),
   error: z.string().optional(),
   resultDir: z.string().optional(),

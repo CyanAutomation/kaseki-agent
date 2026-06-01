@@ -96,6 +96,7 @@ RUN_EVALUATION_WARNING=""
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
+    aws ec2 create-tags --resources "${instance_id}" --tags Key=InspectorAgent,Value=Installed --region us-west-2
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
 PRE_VALIDATION_EXIT=0
@@ -658,6 +659,7 @@ write_metadata() {
   "failed_command": $(printf '%s' "$FAILED_COMMAND" | json_encode),
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "validation_allowlist_failure_reason": $(printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | json_encode),
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
@@ -774,6 +776,9 @@ write_result_summary() {
   fi
   validation_status="passed"
   [ "$VALIDATION_EXIT" -ne 0 ] && validation_status="failed"
+  if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then
+    validation_status="failed (allowlist gate; validation commands exited $VALIDATION_EXIT)"
+  fi
   if grep -q 'skipped_after_agent_failure' "$STAGE_TIMINGS_FILE" 2>/dev/null; then
     validation_status="skipped"
   fi
@@ -820,6 +825,7 @@ $(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pr
 - Auto lint cleanup: $([ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && printf 'passed/skipped' || printf 'failed') ($AUTO_LINT_CLEANUP_EXIT)
 - Validation: $validation_status ($VALIDATION_EXIT)
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
+$(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist reason: %s\n' "$VALIDATION_ALLOWLIST_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
 $(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Quality checks: $QUALITY_EXIT
@@ -873,6 +879,7 @@ write_failure_json() {
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_failed_command": $(printf '%s' "$VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "validation_failure_reason": $(printf '%s' "$VALIDATION_FAILURE_REASON" | json_encode),
+  "validation_allowlist_failure_reason": $(printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | json_encode),
   "pre_validation_failed_command": $(printf '%s' "$PRE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
@@ -1269,7 +1276,8 @@ check_validation_allowlist() {
 
   if [ "$validation_violation_count" -gt 0 ]; then
     QUALITY_EXIT=7
-    QUALITY_FAILURE_REASON="validation_allowlist_check: $validation_violation_count file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
+    VALIDATION_ALLOWLIST_FAILURE_REASON="validation_allowlist_check: $validation_violation_count file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
+    QUALITY_FAILURE_REASON="$VALIDATION_ALLOWLIST_FAILURE_REASON"
     printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a /results/quality.log
     return 1
   fi
@@ -6235,6 +6243,7 @@ PI_DURATION_SECONDS=0
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
+VALIDATION_ALLOWLIST_FAILURE_REASON=""
 VALIDATION_STOPPED_EARLY=false
 VALIDATION_COMMANDS_ATTEMPTED=0
 QUALITY_EXIT=0
