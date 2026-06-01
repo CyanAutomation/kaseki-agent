@@ -6671,7 +6671,9 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
+pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
+  pre_validation_goal_check_diff_hash="$(sha256sum /results/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
@@ -6754,6 +6756,31 @@ if [ "$VALIDATION_EXIT" -eq 0 ]; then
   collect_git_artifacts
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
+  fi
+fi
+
+post_validation_goal_check_diff_hash="$(sha256sum /results/git.diff 2>/dev/null | awk '{print $1}')"
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
+  [ -n "$pre_validation_goal_check_diff_hash" ] && [ -n "$post_validation_goal_check_diff_hash" ] && \
+  [ "$post_validation_goal_check_diff_hash" != "$pre_validation_goal_check_diff_hash" ]; then
+  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a /results/goal-check-stderr.log
+  emit_progress "goal check" "re-running after validation changed the final diff (attempt $coding_attempt)"
+  run_goal_check "$coding_attempt"
+  collect_goal_check_feedback "$INSTANCE_NAME"
+
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
+    snapshot_attempt_artifacts "$coding_attempt"
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "goal check" "retrying coding agent after post-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
+
+    STATUS=8
+    FAILED_COMMAND="goal check"
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
+    emit_error_event "goal_unmet" "Goal check did not pass after post-validation diff changed on attempt $GOAL_CHECK_ATTEMPTS: $GOAL_CHECK_FAILURE_REASON" "exit"
+    break
   fi
 fi
 
