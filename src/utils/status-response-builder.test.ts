@@ -694,6 +694,54 @@ describe('StatusResponseBuilder', () => {
       expect(response.diagnosticEntryPoint).toBe('analysis.md');
     });
 
+    it('should prefer goal-check validation errors over failure.json for invalid goal-check artifacts', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid-entry',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid-entry',
+      };
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 100 },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 200 },
+        'goal-check-stderr.log': { exists: true, size: 300 },
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid-entry',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.diagnosticEntryPoint).toBe('goal-check-validation-errors.jsonl');
+    });
+
+    it('should prefer goal-check stderr when invalid goal-check artifacts have no validation errors file', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid-stderr-entry',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid-stderr-entry',
+      };
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 100 },
+        'goal-check-validation-errors.jsonl': { exists: false, size: 0 },
+        'goal-check-stderr.log': { exists: true, size: 300 },
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid-stderr-entry',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.diagnosticEntryPoint).toBe('goal-check-stderr.log');
+    });
+
     it('should inline result-summary.md content if available', () => {
       const job: Partial<Job> = {
         id: 'job-1',
