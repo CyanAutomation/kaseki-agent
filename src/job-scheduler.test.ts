@@ -1415,7 +1415,7 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     expect(first).toEqual([
       expect.objectContaining({
-        stage: 'clone repository info',
+        stage: 'clone repository',
         message: 'started',
       }),
     ]);
@@ -1462,7 +1462,7 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     expect(scheduler.getLiveProgressEvents('kaseki-7', 25)).toEqual([
       expect.objectContaining({
-        stage: 'clone repository info',
+        stage: 'clone repository',
         message: 'started',
       }),
     ]);
@@ -1515,7 +1515,7 @@ describe('JobScheduler instance allocation and live progress', () => {
 
     expect(scheduler.getLiveProgressEvents(job.id, 25)).toEqual([
       expect.objectContaining({
-        stage: 'clone repository info',
+        stage: 'clone repository',
         message: 'started',
       }),
     ]);
