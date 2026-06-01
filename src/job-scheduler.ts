@@ -1150,7 +1150,7 @@ export class JobScheduler {
       if (match) {
         events.push({
           source: 'docker-logs',
-          stage: match[1].trim(),
+          stage: match[1].trim().replace(/ info$/, ''),
           message: match[2].trim(),
           timestamp: new Date().toISOString(),
         });
