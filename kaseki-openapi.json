@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Kaseki Agent API",
-    "version": "1.57.0",
+    "version": "1.58.2",
     "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment",
     "contact": {
       "name": "CyanAutomation",
@@ -2605,6 +2605,18 @@
           "failureClass": {
             "type": "string",
             "description": "Failure classification (only if failed)"
+          },
+          "validationFailureReason": {
+            "type": "string",
+            "description": "Validation-related failure reason, including validation allowlist gates when present"
+          },
+          "validationAllowlistFailureReason": {
+            "type": "string",
+            "description": "Dedicated reason when files changed during validation are outside KASEKI_VALIDATION_ALLOWLIST"
+          },
+          "qualityFailureReason": {
+            "type": "string",
+            "description": "Quality gate failure reason (retained for compatibility)"
           },
           "error": {
             "type": "string",

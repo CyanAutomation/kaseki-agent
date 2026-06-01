@@ -9,7 +9,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # shellcheck source=../scripts/allowlist-helper.sh
-source "${SCRIPT_DIR}/../kaseki-agent.sh"
+source "$ROOT_DIR/scripts/allowlist-helper.sh"
 export API_KEY="test-api-key"
 export VALIDATION_ENDPOINT=""
 
@@ -40,6 +40,7 @@ eval "$(awk '
 reset_quality_state() {
   QUALITY_EXIT=0
   QUALITY_FAILURE_REASON=""
+  VALIDATION_ALLOWLIST_FAILURE_REASON=""
   : > "$TMP_DIR/results/quality.log"
   : > "$TMP_DIR/results/events.log"
   : > "$TMP_DIR/results/changed-files.txt"
@@ -88,6 +89,8 @@ else
   pass 'validation allowlist rejects validation-generated files outside the allowlist'
 fi
 [ "$QUALITY_EXIT" -eq 7 ] || fail "expected QUALITY_EXIT=7 for generated file, got $QUALITY_EXIT"
+[ "$VALIDATION_ALLOWLIST_FAILURE_REASON" = "$QUALITY_FAILURE_REASON" ] || fail "validation allowlist reason should mirror quality failure reason"
+printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | grep -Fq 'validation_allowlist_check: 1 file(s)' || fail 'expected dedicated validation allowlist failure reason'
 grep -Fxq 'validation.log' "$TMP_DIR/results/validation-changed-files.txt" || fail 'validation-generated file should be recorded as validation-changed'
 rm -f validation.log
 
@@ -106,6 +109,7 @@ else
   pass 'validation allowlist rejects validation-mutated pre-existing agent changes outside the allowlist'
 fi
 [ "$QUALITY_EXIT" -eq 7 ] || fail "expected QUALITY_EXIT=7 for validation mutation, got $QUALITY_EXIT"
+printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON" | grep -Fq 'validation_allowlist_check: 1 file(s)' || fail 'expected dedicated validation allowlist failure reason for validation mutation'
 grep -Fxq 'tracked.txt' "$TMP_DIR/results/validation-changed-files.txt" || fail 'validation-mutated tracked file should be recorded as validation-changed'
 
 printf '\n✅ validation allowlist state snapshot tests passed\n'

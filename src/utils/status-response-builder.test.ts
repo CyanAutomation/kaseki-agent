@@ -132,6 +132,32 @@ describe('StatusResponseBuilder', () => {
       expect(response.error).toBe('Validation failed');
     });
 
+    it('should expose validation allowlist failures as validation-related status reasons', () => {
+      const job: Partial<Job> = {
+        id: 'job-validation-allowlist',
+        status: 'failed',
+        resultDir: '/results/job-validation-allowlist',
+      };
+      const allowlistReason = 'validation_allowlist_check: 1 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST';
+
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return JSON.stringify({
+            validation_allowlist_failure_reason: allowlistReason,
+            quality_failure_reason: allowlistReason,
+          });
+        }
+        return '';
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.validationFailureReason).toBe(allowlistReason);
+      expect(response.validationAllowlistFailureReason).toBe(allowlistReason);
+      expect(response.qualityFailureReason).toBe(allowlistReason);
+    });
+
     it('should include timing info when startedAt is set', () => {
       const startTime = new Date('2026-01-01T00:00:00Z');
       const completedTime = new Date('2026-01-01T00:30:00Z');

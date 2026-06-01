@@ -5,7 +5,13 @@ import { StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
-import { resolveInstanceExitCode, extractValidationFailureReason, extractQualityFailureReason, extractGoalCheckFailureReason } from '../instance-state-derivation';
+import {
+  resolveInstanceExitCode,
+  extractValidationFailureReason,
+  extractValidationAllowlistFailureReason,
+  extractQualityFailureReason,
+  extractGoalCheckFailureReason,
+} from '../instance-state-derivation';
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 import type { ResultCache } from '../result-cache';
@@ -108,6 +114,7 @@ export class StatusResponseBuilder {
     const exitCode = this.resolveExitCode(job, runDir);
     const metadata = this.readMetadata(runDir);
     const validationReason = extractValidationFailureReason(metadata);
+    const validationAllowlistReason = extractValidationAllowlistFailureReason(metadata);
     const qualityReason = extractQualityFailureReason(metadata);
     const goalCheckReason = extractGoalCheckFailureReason(metadata);
     const response: StatusResponse = {
@@ -116,6 +123,7 @@ export class StatusResponseBuilder {
       exitCode: exitCode ?? undefined,
       failureClass: job.failureClass,
       validationFailureReason: validationReason ?? undefined,
+      validationAllowlistFailureReason: validationAllowlistReason ?? undefined,
       qualityFailureReason: qualityReason ?? undefined,
       goalCheckFailureReason: goalCheckReason ?? undefined,
       correlationId: job.correlationId,
