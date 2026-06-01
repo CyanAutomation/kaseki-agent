@@ -742,6 +742,105 @@ describe('StatusResponseBuilder', () => {
       expect(response.diagnosticEntryPoint).toBe('goal-check-stderr.log');
     });
 
+    it('should inline valid small goal-check validation errors JSONL content', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid-inline',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid-inline',
+      };
+      const validationErrorsContent = [
+        JSON.stringify({ path: 'goal-check.json', message: 'missing field' }),
+        JSON.stringify({ path: 'goal-check.json', message: 'invalid verdict', code: 'invalid_enum' }),
+      ].join('\n');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'goal-check-validation-errors.jsonl': { exists: true, size: validationErrorsContent.length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('goal-check-validation-errors.jsonl')) {
+          return validationErrorsContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid-inline',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.goalCheckValidationErrorsContent).toEqual([
+        { path: 'goal-check.json', message: 'missing field' },
+        { path: 'goal-check.json', message: 'invalid verdict', code: 'invalid_enum' },
+      ]);
+      expect(response.goalCheckValidationErrorsRawContent).toBeUndefined();
+    });
+
+    it('should not inline oversized goal-check validation errors content', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid-oversized',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid-oversized',
+      };
+      const largeValidationErrorsContent = 'x'.repeat(70000);
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'goal-check-validation-errors.jsonl': { exists: true, size: largeValidationErrorsContent.length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('goal-check-validation-errors.jsonl')) {
+          return largeValidationErrorsContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid-oversized',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.goalCheckValidationErrorsContent).toBeUndefined();
+      expect(response.goalCheckValidationErrorsRawContent).toBeUndefined();
+    });
+
+    it('should not break status response construction for malformed goal-check validation errors JSONL', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid-malformed',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid-malformed',
+      };
+      const malformedValidationErrorsContent = [
+        JSON.stringify({ path: 'goal-check.json', message: 'missing field' }),
+        'not valid json',
+      ].join('\n');
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'goal-check-validation-errors.jsonl': { exists: true, size: malformedValidationErrorsContent.length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('goal-check-validation-errors.jsonl')) {
+          return malformedValidationErrorsContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid-malformed',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      expect(() => builder['addArtifactInfo'](response, job as Job)).not.toThrow();
+      expect(response.artifacts).toBeDefined();
+      expect(response.goalCheckValidationErrorsContent).toBeUndefined();
+      expect(response.goalCheckValidationErrorsRawContent).toBe(malformedValidationErrorsContent);
+    });
+
     it('should inline result-summary.md content if available', () => {
       const job: Partial<Job> = {
         id: 'job-1',
