@@ -345,6 +345,10 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Quality gate failure reason (retained for compatibility)',
       },
+      goalCheckFailureReason: {
+        type: 'string',
+        description: 'Goal-check failure reason when the goal-check evaluator fails or rejects the run',
+      },
       error: {
         type: 'string',
         description: 'Error message (only if failed)',
@@ -373,6 +377,11 @@ function buildStatusResponseSchema(): Record<string, unknown> {
             type: 'array',
             items: { type: 'string' },
             description: 'List of available artifact files',
+          },
+          diagnosticFiles: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Additional diagnostic artifact files recommended for the current failure reason',
           },
         },
       },

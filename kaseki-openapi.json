@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Kaseki Agent API",
-    "version": "1.58.2",
+    "version": "1.58.3",
     "description": "Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment",
     "contact": {
       "name": "CyanAutomation",
@@ -2618,6 +2618,10 @@
             "type": "string",
             "description": "Quality gate failure reason (retained for compatibility)"
           },
+          "goalCheckFailureReason": {
+            "type": "string",
+            "description": "Goal-check failure reason when the goal-check evaluator fails or rejects the run"
+          },
           "error": {
             "type": "string",
             "description": "Error message (only if failed)"
@@ -2658,6 +2662,13 @@
                   "type": "string"
                 },
                 "description": "List of available artifact files"
+              },
+              "diagnosticFiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Additional diagnostic artifact files recommended for the current failure reason"
               }
             }
           }

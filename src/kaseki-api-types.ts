@@ -255,6 +255,8 @@ export interface StatusResponse {
     failureJson: boolean;
     stderrLog: boolean;
     availableFiles: string[];
+    /** Additional diagnostic artifacts recommended for the current failure reason. */
+    diagnosticFiles?: string[];
   };
   diagnosticEntryPoint?: 'failure.json' | 'analysis.md' | 'result-summary.md';
 }

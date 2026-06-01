@@ -822,6 +822,60 @@ describe('StatusResponseBuilder', () => {
 
       expect(Array.isArray(response.artifacts?.availableFiles)).toBe(true);
     });
+
+    it('should include goal-check diagnostic artifacts when goal-check artifact validation failed', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid',
+      };
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'metadata.json': { exists: true, size: 20 },
+        'failure.json': { exists: true, size: 100 },
+        'stderr.log': { exists: true, size: 50 },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 200 },
+        'goal-check-stderr.log': { exists: true, size: 300 },
+        'goal-check.json': { exists: false, size: 0 },
+        'goal-check-attempts.jsonl': { exists: true, size: 80 },
+      });
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(artifactMetadataCache.getRunArtifactMetadata).toHaveBeenCalledWith(
+        'job-goal-check-invalid',
+        '/results/job-goal-check-invalid',
+        expect.arrayContaining([
+          'metadata.json',
+          'failure.json',
+          'stderr.log',
+          'goal-check-validation-errors.jsonl',
+          'goal-check-stderr.log',
+          'goal-check.json',
+          'goal-check-attempts.jsonl',
+        ]),
+        true
+      );
+      expect(response.artifacts?.availableFiles).toEqual([
+        'metadata.json',
+        'failure.json',
+        'stderr.log',
+        'goal-check-validation-errors.jsonl',
+        'goal-check-stderr.log',
+        'goal-check-attempts.jsonl',
+      ]);
+      expect(response.artifacts?.diagnosticFiles).toEqual([
+        'goal-check-validation-errors.jsonl',
+        'goal-check-stderr.log',
+        'goal-check-attempts.jsonl',
+      ]);
+    });
   });
 
   describe('addProgressInfo', () => {
