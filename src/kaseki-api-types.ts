@@ -255,6 +255,8 @@ export interface StatusResponse {
   // Inline diagnostic content (always available for terminal jobs)
   resultSummaryContent?: string; // Human-readable markdown summary
   failureJsonContent?: Record<string, any>; // Structured failure info (only if failed)
+  goalCheckValidationErrorsContent?: Array<Record<string, unknown>>; // Parsed goal-check artifact validation errors (only if small)
+  goalCheckValidationErrorsRawContent?: string; // Raw goal-check validation errors fallback when JSONL parsing fails
   artifacts?: {
     metadataJson: boolean;
     analysisMd: boolean;
