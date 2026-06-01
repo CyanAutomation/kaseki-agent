@@ -54,7 +54,8 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  # Intentionally exit successfully without creating goal-check-candidate.json.
+  # Intentionally print non-JSON assistant text and exit successfully without creating goal-check-candidate.json.
+  printf '%s\n' 'goal-check verdict: looks good, but no JSON artifact was written'
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"

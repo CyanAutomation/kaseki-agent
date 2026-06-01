@@ -3535,12 +3535,13 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
 ## Rules
 
 - Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
+- You MUST write the final verdict JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT before exiting; a chat response, streamed assistant message, or printed JSON alone is not sufficient.
 - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
 - If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
 
-## Required JSON Output
+## Required JSON artifact
 
 {
   "met": true or false,
@@ -3611,6 +3612,109 @@ run_goal_check() {
   unset goal_prompt
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
+
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
+
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
+    # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
+    # shellcheck disable=SC2016
+    node -e '
+const fs = require("node:fs");
+const candidatePath = process.argv[1];
+const rawPath = process.argv[2];
+const filteredPath = process.argv[3];
+const attempt = Number(process.argv[4]);
+
+function stableStringify(value) {
+  if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableStringify(value[key])).join(",") + "}";
+  }
+  return JSON.stringify(value);
+}
+
+function schemaErrors(artifact) {
+  const errors = [];
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+    errors.push("root must be an object");
+    return errors;
+  }
+  if (typeof artifact.met !== "boolean") errors.push("met must be boolean");
+  if (!["low", "medium", "high"].includes(artifact.confidence)) errors.push("confidence must be low|medium|high");
+  if (typeof artifact.summary !== "string" || artifact.summary.trim().length === 0) errors.push("summary must be a non-empty string");
+  if (artifact.met === false && (typeof artifact.retry_prompt !== "string" || artifact.retry_prompt.trim().length === 0)) errors.push("retry_prompt must be non-empty when met=false");
+  for (const key of ["evidence", "missing", "validation_notes"]) {
+    if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) errors.push(key + " must be an array of strings");
+  }
+  return errors;
+}
+
+function collectBalancedJsonObjects(text) {
+  const snippets = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        snippets.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return snippets;
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+  return out;
+}
+
+const valid = new Map();
+for (const path of [rawPath, filteredPath]) {
+  let text = "";
+  try { text = fs.readFileSync(path, "utf8"); } catch { continue; }
+  const snippets = collectBalancedJsonObjects(text);
+  for (const snippet of snippets) {
+    try {
+      const parsed = JSON.parse(snippet);
+      if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+      for (const innerText of collectStrings(parsed)) {
+        for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+          try {
+            const inner = JSON.parse(innerSnippet);
+            if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+}
+
+if (valid.size === 1) {
+  const recovered = [...valid.values()][0];
+  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+  const note = { timestamp: new Date().toISOString(), attempt, event: "goal_check_artifact_recovered_from_assistant_text", artifact: candidatePath, raw_events: rawPath, filtered_events: filteredPath };
+  fs.appendFileSync("/results/goal-check-stderr.log", JSON.stringify(note) + "\n");
+}
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl "$attempt" 2>> /results/goal-check-stderr.log || true
+  fi
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
     # shellcheck disable=SC2016
@@ -3719,7 +3823,6 @@ fs.appendFileSync("/results/goal-check-attempts.jsonl", JSON.stringify(artifact)
     emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict" "continue"
   fi
   rm -f "$GOAL_CHECK_CANDIDATE_ARTIFACT"
-  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
   GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
