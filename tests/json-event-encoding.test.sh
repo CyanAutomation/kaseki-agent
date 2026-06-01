@@ -42,7 +42,7 @@ node - "$TMP_DIR/results/progress.jsonl" <<'NODE'
 const fs = require('node:fs');
 const lines = fs.readFileSync(process.argv[2], 'utf8').trimEnd().split('\n');
 const event = JSON.parse(lines[0]);
-const progress = JSON.parse(lines[1]);
+    assertEquals "Should return non-zero exit code for malformed JSON" "1" "$?"
 if (event.event_type !== 'quoted_event') throw new Error(`unexpected event_type: ${event.event_type}`);
 if (event.detail !== 'value with "quotes", comma, and = sign') throw new Error(`unexpected detail: ${event.detail}`);
 if (event.path !== 'src/a b.ts') throw new Error(`unexpected path: ${event.path}`);
