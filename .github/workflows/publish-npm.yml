@@ -7,9 +7,6 @@ on:
         description: "Comma-separated tags to publish. Leave empty to auto-detect from latest git tag."
         required: false
         default: ""
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
 
 permissions:
   contents: read
