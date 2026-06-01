@@ -45,7 +45,13 @@ const StatusResponseSchema = z.object({
     availableFiles: z.array(z.string()),
     diagnosticFiles: z.array(z.string()).optional(),
   }).optional(),
-  diagnosticEntryPoint: z.enum(['failure.json', 'analysis.md', 'result-summary.md']).optional(),
+  diagnosticEntryPoint: z.enum([
+    'failure.json',
+    'analysis.md',
+    'result-summary.md',
+    'goal-check-validation-errors.jsonl',
+    'goal-check-stderr.log',
+  ]).optional(),
 });
 
 /**

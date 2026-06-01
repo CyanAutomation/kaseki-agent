@@ -479,7 +479,7 @@ These optional fields eliminate the need for separate API calls to fetch critica
 For backward compatibility, the response still includes:
 
 - `artifacts` — Hint object showing which artifacts are available
-- `diagnosticEntryPoint` — Recommended artifact to examine first
+- `diagnosticEntryPoint` — Recommended artifact to examine first. For goal-check schema-validation failures, this may be `goal-check-validation-errors.jsonl` or `goal-check-stderr.log`; otherwise the fallback order remains `failure.json`, `analysis.md`, then `result-summary.md`.
 - `availableFiles` — Array of file names available for download
 - `diagnosticFiles` — Optional array of additional diagnostic artifact files recommended for the current failure reason (for example, goal-check validation logs when `goalCheckFailureReason` is `goal_check_artifact_invalid`)
 

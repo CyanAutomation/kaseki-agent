@@ -217,6 +217,13 @@ export interface RunResponse {
 /**
  * Structured progress information for a run.
  */
+export type DiagnosticEntryPoint =
+  | 'failure.json'
+  | 'analysis.md'
+  | 'result-summary.md'
+  | 'goal-check-validation-errors.jsonl'
+  | 'goal-check-stderr.log';
+
 export interface StructuredProgress {
   stage: string; // Required: current stage name
   displayName?: string; // Optional: human-readable phase name (e.g., "Suika — Scouting")
@@ -258,7 +265,7 @@ export interface StatusResponse {
     /** Additional diagnostic artifacts recommended for the current failure reason. */
     diagnosticFiles?: string[];
   };
-  diagnosticEntryPoint?: 'failure.json' | 'analysis.md' | 'result-summary.md';
+  diagnosticEntryPoint?: DiagnosticEntryPoint;
 }
 
 /**
