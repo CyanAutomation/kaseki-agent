@@ -251,7 +251,10 @@ fi
 if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
   mkdir_paths+=("${PI_CODING_AGENT_DIR}")
 fi
-mkdir -p "${mkdir_paths[@]}"
+if ! mkdir -p "${mkdir_paths[@]}"; then
+  printf 'Error: Failed to create required runtime directories.\n' >&2
+  exit 1
+fi
 : > /results/stdout.log
 : > /results/stderr.log
 : > /results/pi-events.jsonl
@@ -2505,8 +2508,10 @@ run_auto_lint_cleanup() {
       duration=$((cleanup_end - cleanup_start))
       command_classification="$(classify_auto_lint_cleanup_command_exit 0 "$missing_npm_script")"
       AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=$((AUTO_LINT_CLEANUP_COMMANDS_SKIPPED + 1))
-      AUTO_LINT_CLEANUP_RESULT="warning"
-      AUTO_LINT_CLEANUP_CLASSIFICATION="$command_classification"
+      if [ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ]; then
+        AUTO_LINT_CLEANUP_RESULT="warning"
+        AUTO_LINT_CLEANUP_CLASSIFICATION="$command_classification"
+      fi
       record_skipped_npm_script_command "$trimmed" "$missing_npm_script" "$duration" "$AUTO_LINT_CLEANUP_LOG" "$AUTO_LINT_CLEANUP_TIMINGS_FILE" "skipped cleanup" "$command_classification"
       emit_event "auto_lint_cleanup_command_skipped" "command=$trimmed" "reason=$command_classification" "script=$missing_npm_script" "classification=$command_classification" "duration_seconds=$duration"
       continue
