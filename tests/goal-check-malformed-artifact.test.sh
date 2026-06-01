@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regression test: malformed goal-check artifacts produce structured validation errors.
-
+set -u
 set -euo pipefail
 
 TEST_NAME="goal-check malformed artifact validation"
