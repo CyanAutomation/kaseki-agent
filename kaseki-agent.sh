@@ -1230,10 +1230,31 @@ check_validation_allowlist() {
     return 0
   fi
 
-  local allowlist_regex validation_violation_count
+  local allowlist_regex validation_violation_count validation_changed_file changed_file
+  local validation_before_state_file validation_after_state_file
   allowlist_regex="$(build_allowlist_regex "$KASEKI_VALIDATION_ALLOWLIST")"
   [ -z "$allowlist_regex" ] && return 0
   validation_violation_count=0
+  validation_before_state_file="/results/validation-before-state.txt"
+  validation_after_state_file="/results/validation-after-state.txt"
+  validation_changed_file="/results/validation-changed-files.txt"
+  : > "$validation_changed_file"
+
+  if [ -f "$validation_before_state_file" ] && [ -f "$validation_after_state_file" ]; then
+    awk -F '\t' '
+      NR == FNR { before[$1] = $2; seen[$1] = 1; next }
+      { after[$1] = $2; seen[$1] = 1 }
+      END {
+        for (path in seen) {
+          if (before[path] != after[path]) {
+            print path
+          }
+        }
+      }
+    ' "$validation_before_state_file" "$validation_after_state_file" | LC_ALL=C sort -u > "$validation_changed_file"
+  elif [ -f /results/changed-files.txt ]; then
+    cp /results/changed-files.txt "$validation_changed_file"
+  fi
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
@@ -1244,7 +1265,7 @@ check_validation_allowlist() {
     else
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=true" "file=$changed_file"
     fi
-  done < /results/changed-files.txt
+  done < "$validation_changed_file"
 
   if [ "$validation_violation_count" -gt 0 ]; then
     QUALITY_EXIT=7
@@ -2020,6 +2041,37 @@ collect_changed_file_set() {
     git -C /workspace/repo diff --name-only --cached -- . 2>/dev/null || true
     git -C /workspace/repo ls-files --others --exclude-standard 2>/dev/null || true
   } | sed '/^$/d' | LC_ALL=C sort -u > "$output_file"
+}
+
+collect_changed_file_state() {
+  local output_file="$1"
+  local changed_files_file path staged_hash unstaged_hash content_hash state
+  : > "$output_file"
+  if [ ! -d /workspace/repo/.git ]; then
+    return 0
+  fi
+
+  changed_files_file="$(mktemp)"
+  collect_changed_file_set "$changed_files_file"
+
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -z "$path" ] && continue
+    if git -C /workspace/repo ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+      staged_hash="$(git -C /workspace/repo diff --binary --cached -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+      unstaged_hash="$(git -C /workspace/repo diff --binary -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+      state="tracked:staged=${staged_hash}:unstaged=${unstaged_hash}"
+    elif [ -f "/workspace/repo/$path" ]; then
+      content_hash="$(git -C /workspace/repo hash-object --no-filters -- "$path" 2>/dev/null || sha256sum "/workspace/repo/$path" 2>/dev/null | awk '{print $1}')"
+      state="untracked:file=${content_hash}"
+    elif [ -d "/workspace/repo/$path" ]; then
+      state="untracked:directory"
+    else
+      state="untracked:missing"
+    fi
+    printf '%s\t%s\n' "$path" "$state"
+  done < "$changed_files_file" | LC_ALL=C sort -u > "$output_file"
+
+  rm -f "$changed_files_file"
 }
 
 restore_cleanup_disallowed_changes() {
@@ -6421,6 +6473,7 @@ log_validation_environment() {
   } | tee -a /results/validation.log "$VALIDATION_ENV_LOG"
 }
 log_validation_environment
+collect_changed_file_state /results/validation-before-state.txt
 
 if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
   run_validation_commands \
@@ -6462,6 +6515,7 @@ fi
 
 # Check validation-phase allowlist (if configured)
 if [ "$VALIDATION_EXIT" -eq 0 ]; then
+  collect_changed_file_state /results/validation-after-state.txt
   collect_git_artifacts
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
