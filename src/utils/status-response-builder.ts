@@ -17,6 +17,13 @@ import { readLastJsonlEvent } from './file-helpers';
 import type { ResultCache } from '../result-cache';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
+const GOAL_CHECK_DIAGNOSTIC_FILES = [
+  'goal-check-validation-errors.jsonl',
+  'goal-check-stderr.log',
+  'goal-check.json',
+  'goal-check-attempts.jsonl',
+] as const;
+const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
 
 type ProgressEventLike = {
   stage?: unknown;
@@ -188,14 +195,24 @@ export class StatusResponseBuilder {
     }
 
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
-    const metadata = getRunArtifactMetadata(job.id, runDir, STATUS_KEY_FILES, true);
+    const includeGoalCheckDiagnostics =
+      job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON;
+    const artifactFiles = includeGoalCheckDiagnostics
+      ? [...STATUS_KEY_FILES, ...GOAL_CHECK_DIAGNOSTIC_FILES]
+      : [...STATUS_KEY_FILES];
+    const metadata = getRunArtifactMetadata(job.id, runDir, artifactFiles, true);
+    const isAvailable = (fileName: string): boolean =>
+      metadata[fileName]?.exists === true && metadata[fileName].size > 0;
     const keyFileAvailability = STATUS_KEY_FILES.reduce(
       (acc, fileName) => {
-        acc[fileName] = metadata[fileName]?.exists === true && metadata[fileName].size > 0;
+        acc[fileName] = isAvailable(fileName);
         return acc;
       },
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
     );
+    const diagnosticFiles = includeGoalCheckDiagnostics
+      ? GOAL_CHECK_DIAGNOSTIC_FILES.filter((fileName) => isAvailable(fileName))
+      : [];
 
     response.artifacts = {
       metadataJson: keyFileAvailability['metadata.json'],
@@ -203,7 +220,8 @@ export class StatusResponseBuilder {
       resultSummaryMd: keyFileAvailability['result-summary.md'],
       failureJson: keyFileAvailability['failure.json'],
       stderrLog: keyFileAvailability['stderr.log'],
-      availableFiles: STATUS_KEY_FILES.filter((fileName) => keyFileAvailability[fileName]),
+      availableFiles: artifactFiles.filter((fileName) => isAvailable(fileName)),
+      ...(includeGoalCheckDiagnostics ? { diagnosticFiles } : {}),
     };
 
     // Inline diagnostic content for immediate access
