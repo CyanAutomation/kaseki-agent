@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { Job } from '../kaseki-api-types';
-import { StatusResponse } from '../kaseki-api-types';
+import type { DiagnosticEntryPoint, StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
@@ -250,13 +250,17 @@ export class StatusResponseBuilder {
     }
 
     if (job.status === 'failed') {
-      if (keyFileAvailability['failure.json']) {
-        response.diagnosticEntryPoint = 'failure.json';
-      } else if (keyFileAvailability['analysis.md']) {
-        response.diagnosticEntryPoint = 'analysis.md';
-      } else if (keyFileAvailability['result-summary.md']) {
-        response.diagnosticEntryPoint = 'result-summary.md';
-      }
+      const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = includeGoalCheckDiagnostics
+        ? [
+            'goal-check-validation-errors.jsonl',
+            'goal-check-stderr.log',
+            'failure.json',
+            'analysis.md',
+            'result-summary.md',
+          ]
+        : ['failure.json', 'analysis.md', 'result-summary.md'];
+
+      response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
     }
   }
 

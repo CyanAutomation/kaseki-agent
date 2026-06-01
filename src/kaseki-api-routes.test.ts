@@ -1980,6 +1980,7 @@ describe('kaseki-api-routes status artifact hints', () => {
         'goal-check-validation-errors.jsonl',
         'goal-check-stderr.log',
       ]);
+      expect(body.diagnosticEntryPoint).toBe('goal-check-validation-errors.jsonl');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
