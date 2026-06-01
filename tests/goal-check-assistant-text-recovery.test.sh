@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Regression test: missing goal-check artifacts produce structured validation errors without Node ENOENT stacks.
+# Regression test: goal-check verdicts printed in assistant text are recovered into artifacts.
 set -uo pipefail
 
-TEST_NAME="goal-check missing artifact validation"
+TEST_NAME="goal-check assistant text artifact recovery"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 FAKE_REPO="$TMP_DIR/fake-repo"
@@ -54,8 +54,8 @@ elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
-  # Intentionally print non-JSON assistant text and exit successfully without creating goal-check-candidate.json.
-  printf '%s\n' 'goal-check verdict: looks good, but no JSON artifact was written'
+  # Intentionally print the verdict in the event stream without creating goal-check-candidate.json.
+  printf '%s\n' '{"type":"assistant_message","text":"{\\"met\\":true,\\"confidence\\":\\"high\\",\\"summary\\":\\"All requested checks passed.\\",\\"evidence\\":[\\"validation command passed\\",\\"diff inspected\\",\\"goal requirements satisfied\\"],\\"missing\\":[],\\"retry_prompt\\":\\"\\",\\"validation_notes\\":[\\"npm run check: passed\\"]}"}'
 else
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
@@ -89,26 +89,20 @@ env PATH="$FAKE_BIN:$PATH" REPO_URL="$FAKE_REPO" GIT_REF=main TASK_PROMPT="inspe
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 
-[ "$run_exit" -eq 8 ] || fail "expected goal-check failure exit 8, got $run_exit"
-[ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls did not reach the missing goal-check artifact"
-[ -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "missing goal-check-validation-errors.jsonl"
-grep -q '^goal check[[:space:]]86[[:space:]]' "$RESULTS_DIR/stage-timings.tsv" || fail "goal-check validation did not preserve exit 86"
-node - "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR" <<'NODE' || fail "goal-check validation error log did not capture missing artifact"
-const fs = require('node:fs');
-const lines = fs.readFileSync(process.argv[2], 'utf8').trim().split(/\n+/).filter(Boolean);
-if (lines.length !== 1) throw new Error(`expected exactly one JSONL entry, got ${lines.length}`);
-const entry = JSON.parse(lines[0]);
-if (entry.field !== 'goal-check-candidate.json') throw new Error(`expected field goal-check-candidate.json, got ${entry.field}`);
-if (entry.expected !== `file at ${process.argv[3]}/goal-check-candidate.json`) throw new Error(`expected file at ${process.argv[3]}/goal-check-candidate.json, got ${entry.expected}`);
-if (!String(entry.actual).includes('missing: ')) throw new Error(`actual did not describe missing file: ${entry.actual}`);
-if (entry.severity !== 'critical') throw new Error(`expected critical severity, got ${entry.severity}`);
-if (!/goal-check Pi writes exactly one valid JSON object/.test(String(entry.suggestion))) throw new Error(`suggestion was not targeted: ${entry.suggestion}`);
+[ "$run_exit" -eq 0 ] || fail "expected successful recovery exit 0, got $run_exit"
+[ "$(cat "$PI_CALLS")" = $'goal-setting
+scouting
+coding
+goal-check' ] || fail "Pi calls did not reach the goal-check artifact recovery"
+[ -s "$RESULTS_DIR/goal-check.json" ] || fail "missing recovered goal-check.json"
+[ ! -s "$RESULTS_DIR/goal-check-validation-errors.jsonl" ] || fail "recovery should not create validation errors"
+grep -q 'goal_check_artifact_recovered_from_assistant_text' "$RESULTS_DIR/goal-check-stderr.log" || fail "missing recovery diagnostic note"
+node - "$RESULTS_DIR/goal-check.json" <<'NODE' || fail "recovered goal-check verdict was invalid"
+const verdict = require(process.argv[2]);
+if (verdict.met !== true) throw new Error(`expected met=true, got ${verdict.met}`);
+if (verdict.confidence !== 'high') throw new Error(`expected high confidence, got ${verdict.confidence}`);
+if (!Array.isArray(verdict.evidence) || verdict.evidence.length < 3) throw new Error('expected recovered evidence array');
+if (verdict.attempt !== 1) throw new Error(`expected enriched attempt=1, got ${verdict.attempt}`);
 NODE
-
-grep -q 'goal_check_artifact_missing' "$RESULTS_DIR/progress.jsonl" || fail "missing goal-check artifact error event"
-grep -q "$RESULTS_DIR/goal-check-validation-errors.jsonl" "$RESULTS_DIR/progress.jsonl" || fail "error event did not point to validation error log"
-if [ -f "$RESULTS_DIR/goal-check-stderr.log" ]; then
-  ! grep -Eq 'ENOENT|Error: goal-check artifact unreadable|node:internal|at .*readFileSync' "$RESULTS_DIR/goal-check-stderr.log" || fail "goal-check stderr contained raw Node missing-file stack"
-fi
-[ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should remain absent after validation failure"
+[ ! -e "$RESULTS_DIR/goal-check-candidate.json" ] || fail "goal-check candidate artifact should be consumed after recovery validation"
 echo "PASS: $TEST_NAME"
