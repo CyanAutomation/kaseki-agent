@@ -148,6 +148,7 @@ GOAL_SETTING_CANDIDATE_ARTIFACT="/results/goal-setting-candidate.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
 RUN_EVALUATION_ARTIFACT="/results/run-evaluation.json"
 RUN_EVALUATION_CANDIDATE_ARTIFACT="/results/run-evaluation-candidate.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="/results/test-impact-warnings.log"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
 KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
@@ -265,6 +266,7 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/run-evaluation-summary.json
 : > /results/run-evaluation-stderr.log
 : > /results/run-evaluation.json
+: > "$TEST_IMPACT_WARNINGS_ARTIFACT"
 : > /results/validation.log
 : > /results/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
@@ -989,6 +991,7 @@ Artifacts:
 - goal-check-attempts.jsonl
 - goal-check-validation-errors.jsonl
 - run-evaluation.json
+- test-impact-warnings.log (non-blocking static test-impact warnings)
 - pre-validation.log
 - pre-validation-timings.tsv
 - validation.log
@@ -1060,6 +1063,55 @@ collect_git_artifacts() {
     : > /results/git.diff
     : > /results/changed-files.txt
   fi
+}
+
+run_static_test_impact_check() {
+  local changed_files_file="/results/changed-files.txt"
+  local diff_file="/results/git.diff"
+  local artifact="${TEST_IMPACT_WARNINGS_ARTIFACT:-/results/test-impact-warnings.log}"
+  local indicator_regex='(parse|parser|regex|regexp|stage|event|format|serialize|name)'
+  local production_matches diff_matches warning_detail
+
+  : > "$artifact"
+  if [ ! -s "$changed_files_file" ] || [ ! -s "$diff_file" ]; then
+    return 0
+  fi
+
+  if grep -Eq '(^tests/|(^|/)[^/]+[.](test|spec)[.][^/]+$)' "$changed_files_file" 2>/dev/null; then
+    return 0
+  fi
+
+  production_matches="$(grep -Ei "$indicator_regex" "$changed_files_file" 2>/dev/null | grep -Ev '(^tests/|(^|/)[^/]+[.](test|spec)[.][^/]+$)' || true)"
+  diff_matches="$(grep -Ein '^[+-]' "$diff_file" 2>/dev/null | grep -Ei "(parse|parser|regex|regexp|stage|event|format|serialize|name)" | head -20 || true)"
+
+  if [ -z "$production_matches" ] && [ -z "$diff_matches" ]; then
+    return 0
+  fi
+
+  warning_detail="Production parser/output/naming-adjacent changes were detected without changed test files; review test impact and add focused tests when appropriate."
+  {
+    printf 'Static test-impact warning (%s)\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '\n%s\n' "$warning_detail"
+    printf '\nWhy this was flagged:\n'
+    printf -- '- No changed files matched tests/**, *.test.*, or *.spec.*.\n'
+    printf -- '- At least one changed production path or diff hunk matched one of: parse, parser, regex, RegExp, stage, event, format, serialize, name.\n'
+    if [ -n "$production_matches" ]; then
+      printf '\nChanged production files with indicators:\n'
+      printf '%s\n' "$production_matches" | sed 's/^/- /'
+    fi
+    if [ -n "$diff_matches" ]; then
+      printf '\nDiff hunks with indicators (first 20 matching +/- lines):\n'
+      printf '%s\n' "$diff_matches" | sed 's/^/- /'
+    fi
+    printf '\nAction: If these changes affect parsing, output formatting, event/stage serialization, or naming behavior, add or update a focused test before relying on validation alone. If existing tests already cover the behavior, note that explicitly in goal-check evidence.\n'
+  } >> "$artifact"
+
+  emit_event "warning" \
+    "warning_type=test_impact_without_tests" \
+    "artifact=$artifact" \
+    "detail=$warning_detail"
+  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a /results/progress.log
+  return 0
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -3630,7 +3682,7 @@ collect_run_evaluation_feedback() {
 
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context validation_context
+  local validation_tail progress_tail goal_setting_context validation_context test_impact_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
   if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
     validation_context="Validation log tail (last 80 lines):
@@ -3639,6 +3691,18 @@ $validation_tail"
     validation_context="Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
   fi
   progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+  if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+$(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+---
+"
+  else
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+---
+"
+  fi
   
   # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
   if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
@@ -3671,6 +3735,7 @@ Determine if the agent successfully met the requirements specified in the goal-s
 - Changed files: /results/changed-files.txt
 - Git diff: /results/git.diff
 - Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+- Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
 - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
 
 ## Evaluation Framework: SMART Criteria Check
@@ -3749,7 +3814,7 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
 ## Context
 
 $goal_setting_context
-
+$test_impact_context
 Original task prompt (for reference):
 $TASK_PROMPT
 
@@ -3947,7 +4012,7 @@ if (valid.size === 1) {
 }
 
 build_run_evaluation_prompt() {
-  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
   progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
   stage_timings="$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)"
@@ -3955,6 +4020,18 @@ build_run_evaluation_prompt() {
   restoration_report="$(tail -80 /results/restoration-report.md 2>/dev/null || true)"
   metadata_text="$(cat /results/metadata.json 2>/dev/null || true)"
   draft_pr_body="$(build_pr_body)"
+  if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+$(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+---
+"
+  else
+    test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+---
+"
+  fi
   
   # Include goal-setting output for quality context (influences reviewer_confidence)
   if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
@@ -3992,6 +4069,7 @@ This is NOT another goal-check. The goal-check evaluator already determined if t
 - Changed files: /results/changed-files.txt
 - Git diff and status: /results/git.diff, /results/git.status
 - Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
+- Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
 - Stage timings: /results/stage-timings.tsv
 - Progress log: /results/progress.log
 - Metadata: /results/metadata.json
@@ -4144,7 +4222,7 @@ Summarize the actual changes and their impact, NOT the original task.
 ## Context
 
 $goal_setting_context
-
+$test_impact_context
 Original task prompt (for reference):
 $TASK_PROMPT
 
@@ -6670,6 +6748,8 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
   printf '%s\n' "$format_command" >> /results/format-check-command.txt
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
+
+run_static_test_impact_check
 
 pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
