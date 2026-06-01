@@ -1924,6 +1924,68 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('failed goal-check artifact validation status exposes goal-check diagnostic artifacts', async () => {
+    const jobId = 'kaseki-failed-goal-check-artifact-invalid';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), JSON.stringify({
+      goal_check_failure_reason: 'goal_check_artifact_invalid',
+      failed_command: 'goal check',
+      exit_code: 86,
+    }));
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"failureClass":"goal-unmet"}');
+    fs.writeFileSync(path.join(jobDir, 'goal-check-validation-errors.jsonl'), '{"summary":"critical"}\n');
+    fs.writeFileSync(path.join(jobDir, 'goal-check-stderr.log'), 'schema validation failed');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 10800,
+      logLevel: 'info' as const,
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.goalCheckFailureReason).toBe('goal_check_artifact_invalid');
+      expect(body.artifacts.availableFiles).toEqual([
+        'metadata.json',
+        'failure.json',
+        'goal-check-validation-errors.jsonl',
+        'goal-check-stderr.log',
+      ]);
+      expect(body.artifacts.diagnosticFiles).toEqual([
+        'goal-check-validation-errors.jsonl',
+        'goal-check-stderr.log',
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
   test('runs list includes terminal exit code from result metadata when scheduler job lacks it', async () => {
     const jobId = 'kaseki-list-exit-code';
     const jobDir = path.join(resultsDir, jobId);
