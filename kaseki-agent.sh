@@ -256,6 +256,8 @@ mkdir -p "${mkdir_paths[@]}"
 : > /results/goal-check-events.jsonl
 : > /results/goal-check-summary.json
 : > /results/goal-check-stderr.log
+: > /results/goal-check-validation-errors.jsonl
+: > /results/goal-check-validation-summary.txt
 : > /results/goal-check-attempts.jsonl
 : > /results/goal-check.json
 : > /results/run-evaluation-events.jsonl
@@ -531,6 +533,152 @@ validate_scouting_artifact() {
   printf '%s\n' "$reason_code" > "$reason_file"
   printf '%s\n' "$reason_details" > /results/scouting-validation-summary.txt
   printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/scouting-stderr.log
+  rm -f "$validation_error_file" 2>/dev/null || true
+  [ "$reason_code" = "valid" ]
+}
+
+
+validate_goal_check_artifact_with_node() {
+  local candidate_artifact="$1"
+  local final_artifact="$2"
+  local attempt="$3"
+  local validation_error_file="$4"
+
+  # shellcheck disable=SC2016
+  node -e '
+const fs = require("node:fs");
+const input = process.argv[1];
+const output = process.argv[2];
+const attempt = Number(process.argv[3]);
+const errorLog = process.argv[4];
+const jsonlLog = "/results/goal-check-validation-errors.jsonl";
+const attemptsLog = "/results/goal-check-attempts.jsonl";
+
+function actualType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function appendValidationFailure(error) {
+  fs.appendFileSync(jsonlLog, JSON.stringify({
+    timestamp: new Date().toISOString(),
+    attempt,
+    ...error,
+  }) + "\n");
+}
+
+function summarize(errors) {
+  const critical = errors.filter((error) => error.severity === "critical").length;
+  const warning = errors.filter((error) => error.severity === "warning").length;
+  const counts = [];
+  if (critical) counts.push(`${critical} critical`);
+  if (warning) counts.push(`${warning} warning`);
+  const fields = errors.slice(0, 2).map((error) => error.field).join(", ");
+  const suffix = errors.length > 2 ? `, +${errors.length - 2} more` : "";
+  return `${counts.join(", ")} goal-check validation ${errors.length === 1 ? "error" : "errors"}: ${fields}${suffix}`;
+}
+
+function fail(reasonHint, errors) {
+  for (const error of errors) appendValidationFailure(error);
+  fs.writeFileSync(errorLog, JSON.stringify({
+    reason_hint: reasonHint,
+    details: summarize(errors),
+    errors,
+  }) + "\n");
+  process.exit(1);
+}
+
+let artifact;
+try {
+  artifact = JSON.parse(fs.readFileSync(input, "utf8"));
+} catch (error) {
+  fail("malformed_json", [{
+    field: "root",
+    expected: "valid JSON object",
+    actual: error && error.message ? String(error.message) : String(error),
+    severity: "critical",
+    suggestion: "ensure exactly one valid JSON object is written to /results/goal-check-candidate.json",
+  }]);
+}
+
+const errors = [];
+const addError = (field, expected, actual, severity, suggestion) => {
+  errors.push({ field, expected, actual, severity, suggestion });
+};
+
+if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+  addError("root", "object", actualType(artifact), "critical", "Goal check must return a JSON object (not array/null/primitive)");
+} else {
+  if (typeof artifact.met !== "boolean") {
+    addError("met", "boolean", actualType(artifact.met), "critical", "met must be true or false");
+  }
+
+  if (!["low", "medium", "high"].includes(artifact.confidence)) {
+    addError("confidence", "low|medium|high", artifact.confidence === undefined ? "missing" : actualType(artifact.confidence) === "string" ? artifact.confidence : actualType(artifact.confidence), "critical", "confidence must be one of: low, medium, high (case-sensitive)");
+  }
+
+  if (typeof artifact.summary !== "string") {
+    addError("summary", "non-empty string", actualType(artifact.summary), "critical", "summary must be a string describing the goal check result");
+  } else if (artifact.summary.trim().length === 0) {
+    addError("summary", "non-empty string", "empty string", "critical", "summary cannot be empty; provide at least a brief verdict description");
+  }
+
+  if (artifact.met === false) {
+    if (typeof artifact.retry_prompt !== "string") {
+      addError("retry_prompt", "non-empty string (when met=false)", actualType(artifact.retry_prompt), "critical", "When met=false, retry_prompt must be a string with guidance for the next attempt");
+    } else if (artifact.retry_prompt.trim().length === 0) {
+      addError("retry_prompt", "non-empty string (when met=false)", "empty string", "critical", "retry_prompt cannot be empty when met=false; provide clear guidance for the next attempt");
+    }
+  } else if (artifact.retry_prompt !== undefined && typeof artifact.retry_prompt !== "string") {
+    addError("retry_prompt", "string", actualType(artifact.retry_prompt), "critical", "retry_prompt must be a string; use an empty string when met=true");
+  }
+
+  for (const key of ["evidence", "missing", "validation_notes"]) {
+    if (!Array.isArray(artifact[key])) {
+      addError(key, "array of strings", actualType(artifact[key]), "warning", `${key} should be an array of strings`);
+    } else if (!artifact[key].every((value) => typeof value === "string")) {
+      addError(key, "array of strings", "array with non-strings", "warning", `All elements in ${key} must be strings`);
+    }
+  }
+}
+
+if (errors.length) {
+  const hasCritical = errors.some((error) => error.severity === "critical");
+  fail(hasCritical ? "schema_mismatch" : "schema_warning", errors);
+}
+
+artifact.attempt = attempt;
+artifact.timestamp = new Date().toISOString();
+fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
+fs.appendFileSync(attemptsLog, JSON.stringify(artifact) + "\n");
+' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>> /results/goal-check-stderr.log
+}
+
+validate_goal_check_artifact() {
+  local candidate_artifact="$1"
+  local final_artifact="$2"
+  local attempt="$3"
+  local reason_file="$4"
+  local summary_file="${5:-/results/goal-check-validation-summary.txt}"
+  local validation_error_file="/tmp/goal-check-validation-errors.json"
+  local reason_code="valid"
+  local reason_details="artifact validation passed"
+
+  : > "$validation_error_file"
+  if [ ! -f "$candidate_artifact" ]; then
+    reason_code="missing_file"
+    reason_details="1 critical goal-check validation error: goal-check-candidate.json"
+    # shellcheck disable=SC2016
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at /results/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to /results/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> /results/goal-check-stderr.log || true
+  elif ! validate_goal_check_artifact_with_node "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"; then
+    reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); const hint=String(v.reason_hint||""); process.stdout.write(hint === "malformed_json" ? "malformed_json" : "schema_mismatch");}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
+    reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"goal-check artifact validation failed"));}catch{process.stdout.write("goal-check artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'goal-check artifact validation failed')"
+  fi
+
+  printf '%s\n' "$reason_code" > "$reason_file"
+  printf '%s\n' "$reason_details" > "$summary_file"
+  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/goal-check-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
 }
@@ -3579,7 +3727,7 @@ EOF
 }
 
 run_goal_check() {
-  local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence
+  local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary
   attempt="$1"
   GOAL_CHECK_ATTEMPTS="$attempt"
   GOAL_CHECK_EXIT=0
@@ -3716,111 +3864,24 @@ if (valid.size === 1) {
 ' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl "$attempt" 2>> /results/goal-check-stderr.log || true
   fi
 
-  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
-    # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at /results/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to /results/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$attempt" 2>> /results/goal-check-stderr.log || true
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" /results/goal-check.json "$attempt" /results/goal-check-validation-reason.txt; then
     GOAL_CHECK_EXIT=86
-    GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
-    emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT (full details: /results/goal-check-validation-errors.jsonl)" "continue"
-  elif [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! node -e '
-const fs = require("node:fs");
-const input = process.argv[1];
-const output = process.argv[2];
-const attempt = Number(process.argv[3]);
-const errors = [];
-let artifactText;
-let artifact;
-try {
-  artifactText = fs.readFileSync(input, "utf8");
-} catch (error) {
-  const validationError = {
-    timestamp: new Date().toISOString(),
-    attempt,
-    field: "artifact",
-    expected: "readable JSON file",
-    actual: error && error.message ? error.message : String(error),
-    severity: "critical",
-    suggestion: "Goal-check agent must write exactly one JSON object to " + input
-  };
-  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(validationError) + "\n");
-  throw new Error("goal-check artifact unreadable: " + validationError.actual);
-}
-try {
-  artifact = JSON.parse(artifactText);
-} catch (error) {
-  const validationError = {
-    timestamp: new Date().toISOString(),
-    attempt,
-    field: "root",
-    expected: "valid JSON object",
-    actual: error && error.message ? error.message : String(error),
-    severity: "critical"
-  };
-  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(validationError) + "\n");
-  throw new Error("goal-check artifact invalid JSON: " + validationError.actual);
-}
-
-// Root object validation
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
-  errors.push({field: "root", expected: "object", actual: typeof artifact, severity: "critical", suggestion: "Goal check must return a JSON object (not array/null/primitive)"});
-} else {
-  // Core boolean field validation
-  if (typeof artifact.met !== "boolean") {
-    errors.push({field: "met", expected: "boolean", actual: typeof artifact.met, severity: "critical", suggestion: "met must be true or false"});
-  }
-
-  // Confidence enum validation
-  if (!["low", "medium", "high"].includes(artifact.confidence)) {
-    errors.push({field: "confidence", expected: "low|medium|high", actual: artifact.confidence || "missing", severity: "critical", suggestion: "confidence must be one of: low, medium, high (case-sensitive)"});
-  }
-
-  // Summary validation: must be non-empty string
-  if (typeof artifact.summary !== "string") {
-    errors.push({field: "summary", expected: "non-empty string", actual: typeof artifact.summary, severity: "critical", suggestion: "summary must be a string describing the goal check result"});
-  } else if (artifact.summary.trim().length === 0) {
-    errors.push({field: "summary", expected: "non-empty string", actual: "empty string", severity: "critical", suggestion: "summary cannot be empty; provide at least a brief verdict description"});
-  }
-
-  // Retry prompt validation: only required if met=false (RELAXED constraint)
-  if (artifact.met === false) {
-    if (typeof artifact.retry_prompt !== "string") {
-      errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: typeof artifact.retry_prompt, severity: "critical", suggestion: "When met=false, retry_prompt must be a string with guidance for the next attempt"});
-    } else if (artifact.retry_prompt.trim().length === 0) {
-      errors.push({field: "retry_prompt", expected: "non-empty string (when met=false)", actual: "empty string", severity: "critical", suggestion: "retry_prompt cannot be empty when met=false; provide clear guidance for the next attempt"});
-    }
-  }
-
-  // Arrays validation
-  for (const key of ["evidence", "missing", "validation_notes"]) {
-    if (!Array.isArray(artifact[key])) {
-      errors.push({field: key, expected: "array of strings", actual: Array.isArray(artifact[key]) ? "array" : typeof artifact[key], severity: "warning", suggestion: key + " should be an array of strings"});
-    } else if (!artifact[key].every((v) => typeof v === "string")) {
-      errors.push({field: key, expected: "array of strings", actual: "array with non-strings", severity: "warning", suggestion: "All elements in " + key + " must be strings"});
-    }
-  }
-}
-
-// If there are errors, write structured error log and fail
-if (errors.length) {
-  const summary = errors.filter(e => e.severity === "critical").length > 0 ? "critical" : "warning";
-  fs.appendFileSync("/results/goal-check-validation-errors.jsonl", 
-    JSON.stringify({timestamp: new Date().toISOString(), attempt, summary, errors}) + "\n");
-  
-  const msg = errors
-    .map(e => e.field + ": " + e.suggestion)
-    .join("; ");
-  throw new Error("goal-check artifact invalid (" + summary + "): " + msg);
-}
-
-// Validation passed: enrich artifact with metadata
-artifact.attempt = attempt;
-artifact.timestamp = new Date().toISOString();
-fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-fs.appendFileSync("/results/goal-check-attempts.jsonl", JSON.stringify(artifact) + "\n");
-' "$GOAL_CHECK_CANDIDATE_ARTIFACT" /results/goal-check.json "$attempt" 2>> /results/goal-check-stderr.log; then
-    GOAL_CHECK_EXIT=86
-    GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
-    emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict" "continue"
+    goal_check_validation_reason="$(cat /results/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
+    goal_check_validation_summary="$(cat /results/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
+    case "$goal_check_validation_reason" in
+      missing_file)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
+        emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT ($goal_check_validation_summary; full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+      malformed_json)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_malformed"
+        emit_error_event "goal_check_artifact_malformed" "Goal-check Pi wrote malformed JSON: $goal_check_validation_summary (full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+      *)
+        GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
+        emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict: $goal_check_validation_summary (full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        ;;
+    esac
   fi
   rm -f "$GOAL_CHECK_CANDIDATE_ARTIFACT"
   GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
