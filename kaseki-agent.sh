@@ -86,6 +86,7 @@ GOAL_CHECK_EXIT=0
 GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
 GOAL_CHECK_MET=false
+GOAL_CHECK_REACHED=false
 GOAL_CHECK_FAILURE_REASON=""
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
@@ -889,7 +890,7 @@ build_stages_array() {
 }
 
 write_result_summary() {
-  local changed_files changed_files_markdown validation_status pr_status github_skip_reasons_summary
+  local changed_files changed_files_markdown validation_status pr_status github_skip_reasons_summary goal_check_status
   changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
   if [ -n "$changed_files" ]; then
     changed_files_markdown="$(printf '%s\n' "$changed_files" | sed 's/^/  - /')"
@@ -929,6 +930,20 @@ write_result_summary() {
     fi
   fi
 
+  if [ "$KASEKI_GOAL_CHECK" != "1" ] || [ ! -s "$SCOUTING_ARTIFACT" ]; then
+    goal_check_status="disabled"
+  elif [ "$GOAL_CHECK_REACHED" = "true" ] || [ "$GOAL_CHECK_ATTEMPTS" -gt 0 ]; then
+    if [ "$GOAL_CHECK_MET" = "true" ]; then
+      goal_check_status="met"
+    else
+      goal_check_status="unmet"
+    fi
+  elif [ "$VALIDATION_EXIT" -ne 0 ]; then
+    goal_check_status="not reached due to validation failure"
+  else
+    goal_check_status="not reached"
+  fi
+
   cat > /results/result-summary.md <<SUMMARY
 # Kaseki Result: $INSTANCE_NAME
 
@@ -937,7 +952,7 @@ write_result_summary() {
 - Requested model: $KASEKI_MODEL
 - Actual model: ${ACTUAL_MODEL:-unknown}
 - Pi exit code: $PI_EXIT
-- Goal check: $(if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ]; then [ "$GOAL_CHECK_MET" = "true" ] && printf 'met' || printf 'unmet'; else printf 'disabled'; fi) ($GOAL_CHECK_EXIT)
+- Goal check: $goal_check_status ($GOAL_CHECK_EXIT)
 - Goal check attempts: $GOAL_CHECK_ATTEMPTS (max retries: $KASEKI_GOAL_CHECK_MAX_RETRIES)
 $(if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$GOAL_CHECK_FAILURE_REASON"; fi)
 - Pre-agent validation: $([ "$PRE_VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed') ($PRE_VALIDATION_EXIT)
@@ -3602,8 +3617,14 @@ collect_run_evaluation_feedback() {
 
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context
+  local validation_tail progress_tail goal_setting_context validation_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+  if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
+    validation_context="Validation log tail (last 80 lines):
+$validation_tail"
+  else
+    validation_context="Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
+  fi
   progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
   
   # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
@@ -3636,13 +3657,13 @@ Determine if the agent successfully met the requirements specified in the goal-s
 - Scouting report: $SCOUTING_ARTIFACT
 - Changed files: /results/changed-files.txt
 - Git diff: /results/git.diff
-- Validation outcomes: /results/validation-timings.tsv and /results/validation.log
+- Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
 - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
 
 ## Evaluation Framework: SMART Criteria Check
 
 1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
-2. **Measurable**: Are requirements verifiable via test results, diff inspection, or validation logs?
+2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
 3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
 4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
 5. **Time-bound**: Completed in this single run (not postponed to future attempts)?
@@ -3688,6 +3709,7 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
 - If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
+- Validation logs are optional evidence. If /results/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
 
 ## Required JSON artifact
 
@@ -3718,8 +3740,7 @@ $goal_setting_context
 Original task prompt (for reference):
 $TASK_PROMPT
 
-Validation log tail (last 80 lines):
-$validation_tail
+$validation_context
 
 Progress log tail (last 80 lines):
 $progress_tail
@@ -3732,6 +3753,7 @@ run_goal_check() {
   GOAL_CHECK_ATTEMPTS="$attempt"
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_MET=false
+  GOAL_CHECK_REACHED=true
   GOAL_CHECK_FAILURE_REASON=""
 
   printf '\n==> goal check\n'
@@ -6636,6 +6658,26 @@ if [ -f package.json ] && node -e "const p=require('./package.json'); process.ex
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
+if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
+  run_goal_check "$coding_attempt"
+  collect_goal_check_feedback "$INSTANCE_NAME"
+  snapshot_attempt_artifacts "$coding_attempt"
+
+  if [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && [ "$GOAL_CHECK_MET" != "true" ]; then
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "goal check" "retrying coding agent after pre-validation unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
+
+    STATUS=8
+    FAILED_COMMAND="goal check"
+    [ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
+    emit_error_event "goal_unmet" "Goal check did not pass after $GOAL_CHECK_ATTEMPTS attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+    break
+  fi
+fi
+
 printf '\n==> validation environment\n'
 log_validation_environment() {
   {
@@ -6708,24 +6750,6 @@ if [ "$STATUS" -ne 0 ] || [ "$PI_EXIT" -ne 0 ] || [ "$QUALITY_EXIT" -ne 0 ] || [
   break
 fi
 
-run_goal_check "$coding_attempt"
-collect_goal_check_feedback "$INSTANCE_NAME"
-snapshot_attempt_artifacts "$coding_attempt"
-
-if [ "$KASEKI_GOAL_CHECK" != "1" ] || [ ! -s "$SCOUTING_ARTIFACT" ] || [ "$GOAL_CHECK_MET" = "true" ]; then
-  break
-fi
-
-if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
-  emit_progress "goal check" "retrying coding agent after unmet verdict (attempt $coding_attempt of $max_coding_attempts)"
-  coding_attempt=$((coding_attempt + 1))
-  continue
-fi
-
-STATUS=8
-FAILED_COMMAND="goal check"
-[ -z "$GOAL_CHECK_FAILURE_REASON" ] && GOAL_CHECK_FAILURE_REASON="goal_unmet_after_retries"
-emit_error_event "goal_unmet" "Goal check did not pass after $GOAL_CHECK_ATTEMPTS attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
 break
 done
 
