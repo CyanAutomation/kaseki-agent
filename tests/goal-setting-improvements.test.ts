@@ -723,7 +723,7 @@ if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
 JSON
 elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "${piCalls}"
-  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[]}' > "${resultsDir}/scouting-candidate.json"
+  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "${resultsDir}/scouting-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "${piCalls}"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "${resultsDir}/goal-check-candidate.json"
