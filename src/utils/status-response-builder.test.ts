@@ -314,6 +314,36 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBe(33); // 1 of 3 finished
     });
 
+    it('should map generic pi agent progress to pi coding agent for task progress', () => {
+      const job: Partial<Job> = {
+        id: 'job-pi-agent',
+        status: 'running',
+        resultDir: '/results/job-pi-agent',
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) {
+          return JSON.stringify({ stage: 'pi agent', status: 'running' });
+        }
+        return JSON.stringify({
+          stages: ['clone repository', 'agent setup', 'pi coding agent', 'collect agent diff'],
+        });
+      });
+
+      const response: StatusResponse = {
+        id: 'job-pi-agent',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      expect(response.taskProgressPercent).toBeGreaterThanOrEqual(50);
+    });
+
     it('should handle malformed JSON in progress.jsonl gracefully', () => {
       const job: Partial<Job> = {
         id: 'job-1',

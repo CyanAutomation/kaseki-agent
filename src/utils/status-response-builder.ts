@@ -47,16 +47,35 @@ function normalizeStageName(stage: unknown): string | undefined {
   return typeof stage === 'string' && stage.trim().length > 0 ? stage.trim() : undefined;
 }
 
+const PI_STREAM_ONLY_STAGES = new Set(['pi agent', 'pi tool batch']);
+
 /**
- * Map Pi stream-only stage names to their corresponding orchestrator stage names.
- * This affects task progress calculation while preserving original event names for display.
+ * Normalize progress-only Pi stream stages to denominator stages for task progress.
+ *
+ * Pi emits generic stream stages while several orchestrator Pi stages can be active.
+ * Prefer the surrounding orchestrator stage tracked on the job when it is in the
+ * active denominator; otherwise, treat generic Pi stream progress as coding work.
  */
-function mapOrchestratorStage(stage: string): string {
-  // Map 'pi agent' and 'pi tool batch' to 'pi coding agent' for progress calculation
-  if (stage === 'pi agent' || stage === 'pi tool batch') {
-    return 'pi coding agent';
+function normalizeTaskProgressStage(
+  stage: unknown,
+  jobCurrentStage?: unknown,
+  denominatorStages: readonly string[] = []
+): string | undefined {
+  const normalizedStage = normalizeStageName(stage);
+  if (!normalizedStage) {
+    return undefined;
   }
-  return stage;
+
+  if (!PI_STREAM_ONLY_STAGES.has(normalizedStage)) {
+    return normalizedStage;
+  }
+
+  const normalizedJobCurrentStage = normalizeStageName(jobCurrentStage);
+  if (normalizedJobCurrentStage && denominatorStages.includes(normalizedJobCurrentStage)) {
+    return normalizedJobCurrentStage;
+  }
+
+  return 'pi coding agent';
 }
 
 function isFinishedProgressEvent(event: ProgressEventLike): boolean {
@@ -296,10 +315,14 @@ export class StatusResponseBuilder {
       const metadata = this.readMetadata(runDir);
       const progressFile = path.join(runDir, 'progress.jsonl');
       const orchestratorStages = deriveOrchestratorStages(job, this.config);
-
-      const { observedStages, finishedStages, currentStage } = this.processProgressEvents(progressFile, job, response);
-
       const { denominatorStages, totalStages } = this.determineStageDenominator(metadata, orchestratorStages);
+
+      const { observedStages, finishedStages, currentStage } = this.processProgressEvents(
+        progressFile,
+        job,
+        response,
+        denominatorStages
+      );
 
       if (totalStages <= 0) {
         response.taskProgressPercent = undefined;
@@ -333,30 +356,28 @@ export class StatusResponseBuilder {
   private processProgressEvents(
     progressFile: string,
     job: Job,
-    response: StatusResponse
+    response: StatusResponse,
+    denominatorStages: readonly string[]
   ): { observedStages: Set<string>; finishedStages: Set<string>; currentStage: string | undefined } {
     const observedStages = new Set<string>();
     const finishedStages = new Set<string>();
-    let currentStage: string | undefined = normalizeStageName(job.currentStage) ?? normalizeStageName(response.progress?.stage);
+    let currentStage: string | undefined = normalizeTaskProgressStage(
+      job.currentStage,
+      undefined,
+      denominatorStages
+    ) ?? normalizeTaskProgressStage(response.progress?.stage, job.currentStage, denominatorStages);
 
     const ingestEvent = (event: ProgressEventLike): void => {
-      const originalStage = normalizeStageName(event.stage);
-      if (!originalStage) {
+      const progressStage = normalizeTaskProgressStage(event.stage, job.currentStage, denominatorStages);
+      if (!progressStage) {
         return;
       }
 
-      // Use the original stage name for tracking and display
-      observedStages.add(originalStage);
-
-      // Use the mapped stage name for progress calculation
-      const mappedStage = mapOrchestratorStage(originalStage);
-
-      // Update current stage with the mapped name for progress calculation
-      // Update current stage with the mapped name for progress calculation
-      currentStage = mappedStage;
+      observedStages.add(progressStage);
+      currentStage = progressStage;
 
       if (isFinishedProgressEvent(event)) {
-        finishedStages.add(mappedStage);
+        finishedStages.add(progressStage);
       }
     };
 
