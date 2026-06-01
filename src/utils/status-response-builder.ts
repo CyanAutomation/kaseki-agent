@@ -47,6 +47,18 @@ function normalizeStageName(stage: unknown): string | undefined {
   return typeof stage === 'string' && stage.trim().length > 0 ? stage.trim() : undefined;
 }
 
+/**
+ * Map Pi stream-only stage names to their corresponding orchestrator stage names.
+ * This affects task progress calculation while preserving original event names for display.
+ */
+function mapOrchestratorStage(stage: string): string {
+  // Map 'pi agent' and 'pi tool batch' to 'pi coding agent' for progress calculation
+  if (stage === 'pi agent' || stage === 'pi tool batch') {
+    return 'pi coding agent';
+  }
+  return stage;
+}
+
 function isFinishedProgressEvent(event: ProgressEventLike): boolean {
   return event.status === 'finished' || (typeof event.detail === 'string' && event.detail.includes('finished'));
 }
@@ -328,14 +340,24 @@ export class StatusResponseBuilder {
     let currentStage: string | undefined = normalizeStageName(job.currentStage) ?? normalizeStageName(response.progress?.stage);
 
     const ingestEvent = (event: ProgressEventLike): void => {
-      const stage = normalizeStageName(event.stage);
-      if (!stage) {
+      const originalStage = normalizeStageName(event.stage);
+      if (!originalStage) {
         return;
       }
-      observedStages.add(stage);
-      currentStage = stage;
+
+      // Use the original stage name for tracking and display
+      observedStages.add(originalStage);
+
+      // Use the mapped stage name for progress calculation
+      const mappedStage = mapOrchestratorStage(originalStage);
+
+      // Update current stage with the mapped name for progress calculation
+      if (currentStage === originalStage || currentStage === undefined) {
+        currentStage = mappedStage;
+      }
+
       if (isFinishedProgressEvent(event)) {
-        finishedStages.add(stage);
+        finishedStages.add(mappedStage);
       }
     };
 
