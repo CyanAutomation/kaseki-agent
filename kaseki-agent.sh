@@ -3612,7 +3612,13 @@ run_goal_check() {
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
-  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! node -e '
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
+    # shellcheck disable=SC2016
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at /results/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to /results/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$attempt" 2>> /results/goal-check-stderr.log || true
+    GOAL_CHECK_EXIT=86
+    GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
+    emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT (full details: /results/goal-check-validation-errors.jsonl)" "continue"
+  elif [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! node -e '
 const fs = require("node:fs");
 const input = process.argv[1];
 const output = process.argv[2];
