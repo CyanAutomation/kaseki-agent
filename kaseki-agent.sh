@@ -1082,7 +1082,7 @@ run_static_test_impact_check() {
   fi
 
   production_matches="$(grep -Ei "$indicator_regex" "$changed_files_file" 2>/dev/null | grep -Ev '(^tests/|(^|/)[^/]+[.](test|spec)[.][^/]+$)' || true)"
-  diff_matches="$(grep -Ein '^[+-].*(parse|parser|regex|regexp|stage|event|format|serialize|name)' "$diff_file" 2>/dev/null | head -20 || true)"
+  diff_matches="$(grep -Ein '^[+-]' "$diff_file" 2>/dev/null | grep -Ei "(parse|parser|regex|regexp|stage|event|format|serialize|name)" | head -20 || true)"
 
   if [ -z "$production_matches" ] && [ -z "$diff_matches" ]; then
     return 0
