@@ -463,6 +463,7 @@ const controllerPage = String.raw`<!doctype html>
          Check class combines flex + grid for checkbox/label pairs. */
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { display: grid; gap: var(--control-gap); }
       .grid, .checks, .action-row, .run-status, .summary-grid, .link-grid { grid-template-columns: minmax(0, 1fr); }
+      .action-row.run-actions { display: flex; gap: var(--control-gap); flex-wrap: wrap; }
       .check {
         align-items: center;
         display: flex;
@@ -475,7 +476,11 @@ const controllerPage = String.raw`<!doctype html>
       .check-label { color: var(--color-text); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); line-height: var(--line-height-snug); }
       .check-helper { color: var(--color-text-muted); font-size: var(--font-size-md); line-height: var(--line-height-relaxed); }
       .action-row { align-items: end; }
-      .action-row > button, .run-status > button { width: 100%; }
+      .action-row:not(.run-actions) > button, .run-status > button { width: 100%; }
+      .action-row.run-actions > button { flex: 1; min-width: 120px; }
+      .action-row.run-actions #validate { order: 1; }
+      .action-row.run-actions #submit { order: 2; }
+      .action-row.run-actions #cancel-run { order: 3; }
       .run-status { grid-template-columns: minmax(0, 1fr); }
       .summary-grid {
         grid-template-columns: repeat(auto-fit, minmax(var(--card-min-width), 1fr));
@@ -607,6 +612,8 @@ const controllerPage = String.raw`<!doctype html>
       button:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
       #submit:disabled { background-color: #666; border-color: #666; color: #aaa; }
       #submit:enabled { cursor: pointer; }
+      #cancel-run:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+      #cancel-run:enabled { cursor: pointer; }
       .validation-badge {
         margin-left: 6px;
         color: #00d084;
@@ -705,11 +712,10 @@ const controllerPage = String.raw`<!doctype html>
           padding: var(--content-pad-desktop);
         }
         .grid, .checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .action-row {
+        .action-row:not(.run-actions) {
           grid-template-columns: repeat(auto-fit, minmax(160px, max-content));
         }
-        .action-row.run-actions { justify-content: end; }
-        .action-row.controller-actions { justify-content: start; }
+        .action-row.run-actions { justify-content: flex-start; }
         .run-status { grid-template-columns: minmax(0, 1fr) minmax(160px, max-content); }
       }
       /* ===== TABS ===== */
@@ -1760,6 +1766,7 @@ const controllerPage = String.raw`<!doctype html>
           button.textContent = formatRunButtonLabel(run);
           button.addEventListener('click', () => {
             runIdInput.value = run.id;
+            updateCancelRunButtonState();
             showRunLinks(run.id);
             activeRunView = 'status';
             pollRun(run.id);
@@ -2026,11 +2033,26 @@ const controllerPage = String.raw`<!doctype html>
         });
       }
 
+      function updateCancelRunButtonState() {
+        const cancelRunBtn = document.querySelector('#cancel-run');
+        const runId = runIdInput.value.trim();
+        if (runId) {
+          cancelRunBtn.disabled = false;
+          cancelRunBtn.setAttribute('title', 'Cancel the active run');
+          cancelRunBtn.setAttribute('aria-disabled', 'false');
+        } else {
+          cancelRunBtn.disabled = true;
+          cancelRunBtn.setAttribute('title', 'No active run');
+          cancelRunBtn.setAttribute('aria-disabled', 'true');
+        }
+      }
+
       // Restore validation state on page load
       getValidationState();
       updateSubmitButtonState();
       updateValidationBadge();
       attachFormChangeListeners();
+      updateCancelRunButtonState();
 
       document.querySelector('#validate').addEventListener('click', (event) => {
         if (!form.reportValidity()) return;
@@ -2306,6 +2328,7 @@ const controllerPage = String.raw`<!doctype html>
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
               runIdInput.value = payload.id;
+              updateCancelRunButtonState();
               showRunLinks(payload.id);
               activeRunView = 'status';
               loadRunsList({ preserveOutput: true });
