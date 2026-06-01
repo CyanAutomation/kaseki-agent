@@ -333,6 +333,18 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'string',
         description: 'Failure classification (only if failed)',
       },
+      validationFailureReason: {
+        type: 'string',
+        description: 'Validation-related failure reason, including validation allowlist gates when present',
+      },
+      validationAllowlistFailureReason: {
+        type: 'string',
+        description: 'Dedicated reason when files changed during validation are outside KASEKI_VALIDATION_ALLOWLIST',
+      },
+      qualityFailureReason: {
+        type: 'string',
+        description: 'Quality gate failure reason (retained for compatibility)',
+      },
       error: {
         type: 'string',
         description: 'Error message (only if failed)',
