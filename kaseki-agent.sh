@@ -5119,6 +5119,7 @@ NODE
     emit_progress "run evaluation" "wrote run evaluation artifact"
   fi
   record_stage_timing "run evaluation" "$RUN_EVALUATION_EXIT" "$(($(date +%s) - evaluation_start))" "timeout_seconds=$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS warning=$RUN_EVALUATION_WARNING"
+  collect_run_evaluation_feedback "$INSTANCE_NAME"
   return 0
 }
 
@@ -7143,7 +7144,6 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
   emit_progress "baseline validation setup" "started"
   
   # Check cache first
-  local baseline_cache_dir
   baseline_cache_dir="$(baseline_validation_cache_dir)"
   
   if restore_baseline_validation_from_cache "$baseline_cache_dir"; then

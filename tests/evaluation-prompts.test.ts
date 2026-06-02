@@ -419,11 +419,11 @@ NODE
 
     it('should call collect_run_evaluation_feedback after run-evaluation', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const runEvalSection = scriptContent.substring(
-        scriptContent.indexOf('run_run_evaluation'),
-        scriptContent.indexOf('run_run_evaluation') + 5000
-      );
-      expect(runEvalSection).toContain('collect_run_evaluation_feedback');
+      const lines = scriptContent.split('\n').map((line) => line.trim());
+      const runEvalLine = lines.findIndex((line) => line === 'run_run_evaluation');
+      expect(runEvalLine).toBeGreaterThanOrEqual(0);
+      const nextCommand = lines.slice(runEvalLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
+      expect(nextCommand).toBe('collect_run_evaluation_feedback "$INSTANCE_NAME"');
     });
   });
 
