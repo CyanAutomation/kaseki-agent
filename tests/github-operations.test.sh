@@ -16,7 +16,7 @@ info() { printf '[info] %s\n' "$1"; }
 
 assert_file_contains() {
   local file="$1" expected="$2" description="$3"
-  if grep -Fq "$expected" "$file"; then
+  if grep -Fq -- "$expected" "$file"; then
     pass "$description"
   else
     printf -- '--- %s ---\n' "$file" >&2
@@ -27,7 +27,7 @@ assert_file_contains() {
 
 assert_file_not_contains() {
   local file="$1" unexpected="$2" description="$3"
-  if grep -Fq "$unexpected" "$file"; then
+  if grep -Fq -- "$unexpected" "$file"; then
     printf -- '--- %s ---\n' "$file" >&2
     cat "$file" >&2 2>/dev/null || true
     fail "$description"
@@ -94,6 +94,17 @@ case "${1:-}" in
       exit 1
     fi
     printf 'assignment failure captured\n'
+    exit 0
+    ;;
+  node-assignment-failure-pem)
+    shift
+    local_log="$1"
+    readonly captured_output=''
+    if run_node_subprocess captured_output 'process.stdout.write(process.env.PEM_OUTPUT)' "" "$local_log"; then
+      printf 'unexpected success\n'
+      exit 1
+    fi
+    printf 'pem assignment failure captured\n'
     exit 0
     ;;
   *)
@@ -332,8 +343,22 @@ assert_file_contains "$RESULTS_DIR/node-assignment-failure.log" 'Failed to assig
 assert_file_contains "$RESULTS_DIR/node-assignment-failure.log" 'output preview (redacted, first 150 chars): alpha [redacted token] omega tail' 'Assignment failure diagnostic includes a redacted output preview'
 assert_file_not_contains "$RESULTS_DIR/node-assignment-failure.log" 'sk-abcdefghijklmnopqrstuvwxyz0123456789' 'Assignment failure diagnostic redacts token-like output'
 
+# Test 9: Multi-line PEM/private-key output is redacted before diagnostic previews are logged.
+info 'Test 9: Node subprocess assignment failure redacts multi-line private key previews'
+set +e
+env PEM_OUTPUT=$'alpha\n-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj\nvery-secret-private-key-body\n-----END PRIVATE KEY-----\nomega' \
+  "$HARNESS" node-assignment-failure-pem "$RESULTS_DIR/node-assignment-failure-pem.log" > "$RESULTS_DIR/node-assignment-failure-pem.out" 2>&1
+node_assignment_pem_exit=$?
+set -e
+[ "$node_assignment_pem_exit" -eq 0 ] || fail "Node PEM assignment harness exited $node_assignment_pem_exit"
+pass 'Node subprocess assignment failure redacts multi-line PEM private key previews'
+assert_file_contains "$RESULTS_DIR/node-assignment-failure-pem.out" 'pem assignment failure captured' 'Harness observed PEM assignment failure'
+assert_file_contains "$RESULTS_DIR/node-assignment-failure-pem.log" 'output preview (redacted, first 150 chars): alpha [redacted private key] omega' 'Assignment failure diagnostic redacts multi-line private key output'
+assert_file_not_contains "$RESULTS_DIR/node-assignment-failure-pem.log" '-----BEGIN PRIVATE KEY-----' 'Assignment failure diagnostic does not leak PEM header'
+assert_file_not_contains "$RESULTS_DIR/node-assignment-failure-pem.log" 'very-secret-private-key-body' 'Assignment failure diagnostic does not leak PEM body'
+
 info 'All tests passed!'
 printf '\n==> Summary\n'
-printf 'Tests run: 8\n'
-printf 'Passed: 8\n'
+printf 'Tests run: 9\n'
+printf 'Passed: 9\n'
 printf 'Failed: 0\n'
