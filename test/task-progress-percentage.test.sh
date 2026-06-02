@@ -183,17 +183,8 @@ assert_equal "100" "$expected_single" "Single completed stage = 100%, not 1000%"
 
 # Scenario 2: Ensure result never exceeds 100% (handles off-by-one in stage counting)
 # If somehow completedStages > totalStages due to a bug, final result should still cap at 100%
-cat > "$TEST_DIR/progress_invalid_count.jsonl" <<'EOF'
-{"timestamp":"2024-05-25T10:00:00Z","stage":"stage-1","status":"finished"}
-{"timestamp":"2024-05-25T10:00:01Z","stage":"stage-2","status":"finished"}
-{"timestamp":"2024-05-25T10:00:02Z","stage":"stage-1","status":"finished"}
-EOF
-
-# This has 2 unique finished stages, but if metadata says 1 total stage, 
-# result should cap at 100% not overflow
-# Simulate totalStages = 1 (which is invalid but could happen)
-# Formula: (2 / 1) * 100 = 200, should be capped to 100
-assert_equal "100" "100" "Progress percentage capped at maximum 100%"
+# Note: TypeScript tests in src/utils/status-response-builder.test.ts provide comprehensive coverage
+# for this clamping behavior with semantic scenarios (fewer denominator stages than finished observed)
 
 # Scenario 3: Verify boundaries are respected
 # Test 0% (no stages completed)

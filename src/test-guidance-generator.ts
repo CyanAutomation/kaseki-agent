@@ -32,7 +32,7 @@ export interface TestGuidance {
 export function generateTestGuidance(
   testFile: string,
   changeReason: string,
-  changeType: 'parser' | 'event' | 'response_construction' | 'serializer' | 'naming_convention' = 'unknown'
+  changeType: 'parser' | 'event' | 'response_construction' | 'serializer' | 'naming_convention' | 'unknown' = 'unknown'
 ): TestGuidance {
   let examples: TestExample[] = [];
   let affectedAssertions: string[] = [];
@@ -80,7 +80,7 @@ export function generateTestGuidance(
 /**
  * Generate parser-related test examples (null handling, input validation, edge cases)
  */
-function generateParserExamples(reason: string): TestExample[] {
+function generateParserExamples(_reason: string): TestExample[] {
   return [
     {
       type: 'added_assertion',
@@ -116,7 +116,7 @@ function generateParserExamples(reason: string): TestExample[] {
 /**
  * Generate event-related test examples (field changes, timing, payload structure)
  */
-function generateEventExamples(reason: string): TestExample[] {
+function generateEventExamples(_reason: string): TestExample[] {
   return [
     {
       type: 'added_assertion',
@@ -152,7 +152,7 @@ function generateEventExamples(reason: string): TestExample[] {
 /**
  * Generate response construction test examples (serialization, field mapping, format)
  */
-function generateResponseExamples(reason: string): TestExample[] {
+function generateResponseExamples(_reason: string): TestExample[] {
   return [
     {
       type: 'added_test_case',
@@ -188,7 +188,7 @@ function generateResponseExamples(reason: string): TestExample[] {
 /**
  * Generate serializer-related test examples (encoding, type preservation, format)
  */
-function generateSerializerExamples(reason: string): TestExample[] {
+function generateSerializerExamples(_reason: string): TestExample[] {
   return [
     {
       type: 'added_test_case',
@@ -224,7 +224,7 @@ function generateSerializerExamples(reason: string): TestExample[] {
 /**
  * Generate naming convention test examples (renamed fields, constants, etc.)
  */
-function generateNamingExamples(reason: string): TestExample[] {
+function generateNamingExamples(_reason: string): TestExample[] {
   return [
     {
       type: 'modified_assertion',
