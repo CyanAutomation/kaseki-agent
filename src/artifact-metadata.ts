@@ -77,6 +77,58 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  // Goal-setting (pre-scouting phase)
+  'goal-setting.json': {
+    name: 'goal-setting.json',
+    contentType: 'application/json',
+    description: 'Pre-scouting goal-setting output: upgraded goal, requirements, success criteria, anti-patterns, quality metrics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 6,
+    sizeHint: 'small',
+  },
+
+  'goal-setting-summary.json': {
+    name: 'goal-setting-summary.json',
+    contentType: 'application/json',
+    description: 'Pi goal-setting event statistics including model and token metadata when available',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
+  'goal-setting-events.jsonl': {
+    name: 'goal-setting-events.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Sanitized Pi events from the goal-setting phase',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'large',
+  },
+
+  'goal-setting-stderr.log': {
+    name: 'goal-setting-stderr.log',
+    contentType: 'text/plain',
+    description: 'Goal-setting Pi stderr and artifact validation diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'medium',
+  },
+
+  'goal-setting-validation-errors.jsonl': {
+    name: 'goal-setting-validation-errors.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Structured goal-setting artifact validation failures with field-level expected/actual details and suggestions',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 8,
+    sizeHint: 'small',
+  },
+
+  'goal-setting-metrics.json': {
+    name: 'goal-setting-metrics.json',
+    contentType: 'application/json',
+    description: 'Goal-setting phase metrics: invoked timestamp, completion timestamp, duration, retry count, success status, and failure reason if applicable',
+    availability: ArtifactAvailability.ALWAYS,
+    triageOrder: 26,
+    sizeHint: 'small',
+  },
+
   'scouting.json': {
     name: 'scouting.json',
     contentType: 'application/json',
