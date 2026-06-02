@@ -512,6 +512,84 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBe(100);
     });
 
+    it('should calculate 0% when no stages are completed', () => {
+      // Semantic boundary test: zero completed stages should yield 0% progress
+      const job: Partial<Job> = {
+        id: 'job-zero-progress',
+        status: 'running',
+        resultDir: '/results/job-zero-progress',
+      };
+
+      // Progress shows only a started stage, no finished stages
+      const progressContent = JSON.stringify({ stage: 'clone repository', status: 'started' });
+
+      const metadataContent = JSON.stringify({
+        stages: ['clone repository', 'agent setup', 'pi coding agent', 'quality checks'],
+      });
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) {
+          return progressContent;
+        }
+        return metadataContent;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-zero-progress',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // No stages finished: 0/4 = 0%
+      expect(response.taskProgressPercent).toBe(0);
+    });
+
+    it('should calculate 100% when all stages are completed', () => {
+      // Semantic boundary test: all stages completed should yield exactly 100%
+      const job: Partial<Job> = {
+        id: 'job-all-complete',
+        status: 'running',
+        resultDir: '/results/job-all-complete',
+      };
+
+      // Progress shows all stages finished
+      const progressContent = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'agent setup', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pi coding agent', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
+      const metadataContent = JSON.stringify({
+        stages: ['clone repository', 'agent setup', 'pi coding agent'],
+      });
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) {
+          return progressContent;
+        }
+        return metadataContent;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-all-complete',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // All stages finished: 3/3 = 100%
+      expect(response.taskProgressPercent).toBe(100);
+    });
+
     it('should normalize stage names (trim whitespace)', () => {
       const job: Partial<Job> = {
         id: 'job-1',

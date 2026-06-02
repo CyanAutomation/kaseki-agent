@@ -164,16 +164,9 @@ assert_equal "100" "$expected_single" "Single completed stage = 100%, not 1000%"
 # Scenario 2: Ensure result never exceeds 100% (handles off-by-one in stage counting)
 # If somehow completedStages > totalStages due to a bug, final result should still cap at 100%
 # Note: TypeScript tests in src/utils/status-response-builder.test.ts provide comprehensive coverage
-# for this clamping behavior with semantic scenarios (fewer denominator stages than finished observed)
-
-# Scenario 3: Verify boundaries are respected
-# Test 0% (no stages completed)
-expected_min=$((0 * 100 / 5))
-assert_equal "0" "$expected_min" "Minimum boundary: 0% is valid"
-
-# Test 100% (all stages completed)  
-expected_max=$((5 * 100 / 5))
-assert_equal "100" "$expected_max" "Maximum boundary: 100% is valid"
+# for:
+# - Clamping behavior with semantic scenarios (fewer denominator stages than finished observed)
+# - Boundary conditions: zero/all/over-completed stages with taskProgressPercent assertions
 
 # ============================================================================
 
