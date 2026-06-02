@@ -2712,7 +2712,7 @@ baseline_validation_cache_is_valid() {
   [ -f "$cache_dir/validation-timings.tsv" ] || return 1
   
   # Check age: if older than max_age_hours, invalidate
-  local cache_mtime modified_seconds now_seconds age_hours
+  local cache_mtime now_seconds age_hours
   cache_mtime="$(stat -c %Y "$cache_dir/validation.log" 2>/dev/null || printf '0')"
   now_seconds="$(date +%s)"
   age_hours=$(( (now_seconds - cache_mtime) / 3600 ))
@@ -2781,7 +2781,6 @@ save_baseline_validation_to_cache() {
 
 checkout_baseline_repo() {
   local baseline_dir="/workspace-baseline"
-  local baseline_workspace_cache_dir="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}/workspace"
   
   # Clean up any existing baseline
   rm -rf "$baseline_dir" 2>/dev/null || true
