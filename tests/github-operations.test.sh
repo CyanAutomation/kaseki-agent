@@ -60,8 +60,10 @@ case "${1:-}" in
     GITHUB_API_ERROR_TYPE=""
     GITHUB_API_ERROR_MESSAGE=""
     GITHUB_API_HTTP_STATUS=""
+    set +e
     validate_github_api_response "$@"
     rc=$?
+    set -e
     if [ "$rc" -eq 0 ]; then
       printf 'VALID=1\n'
       exit 0
@@ -82,6 +84,17 @@ case "${1:-}" in
     shift
     apply_github_pr_labels "$@"
     exit "$?"
+    ;;
+  node-assignment-failure)
+    shift
+    local_log="$1"
+    readonly captured_output=''
+    if run_node_subprocess captured_output "process.stdout.write('alpha sk-abcdefghijklmnopqrstuvwxyz0123456789 omega tail that should be truncated after the diagnostic preview budget')" "" "$local_log"; then
+      printf 'unexpected success\n'
+      exit 1
+    fi
+    printf 'assignment failure captured\n'
+    exit 0
     ;;
   *)
     printf 'unknown harness command: %s\n' "${1:-}" >&2
@@ -306,8 +319,21 @@ assert_file_not_contains "$RESULTS_DIR/git-push-failure.log" 'Branch pushed succ
 assert_file_contains "$RESULTS_DIR/git-push-failure.log" 'Failed to push branch (exit 42)' 'Git push failure records the git exit code despite tee'
 assert_file_contains "$RESULTS_DIR/git-push-failure.log" 'GITHUB_PUSH_EXIT=42' 'Git push failure updates the caller-visible push exit artifact'
 
+# Test 8: Node subprocess output assignment failures are part of the helper contract.
+info 'Test 8: Node subprocess assignment failure contract'
+set +e
+"$HARNESS" node-assignment-failure "$RESULTS_DIR/node-assignment-failure.log" > "$RESULTS_DIR/node-assignment-failure.out" 2>&1
+node_assignment_exit=$?
+set -e
+[ "$node_assignment_exit" -eq 0 ] || fail "Node assignment harness exited $node_assignment_exit"
+pass 'Node subprocess assignment failure is caller-visible as non-zero from the helper'
+assert_file_contains "$RESULTS_DIR/node-assignment-failure.out" 'assignment failure captured' 'Harness observed run_node_subprocess assignment failure'
+assert_file_contains "$RESULTS_DIR/node-assignment-failure.log" 'Failed to assign Node.js output to variable: captured_output' 'Assignment failure diagnostic names the output variable'
+assert_file_contains "$RESULTS_DIR/node-assignment-failure.log" 'output preview (redacted, first 150 chars): alpha [redacted token] omega tail' 'Assignment failure diagnostic includes a redacted output preview'
+assert_file_not_contains "$RESULTS_DIR/node-assignment-failure.log" 'sk-abcdefghijklmnopqrstuvwxyz0123456789' 'Assignment failure diagnostic redacts token-like output'
+
 info 'All tests passed!'
 printf '\n==> Summary\n'
-printf 'Tests run: 7\n'
-printf 'Passed: 7\n'
+printf 'Tests run: 8\n'
+printf 'Passed: 8\n'
 printf 'Failed: 0\n'
