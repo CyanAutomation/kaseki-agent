@@ -325,13 +325,23 @@ run_node_subprocess() {
   local input_data="${3:-}"
   local error_log_file="${4:-/tmp/node-error.log}"
   local node_stderr_tmp node_exit_code output_value
-  
+
+  if ! [[ "$output_var_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    {
+      printf '[node-subprocess-error] Invalid output variable name: %s\n' "$output_var_name"
+      printf '[node-subprocess-error] code: %.200s\n' "$node_code"
+    } | tee -a "$error_log_file" >&2
+    return 1
+  fi
+
   node_stderr_tmp="$(mktemp /tmp/node-stderr.XXXXXX)" || {
-    printf 'ERROR: Failed to create temp file for Node.js stderr\n' >&2
-    eval "$output_var_name=''"
+    printf '[node-subprocess-error] Failed to create temp file for Node.js stderr\n' | tee -a "$error_log_file" >&2
+    if ! printf -v "$output_var_name" '%s' ''; then
+      printf '[node-subprocess-error] Failed to clear output variable: %s\n' "$output_var_name" | tee -a "$error_log_file" >&2
+    fi
     return 1
   }
-  
+
   # Run Node.js and capture both stdout and stderr
   if [ -n "$input_data" ]; then
     output_value=$(printf '%s' "$input_data" | node -e "$node_code" 2>"$node_stderr_tmp")
@@ -339,7 +349,7 @@ run_node_subprocess() {
     output_value=$(node -e "$node_code" 2>"$node_stderr_tmp")
   fi
   node_exit_code=$?
-  
+
   # Handle errors
   if [ $node_exit_code -ne 0 ]; then
     local stderr_content
@@ -355,12 +365,19 @@ run_node_subprocess() {
       fi
     } | tee -a "$error_log_file" >&2
     rm -f "$node_stderr_tmp"
-    eval "$output_var_name=''"
+    if ! printf -v "$output_var_name" '%s' ''; then
+      printf '[node-subprocess-error] Failed to clear output variable: %s\n' "$output_var_name" | tee -a "$error_log_file" >&2
+      return 1
+    fi
     return "$node_exit_code"
   fi
-  
+
   # Success: store output in variable and return 0
-  eval "$output_var_name='$output_value'"
+  if ! printf -v "$output_var_name" '%s' "$output_value"; then
+    printf '[node-subprocess-error] Failed to assign output variable: %s\n' "$output_var_name" | tee -a "$error_log_file" >&2
+    rm -f "$node_stderr_tmp"
+    return 1
+  fi
   rm -f "$node_stderr_tmp"
   return 0
 }
