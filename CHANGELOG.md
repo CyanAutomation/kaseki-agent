@@ -4,6 +4,29 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.59.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.5...v1.59.0) (2026-06-02)
+
+
+### Features
+
+* add baseline test failure comparison feature with detailed documentation and integration tests ([9a3887b](https://github.com/CyanAutomation/kaseki-agent/commit/9a3887b4f170d72a7df194154ee31588e137bf56))
+* add documentation cross-reference tests for evaluation prompts and goal-setting guide ([206ff4c](https://github.com/CyanAutomation/kaseki-agent/commit/206ff4c51f8e416b79e029bd62636dd21a112d21))
+* add documentation integrity tests for cross-references and structure validation ([f92301d](https://github.com/CyanAutomation/kaseki-agent/commit/f92301df347aa63ede24285984b6a11d62efcbe4))
+* add goal-setting artifacts and metrics tracking to the registry ([efe8369](https://github.com/CyanAutomation/kaseki-agent/commit/efe83698d01ffa0e0a3e8c399ba08e5db421d8db))
+* add validation failure causality analysis architecture documentation ([1df07ec](https://github.com/CyanAutomation/kaseki-agent/commit/1df07ec380867a9968d4908e09281131295aeedd))
+* enhance Jest configuration and add comprehensive tests for task progress percentage calculations ([4cdc815](https://github.com/CyanAutomation/kaseki-agent/commit/4cdc815a9dcd964783c9c92da17bafa6f2946a68))
+* enhance test guidance and status response handling with improved validation and clamping logic ([9d26a44](https://github.com/CyanAutomation/kaseki-agent/commit/9d26a445ff08eecb951284e7818fa7bd43082887))
+* implement baseline validation for test failure analysis ([543a17a](https://github.com/CyanAutomation/kaseki-agent/commit/543a17af98b4fcb6fc8055065899055e54ced809))
+* implement validation failure causality analysis with integration tests and documentation ([e70b881](https://github.com/CyanAutomation/kaseki-agent/commit/e70b881561b1427f83bc91c736a27cbf1c941aa7))
+* Integrate causality assessment into goal-check process ([05546b4](https://github.com/CyanAutomation/kaseki-agent/commit/05546b42f6957455d323026191be813906cc849a))
+* integrate feedback collection after run evaluation and update related tests ([3a1b0ca](https://github.com/CyanAutomation/kaseki-agent/commit/3a1b0ca9b6436a997c62dcc0110a6c5790dccbba))
+* refine function end detection logic and remove outdated documentation tests in evaluation prompts ([695d9c5](https://github.com/CyanAutomation/kaseki-agent/commit/695d9c5b2b5801ef3a726b3e0e5f899e07d25d07))
+* remove unused imports and update path resolution in test files ([2d92f45](https://github.com/CyanAutomation/kaseki-agent/commit/2d92f45cc58c1566482025388207a408c10dc47c))
+* update evaluation prompt tests for feedback collection and adjust goal quality score expectation ([4cc40c7](https://github.com/CyanAutomation/kaseki-agent/commit/4cc40c7b3eb375a411a88e2952724e94aa2e99bd))
+* update Jest configuration and add tests for task progress percentage calculations ([9054e4f](https://github.com/CyanAutomation/kaseki-agent/commit/9054e4f9065878a0dac708b2c066c9380fced014))
+* update Jest configuration and tests for improved progress calculation and validation ([e99f19b](https://github.com/CyanAutomation/kaseki-agent/commit/e99f19bb47f7b513ffeb0df56376f45821c7745a))
+* update scoring system and enhance quality warning checks in goal evaluation ([218f094](https://github.com/CyanAutomation/kaseki-agent/commit/218f09474a72c0cb160a52bd2df5ea373051eac2))
+
 ## [1.58.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.4...v1.58.5) (2026-06-02)
 
 
