@@ -152,12 +152,12 @@ async function runAnalyzer(
     // Cleanup
     try {
       fs.unlinkSync(baselineFile);
-    } catch (e) {
+    } catch {
       // ignore
     }
     try {
       fs.unlinkSync(workingFile);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -205,7 +205,7 @@ async function runTests() {
       // Cleanup output file
       try {
         fs.unlinkSync(outputFile);
-      } catch (e) {
+      } catch {
         // ignore
       }
     } catch (error) {
