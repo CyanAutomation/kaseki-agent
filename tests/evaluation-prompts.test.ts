@@ -2,10 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
-import { fileURLToPath } from 'url';
-
-// Use global describe, it, expect, beforeAll from Jest
-const __dirname = path.join(process.cwd(), 'tests');
 
 /**
  * Tests for evaluation prompt enhancements
@@ -19,9 +15,10 @@ const __dirname = path.join(process.cwd(), 'tests');
 
 describe('Evaluation Prompt Enhancements', () => {
   let kasekiAgentPath: string;
+  const projectRoot = process.cwd();
 
   beforeAll(() => {
-    kasekiAgentPath = path.join(process.cwd(), 'kaseki-agent.sh');
+    kasekiAgentPath = path.join(projectRoot, 'kaseki-agent.sh');
     if (!fs.existsSync(kasekiAgentPath)) {
       throw new Error(`kaseki-agent.sh not found at ${kasekiAgentPath}`);
     }
@@ -307,7 +304,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const fakeBin = path.join(tmpDir, 'bin');
       const nodeArgsLog = path.join(tmpDir, 'node-args.log');
       const resultsDir = path.join(tmpDir, 'results');
-      const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
+      const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
       const isolatedFunction = collectRunEvaluationFeedbackFunction
         .replace(/local run_evaluation_path="\/results\/run-evaluation.json"/, `local run_evaluation_path="${resultsDir}/run-evaluation.json"`)
         .replace(/local feedback_file="\/results\/kaseki-improvements.jsonl"/, `local feedback_file="${resultsDir}/kaseki-improvements.jsonl"`)
@@ -435,7 +432,7 @@ NODE
 
   describe('Analysis Scripts', () => {
     it('collect-feedback.js should satisfy the feedback collection contract', () => {
-      const collectFeedbackPath = path.join(__dirname, '..', '..', 'scripts', 'collect-feedback.js');
+      const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
       expect(fs.existsSync(collectFeedbackPath)).toBe(true);
 
       const collectFeedbackContent = fs.readFileSync(collectFeedbackPath, 'utf8');
@@ -495,14 +492,14 @@ NODE
     });
 
     it('should have analyze-goal-feedback.js script', () => {
-      const analyzePath = path.join(__dirname, '..', '..', 'scripts', 'analyze-goal-feedback.js');
+      const analyzePath = path.join(projectRoot, 'scripts', 'analyze-goal-feedback.js');
       expect(fs.existsSync(analyzePath)).toBe(true);
     });
   });
 
   describe('Documentation Updates', () => {
     it('should have EVALUATION_BEST_PRACTICES.md', () => {
-      const docPath = path.join(__dirname, '..', '..', 'docs', 'EVALUATION_BEST_PRACTICES.md');
+      const docPath = path.join(projectRoot, 'docs', 'EVALUATION_BEST_PRACTICES.md');
       expect(fs.existsSync(docPath)).toBe(true);
 
       const content = fs.readFileSync(docPath, 'utf8');
@@ -513,7 +510,7 @@ NODE
     });
 
     it('should have FEEDBACK_LOOP_INTEGRATION.md', () => {
-      const docPath = path.join(__dirname, '..', '..', 'docs', 'FEEDBACK_LOOP_INTEGRATION.md');
+      const docPath = path.join(projectRoot, 'docs', 'FEEDBACK_LOOP_INTEGRATION.md');
       expect(fs.existsSync(docPath)).toBe(true);
 
       const content = fs.readFileSync(docPath, 'utf8');
@@ -523,7 +520,7 @@ NODE
     });
 
     it('GOAL_SETTING_GUIDE.md should cross-reference evaluation docs', () => {
-      const docPath = path.join(__dirname, '..', '..', 'docs', 'GOAL_SETTING_GUIDE.md');
+      const docPath = path.join(projectRoot, 'docs', 'GOAL_SETTING_GUIDE.md');
       const content = fs.readFileSync(docPath, 'utf8');
       expect(content).toContain('EVALUATION_BEST_PRACTICES');
       expect(content).toContain('FEEDBACK_LOOP_INTEGRATION');
