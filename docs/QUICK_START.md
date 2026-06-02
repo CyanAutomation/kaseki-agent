@@ -11,6 +11,7 @@ kaseki-agent init
 ```
 
 This will:
+
 - ✓ Auto-configure secrets directories with proper permissions
 - ✓ Ask which deployment path you want (Docker Compose or single-run)
 - ✓ Collect your OpenRouter API key and other credentials
@@ -43,11 +44,13 @@ docker-compose up -d
 ```
 
 Monitor startup:
+
 ```bash
 docker-compose logs -f kaseki-api
 ```
 
 Verify it's running:
+
 ```bash
 curl http://localhost:8080/ready
 ```
@@ -86,6 +89,7 @@ docker-compose restart kaseki-api
 ### Secrets Not Found?
 
 Check where they're stored:
+
 ```bash
 ls -la /home/pi/secrets/                    # Host Docker source
 docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
@@ -95,6 +99,7 @@ ls -la ~/.kaseki/secrets/                   # Local
 ### API Key Not Working?
 
 Verify the files are readable:
+
 ```bash
 docker exec kaseki-api test -r /run/secrets/kaseki/openrouter_api_key
 docker exec kaseki-api test -r /run/secrets/kaseki/github_app_id
@@ -104,6 +109,7 @@ cat ~/.kaseki/secrets/openrouter_api_key # Local only
 ```
 
 If it looks correct, try running the API service again:
+
 ```bash
 docker-compose up kaseki-api
 ```
@@ -130,12 +136,14 @@ Check results: `ls -la /agents/kaseki-results/`
 ### What's Goal-Setting?
 
 The goal-setting agent:
+
 1. Reads your raw task prompt
 2. Analyzes for clarity, measurability, and scope
 3. Creates an **upgraded goal** with clear success criteria
 4. Returns a refined prompt that improves downstream agent performance
 
 **Example**:
+
 - **Your prompt**: "Fix the parser"
 - **Upgraded goal**: "Fix parseRole() to safely handle null/undefined values in FriendlyName field. Add test coverage for 5 edge cases. All tests must pass."
 
@@ -149,6 +157,7 @@ export KASEKI_GOAL_SETTING=0
 ```
 
 Or via API:
+
 ```json
 {
   "repoUrl": "https://github.com/user/repo",
@@ -172,10 +181,12 @@ export KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
 ### Check Goal-Setting Results
 
 After a run:
+
 - `/results/goal-setting.json` — The upgraded goal with reasoning
 - `/results/goal-setting-events.jsonl` — Agent activity details
 
 Example output:
+
 ```json
 {
   "original_prompt": "Fix the parser bug",
@@ -213,6 +224,7 @@ For detailed guidance, see [GOAL_SETTING_GUIDE.md](GOAL_SETTING_GUIDE.md).
 ### Enable Scouting
 
 Via environment variable:
+
 ```bash
 export KASEKI_SCOUTING=1
 export OPENROUTER_API_KEY=sk-or-your-key
@@ -220,6 +232,7 @@ export OPENROUTER_API_KEY=sk-or-your-key
 ```
 
 Or via API request:
+
 ```json
 {
   "repoUrl": "https://github.com/user/repo",
@@ -243,6 +256,7 @@ export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
 ```
 
 In this case:
+
 - Scouting recommends: `src/parser.ts src/lexer.ts tests/parser.test.ts`
 - You provide: `src/** tests/**`
 - **Result**: Main agent can modify any files in `src/` or `tests/` (broadest of both)
@@ -250,11 +264,13 @@ In this case:
 ### Check Scouting Results
 
 After a run, inspect:
+
 - `/results/scouting.json` — Full research artifact with recommended patterns
 - `/results/scouting-report.md` — Coverage metrics and warnings
 - `/results/metadata.jsonl` — Log of allowlist merge decisions
 
 Example `scouting.json`:
+
 ```json
 {
   "task": "Fix parser bug when handling nested expressions",
@@ -276,6 +292,7 @@ Example `scouting.json`:
 ## Advanced Configuration
 
 For more options (timeouts, validation commands, quality gates, etc.), see:
+
 - [docs/ADVANCED_CONFIG.md](ADVANCED_CONFIG.md) — 60+ environment variables
 - [docs/DEPLOYMENT.md](DEPLOYMENT.md) — Production deployment guide
 - [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
@@ -335,7 +352,6 @@ docker-compose logs kaseki-api
 docker pull docker.io/cyanautomation/kaseki-agent:latest
 ```
 
-
 **Host log mirror warning at startup**  
 
 If `KASEKI_LOG_DIR` is not writable, startup prints a warning and continues by default.
@@ -382,6 +398,105 @@ KASEKI_TS_PRE_CHECK=0
 ```
 
 By default, kaseki-agent runs `npm run build` before invoking the agent to catch TypeScript compilation errors early (saves ~15 minutes when export issues occur). This is automatic and transparent; errors are logged to `/results/pre-validation-ts-check.log`.
+
+---
+
+## Baseline Test Failure Comparison
+
+**New in v2.8**: Kaseki automatically compares test results before and after the agent's changes to identify newly-introduced failures.
+
+### What's Baseline Validation?
+
+Baseline validation checks out the `main` branch and runs your validation commands (tests) on the pristine code, then compares against the agent's modified code:
+
+- **Pre-existing failures**: Failures that existed in main (not the agent's fault)
+- **Newly-introduced failures**: Tests that passed in main but fail after agent changes ⚠️
+- **Fixed failures**: Tests that failed in main but now pass ✅
+
+### Enable Baseline Validation
+
+Baseline validation is **enabled by default**. Just set your validation commands:
+
+```bash
+export KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run test"
+./run-kaseki.sh https://github.com/user/repo main
+```
+
+To disable it:
+
+```bash
+export KASEKI_BASELINE_VALIDATION_ENABLED=0
+```
+
+### View Results
+
+After the run, check:
+
+- **result-summary.md** — Quick summary:
+
+  ```
+  - Test failure analysis: completed
+    - ⚠️ **Newly introduced failures: 1**
+  ```
+
+- **test-baseline-comparison.json** — Full breakdown:
+
+  ```json
+  {
+    "summary": {
+      "total_pre_existing": 2,
+      "total_newly_introduced": 1,
+      "total_fixed": 0
+    },
+    "classification": {
+      "should validate input": {
+        "category": "pre-existing"
+      },
+      "should handle null": {
+        "category": "newly-introduced"
+      }
+    }
+  }
+  ```
+
+- **metadata.json** — Quick metrics:
+
+  ```json
+  {
+    "test_failure_classification_status": "completed",
+    "newly_introduced_failures_count": 1
+  }
+  ```
+
+### Optimize Cache
+
+First run caches the main branch baseline; subsequent runs reuse it (faster):
+
+```bash
+# Run 1: ~30-60 sec overhead (baseline checkout + validation)
+# Run 2-N: baseline reused from cache (~2 sec overhead)
+
+# Control cache expiration (days):
+export KASEKI_BASELINE_CACHE_MAX_AGE_DAYS=14
+```
+
+### Use Case: Quality Gate
+
+Fail the run if agent introduces failures:
+
+```bash
+./run-kaseki.sh
+
+NEWLY_INTRO=$(jq '.summary.total_newly_introduced' \
+  /agents/kaseki-results/kaseki-1/test-baseline-comparison.json)
+
+if [ "$NEWLY_INTRO" -gt 0 ]; then
+  echo "❌ Agent introduced $NEWLY_INTRO failures"
+  exit 1
+fi
+```
+
+**For detailed guide**: → See [docs/BASELINE_TEST_COMPARISON.md](../docs/BASELINE_TEST_COMPARISON.md)
 
 ### Complete Variable Reference
 

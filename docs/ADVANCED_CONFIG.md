@@ -12,14 +12,15 @@ Complete documentation of all 60+ kaseki-agent configuration variables.
 1. [Essential 8 Variables](#essential-8-variables)
 2. [Execution Zone](#execution-zone)
 3. [Validation & Quality Gates Zone](#validation--quality-gates-zone)
-4. [Caching & Performance Zone](#caching--performance-zone)
-5. [Logging & Debugging Zone](#logging--debugging-zone)
-6. [Monitoring Zone (Sentry)](#monitoring-zone-sentry)
-7. [Infrastructure Zone (API Service)](#infrastructure-zone-api-service-only)
-8. [GitHub Integration Zone](#github-integration-zone)
-9. [Advanced & Experimental Zone](#advanced--experimental-zone)
-10. [Configuration Precedence](#configuration-precedence)
-11. [Variable Types & Validation](#variable-types--validation)
+4. [Baseline Test Failure Comparison (v2.8+)](#baseline-test-failure-comparison-v28)
+5. [Caching & Performance Zone](#caching--performance-zone)
+6. [Logging & Debugging Zone](#logging--debugging-zone)
+7. [Monitoring Zone (Sentry)](#monitoring-zone-sentry)
+8. [Infrastructure Zone (API Service)](#infrastructure-zone-api-service-only)
+9. [GitHub Integration Zone](#github-integration-zone)
+10. [Advanced & Experimental Zone](#advanced--experimental-zone)
+11. [Configuration Precedence](#configuration-precedence)
+12. [Variable Types & Validation](#variable-types--validation)
 
 ---
 
@@ -166,6 +167,133 @@ These are the minimum variables needed for any setup path. All other variables h
   ```bash
   KASEKI_STREAM_PROGRESS=false  # For CI/CD pipelines
   ```
+
+---
+
+## Baseline Test Failure Comparison (v2.8+)
+
+Variables controlling baseline test failure classification to distinguish pre-existing from newly-introduced failures.
+
+### `KASEKI_BASELINE_VALIDATION_ENABLED`
+
+- **Type**: `boolean`
+- **Default**: `1` (enabled)
+- **Options**: `0` (disabled), `1` (enabled)
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Enable/disable automatic baseline validation on main branch
+- **Behavior**:
+  - When enabled, checks out main branch and runs `KASEKI_PRE_AGENT_VALIDATION_COMMANDS`
+  - Compares test results before and after agent changes
+  - Classifies failures as pre-existing, newly-introduced, fixed, or changed
+  - Gracefully degrades if baseline checkout fails (continues run without comparison)
+- **Use case**: Identify whether test failures are caused by agent changes or existed in main
+- **Performance impact**: ~30-60 seconds per run (baseline checkout); subsequent runs reuse cache
+- **Example**:
+
+  ```bash
+  # Enable (default)
+  KASEKI_BASELINE_VALIDATION_ENABLED=1
+
+  # Disable for faster runs if you don't care about comparison
+  KASEKI_BASELINE_VALIDATION_ENABLED=0
+  ```
+
+### `KASEKI_BASELINE_CACHE_ROOT`
+
+- **Type**: `string` (directory path)
+- **Default**: `/cache/kaseki-baseline`
+- **Paths**: Single-run (if writable), Local API, Production API
+- **Description**: Root directory for caching baseline checkouts
+- **Behavior**:
+  - First run: Clones main branch and caches it at `<KASEKI_BASELINE_CACHE_ROOT>/<cache_key>/`
+  - Subsequent runs: Reuses cached checkout if not older than `KASEKI_BASELINE_CACHE_MAX_AGE_DAYS`
+  - Cache key is stable: `sha256(REPO_URL) + "main"`
+  - Different repos have separate cache directories
+- **Disk usage per repo**: ~200 MB (npm_modules + git objects)
+- **Example**:
+
+  ```bash
+  # Default
+  KASEKI_BASELINE_CACHE_ROOT=/cache/kaseki-baseline
+
+  # Custom path (e.g., on fast SSD)
+  KASEKI_BASELINE_CACHE_ROOT=/mnt/ssd/kaseki-cache
+
+  # Shared across cluster
+  KASEKI_BASELINE_CACHE_ROOT=/nfs/kaseki-baseline
+  ```
+
+### `KASEKI_BASELINE_CACHE_MAX_AGE_DAYS`
+
+- **Type**: `number` (integer, positive)
+- **Default**: `7` (7 days)
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Maximum age of cached baseline before invalidation
+- **Behavior**:
+  - Cache is invalidated if modification time > `KASEKI_BASELINE_CACHE_MAX_AGE_DAYS`
+  - On invalidation, new baseline is checked out and cached
+  - Set to `0` to always fetch fresh baseline (slow, not recommended)
+  - Set to `999` to never invalidate cache (except on manual deletion)
+- **Recommendations**:
+  - Development/local: `1` (fresh daily)
+  - Stable repos: `7` (fresh weekly)
+  - Long-running cached environments: `14` (fresh bi-weekly)
+- **Example**:
+
+  ```bash
+  # Fresh baseline every day
+  KASEKI_BASELINE_CACHE_MAX_AGE_DAYS=1
+
+  # Keep cache for 2 weeks
+  KASEKI_BASELINE_CACHE_MAX_AGE_DAYS=14
+
+  # Never invalidate (manual management)
+  KASEKI_BASELINE_CACHE_MAX_AGE_DAYS=999
+  ```
+
+**Output Artifacts**:
+
+When baseline validation is enabled, these artifacts are generated:
+
+- `/results/validation-baseline.log` — Full output from validation commands on main branch
+- `/results/validation-baseline-timings.tsv` — Per-command timing for baseline
+- `/results/test-baseline-comparison.json` — Structured classification data:
+
+  ```json
+  {
+    "summary": {
+      "total_pre_existing": 2,
+      "total_newly_introduced": 1,
+      "total_fixed": 0
+    },
+    "classification": {
+      "test_name": {
+        "baseline_status": "passed",
+        "working_status": "failed",
+        "category": "newly-introduced"
+      }
+    }
+  }
+  ```
+
+**Integration with Metadata**:
+
+- `metadata.json` includes:
+  - `baseline_validation_enabled`: boolean
+  - `baseline_cache_status`: "completed", "checkout_failed", "validation_failed", "disabled"
+  - `baseline_validation_exit_code`: exit code from baseline validation
+  - `test_failure_classification_status`: "completed", "skipped", "failed"
+  - `newly_introduced_failures_count`: count of newly-introduced failures
+
+**Best Practices**:
+
+- ✅ Enable baseline validation when running tests: `KASEKI_BASELINE_VALIDATION_ENABLED=1`
+- ✅ Set appropriate cache TTL for your environment
+- ✅ Use `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` to specify which tests to run
+- ❌ Don't set cache max age to 0 (forces fresh checkout every run, slow)
+- ❌ Don't disable completely if you want to detect regressions
+
+**See also**: [docs/BASELINE_TEST_COMPARISON.md](BASELINE_TEST_COMPARISON.md) for detailed usage guide.
 
 ---
 
