@@ -6,9 +6,119 @@
 > @cyanautomation/kaseki-agent@1.58.5 build
 > tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
 
-src/test-guidance-generator.ts(35,3): error TS2322: Type '"unknown"' is not assignable to type '"parser" | "event" | "response_construction" | "serializer" | "naming_convention"'.
-src/test-guidance-generator.ts(83,33): error TS6133: 'reason' is declared but its value is never read.
-src/test-guidance-generator.ts(119,32): error TS6133: 'reason' is declared but its value is never read.
-src/test-guidance-generator.ts(155,35): error TS6133: 'reason' is declared but its value is never read.
-src/test-guidance-generator.ts(191,37): error TS6133: 'reason' is declared but its value is never read.
-src/test-guidance-generator.ts(227,33): error TS6133: 'reason' is declared but its value is never read.
+✓ Added .js extensions to imports in dist/
+
+> @cyanautomation/kaseki-agent@1.58.5 generate:openapi
+> node scripts/generate-openapi-spec.js
+
+Generating OpenAPI 3.1 specification...
+✓ OpenAPI spec generated successfully
+  Output: /workspaces/kaseki-agent/kaseki-openapi.json
+  Size: 87.81 KB
+  Endpoints: 15
+  Schemas: 6
+
+> @cyanautomation/kaseki-agent@1.58.5 check:dist-dynamic-imports
+> node dist/check-dist-dynamic-imports.js
+
+✓ No extensionless relative dynamic imports found in dist/
+
+> @cyanautomation/kaseki-agent@1.58.5 type-check
+> tsc --noEmit -p tsconfig.json
+
+FAIL tests/evaluation-prompts.test.ts (17.753 s)
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should call collect_run_evaluation_feedback after run-evaluation
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "collect_run_evaluation_feedback"
+    Received string:    "run_run_evaluation() {
+      local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+      RUN_EVALUATION_EXIT=0
+      RUN_EVALUATION_WARNING=\"\"·
+      printf '\\n==> run evaluation\\n'
+      set_current_stage \"run evaluation\"
+      if [ \"$KASEKI_RUN_EVALUATION\" != \"1\" ]; then
+        printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\\n' \"$KASEKI_RUN_EVALUATION\" | tee -a /results/run-evaluation-stderr.log
+        record_stage_timing \"run evaluation\" 0 0 \"skipped_by_config\"
+        return 0
+      fi
+      if [ \"$KASEKI_DRY_RUN\" = \"1\" ]; then
+        printf 'Run evaluation skipped for dry-run/startup-check mode.\\n' | tee -a /results/run-evaluation-stderr.log
+        record_stage_timing \"run evaluation\" 0 0 \"dry_run=true\"
+        return 0
+      fi·
+      emit_progress \"run evaluation\" \"started\"
+      write_metadata \"$STATUS\"
+      evaluation_prompt=\"$(build_run_evaluation_prompt)\"
+      evaluation_start=\"$(date +%s)\"
+      eval_dirty_before=\"$(git status --porcelain 2>> /results/run-evaluation-stderr.log || true)\"
+      chmod -R a-w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+      set +e
+      OPENROUTER_API_KEY=\"$openrouter_api_key\" \\
+        timeout --signal=SIGTERM \"$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS\" \\
+        pi --mode json --no-session --provider \"$KASEKI_PROVIDER\" --model \"$KASEKI_RUN_EVALUATION_MODEL\" \"$evaluation_prompt\" \\
+        2> >(tee -a /results/run-evaluation-stderr.log >&2) \\
+        | tee \"$RUN_EVALUATION_RAW_EVENTS\" \\
+        | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+      RUN_EVALUATION_EXIT=\"${PIPESTATUS[0]}\"
+      unset evaluation_prompt
+      RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
+      chmod -R u+w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+      set +e·
+      if [ \"$RUN_EVALUATION_EXIT\" -eq 0 ] && ! node -e '
+    const fs = require(\"node:fs\");
+    const input = process.argv[1];
+    const output = process.argv[2];
+    const model = process.argv[3];
+    const actualModel = process.argv[4] || \"unknown\";
+    const assessmentValues = new Set([\"excellent\", \"good\", \"mixed\", \"poor\", \"unknown\"]);
+    const confidenceValues = new Set([\"high\", \"medium\", \"low\"]);
+    const stageValueValues = new Set([\"high\", \"medium\", \"low\", \"unknown\"]);
+    const priorityValues = new Set([\"high\", \"medium\", \"low\"]);
+    const invalid = [];
+    const artifact = JSON.parse(fs.readFileSync(input, \"utf8\"));
+    if (!artifact || Array.isArray(artifact) || typeof artifact !== \"object\") invalid.push(\"root\");
+    if (!assessmentValues.has(artifact.overall_assessment)) invalid.push(\"overall_assessment\");
+    if (!confidenceValues.has(artifact.reviewer_confidence)) invalid.push(\"reviewer_confidence\");
+    if (!Number.isInteger(artifact.task_completion_score) || artifact.task_completion_score < 1 || artifact.task_completion_score > 5) invalid.push(\"task_completion_score\");
+    for (const key of [\"summary\", \"pr_summary\"]) if (typeof artifact[key] !== \"string\") invalid.push(key);
+    for (const key of [\"human_review_focus\", \"efficiency_findings\", \"warnings\"]) {
+      if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === \"string\")) invalid.push(key);
+    }
+    if (!Array.isArray(artifact.stage_value) || !artifact.stage_value.every((item) => item && typeof item.stage === \"string\" && stageValueValues.has(item.value) && typeof item.reason === \"string\")) invalid.push(\"stage_value\");
+    if (!Array.isArray(artifact.kaseki_improvement_opportunities) || !artifact.kaseki_improvement_opportunities.every((item) => item && typeof item.category === \"string\" && priorityValues.has(item.priority) && typeof item.suggestion === \"string\")) invalid.push(\"kaseki_improvement_opportunities\");
+    if (invalid.length) throw new Error(\"invalid run-evaluation fields: \" + invalid.join(\", \"));
+    artifact.timestamp = new Date().toISOString();
+    artifact.model = model;
+    artifact.actual_model = actualModel;
+    fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + \"\\n\");
+    ' \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\" \"$RUN_EVALUATION_ARTIFACT\" \"$KASEKI_RUN_EVALUATION_MODEL\" \"$RUN_EVALUATION_ACTUAL_MODEL\" 2>> /results/run-evaluation-stderr.log; then
+        RUN_EVALUATION_EXIT=86
+        emit_error_event \"run_evaluation_artifact_invalid\" \"Run-evaluation Pi did not write a schema-valid JSON artifact\" \"continue\"
+      fi
+      rm -f \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\"
+      kaseki-pi-event-filter \"$RUN_EVALUATION_RAW_EVENTS\" /results/run-evaluation-events.jsonl /results/run-evaluation-summary.json 2>> /results/run-evaluation-stderr.log || true
+      RUN_EVALUATION_ACTUAL_MODEL=\"$(node -e 'try { const s=require(\"/results/run-evaluation-summary.json\"); const v=String(s.selected_model || s.model || \"\").trim(); console.log(v && v !== \"unknown\" && v !== \"null\" ? v : \"unknown\"); } catch { console.log(\"unknown\"); }' 2>/dev/null)\"
+      if [ -s \"$RUN_EVALUATION_ARTIFACT\" ]; then
+        node - \"$RUN_EVALUATION_ARTIFACT\" \"$RUN_EVALUATION_ACTUAL_MODEL\" <<'NODE' 2>> /results/run-evaluation-stderr.log || true
+    const fs = require('fs');
+    const [file, actualModel] = process.argv.slice(2);
+    const artifact = JSON.parse(fs.readFileSync(file, 'utf8')"
+
+      424 |         scriptContent.indexOf('run_run_evaluation') + 5000
+      425 |       );
+    > 426 |       expect(runEvalSection).toContain('collect_run_evaluation_feedback');
+          |                              ^
+      427 |     });
+      428 |   });
+      429 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:426:30)
+
+To /tmp/kaseki-routes-remote-0mtkOJ
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-67FFbG'...
+done.
+To /tmp/kaseki-routes-remote-0mtkOJ
+   d07e423..0f4715b  main -> main
