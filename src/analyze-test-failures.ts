@@ -56,57 +56,84 @@ interface AnalysisResult {
 function parseTestResults(logContent: string, exitCode: number): Record<string, TestResult> {
   const results: Record<string, TestResult> = {};
 
-  // Pattern 1: Jest/Vitest format
-  // ✓ test name or PASS test name
-  // ✗ test name or FAIL test name
-  const testPatterns = [
-    /✓\s+(.+?)(?:\s+\(\d+ms\))?$/gm,
-    /✗\s+(.+?)(?:\s+\(\d+ms\))?$/gm,
-    /PASS\s+(.+?)(?:\s+\(\d+ms\))?$/gm,
-    /FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/gm,
-  ];
+  // Split into lines for processing
+  const lines = logContent.split('\n');
 
-  // Extract passed tests
-  const passedRegex = /✓\s+(.+?)(?:\s+\(\d+ms\))?$/gm;
-  let match;
-  while ((match = passedRegex.exec(logContent)) !== null) {
-    const testName = match[1].trim();
-    if (testName && !results[testName]) {
-      results[testName] = { status: 'passed' };
+  // Track which test names we've already seen to avoid duplicates
+  const seenTests = new Set<string>();
+
+  for (const line of lines) {
+    // Skip empty lines and header lines
+    if (!line.trim() || /^(Test|PASS|FAIL|Tests|Files):/.test(line.trim())) {
+      continue;
+    }
+
+    // Pattern 1: ✓ test name or ✗ test name
+    let match = line.match(/^\s*✓\s+(.+?)(?:\s+\(\d+ms\))?$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName && !seenTests.has(testName)) {
+        results[testName] = { status: 'passed' };
+        seenTests.add(testName);
+        continue;
+      }
+    }
+
+    match = line.match(/^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName) {
+        results[testName] = { status: 'failed' };
+        seenTests.add(testName);
+        continue;
+      }
+    }
+
+    // Pattern 2: PASS test name or FAIL test name
+    match = line.match(/^\s*PASS\s+(.+?)(?:\s+\(\d+ms\))?$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName && !seenTests.has(testName)) {
+        results[testName] = { status: 'passed' };
+        seenTests.add(testName);
+        continue;
+      }
+    }
+
+    match = line.match(/^\s*FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName) {
+        results[testName] = { status: 'failed' };
+        seenTests.add(testName);
+        continue;
+      }
+    }
+
+    // Pattern 3: [PASS] test name or [FAIL] test name
+    match = line.match(/^\s*\[PASS\]\s+(.+?)$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName && !seenTests.has(testName)) {
+        results[testName] = { status: 'passed' };
+        seenTests.add(testName);
+        continue;
+      }
+    }
+
+    match = line.match(/^\s*\[FAIL\]\s+(.+?)$/);
+    if (match) {
+      const testName = match[1].trim();
+      if (testName) {
+        results[testName] = { status: 'failed' };
+        seenTests.add(testName);
+        continue;
+      }
     }
   }
 
-  // Extract failed tests
-  const failedRegex = /✗\s+(.+?)(?:\s+\(\d+ms\))?$/gm;
-  while ((match = failedRegex.exec(logContent)) !== null) {
-    const testName = match[1].trim();
-    if (testName) {
-      results[testName] = { status: 'failed' };
-    }
-  }
-
-  // Pattern 2: Generic PASS/FAIL lines
-  const passTestRegex = /(?:PASS|✓|\[PASS\])\s+(.+?)(?:\s+|$)/gm;
-  while ((match = passTestRegex.exec(logContent)) !== null) {
-    const testName = match[1].trim();
-    if (testName && testName.length > 3 && !results[testName]) {
-      results[testName] = { status: 'passed' };
-    }
-  }
-
-  const failTestRegex = /(?:FAIL|✗|\[FAIL\])\s+(.+?)(?:\s+|$)/gm;
-  while ((match = failTestRegex.exec(logContent)) !== null) {
-    const testName = match[1].trim();
-    if (testName && testName.length > 3) {
-      results[testName] = { status: 'failed' };
-    }
-  }
-
-  // Pattern 3: "X tests passed, Y failed" summary
-  const summaryMatch = logContent.match(/(\d+)\s+(?:test|spec)s?\s+(?:passed|skipped)/i);
-  if (summaryMatch && Object.keys(results).length === 0) {
-    // If no individual tests found, infer overall status from exit code
-    // (helpful as fallback for frameworks that don't emit per-test lines)
+  // If no individual tests found, infer overall status from exit code
+  if (Object.keys(results).length === 0) {
     results['overall'] = { status: exitCode === 0 ? 'passed' : 'failed' };
   }
 
@@ -139,28 +166,36 @@ function classifyTests(
     const workingStatus = workingResults[testName]?.status || 'skipped';
 
     let category: TestClassification['category'];
+    
+    // Determine classification based on status transitions
     if (workingStatus === 'failed' && baselineStatus === 'failed') {
+      // Same test, still failing
       category = 'pre-existing';
-    } else if (workingStatus === 'failed' && baselineStatus === 'passed') {
+    } else if (workingStatus === 'failed' && (baselineStatus === 'passed' || baselineStatus === 'skipped')) {
+      // Either was passing and now failing, or is new and failing
       category = 'newly-introduced';
     } else if (workingStatus === 'passed' && baselineStatus === 'failed') {
+      // Was failing, now passing
       category = 'fixed';
-    } else if (workingStatus !== baselineStatus) {
+    } else if (workingStatus === 'passed' && baselineStatus === 'skipped') {
+      // New test but passing - don't include in report
+      return;
+    } else if (workingStatus === 'skipped' || baselineStatus === 'skipped') {
+      // Test disappeared or was never run - classify as changed but may skip reporting
       category = 'changed';
     } else {
-      // Both same status - only include if failed
-      if (workingStatus === 'failed') {
-        category = 'pre-existing'; // Both failed
-      } else {
-        return; // Both passed or skipped - skip including in report
-      }
+      // Fallback for any other case
+      category = 'changed';
     }
 
-    classification[testName] = {
-      baseline_status: baselineStatus,
-      working_status: workingStatus,
-      category,
-    };
+    // Only include failed tests and transitions between failed/passed states
+    if (workingStatus === 'failed' || baselineStatus === 'failed') {
+      classification[testName] = {
+        baseline_status: baselineStatus,
+        working_status: workingStatus,
+        category,
+      };
+    }
   });
 
   return classification;
