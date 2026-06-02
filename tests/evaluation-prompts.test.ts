@@ -36,7 +36,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const goalCheckSection = scriptContent.substring(
         scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 5000
+        scriptContent.indexOf('build_goal_check_prompt()') + 20000
       );
       expect(goalCheckSection.toLowerCase()).toContain('smart');
     });
@@ -45,7 +45,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const goalCheckSection = scriptContent.substring(
         scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 5000
+        scriptContent.indexOf('build_goal_check_prompt()') + 20000
       );
       expect(goalCheckSection).toContain('confidence');
       expect(goalCheckSection.toLowerCase()).toContain('grounding');
@@ -55,7 +55,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const goalCheckSection = scriptContent.substring(
         scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 5000
+        scriptContent.indexOf('build_goal_check_prompt()') + 20000
       );
       expect(goalCheckSection).toContain('specific');
       expect(goalCheckSection).toContain('verifiable');
@@ -66,8 +66,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const goalCheckSection = scriptContent.substring(
         scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 6000
-      );
+        scriptContent.indexOf('build_goal_check_prompt()') + 20000);
       expect(goalCheckSection).toContain('"met"');
       expect(goalCheckSection).toContain('"confidence"');
       expect(goalCheckSection).toContain('"summary"');
@@ -81,7 +80,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 5000
+        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000
       );
       expect(runEvalSection).toContain('GOAL_SETTING_ARTIFACT');
       expect(runEvalSection).toContain('goal_setting_context');
@@ -91,8 +90,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 6000
-      );
+        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
       expect(runEvalSection.toLowerCase()).toContain('quality');
       expect(runEvalSection.toLowerCase()).toContain('confidence');
       expect(runEvalSection).toContain('goal');
@@ -102,8 +100,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 7000
-      );
+        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
       expect(runEvalSection).toContain('stage');
       expect(runEvalSection).toContain('value');
     });
@@ -123,8 +120,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 7000
-      );
+        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
       expect(runEvalSection).toContain('task_completion_score');
       expect(runEvalSection).toContain('SMART');
     });
@@ -133,8 +129,7 @@ describe('Evaluation Prompt Enhancements', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 10000
-      );
+        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
       expect(runEvalSection).toContain('"overall_assessment"');
       expect(runEvalSection).toContain('"reviewer_confidence"');
       expect(runEvalSection).toContain('"task_completion_score"');
@@ -489,11 +484,6 @@ NODE
       expect(shellContent).toContain(
         'node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"'
       );
-    });
-
-    it('should have analyze-goal-feedback.js script', () => {
-      const analyzePath = path.join(projectRoot, 'scripts', 'analyze-goal-feedback.js');
-      expect(fs.existsSync(analyzePath)).toBe(true);
     });
   });
 

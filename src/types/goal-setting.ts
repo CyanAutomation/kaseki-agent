@@ -149,7 +149,7 @@ export function isSmartCriterion(value: unknown): value is SmartCriterion {
 
 /**
  * Calculate numeric goal quality score from GoalSettingOutput or QualityMetrics.
- * Scoring: high=20, medium=10, low=0 points per dimension (0-100 scale).
+ * Scoring: high=25, medium=12.5, low=0 points per dimension.
  * Returns 50 (midpoint) if no quality metrics provided.
  */
 export function calculateGoalQualityScore(goal: GoalSettingOutput | QualityMetrics): number {
@@ -157,15 +157,15 @@ export function calculateGoalQualityScore(goal: GoalSettingOutput | QualityMetri
   const metrics: QualityMetrics | undefined =
     'quality_metrics' in goal && goal.quality_metrics
       ? goal.quality_metrics
-      : 'clarity' in goal
+      : 'clarity' in (goal as any) && !('original_prompt' in goal)
         ? (goal as QualityMetrics)
         : undefined;
 
   if (!metrics) return 50; // Default midpoint score
 
   const scoreMap: Record<'high' | 'medium' | 'low', number> = {
-    high: 20,
-    medium: 10,
+    high: 25,
+    medium: 12.5,
     low: 0,
   };
 
@@ -180,19 +180,47 @@ export function calculateGoalQualityScore(goal: GoalSettingOutput | QualityMetri
 
 /**
  * Collect quality warnings from a goal output.
- * Returns array of dimension names that scored 'low'.
  */
 export function hasQualityWarnings(goal: GoalSettingOutput): string[] {
-  if (!goal.quality_metrics) return [];
-
   const warnings: string[] = [];
-  const metrics = goal.quality_metrics;
 
-  if (metrics.clarity === 'low') warnings.push('clarity');
-  if (metrics.measurability === 'low') warnings.push('measurability');
-  if (metrics.specificity === 'low') warnings.push('specificity');
-  if (metrics.scope_clarity === 'low') warnings.push('scope_clarity');
-  if (metrics.constraint_strength === 'low') warnings.push('constraint_strength');
+  // Check structure
+  if (!goal.anti_patterns ||
+     (!goal.anti_patterns.do_not_modify?.length &&
+      !goal.anti_patterns.do_not_break?.length &&
+      !goal.anti_patterns.must_preserve?.length)) {
+    warnings.push('No explicit anti-patterns defined - recommended for safety');
+  }
+
+  if (!goal.examples || (!goal.examples.before && !goal.examples.after)) {
+    warnings.push('No examples provided - recommended for clarity');
+  }
+
+  if (!goal.constraints ||
+     (!goal.constraints.operational?.length &&
+      !goal.constraints.architectural?.length &&
+      !goal.constraints.technical?.length &&
+      !goal.constraints.business?.length)) {
+    warnings.push('No constraints provided - recommended for architectural safety');
+  }
+
+  // Check SMART criteria
+  const hasWeakSmart = goal.success_criteria.some(c =>
+    typeof c !== 'string' && c.smart_score === 'low'
+  );
+  if (hasWeakSmart) {
+    warnings.push('Success criteria not measurable (low smart_score)');
+  }
+
+  // Check quality metrics
+  if (goal.quality_metrics) {
+    const metrics = goal.quality_metrics;
+    if (metrics.clarity === 'low') warnings.push('Goal clarity is low');
+    if (metrics.measurability === 'low') warnings.push('Success criteria not measurable');
+    if (metrics.specificity === 'low') warnings.push('Goal specificity is low');
+    if (metrics.scope_clarity === 'low') warnings.push('Scope boundaries are unclear');
+    if (metrics.constraint_strength === 'low') warnings.push('Constraint strength is low');
+  }
 
   return warnings;
 }
