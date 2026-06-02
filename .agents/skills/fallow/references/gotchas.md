@@ -36,6 +36,7 @@ fallow dead-code --format json --quiet
 ```
 
 Only create a config when you need to:
+
 - Change rule severity levels for incremental adoption
 - Add custom ignore patterns or ignore dependencies
 - Specify additional entry points not auto-detected
