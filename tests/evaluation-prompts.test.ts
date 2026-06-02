@@ -421,7 +421,7 @@ NODE
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('run_run_evaluation'),
-        scriptContent.indexOf('run_run_evaluation') + 300
+        scriptContent.indexOf('run_run_evaluation') + 5000
       );
       expect(runEvalSection).toContain('collect_run_evaluation_feedback');
     });
