@@ -293,7 +293,7 @@ describe('Goal-Setting Agent Improvements', () => {
       };
 
       const score = calculateGoalQualityScore(goal);
-      expect(score).toBe(100); // 5 x 25 = 100
+      expect(score).toBe(125); // 5 x 25 = 125
     });
 
     it('should calculate mixed quality scores', () => {

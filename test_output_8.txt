@@ -75,3 +75,56 @@ Cloning into '/tmp/kaseki-routes-checkout-5jEOKA'...
 done.
 To /tmp/kaseki-routes-remote-8FZRaf
    84cd8a5..d887195  main -> main
+
+[kaseki-report.test] runtime_ms=31.38
+
+Summary of all failing tests
+FAIL tests/evaluation-prompts.test.ts (5.975 s)
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should call collect_run_evaluation_feedback after run-evaluation
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "collect_run_evaluation_feedback"
+    Received string:    "run_run_evaluation() {
+      local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+      RUN_EVALUATION_EXIT=0
+      RUN_EVALUATION_WARNING=\"\"·
+      printf '\\n==> run evaluation\\n'
+      set_current_stage \"run evaluation\"
+      if [ \"$KASEKI_RUN_EVALUATION\" != \"1\" ]; then
+        printf 'Run evaluation s"
+
+      424 |         scriptContent.indexOf('run_run_evaluation') + 300
+      425 |       );
+    > 426 |       expect(runEvalSection).toContain('collect_run_evaluation_feedback');
+          |                              ^
+      427 |     });
+      428 |   });
+      429 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:426:30)
+
+FAIL tests/goal-setting-improvements.test.ts (19.771 s)
+  ● Goal-Setting Agent Improvements › Improvement #5: Multi-Dimensional Quality Metrics › should calculate 5-point quality scorecard
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 100
+    Received: 125
+
+      294 |
+      295 |       const score = calculateGoalQualityScore(goal);
+    > 296 |       expect(score).toBe(100); // 5 x 25 = 100
+          |                     ^
+      297 |     });
+      298 |
+      299 |     it('should calculate mixed quality scores', () => {
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:296:21)
+
+
+Test Suites: 2 failed, 61 passed, 63 total
+Tests:       2 failed, 1255 passed, 1257 total
+Snapshots:   0 total
+Time:        102.99 s, estimated 110 s
+Ran all test suites.
