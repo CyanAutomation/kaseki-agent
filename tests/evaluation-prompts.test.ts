@@ -5,8 +5,7 @@ import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 // Use global describe, it, expect, beforeAll from Jest
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.join(process.cwd(), 'tests');
 
 /**
  * Tests for evaluation prompt enhancements
@@ -22,7 +21,7 @@ describe('Evaluation Prompt Enhancements', () => {
   let kasekiAgentPath: string;
 
   beforeAll(() => {
-    kasekiAgentPath = path.join(__dirname, '..', '..', 'kaseki-agent.sh');
+    kasekiAgentPath = path.join(process.cwd(), 'kaseki-agent.sh');
     if (!fs.existsSync(kasekiAgentPath)) {
       throw new Error(`kaseki-agent.sh not found at ${kasekiAgentPath}`);
     }

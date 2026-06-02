@@ -34,3 +34,51 @@ FAIL tests/evaluation-prompts.test.ts
     [7m8[0m const __filename = fileURLToPath(import.meta.url);
     [7m [0m [91m                                 ~~~~~~~~~~~[0m
 
+To /tmp/kaseki-routes-remote-mpHBBt
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-uuA5oS'...
+done.
+To /tmp/kaseki-routes-remote-mpHBBt
+   eeff2b0..88ff908  main -> main
+FAIL tests/goal-setting-improvements.test.ts
+  ● Test suite failed to run
+
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m541[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m541[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m647[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m647[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+
+
+[kaseki-report.test] runtime_ms=9.64
+
+Summary of all failing tests
+FAIL tests/evaluation-prompts.test.ts
+  ● Test suite failed to run
+
+    [96mtests/evaluation-prompts.test.ts[0m:[93m8[0m:[93m34[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m8[0m const __filename = fileURLToPath(import.meta.url);
+    [7m [0m [91m                                 ~~~~~~~~~~~[0m
+
+FAIL tests/goal-setting-improvements.test.ts
+  ● Test suite failed to run
+
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m541[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m541[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m647[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m647[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+
+
+Test Suites: 2 failed, 61 passed, 63 total
+Tests:       1206 passed, 1206 total
+Snapshots:   0 total
+Time:        150.601 s
+Ran all test suites.

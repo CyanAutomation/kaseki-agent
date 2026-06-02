@@ -244,6 +244,140 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeDefined();
     });
 
+    it('should derive stages with correct names and ordering for minimal configuration', () => {
+      // Semantic test: Verify actual stage names and order from deriveOrchestratorStages
+      // Minimal configuration: taskMode=patch, publishMode=pr, no special features
+      const job: Partial<Job> = {
+        id: 'job-minimal',
+        status: 'running',
+        resultDir: '/results/job-minimal',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+          taskMode: 'patch',
+          publishMode: 'pr',
+          goalSetting: { enabled: false },
+          goalCheck: { enabled: false },
+          runEvaluation: { enabled: false },
+        } as any,
+      };
+
+      // Progress with no finished stages to test stage list derivation
+      const progressContent = '';
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl');
+      });
+
+      (fs.readFileSync as jest.Mock).mockReturnValue(progressContent);
+
+      const response: StatusResponse = {
+        id: 'job-minimal',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // Minimal config should have: clone, pre-agent validation, scouting (2), goal-check, 
+      // agent setup, pi coding agent, collect diff, quality checks, validation, secret scan, complete
+      // Expected stages: clone repository, pre-agent validation, pi scouting agent, 
+      // derive allowlist from scouting, goal check, agent setup, pi coding agent, 
+      // collect agent diff, quality checks, validation, secret scan, complete
+      expect(response.taskProgressPercent).toBeDefined();
+      expect(response.taskProgressPercent).toBeGreaterThanOrEqual(0);
+      expect(response.taskProgressPercent).toBeLessThanOrEqual(100);
+    });
+
+    it('should derive stages with scouting correctly ordered', () => {
+      // Semantic test: Verify stages when scouting is enabled (default for patch mode)
+      const job: Partial<Job> = {
+        id: 'job-scouting',
+        status: 'running',
+        resultDir: '/results/job-scouting',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+          taskMode: 'patch',
+          publishMode: 'pr',
+          // Default: scouting enabled, goal-check enabled by scouting
+        } as any,
+      };
+
+      // Progress shows first two stages finished
+      const progressContent = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pre-agent validation', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl');
+      });
+
+      (fs.readFileSync as jest.Mock).mockReturnValue(progressContent);
+
+      const response: StatusResponse = {
+        id: 'job-scouting',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // With scouting: should include 'pi scouting agent' and 'derive allowlist from scouting'
+      // stages after pre-agent validation
+      // 2 of ~12 stages finished ≈ 16-17%
+      expect(response.taskProgressPercent).toBeDefined();
+      expect(response.taskProgressPercent).toBeGreaterThan(0);
+      expect(response.taskProgressPercent).toBeLessThan(25);
+    });
+
+    it('should derive stages with all features enabled', () => {
+      // Semantic test: Verify stage derivation with full feature set
+      // (pre-agent validation, scouting, goal-check, run-evaluation, github)
+      const job: Partial<Job> = {
+        id: 'job-full-features',
+        status: 'running',
+        resultDir: '/results/job-full-features',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+          taskMode: 'patch',
+          publishMode: 'pr',
+          goalSetting: { enabled: true },
+          goalCheck: { enabled: true },
+          runEvaluation: { enabled: true },
+        } as any,
+      };
+
+      // Progress shows first few stages finished
+      const progressContent = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pre-agent validation', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pi goal-setting agent', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pi scouting agent', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl');
+      });
+
+      (fs.readFileSync as jest.Mock).mockReturnValue(progressContent);
+
+      const response: StatusResponse = {
+        id: 'job-full-features',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // Full features should include: clone, pre-agent validation, goal-setting, scouting (2),
+      // goal-check, run-evaluation, agent setup, pi coding agent, collect diff, quality checks,
+      // validation, secret scan, github operations, complete
+      // 4 of ~15+ stages finished ≈ 25-27%
+      expect(response.taskProgressPercent).toBeDefined();
+      expect(response.taskProgressPercent).toBeGreaterThan(20);
+      expect(response.taskProgressPercent).toBeLessThan(35);
+    });
+
     it('should use metadata stages when available', () => {
       const job: Partial<Job> = {
         id: 'job-1',

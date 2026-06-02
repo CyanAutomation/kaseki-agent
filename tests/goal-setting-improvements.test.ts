@@ -538,7 +538,7 @@ describe('Goal-Setting Agent Improvements', () => {
   // ===== IMPROVEMENT #8: REASONING TRANSPARENCY =====
   describe('Improvement #8: Reasoning Transparency', () => {
     it('should validate and preserve actionable reasoning through the production artifact validator', () => {
-      const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+      const repoRoot = process.cwd();
       const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-validator-'));
 
       try {
@@ -644,7 +644,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
   // ===== IMPROVEMENT #9: ITERATIVE REFINEMENT =====
   describe('Improvement #9: Iterative Refinement / Retry', () => {
     it('should persist and interpret retry attempts from an actual goal-setting retry', () => {
-      const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+      const repoRoot = process.cwd();
       const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-retry-'));
 
       try {
