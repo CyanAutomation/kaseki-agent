@@ -87,7 +87,7 @@ export function parseTestFailures(logContent: string): TestFailure[] {
     // Check for failure patterns
     for (const pattern of failurePatterns) {
       if (pattern.test(line)) {
-        if (currentFailure) failures.push(currentFailure as TestFailure);
+        if (currentFailure) failures.push({ ...currentFailure, message: currentFailure.message || '' } as TestFailure);
         currentFailure = { message: line.trim(), stderr: line };
         break;
       }
@@ -100,7 +100,7 @@ export function parseTestFailures(logContent: string): TestFailure[] {
   }
 
   if (currentFailure) {
-    failures.push(currentFailure as TestFailure);
+    failures.push({ ...currentFailure, message: currentFailure.message || '' } as TestFailure);
   }
 
   return failures;
@@ -116,12 +116,18 @@ export function analyzeComparativeTestResults(
   const baselineFailures = parseTestFailures(baselineLog);
   const postChangeFailures = parseTestFailures(postChangeLog);
 
-  const baselineMessages = new Set(baselineFailures.map(f => f.message));
-  const postChangeMessages = new Set(postChangeFailures.map(f => f.message));
+  const baselineMessages = new Set(
+    baselineFailures.map(f => f.message || '').filter(m => m.length > 0)
+  );
+  const postChangeMessages = new Set(
+    postChangeFailures.map(f => f.message || '').filter(m => m.length > 0)
+  );
 
-  const newlyFailing = Array.from(postChangeMessages).filter(m => !baselineMessages.has(m));
-  const newlyPassing = Array.from(baselineMessages).filter(m => !postChangeMessages.has(m));
-  const consistentlyFailing = Array.from(baselineMessages).filter(m =>
+  const newlyFailing: string[] = Array.from(postChangeMessages).filter(m => !baselineMessages.has(m));
+  const newlyPassing: string[] = Array.from(baselineMessages).filter(m =>
+    !postChangeMessages.has(m)
+  );
+  const consistentlyFailing: string[] = Array.from(baselineMessages).filter(m =>
     postChangeMessages.has(m)
   );
 
@@ -271,22 +277,19 @@ export function assessCausality(
 
   // Compute weighted confidence
   let confidence = 0;
-  let weight = 0;
 
   if (signal1IndicatesChangeRelated || comparativeResults.regressionCount > 0) {
     confidence += (signal1Weight * 0.9) / (signal1Weight + signal2Weight + signal3Weight);
-    weight += signal1Weight;
   }
 
   if (signal2IndicatesChangeRelated) {
     confidence += (signal2Weight * 0.8) / (signal1Weight + signal2Weight + signal3Weight);
-    weight += signal2Weight;
   }
 
   if (signal3IndicatesChangeRelated) {
-    confidence += (signal3Weight * (codeImpact.correlationStrength === 'high' ? 0.8 : 0.5)) /
-      (signal1Weight + signal2Weight + signal3Weight);
-    weight += signal3Weight;
+    const impactConfidence = codeImpact.correlationStrength === 'high' ? 0.8 : 0.5;
+    confidence +=
+      (signal3Weight * impactConfidence) / (signal1Weight + signal2Weight + signal3Weight);
   }
 
   // Determine verdict
@@ -302,12 +305,16 @@ export function assessCausality(
 
   if (hasInfraFailure) {
     failureType = 'pre_existing';
-    rationale = `Infrastructure failure detected (${logMarkers
+    const infraPatterns = logMarkers
       .filter(m => m.type === 'infra_failure' && m.found)
       .map(m => m.pattern)
-      .join(', ')}); not caused by code change.`;
+      .join(', ');
+    rationale = `Infrastructure failure detected (${infraPatterns}); not caused by code change.`;
     confidence = 0.95;
-  } else if (comparativeResults.regressionCount > 0 && comparativeResults.newlyFailing.length > 0) {
+  } else if (
+    comparativeResults.regressionCount > 0 &&
+    comparativeResults.newlyFailing.length > 0
+  ) {
     failureType = 'change_related';
     rationale = `${comparativeResults.newlyFailing.length} new test failure(s) introduced by change.`;
     confidence = Math.min(0.95, 0.7 + comparativeResults.newlyFailing.length * 0.1);
@@ -317,9 +324,13 @@ export function assessCausality(
     confidence = 0.85;
   } else if (signalsIndicatingChange >= 2) {
     failureType = 'change_related';
-    rationale = `Multiple signals suggest change-related failure: ${
-      signal2IndicatesChangeRelated ? 'changed code in stack trace, ' : ''
-    }${signal3IndicatesChangeRelated ? 'changed identifiers in error' : ''}`;
+    const signals = [
+      signal2IndicatesChangeRelated ? 'changed code in stack trace' : '',
+      signal3IndicatesChangeRelated ? 'changed identifiers in error' : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    rationale = `Multiple signals suggest change-related failure: ${signals}`;
     confidence = 0.65;
   } else if (signalsIndicatingChange === 1) {
     failureType = 'inconclusive';
