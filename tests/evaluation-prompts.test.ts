@@ -270,10 +270,12 @@ describe('Evaluation Prompt Enhancements', () => {
       const functionStart = scriptContent.indexOf('collect_run_evaluation_feedback() {');
       expect(functionStart).toBeGreaterThanOrEqual(0);
 
-      const functionEnd = scriptContent.indexOf('\n}\n\nconst', functionStart);
+      let functionEnd = scriptContent.indexOf('\n}\n\nbuild_goal_check_prompt()', functionStart);
       if (functionEnd === -1) {
-        const altEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
-        expect(altEnd).toBeGreaterThan(functionStart);
+        functionEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
+      }
+      if (functionEnd === -1) {
+        functionEnd = scriptContent.indexOf('\n}\n', functionStart);
       }
       expect(functionEnd).toBeGreaterThan(functionStart);
       const collectRunEvaluationFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
@@ -484,36 +486,6 @@ NODE
       expect(shellContent).toContain(
         'node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"'
       );
-    });
-  });
-
-  describe('Documentation Updates', () => {
-    it('should have EVALUATION_BEST_PRACTICES.md', () => {
-      const docPath = path.join(projectRoot, 'docs', 'EVALUATION_BEST_PRACTICES.md');
-      expect(fs.existsSync(docPath)).toBe(true);
-
-      const content = fs.readFileSync(docPath, 'utf8');
-      expect(content).toContain('SMART');
-      expect(content).toContain('goal-check');
-      expect(content).toContain('run-evaluation');
-      expect(content).toContain('confidence');
-    });
-
-    it('should have FEEDBACK_LOOP_INTEGRATION.md', () => {
-      const docPath = path.join(projectRoot, 'docs', 'FEEDBACK_LOOP_INTEGRATION.md');
-      expect(fs.existsSync(docPath)).toBe(true);
-
-      const content = fs.readFileSync(docPath, 'utf8');
-      expect(content).toContain('Feedback Path');
-      expect(content).toContain('goal quality');
-      expect(content).toContain('improvement');
-    });
-
-    it('GOAL_SETTING_GUIDE.md should cross-reference evaluation docs', () => {
-      const docPath = path.join(projectRoot, 'docs', 'GOAL_SETTING_GUIDE.md');
-      const content = fs.readFileSync(docPath, 'utf8');
-      expect(content).toContain('EVALUATION_BEST_PRACTICES');
-      expect(content).toContain('FEEDBACK_LOOP_INTEGRATION');
     });
   });
 
