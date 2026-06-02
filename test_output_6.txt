@@ -26,3 +26,59 @@ Generating OpenAPI 3.1 specification...
 > @cyanautomation/kaseki-agent@1.58.5 type-check
 > tsc --noEmit -p tsconfig.json
 
+FAIL tests/goal-setting-improvements.test.ts
+  ● Test suite failed to run
+
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m20[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'dirname' is declared but its value is never read.
+
+    [7m20[0m import { dirname, join } from 'node:path';
+    [7m  [0m [91m         ~~~~~~~[0m
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m21[0m:[93m1[0m - [91merror[0m[90m TS6133: [0m'fileURLToPath' is declared but its value is never read.
+
+    [7m21[0m import { fileURLToPath } from 'node:url';
+    [7m  [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+FAIL tests/evaluation-prompts.test.ts
+  ● Test suite failed to run
+
+    [96mtests/evaluation-prompts.test.ts[0m:[93m5[0m:[93m1[0m - [91merror[0m[90m TS6133: [0m'fileURLToPath' is declared but its value is never read.
+
+    [7m5[0m import { fileURLToPath } from 'url';
+    [7m [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+To /tmp/kaseki-routes-remote-WcxBLt
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-X51wZ9'...
+done.
+To /tmp/kaseki-routes-remote-WcxBLt
+   c74c37f..d4628ef  main -> main
+
+[kaseki-report.test] runtime_ms=80.65
+
+Summary of all failing tests
+FAIL tests/goal-setting-improvements.test.ts
+  ● Test suite failed to run
+
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m20[0m:[93m10[0m - [91merror[0m[90m TS6133: [0m'dirname' is declared but its value is never read.
+
+    [7m20[0m import { dirname, join } from 'node:path';
+    [7m  [0m [91m         ~~~~~~~[0m
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m21[0m:[93m1[0m - [91merror[0m[90m TS6133: [0m'fileURLToPath' is declared but its value is never read.
+
+    [7m21[0m import { fileURLToPath } from 'node:url';
+    [7m  [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+FAIL tests/evaluation-prompts.test.ts
+  ● Test suite failed to run
+
+    [96mtests/evaluation-prompts.test.ts[0m:[93m5[0m:[93m1[0m - [91merror[0m[90m TS6133: [0m'fileURLToPath' is declared but its value is never read.
+
+    [7m5[0m import { fileURLToPath } from 'url';
+    [7m [0m [91m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+Test Suites: 2 failed, 61 passed, 63 total
+Tests:       1209 passed, 1209 total
+Snapshots:   0 total
+Time:        114.486 s, estimated 140 s
+Ran all test suites.
