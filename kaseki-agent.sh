@@ -2874,6 +2874,107 @@ analyze_test_failures_baseline() {
   fi
 }
 
+analyze_validation_failure_causality() {
+  local baseline_log="/results/validation-baseline.log"
+  local post_change_log="/results/validation.log"
+  local git_diff="/results/git.diff"
+  local changed_files="/results/changed-files.txt"
+  local output_file="/results/validation-causality-analysis.json"
+
+  # Skip if no baseline (first run)
+  if [ ! -f "$baseline_log" ]; then
+    emit_progress "validation causality analysis" "skipped (no baseline validation results)"
+    return 0
+  fi
+
+  # Skip if no post-change validation
+  if [ ! -f "$post_change_log" ]; then
+    emit_progress "validation causality analysis" "skipped (no post-change validation results)"
+    return 0
+  fi
+
+  emit_progress "validation causality analysis" "analyzing failure causality (3 signals)"
+
+  # Use TypeScript utilities to analyze causality
+  local analyzer_module="src/lib/validation-causality-analysis.ts"
+  if [ ! -f "$analyzer_module" ] && [ -f "/app/$analyzer_module" ]; then
+    analyzer_module="/app/$analyzer_module"
+  fi
+
+  # Create a small Node.js script to run the analysis
+  local analysis_script="/tmp/causality-analysis.js"
+  cat > "$analysis_script" << 'EOF'
+const fs = require('fs');
+const path = require('path');
+
+// For now, we'll invoke the TypeScript module via tsx or ts-node
+const { analyzeValidationFailureCausality, generateCausalityAnalysisArtifact } = 
+  require(process.argv[1]);
+
+const baselineLog = process.argv[2];
+const postChangeLog = process.argv[3];
+const gitDiff = process.argv[4];
+const changedFiles = process.argv[5];
+const outputPath = process.argv[6];
+
+try {
+  const assessment = analyzeValidationFailureCausality(
+    baselineLog,
+    postChangeLog,
+    gitDiff,
+    changedFiles
+  );
+  
+  if (assessment) {
+    if (generateCausalityAnalysisArtifact(assessment, outputPath)) {
+      console.log(`Causality analysis written to ${outputPath}`);
+      console.log(`Verdict: ${assessment.failureType} (confidence: ${(assessment.confidence * 100).toFixed(1)}%)`);
+      process.exit(0);
+    } else {
+      console.error('Failed to write causality analysis artifact');
+      process.exit(1);
+    }
+  } else {
+    console.error('Failed to assess causality');
+    process.exit(1);
+  }
+} catch (err) {
+  console.error('Causality analysis error:', err.message);
+  process.exit(1);
+}
+EOF
+
+  # Try to run the analysis using ts-node or node directly
+  if command -v npx >/dev/null 2>&1; then
+    npx -y ts-node "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
+      # If ts-node fails, try a simpler approach: just note that analysis was attempted
+      emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
+      return 0
+    }
+  else
+    emit_progress "validation causality analysis" "npx not available; skipping detailed causality breakdown"
+    return 0
+  fi
+
+  rm -f "$analysis_script"
+
+  # Check if artifact was created
+  if [ -f "$output_file" ]; then
+    # Extract verdict from artifact
+    if command -v jq >/dev/null 2>&1; then
+      local verdict=$(jq -r '.assessment.failureType // "unknown"' "$output_file")
+      local confidence=$(jq -r '.assessment.confidence // 0' "$output_file")
+      emit_progress "validation causality analysis" "completed: $verdict (${confidence}% confidence)"
+      return 0
+    else
+      emit_progress "validation causality analysis" "completed (artifact created)"
+      return 0
+    fi
+  fi
+
+  return 0
+}
+
 run_validation_commands() {
   local stage_label="$1"
   local commands="$2"
@@ -7388,6 +7489,11 @@ else
     "$VALIDATION_TIMINGS_FILE" \
     "$VALIDATION_ENV_LOG" \
     "validation_command_failed"
+  
+  # Analyze validation failure causality if validation failed
+  if [ "$VALIDATION_EXIT" -ne 0 ]; then
+    analyze_validation_failure_causality
+  fi
 fi
 
 # Check validation-phase allowlist (if configured)
