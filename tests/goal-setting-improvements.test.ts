@@ -736,7 +736,7 @@ printf '{"type":"message","model":"test-model"}\n'
         writeFileSync(join(fakeBin, 'kaseki-pi-event-filter'), '#!/usr/bin/env bash\ncat "$1" > "$2"\nprintf \'{"selected_model":"test-model"}\\n\' > "$3"\n', { mode: 0o755 });
         writeFileSync(join(fakeBin, 'timeout'), '#!/usr/bin/env bash\nshift 2\n"$@"\n', { mode: 0o755 });
         writeFileSync(join(fakeBin, 'validation-output-filter'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nexit 0\n', { mode: 0o755 });
+        writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nmkdir -p node_modules\nexit 0\n', { mode: 0o755 });
 
         execFileSync('bash', [modifiedScript], {
           env: {

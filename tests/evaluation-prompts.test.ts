@@ -489,6 +489,38 @@ NODE
     });
   });
 
+  describe('Documentation Cross-References', () => {
+    it('should verify required links between evaluation docs', () => {
+      // Validate that the three key evaluation docs link to each other
+      const goalSettingPath = path.join(projectRoot, 'docs', 'GOAL_SETTING_GUIDE.md');
+      const bestPracticesPath = path.join(projectRoot, 'docs', 'EVALUATION_BEST_PRACTICES.md');
+      const feedbackLoopPath = path.join(projectRoot, 'docs', 'FEEDBACK_LOOP_INTEGRATION.md');
+
+      // Check files exist
+      expect(fs.existsSync(goalSettingPath)).toBe(true);
+      expect(fs.existsSync(bestPracticesPath)).toBe(true);
+      expect(fs.existsSync(feedbackLoopPath)).toBe(true);
+
+      const goalSettingContent = fs.readFileSync(goalSettingPath, 'utf8');
+      const bestPracticesContent = fs.readFileSync(bestPracticesPath, 'utf8');
+      const feedbackLoopContent = fs.readFileSync(feedbackLoopPath, 'utf8');
+
+      // GOAL_SETTING_GUIDE.md should link to EVALUATION_BEST_PRACTICES.md and FEEDBACK_LOOP_INTEGRATION.md
+      expect(goalSettingContent).toMatch(/\[.*Evaluation Best Practices.*\]\(.*EVALUATION_BEST_PRACTICES\.md.*\)/);
+      expect(goalSettingContent).toMatch(/\[.*Feedback Loop.*\]\(.*FEEDBACK_LOOP_INTEGRATION\.md.*\)/);
+
+      // EVALUATION_BEST_PRACTICES.md should reference the feedback loop concept
+      expect(bestPracticesContent).toContain('Feedback');
+      expect(bestPracticesContent).toContain('Goal-Check');
+      expect(bestPracticesContent).toContain('Run-Evaluation');
+
+      // FEEDBACK_LOOP_INTEGRATION.md should reference goal-setting and best practices
+      expect(feedbackLoopContent).toContain('Goal-Setting');
+      expect(feedbackLoopContent).toContain('Goal-Check');
+      expect(feedbackLoopContent).toContain('Run-Evaluation');
+    });
+  });
+
   describe('Schema Validation', () => {
     it('goal-check schema should require met as boolean', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
