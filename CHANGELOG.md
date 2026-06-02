@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.58.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.4...v1.58.5) (2026-06-02)
+
+
+### Bug Fixes
+
+* progress parsing in JobScheduler.parseLiveProgressEv... (kaseki-91) ([#542](https://github.com/CyanAutomation/kaseki-agent/issues/542)) ([b2cf3f7](https://github.com/CyanAutomation/kaseki-agent/commit/b2cf3f74f0a0525530df8106883c8791ae40a9dd))
+
 ## [1.58.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.3...v1.58.4) (2026-06-01)
 
 
