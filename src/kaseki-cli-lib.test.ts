@@ -1,27 +1,34 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 import childProcess from 'child_process';
 import * as kasekiCli from './kaseki-cli-lib';
 
+import os from 'os';
+
 describe('kaseki-cli-lib', () => {
-  const TEST_DIR = path.join(__dirname, '..', '..', 'tmp-kaseki-cli-test');
+  const TEST_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-cli-test-'));
   const MOCK_RESULTS_DIR = path.join(TEST_DIR, 'agents', 'kaseki-results');
 
-  beforeEach(() => {
-    // Remove previous test data
-    if (fs.existsSync(TEST_DIR)) {
-      execSync(`rm -rf "${TEST_DIR}"`);
-    }
-    // Create directory structure
+  beforeAll(() => {
+    // Create directory structure once
     fs.mkdirSync(MOCK_RESULTS_DIR, { recursive: true });
     // Override config for testing
     kasekiCli.config.KASEKI_RESULTS_DIR = MOCK_RESULTS_DIR;
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (fs.existsSync(TEST_DIR)) {
-      execSync(`rm -rf "${TEST_DIR}"`);
+      fs.rmSync(TEST_DIR, { recursive: true, force: true });
+    }
+  });
+
+  beforeEach(() => {
+    // Clean MOCK_RESULTS_DIR between tests
+    if (fs.existsSync(MOCK_RESULTS_DIR)) {
+      const files = fs.readdirSync(MOCK_RESULTS_DIR);
+      for (const file of files) {
+        fs.rmSync(path.join(MOCK_RESULTS_DIR, file), { recursive: true, force: true });
+      }
     }
   });
 
