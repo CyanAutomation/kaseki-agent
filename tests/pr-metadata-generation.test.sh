@@ -589,6 +589,41 @@ if (payload.draft !== false) process.exit(3);
 NODE
 pass "Explicit normal PR mode GitHub PR API payload marks the PR as ready for review"
 
+regression_pr_body=$(cat <<'PRBODY'
+## Regression stderr markdown
+
+The agent's output preserved quoted review text: stage literally named 'deploy error'.
+
+Parser reference: JobScheduler.parseLiveProgressEvents().
+
+```text
+stderr log excerpt:
+bash: -c: line 1: syntax error near unexpected token `('
+`inline code` and fenced markdown should stay intact.
+The agent's output mentioned stage literally named 'deploy error' while parsing JobScheduler.parseLiveProgressEvents().
+```
+PRBODY
+)
+
+if run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$regression_pr_body" "$TMP_DIR/node.log"; then
+  pass "PR body JSON encoding handles quotes, parentheses, backticks, and multiline markdown"
+else
+  fail "PR body JSON encoding failed for regression markdown fixture"
+fi
+
+payload="{\"title\": $pr_title_json, \"body\": $pr_body_json, \"head\": \"$feature_branch\", \"base\": \"$GIT_REF\", \"draft\": false}"
+PAYLOAD="$payload" EXPECTED_PR_BODY="$regression_pr_body" node <<'NODE'
+const payload = JSON.parse(process.env.PAYLOAD);
+if (payload.body !== process.env.EXPECTED_PR_BODY) process.exit(1);
+NODE
+pass "PR body JSON payload preserves regression markdown fixture exactly"
+
+if [ -f "$TMP_DIR/node.log" ] && grep -Fq 'syntax error near unexpected token' "$TMP_DIR/node.log"; then
+  fail "Node subprocess log unexpectedly contains shell syntax error output"
+else
+  pass "Node subprocess log omits shell syntax error output for regression fixture"
+fi
+
 KASEKI_PUBLISH_MODE='draft_pr'
 draft_pr_body="$(build_pr_body)"
 if grep -Fq 'This PR is in draft status. Please review before merging.' <<<"$draft_pr_body"; then
