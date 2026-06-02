@@ -285,6 +285,58 @@ curl -X POST http://localhost:8080/run \
 "Update npm dependencies to the latest versions using 'npm update'. Prioritize security patches. Ensure all tests pass after update. If update breaks anything, revert only the breaking dependency and document the issue in a comment."
 ```
 
+## Test Updates in Goals
+
+When your task involves modifying **parsers, events, response construction, or serializers**, the goal-setting agent will automatically detect this and include **test-update success criteria** in the refined goal.
+
+### Why Test Updates Matter
+
+Code changes in these areas almost always require corresponding test assertion updates:
+
+| Code Change | Test Updates Needed | Why |
+|---|---|---|
+| Parser logic (null handling, input validation) | ✅ Yes | Assertion expectations for input/output change |
+| Event handling (field names, timing) | ✅ Yes | Event structure or behavior expectations shift |
+| Response construction (format, serialization) | ✅ Yes | Serialization format or field mapping changes |
+| Naming conventions (variable/function names) | ✅ Yes | String literal assertions must match new names |
+
+### Examples of Good Test-Update Criteria
+
+✅ **Parser Changes**:
+```
+"Add 4 tests for null/empty/whitespace role handling in tests/parser.test.ts (lines 120-150). Expected behavior: null → {name: 'Unnamed Role'}, empty → {name: 'Unnamed Role'}."
+```
+
+✅ **Event Changes**:
+```
+"Update 2-3 event assertions in tests/event-handler.test.ts for new async behavior (lines 200-220). Expect event.timestamp field and timing within 50ms instead of 10ms."
+```
+
+✅ **Response Format Changes**:
+```
+"Add round-trip serialization test: serialize new format, deserialize, verify field mapping matches. 3-5 test cases in tests/serialization.test.ts."
+```
+
+### What Goal-Setting Does
+
+When the goal-setting agent detects parser/event/response changes in your prompt:
+
+1. It automatically includes test-update criteria in the refined goal
+2. It flags these as **success criteria** (measurable, specific, achievable)
+3. The scouting agent identifies which test files are affected and what assertions need updating
+4. The coding agent receives examples of how to update test assertions
+5. Goal-check validates that tests were actually updated
+
+### Disabling Auto-Injection (Advanced)
+
+If goal-setting incorrectly identifies test updates as necessary, explicitly disable in your prompt:
+
+```
+"Fix parser logic (null handling). Do not add or modify any tests."
+```
+
+The goal-setting agent respects explicit "do not" clauses even when automatic detection would suggest otherwise.
+
 ## Monitoring
 
 ### Check Goal-Setting Status

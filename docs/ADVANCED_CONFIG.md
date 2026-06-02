@@ -90,6 +90,27 @@ These are the minimum variables needed for any setup path. All other variables h
   KASEKI_VALIDATION_COMMANDS=npm run test;python -m pytest;cargo test
   ```
 
+### `KASEKI_VALIDATION_RUN_ALL_COMMANDS`
+
+- **Type**: `boolean` (0 or 1)
+- **Default**: `0`
+- **Required**: Optional
+- **Paths**: Single-run, Local API, Production API
+- **Description**: Run all validation commands even if some fail (comprehensive validation mode)
+- **Behavior**:
+  - By default (`0`), validation stops at the first command failure (fail-fast mode)
+  - When set to `1`, runs all validation commands, collects all failures
+  - Useful for seeing all problems at once instead of fixing one and re-running
+  - Sets `KASEKI_VALIDATION_FAIL_FAST=0` internally
+  - Result summary notes whether comprehensive mode was used
+- **Example**:
+
+  ```bash
+  # Run all tests even if one fails (comprehensive validation)
+  KASEKI_VALIDATION_RUN_ALL_COMMANDS=1
+  KASEKI_VALIDATION_COMMANDS=npm run check;npm run test;npm run lint
+  ```
+
 ### `KASEKI_PRE_AGENT_VALIDATION`
 
 - **Type**: `boolean`

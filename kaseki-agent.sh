@@ -62,6 +62,11 @@ TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback 
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
 KASEKI_VALIDATION_FAIL_FAST="${KASEKI_VALIDATION_FAIL_FAST:-1}"
+KASEKI_VALIDATION_RUN_ALL_COMMANDS="${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}"
+# If KASEKI_VALIDATION_RUN_ALL_COMMANDS=1, override fail-fast to ensure all commands run
+if [ "${KASEKI_VALIDATION_RUN_ALL_COMMANDS:-0}" -eq 1 ]; then
+  KASEKI_VALIDATION_FAIL_FAST=0
+fi
 KASEKI_STRICT_SCRIPT_CHECK="${KASEKI_STRICT_SCRIPT_CHECK:-0}"
 KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK="${KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK:-0}"
 KASEKI_GITHUB_PR_RETRIES="${KASEKI_GITHUB_PR_RETRIES:-3}"
@@ -547,6 +552,24 @@ if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
       if (!item || typeof item.path !== "string" || !item.path.trim() || typeof item.reason !== "string" || !item.reason.trim()) {
         addError(`test_impact[${index}]`, "object with non-empty string path and non-empty string reason", actualType(item), "critical", "Each test_impact entry must include the impacted test path and expectation reason strings");
       }
+      // Validate optional test_examples field
+      if (item.test_examples !== undefined) {
+        if (!Array.isArray(item.test_examples)) {
+          addError(`test_impact[${index}].test_examples`, "array of example objects or undefined", actualType(item.test_examples), "warning", "test_examples must be an array of objects with type, pattern, description, before, and after fields");
+        } else {
+          item.test_examples.forEach((example, exIdx) => {
+            if (!example || typeof example !== "object" || !["added_assertion", "modified_assertion", "added_test_case", "added_pattern"].includes(example.type)) {
+              addError(`test_impact[${index}].test_examples[${exIdx}].type`, "added_assertion|modified_assertion|added_test_case|added_pattern", actualType(example && example.type), "warning", "Each test_example must have a valid type");
+            }
+            if (!example || typeof example.pattern !== "string") {
+              addError(`test_impact[${index}].test_examples[${exIdx}].pattern`, "string", actualType(example && example.pattern), "warning", "Each test_example must have a pattern string");
+            }
+            if (!example || typeof example.before !== "string" || typeof example.after !== "string") {
+              addError(`test_impact[${index}].test_examples[${exIdx}]`, "before and after strings", "missing or invalid", "warning", "Each test_example must have before and after code snippets");
+            }
+          });
+        }
+      }
     });
   }
 
@@ -869,6 +892,7 @@ write_metadata() {
   "pre_validation_exit_code": $PRE_VALIDATION_EXIT,
   "validation_exit_code": $VALIDATION_EXIT,
   "validation_fail_fast_mode": $([[ "$KASEKI_VALIDATION_FAIL_FAST" == "1" ]] && printf 'true' || printf 'false'),
+  "validation_run_all_commands": $([[ "$KASEKI_VALIDATION_RUN_ALL_COMMANDS" == "1" ]] && printf 'true' || printf 'false'),
   "pre_validation_stopped_early": $([[ "$PRE_VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
   "validation_stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
   "pre_validation_commands_attempted": $PRE_VALIDATION_COMMANDS_ATTEMPTED,
@@ -1050,7 +1074,7 @@ $(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pr
 $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
 $(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist reason: %s\n' "$VALIDATION_ALLOWLIST_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
+$(if [ "$KASEKI_VALIDATION_RUN_ALL_COMMANDS" -eq 1 ]; then printf -- '- **ℹ️ Validation mode: Comprehensive** (KASEKI_VALIDATION_RUN_ALL_COMMANDS=1) - all %d commands executed\n' "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; elif [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Test failure analysis: $TEST_FAILURE_CLASSIFICATION_STATUS
 $(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ "$NEWLY_INTRODUCED_FAILURES_COUNT" -gt 0 ]; then printf '  - ⚠️ **Newly introduced failures: %d**\n' "$NEWLY_INTRODUCED_FAILURES_COUNT"; fi)
 $(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f /results/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
@@ -3356,7 +3380,9 @@ build_agent_prompt() {
 Scouting artifact:
 - A preceding read-only Pi scouting run researched this task and wrote its JSON findings to $SCOUTING_ARTIFACT.
 - Read that artifact before coding. Treat it as planning input, then verify important details against the current repository.
-- If you change parser logic, output format, naming conventions, serializers, or progress/event fields, read the scouting test_impact files and update the related tests and expectation strings so parser/output/naming behavior changes remain covered."
+- The scouting artifact may include 'test_examples' with before/after code snippets. Use these as patterns when updating related tests.
+- If you change parser logic, output format, naming conventions, serializers, or progress/event fields, read the scouting test_impact files and update the related tests and expectation strings so parser/output/naming behavior changes remain covered.
+- When test_impact includes test_examples, follow those patterns to guide your assertion updates."
   fi
   if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
     retry_section="
@@ -3545,12 +3571,29 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
   "confidence": "high|medium|low (overall goal readiness)"
 }
 
+=== TEST UPDATE REQUIREMENTS ===
+
+**CRITICAL FOR CODE-MODIFYING TASKS**: If this task involves modifying any of these areas, ALWAYS include explicit test-update success criteria:
+
+- **Parsers or regex logic**: "Add 3-5 tests for [null/empty/invalid input handling]"
+- **Event handling or field changes**: "Update 2-3 tests for [event field validation/timing]"
+- **Response construction or serialization**: "Add round-trip serialization tests covering [format changes]"
+- **Naming conventions or transformations**: "Update test assertions for renamed [fields/functions]"
+
+Examples of strong test-update criteria:
+✓ "Add 4 tests for null-role, empty-string-role, and whitespace-role cases (tests/parser.test.ts lines 120-150)"
+✓ "Update 3 event-timing assertions in tests/event-handler.test.ts for new async behavior"
+✓ "Add backward-compatibility test: serialize new format, deserialize to verify field mapping (tests/serialization.test.ts)"
+
+Include these in success_criteria as SMART criteria with smart_score: "high" (measurable, specific, achievable in one run).
+
 === GUIDELINES ===
 
 - Be concise but complete. This goal will drive all downstream agents.
 - Distinguish hard constraints (safety-critical) from soft preferences.
 - Include examples if inferrable from the prompt (helps agents avoid false starts).
 - Categorize constraints by type to aid downstream prioritization.
+- When task involves parser/event/response changes, include test-update criteria (see TEST UPDATE REQUIREMENTS above).
 - If confidence is low, explain what's ambiguous and what clarification would help.
 - Focus on goal quality over verbosity.
 EOF
@@ -4115,6 +4158,46 @@ The JSON object must be concise and useful to the coding agent. Use this shape:
 Guidelines for test_impact:
 - Always include test_impact. Use an empty array only when no likely affected tests or expectation strings can be identified.
 - When the task touches parsing logic, output format, naming conventions, serializers, or progress/event fields, identify likely affected test files and the expectation strings or snapshots/assertions they contain so parser/output/naming changes trigger related test updates.
+- For each test file identified, provide concrete test_examples showing before/after assertion patterns. This helps the coding agent understand exactly what assertions need updating.
+- test_examples should include:
+  - **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
+  - **before**: The current or expected-to-fail assertion/test code
+  - **after**: The corrected/new assertion/test code
+  - **pattern**: Short name of the pattern (e.g., "Null-coalescing assertion", "Event field presence")
+  - **description**: 1-2 sentences explaining why this change matters
+
+Examples of strong test_impact entries with test_examples:
+✓ Parser change:
+  {"path": "tests/parser.test.ts", "reason": "null/empty role handling", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow()", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed' })", "description": "Updated spec treats null as fallback, not error"}]}
+
+✓ Event change:
+  {"path": "tests/event-handler.test.ts", "reason": "new async timing for events", "test_examples": [{"type": "modified_assertion", "pattern": "Event timing", "before": "await eventPromise; // within 10ms", "after": "await eventPromise; // within 50ms", "description": "Event emission is now async"}]}
+
+Enhanced Guidelines by Change Type:
+
+1. **Parser & Regex Changes**
+   - Detection keywords: parse, parser, regex, validation, input handling, null safety, type coercion
+   - Typical test_impact: Tests for edge cases (null, empty, undefined, type mismatches)
+   - Example test_examples: Null-coalescing assertions, type validation, whitespace handling, special character input tests
+   - Files to check: tests/parser.test.ts, tests/validation.test.ts, tests/input.test.ts
+
+2. **Event Handling & Progress Changes**
+   - Detection keywords: event, emit, listener, on, once, signal, progress, stage, field names
+   - Typical test_impact: Event structure, timing expectations, field presence, listener callbacks
+   - Example test_examples: Field presence assertions, timing expectations, event ordering, listener verification
+   - Files to check: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
+
+3. **Response Construction & Serialization**
+   - Detection keywords: response, serialize, serialize, format, construct, map, transform, output, payload, schema
+   - Typical test_impact: Response field mapping, serialization format, type preservation, backward compatibility
+   - Example test_examples: Round-trip serialization, field mapping, type coercion, format compliance
+   - Files to check: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
+
+4. **Naming Conventions & Constants**
+   - Detection keywords: rename, constant, enum, field name, method name, identifier, migrate naming
+   - Typical test_impact: String literal assertions, constant references, API contract changes
+   - Example test_examples: Field name assertions, constant value matches, deprecation handling
+   - Files to check: tests/**/*.test.ts (search for exact string matches and constants)
 
 Guidelines for suggested_allowlist:
 - agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".
@@ -4300,7 +4383,7 @@ collect_run_evaluation_feedback() {
 
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context validation_context test_impact_context
+  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
   validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
   if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
     validation_context="Validation log tail (last 80 lines):
@@ -4331,6 +4414,49 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
 "
   else
     goal_setting_context=""
+  fi
+
+  # Include causality assessment if available (helps interpret validation failures)
+  if [ -f /results/validation-causality-analysis.json ]; then
+    causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
+
+$(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+let input = "";
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => {
+  try {
+    const data = JSON.parse(input);
+    const assess = data.assessment;
+    console.log(`Type: ${assess.failureType}`);
+    console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+    console.log(`Rationale: ${assess.rationale}`);
+    console.log();
+    if (assess.failureType === "pre_existing") {
+      console.log("⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).");
+      console.log("   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.");
+      console.log("   - Implementation may be valid despite validation failures.");
+    } else if (assess.failureType === "change_related") {
+      console.log("❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.");
+      console.log("   - Implementation is not valid; failures must be fixed.");
+    } else if (assess.failureType === "mixed") {
+      console.log("⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.");
+      console.log("   - Identify and fix change-related failures.");
+      console.log("   - Pre-existing failures may not block goal if implementation is otherwise valid.");
+    } else if (assess.failureType === "inconclusive") {
+      console.log("❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.");
+      console.log("   - Be conservative; base verdict on other available evidence.");
+    }
+  } catch (e) {
+    console.log("(Could not parse causality assessment)");
+  }
+});
+'
+)
+
+---
+"
+  else
+    causality_context=""
   fi
 
   cat <<EOF
@@ -4432,6 +4558,7 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
 ## Context
 
 $goal_setting_context
+$causality_context
 $test_impact_context
 Original task prompt (for reference):
 $TASK_PROMPT
