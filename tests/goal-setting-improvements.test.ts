@@ -19,7 +19,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect } from 'vitest';
+// Use global describe, it, expect from Jest
 import {
   GoalSettingOutput,
   GoalSettingOutputSchema,
@@ -40,12 +40,12 @@ const extractShellFunctionBlock = (scriptSource: string, startFunction: string, 
   const endPattern = new RegExp(`^${escapeRegExp(endFunction)}\\(\\) \\{$`);
   const startLineIndexes = lines.flatMap((line, index) => (startPattern.test(line) ? [index] : []));
 
-  expect(startLineIndexes, `${startFunction} must have exactly one top-level declaration`).toHaveLength(1);
+  expect(startLineIndexes).toHaveLength(1);
 
   const startLineIndex = startLineIndexes[0];
   const endLineIndex = lines.findIndex((line, index) => index > startLineIndex && endPattern.test(line));
 
-  expect(endLineIndex, `${endFunction} must be the next verified top-level boundary`).toBeGreaterThan(startLineIndex);
+  expect(endLineIndex).toBeGreaterThan(startLineIndex);
 
   return lines.slice(startLineIndex, endLineIndex).join('\n');
 };

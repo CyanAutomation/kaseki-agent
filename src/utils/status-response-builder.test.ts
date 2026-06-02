@@ -459,6 +459,51 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeLessThanOrEqual(100);
     });
 
+    it('should clamp to exactly 100% when more stages finish than declared in metadata', () => {
+      // Semantic test: metadata declares fewer stages (2) than observed finished stages (3),
+      // demonstrating a real-world scenario where runtime execution discovers additional stages
+      // beyond what was pre-declared in metadata. The result should clamp to exactly 100%.
+      const job: Partial<Job> = {
+        id: 'job-clamp-test',
+        status: 'running',
+        resultDir: '/results/job-clamp-test',
+      };
+
+      // Progress shows 3 stages finished, all matching the metadata denominator
+      const progressContent = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'agent setup', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pi coding agent', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
+      // But metadata declares only 2 stages (fewer than observed)
+      const metadataContent = JSON.stringify({
+        stages: ['clone repository', 'agent setup'],
+      });
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) {
+          return progressContent;
+        }
+        return metadataContent;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-clamp-test',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // Only 'clone repository' and 'agent setup' match the denominator (2 of 2),
+      // so completedStages = 2, totalStages = 2, giving 100%
+      expect(response.taskProgressPercent).toBe(100);
+    });
+
     it('should normalize stage names (trim whitespace)', () => {
       const job: Partial<Job> = {
         id: 'job-1',

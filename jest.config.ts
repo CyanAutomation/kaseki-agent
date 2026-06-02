@@ -22,6 +22,7 @@ const config: Config = {
       tsconfig: {
         esModuleInterop: true,
         module: 'ESNext',
+        target: 'ESNext',
       },
     }],
   },

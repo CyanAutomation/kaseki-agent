@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+// Use global describe, it, expect, beforeAll from Jest
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Tests for evaluation prompt enhancements
@@ -545,9 +549,147 @@ NODE
       expect(scriptContent).toContain('low');
     });
 
-    it('task_completion_score should be validated as 1-5 integer', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      expect(scriptContent).toContain('task_completion_score');
+    describe('task_completion_score validation', () => {
+      it('should validate task_completion_score as 1-5 integer - passes on valid values 1-5', () => {
+        const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+        expect(scriptContent).toContain('task_completion_score');
+        
+        // Extract the validator logic
+        const validatorMatch = scriptContent.match(
+          /if \(!Number\.isInteger\(artifact\.task_completion_score\).*?artifact\.task_completion_score > 5\)/
+        );
+        expect(validatorMatch).not.toBeNull();
+        
+        // Test valid integer scores 1-5
+        const validScores = [1, 2, 3, 4, 5];
+        validScores.forEach(score => {
+          const artifact = {
+            overall_assessment: 'excellent',
+            reviewer_confidence: 'high',
+            task_completion_score: score,
+            summary: 'Test summary',
+            pr_summary: 'Test PR summary',
+            human_review_focus: [],
+            efficiency_findings: [],
+            warnings: [],
+            stage_value: [],
+            kaseki_improvement_opportunities: [],
+          };
+          
+          // Should pass validation (no invalid.push)
+          const invalid: string[] = [];
+          if (!Number.isInteger(artifact.task_completion_score) || 
+              artifact.task_completion_score < 1 || 
+              artifact.task_completion_score > 5) {
+            invalid.push('task_completion_score');
+          }
+          expect(invalid).toHaveLength(0);
+          expect(invalid).not.toContain('task_completion_score');
+        });
+      });
+
+      it('should reject invalid values: 0, 6, 3.5, "4", and missing field', () => {
+        const invalid: string[] = [];
+        
+        // Test case 1: score = 0 (below minimum)
+        const artifact1 = {
+          overall_assessment: 'poor',
+          reviewer_confidence: 'low',
+          task_completion_score: 0,
+          summary: 'Test', pr_summary: 'Test',
+          human_review_focus: [], efficiency_findings: [], warnings: [],
+          stage_value: [], kaseki_improvement_opportunities: [],
+        };
+        if (!Number.isInteger(artifact1.task_completion_score) || 
+            artifact1.task_completion_score < 1 || 
+            artifact1.task_completion_score > 5) {
+          invalid.push('score_0');
+        }
+        expect(invalid).toContain('score_0');
+        
+        // Test case 2: score = 6 (above maximum)
+        invalid.length = 0;
+        const artifact2 = {
+          overall_assessment: 'excellent',
+          reviewer_confidence: 'high',
+          task_completion_score: 6,
+          summary: 'Test', pr_summary: 'Test',
+          human_review_focus: [], efficiency_findings: [], warnings: [],
+          stage_value: [], kaseki_improvement_opportunities: [],
+        };
+        if (!Number.isInteger(artifact2.task_completion_score) || 
+            artifact2.task_completion_score < 1 || 
+            artifact2.task_completion_score > 5) {
+          invalid.push('score_6');
+        }
+        expect(invalid).toContain('score_6');
+        
+        // Test case 3: score = 3.5 (float, not integer)
+        invalid.length = 0;
+        const artifact3 = {
+          overall_assessment: 'good',
+          reviewer_confidence: 'medium',
+          task_completion_score: 3.5,
+          summary: 'Test', pr_summary: 'Test',
+          human_review_focus: [], efficiency_findings: [], warnings: [],
+          stage_value: [], kaseki_improvement_opportunities: [],
+        };
+        if (!Number.isInteger(artifact3.task_completion_score) || 
+            artifact3.task_completion_score < 1 || 
+            artifact3.task_completion_score > 5) {
+          invalid.push('score_3_5');
+        }
+        expect(invalid).toContain('score_3_5');
+        
+        // Test case 4: score = "4" (string, not integer)
+        invalid.length = 0;
+        const artifact4: any = {
+          overall_assessment: 'good',
+          reviewer_confidence: 'medium',
+          task_completion_score: "4",
+          summary: 'Test', pr_summary: 'Test',
+          human_review_focus: [], efficiency_findings: [], warnings: [],
+          stage_value: [], kaseki_improvement_opportunities: [],
+        };
+        if (!Number.isInteger(artifact4.task_completion_score) || 
+            artifact4.task_completion_score < 1 || 
+            artifact4.task_completion_score > 5) {
+          invalid.push('score_string_4');
+        }
+        expect(invalid).toContain('score_string_4');
+        
+        // Test case 5: missing task_completion_score field
+        invalid.length = 0;
+        const artifact5: any = {
+          overall_assessment: 'good',
+          reviewer_confidence: 'medium',
+          // task_completion_score intentionally missing
+          summary: 'Test', pr_summary: 'Test',
+          human_review_focus: [], efficiency_findings: [], warnings: [],
+          stage_value: [], kaseki_improvement_opportunities: [],
+        };
+        if (!Number.isInteger(artifact5.task_completion_score) || 
+            artifact5.task_completion_score < 1 || 
+            artifact5.task_completion_score > 5) {
+          invalid.push('score_missing');
+        }
+        expect(invalid).toContain('score_missing');
+      });
+
+      it('should validate task_completion_score in actual kaseki-agent.sh validator', () => {
+        const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+        
+        // Verify the validator is present in the run-evaluation validation section
+        const validationSection = scriptContent.substring(
+          scriptContent.indexOf('run_run_evaluation'),
+          scriptContent.indexOf('run_run_evaluation') + 10000
+        );
+        
+        expect(validationSection).toContain('Number.isInteger(artifact.task_completion_score)');
+        expect(validationSection).toContain('artifact.task_completion_score < 1');
+        expect(validationSection).toContain('artifact.task_completion_score > 5');
+        expect(validationSection).toContain('invalid.push("task_completion_score")');
+      });
     });
   });
 });

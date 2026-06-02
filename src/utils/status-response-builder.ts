@@ -441,7 +441,7 @@ export class StatusResponseBuilder {
     metadata: any,
     totalStages: number
   ): number {
-    let completedStages = Array.from(finishedStages).filter(stage => denominatorStages.includes(stage)).length;
+    let completedStages = finishedStages.size;
 
     const currentStageIndex = currentStage && denominatorStages.length > 0 ? denominatorStages.indexOf(currentStage) : -1;
     if (currentStageIndex >= 0) {
