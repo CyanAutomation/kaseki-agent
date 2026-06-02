@@ -1689,9 +1689,8 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         const stage = progress.displayName ? stripControlSequences(progress.displayName) : (progress.stage ? stripControlSequences(progress.stage) : '');
-        const message = progress.message ? stripControlSequences(progress.message) : '';
         const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
-        const parts = [stage, message, percent].filter(Boolean);
+        const parts = [stage, percent].filter(Boolean);
         detailsEl.textContent = parts.join(' | ');
       }
 
