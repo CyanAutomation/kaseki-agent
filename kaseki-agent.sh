@@ -3476,9 +3476,118 @@ run_goal_setting_agent() {
   return 0
 }
 
+write_goal_setting_metrics() {
+  local invoked_at="$1"
+  local completed_at="$2"
+  local retry_count="${KASEKI_GOAL_SETTING_ATTEMPTS:-0}"
+  local success=false
+  local failure_reason=""
+
+  # Determine success/failure using unified classification
+  if [ -n "$KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT" ]; then
+    success=true
+  else
+    # Use unified error classification
+    failure_reason="$(classify_goal_setting_error "$GOAL_SETTING_EXIT" "$goal_setting_last_stderr")"
+  fi
+
+  local duration_ms=$(( (completed_at - invoked_at) * 1000 ))
+
+  # Write metrics JSON
+  node -e "
+    const fs = require('fs');
+    const metrics = {
+      invoked_at: new Date(${invoked_at}000).toISOString(),
+      completed_at: new Date(${completed_at}000).toISOString(),
+      duration_ms: ${duration_ms},
+      retry_count: ${retry_count},
+      success: ${success},
+      $(if [ "$success" = "false" ]; then echo "failure_reason: '$failure_reason',"; fi)
+      model: '${GOAL_SETTING_ACTUAL_MODEL:-unknown}',
+      timeout_seconds: ${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}
+    };
+    fs.writeFileSync('/results/goal-setting-metrics.json', JSON.stringify(metrics, null, 2) + '\n');
+  " 2>/dev/null || {
+    # Fallback to jq or printf if node fails
+    {
+      printf '{\n'
+      printf '  "invoked_at": "%s",\n' "$(date -d @${invoked_at} -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "completed_at": "%s",\n' "$(date -d @${completed_at} -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "duration_ms": %d,\n' "$duration_ms"
+      printf '  "retry_count": %d,\n' "$retry_count"
+      printf '  "success": %s,\n' "$([ "$success" = "true" ] && echo "true" || echo "false")"
+      if [ "$success" = "false" ]; then
+        printf '  "failure_reason": "%s",\n' "$failure_reason"
+      fi
+      printf '  "model": "%s",\n' "${GOAL_SETTING_ACTUAL_MODEL:-unknown}"
+      printf '  "timeout_seconds": %d\n' "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
+      printf '}\n'
+    } > /results/goal-setting-metrics.json
+  }
+}
+
+classify_goal_setting_error() {
+  local exit_code="$1"
+  local stderr_content="$2"
+
+  # Check validation reason file first (most authoritative)
+  if [ -f /results/goal-setting-validation-reason.txt ]; then
+    local reason_code
+    reason_code=$(cat /results/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    case "$reason_code" in
+      schema_mismatch)
+        echo "GOAL_SETTING_SCHEMA_MISMATCH"
+        return 0
+        ;;
+      malformed_json)
+        echo "GOAL_SETTING_MALFORMED_JSON"
+        return 0
+        ;;
+      missing_required_fields)
+        echo "GOAL_SETTING_MISSING_REQUIRED_FIELDS"
+        return 0
+        ;;
+      missing_file)
+        echo "GOAL_SETTING_MISSING_FILE"
+        return 0
+        ;;
+    esac
+  fi
+
+  # Classify by exit code
+  case "$exit_code" in
+    0)
+      echo "GOAL_SETTING_SUCCESS"
+      ;;
+    2)
+      echo "GOAL_SETTING_MISSING_CONFIG"
+      ;;
+    86)
+      echo "GOAL_SETTING_VALIDATION_ERROR"
+      ;;
+    124)
+      echo "GOAL_SETTING_TIMEOUT"
+      ;;
+    *)
+      # Check stderr for specific errors
+      if echo "$stderr_content" | grep -qi "timeout" 2>/dev/null; then
+        echo "GOAL_SETTING_TIMEOUT"
+      elif echo "$stderr_content" | grep -qi "rate.?limit" 2>/dev/null; then
+        echo "GOAL_SETTING_RATE_LIMITED"
+      elif echo "$stderr_content" | grep -qi "api.?error\|connection" 2>/dev/null; then
+        echo "GOAL_SETTING_API_ERROR"
+      elif echo "$stderr_content" | grep -qi "schema\|validation\|invalid" 2>/dev/null; then
+        echo "GOAL_SETTING_VALIDATION_ERROR"
+      else
+        echo "GOAL_SETTING_PI_ERROR_EXIT_$exit_code"
+      fi
+      ;;
+  esac
+}
+
 run_goal_setting_agent_with_retry() {
   local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
-  local pre_goal_setting_status pre_goal_setting_failed_command
+  local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
 
   max_attempts=2
   attempt=1
@@ -3486,6 +3595,7 @@ run_goal_setting_agent_with_retry() {
   goal_setting_last_stderr=""
   pre_goal_setting_status="$STATUS"
   pre_goal_setting_failed_command="$FAILED_COMMAND"
+  goal_setting_phase_start_time="$(date +%s)"
 
   # Initialize goal-setting retry tracking env vars
   export KASEKI_GOAL_SETTING_ATTEMPTS=0
@@ -3523,6 +3633,7 @@ run_goal_setting_agent_with_retry() {
       
       STATUS="$pre_goal_setting_status"
       FAILED_COMMAND="$pre_goal_setting_failed_command"
+      write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
       return 0
     fi
 
@@ -3545,6 +3656,7 @@ run_goal_setting_agent_with_retry() {
       # affect the final run status.
       STATUS="$pre_goal_setting_status"
       FAILED_COMMAND="$pre_goal_setting_failed_command"
+      write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
       return 0
     fi
 
@@ -3557,6 +3669,7 @@ run_goal_setting_agent_with_retry() {
   printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d), using original TASK_PROMPT\n' "$goal_setting_last_exit"
   STATUS="$pre_goal_setting_status"
   FAILED_COMMAND="$pre_goal_setting_failed_command"
+  write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
   return 0
 }
 
