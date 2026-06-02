@@ -373,8 +373,33 @@ run_node_subprocess() {
   fi
 
   # Success: store output in variable and return 0
+  local output_preview output_var_decl output_var_attrs
+  output_preview="$(printf '%s' "$output_value" \
+    | sed -E 's/-----BEGIN [^-]+ PRIVATE KEY-----[^[:cntrl:]]*-----END [^-]+ PRIVATE KEY-----/[redacted private key]/g; s/\b(gh[opsru]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/[redacted token]/g; s/\bsk-[A-Za-z0-9_-]{10,}\b/[redacted token]/g; s/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/[redacted jwt]/g; s/((api|access|auth|bearer|github|openai|secret|token|password|credential)[_-]?(key|token|secret|password)?[[:space:]]*[=:][^[:space:]]+)/[redacted]/Ig' \
+    | tr '\n' ' ' \
+    | cut -c 1-150)"
+
+  # Avoid Bash's fatal readonly-assignment error so callers can handle the
+  # helper's non-zero status through their existing `if ! ...; then` checks.
+  if output_var_decl="$(declare -p "$output_var_name" 2>/dev/null)"; then
+    output_var_attrs="${output_var_decl#declare -}"
+    output_var_attrs="${output_var_attrs%% *}"
+    if [[ "$output_var_attrs" == *r* ]]; then
+      {
+        printf '[node-subprocess-error] Failed to assign Node.js output to variable: %s\n' "$output_var_name"
+        printf '[node-subprocess-error] output variable is readonly\n'
+        printf '[node-subprocess-error] output preview (redacted, first 150 chars): %s\n' "$output_preview"
+      } | tee -a "$error_log_file" >&2
+      rm -f "$node_stderr_tmp"
+      return 1
+    fi
+  fi
+
   if ! printf -v "$output_var_name" '%s' "$output_value"; then
-    printf '[node-subprocess-error] Failed to assign output variable: %s\n' "$output_var_name" | tee -a "$error_log_file" >&2
+    {
+      printf '[node-subprocess-error] Failed to assign Node.js output to variable: %s\n' "$output_var_name"
+      printf '[node-subprocess-error] output preview (redacted, first 150 chars): %s\n' "$output_preview"
+    } | tee -a "$error_log_file" >&2
     rm -f "$node_stderr_tmp"
     return 1
   fi
