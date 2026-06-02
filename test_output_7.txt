@@ -26,3 +26,1772 @@ Generating OpenAPI 3.1 specification...
 > @cyanautomation/kaseki-agent@1.58.5 type-check
 > tsc --noEmit -p tsconfig.json
 
+bash: -c: line 247: unexpected EOF while looking for matching `''
+FAIL tests/evaluation-prompts.test.ts (10.756 s)
+  ● Evaluation Prompt Enhancements › Goal-Check Prompt › should include confidence grounding guidance
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "grounding"
+    Received string:    "build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      if [ -n \"$(printf '%s' \"$validation_tail\" | tr -d '[:space:]')\" ]; then
+        validation_context=\"validation log tail (last 80 lines):
+    $validation_tail\"
+      else
+        validation_context=\"validation log: /results/validation.log is empty or has not been produced yet. treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied.\"
+      fi
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      if [ -s \"$test_impact_warnings_artifact\" ]; then
+        test_impact_context=\"static test-impact warnings artifact ($test_impact_warnings_artifact):
+    $(cat \"$test_impact_warnings_artifact\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"static test-impact warnings artifact ($test_impact_warnings_artifact): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # include goal-setting output if available (provides smart criteria, quality metrics, anti-patterns)
+      if [ -f \"$goal_setting_artifact\" ]; then
+        goal_setting_context=\"goal-setting output (use this to validate smart criteria and anti-patterns):
+    $(head -n 200 \"$goal_setting_artifact\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      # include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context=\"validation failure causality assessment:·
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = \"\";
+    process.stdin.on(\"data\", chunk => input += chunk);
+    process.stdin.on(\"end\", () => {
+      try {
+        const data = json.parse(input);
+        const assess = data.assessment;
+        console.log(`type: ${assess.failuretype}`);
+        console.log(`confidence: ${(assess.confidence * 100).tofixed(0)}%`);
+        console.log(`rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failuretype === \"pre_existing\") {
+          console.log(\"⚠️  key finding: validation failures appear to be pre-existing (not caused by code changes).\");
+          console.log(\"   - you can assess goal-check verdict based on requirements implementation, not blocked by these failures.\");
+          console.log(\"   - implementation may be valid despite validation failures.\");
+        } else if (assess.failuretype === \"change_related\") {
+          console.log(\"❌ key finding: validation failures are caused by code changes.\");
+          console.log(\"   - implementation is not valid; failures must be fixed.\");
+        } else if (assess.failuretype === \"mixed\") {
+          console.log(\"⚠️  key finding: mixed causality - some failures from changes, some pre-existing.\");
+          console.log(\"   - identify and fix change-related failures.\");
+          console.log(\"   - pre-existing failures may not block goal if implementation is otherwise valid.\");
+        } else if (assess.failuretype === \"inconclusive\") {
+          console.log(\"❓ key finding: causality inconclusive - insufficient signal agreement.\");
+          console.log(\"   - be conservative; base verdict on other available evidence.\");
+        }
+      } catch (e) {
+        console.log(\"(could not parse causality assessment)\");
+      }
+    });
+    '
+    )·
+    ---
+    \"
+      else
+        causality_context=\"\"
+      fi·
+      cat <<eof
+    you are a read-only goal-check pi agent inside a kaseki-managed ephemeral workspace.·
+    evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.·
+    ## your task·
+    determine if the agent successfully met the requirements specified in the goal-setting output. this is not a code review—focus on requirement completion, not code style. use smart criteria (specific, measurable, achievable, relevant, time-bound) to validate success.·
+    ## inputs to inspect·
+    **goal-setting context** (use to validate smart dimensions and anti-patterns):
+    - goal-setting artifact: $goal_setting_artifact
+    - quality metrics, smart criteria, anti-patterns, constraints·
+    **agent artifacts** (use to verify requirements were met):
+    - scouting report: $scouting_artifact
+    - changed files: /results/changed-files.txt
+    - git diff: /results/git.diff
+    - validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - static test-impact warnings (non-blocking): $test_impact_warnings_artifact
+    - coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl·
+    ## evaluation framework: smart criteria check·
+    1. **specific**: did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **measurable**: are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **achievable**: were requiremen"
+
+      49 |       );
+      50 |       expect(goalCheckSection).toContain('confidence');
+    > 51 |       expect(goalCheckSection.toLowerCase()).toContain('grounding');
+         |                                              ^
+      52 |     });
+      53 |
+      54 |     it('should request specific evidence with file/line references', () => {
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:51:46)
+
+  ● Evaluation Prompt Enhancements › Goal-Check Prompt › should maintain required JSON schema fields
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "\"met\""
+    Received string:    "build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      if [ -n \"$(printf '%s' \"$validation_tail\" | tr -d '[:space:]')\" ]; then
+        validation_context=\"Validation log tail (last 80 lines):
+    $validation_tail\"
+      else
+        validation_context=\"Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied.\"
+      fi
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      if [ -s \"$TEST_IMPACT_WARNINGS_ARTIFACT\" ]; then
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat \"$TEST_IMPACT_WARNINGS_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+      if [ -f \"$GOAL_SETTING_ARTIFACT\" ]; then
+        goal_setting_context=\"GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
+    $(head -n 200 \"$GOAL_SETTING_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      # Include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context=\"VALIDATION FAILURE CAUSALITY ASSESSMENT:·
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = \"\";
+    process.stdin.on(\"data\", chunk => input += chunk);
+    process.stdin.on(\"end\", () => {
+      try {
+        const data = JSON.parse(input);
+        const assess = data.assessment;
+        console.log(`Type: ${assess.failureType}`);
+        console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+        console.log(`Rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failureType === \"pre_existing\") {
+          console.log(\"⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).\");
+          console.log(\"   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.\");
+          console.log(\"   - Implementation may be valid despite validation failures.\");
+        } else if (assess.failureType === \"change_related\") {
+          console.log(\"❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.\");
+          console.log(\"   - Implementation is not valid; failures must be fixed.\");
+        } else if (assess.failureType === \"mixed\") {
+          console.log(\"⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.\");
+          console.log(\"   - Identify and fix change-related failures.\");
+          console.log(\"   - Pre-existing failures may not block goal if implementation is otherwise valid.\");
+        } else if (assess.failureType === \"inconclusive\") {
+          console.log(\"❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.\");
+          console.log(\"   - Be conservative; base verdict on other available evidence.\");
+        }
+      } catch (e) {
+        console.log(\"(Could not parse causality assessment)\");
+      }
+    });
+    '
+    )·
+    ---
+    \"
+      else
+        causality_context=\"\"
+      fi·
+      cat <<EOF
+    You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.·
+    Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.·
+    ## Your Task·
+    Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.·
+    ## Inputs to Inspect·
+    **Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns, constraints·
+    **Agent Artifacts** (use to verify requirements were met):
+    - Scouting report: $SCOUTING_ARTIFACT
+    - Changed files: /results/changed-files.txt
+    - Git diff: /results/git.diff
+    - Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl·
+    ## Evaluation Framework: SMART Criteria Check·
+    1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
+    4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
+    5. **Time-bound**: Completed in this single run (not postponed to future attempts)?·
+    For each dimension, provide evidence by citing specific file locations, test names, or validation results.·
+    ## Evidence Requirements·
+    Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:·
+    ✅ Good evidence:
+    - \"parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')\"
+    - \"5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs\"
+    - \"All 127 tests pass in validation.log (previously 125)\"·
+    ❌ Poor evidence:
+    - \"The parser was fixed\"
+    - \"Tests were added\"
+    - \"Code looks good\"·
+    ## Confidence Grounding·
+    Map your confidence to evidence strength:·
+    - **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥"
+
+      69 |         scriptContent.indexOf('build_goal_check_prompt()') + 6000
+      70 |       );
+    > 71 |       expect(goalCheckSection).toContain('"met"');
+         |                                ^
+      72 |       expect(goalCheckSection).toContain('"confidence"');
+      73 |       expect(goalCheckSection).toContain('"summary"');
+      74 |       expect(goalCheckSection).toContain('"evidence"');
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:71:32)
+
+  ● Evaluation Prompt Enhancements › Run-Evaluation Prompt › should define task_completion_score framework tied to SMART
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "task_completion_score"
+    Received string:    "build_run_evaluation_prompt() {
+      local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      stage_timings=\"$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)\"
+      dependency_cache=\"$(tail -80 /results/dependency-cache.log 2>/dev/null || true)\"
+      restoration_report=\"$(tail -80 /results/restoration-report.md 2>/dev/null || true)\"
+      metadata_text=\"$(cat /results/metadata.json 2>/dev/null || true)\"
+      draft_pr_body=\"$(build_pr_body)\"
+      if [ -s \"$TEST_IMPACT_WARNINGS_ARTIFACT\" ]; then
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat \"$TEST_IMPACT_WARNINGS_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # Include goal-setting output for quality context (influences reviewer_confidence)
+      if [ -f \"$GOAL_SETTING_ARTIFACT\" ]; then
+        goal_setting_context=\"GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
+    $(head -n 200 \"$GOAL_SETTING_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      cat <<EOF
+    You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.·
+    Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.·
+    ## Your Task·
+    This is NOT another goal-check. The goal-check evaluator already determined if the goal was met. Your job is to assess:
+    1. **Reviewer Confidence**: Can humans trust this PR without exhaustive manual review?
+    2. **Process Value**: Which stages added value? Which could be streamlined?
+    3. **Kaseki Improvements**: What should the Kaseki system optimize for next time?
+    4. **Task Completion**: Did the agent realize the specific goal? (score 1-5)·
+    ## Inputs to Use·
+    **Goal Quality Context** (influences reviewer_confidence assessment):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns·
+    **Agent Artifacts** (verify goal was realized):
+    - Goal-check verdict: /results/goal-check.json
+    - Scouting report: /results/scouting.json
+    - Changed files: /results/changed-files.txt
+    - Git diff and status: /results/git.diff, /results/git.status
+    - Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Stage timings: /results/stage-timings.tsv
+    - Progress log: /results/progress.log
+    - Metadata: /results/metadata.json·
+    ## Evaluation Framework·
+    ### 1. Reviewer Confidence Grounding·
+    Reviewer confidence should account for goal quality. Poor goals = harder to assess = lower confidence.·
+    **High reviewer_confidence** (80%+ trust for merge):
+    - Goal quality ≥80 (high clarity, measurability, specificity)
+    - Goal-check: met=true with high confidence
+    - Validation: all pass (or failures are pre-existing)
+    - Diff: ≤200 lines, ≤3 files
+    - No warnings from evaluators·
+    **Medium reviewer_confidence** (50-79% trust; recommend review):
+    - Goal quality 60-79 (medium quality)
+    - OR Goal-check: met=true but medium confidence
+    - OR Validation: mostly pass with 1-2 minor failures
+    - OR Diff: 200-500 lines, ≤5 files·
+    **Low reviewer_confidence** (<50% trust; require manual review):
+    - Goal quality <60 (low clarity/measurability)
+    - OR Goal-check: unmet or low confidence
+    - OR Validation: failures (excluding pre-existing)
+    - OR Diff: >500 lines or >5 files
+    - OR Contradictory signals·
+    Always account for goal quality. A low-quality goal makes success harder to assess.·
+    ### 2. Task Completion Score (1-5)·
+    Use SMART framework from goal-setting:·
+    - **5**: All SMART dimensions verified: specific requirements met, measurable criteria pass, achievable in one run, relevant to goal, time-bound (no pending work)
+    - **4**: 4/5 SMART dimensions clear; one minor dimension unclear
+    - **3**: 3/5 SMART dimensions met; some uncertainty remains
+    - **2**: 2/5 dimensions; major requirements unclear or unmet
+    - **1**: <2 dimensions met; goal largely unrealized·
+    Reference specific goal-setting quality metrics (clarity, measurability, specificity) in your reasoning.·
+    ### 3. Stage Value Assessment (NOT effort, but VALUE)·
+    For each stage, assess whether it contributed signal to the outcome:·
+    **High value**: Stage identified/resolved critical requirement, prevented bug, or shaped agent focus
+    - Example: \"Scouting discovered edge case in null handling; coding directly addressed it\"
+    - Example: \"Goal-check found unmet test requirement; agent could retry successfully\"·
+    **Medium value**: Stage provided baseline context without major direction change
+    - Example: \"Validation confirmed no regressions\"
+    - Example: \"Scouting listed requirements; all were addressed as expected\"·
+    **Low value**: Stage produced minimal new signals or could be optimized
+    - Example: \"Scouting repeated information already in goal-setting\"
+    - Example: \"Validation ran successfully but didn't catch anything unexpected\"·
+    Stages (assess value, not effort):
+    - goal-setting: Did it upgrade the goal meaningfully? (compare quality metrics)
+    - scouting: Did research uncover critical information? Or confirm expected?
+    - coding: Did agent implement efficiently? Or require retries?
+    - validation: Did validation catch issues? Or all pass as expected?
+    - goal-check: Did verdict provide clear signal? Or was it uncertain?·
+    ### 4. Kaseki Improvement Opportunities·
+    Suggestions should be SPECIFIC and ACTIONABLE:·
+    ✅ Good improvement:
+    {
+      \"category\": \"goal_setting\",
+      \"priority\": \"high\",
+      \"suggestion\": \"Goal quality was 'medium' (specificity=low). Upgrades should emphasize scope clarity: clearly separate 'fix parseRole()' from 'refactor error handling' if both are needed.\"
+    }·
+    ❌ Poor improvement:
+    {
+      \"category\": \"general\",
+      \"priority\": \"medium\",
+      \"suggestion\": \"Do better\"
+    }·
+    Categories:
+    - goal_setting: Goal-setting agent or prompt improvements
+    - scouting: Scouting research or codebase context
+    - coding: Coding agent performance or configuration
+    - validation: Validation commands or testing framework
+    - goal_check: Goal-check evaluation logic
+    - run_evaluation: Run-evaluation (this phase) quality
+    - process: Overall pipeline design·
+    Priorities:
+    - HIGH: Unblocks failures or improves success >10%
+    - MEDIUM: Improves efficiency/UX; 5-10% estimated gain
+    - LOW: Nice-to-have; <5% impact·
+    ### 5. Human Review Focus (2-4 items max)·
+    What should humans manually review?·
+    ✅ Good:
+    - \"The retry logic for null input may have side effects on callers; check parseRole(null) call sites\"
+    - \"New dependencies added (vitest-mock-extended, faker); verify these are acceptable\"·
+    ❌ Poor:
+    - \"Make sure it works\"
+    - \"Review everything\"·
+    Focus on things Kaseki didn't already verify (goa"
+
+      126 |         scriptContent.indexOf('build_run_evaluation_prompt()') + 7000
+      127 |       );
+    > 128 |       expect(runEvalSection).toContain('task_completion_score');
+          |                              ^
+      129 |       expect(runEvalSection).toContain('SMART');
+      130 |     });
+      131 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:128:30)
+
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should collect run-evaluation feedback from the schema-valid artifact contract
+
+    Bash script execution failed: Command failed: bash -c set -euo pipefail
+    collect_run_evaluation_feedback() {
+      local instance_name="$1"
+      local run_evaluation_path="/tmp/run-evaluation-feedback-contract-IcgMR5/results/run-evaluation.json"
+      local metadata_path="/tmp/run-evaluation-feedback-contract-IcgMR5/results/metadata.json"
+      local feedback_file="/tmp/run-evaluation-feedback-contract-IcgMR5/results/kaseki-improvements.jsonl"
+
+      # Only collect if run-evaluation succeeded and artifacts exist
+      if [ ! -f "$run_evaluation_path" ] || [ "$RUN_EVALUATION_EXIT" -ne 0 ]; then
+        return 0
+      fi
+
+      # Use node script to collect feedback, append as JSONL
+      node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+    }
+
+
+    build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+      if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
+        validation_context="Validation log tail (last 80 lines):
+    $validation_tail"
+      else
+        validation_context="Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
+      fi
+      progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+      if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+        test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+    ---
+    "
+      else
+        test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+    ---
+    "
+      fi
+      
+      # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+      if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+        goal_setting_context="GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
+    $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
+
+    ---
+    "
+      else
+        goal_setting_context=""
+      fi
+
+      # Include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
+
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = "";
+    process.stdin.on("data", chunk => input += chunk);
+    process.stdin.on("end", () => {
+      try {
+        const data = JSON.parse(input);
+        const assess = data.assessment;
+        console.log(`Type: ${assess.failureType}`);
+        console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+        console.log(`Rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failureType === "pre_existing") {
+          console.log("⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).");
+          console.log("   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.");
+          console.log("   - Implementation may be valid despite validation failures.");
+        } else if (assess.failureType === "change_related") {
+          console.log("❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.");
+          console.log("   - Implementation is not valid; failures must be fixed.");
+        } else if (assess.failureType === "mixed") {
+          console.log("⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.");
+          console.log("   - Identify and fix change-related failures.");
+          console.log("   - Pre-existing failures may not block goal if implementation is otherwise valid.");
+        } else if (assess.failureType === "inconclusive") {
+          console.log("❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.");
+          console.log("   - Be conservative; base verdict on other available evidence.");
+        }
+      } catch (e) {
+        console.log("(Could not parse causality assessment)");
+      }
+    });
+    '
+    )
+
+    ---
+    "
+      else
+        causality_context=""
+      fi
+
+      cat <<EOF
+    You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
+
+    Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
+
+    ## Your Task
+
+    Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.
+
+    ## Inputs to Inspect
+
+    **Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns, constraints
+
+    **Agent Artifacts** (use to verify requirements were met):
+    - Scouting report: $SCOUTING_ARTIFACT
+    - Changed files: /results/changed-files.txt
+    - Git diff: /results/git.diff
+    - Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
+
+    ## Evaluation Framework: SMART Criteria Check
+
+    1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
+    4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
+    5. **Time-bound**: Completed in this single run (not postponed to future attempts)?
+
+    For each dimension, provide evidence by citing specific file locations, test names, or validation results.
+
+    ## Evidence Requirements
+
+    Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:
+
+    ✅ Good evidence:
+    - "parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')"
+    - "5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs"
+    - "All 127 tests pass in validation.log (previously 125)"
+
+    ❌ Poor evidence:
+    - "The parser was fixed"
+    - "Tests were added"
+    - "Code looks good"
+
+    ## Confidence Grounding
+
+    Map your confidence to evidence strength:
+
+    - **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥2 clear unmet dimensions with actionable fix)
+    - **medium**: 2-3 evidence items + 3-4 SMART dimensions + some uncertainty
+    - **low**: <2 evidence items OR <3 SMART dimensions OR unclear path to fix
+
+    ## Retry Prompt Guidance (if met=false)
+
+    If goal is not met, your retry_prompt MUST:
+    1. Name the specific unmet SMART dimension(s)
+    2. Reference what the agent did accomplish (so it doesn't re-do work)
+    3. Provide actionable next steps (not just "try again")
+
+    Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test coverage is incomplete. Add tests for the 2 missing cases: unicode symbols and 100+ char names. Then run npm test to verify all 127 tests pass."
+
+    ## Rules
+
+    - Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
+    - You MUST write the final verdict JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT before exiting; a chat response, streamed assistant message, or printed JSON alone is not sufficient.
+    - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
+    - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+    - Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
+    - If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
+    - Validation logs are optional evidence. If /results/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
+
+    ## Required JSON artifact
+
+    {
+      "met": true or false,
+      "confidence": "high", "medium", or "low",
+      "summary": "1-2 sentence verdict with key finding",
+      "evidence": [
+        "specific, verifiable evidence item 1 with file/line references",
+        "specific, verifiable evidence item 2",
+        "... (3+ items for high confidence)"
+      ],
+      "missing": [
+        "unmet requirement 1 (empty array if met=true)",
+        "unmet requirement 2"
+      ],
+      "retry_prompt": "actionable repair instructions; empty if met=true",
+      "validation_notes": [
+        "validation command 1: outcome",
+        "validation command 2: outcome"
+      ]
+    }
+
+    ## Context
+
+    $goal_setting_context
+    $causality_context
+    $test_impact_context
+    Original task prompt (for reference):
+    $TASK_PROMPT
+
+    $validation_context
+
+    Progress log tail (last 80 lines):
+    $progress_tail
+    EOF
+    }
+
+    run_goal_check() {
+      local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary
+      attempt="$1"
+      GOAL_CHECK_ATTEMPTS="$attempt"
+      GOAL_CHECK_EXIT=0
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_REACHED=true
+      GOAL_CHECK_FAILURE_REASON=""
+
+      printf '\n==> goal check\n'
+      set_current_stage "goal check"
+      if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
+        printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a /results/goal-check-stderr.log
+        record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
+        return 0
+      fi
+      if [ ! -s "$SCOUTING_ARTIFACT" ]; then
+        printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a /results/goal-check-stderr.log
+        record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
+        return 0
+      fi
+
+      goal_prompt="$(build_goal_check_prompt)"
+      goal_start="$(date +%s)"
+      set +e
+      OPENROUTER_API_KEY="$openrouter_api_key" \
+        timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
+        2> >(tee -a /results/goal-check-stderr.log >&2) \
+        | tee "$GOAL_CHECK_RAW_EVENTS" \
+        | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+      GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
+      unset goal_prompt
+      GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
+      set +e
+
+      kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
+
+      if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
+        # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
+        # shellcheck disable=SC2016
+        node -e '
+    const fs = require("node:fs");
+    const candidatePath = process.argv[1];
+    const rawPath = process.argv[2];
+    const filteredPath = process.argv[3];
+    const attempt = Number(process.argv[4]);
+
+    function stableStringify(value) {
+      if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+      if (value && typeof value === "object") {
+        return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableStringify(value[key])).join(",") + "}";
+      }
+      return JSON.stringify(value);
+    }
+
+    function schemaErrors(artifact) {
+      const errors = [];
+      if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+        errors.push("root must be an object");
+        return errors;
+      }
+      if (typeof artifact.met !== "boolean") errors.push("met must be boolean");
+      if (!["low", "medium", "high"].includes(artifact.confidence)) errors.push("confidence must be low|medium|high");
+      if (typeof artifact.summary !== "string" || artifact.summary.trim().length === 0) errors.push("summary must be a non-empty string");
+      if (artifact.met === false && (typeof artifact.retry_prompt !== "string" || artifact.retry_prompt.trim().length === 0)) errors.push("retry_prompt must be non-empty when met=false");
+      for (const key of ["evidence", "missing", "validation_notes"]) {
+        if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) errors.push(key + " must be an array of strings");
+      }
+      return errors;
+    }
+
+    function collectBalancedJsonObjects(text) {
+      const snippets = [];
+      let start = -1;
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === "\"") inString = false;
+          continue;
+        }
+        if (ch === "\"") {
+          inString = true;
+        } else if (ch === "{") {
+          if (depth === 0) start = i;
+          depth += 1;
+        } else if (ch === "}" && depth > 0) {
+          depth -= 1;
+          if (depth === 0 && start >= 0) {
+            snippets.push(text.slice(start, i + 1));
+            start = -1;
+          }
+        }
+      }
+      return snippets;
+    }
+
+    function collectStrings(value, out = []) {
+      if (typeof value === "string") out.push(value);
+      else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+      else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+      return out;
+    }
+
+    PATH="/tmp/run-evaluation-feedback-contract-IcgMR5/bin":$PATH
+    SCRIPT_DIR="/workspaces/kaseki-agent/scripts"
+    RUN_EVALUATION_EXIT=0
+    collect_run_evaluation_feedback contract-instance
+
+    bash: -c: line 247: unexpected EOF while looking for matching `''
+
+    Stderr: bash: -c: line 247: unexpected EOF while looking for matching `''
+
+      364 |           execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+      365 |         } catch (error: any) {
+    > 366 |           throw new Error(`Bash script execution failed: ${error.message}\nStderr: ${error.stderr || 'N/A'}`);
+          |                 ^
+      367 |         }
+      368 |
+      369 |         let nodeArgs: string[];
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:366:17)
+
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should call collect_run_evaluation_feedback after run-evaluation
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "collect_run_evaluation_feedback"
+    Received string:    "run_run_evaluation() {
+      local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+      RUN_EVALUATION_EXIT=0
+      RUN_EVALUATION_WARNING=\"\"·
+      printf '\\n==> run evaluation\\n'
+      set_current_stage \"run evaluation\"
+      if [ \"$KASEKI_RUN_EVALUATION\" != \"1\" ]; then
+        printf 'Run evaluation s"
+
+      427 |         scriptContent.indexOf('run_run_evaluation') + 300
+      428 |       );
+    > 429 |       expect(runEvalSection).toContain('collect_run_evaluation_feedback');
+          |                              ^
+      430 |     });
+      431 |   });
+      432 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:429:30)
+
+To /tmp/kaseki-routes-remote-V56BBn
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-KvYRrh'...
+done.
+To /tmp/kaseki-routes-remote-V56BBn
+   2270db9..a4d3137  main -> main
+FAIL tests/goal-setting-improvements.test.ts
+  ● Goal-Setting Agent Improvements › Improvement #1: Anti-Patterns / Do-NOT Clauses › should validate supported anti-pattern categories and report missing or malformed input
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "No explicit anti-patterns defined - recommended for safety"
+    Received array: []
+
+      94 |
+      95 |       const missingAntiPatterns = parseGoalSettingOutput(baseGoal);
+    > 96 |       expect(hasQualityWarnings(missingAntiPatterns)).toContain(
+         |                                                       ^
+      97 |         'No explicit anti-patterns defined - recommended for safety',
+      98 |       );
+      99 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:96:55)
+
+  ● Goal-Setting Agent Improvements › Improvement #2: SMART Criteria Validation › should detect weak SMART quality
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      168 |
+      169 |       const warnings = hasQualityWarnings(goal);
+    > 170 |       expect(warnings.some((w) => w.includes('Success criteria not measurable'))).toBe(true);
+          |                                                                                   ^
+      171 |     });
+      172 |
+      173 |     it('should support legacy string format for backward compatibility', () => {
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:170:83)
+
+  ● Goal-Setting Agent Improvements › Improvement #4: Example-Based Goal Clarification › should warn if examples are missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      270 |
+      271 |       const warnings = hasQualityWarnings(goal);
+    > 272 |       expect(warnings.some((w) => w.includes('examples'))).toBe(true);
+          |                                                            ^
+      273 |     });
+      274 |   });
+      275 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:272:60)
+
+  ● Goal-Setting Agent Improvements › Improvement #5: Multi-Dimensional Quality Metrics › should calculate mixed quality scores
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 75
+    Received: 60
+
+      315 |
+      316 |       const score = calculateGoalQualityScore(goal);
+    > 317 |       expect(score).toBe(75); // 25 + 12.5 + 0 + 25 + 12.5 = 75
+          |                     ^
+      318 |     });
+      319 |
+      320 |     it('should default to 50 if no quality metrics provided', () => {
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:317:21)
+
+  ● Goal-Setting Agent Improvements › Improvement #6: Constraint Categorization › should warn if constraints missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      407 |
+      408 |       const warnings = hasQualityWarnings(goal);
+    > 409 |       expect(warnings.some((w) => w.includes('constraints'))).toBe(true);
+          |                                                               ^
+      410 |     });
+      411 |   });
+      412 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:409:63)
+
+  ● Goal-Setting Agent Improvements › Improvement #9: Iterative Refinement / Retry › should persist and interpret retry attempts from an actual goal-setting retry
+
+    Command failed: bash /tmp/kaseki-goal-setting-retry-dFFbxz/kaseki-agent-modified.sh
+    Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: /var/log/kaseki (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)
+    Cloning into '/tmp/kaseki-goal-setting-retry-dFFbxz/repo'...
+    warning: --depth is ignored in local clones; use file:// instead.
+    done.
+    fake npm ci --prefer-offline --ignore-scripts
+    cp: cannot stat 'node_modules/.': No such file or directory
+    [debug] restoration.jsonl does not exist
+    [debug] restoration report: skipping - restoration.jsonl not found
+
+      739 |         writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nexit 0\n', { mode: 0o755 });
+      740 |
+    > 741 |         execFileSync('bash', [modifiedScript], {
+          |                     ^
+      742 |           env: {
+      743 |             ...process.env,
+      744 |             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:741:21)
+
+  ● Goal-Setting Agent Improvements › Improvement #10: Quality Warnings & Early Detection › should flag multiple quality issues
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      805 |       expect(warnings.length).toBeGreaterThan(0);
+      806 |       expect(warnings.some((w) => w.includes('clarity'))).toBe(true);
+    > 807 |       expect(warnings.some((w) => w.includes('measurable'))).toBe(true);
+          |                                                              ^
+      808 |       expect(warnings.some((w) => w.includes('Scope'))).toBe(true);
+      809 |     });
+      810 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:807:62)
+
+  ● Goal-Setting Agent Improvements › Improvement #10: Quality Warnings & Early Detection › should flag missing anti-patterns
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      820 |
+      821 |       const warnings = hasQualityWarnings(goal);
+    > 822 |       expect(warnings.some((w) => w.includes('anti-patterns'))).toBe(true);
+          |                                                                 ^
+      823 |     });
+      824 |   });
+      825 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:822:65)
+
+
+[kaseki-report.test] runtime_ms=8.41
+
+Summary of all failing tests
+FAIL tests/evaluation-prompts.test.ts (10.756 s)
+  ● Evaluation Prompt Enhancements › Goal-Check Prompt › should include confidence grounding guidance
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "grounding"
+    Received string:    "build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      if [ -n \"$(printf '%s' \"$validation_tail\" | tr -d '[:space:]')\" ]; then
+        validation_context=\"validation log tail (last 80 lines):
+    $validation_tail\"
+      else
+        validation_context=\"validation log: /results/validation.log is empty or has not been produced yet. treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied.\"
+      fi
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      if [ -s \"$test_impact_warnings_artifact\" ]; then
+        test_impact_context=\"static test-impact warnings artifact ($test_impact_warnings_artifact):
+    $(cat \"$test_impact_warnings_artifact\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"static test-impact warnings artifact ($test_impact_warnings_artifact): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # include goal-setting output if available (provides smart criteria, quality metrics, anti-patterns)
+      if [ -f \"$goal_setting_artifact\" ]; then
+        goal_setting_context=\"goal-setting output (use this to validate smart criteria and anti-patterns):
+    $(head -n 200 \"$goal_setting_artifact\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      # include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context=\"validation failure causality assessment:·
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = \"\";
+    process.stdin.on(\"data\", chunk => input += chunk);
+    process.stdin.on(\"end\", () => {
+      try {
+        const data = json.parse(input);
+        const assess = data.assessment;
+        console.log(`type: ${assess.failuretype}`);
+        console.log(`confidence: ${(assess.confidence * 100).tofixed(0)}%`);
+        console.log(`rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failuretype === \"pre_existing\") {
+          console.log(\"⚠️  key finding: validation failures appear to be pre-existing (not caused by code changes).\");
+          console.log(\"   - you can assess goal-check verdict based on requirements implementation, not blocked by these failures.\");
+          console.log(\"   - implementation may be valid despite validation failures.\");
+        } else if (assess.failuretype === \"change_related\") {
+          console.log(\"❌ key finding: validation failures are caused by code changes.\");
+          console.log(\"   - implementation is not valid; failures must be fixed.\");
+        } else if (assess.failuretype === \"mixed\") {
+          console.log(\"⚠️  key finding: mixed causality - some failures from changes, some pre-existing.\");
+          console.log(\"   - identify and fix change-related failures.\");
+          console.log(\"   - pre-existing failures may not block goal if implementation is otherwise valid.\");
+        } else if (assess.failuretype === \"inconclusive\") {
+          console.log(\"❓ key finding: causality inconclusive - insufficient signal agreement.\");
+          console.log(\"   - be conservative; base verdict on other available evidence.\");
+        }
+      } catch (e) {
+        console.log(\"(could not parse causality assessment)\");
+      }
+    });
+    '
+    )·
+    ---
+    \"
+      else
+        causality_context=\"\"
+      fi·
+      cat <<eof
+    you are a read-only goal-check pi agent inside a kaseki-managed ephemeral workspace.·
+    evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.·
+    ## your task·
+    determine if the agent successfully met the requirements specified in the goal-setting output. this is not a code review—focus on requirement completion, not code style. use smart criteria (specific, measurable, achievable, relevant, time-bound) to validate success.·
+    ## inputs to inspect·
+    **goal-setting context** (use to validate smart dimensions and anti-patterns):
+    - goal-setting artifact: $goal_setting_artifact
+    - quality metrics, smart criteria, anti-patterns, constraints·
+    **agent artifacts** (use to verify requirements were met):
+    - scouting report: $scouting_artifact
+    - changed files: /results/changed-files.txt
+    - git diff: /results/git.diff
+    - validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - static test-impact warnings (non-blocking): $test_impact_warnings_artifact
+    - coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl·
+    ## evaluation framework: smart criteria check·
+    1. **specific**: did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **measurable**: are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **achievable**: were requiremen"
+
+      49 |       );
+      50 |       expect(goalCheckSection).toContain('confidence');
+    > 51 |       expect(goalCheckSection.toLowerCase()).toContain('grounding');
+         |                                              ^
+      52 |     });
+      53 |
+      54 |     it('should request specific evidence with file/line references', () => {
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:51:46)
+
+  ● Evaluation Prompt Enhancements › Goal-Check Prompt › should maintain required JSON schema fields
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "\"met\""
+    Received string:    "build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      if [ -n \"$(printf '%s' \"$validation_tail\" | tr -d '[:space:]')\" ]; then
+        validation_context=\"Validation log tail (last 80 lines):
+    $validation_tail\"
+      else
+        validation_context=\"Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied.\"
+      fi
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      if [ -s \"$TEST_IMPACT_WARNINGS_ARTIFACT\" ]; then
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat \"$TEST_IMPACT_WARNINGS_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+      if [ -f \"$GOAL_SETTING_ARTIFACT\" ]; then
+        goal_setting_context=\"GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
+    $(head -n 200 \"$GOAL_SETTING_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      # Include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context=\"VALIDATION FAILURE CAUSALITY ASSESSMENT:·
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = \"\";
+    process.stdin.on(\"data\", chunk => input += chunk);
+    process.stdin.on(\"end\", () => {
+      try {
+        const data = JSON.parse(input);
+        const assess = data.assessment;
+        console.log(`Type: ${assess.failureType}`);
+        console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+        console.log(`Rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failureType === \"pre_existing\") {
+          console.log(\"⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).\");
+          console.log(\"   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.\");
+          console.log(\"   - Implementation may be valid despite validation failures.\");
+        } else if (assess.failureType === \"change_related\") {
+          console.log(\"❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.\");
+          console.log(\"   - Implementation is not valid; failures must be fixed.\");
+        } else if (assess.failureType === \"mixed\") {
+          console.log(\"⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.\");
+          console.log(\"   - Identify and fix change-related failures.\");
+          console.log(\"   - Pre-existing failures may not block goal if implementation is otherwise valid.\");
+        } else if (assess.failureType === \"inconclusive\") {
+          console.log(\"❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.\");
+          console.log(\"   - Be conservative; base verdict on other available evidence.\");
+        }
+      } catch (e) {
+        console.log(\"(Could not parse causality assessment)\");
+      }
+    });
+    '
+    )·
+    ---
+    \"
+      else
+        causality_context=\"\"
+      fi·
+      cat <<EOF
+    You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.·
+    Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.·
+    ## Your Task·
+    Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.·
+    ## Inputs to Inspect·
+    **Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns, constraints·
+    **Agent Artifacts** (use to verify requirements were met):
+    - Scouting report: $SCOUTING_ARTIFACT
+    - Changed files: /results/changed-files.txt
+    - Git diff: /results/git.diff
+    - Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl·
+    ## Evaluation Framework: SMART Criteria Check·
+    1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
+    4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
+    5. **Time-bound**: Completed in this single run (not postponed to future attempts)?·
+    For each dimension, provide evidence by citing specific file locations, test names, or validation results.·
+    ## Evidence Requirements·
+    Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:·
+    ✅ Good evidence:
+    - \"parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')\"
+    - \"5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs\"
+    - \"All 127 tests pass in validation.log (previously 125)\"·
+    ❌ Poor evidence:
+    - \"The parser was fixed\"
+    - \"Tests were added\"
+    - \"Code looks good\"·
+    ## Confidence Grounding·
+    Map your confidence to evidence strength:·
+    - **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥"
+
+      69 |         scriptContent.indexOf('build_goal_check_prompt()') + 6000
+      70 |       );
+    > 71 |       expect(goalCheckSection).toContain('"met"');
+         |                                ^
+      72 |       expect(goalCheckSection).toContain('"confidence"');
+      73 |       expect(goalCheckSection).toContain('"summary"');
+      74 |       expect(goalCheckSection).toContain('"evidence"');
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:71:32)
+
+  ● Evaluation Prompt Enhancements › Run-Evaluation Prompt › should define task_completion_score framework tied to SMART
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "task_completion_score"
+    Received string:    "build_run_evaluation_prompt() {
+      local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
+      validation_tail=\"$(tail -80 /results/validation.log 2>/dev/null || true)\"
+      progress_tail=\"$(tail -80 /results/progress.log 2>/dev/null || true)\"
+      stage_timings=\"$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)\"
+      dependency_cache=\"$(tail -80 /results/dependency-cache.log 2>/dev/null || true)\"
+      restoration_report=\"$(tail -80 /results/restoration-report.md 2>/dev/null || true)\"
+      metadata_text=\"$(cat /results/metadata.json 2>/dev/null || true)\"
+      draft_pr_body=\"$(build_pr_body)\"
+      if [ -s \"$TEST_IMPACT_WARNINGS_ARTIFACT\" ]; then
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat \"$TEST_IMPACT_WARNINGS_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        test_impact_context=\"Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.·
+    ---
+    \"
+      fi···
+      # Include goal-setting output for quality context (influences reviewer_confidence)
+      if [ -f \"$GOAL_SETTING_ARTIFACT\" ]; then
+        goal_setting_context=\"GOAL-SETTING OUTPUT (use to calibrate reviewer_confidence):
+    $(head -n 200 \"$GOAL_SETTING_ARTIFACT\" 2>/dev/null)·
+    ---
+    \"
+      else
+        goal_setting_context=\"\"
+      fi·
+      cat <<EOF
+    You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.·
+    Evaluate Kaseki's process quality for this run. Be task-agnostic: focus on reviewer confidence, process efficiency, stage value, and opportunities for Kaseki to improve.·
+    ## Your Task·
+    This is NOT another goal-check. The goal-check evaluator already determined if the goal was met. Your job is to assess:
+    1. **Reviewer Confidence**: Can humans trust this PR without exhaustive manual review?
+    2. **Process Value**: Which stages added value? Which could be streamlined?
+    3. **Kaseki Improvements**: What should the Kaseki system optimize for next time?
+    4. **Task Completion**: Did the agent realize the specific goal? (score 1-5)·
+    ## Inputs to Use·
+    **Goal Quality Context** (influences reviewer_confidence assessment):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns·
+    **Agent Artifacts** (verify goal was realized):
+    - Goal-check verdict: /results/goal-check.json
+    - Scouting report: /results/scouting.json
+    - Changed files: /results/changed-files.txt
+    - Git diff and status: /results/git.diff, /results/git.status
+    - Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Stage timings: /results/stage-timings.tsv
+    - Progress log: /results/progress.log
+    - Metadata: /results/metadata.json·
+    ## Evaluation Framework·
+    ### 1. Reviewer Confidence Grounding·
+    Reviewer confidence should account for goal quality. Poor goals = harder to assess = lower confidence.·
+    **High reviewer_confidence** (80%+ trust for merge):
+    - Goal quality ≥80 (high clarity, measurability, specificity)
+    - Goal-check: met=true with high confidence
+    - Validation: all pass (or failures are pre-existing)
+    - Diff: ≤200 lines, ≤3 files
+    - No warnings from evaluators·
+    **Medium reviewer_confidence** (50-79% trust; recommend review):
+    - Goal quality 60-79 (medium quality)
+    - OR Goal-check: met=true but medium confidence
+    - OR Validation: mostly pass with 1-2 minor failures
+    - OR Diff: 200-500 lines, ≤5 files·
+    **Low reviewer_confidence** (<50% trust; require manual review):
+    - Goal quality <60 (low clarity/measurability)
+    - OR Goal-check: unmet or low confidence
+    - OR Validation: failures (excluding pre-existing)
+    - OR Diff: >500 lines or >5 files
+    - OR Contradictory signals·
+    Always account for goal quality. A low-quality goal makes success harder to assess.·
+    ### 2. Task Completion Score (1-5)·
+    Use SMART framework from goal-setting:·
+    - **5**: All SMART dimensions verified: specific requirements met, measurable criteria pass, achievable in one run, relevant to goal, time-bound (no pending work)
+    - **4**: 4/5 SMART dimensions clear; one minor dimension unclear
+    - **3**: 3/5 SMART dimensions met; some uncertainty remains
+    - **2**: 2/5 dimensions; major requirements unclear or unmet
+    - **1**: <2 dimensions met; goal largely unrealized·
+    Reference specific goal-setting quality metrics (clarity, measurability, specificity) in your reasoning.·
+    ### 3. Stage Value Assessment (NOT effort, but VALUE)·
+    For each stage, assess whether it contributed signal to the outcome:·
+    **High value**: Stage identified/resolved critical requirement, prevented bug, or shaped agent focus
+    - Example: \"Scouting discovered edge case in null handling; coding directly addressed it\"
+    - Example: \"Goal-check found unmet test requirement; agent could retry successfully\"·
+    **Medium value**: Stage provided baseline context without major direction change
+    - Example: \"Validation confirmed no regressions\"
+    - Example: \"Scouting listed requirements; all were addressed as expected\"·
+    **Low value**: Stage produced minimal new signals or could be optimized
+    - Example: \"Scouting repeated information already in goal-setting\"
+    - Example: \"Validation ran successfully but didn't catch anything unexpected\"·
+    Stages (assess value, not effort):
+    - goal-setting: Did it upgrade the goal meaningfully? (compare quality metrics)
+    - scouting: Did research uncover critical information? Or confirm expected?
+    - coding: Did agent implement efficiently? Or require retries?
+    - validation: Did validation catch issues? Or all pass as expected?
+    - goal-check: Did verdict provide clear signal? Or was it uncertain?·
+    ### 4. Kaseki Improvement Opportunities·
+    Suggestions should be SPECIFIC and ACTIONABLE:·
+    ✅ Good improvement:
+    {
+      \"category\": \"goal_setting\",
+      \"priority\": \"high\",
+      \"suggestion\": \"Goal quality was 'medium' (specificity=low). Upgrades should emphasize scope clarity: clearly separate 'fix parseRole()' from 'refactor error handling' if both are needed.\"
+    }·
+    ❌ Poor improvement:
+    {
+      \"category\": \"general\",
+      \"priority\": \"medium\",
+      \"suggestion\": \"Do better\"
+    }·
+    Categories:
+    - goal_setting: Goal-setting agent or prompt improvements
+    - scouting: Scouting research or codebase context
+    - coding: Coding agent performance or configuration
+    - validation: Validation commands or testing framework
+    - goal_check: Goal-check evaluation logic
+    - run_evaluation: Run-evaluation (this phase) quality
+    - process: Overall pipeline design·
+    Priorities:
+    - HIGH: Unblocks failures or improves success >10%
+    - MEDIUM: Improves efficiency/UX; 5-10% estimated gain
+    - LOW: Nice-to-have; <5% impact·
+    ### 5. Human Review Focus (2-4 items max)·
+    What should humans manually review?·
+    ✅ Good:
+    - \"The retry logic for null input may have side effects on callers; check parseRole(null) call sites\"
+    - \"New dependencies added (vitest-mock-extended, faker); verify these are acceptable\"·
+    ❌ Poor:
+    - \"Make sure it works\"
+    - \"Review everything\"·
+    Focus on things Kaseki didn't already verify (goa"
+
+      126 |         scriptContent.indexOf('build_run_evaluation_prompt()') + 7000
+      127 |       );
+    > 128 |       expect(runEvalSection).toContain('task_completion_score');
+          |                              ^
+      129 |       expect(runEvalSection).toContain('SMART');
+      130 |     });
+      131 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:128:30)
+
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should collect run-evaluation feedback from the schema-valid artifact contract
+
+    Bash script execution failed: Command failed: bash -c set -euo pipefail
+    collect_run_evaluation_feedback() {
+      local instance_name="$1"
+      local run_evaluation_path="/tmp/run-evaluation-feedback-contract-IcgMR5/results/run-evaluation.json"
+      local metadata_path="/tmp/run-evaluation-feedback-contract-IcgMR5/results/metadata.json"
+      local feedback_file="/tmp/run-evaluation-feedback-contract-IcgMR5/results/kaseki-improvements.jsonl"
+
+      # Only collect if run-evaluation succeeded and artifacts exist
+      if [ ! -f "$run_evaluation_path" ] || [ "$RUN_EVALUATION_EXIT" -ne 0 ]; then
+        return 0
+      fi
+
+      # Use node script to collect feedback, append as JSONL
+      node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+    }
+
+
+    build_goal_check_prompt() {
+      local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
+      validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+      if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
+        validation_context="Validation log tail (last 80 lines):
+    $validation_tail"
+      else
+        validation_context="Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
+      fi
+      progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+      if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
+        test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
+    $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
+
+    ---
+    "
+      else
+        test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT): no warnings emitted.
+
+    ---
+    "
+      fi
+      
+      # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
+      if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+        goal_setting_context="GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
+    $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
+
+    ---
+    "
+      else
+        goal_setting_context=""
+      fi
+
+      # Include causality assessment if available (helps interpret validation failures)
+      if [ -f /results/validation-causality-analysis.json ]; then
+        causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
+
+    $(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+    let input = "";
+    process.stdin.on("data", chunk => input += chunk);
+    process.stdin.on("end", () => {
+      try {
+        const data = JSON.parse(input);
+        const assess = data.assessment;
+        console.log(`Type: ${assess.failureType}`);
+        console.log(`Confidence: ${(assess.confidence * 100).toFixed(0)}%`);
+        console.log(`Rationale: ${assess.rationale}`);
+        console.log();
+        if (assess.failureType === "pre_existing") {
+          console.log("⚠️  Key Finding: Validation failures appear to be PRE-EXISTING (not caused by code changes).");
+          console.log("   - You can assess goal-check verdict based on requirements implementation, not blocked by these failures.");
+          console.log("   - Implementation may be valid despite validation failures.");
+        } else if (assess.failureType === "change_related") {
+          console.log("❌ Key Finding: Validation failures are CAUSED BY CODE CHANGES.");
+          console.log("   - Implementation is not valid; failures must be fixed.");
+        } else if (assess.failureType === "mixed") {
+          console.log("⚠️  Key Finding: MIXED causality - some failures from changes, some pre-existing.");
+          console.log("   - Identify and fix change-related failures.");
+          console.log("   - Pre-existing failures may not block goal if implementation is otherwise valid.");
+        } else if (assess.failureType === "inconclusive") {
+          console.log("❓ Key Finding: Causality INCONCLUSIVE - insufficient signal agreement.");
+          console.log("   - Be conservative; base verdict on other available evidence.");
+        }
+      } catch (e) {
+        console.log("(Could not parse causality assessment)");
+      }
+    });
+    '
+    )
+
+    ---
+    "
+      else
+        causality_context=""
+      fi
+
+      cat <<EOF
+    You are a read-only goal-check Pi agent inside a Kaseki-managed ephemeral workspace.
+
+    Evaluate whether the coding agent's current repository changes realized the objective from the goal-setting report.
+
+    ## Your Task
+
+    Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.
+
+    ## Inputs to Inspect
+
+    **Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
+    - Goal-setting artifact: $GOAL_SETTING_ARTIFACT
+    - Quality metrics, SMART criteria, anti-patterns, constraints
+
+    **Agent Artifacts** (use to verify requirements were met):
+    - Scouting report: $SCOUTING_ARTIFACT
+    - Changed files: /results/changed-files.txt
+    - Git diff: /results/git.diff
+    - Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+    - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
+    - Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
+
+    ## Evaluation Framework: SMART Criteria Check
+
+    1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
+    2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
+    3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
+    4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
+    5. **Time-bound**: Completed in this single run (not postponed to future attempts)?
+
+    For each dimension, provide evidence by citing specific file locations, test names, or validation results.
+
+    ## Evidence Requirements
+
+    Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:
+
+    ✅ Good evidence:
+    - "parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')"
+    - "5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs"
+    - "All 127 tests pass in validation.log (previously 125)"
+
+    ❌ Poor evidence:
+    - "The parser was fixed"
+    - "Tests were added"
+    - "Code looks good"
+
+    ## Confidence Grounding
+
+    Map your confidence to evidence strength:
+
+    - **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥2 clear unmet dimensions with actionable fix)
+    - **medium**: 2-3 evidence items + 3-4 SMART dimensions + some uncertainty
+    - **low**: <2 evidence items OR <3 SMART dimensions OR unclear path to fix
+
+    ## Retry Prompt Guidance (if met=false)
+
+    If goal is not met, your retry_prompt MUST:
+    1. Name the specific unmet SMART dimension(s)
+    2. Reference what the agent did accomplish (so it doesn't re-do work)
+    3. Provide actionable next steps (not just "try again")
+
+    Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test coverage is incomplete. Add tests for the 2 missing cases: unicode symbols and 100+ char names. Then run npm test to verify all 127 tests pass."
+
+    ## Rules
+
+    - Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
+    - You MUST write the final verdict JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT before exiting; a chat response, streamed assistant message, or printed JSON alone is not sufficient.
+    - Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
+    - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
+    - Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
+    - If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
+    - Validation logs are optional evidence. If /results/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
+
+    ## Required JSON artifact
+
+    {
+      "met": true or false,
+      "confidence": "high", "medium", or "low",
+      "summary": "1-2 sentence verdict with key finding",
+      "evidence": [
+        "specific, verifiable evidence item 1 with file/line references",
+        "specific, verifiable evidence item 2",
+        "... (3+ items for high confidence)"
+      ],
+      "missing": [
+        "unmet requirement 1 (empty array if met=true)",
+        "unmet requirement 2"
+      ],
+      "retry_prompt": "actionable repair instructions; empty if met=true",
+      "validation_notes": [
+        "validation command 1: outcome",
+        "validation command 2: outcome"
+      ]
+    }
+
+    ## Context
+
+    $goal_setting_context
+    $causality_context
+    $test_impact_context
+    Original task prompt (for reference):
+    $TASK_PROMPT
+
+    $validation_context
+
+    Progress log tail (last 80 lines):
+    $progress_tail
+    EOF
+    }
+
+    run_goal_check() {
+      local attempt goal_prompt goal_start verdict_met retry_prompt verdict_summary confidence goal_check_validation_reason goal_check_validation_summary
+      attempt="$1"
+      GOAL_CHECK_ATTEMPTS="$attempt"
+      GOAL_CHECK_EXIT=0
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_REACHED=true
+      GOAL_CHECK_FAILURE_REASON=""
+
+      printf '\n==> goal check\n'
+      set_current_stage "goal check"
+      if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
+        printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a /results/goal-check-stderr.log
+        record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
+        return 0
+      fi
+      if [ ! -s "$SCOUTING_ARTIFACT" ]; then
+        printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a /results/goal-check-stderr.log
+        record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
+        return 0
+      fi
+
+      goal_prompt="$(build_goal_check_prompt)"
+      goal_start="$(date +%s)"
+      set +e
+      OPENROUTER_API_KEY="$openrouter_api_key" \
+        timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
+        2> >(tee -a /results/goal-check-stderr.log >&2) \
+        | tee "$GOAL_CHECK_RAW_EVENTS" \
+        | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+      GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
+      unset goal_prompt
+      GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
+      set +e
+
+      kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
+
+      if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
+        # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
+        # shellcheck disable=SC2016
+        node -e '
+    const fs = require("node:fs");
+    const candidatePath = process.argv[1];
+    const rawPath = process.argv[2];
+    const filteredPath = process.argv[3];
+    const attempt = Number(process.argv[4]);
+
+    function stableStringify(value) {
+      if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+      if (value && typeof value === "object") {
+        return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableStringify(value[key])).join(",") + "}";
+      }
+      return JSON.stringify(value);
+    }
+
+    function schemaErrors(artifact) {
+      const errors = [];
+      if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+        errors.push("root must be an object");
+        return errors;
+      }
+      if (typeof artifact.met !== "boolean") errors.push("met must be boolean");
+      if (!["low", "medium", "high"].includes(artifact.confidence)) errors.push("confidence must be low|medium|high");
+      if (typeof artifact.summary !== "string" || artifact.summary.trim().length === 0) errors.push("summary must be a non-empty string");
+      if (artifact.met === false && (typeof artifact.retry_prompt !== "string" || artifact.retry_prompt.trim().length === 0)) errors.push("retry_prompt must be non-empty when met=false");
+      for (const key of ["evidence", "missing", "validation_notes"]) {
+        if (!Array.isArray(artifact[key]) || !artifact[key].every((v) => typeof v === "string")) errors.push(key + " must be an array of strings");
+      }
+      return errors;
+    }
+
+    function collectBalancedJsonObjects(text) {
+      const snippets = [];
+      let start = -1;
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === "\\") escaped = true;
+          else if (ch === "\"") inString = false;
+          continue;
+        }
+        if (ch === "\"") {
+          inString = true;
+        } else if (ch === "{") {
+          if (depth === 0) start = i;
+          depth += 1;
+        } else if (ch === "}" && depth > 0) {
+          depth -= 1;
+          if (depth === 0 && start >= 0) {
+            snippets.push(text.slice(start, i + 1));
+            start = -1;
+          }
+        }
+      }
+      return snippets;
+    }
+
+    function collectStrings(value, out = []) {
+      if (typeof value === "string") out.push(value);
+      else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+      else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+      return out;
+    }
+
+    PATH="/tmp/run-evaluation-feedback-contract-IcgMR5/bin":$PATH
+    SCRIPT_DIR="/workspaces/kaseki-agent/scripts"
+    RUN_EVALUATION_EXIT=0
+    collect_run_evaluation_feedback contract-instance
+
+    bash: -c: line 247: unexpected EOF while looking for matching `''
+
+    Stderr: bash: -c: line 247: unexpected EOF while looking for matching `''
+
+      364 |           execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
+      365 |         } catch (error: any) {
+    > 366 |           throw new Error(`Bash script execution failed: ${error.message}\nStderr: ${error.stderr || 'N/A'}`);
+          |                 ^
+      367 |         }
+      368 |
+      369 |         let nodeArgs: string[];
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:366:17)
+
+  ● Evaluation Prompt Enhancements › Feedback Collection Integration › should call collect_run_evaluation_feedback after run-evaluation
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "collect_run_evaluation_feedback"
+    Received string:    "run_run_evaluation() {
+      local evaluation_prompt evaluation_start eval_dirty_before eval_dirty_after
+      RUN_EVALUATION_EXIT=0
+      RUN_EVALUATION_WARNING=\"\"·
+      printf '\\n==> run evaluation\\n'
+      set_current_stage \"run evaluation\"
+      if [ \"$KASEKI_RUN_EVALUATION\" != \"1\" ]; then
+        printf 'Run evaluation s"
+
+      427 |         scriptContent.indexOf('run_run_evaluation') + 300
+      428 |       );
+    > 429 |       expect(runEvalSection).toContain('collect_run_evaluation_feedback');
+          |                              ^
+      430 |     });
+      431 |   });
+      432 |
+
+      at Object.<anonymous> (tests/evaluation-prompts.test.ts:429:30)
+
+FAIL tests/goal-setting-improvements.test.ts
+  ● Goal-Setting Agent Improvements › Improvement #1: Anti-Patterns / Do-NOT Clauses › should validate supported anti-pattern categories and report missing or malformed input
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected value: "No explicit anti-patterns defined - recommended for safety"
+    Received array: []
+
+      94 |
+      95 |       const missingAntiPatterns = parseGoalSettingOutput(baseGoal);
+    > 96 |       expect(hasQualityWarnings(missingAntiPatterns)).toContain(
+         |                                                       ^
+      97 |         'No explicit anti-patterns defined - recommended for safety',
+      98 |       );
+      99 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:96:55)
+
+  ● Goal-Setting Agent Improvements › Improvement #2: SMART Criteria Validation › should detect weak SMART quality
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      168 |
+      169 |       const warnings = hasQualityWarnings(goal);
+    > 170 |       expect(warnings.some((w) => w.includes('Success criteria not measurable'))).toBe(true);
+          |                                                                                   ^
+      171 |     });
+      172 |
+      173 |     it('should support legacy string format for backward compatibility', () => {
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:170:83)
+
+  ● Goal-Setting Agent Improvements › Improvement #4: Example-Based Goal Clarification › should warn if examples are missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      270 |
+      271 |       const warnings = hasQualityWarnings(goal);
+    > 272 |       expect(warnings.some((w) => w.includes('examples'))).toBe(true);
+          |                                                            ^
+      273 |     });
+      274 |   });
+      275 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:272:60)
+
+  ● Goal-Setting Agent Improvements › Improvement #5: Multi-Dimensional Quality Metrics › should calculate mixed quality scores
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 75
+    Received: 60
+
+      315 |
+      316 |       const score = calculateGoalQualityScore(goal);
+    > 317 |       expect(score).toBe(75); // 25 + 12.5 + 0 + 25 + 12.5 = 75
+          |                     ^
+      318 |     });
+      319 |
+      320 |     it('should default to 50 if no quality metrics provided', () => {
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:317:21)
+
+  ● Goal-Setting Agent Improvements › Improvement #6: Constraint Categorization › should warn if constraints missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      407 |
+      408 |       const warnings = hasQualityWarnings(goal);
+    > 409 |       expect(warnings.some((w) => w.includes('constraints'))).toBe(true);
+          |                                                               ^
+      410 |     });
+      411 |   });
+      412 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:409:63)
+
+  ● Goal-Setting Agent Improvements › Improvement #9: Iterative Refinement / Retry › should persist and interpret retry attempts from an actual goal-setting retry
+
+    Command failed: bash /tmp/kaseki-goal-setting-retry-dFFbxz/kaseki-agent-modified.sh
+    Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: /var/log/kaseki (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)
+    Cloning into '/tmp/kaseki-goal-setting-retry-dFFbxz/repo'...
+    warning: --depth is ignored in local clones; use file:// instead.
+    done.
+    fake npm ci --prefer-offline --ignore-scripts
+    cp: cannot stat 'node_modules/.': No such file or directory
+    [debug] restoration.jsonl does not exist
+    [debug] restoration report: skipping - restoration.jsonl not found
+
+      739 |         writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nexit 0\n', { mode: 0o755 });
+      740 |
+    > 741 |         execFileSync('bash', [modifiedScript], {
+          |                     ^
+      742 |           env: {
+      743 |             ...process.env,
+      744 |             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:741:21)
+
+  ● Goal-Setting Agent Improvements › Improvement #10: Quality Warnings & Early Detection › should flag multiple quality issues
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      805 |       expect(warnings.length).toBeGreaterThan(0);
+      806 |       expect(warnings.some((w) => w.includes('clarity'))).toBe(true);
+    > 807 |       expect(warnings.some((w) => w.includes('measurable'))).toBe(true);
+          |                                                              ^
+      808 |       expect(warnings.some((w) => w.includes('Scope'))).toBe(true);
+      809 |     });
+      810 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:807:62)
+
+  ● Goal-Setting Agent Improvements › Improvement #10: Quality Warnings & Early Detection › should flag missing anti-patterns
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      820 |
+      821 |       const warnings = hasQualityWarnings(goal);
+    > 822 |       expect(warnings.some((w) => w.includes('anti-patterns'))).toBe(true);
+          |                                                                 ^
+      823 |     });
+      824 |   });
+      825 |
+
+      at Object.<anonymous> (tests/goal-setting-improvements.test.ts:822:65)
+
+
+Test Suites: 2 failed, 61 passed, 63 total
+Tests:       13 failed, 1245 passed, 1258 total
+Snapshots:   0 total
+Time:        105.864 s
+Ran all test suites.
