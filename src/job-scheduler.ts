@@ -1148,12 +1148,33 @@ export class JobScheduler {
     for (const line of output.split(/\r?\n/)) {
       const match = /^\[progress\]\s+([^:]+):\s*(.*)$/.exec(line);
       if (match) {
-        events.push({
-          source: 'docker-logs',
-          stage: match[1].trim().replace(/ info$/, ''),
-          message: match[2].trim(),
-          timestamp: new Date().toISOString(),
-        });
+        const fullBeforeColon = match[1].trim();
+        const message = match[2].trim();
+
+        // Check if this is shell format: <stage> <status>: <detail>
+        // where status is one of: info, started, finished, error
+        const shellStatusMatch = /^(.+?)\s+(info|started|finished|error)$/.exec(fullBeforeColon);
+
+        if (shellStatusMatch) {
+          // Shell format: extract stage and status
+          const stage = shellStatusMatch[1].trim();
+          const status = shellStatusMatch[2];
+          events.push({
+            source: 'docker-logs',
+            stage,
+            status,
+            message,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          // Pi stream format: treat everything before colon as stage (backward compatibility)
+          events.push({
+            source: 'docker-logs',
+            stage: fullBeforeColon,
+            message,
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
     }
     return events;
