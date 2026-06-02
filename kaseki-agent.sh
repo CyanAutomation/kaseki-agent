@@ -25,7 +25,8 @@ KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
 KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}"
-KASEKI_BASELINE_CACHE_MAX_AGE_DAYS="${KASEKI_BASELINE_CACHE_MAX_AGE_DAYS:-7}"
+KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
+KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
 KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
@@ -2666,8 +2667,9 @@ run_auto_lint_cleanup() {
 # === Baseline Test Failure Comparison (Pre-existing vs Newly-Introduced) ===
 
 baseline_validation_cache_key() {
-  # Cache key: repo_url + main_branch_ref (always "main")
-  printf '%s\n%s' "$REPO_URL" "main" | sha256sum | awk '{print $1}'
+  # Cache key: repo_url + main_branch_ref + validation commands
+  # This ensures different validation command sets get different cache entries
+  printf '%s\n%s\n%s' "$REPO_URL" "main" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | sha256sum | awk '{print $1}'
 }
 
 baseline_validation_cache_dir() {
@@ -2679,17 +2681,78 @@ baseline_validation_cache_dir() {
 
 baseline_validation_cache_is_valid() {
   local cache_dir="$1"
-  local max_age_days="${KASEKI_BASELINE_CACHE_MAX_AGE_DAYS:-7}"
+  local max_age_hours="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
   
   [ -d "$cache_dir" ] || return 1
   [ -f "$cache_dir/validation.log" ] || return 1
+  [ -f "$cache_dir/validation-timings.tsv" ] || return 1
   
-  # Check age: if older than max_age_days, invalidate
-  local cache_mtime modified_seconds now_seconds age_days
+  # Check age: if older than max_age_hours, invalidate
+  local cache_mtime modified_seconds now_seconds age_hours
   cache_mtime="$(stat -c %Y "$cache_dir/validation.log" 2>/dev/null || printf '0')"
   now_seconds="$(date +%s)"
-  age_days=$(( (now_seconds - cache_mtime) / 86400 ))
-  [ "$age_days" -lt "$max_age_days" ]
+  age_hours=$(( (now_seconds - cache_mtime) / 3600 ))
+  [ "$age_hours" -lt "$max_age_hours" ]
+}
+
+restore_baseline_validation_from_cache() {
+  local cache_dir="$1"
+  
+  if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+    return 1
+  fi
+  
+  if ! baseline_validation_cache_is_valid "$cache_dir"; then
+    return 1
+  fi
+  
+  # Restore cached files to results directory
+  mkdir -p /results
+  
+  if ! cp "$cache_dir/validation.log" /results/validation-baseline.log 2>/dev/null; then
+    return 1
+  fi
+  if ! cp "$cache_dir/validation-raw.log" /results/validation-baseline-raw.log 2>/dev/null; then
+    return 1
+  fi
+  if ! cp "$cache_dir/validation-timings.tsv" /results/validation-baseline-timings.tsv 2>/dev/null; then
+    return 1
+  fi
+  if [ -f "$cache_dir/validation-env.log" ]; then
+    cp "$cache_dir/validation-env.log" /results/validation-baseline-env.log 2>/dev/null || true
+  fi
+  
+  return 0
+}
+
+save_baseline_validation_to_cache() {
+  local cache_dir="$1"
+  
+  if [ "$KASEKI_BASELINE_CACHE_DISABLED" = "1" ]; then
+    return 0
+  fi
+  
+  # Create cache directory
+  mkdir -p "$cache_dir" || return 1
+  
+  # Save validation results to cache
+  if [ -f /results/validation-baseline.log ]; then
+    cp /results/validation-baseline.log "$cache_dir/validation.log" || return 1
+  fi
+  
+  if [ -f /results/validation-baseline-raw.log ]; then
+    cp /results/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
+  fi
+  
+  if [ -f /results/validation-baseline-timings.tsv ]; then
+    cp /results/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
+  fi
+  
+  if [ -f /results/validation-baseline-env.log ]; then
+    cp /results/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
+  fi
+  
+  return 0
 }
 
 checkout_baseline_repo() {
@@ -6851,17 +6914,34 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
   set_current_stage "baseline validation setup"
   emit_progress "baseline validation setup" "started"
   
-  if checkout_baseline_repo; then
-    BASELINE_CACHE_STATUS="completed"
-    run_baseline_validation || {
-      BASELINE_CACHE_STATUS="validation_failed"
-      emit_progress "baseline validation" "completed with failures (will compare against working results)"
-    }
-    # Cleanup baseline workspace to save space
-    rm -rf /workspace-baseline 2>/dev/null || true
+  # Check cache first
+  local baseline_cache_dir
+  baseline_cache_dir="$(baseline_validation_cache_dir)"
+  
+  if restore_baseline_validation_from_cache "$baseline_cache_dir"; then
+    BASELINE_CACHE_STATUS="cache_hit"
+    emit_progress "baseline validation" "restored from cache (age < ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h, validation_commands_hash=${baseline_cache_dir##*/})"
+    record_stage_timing "baseline validation" "0" "0" "cache_hit=true cache_dir=$baseline_cache_dir"
   else
-    BASELINE_CACHE_STATUS="checkout_failed"
-    emit_error_event "baseline_checkout_failed" "Failed to setup baseline for test failure comparison; continuing without baseline" "continue"
+    # Cache miss: checkout and run validation
+    if checkout_baseline_repo; then
+      BASELINE_CACHE_STATUS="completed"
+      run_baseline_validation || {
+        BASELINE_CACHE_STATUS="validation_failed"
+        emit_progress "baseline validation" "completed with failures (will compare against working results)"
+      }
+      # Save results to cache for future runs
+      if save_baseline_validation_to_cache "$baseline_cache_dir"; then
+        emit_progress "baseline validation cache" "saved for future runs (will be valid for ${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS}h)"
+      else
+        emit_progress "baseline validation cache" "failed to save (non-blocking)"
+      fi
+      # Cleanup baseline workspace to save space
+      rm -rf /workspace-baseline 2>/dev/null || true
+    else
+      BASELINE_CACHE_STATUS="checkout_failed"
+      emit_error_event "baseline_checkout_failed" "Failed to setup baseline for test failure comparison; continuing without baseline" "continue"
+    fi
   fi
 else
   if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" != "1" ]; then

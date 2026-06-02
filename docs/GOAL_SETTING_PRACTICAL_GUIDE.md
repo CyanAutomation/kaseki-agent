@@ -96,6 +96,7 @@ console.log(`Constraint Strength: ${metrics.constraint_strength}`);
 ```
 
 **Quality Interpretation**:
+
 - **High**: Excellent quality. Agent should succeed.
 - **Medium**: Good quality. Most likely to succeed.
 - **Low**: Poor quality. High failure risk. Consider retrying with better prompt.
@@ -122,6 +123,7 @@ goal.success_criteria.forEach((c, i) => {
 ```
 
 **SMART Score Meanings**:
+
 - **High**: Specific ("fix parseRole() null"), Measurable ("all tests pass"), Achievable, Relevant, Time-bound
 - **Low**: Vague ("improve quality"), not measurable, scope unclear
 
@@ -246,6 +248,7 @@ cat /results/goal-setting-validation-notes.txt
 ```
 
 Output might show:
+
 ```
 goal-setting-warnings:
   Goal clarity is low - may cause agent confusion
@@ -256,14 +259,17 @@ goal-setting-warnings:
 ### Step 2: Improve Your Input Prompt
 
 **If clarity is low**:
+
 - Be more specific: "Fix parseRole()" vs "Fix the function"
 - Add context: Explain WHY the change matters
 
 **If measurability is low**:
+
 - Add concrete metrics: "Add 5 tests" vs "improve coverage"
 - Define acceptance criteria: "all tests pass" vs "make it better"
 
 **If anti-patterns are missing**:
+
 - List what NOT to change: "Don't modify src/generated/"
 - Define preservation rules: "Keep error message format"
 
