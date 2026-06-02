@@ -255,6 +255,12 @@ describe('StatusResponseBuilder', () => {
         stages: ['stage1', 'stage2', 'stage3', 'stage4'],
       });
 
+      // Progress shows only stage1 and stage2 finished
+      const progressContent = [
+        JSON.stringify({ stage: 'stage1', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'stage2', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
       (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
         return filePath.includes('metadata.json') || filePath.includes('progress.jsonl');
       });
@@ -262,6 +268,9 @@ describe('StatusResponseBuilder', () => {
       (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
         if (filePath.includes('metadata.json')) {
           return metadataContent;
+        }
+        if (filePath.includes('progress.jsonl')) {
+          return progressContent;
         }
         return '';
       });
@@ -273,10 +282,9 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // Should use metadata stages as denominator
-      expect(response.taskProgressPercent).toBeDefined();
-      expect(response.taskProgressPercent).toBeGreaterThanOrEqual(0);
-      expect(response.taskProgressPercent).toBeLessThanOrEqual(100);
+      // Should use metadata stages as denominator (4 stages total)
+      // With 2 stages finished: (2/4) * 100 = 50%
+      expect(response.taskProgressPercent).toBe(50);
     });
 
     it('should read progress from progress.jsonl file', () => {
