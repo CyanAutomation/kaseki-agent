@@ -166,7 +166,7 @@ function classifyTests(
     const workingStatus = workingResults[testName]?.status || 'skipped';
 
     let category: TestClassification['category'];
-    
+
     // Determine classification based on status transitions
     if (workingStatus === 'failed' && baselineStatus === 'failed') {
       // Same test, still failing
@@ -218,15 +218,15 @@ function generateSummary(classification: Record<string, TestClassification>) {
     }
 
     switch (result.category) {
-      case 'pre-existing':
-        summary.total_pre_existing++;
-        break;
-      case 'newly-introduced':
-        summary.total_newly_introduced++;
-        break;
-      case 'fixed':
-        summary.total_fixed++;
-        break;
+    case 'pre-existing':
+      summary.total_pre_existing++;
+      break;
+    case 'newly-introduced':
+      summary.total_newly_introduced++;
+      break;
+    case 'fixed':
+      summary.total_fixed++;
+      break;
     }
   }
 

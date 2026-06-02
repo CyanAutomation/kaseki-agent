@@ -278,10 +278,10 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // Minimal config should have: clone, pre-agent validation, scouting (2), goal-check, 
+      // Minimal config should have: clone, pre-agent validation, scouting (2), goal-check,
       // agent setup, pi coding agent, collect diff, quality checks, validation, secret scan, complete
-      // Expected stages: clone repository, pre-agent validation, pi scouting agent, 
-      // derive allowlist from scouting, goal check, agent setup, pi coding agent, 
+      // Expected stages: clone repository, pre-agent validation, pi scouting agent,
+      // derive allowlist from scouting, goal check, agent setup, pi coding agent,
       // collect agent diff, quality checks, validation, secret scan, complete
       expect(response.taskProgressPercent).toBeDefined();
       expect(response.taskProgressPercent).toBeGreaterThanOrEqual(0);

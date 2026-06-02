@@ -506,10 +506,10 @@ NODE
         expect(scriptContent).toContain('high');
         expect(scriptContent).toContain('medium');
         expect(scriptContent).toContain('low');
-        
+
         // Define the validator logic matching kaseki-agent.sh
         const confidenceValues = new Set(['high', 'medium', 'low']);
-        
+
         // Test valid confidence levels
         const validValues = ['high', 'medium', 'low'];
         validValues.forEach(value => {
@@ -525,7 +525,7 @@ NODE
             stage_value: [],
             kaseki_improvement_opportunities: [],
           };
-          
+
           // Should pass validation (no invalid.push)
           const invalid: string[] = [];
           if (!confidenceValues.has(artifact.reviewer_confidence)) {
@@ -538,7 +538,7 @@ NODE
 
       it('should reject invalid values: critical, unknown, empty string, missing, and non-string', () => {
         const confidenceValues = new Set(['high', 'medium', 'low']);
-        
+
         // Test case 1: value = "critical" (not in enum)
         const invalid1: string[] = [];
         const artifact1: any = {
@@ -553,7 +553,7 @@ NODE
           invalid1.push('confidence_critical');
         }
         expect(invalid1).toContain('confidence_critical');
-        
+
         // Test case 2: value = "unknown" (not in enum for reviewer_confidence)
         const invalid2: string[] = [];
         const artifact2: any = {
@@ -568,7 +568,7 @@ NODE
           invalid2.push('confidence_unknown');
         }
         expect(invalid2).toContain('confidence_unknown');
-        
+
         // Test case 3: value = "" (empty string)
         const invalid3: string[] = [];
         const artifact3: any = {
@@ -583,7 +583,7 @@ NODE
           invalid3.push('confidence_empty');
         }
         expect(invalid3).toContain('confidence_empty');
-        
+
         // Test case 4: value = 123 (non-string)
         const invalid4: string[] = [];
         const artifact4: any = {
@@ -598,7 +598,7 @@ NODE
           invalid4.push('confidence_number');
         }
         expect(invalid4).toContain('confidence_number');
-        
+
         // Test case 5: missing reviewer_confidence field
         const invalid5: string[] = [];
         const artifact5: any = {
@@ -617,15 +617,15 @@ NODE
 
       it('should validate reviewer_confidence in actual kaseki-agent.sh validator', () => {
         const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-        
+
         // Verify the validator is present in the run-evaluation validation section
         const validationSection = scriptContent.substring(
           scriptContent.indexOf('run_run_evaluation'),
           scriptContent.indexOf('run_run_evaluation') + 10000
         );
-        
+
         expect(validationSection).toContain('confidenceValues');
-        expect(validationSection).toContain("new Set");
+        expect(validationSection).toContain('new Set');
         expect(validationSection).toContain('"high"');
         expect(validationSection).toContain('"medium"');
         expect(validationSection).toContain('"low"');
@@ -638,13 +638,13 @@ NODE
       it('should validate task_completion_score as 1-5 integer - passes on valid values 1-5', () => {
         const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
         expect(scriptContent).toContain('task_completion_score');
-        
+
         // Extract the validator logic
         const validatorMatch = scriptContent.match(
           /if \(!Number\.isInteger\(artifact\.task_completion_score\).*?artifact\.task_completion_score > 5\)/
         );
         expect(validatorMatch).not.toBeNull();
-        
+
         // Test valid integer scores 1-5
         const validScores = [1, 2, 3, 4, 5];
         validScores.forEach(score => {
@@ -660,11 +660,11 @@ NODE
             stage_value: [],
             kaseki_improvement_opportunities: [],
           };
-          
+
           // Should pass validation (no invalid.push)
           const invalid: string[] = [];
-          if (!Number.isInteger(artifact.task_completion_score) || 
-              artifact.task_completion_score < 1 || 
+          if (!Number.isInteger(artifact.task_completion_score) ||
+              artifact.task_completion_score < 1 ||
               artifact.task_completion_score > 5) {
             invalid.push('task_completion_score');
           }
@@ -675,7 +675,7 @@ NODE
 
       it('should reject invalid values: 0, 6, 3.5, "4", and missing field', () => {
         const invalid: string[] = [];
-        
+
         // Test case 1: score = 0 (below minimum)
         const artifact1 = {
           overall_assessment: 'poor',
@@ -685,13 +685,13 @@ NODE
           human_review_focus: [], efficiency_findings: [], warnings: [],
           stage_value: [], kaseki_improvement_opportunities: [],
         };
-        if (!Number.isInteger(artifact1.task_completion_score) || 
-            artifact1.task_completion_score < 1 || 
+        if (!Number.isInteger(artifact1.task_completion_score) ||
+            artifact1.task_completion_score < 1 ||
             artifact1.task_completion_score > 5) {
           invalid.push('score_0');
         }
         expect(invalid).toContain('score_0');
-        
+
         // Test case 2: score = 6 (above maximum)
         invalid.length = 0;
         const artifact2 = {
@@ -702,13 +702,13 @@ NODE
           human_review_focus: [], efficiency_findings: [], warnings: [],
           stage_value: [], kaseki_improvement_opportunities: [],
         };
-        if (!Number.isInteger(artifact2.task_completion_score) || 
-            artifact2.task_completion_score < 1 || 
+        if (!Number.isInteger(artifact2.task_completion_score) ||
+            artifact2.task_completion_score < 1 ||
             artifact2.task_completion_score > 5) {
           invalid.push('score_6');
         }
         expect(invalid).toContain('score_6');
-        
+
         // Test case 3: score = 3.5 (float, not integer)
         invalid.length = 0;
         const artifact3 = {
@@ -719,30 +719,30 @@ NODE
           human_review_focus: [], efficiency_findings: [], warnings: [],
           stage_value: [], kaseki_improvement_opportunities: [],
         };
-        if (!Number.isInteger(artifact3.task_completion_score) || 
-            artifact3.task_completion_score < 1 || 
+        if (!Number.isInteger(artifact3.task_completion_score) ||
+            artifact3.task_completion_score < 1 ||
             artifact3.task_completion_score > 5) {
           invalid.push('score_3_5');
         }
         expect(invalid).toContain('score_3_5');
-        
+
         // Test case 4: score = "4" (string, not integer)
         invalid.length = 0;
         const artifact4: any = {
           overall_assessment: 'good',
           reviewer_confidence: 'medium',
-          task_completion_score: "4",
+          task_completion_score: '4',
           summary: 'Test', pr_summary: 'Test',
           human_review_focus: [], efficiency_findings: [], warnings: [],
           stage_value: [], kaseki_improvement_opportunities: [],
         };
-        if (!Number.isInteger(artifact4.task_completion_score) || 
-            artifact4.task_completion_score < 1 || 
+        if (!Number.isInteger(artifact4.task_completion_score) ||
+            artifact4.task_completion_score < 1 ||
             artifact4.task_completion_score > 5) {
           invalid.push('score_string_4');
         }
         expect(invalid).toContain('score_string_4');
-        
+
         // Test case 5: missing task_completion_score field
         invalid.length = 0;
         const artifact5: any = {
@@ -753,8 +753,8 @@ NODE
           human_review_focus: [], efficiency_findings: [], warnings: [],
           stage_value: [], kaseki_improvement_opportunities: [],
         };
-        if (!Number.isInteger(artifact5.task_completion_score) || 
-            artifact5.task_completion_score < 1 || 
+        if (!Number.isInteger(artifact5.task_completion_score) ||
+            artifact5.task_completion_score < 1 ||
             artifact5.task_completion_score > 5) {
           invalid.push('score_missing');
         }
@@ -763,13 +763,13 @@ NODE
 
       it('should validate task_completion_score in actual kaseki-agent.sh validator', () => {
         const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-        
+
         // Verify the validator is present in the run-evaluation validation section
         const validationSection = scriptContent.substring(
           scriptContent.indexOf('run_run_evaluation'),
           scriptContent.indexOf('run_run_evaluation') + 10000
         );
-        
+
         expect(validationSection).toContain('Number.isInteger(artifact.task_completion_score)');
         expect(validationSection).toContain('artifact.task_completion_score < 1');
         expect(validationSection).toContain('artifact.task_completion_score > 5');
