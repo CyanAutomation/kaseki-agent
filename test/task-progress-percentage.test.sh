@@ -94,28 +94,10 @@ assert_equal "5" "$finished_count_all" "All 5 stages finished"
 assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/5 = 100%)"
 
 # ============================================================================
-# TEST SUITE 2: Stage filtering by configuration
-# ============================================================================
-
-test_case "Stage filtering based on configuration"
-
-# Test different feature combinations
-# Note: These are logical tests, not actual bash function tests
-
-# Scenario 1: Minimal configuration (no scouting, no goal check, no eval, no github)
-declare -a minimal_stages=("clone repository" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "complete")
-assert_equal "8" "${#minimal_stages[@]}" "Minimal configuration has 8 stages"
-
-# Scenario 2: With scouting
-declare -a with_scouting=("clone repository" "pi scouting agent" "derive allowlist from scouting" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "complete")
-assert_equal "10" "${#with_scouting[@]}" "Configuration with scouting has 10 stages"
-
-# Scenario 3: With all features
-declare -a all_features=("clone repository" "pre-agent validation" "pi scouting agent" "derive allowlist from scouting" "goal check" "run evaluation" "agent setup" "pi coding agent" "collect agent diff" "quality checks" "validation" "secret scan" "github operations" "complete")
-assert_equal "14" "${#all_features[@]}" "Full configuration has 14 stages"
-
-# ============================================================================
-# TEST SUITE 3: Edge cases
+# TEST SUITE 2: Edge cases
+# Note: Stage filtering by configuration is covered in src/utils/status-response-builder.test.ts
+# which tests the actual deriveOrchestratorStages production function with semantic assertions
+# for minimal, scouting-enabled, and full-feature configurations
 # ============================================================================
 
 test_case "Edge cases"
