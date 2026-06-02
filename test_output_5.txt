@@ -6,3 +6,31 @@
 > @cyanautomation/kaseki-agent@1.58.5 build
 > tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
 
+✓ Added .js extensions to imports in dist/
+
+> @cyanautomation/kaseki-agent@1.58.5 generate:openapi
+> node scripts/generate-openapi-spec.js
+
+Generating OpenAPI 3.1 specification...
+✓ OpenAPI spec generated successfully
+  Output: /workspaces/kaseki-agent/kaseki-openapi.json
+  Size: 87.81 KB
+  Endpoints: 15
+  Schemas: 6
+
+> @cyanautomation/kaseki-agent@1.58.5 check:dist-dynamic-imports
+> node dist/check-dist-dynamic-imports.js
+
+✓ No extensionless relative dynamic imports found in dist/
+
+> @cyanautomation/kaseki-agent@1.58.5 type-check
+> tsc --noEmit -p tsconfig.json
+
+FAIL tests/evaluation-prompts.test.ts
+  ● Test suite failed to run
+
+    [96mtests/evaluation-prompts.test.ts[0m:[93m8[0m:[93m34[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m8[0m const __filename = fileURLToPath(import.meta.url);
+    [7m [0m [91m                                 ~~~~~~~~~~~[0m
+

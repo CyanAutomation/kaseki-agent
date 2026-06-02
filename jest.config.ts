@@ -19,7 +19,7 @@ const config: Config = {
   transform: {
     '^.+\\.ts$': ['ts-jest', {
       useESM: true,
-      tsconfig: 'tsconfig.test.json',
+      tsconfig: 'tsconfig.jest.json',
     }],
   },
   transformIgnorePatterns: ['node_modules/'],
