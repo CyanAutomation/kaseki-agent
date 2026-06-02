@@ -40,30 +40,10 @@ assert_equal() {
 }
 
 # ============================================================================
-# TEST SUITE 1: Metadata stages array generation
+# TEST SUITE 1: Progress calculation logic
 # ============================================================================
-
-test_case "Metadata includes stages array"
-# Simulate metadata.json with stages
-cat > "$TEST_DIR/metadata.json" <<'EOF'
-{
-  "instance": "kaseki-test-1",
-  "stages": ["clone repository", "pi coding agent", "quality checks", "validation", "complete"],
-  "exit_code": 0
-}
-EOF
-
-if [ -f "$TEST_DIR/metadata.json" ]; then
-  assert_equal "true" "true" "metadata.json created with stages array"
-  
-  # Verify stages array exists
-  stages=$(jq '.stages | length' "$TEST_DIR/metadata.json" 2>/dev/null || echo "0")
-  assert_equal "5" "$stages" "metadata.json contains 5 stages"
-fi
-
-# ============================================================================
-# TEST SUITE 2: Progress calculation logic
-# ============================================================================
+# Note: Metadata stages array parsing and impact on taskProgressPercent
+# is covered in src/utils/status-response-builder.test.ts
 
 test_case "Progress calculation with completed stages"
 
@@ -114,7 +94,7 @@ assert_equal "5" "$finished_count_all" "All 5 stages finished"
 assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/5 = 100%)"
 
 # ============================================================================
-# TEST SUITE 3: Stage filtering by configuration
+# TEST SUITE 2: Stage filtering by configuration
 # ============================================================================
 
 test_case "Stage filtering based on configuration"
@@ -135,7 +115,7 @@ declare -a all_features=("clone repository" "pre-agent validation" "pi scouting 
 assert_equal "14" "${#all_features[@]}" "Full configuration has 14 stages"
 
 # ============================================================================
-# TEST SUITE 4: Edge cases
+# TEST SUITE 3: Edge cases
 # ============================================================================
 
 test_case "Edge cases"
@@ -164,7 +144,7 @@ has_stages=$(jq 'has("stages")' "$no_stages_file" 2>/dev/null)
 assert_equal "false" "$has_stages" "Missing stages field detected correctly"
 
 # ============================================================================
-# TEST SUITE 5: Bug fix - 1000% percentage issue
+# TEST SUITE 4: Bug fix - 1000% percentage issue
 # ============================================================================
 
 test_case "Bug fix: Prevent 1000% calculation errors"

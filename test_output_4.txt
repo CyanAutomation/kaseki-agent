@@ -46,3 +46,39 @@ FAIL tests/evaluation-prompts.test.ts
     [7m8[0m const __filename = fileURLToPath(import.meta.url);
     [7m [0m [91m                                 ~~~~~~~~~~~[0m
 
+To /tmp/kaseki-routes-remote-LKVBgu
+ * [new branch]      main -> main
+Cloning into '/tmp/kaseki-routes-checkout-BRmzte'...
+done.
+To /tmp/kaseki-routes-remote-LKVBgu
+   d92fc17..4ae08ab  main -> main
+
+[kaseki-report.test] runtime_ms=15.39
+
+Summary of all failing tests
+FAIL tests/goal-setting-improvements.test.ts
+  ● Test suite failed to run
+
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m541[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m541[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+    [96mtests/goal-setting-improvements.test.ts[0m:[93m647[0m:[93m54[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m647[0m       const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+    [7m   [0m [91m                                                     ~~~~~~~~~~~[0m
+
+FAIL tests/evaluation-prompts.test.ts
+  ● Test suite failed to run
+
+    [96mtests/evaluation-prompts.test.ts[0m:[93m8[0m:[93m34[0m - [91merror[0m[90m TS1343: [0mThe 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', 'node18', 'node20', or 'nodenext'.
+
+    [7m8[0m const __filename = fileURLToPath(import.meta.url);
+    [7m [0m [91m                                 ~~~~~~~~~~~[0m
+
+
+Test Suites: 2 failed, 61 passed, 63 total
+Tests:       1204 passed, 1204 total
+Snapshots:   0 total
+Time:        114.715 s
+Ran all test suites.
