@@ -23,6 +23,9 @@ KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
+KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
+KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}"
+KASEKI_BASELINE_CACHE_MAX_AGE_DAYS="${KASEKI_BASELINE_CACHE_MAX_AGE_DAYS:-7}"
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
 KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
@@ -105,6 +108,14 @@ PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
 PRE_VALIDATION_FAILURE_REASON=""
 PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+BASELINE_VALIDATION_EXIT=0
+BASELINE_VALIDATION_FAILED_COMMAND_DETAIL=""
+BASELINE_VALIDATION_FAILURE_REASON=""
+BASELINE_VALIDATION_STOPPED_EARLY=false
+BASELINE_VALIDATION_COMMANDS_ATTEMPTED=0
+BASELINE_CACHE_STATUS="not_started"
+TEST_FAILURE_CLASSIFICATION_STATUS="not_started"
+NEWLY_INTRODUCED_FAILURES_COUNT=0
 AUTO_LINT_CLEANUP_EXIT=0
 AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
 AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=0
@@ -900,6 +911,12 @@ write_metadata() {
   "github_api_http_status": $(printf '%s' "$GITHUB_API_HTTP_STATUS" | json_encode),
   "validation_filter_stderr_tail": $(printf '%s' "$FILTER_STDERR_TAIL" | json_encode),
   "validation_filter_exit_code": 0,
+  "baseline_validation_enabled": $([[ "$KASEKI_BASELINE_VALIDATION_ENABLED" == "1" ]] && printf 'true' || printf 'false'),
+  "baseline_cache_status": $(printf '%s' "$BASELINE_CACHE_STATUS" | json_encode),
+  "baseline_validation_exit_code": $BASELINE_VALIDATION_EXIT,
+  "baseline_validation_failed_command": $(printf '%s' "$BASELINE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
+  "test_failure_classification_status": $(printf '%s' "$TEST_FAILURE_CLASSIFICATION_STATUS" | json_encode),
+  "newly_introduced_failures_count": $NEWLY_INTRODUCED_FAILURES_COUNT,
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode),
@@ -1033,6 +1050,9 @@ $(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALID
 $(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist reason: %s\n' "$VALIDATION_ALLOWLIST_FAILURE_REASON"; fi)
 - Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
 $(if [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
+- Test failure analysis: $TEST_FAILURE_CLASSIFICATION_STATUS
+$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ "$NEWLY_INTRODUCED_FAILURES_COUNT" -gt 0 ]; then printf '  - ⚠️ **Newly introduced failures: %d**\n' "$NEWLY_INTRODUCED_FAILURES_COUNT"; fi)
+$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f /results/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -1055,6 +1075,9 @@ Artifacts:
 - pre-validation-timings.tsv
 - validation.log
 - validation-timings.tsv
+- validation-baseline.log (baseline validation on main branch)
+- validation-baseline-timings.tsv
+- test-baseline-comparison.json (test failure classification)
 - auto-lint-cleanup.log
 - auto-lint-cleanup-timings.tsv
 - stage-timings.tsv
@@ -1663,6 +1686,29 @@ finish() {
   fi
   # Authoritative call site: this runs at EXIT so artifacts reflect final repo state.
   maybe_call_finish_helper collect_git_artifacts
+  
+  # Analyze test failures and compare baseline vs. working results
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f /results/validation-baseline.log ] && [ -f /results/pre-validation.log ]; then
+    set_current_stage "test failure analysis"
+    if analyze_test_failures_baseline; then
+      TEST_FAILURE_CLASSIFICATION_STATUS="completed"
+      # Try to extract newly_introduced_failures_count from JSON output (if jq available)
+      if [ -f /results/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' /results/test-baseline-comparison.json 2>/dev/null || printf '0')
+      elif [ -f /results/test-baseline-comparison.json ]; then
+        # Fallback: try to extract with grep/sed if jq not available
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' /results/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
+      fi
+    else
+      TEST_FAILURE_CLASSIFICATION_STATUS="failed"
+    fi
+  else
+    if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" != "1" ]; then
+      TEST_FAILURE_CLASSIFICATION_STATUS="disabled"
+    else
+      TEST_FAILURE_CLASSIFICATION_STATUS="skipped"
+    fi
+  fi
   
   # Debug output for restoration report generation
   if [ -f /results/restoration.jsonl ]; then
@@ -2615,6 +2661,154 @@ run_auto_lint_cleanup() {
   emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=$AUTO_LINT_CLEANUP_RESULT" "classification=$AUTO_LINT_CLEANUP_CLASSIFICATION" "attempted_commands=$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED" "skipped_commands=$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
   emit_progress "$stage_label" "finished with exit $AUTO_LINT_CLEANUP_EXIT"
   return 0
+}
+
+# === Baseline Test Failure Comparison (Pre-existing vs Newly-Introduced) ===
+
+baseline_validation_cache_key() {
+  # Cache key: repo_url + main_branch_ref (always "main")
+  printf '%s\n%s' "$REPO_URL" "main" | sha256sum | awk '{print $1}'
+}
+
+baseline_validation_cache_dir() {
+  local cache_root="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}"
+  local cache_key
+  cache_key="$(baseline_validation_cache_key)"
+  printf '%s/%s' "$cache_root" "$cache_key"
+}
+
+baseline_validation_cache_is_valid() {
+  local cache_dir="$1"
+  local max_age_days="${KASEKI_BASELINE_CACHE_MAX_AGE_DAYS:-7}"
+  
+  [ -d "$cache_dir" ] || return 1
+  [ -f "$cache_dir/validation.log" ] || return 1
+  
+  # Check age: if older than max_age_days, invalidate
+  local cache_mtime modified_seconds now_seconds age_days
+  cache_mtime="$(stat -c %Y "$cache_dir/validation.log" 2>/dev/null || printf '0')"
+  now_seconds="$(date +%s)"
+  age_days=$(( (now_seconds - cache_mtime) / 86400 ))
+  [ "$age_days" -lt "$max_age_days" ]
+}
+
+checkout_baseline_repo() {
+  local baseline_dir="/workspace-baseline"
+  local baseline_workspace_cache_dir="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}/workspace"
+  
+  # Clean up any existing baseline
+  rm -rf "$baseline_dir" 2>/dev/null || true
+  mkdir -p "$baseline_dir"
+  
+  emit_progress "baseline preparation" "checking out main branch"
+  
+  # Clone main branch into baseline directory
+  if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$KASEKI_LOG_DIR/baseline-checkout.log"; then
+    emit_error_event "baseline_checkout_failed" "Failed to checkout main branch for baseline comparison" "continue"
+    return 1
+  fi
+  
+  # Install dependencies in baseline
+  if [ -f "$baseline_dir/package.json" ]; then
+    emit_progress "baseline preparation" "installing baseline dependencies"
+    if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$KASEKI_LOG_DIR/baseline-npm-ci.log"; then
+      emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
+      cd /workspace/repo
+      return 1
+    fi
+    cd /workspace/repo
+  fi
+  
+  return 0
+}
+
+run_baseline_validation() {
+  local baseline_dir="/workspace-baseline"
+  local baseline_log="/results/validation-baseline.log"
+  local baseline_raw_log="/results/validation-baseline-raw.log"
+  local baseline_timings="/results/validation-baseline-timings.tsv"
+  local baseline_exit_var="BASELINE_VALIDATION_EXIT"
+  local baseline_detail_var="BASELINE_VALIDATION_FAILED_COMMAND_DETAIL"
+  local baseline_reason_var="BASELINE_VALIDATION_FAILURE_REASON"
+  
+  if [ ! -d "$baseline_dir" ]; then
+    return 1
+  fi
+  
+  # Save current working directory
+  local saved_pwd="$PWD"
+  
+  # Change to baseline directory temporarily
+  cd "$baseline_dir" || return 1
+  
+  # Run validation commands in baseline
+  run_validation_commands \
+    "baseline validation" \
+    "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
+    "$baseline_log" \
+    "$baseline_raw_log" \
+    "$baseline_timings" \
+    "/results/validation-baseline-env.log" \
+    "baseline_validation_failed" \
+    "$baseline_exit_var" \
+    "$baseline_detail_var" \
+    "$baseline_reason_var" \
+    "BASELINE_VALIDATION_STOPPED_EARLY" \
+    "BASELINE_VALIDATION_COMMANDS_ATTEMPTED"
+  
+  local baseline_exit=$?
+  
+  # Restore working directory
+  cd "$saved_pwd" || return 1
+  
+  # Store baseline exit code for later analysis
+  export BASELINE_VALIDATION_EXIT=$baseline_exit
+  
+  return $baseline_exit
+}
+
+analyze_test_failures_baseline() {
+  local baseline_log="/results/validation-baseline.log"
+  local working_log="/results/pre-validation.log"
+  local output_file="/results/test-baseline-comparison.json"
+  local results_dir="/results"
+  
+  if [ ! -f "$baseline_log" ] || [ ! -f "$working_log" ]; then
+    emit_progress "test failure analysis" "skipped (baseline or working log missing)"
+    return 0
+  fi
+  
+  emit_progress "test failure analysis" "comparing baseline and working test results"
+  
+  # Compile and run analyze-test-failures.ts if source exists
+  local analyzer_ts="$SCRIPT_DIR/src/analyze-test-failures.ts"
+  local analyzer_js="/tmp/analyze-test-failures.js"
+  
+  if [ ! -f "$analyzer_ts" ] && [ -f "/app/src/analyze-test-failures.ts" ]; then
+    analyzer_ts="/app/src/analyze-test-failures.ts"
+  fi
+  
+  if [ -f "$analyzer_ts" ]; then
+    # Transpile on-the-fly if npx esbuild or tsc available, otherwise run via node with ts-node
+    if command -v npx >/dev/null 2>&1; then
+      npx -y esbuild "$analyzer_ts" --bundle --platform=node --outfile="$analyzer_js" 2>/dev/null || {
+        # Fallback to ts-node
+        npx -y ts-node "$analyzer_ts" "$baseline_log" "$working_log" "$output_file" "$results_dir" 2>/dev/null
+        return $?
+      }
+      node "$analyzer_js" "$baseline_log" "$working_log" "$output_file" "$results_dir"
+      local result=$?
+      rm -f "$analyzer_js"
+      return $result
+    else
+      # Try running with node's native TypeScript support if available
+      node "$analyzer_ts" "$baseline_log" "$working_log" "$output_file" "$results_dir" 2>/dev/null
+      return $?
+    fi
+  else
+    emit_error_event "test_failure_analyzer_missing" "Test failure analyzer script not found at $analyzer_ts" "continue"
+    return 1
+  fi
 }
 
 run_validation_commands() {
@@ -6649,6 +6843,31 @@ prepare_dependencies() {
 
 if ! run_step "prepare node dependencies" prepare_dependencies; then
   exit 0
+fi
+
+# Baseline validation: checkout main branch and run validation commands for test failure comparison
+if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALIDATION" = "1" ]; then
+  printf '\n==> baseline validation setup\n'
+  set_current_stage "baseline validation setup"
+  emit_progress "baseline validation setup" "started"
+  
+  if checkout_baseline_repo; then
+    BASELINE_CACHE_STATUS="completed"
+    run_baseline_validation || {
+      BASELINE_CACHE_STATUS="validation_failed"
+      emit_progress "baseline validation" "completed with failures (will compare against working results)"
+    }
+    # Cleanup baseline workspace to save space
+    rm -rf /workspace-baseline 2>/dev/null || true
+  else
+    BASELINE_CACHE_STATUS="checkout_failed"
+    emit_error_event "baseline_checkout_failed" "Failed to setup baseline for test failure comparison; continuing without baseline" "continue"
+  fi
+else
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" != "1" ]; then
+    BASELINE_CACHE_STATUS="disabled"
+    emit_progress "baseline validation" "disabled via KASEKI_BASELINE_VALIDATION_ENABLED"
+  fi
 fi
 
 if [ "$KASEKI_PRE_AGENT_VALIDATION" = "0" ]; then
