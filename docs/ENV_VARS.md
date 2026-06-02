@@ -96,6 +96,7 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 **Behavior:**
 
 - Pre-agent commands run after clone/dependency setup and before Pi. A failure means the selected repo/ref was already failing; inspect `pre-validation.log`, `pre-validation-raw.log`, `pre-validation-env.log`, and `pre-validation-timings.tsv`.
+- **Baseline caching**: Pre-agent validation results are cached per `GIT_REF` + `KASEKI_PRE_AGENT_VALIDATION_COMMANDS` combination with a 24-hour default TTL. On subsequent runs with the same repo/commands, cached results restore instantly, avoiding redundant checkout + validation. Disable with `KASEKI_BASELINE_CACHE_DISABLED=1` for testing or cost-sensitive deployments.
 - Post-agent commands run after Pi, allowlist restoration, and quality gates. A failure means the final agent output failed validation; inspect `validation.log`, `validation-raw.log`, `validation-env.log`, and `validation-timings.tsv`.
 - Commands are executed sequentially within each phase.
 - Missing npm scripts are skipped (non-fatal).
@@ -122,6 +123,9 @@ To disable GitHub operations: `export GITHUB_APP_ENABLED=0`
 | `KASEKI_DEPENDENCY_CACHE_PRUNE` | `1` | boolean | Enable dependency cache pruning after dependency preparation |
 | `KASEKI_DEPENDENCY_CACHE_METRICS_FILE` | `${KASEKI_DEPENDENCY_CACHE_DIR}/.kaseki-cache-metrics` | string | Worker-written cache size/count file read by `/api/metrics` |
 | `NPM_CONFIG_CACHE` | `${KASEKI_CACHE_DIR}/npm-cache` | string | npm internal cache |
+| `KASEKI_BASELINE_CACHE_ROOT` | `/cache/kaseki-baseline` | string | Baseline validation results cache directory |
+| `KASEKI_BASELINE_CACHE_MAX_AGE_HOURS` | `24` | integer | Maximum baseline cache entry age in hours before expiration; `0` disables age-based invalidation |
+| `KASEKI_BASELINE_CACHE_DISABLED` | `0` | boolean | Disable baseline validation caching (useful for testing or cost-sensitive deployments) |
 
 #### `KASEKI_DEPENDENCY_RESTORE_MODE` decision guide
 
