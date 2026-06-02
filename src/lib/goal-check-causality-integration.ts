@@ -95,29 +95,29 @@ export function extractGoalCheckContext(
   let should_consider_pre_existing = false;
 
   switch (failureType) {
-    case 'change_related':
-      recommendation = `Validation failures are caused by code changes (${(confidence * 100).toFixed(0)}% confidence). Implementation is NOT valid; goal-check should fail.`;
-      implementation_valid = false;
-      should_consider_pre_existing = false;
-      break;
+  case 'change_related':
+    recommendation = `Validation failures are caused by code changes (${(confidence * 100).toFixed(0)}% confidence). Implementation is NOT valid; goal-check should fail.`;
+    implementation_valid = false;
+    should_consider_pre_existing = false;
+    break;
 
-    case 'pre_existing':
-      recommendation = `Validation failures are pre-existing, not caused by code changes (${(confidence * 100).toFixed(0)}% confidence). Implementation may still be valid; consider goal-check verdict on implementation merit alone.`;
-      implementation_valid = true;
-      should_consider_pre_existing = true;
-      break;
+  case 'pre_existing':
+    recommendation = `Validation failures are pre-existing, not caused by code changes (${(confidence * 100).toFixed(0)}% confidence). Implementation may still be valid; consider goal-check verdict on implementation merit alone.`;
+    implementation_valid = true;
+    should_consider_pre_existing = true;
+    break;
 
-    case 'mixed':
-      recommendation = `Validation failures are mixed: some caused by changes, some pre-existing (${(confidence * 100).toFixed(0)}% confidence). Goal-check should: (1) Identify change-related failures and fail on those, (2) Accept pre-existing failures as non-blocking if they don't touch changed code.`;
-      implementation_valid = false; // Fail on change-related failures
-      should_consider_pre_existing = true;
-      break;
+  case 'mixed':
+    recommendation = `Validation failures are mixed: some caused by changes, some pre-existing (${(confidence * 100).toFixed(0)}% confidence). Goal-check should: (1) Identify change-related failures and fail on those, (2) Accept pre-existing failures as non-blocking if they don't touch changed code.`;
+    implementation_valid = false; // Fail on change-related failures
+    should_consider_pre_existing = true;
+    break;
 
-    case 'inconclusive':
-      recommendation = `Causality assessment is inconclusive (${(confidence * 100).toFixed(0)}% confidence). Goal-check should make determination based on other evidence (changed files, diff quality, requirements alignment).`;
-      implementation_valid = false; // Conservative: fail until proven otherwise
-      should_consider_pre_existing = false;
-      break;
+  case 'inconclusive':
+    recommendation = `Causality assessment is inconclusive (${(confidence * 100).toFixed(0)}% confidence). Goal-check should make determination based on other evidence (changed files, diff quality, requirements alignment).`;
+    implementation_valid = false; // Conservative: fail until proven otherwise
+    should_consider_pre_existing = false;
+    break;
   }
 
   return {
@@ -140,7 +140,7 @@ export function formatCausalityForGoalCheck(context: GoalCheckCausalityContext):
   }
 
   const lines = [
-    `Failure Causality Assessment:`,
+    'Failure Causality Assessment:',
     `- Type: ${context.failure_type}`,
     `- Confidence: ${(context.confidence! * 100).toFixed(0)}%`,
     `- Rationale: ${context.rationale}`,
@@ -149,17 +149,17 @@ export function formatCausalityForGoalCheck(context: GoalCheckCausalityContext):
 
   if (context.should_consider_pre_existing) {
     lines.push(
-      `⚠️  Note: Some failures appear to be pre-existing. Evaluate goal-check verdict considering only changes introduced in this run.`
+      '⚠️  Note: Some failures appear to be pre-existing. Evaluate goal-check verdict considering only changes introduced in this run.'
     );
   }
 
   if (!context.implementation_valid) {
     lines.push(
-      `❌ Assessment: Code changes directly caused validation failures. Implementation is not valid.`
+      '❌ Assessment: Code changes directly caused validation failures. Implementation is not valid.'
     );
   } else {
     lines.push(
-      `✓ Assessment: Failures are not caused by code changes. Implementation may be valid despite validation failures.`
+      '✓ Assessment: Failures are not caused by code changes. Implementation may be valid despite validation failures.'
     );
   }
 
@@ -208,7 +208,7 @@ export function suggestVerdictAdjustment(
   if (causality.failure_type === 'mixed') {
     return {
       suggestedMet: false, /* Mixed verdict: must investigate change-related failures */
-      adjustmentReason: `Failures are mixed. Change-related items must be fixed before goal can be met.`,
+      adjustmentReason: 'Failures are mixed. Change-related items must be fixed before goal can be met.',
       confidence: 'medium',
     };
   }
@@ -224,7 +224,7 @@ export function suggestVerdictAdjustment(
   // Inconclusive: conservative approach
   return {
     suggestedMet: false,
-    adjustmentReason: `Causality assessment is inconclusive. Conservative approach: fail until clearer evidence is available.`,
+    adjustmentReason: 'Causality assessment is inconclusive. Conservative approach: fail until clearer evidence is available.',
     confidence: 'low',
   };
 }

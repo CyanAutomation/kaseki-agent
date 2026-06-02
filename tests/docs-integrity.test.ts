@@ -39,7 +39,7 @@ describe('Documentation Integrity', () => {
     it('referenced EVALUATION_BEST_PRACTICES.md should exist and contain expected headings', () => {
       expect(fs.existsSync(bestPracticesPath)).toBe(true);
       const content = fs.readFileSync(bestPracticesPath, 'utf8');
-      
+
       // Verify core headings are present
       expect(content).toContain('# Evaluation Best Practices');
       expect(content).toContain('Goal-Check');
@@ -50,7 +50,7 @@ describe('Documentation Integrity', () => {
     it('referenced FEEDBACK_LOOP_INTEGRATION.md should exist and contain expected headings', () => {
       expect(fs.existsSync(feedbackLoopPath)).toBe(true);
       const content = fs.readFileSync(feedbackLoopPath, 'utf8');
-      
+
       // Verify core headings are present
       expect(content).toContain('# Feedback Loop Integration');
       expect(content).toContain('Goal-Setting');
@@ -67,7 +67,7 @@ describe('Documentation Integrity', () => {
 
     it('EVALUATION_BEST_PRACTICES.md should reference related docs', () => {
       const content = fs.readFileSync(bestPracticesPath, 'utf8');
-      
+
       // Should mention or link to goal-setting concepts
       expect(content).toContain('Goal-Setting');
       // Should mention feedback or iteration
@@ -76,7 +76,7 @@ describe('Documentation Integrity', () => {
 
     it('FEEDBACK_LOOP_INTEGRATION.md should reference EVALUATION_BEST_PRACTICES.md', () => {
       const content = fs.readFileSync(feedbackLoopPath, 'utf8');
-      
+
       // Should mention the best practices or evaluations
       expect(content).toContain('goal-check');
       expect(content).toContain('run-evaluation');
@@ -106,26 +106,26 @@ describe('Documentation Integrity', () => {
 
       docs.forEach(({ path: docPath, name }) => {
         const content = fs.readFileSync(docPath, 'utf8');
-        
+
         // Find all markdown links: [text](file)
         const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
         let match;
-        
+
         while ((match = linkRegex.exec(content)) !== null) {
           const [, , link] = match;
-          
+
           // Skip external links (http, https) and anchors-only links
           if (link.startsWith('http') || link.startsWith('mailto:') || link.startsWith('#')) {
             continue;
           }
-          
+
           // Resolve relative path (remove leading ./ if present)
           const resolvedLink = link.startsWith('./') ? link.substring(2) : link;
-          
+
           // Check if linked file exists (split on # to handle anchor links)
           const filePart = resolvedLink.split('#')[0];
           const fullPath = path.join(projectRoot, 'docs', filePart);
-          
+
           // Only error if the file part is non-empty and file doesn't exist
           if (filePart && !fs.existsSync(fullPath)) {
             throw new Error(`Broken link in ${name}: [${filePart}](${link}) - file does not exist at ${fullPath}`);

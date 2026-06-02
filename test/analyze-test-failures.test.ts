@@ -215,7 +215,7 @@ async function runTests() {
     }
   }
 
-  console.log(`\n=== Results ===`);
+  console.log('\n=== Results ===');
   console.log(`Passed: ${passed}`);
   console.log(`Failed: ${failed}`);
   console.log(`Total: ${passed + failed}`);
