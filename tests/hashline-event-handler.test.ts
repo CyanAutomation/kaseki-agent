@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { processHashlineEventsFromFile } from '../src/hashline-event-handler';
 
 describe('hashline-event-handler', () => {
@@ -64,7 +65,6 @@ describe('hashline-event-handler', () => {
       // Compute hashes for the file
       const lines = content.split('\n');
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
@@ -188,7 +188,6 @@ line 4`;
       fs.writeFileSync(filePath, content);
 
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
@@ -271,7 +270,6 @@ line 4`;
       fs.writeFileSync(filePath, content);
 
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
@@ -316,7 +314,6 @@ line 4`;
       fs.writeFileSync(filePath, content);
 
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
@@ -364,7 +361,6 @@ line 2`;
       fs.writeFileSync(filePath, content);
 
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
@@ -436,7 +432,6 @@ line 2`;
       fs.writeFileSync(filePath, content);
 
       const getHash = (line: string) => {
-        const crypto = require('node:crypto');
         const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
         return crypto
           .createHash('sha256')
