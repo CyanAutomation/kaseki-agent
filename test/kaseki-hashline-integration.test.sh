@@ -10,7 +10,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 test_count=0
@@ -34,7 +33,6 @@ test_result() {
 
 # Setup temporary test workspace
 setup_test_workspace() {
-  local test_name="$1"
   TEST_TMPDIR="$(mktemp -d)"
   TEST_RESULTS_DIR="$TEST_TMPDIR/results"
   TEST_WORKSPACE_DIR="$TEST_TMPDIR/workspace"
@@ -68,8 +66,10 @@ test_hashline_handler_integration() {
   setup_test_workspace "hashline_handler_integration"
   
   # Compute hash of a line in src.js
-  local line1_hash=$(sha256sum <(echo -n "  return 42;") | cut -c1-8)
-  local line2_hash=$(sha256sum <(echo -n "}") | cut -c1-8)
+  local line1_hash
+  line1_hash=$(sha256sum <(echo -n "  return 42;") | cut -c1-8)
+  local line2_hash
+  line2_hash=$(sha256sum <(echo -n "}") | cut -c1-8)
   
   # Create a mock pi-events.jsonl with hashline_edit tool_call
   cat > "$TEST_RESULTS_DIR/pi-events.jsonl" <<EOF
@@ -102,8 +102,10 @@ EOF
   
   # Verify summary has expected fields
   if [ -f "$TEST_RESULTS_DIR/hashline-summary.json" ]; then
-    local has_applied=$(jq '.applied' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "null")
-    local has_rejected=$(jq '.rejected' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "null")
+    local has_applied
+    has_applied=$(jq '.applied' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "null")
+    local has_rejected
+    has_rejected=$(jq '.rejected' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "null")
     
     if [ "$has_applied" = "null" ] || [ "$has_rejected" = "null" ]; then
       echo "ERROR: hashline-summary.json missing required fields"
@@ -179,7 +181,8 @@ EOF
   
   # Should record rejection in summary
   if [ -f "$TEST_RESULTS_DIR/hashline-summary.json" ]; then
-    local has_rejected=$(jq '.rejected' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "0")
+    local has_rejected
+    has_rejected=$(jq '.rejected' "$TEST_RESULTS_DIR/hashline-summary.json" 2>/dev/null || echo "0")
     if [ "$has_rejected" = "0" ] || [ "$has_rejected" = "null" ]; then
       echo "ERROR: hashline-summary.json should record rejected edits"
       result=1

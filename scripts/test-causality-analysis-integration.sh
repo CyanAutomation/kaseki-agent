@@ -172,7 +172,8 @@ EOF
     fi
     
     # Verify required fields
-    local failureType=$(jq -r '.assessment.failureType' "$artifact_file")
+    local failureType
+    failureType=$(jq -r '.assessment.failureType' "$artifact_file")
     if [ "$failureType" = "change_related" ]; then
       log_pass "Artifact contains required verdict field"
     else
