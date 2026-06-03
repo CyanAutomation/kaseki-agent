@@ -32,6 +32,7 @@ KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
+KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
 KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
 KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_SETTING_TIMEOUT_SECONDS="${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
@@ -7423,6 +7424,27 @@ else
       FAILED_COMMAND="pi event export incomplete"
     fi
   fi
+
+  # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
+  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s /results/pi-events.jsonl ]; then
+    emit_progress "hashline validation" "started"
+    HASHLINE_EXIT=0
+    set +e
+    npx tsx /app/lib/hashline-event-handler-cli.js /results/pi-events.jsonl /workspace /results/hashline-events.jsonl /results/hashline-summary.json 2>> /results/hashline-validation.log
+    HASHLINE_EXIT=$?
+    set +e
+
+    if [ "$HASHLINE_EXIT" -ne 0 ]; then
+      printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a /results/hashline-validation.log
+      emit_event "warning" "warning_type=hashline_validation_failed" "detail=hashline_edit processing exited with code $HASHLINE_EXIT"
+    else
+      emit_progress "hashline validation" "completed"
+    fi
+
+    # Record timing for hashline validation
+    record_stage_timing "hashline validation" "$HASHLINE_EXIT" "0" "status=processing_hashline_edit_events"
+  fi
+
   ACTUAL_MODEL="$(node -e "
     var fs=require('fs');
     function clean(v){
