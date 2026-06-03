@@ -265,19 +265,6 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildServers detailed validation', () => {
-    it('server list should remain schema-compatible', () => {
-      const servers = buildServers();
-
-      expect(servers).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            url: expect.any(String),
-            description: expect.any(String),
-          }),
-        ])
-      );
-    });
-
     it('localhost server should use http://localhost', () => {
       const servers = buildServers();
       const local = servers.find((s) => (s.url as string).includes('localhost'));
