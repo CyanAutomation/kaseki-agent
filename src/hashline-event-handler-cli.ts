@@ -7,7 +7,6 @@
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { processHashlineEventsFromFile } from './hashline-event-handler.js';
 
 async function main() {
