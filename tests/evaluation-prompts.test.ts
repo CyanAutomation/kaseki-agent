@@ -430,8 +430,6 @@ NODE
   describe('Analysis Scripts', () => {
     it('collect-feedback.js should satisfy the feedback collection contract', () => {
       const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
-      expect(fs.existsSync(collectFeedbackPath)).toBe(true);
-
       const collectFeedbackContent = fs.readFileSync(collectFeedbackPath, 'utf8');
       const shellContent = fs.readFileSync(kasekiAgentPath, 'utf8');
 
@@ -628,7 +626,7 @@ NODE
         const validatorStartMarker = 'const fs = require("node:fs");';
         const validatorStart = scriptContent.indexOf(validatorStartMarker, scriptContent.indexOf('run_run_evaluation() {'));
         const validatorEnd = scriptContent.indexOf(
-          "\n\' \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\" \"$RUN_EVALUATION_ARTIFACT\"",
+          "\n' \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\" \"$RUN_EVALUATION_ARTIFACT\"",
           validatorStart
         );
 
