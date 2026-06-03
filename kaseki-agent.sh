@@ -116,9 +116,9 @@ PRE_VALIDATION_STOPPED_EARLY=false
 PRE_VALIDATION_COMMANDS_ATTEMPTED=0
 BASELINE_VALIDATION_EXIT=0
 BASELINE_VALIDATION_FAILED_COMMAND_DETAIL=""
-BASELINE_VALIDATION_FAILURE_REASON=""
-BASELINE_VALIDATION_STOPPED_EARLY=false
-BASELINE_VALIDATION_COMMANDS_ATTEMPTED=0
+export BASELINE_VALIDATION_FAILURE_REASON=""
+export BASELINE_VALIDATION_STOPPED_EARLY=false
+export BASELINE_VALIDATION_COMMANDS_ATTEMPTED=0
 BASELINE_CACHE_STATUS="not_started"
 TEST_FAILURE_CLASSIFICATION_STATUS="not_started"
 NEWLY_INTRODUCED_FAILURES_COUNT=0
@@ -2985,8 +2985,10 @@ EOF
   if [ -f "$output_file" ]; then
     # Extract verdict from artifact
     if command -v jq >/dev/null 2>&1; then
-      local verdict=$(jq -r '.assessment.failureType // "unknown"' "$output_file")
-      local confidence=$(jq -r '.assessment.confidence // 0' "$output_file")
+      local verdict
+      verdict=$(jq -r '.assessment.failureType // "unknown"' "$output_file")
+      local confidence
+      confidence=$(jq -r '.assessment.confidence // 0' "$output_file")
       emit_progress "validation causality analysis" "completed: $verdict (${confidence}% confidence)"
       return 0
     else
@@ -3911,8 +3913,8 @@ write_goal_setting_metrics() {
     # Fallback to jq or printf if node fails
     {
       printf '{\n'
-      printf '  "invoked_at": "%s",\n' "$(date -d @${invoked_at} -u +%Y-%m-%dT%H:%M:%SZ)"
-      printf '  "completed_at": "%s",\n' "$(date -d @${completed_at} -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "invoked_at": "%s",\n' "$(date -d @"${invoked_at}" -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '  "completed_at": "%s",\n' "$(date -d @"${completed_at}" -u +%Y-%m-%dT%H:%M:%SZ)"
       printf '  "duration_ms": %d,\n' "$duration_ms"
       printf '  "retry_count": %d,\n' "$retry_count"
       printf '  "success": %s,\n' "$([ "$success" = "true" ] && echo "true" || echo "false")"
@@ -4417,9 +4419,10 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
 
   # Include causality assessment if available (helps interpret validation failures)
   if [ -f /results/validation-causality-analysis.json ]; then
+    # shellcheck disable=SC2016
     causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
 
-$(cat /results/validation-causality-analysis.json 2>/dev/null | node -e '
+$(node -e '
 let input = "";
 process.stdin.on("data", chunk => input += chunk);
 process.stdin.on("end", () => {
