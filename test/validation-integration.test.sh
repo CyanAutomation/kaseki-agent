@@ -98,6 +98,7 @@ with_workspace_repo_fixture() {
   else
     WORKSPACE_REPO_STATE="created"
   fi
+  [ -d "$fixture" ] || fail "Fixture directory does not exist: $fixture"
   ln -s "$fixture" /workspace/repo
 }
 
