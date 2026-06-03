@@ -3377,10 +3377,11 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section
+  local memory_section scouting_section retry_section hashline_edits_section
   memory_section="$(read_repo_memory_section)"
   scouting_section=""
   retry_section=""
+  hashline_edits_section=""
   if [ -s "$SCOUTING_ARTIFACT" ]; then
     scouting_section="
 Scouting artifact:
@@ -3397,11 +3398,47 @@ Goal-check retry guidance:
 - Address this feedback while preserving valid existing work:
 $GOAL_CHECK_RETRY_PROMPT"
   fi
+  if [ "$KASEKI_HASHLINE_EDITS" != "0" ]; then
+    hashline_edits_section="
+File editing with content-based anchors (hashline_edit):
+- Use the hashline_edit tool to make precise file edits using content-based anchors instead of line numbers.
+- This tool reduces retry friction when files change between coding attempts.
+
+Hashline_edit syntax:
+  file_path: Relative path to the file (e.g., 'src/parser.ts')
+  anchor:
+    start_hash: First 8 characters of SHA-256 hash of the first line to replace
+    end_hash: First 8 characters of SHA-256 hash of the last line to replace
+    context_lines: Number of surrounding lines to include for disambiguation (default: 3)
+  replacement: New content (can span multiple lines)
+
+Example: Replace lines 15-17 in src/parser.ts
+  {
+    \"file_path\": \"src/parser.ts\",
+    \"anchor\": {
+      \"start_hash\": \"7d8a4b32\",  // SHA-256 hash of line 15
+      \"end_hash\": \"9c3e1f7a\",    // SHA-256 hash of line 17
+      \"context_lines\": 3
+    },
+    \"replacement\": \"  // Updated implementation\\n  return result;\"
+  }
+
+When to use hashline_edit:
+- Prefer hashline_edit for precise edits to specific code sections
+- Use it to avoid stale line-number references between retries
+- Multiple edits are processed sequentially; anchor failures don't block subsequent edits
+
+Fallback behavior:
+- If hashline_edit is not available or anchor matches are stale, edit operations are rejected (non-fatal)
+- You can always use bash commands (write, sed, etc.) as a fallback
+- The system prefers hashline_edit but gracefully degrades to bash-based editing"
+  fi
   if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
     printf '%s' "$TASK_PROMPT"
     printf '%s' "$memory_section"
     printf '%s' "$scouting_section"
     printf '%s' "$retry_section"
+    printf '%s' "$hashline_edits_section"
     return 0
   fi
 
@@ -3420,6 +3457,7 @@ $TASK_PROMPT
 $memory_section
 $scouting_section
 $retry_section
+$hashline_edits_section
 EOF
 }
 
