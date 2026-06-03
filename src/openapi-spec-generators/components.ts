@@ -65,11 +65,21 @@ export function buildTags(): Array<Record<string, unknown>> {
   ];
 }
 
+type PackageJsonReader = (packageJsonPath: string) => { version?: unknown };
+
+export interface BuildInfoOptions {
+  packageJsonReader?: PackageJsonReader;
+}
+
+function readPackageJson(packageJsonPath: string): { version?: unknown } {
+  return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
+}
+
 /**
  * Build API info metadata.
  * Includes title, version, description, contact info, and license.
  */
-function getPackageVersion(): string {
+function getPackageVersion(packageJsonReader: PackageJsonReader = readPackageJson): string {
   const executableDir = path.dirname(process.argv[1] || process.cwd());
   const candidates = [
     path.join(process.cwd(), 'package.json'),
@@ -82,7 +92,7 @@ function getPackageVersion(): string {
 
   for (const packageJsonPath of candidates) {
     try {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
+      const packageJson = packageJsonReader(packageJsonPath);
       if (typeof packageJson.version === 'string') {
         return packageJson.version;
       }
@@ -100,10 +110,10 @@ function getPackageVersion(): string {
   return '0.0.0';
 }
 
-export function buildInfo(): Record<string, unknown> {
+export function buildInfo(options: BuildInfoOptions = {}): Record<string, unknown> {
   return {
     title: 'Kaseki Agent API',
-    version: getPackageVersion(),
+    version: getPackageVersion(options.packageJsonReader),
     description:
       'Ephemeral coding-agent runner: orchestrates Pi CLI via Docker for automated code modifications with validation and deployment',
     contact: {
