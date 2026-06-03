@@ -461,6 +461,118 @@ invalid json line
       expect(result.recommendations.length).toBeGreaterThan(0);
     });
 
+
+    test('should read representative feedback, skip malformed records, and produce a stable analysis contract', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const testFile = path.join(testDir, 'representative-feedback.jsonl');
+      const feedbackLines = [
+        {
+          phase: 'goal_check',
+          goal_quality: {
+            score: 92,
+            smart_criteria: [{ smart_score: 'high' }, { smart_score: 'high' }],
+          },
+          correlation: { success: true },
+          goal_check_verdict: { met: true, confidence: 'high', evidenceCount: 6, missingCount: 0 },
+          outcomes: { coding_attempts: 1 },
+        },
+        '{malformed feedback entry',
+        {
+          phase: 'goal_check',
+          goal_quality: {
+            score: 87,
+            smart_criteria: [{ smart_score: 'high' }, { smart_score: 'medium' }],
+          },
+          correlation: { success: true },
+          goal_check_verdict: { met: true, confidence: 'high', evidenceCount: 5, missingCount: 1 },
+          outcomes: { coding_attempts: 2 },
+        },
+        {
+          phase: 'goal_check',
+          goal_quality: {
+            score: 42,
+            smart_criteria: [{ smart_score: 'low' }, { smart_score: 'low' }],
+          },
+          correlation: { success: false },
+          goal_check_verdict: { met: false, confidence: 'high', evidenceCount: 2, missingCount: 4 },
+          outcomes: { coding_attempts: 4 },
+        },
+        {
+          phase: 'run_evaluation',
+          goal_quality: { score: 100, smart_criteria: [{ smart_score: 'high' }] },
+          correlation: { success: true },
+        },
+      ];
+      fs.writeFileSync(
+        testFile,
+        feedbackLines.map((entry) => (typeof entry === 'string' ? entry : JSON.stringify(entry))).join('\n')
+      );
+
+      try {
+        const parsedEntries = readFeedbackFile(testFile);
+        const analysis = analyzeGoalFeedback(parsedEntries);
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toMatch(/^Failed to parse feedback entry:/);
+        expect(parsedEntries).toHaveLength(4);
+        expect(Object.keys(analysis)).toEqual([
+          'total_runs',
+          'quality_buckets',
+          'correlation_insights',
+          'smart_analysis',
+          'recommendations',
+        ]);
+        expect(Object.keys(analysis.quality_buckets)).toEqual(['high', 'low']);
+        expect(Object.keys(analysis.quality_buckets.high)).toEqual([
+          'count',
+          'success_rate',
+          'verdict_met_rate',
+          'avg_quality_score',
+          'avg_completion_attempts',
+        ]);
+        expect(Object.keys(analysis.smart_analysis)).toEqual(['total_criteria', 'distribution', 'insight']);
+
+        expect(analysis).toEqual(
+          expect.objectContaining({
+            total_runs: 3,
+            quality_buckets: {
+              high: {
+                count: 2,
+                success_rate: '100.0',
+                verdict_met_rate: '100.0',
+                avg_quality_score: '89.5',
+                avg_completion_attempts: '1.5',
+              },
+              low: {
+                count: 1,
+                success_rate: '0.0',
+                verdict_met_rate: '0.0',
+                avg_quality_score: '42.0',
+                avg_completion_attempts: '4.0',
+              },
+            },
+            smart_analysis: {
+              total_criteria: 6,
+              distribution: { high: '50.0%', medium: '16.7%', low: '33.3%' },
+              insight: '3 high-quality SMART criteria, 2 low-quality',
+            },
+          })
+        );
+        expect(analysis.correlation_insights).toEqual([
+          'Strong signal: High-quality goals (≥85) have 100% success vs 0% for low-quality (<60)',
+          'Evaluator calibration good: High-confidence verdicts are 100% accurate',
+          'Evaluator effort: avg 4.3 evidence items, 1.7 missing items per verdict',
+        ]);
+        expect(analysis.recommendations.map((rec: any) => `${rec.priority}:${rec.area}`)).toEqual([
+          'high:goal_quality',
+          'high:evaluator_quality',
+          'medium:smart_criteria',
+        ]);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     test('should calculate correct success rates across quality buckets', () => {
       const entries: GoalCheckEntry[] = [
         // High bucket: 3 attempts, 2 successes = 66.7%
