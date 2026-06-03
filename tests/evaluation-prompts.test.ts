@@ -500,137 +500,112 @@ NODE
     });
 
     describe('reviewer_confidence validation', () => {
-      it('should validate reviewer_confidence enum - passes on valid values high, medium, low', () => {
+      const baseRunEvaluationArtifact = () => ({
+        overall_assessment: 'good',
+        reviewer_confidence: 'high' as unknown,
+        task_completion_score: 4,
+        summary: 'Test summary',
+        pr_summary: 'Test PR summary',
+        human_review_focus: [],
+        efficiency_findings: [],
+        warnings: [],
+        stage_value: [{ stage: 'evaluation', value: 'medium', reason: 'Test fixture stage value' }],
+        kaseki_improvement_opportunities: [
+          { category: 'evaluation', priority: 'low', suggestion: 'Test fixture improvement' },
+        ],
+      });
+
+      const extractRunEvaluationValidator = () => {
         const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-        expect(scriptContent).toContain('reviewer_confidence');
-        expect(scriptContent).toContain('high');
-        expect(scriptContent).toContain('medium');
-        expect(scriptContent).toContain('low');
+        const startMarker = 'node -e \'\nconst fs = require("node:fs");';
+        const startIndex = scriptContent.indexOf(startMarker, scriptContent.indexOf('run_run_evaluation()'));
+        expect(startIndex).toBeGreaterThanOrEqual(0);
 
-        // Define the validator logic matching kaseki-agent.sh
-        const confidenceValues = new Set(['high', 'medium', 'low']);
+        const validatorStart = startIndex + "node -e '\n".length;
+        const endMarker = '\n\' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT"';
+        const endIndex = scriptContent.indexOf(endMarker, validatorStart);
+        expect(endIndex).toBeGreaterThan(validatorStart);
 
-        // Test valid confidence levels
-        const validValues = ['high', 'medium', 'low'];
-        validValues.forEach(value => {
-          const artifact = {
-            overall_assessment: 'good',
-            reviewer_confidence: value,
-            task_completion_score: 4,
-            summary: 'Test summary',
-            pr_summary: 'Test PR summary',
-            human_review_focus: [],
-            efficiency_findings: [],
-            warnings: [],
-            stage_value: [],
-            kaseki_improvement_opportunities: [],
-          };
+        return scriptContent.slice(validatorStart, endIndex);
+      };
 
-          // Should pass validation (no invalid.push)
-          const invalid: string[] = [];
-          if (!confidenceValues.has(artifact.reviewer_confidence)) {
-            invalid.push('reviewer_confidence');
+      const runValidator = (artifact: Record<string, unknown>) => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-evaluation-validator-'));
+        const candidatePath = path.join(tmpDir, 'candidate.json');
+        const outputPath = path.join(tmpDir, 'run-evaluation.json');
+
+        try {
+          fs.writeFileSync(candidatePath, JSON.stringify(artifact));
+          execFileSync(
+            process.execPath,
+            ['-e', extractRunEvaluationValidator(), candidatePath, outputPath, 'test-model', 'actual-test-model'],
+            { encoding: 'utf8' }
+          );
+          return JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        } finally {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
+      };
+
+      const expectValidatorFailure = (artifact: Record<string, unknown>) => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-evaluation-validator-failure-'));
+        const candidatePath = path.join(tmpDir, 'candidate.json');
+        const outputPath = path.join(tmpDir, 'run-evaluation.json');
+
+        try {
+          fs.writeFileSync(candidatePath, JSON.stringify(artifact));
+          expect(() => {
+            execFileSync(
+              process.execPath,
+              ['-e', extractRunEvaluationValidator(), candidatePath, outputPath, 'test-model', 'actual-test-model'],
+              { encoding: 'utf8', stdio: 'pipe' }
+            );
+          }).toThrow();
+          expect(fs.existsSync(outputPath)).toBe(false);
+        } finally {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
+      };
+
+      it('accepts high, medium, and low reviewer_confidence values using the kaseki-agent.sh run-evaluation artifact validator', () => {
+        for (const reviewerConfidence of ['high', 'medium', 'low']) {
+          const validatedArtifact = runValidator({
+            ...baseRunEvaluationArtifact(),
+            reviewer_confidence: reviewerConfidence,
+          });
+
+          expect(validatedArtifact).toMatchObject({
+            reviewer_confidence: reviewerConfidence,
+            model: 'test-model',
+            actual_model: 'actual-test-model',
+          });
+          expect(typeof validatedArtifact.timestamp).toBe('string');
+        }
+      });
+
+      it('rejects critical, unknown, empty, missing, and non-string reviewer_confidence values using the kaseki-agent.sh run-evaluation artifact validator', () => {
+        const invalidArtifacts = [
+          { label: 'critical', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: 'critical' } },
+          { label: 'unknown', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: 'unknown' } },
+          { label: 'empty', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: '' } },
+          { label: 'missing', artifact: (() => {
+            const artifact = baseRunEvaluationArtifact();
+            delete (artifact as Record<string, unknown>).reviewer_confidence;
+            return artifact;
+          })() },
+          { label: 'number', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: 123 } },
+          { label: 'boolean', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: true } },
+          { label: 'array', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: ['high'] } },
+          { label: 'object', artifact: { ...baseRunEvaluationArtifact(), reviewer_confidence: { value: 'high' } } },
+        ];
+
+        for (const { label, artifact } of invalidArtifacts) {
+          try {
+            expectValidatorFailure(artifact);
+          } catch (error: any) {
+            throw new Error(`Expected reviewer_confidence=${label} to fail validation: ${error.message}`);
           }
-          expect(invalid).toHaveLength(0);
-          expect(invalid).not.toContain('reviewer_confidence');
-        });
-      });
-
-      it('should reject invalid values: critical, unknown, empty string, missing, and non-string', () => {
-        const confidenceValues = new Set(['high', 'medium', 'low']);
-
-        // Test case 1: value = "critical" (not in enum)
-        const invalid1: string[] = [];
-        const artifact1: any = {
-          overall_assessment: 'good',
-          reviewer_confidence: 'critical',
-          task_completion_score: 4,
-          summary: 'Test', pr_summary: 'Test',
-          human_review_focus: [], efficiency_findings: [], warnings: [],
-          stage_value: [], kaseki_improvement_opportunities: [],
-        };
-        if (!confidenceValues.has(artifact1.reviewer_confidence)) {
-          invalid1.push('confidence_critical');
         }
-        expect(invalid1).toContain('confidence_critical');
-
-        // Test case 2: value = "unknown" (not in enum for reviewer_confidence)
-        const invalid2: string[] = [];
-        const artifact2: any = {
-          overall_assessment: 'good',
-          reviewer_confidence: 'unknown',
-          task_completion_score: 4,
-          summary: 'Test', pr_summary: 'Test',
-          human_review_focus: [], efficiency_findings: [], warnings: [],
-          stage_value: [], kaseki_improvement_opportunities: [],
-        };
-        if (!confidenceValues.has(artifact2.reviewer_confidence)) {
-          invalid2.push('confidence_unknown');
-        }
-        expect(invalid2).toContain('confidence_unknown');
-
-        // Test case 3: value = "" (empty string)
-        const invalid3: string[] = [];
-        const artifact3: any = {
-          overall_assessment: 'good',
-          reviewer_confidence: '',
-          task_completion_score: 4,
-          summary: 'Test', pr_summary: 'Test',
-          human_review_focus: [], efficiency_findings: [], warnings: [],
-          stage_value: [], kaseki_improvement_opportunities: [],
-        };
-        if (!confidenceValues.has(artifact3.reviewer_confidence)) {
-          invalid3.push('confidence_empty');
-        }
-        expect(invalid3).toContain('confidence_empty');
-
-        // Test case 4: value = 123 (non-string)
-        const invalid4: string[] = [];
-        const artifact4: any = {
-          overall_assessment: 'good',
-          reviewer_confidence: 123,
-          task_completion_score: 4,
-          summary: 'Test', pr_summary: 'Test',
-          human_review_focus: [], efficiency_findings: [], warnings: [],
-          stage_value: [], kaseki_improvement_opportunities: [],
-        };
-        if (!confidenceValues.has(artifact4.reviewer_confidence)) {
-          invalid4.push('confidence_number');
-        }
-        expect(invalid4).toContain('confidence_number');
-
-        // Test case 5: missing reviewer_confidence field
-        const invalid5: string[] = [];
-        const artifact5: any = {
-          overall_assessment: 'good',
-          // reviewer_confidence intentionally missing
-          task_completion_score: 4,
-          summary: 'Test', pr_summary: 'Test',
-          human_review_focus: [], efficiency_findings: [], warnings: [],
-          stage_value: [], kaseki_improvement_opportunities: [],
-        };
-        if (!confidenceValues.has(artifact5.reviewer_confidence)) {
-          invalid5.push('confidence_missing');
-        }
-        expect(invalid5).toContain('confidence_missing');
-      });
-
-      it('should validate reviewer_confidence in actual kaseki-agent.sh validator', () => {
-        const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-
-        // Verify the validator is present in the run-evaluation validation section
-        const validationSection = scriptContent.substring(
-          scriptContent.indexOf('run_run_evaluation'),
-          scriptContent.indexOf('run_run_evaluation') + 10000
-        );
-
-        expect(validationSection).toContain('confidenceValues');
-        expect(validationSection).toContain('new Set');
-        expect(validationSection).toContain('"high"');
-        expect(validationSection).toContain('"medium"');
-        expect(validationSection).toContain('"low"');
-        expect(validationSection).toContain('confidenceValues.has(artifact.reviewer_confidence)');
-        expect(validationSection).toContain('invalid.push("reviewer_confidence")');
       });
     });
 
