@@ -35,6 +35,49 @@ log_warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
 log_error() { echo -e "${RED}✗${NC} $*" >&2; }
 log_info()  { echo -e "${BLUE}ℹ${NC} $*" >&2; }
 
+check_path_components_traversable() {
+  local target_path="$1"
+  local current=""
+  local component
+  local -a components
+
+  if [ -z "$target_path" ]; then
+    return 0
+  fi
+
+  case "$target_path" in
+    /*) current="/" ;;
+    *) current="." ;;
+  esac
+
+  IFS='/' read -r -a components <<< "$target_path"
+  for component in "${components[@]}"; do
+    [ -z "$component" ] && continue
+
+    if [ "$current" = "/" ]; then
+      current="/$component"
+    elif [ "$current" = "." ]; then
+      current="$component"
+    else
+      current="$current/$component"
+    fi
+
+    if [ -d "$current" ]; then
+      if [ ! -x "$current" ]; then
+        log_error "Parent directory is not traversable: $current (needed for $target_path)"
+        log_info "  Fix host permissions so UID/GID $CONTAINER_UID:$CONTAINER_GID can traverse it, or set KASEKI_SECRETS_DIR to an accessible mounted path"
+        return 2
+      fi
+    elif [ -e "$current" ]; then
+      return 0
+    else
+      return 0
+    fi
+  done
+
+  return 0
+}
+
 # --- Checks ---
 
 check_kaseki_root() {
@@ -51,8 +94,9 @@ check_kaseki_root() {
   fi
 
   if [ ! -w "$KASEKI_ROOT" ]; then
-    log_error "$KASEKI_ROOT is not writable by UID $CONTAINER_UID"
+    log_error "$KASEKI_ROOT is not writable by UID $CONTAINER_UID (read-only mount or ownership/permission issue)"
     log_error "  Fix: sudo chown $CONTAINER_UID:$CONTAINER_GID $KASEKI_ROOT && sudo chmod 755 $KASEKI_ROOT"
+    log_info "  If this is a read-only mount, remount it read-write or set KASEKI_ROOT to a writable path"
     return 2
   fi
 
@@ -111,6 +155,10 @@ check_secret_paths() {
   local secrets_dir_found=false
   local exit_code=0
 
+  if ! check_path_components_traversable "$primary_secrets_dir"; then
+    return 2
+  fi
+
   if [ -d "$primary_secrets_dir" ]; then
     log_pass "Secrets directory found: $primary_secrets_dir"
 
@@ -164,6 +212,10 @@ check_secret_file_sources() {
   for secret_file in "$@"; do
     [ -z "$secret_file" ] && continue
 
+    if ! check_path_components_traversable "$secret_file"; then
+      return 2
+    fi
+
     if [ -f "$secret_file" ]; then
       if [ -r "$secret_file" ]; then
         log_pass "$label found and readable: $secret_file"
@@ -191,14 +243,17 @@ check_api_key() {
     return 0
   fi
 
+  local exit_code
   if check_secret_file_sources \
     "OpenRouter API key" \
     "${OPENROUTER_API_KEY_FILE:-}" \
     "$KASEKI_SECRETS_DIR/openrouter_api_key" \
     "$HOME/.kaseki/secrets/openrouter_api_key"; then
     return 0
+  else
+    exit_code=$?
   fi
-  local exit_code=$?
+
   if [ "$exit_code" -eq 2 ]; then
     return 2
   fi
