@@ -87,7 +87,11 @@ describe('OpenAPI Component Builders', () => {
 
       expect(contact.name).toBe('CyanAutomation');
       expect(typeof contact.url).toBe('string');
-      expect((contact.url as string).includes('github')).toBe(true);
+
+      const contactUrl = new URL(contact.url as string);
+      expect(contactUrl.protocol).toBe('https:');
+      expect(contactUrl.hostname).toBe('github.com');
+      expect(contactUrl.pathname).toBe('/CyanAutomation/kaseki-agent');
     });
 
     it('should include MIT license', () => {
@@ -238,19 +242,6 @@ describe('OpenAPI Component Builders', () => {
       expect(desc).toMatch(/pi|openrouter|coding|agent/i);
     });
 
-    it('contact name should be CyanAutomation', () => {
-      const info = buildInfo();
-      const contact = info.contact as Record<string, unknown>;
-      expect(contact.name).toBe('CyanAutomation');
-    });
-
-    it('contact url should be valid and point to GitHub', () => {
-      const info = buildInfo();
-      const contact = info.contact as Record<string, unknown>;
-      expect(contact.url).toContain('github');
-      expect((contact.url as string).startsWith('http')).toBe(true);
-    });
-
     it('license should be MIT', () => {
       const info = buildInfo();
       const license = info.license as Record<string, unknown>;
@@ -370,16 +361,6 @@ describe('OpenAPI Component Builders', () => {
       expect(info).toHaveProperty('description');
       expect(info).toHaveProperty('contact');
       expect(info).toHaveProperty('license');
-    });
-
-    it('contact object should be complete', () => {
-      const info = buildInfo();
-      const contact = info.contact as Record<string, unknown>;
-
-      expect(contact).toHaveProperty('name');
-      expect(contact).toHaveProperty('url');
-      expect(typeof contact.name).toBe('string');
-      expect(typeof contact.url).toBe('string');
     });
 
     it('license object should be complete', () => {
