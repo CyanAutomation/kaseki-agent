@@ -32,42 +32,37 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildTags', () => {
-    it('should return array of tag definitions', () => {
-      const tags = buildTags();
-
-      expect(Array.isArray(tags)).toBe(true);
-      expect(tags.length).toBeGreaterThan(0);
-    });
-
-    it('should include all expected tag names', () => {
-      const tags = buildTags();
-      const tagNames = tags.map((t) => t.name);
-
-      expect(tagNames).toContain('Health & Status');
-      expect(tagNames).toContain('Service Info');
-      expect(tagNames).toContain('Run Management');
-      expect(tagNames).toContain('Run Logs & Progress');
-      expect(tagNames).toContain('Artifacts');
-      expect(tagNames).toContain('Run Details');
-      expect(tagNames).toContain('Webhooks');
-    });
-
-    it('each tag should have name and description', () => {
-      const tags = buildTags();
-
-      tags.forEach((tag) => {
-        expect(tag).toHaveProperty('name');
-        expect(tag).toHaveProperty('description');
-        expect(typeof tag.name).toBe('string');
-        expect(typeof tag.description).toBe('string');
-        expect(((tag as any).name).length).toBeGreaterThan(0);
-        expect(((tag as any).description).length).toBeGreaterThan(0);
-      });
-    });
-
-    it('should have 7 total tags', () => {
-      const tags = buildTags();
-      expect(tags.length).toBe(7);
+    it('should return the documented tag definitions with meaningful descriptions', () => {
+      expect(buildTags()).toEqual([
+        {
+          name: 'Health & Status',
+          description: 'Unauthenticated health and readiness checks',
+        },
+        {
+          name: 'Service Info',
+          description: 'Service metadata, metrics, and pre-flight validation',
+        },
+        {
+          name: 'Run Management',
+          description: 'Create, list, and manage kaseki runs',
+        },
+        {
+          name: 'Run Logs & Progress',
+          description: 'Retrieve progress events and logs for runs',
+        },
+        {
+          name: 'Artifacts',
+          description: 'List and download run artifacts',
+        },
+        {
+          name: 'Run Details',
+          description: 'Comprehensive run analysis and diagnostics',
+        },
+        {
+          name: 'Webhooks',
+          description: 'Webhook configuration and testing',
+        },
+      ]);
     });
   });
 
@@ -229,46 +224,6 @@ describe('OpenAPI Component Builders', () => {
     it('should include only one security scheme', () => {
       const schemes = buildSecuritySchemes();
       expect(Object.keys(schemes)).toHaveLength(1);
-    });
-  });
-
-  describe('buildTags detailed validation', () => {
-    it('all tags should have non-empty name and description', () => {
-      const tags = buildTags();
-
-      tags.forEach((tag) => {
-        expect(tag.name).toBeTruthy();
-        expect(tag.description).toBeTruthy();
-        expect((tag.name as string).length).toBeGreaterThan(0);
-        expect((tag.description as string).length).toBeGreaterThan(0);
-      });
-    });
-
-    it('tag names should be descriptive', () => {
-      const tags = buildTags();
-      const tagNames = tags.map((t) => t.name);
-
-      const expectedPattern = /^[A-Z][\w\s&]+$/;
-      tagNames.forEach((name) => {
-        expect(name).toMatch(expectedPattern);
-      });
-    });
-
-    it('tag descriptions should explain purpose', () => {
-      const tags = buildTags();
-
-      tags.forEach((tag) => {
-        const desc = tag.description as string;
-        expect(desc.length).toBeGreaterThan(10);
-      });
-    });
-
-    it('specific tags should have correct descriptions', () => {
-      const tags = buildTags();
-      const healthTag = tags.find((t) => t.name === 'Health & Status');
-
-      expect(healthTag).toBeDefined();
-      expect(healthTag?.description).toContain('health');
     });
   });
 
