@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { StatusResponseBuilder } from './status-response-builder';
+import { deriveOrchestratorStages, StatusResponseBuilder } from './status-response-builder';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { ResultCache } from '../result-cache';
@@ -214,6 +214,90 @@ describe('StatusResponseBuilder', () => {
 
       expect(response.elapsedSeconds).toBeUndefined();
       expect(response.timeoutRiskPercent).toBeUndefined();
+    });
+  });
+
+  describe('deriveOrchestratorStages', () => {
+    const buildJob = (request: Partial<Job['request']>): Job => ({
+      id: 'stage-derivation-job',
+      status: 'running',
+      request: {
+        repoUrl: 'https://github.com/test/repo',
+        ref: 'main',
+        ...request,
+      } as Job['request'],
+    } as Job);
+
+    it('derives exact stage names and ordering for minimal API-facing configuration', () => {
+      expect(deriveOrchestratorStages(buildJob({
+        taskMode: 'inspect',
+        publishMode: 'none',
+        goalSetting: { enabled: false },
+        goalCheck: { enabled: false },
+        runEvaluation: { enabled: false },
+        autoLintCleanup: { enabled: false },
+      }), mockConfig)).toEqual([
+        'clone repository',
+        'agent setup',
+        'pi coding agent',
+        'collect agent diff',
+        'quality checks',
+        'validation',
+        'secret scan',
+        'complete',
+      ]);
+    });
+
+    it('derives exact stage names and ordering for scouting-enabled API-facing configuration', () => {
+      expect(deriveOrchestratorStages(buildJob({
+        taskMode: 'patch',
+        publishMode: 'none',
+        goalSetting: { enabled: false },
+        goalCheck: { enabled: true },
+        runEvaluation: { enabled: false },
+        autoLintCleanup: { enabled: false },
+      }), mockConfig)).toEqual([
+        'clone repository',
+        'pre-agent validation',
+        'pi scouting agent',
+        'derive allowlist from scouting',
+        'goal check',
+        'agent setup',
+        'pi coding agent',
+        'collect agent diff',
+        'quality checks',
+        'validation',
+        'secret scan',
+        'complete',
+      ]);
+    });
+
+    it('derives exact stage names and ordering for full-feature API-facing configuration', () => {
+      expect(deriveOrchestratorStages(buildJob({
+        taskMode: 'patch',
+        publishMode: 'pr',
+        goalSetting: { enabled: true },
+        goalCheck: { enabled: true },
+        runEvaluation: { enabled: true },
+        autoLintCleanup: { enabled: true },
+      }), mockConfig)).toEqual([
+        'clone repository',
+        'pre-agent validation',
+        'pi goal-setting agent',
+        'pi scouting agent',
+        'derive allowlist from scouting',
+        'goal check',
+        'run evaluation',
+        'agent setup',
+        'pi coding agent',
+        'auto lint cleanup',
+        'collect agent diff',
+        'quality checks',
+        'validation',
+        'secret scan',
+        'github operations',
+        'complete',
+      ]);
     });
   });
 

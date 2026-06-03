@@ -82,7 +82,7 @@ function isFinishedProgressEvent(event: ProgressEventLike): boolean {
   return event.status === 'finished' || (typeof event.detail === 'string' && event.detail.includes('finished'));
 }
 
-function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
+export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
   const request = job.request ?? ({} as Job['request']);
   const taskMode = request.taskMode || config.defaultTaskMode;
   const publishMode = request.publishMode || 'pr';

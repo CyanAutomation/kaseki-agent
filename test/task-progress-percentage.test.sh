@@ -62,12 +62,123 @@ expected_percentage=$((finished_count * 100 / total_count))
 assert_equal "2" "$finished_count" "Correctly counted 2 finished stages"
 assert_equal "40" "$expected_percentage" "Calculated correct percentage (2/5 = 40%)"
 
+
 # ============================================================================
-# TEST SUITE 2: Edge cases
-# Note: Stage filtering by configuration and metadata-provided stage lists are
-# covered in src/utils/status-response-builder.test.ts through the production
-# StatusResponseBuilder path with taskProgressPercent assertions.
+# TEST SUITE 2: Stage filtering based on configuration
 # ============================================================================
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+extract_function() {
+  local name="$1"
+  awk -v fn="$name" '
+    $0 ~ "^" fn "\\(\\) \\{" { capture=1; depth=0 }
+    capture {
+      print
+      for (i = 1; i <= length($0); i++) {
+        ch = substr($0, i, 1)
+        if (ch == "{") depth++
+        if (ch == "}") depth--
+      }
+      if (capture && depth == 0) exit
+    }
+  ' "$ROOT_DIR/kaseki-agent.sh"
+}
+
+eval "$(extract_function build_stages_array)"
+
+derive_stages_for_config() {
+  (
+    export KASEKI_PRE_AGENT_VALIDATION="$1"
+    export KASEKI_GOAL_SETTING="$2"
+    export KASEKI_SCOUTING="$3"
+    export KASEKI_GOAL_CHECK="$4"
+    export KASEKI_RUN_EVALUATION="$5"
+    export KASEKI_AUTO_LINT_CLEANUP="$6"
+    export KASEKI_DRY_RUN="$7"
+    export GITHUB_APP_ENABLED="$8"
+    build_stages_array
+  )
+}
+
+assert_stages_equal() {
+  local config_name="$1"
+  local actual_file="$2"
+  local expected_file="$3"
+
+  if diff -u "$expected_file" "$actual_file" > "$TEST_DIR/${config_name}.diff"; then
+    echo -e "${GREEN}✓${NC} $config_name stage names and ordering match production derivation"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    echo -e "${RED}✗${NC} $config_name stage names and ordering match production derivation"
+    cat "$TEST_DIR/${config_name}.diff"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+  fi
+}
+
+write_expected_stages() {
+  local output_file="$1"
+  shift
+  printf '%s\n' "$@" > "$output_file"
+}
+
+test_case "Production stage derivation for minimal configuration"
+minimal_actual="$TEST_DIR/minimal.actual"
+minimal_expected="$TEST_DIR/minimal.expected"
+derive_stages_for_config 0 0 0 0 0 0 1 0 > "$minimal_actual"
+write_expected_stages "$minimal_expected" \
+  "clone repository" \
+  "agent setup" \
+  "pi coding agent" \
+  "collect agent diff" \
+  "quality checks" \
+  "validation" \
+  "secret scan" \
+  "complete"
+assert_stages_equal "minimal" "$minimal_actual" "$minimal_expected"
+
+test_case "Production stage derivation for scouting-enabled configuration"
+scouting_actual="$TEST_DIR/scouting.actual"
+scouting_expected="$TEST_DIR/scouting.expected"
+derive_stages_for_config 1 0 1 1 0 0 1 0 > "$scouting_actual"
+write_expected_stages "$scouting_expected" \
+  "clone repository" \
+  "pre-agent validation" \
+  "pi scouting agent" \
+  "derive allowlist from scouting" \
+  "goal check" \
+  "agent setup" \
+  "pi coding agent" \
+  "collect agent diff" \
+  "quality checks" \
+  "validation" \
+  "secret scan" \
+  "complete"
+assert_stages_equal "scouting-enabled" "$scouting_actual" "$scouting_expected"
+
+test_case "Production stage derivation for full-feature configuration"
+full_feature_actual="$TEST_DIR/full-feature.actual"
+full_feature_expected="$TEST_DIR/full-feature.expected"
+derive_stages_for_config 1 1 1 1 1 1 0 1 > "$full_feature_actual"
+write_expected_stages "$full_feature_expected" \
+  "clone repository" \
+  "pre-agent validation" \
+  "pi goal-setting agent" \
+  "pi scouting agent" \
+  "derive allowlist from scouting" \
+  "goal check" \
+  "run evaluation" \
+  "agent setup" \
+  "pi coding agent" \
+  "auto lint cleanup" \
+  "collect agent diff" \
+  "quality checks" \
+  "validation" \
+  "secret scan" \
+  "github operations" \
+  "complete"
+assert_stages_equal "full-feature" "$full_feature_actual" "$full_feature_expected"
+
 
 # ============================================================================
 # TEST SUITE 3: Semantic boundary coverage
