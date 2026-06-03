@@ -628,7 +628,7 @@ NODE
         const validatorStartMarker = 'const fs = require("node:fs");';
         const validatorStart = scriptContent.indexOf(validatorStartMarker, scriptContent.indexOf('run_run_evaluation() {'));
         const validatorEnd = scriptContent.indexOf(
-          "\n\' \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\" \"$RUN_EVALUATION_ARTIFACT\"",
+          "\n' \"$RUN_EVALUATION_CANDIDATE_ARTIFACT\" \"$RUN_EVALUATION_ARTIFACT\"",
           validatorStart
         );
 
