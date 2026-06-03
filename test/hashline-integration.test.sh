@@ -105,7 +105,8 @@ EOF
 
   # Compute hash of line 2 ("  console.log('world');")
   local line2='  console.log('\''world'\'');'
-  local hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
+  local hash_line2
+  hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
 
   # Create event
   cat > "$events_file" <<EOF
@@ -150,7 +151,8 @@ EOF
   # Check summary
   local summary_file="$TEST_DIR/hashline-summary.json"
   if [ -f "$summary_file" ]; then
-    local rejected=$(jq '.rejected' "$summary_file" 2>/dev/null || echo "0")
+    local rejected
+    rejected=$(jq '.rejected' "$summary_file" 2>/dev/null || echo "0")
     if [ "$rejected" -eq 1 ]; then
       # Verify file was NOT modified
       if assert_file_not_contains "$test_file" "replaced"; then
@@ -181,9 +183,11 @@ EOF
 
   # Compute hashes
   local line2='  return 1;'
-  local hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
+  local hash_line2
+  hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
   local line5='  return 2;'
-  local hash_line5=$(echo -n "$line5" | sha256sum | cut -c1-8)
+  local hash_line5
+  hash_line5=$(echo -n "$line5" | sha256sum | cut -c1-8)
 
   cat > "$events_file" <<EOF
 {"type":"tool_call","tool_name":"hashline_edit","call":{"file":"test.ts","anchor":{"start_hash":"$hash_line2","end_hash":"$hash_line2","context_lines":1},"replacement":"  return 100;"}}
@@ -217,9 +221,11 @@ EOF
   local events_file="$TEST_DIR/events.jsonl"
 
   local line2='  const x = 1;'
-  local hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
+  local hash_line2
+  hash_line2=$(echo -n "$line2" | sha256sum | cut -c1-8)
   local line3='  const y = 2;'
-  local hash_line3=$(echo -n "$line3" | sha256sum | cut -c1-8)
+  local hash_line3
+  hash_line3=$(echo -n "$line3" | sha256sum | cut -c1-8)
 
   cat > "$events_file" <<EOF
 {"type":"tool_call","tool_name":"hashline_edit","call":{"file":"test.ts","anchor":{"start_hash":"$hash_line2","end_hash":"$hash_line3","context_lines":3},"replacement":"  const z = 3;"}}
@@ -260,7 +266,8 @@ EOF
   # Check summary - should have 0 applied
   local summary_file="$TEST_DIR/hashline-summary.json"
   if [ -f "$summary_file" ]; then
-    local applied=$(jq '.applied' "$summary_file" 2>/dev/null || echo "1")
+    local applied
+    applied=$(jq '.applied' "$summary_file" 2>/dev/null || echo "1")
     if [ "$applied" -eq 0 ]; then
       pass_test
       return 0

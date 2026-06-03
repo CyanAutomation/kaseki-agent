@@ -103,19 +103,33 @@ with_workspace_repo_fixture() {
 }
 
 reset_validation_state() {
+  # shellcheck disable=SC2034
   VALIDATION_EXIT=0
+  # shellcheck disable=SC2034
   VALIDATION_FAILED_COMMAND_DETAIL=""
+  # shellcheck disable=SC2034
   VALIDATION_FAILURE_REASON=""
+  # shellcheck disable=SC2034
   VALIDATION_STOPPED_EARLY=false
+  # shellcheck disable=SC2034
   VALIDATION_COMMANDS_ATTEMPTED=0
+  # shellcheck disable=SC2034
   PRE_VALIDATION_EXIT=0
+  # shellcheck disable=SC2034
   PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
+  # shellcheck disable=SC2034
   PRE_VALIDATION_FAILURE_REASON=""
+  # shellcheck disable=SC2034
   PRE_VALIDATION_STOPPED_EARLY=false
+  # shellcheck disable=SC2034
   PRE_VALIDATION_COMMANDS_ATTEMPTED=0
+  # shellcheck disable=SC2034
   KASEKI_BASELINE_VALIDATION_DRY_RUN=0
+  # shellcheck disable=SC2034
   KASEKI_DRY_RUN=0
+  # shellcheck disable=SC2034
   KASEKI_VALIDATION_FAIL_FAST=1
+  # shellcheck disable=SC2034
   KASEKI_VALIDATION_RUN_ALL_COMMANDS=0
 }
 
