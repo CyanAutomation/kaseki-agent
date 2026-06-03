@@ -575,7 +575,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeDefined();
     });
 
-    it('should clamp completedStages to not exceed totalStages', () => {
+    it('should calculate 100% through addTaskProgressInfo when stages are over-completed', () => {
       // Semantic test: metadata declares fewer denominator stages than the finished
       // stages observed in progress.jsonl, as can happen when runtime execution
       // emits additional phases beyond what metadata pre-declared.
@@ -616,7 +616,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBe(100);
     });
 
-    it('should calculate 0% when no stages are completed', () => {
+    it('should calculate 0% through addTaskProgressInfo when zero stages are completed', () => {
       // Semantic boundary test: zero completed stages should yield 0% progress
       const job: Partial<Job> = {
         id: 'job-zero-progress',
@@ -653,7 +653,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBe(0);
     });
 
-    it('should calculate 100% when all stages are completed', () => {
+    it('should calculate 100% through addTaskProgressInfo when all stages are completed', () => {
       // Semantic boundary test: all stages completed should yield exactly 100%
       const job: Partial<Job> = {
         id: 'job-all-complete',
