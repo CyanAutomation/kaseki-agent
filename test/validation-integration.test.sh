@@ -59,7 +59,7 @@ setup_results_dir() {
     RESULTS_PREEXISTED=1
   else
     RESULTS_PREEXISTED=0
-    mkdir -p /results
+    mkdir -p /results || fail "Failed to create /results directory"
   fi
   : > /results/quality.log
 }
