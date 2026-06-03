@@ -659,6 +659,47 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeDefined();
     });
 
+    it('should calculate partial taskProgressPercent when progress includes a stage missing from metadata', () => {
+      // Semantic missing-stage test: runtime progress may include a finished
+      // stage that metadata.stages did not pre-declare. Exercise the production
+      // addTaskProgressInfo path instead of recomputing percentages externally.
+      const job: Partial<Job> = {
+        id: 'job-missing-stage',
+        status: 'running',
+        resultDir: '/results/job-missing-stage',
+      };
+
+      const progressContent = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'runtime-only stage', status: 'finished', detail: 'finished' }),
+      ].join('\n');
+
+      const metadataContent = JSON.stringify({
+        stages: ['clone repository', 'agent setup', 'pi coding agent', 'quality checks'],
+      });
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) {
+          return progressContent;
+        }
+        return metadataContent;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-missing-stage',
+        status: 'running',
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      // Two finished progress events over four declared stages: 2/4 = 50%.
+      expect(response.taskProgressPercent).toBe(50);
+    });
+
     it('should calculate 100% through addTaskProgressInfo when stages are over-completed', () => {
       // Semantic test: metadata declares fewer denominator stages than the finished
       // stages observed in progress.jsonl, as can happen when runtime execution
