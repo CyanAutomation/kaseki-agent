@@ -39,6 +39,7 @@ describe('Documentation link integrity', () => {
       anchors.add(slugifyHeading(headingMatch[1]));
     }
 
+    headingRegex.lastIndex = 0;
     return anchors;
   };
 
