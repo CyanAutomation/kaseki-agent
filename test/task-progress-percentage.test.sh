@@ -95,35 +95,10 @@ assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/
 
 # ============================================================================
 # TEST SUITE 2: Edge cases
-# Note: Stage filtering by configuration is covered in src/utils/status-response-builder.test.ts
-# which tests the actual deriveOrchestratorStages production function with semantic assertions
-# for minimal, scouting-enabled, and full-feature configurations
+# Note: Stage filtering by configuration and metadata-provided stage lists are
+# covered in src/utils/status-response-builder.test.ts through the production
+# StatusResponseBuilder path with taskProgressPercent assertions.
 # ============================================================================
-
-test_case "Edge cases"
-
-# Empty stages array
-empty_stages_file="$TEST_DIR/metadata_empty_stages.json"
-cat > "$empty_stages_file" <<'EOF'
-{
-  "instance": "kaseki-empty",
-  "stages": [],
-  "exit_code": 0
-}
-EOF
-total_empty=$(jq '.stages | length' "$empty_stages_file" 2>/dev/null)
-assert_equal "0" "$total_empty" "Empty stages array handled correctly"
-
-# Missing stages field
-no_stages_file="$TEST_DIR/metadata_no_stages.json"
-cat > "$no_stages_file" <<'EOF'
-{
-  "instance": "kaseki-no-stages",
-  "exit_code": 0
-}
-EOF
-has_stages=$(jq 'has("stages")' "$no_stages_file" 2>/dev/null)
-assert_equal "false" "$has_stages" "Missing stages field detected correctly"
 
 # ============================================================================
 # TEST SUITE 4: Bug fix - 1000% percentage issue
