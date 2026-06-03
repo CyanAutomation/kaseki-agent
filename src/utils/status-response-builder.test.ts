@@ -565,60 +565,21 @@ describe('StatusResponseBuilder', () => {
     });
 
     it('should clamp completedStages to not exceed totalStages', () => {
-      const job: Partial<Job> = {
-        id: 'job-1',
-        status: 'running',
-        resultDir: '/results/job-1',
-      };
-
-      const progressContent = [
-        JSON.stringify({ stage: 'stage1', status: 'finished', detail: 'finished' }),
-        JSON.stringify({ stage: 'stage2', status: 'finished', detail: 'finished' }),
-        JSON.stringify({ stage: 'stage3', status: 'finished', detail: 'finished' }),
-        JSON.stringify({ stage: 'stage4', status: 'finished', detail: 'finished' }),
-        JSON.stringify({ stage: 'stage5', status: 'finished', detail: 'finished' }),
-      ].join('\n');
-
-      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
-        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
-      });
-
-      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
-        if (filePath.includes('progress.jsonl')) {
-          return progressContent;
-        }
-        return JSON.stringify({ stages: ['stage1', 'stage2', 'stage3'] });
-      });
-
-      const response: StatusResponse = {
-        id: 'job-1',
-        status: 'running',
-      };
-
-      builder['addTaskProgressInfo'](response, job as Job);
-
-      // Should be clamped to 100% even if more stages finished than expected
-      expect(response.taskProgressPercent).toBeLessThanOrEqual(100);
-    });
-
-    it('should clamp to exactly 100% when more stages finish than declared in metadata', () => {
-      // Semantic test: metadata declares fewer stages (2) than observed finished stages (3),
-      // demonstrating a real-world scenario where runtime execution discovers additional stages
-      // beyond what was pre-declared in metadata. The result should clamp to exactly 100%.
+      // Semantic test: metadata declares fewer denominator stages than the finished
+      // stages observed in progress.jsonl, as can happen when runtime execution
+      // emits additional phases beyond what metadata pre-declared.
       const job: Partial<Job> = {
         id: 'job-clamp-test',
         status: 'running',
         resultDir: '/results/job-clamp-test',
       };
 
-      // Progress shows 3 stages finished, all matching the metadata denominator
       const progressContent = [
         JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
         JSON.stringify({ stage: 'agent setup', status: 'finished', detail: 'finished' }),
         JSON.stringify({ stage: 'pi coding agent', status: 'finished', detail: 'finished' }),
       ].join('\n');
 
-      // But metadata declares only 2 stages (fewer than observed)
       const metadataContent = JSON.stringify({
         stages: ['clone repository', 'agent setup'],
       });
@@ -641,8 +602,6 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // Only 'clone repository' and 'agent setup' match the denominator (2 of 2),
-      // so completedStages = 2, totalStages = 2, giving 100%
       expect(response.taskProgressPercent).toBe(100);
     });
 
