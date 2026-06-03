@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.60.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.59.0...v1.60.0) (2026-06-03)
+
+
+### Bug Fixes
+
+* export baseline validation variables and correct string delimiter in test ([e9674be](https://github.com/CyanAutomation/kaseki-agent/commit/e9674be4fae8f0498295f3019f99b3b032fd40bb))
+
+
+### Features
+
+* Add CLI wrapper and integration tests for hashline event processing ([d1b3042](https://github.com/CyanAutomation/kaseki-agent/commit/d1b30423e6dd2f648acf9359c5fb95d157cf8cb6))
+* Add hashline event handler CLI and integration tests ([95da948](https://github.com/CyanAutomation/kaseki-agent/commit/95da9485c1ef2c3026317a79715100cd1b5422e5))
+* Enhance task prompt with hashline_edit guidance and add corresponding tests ([7f96081](https://github.com/CyanAutomation/kaseki-agent/commit/7f960819f853171f11000175d2a0507604b3ca7d))
+* Implement Hashline Validator for content-based editing ([2b2df82](https://github.com/CyanAutomation/kaseki-agent/commit/2b2df82886c4ea62b142d104e9e26a76a806c9c9))
+* Update hashline event handling and improve regex detection in tests ([48ab453](https://github.com/CyanAutomation/kaseki-agent/commit/48ab4534f8a3f31809cae55cedc5b72c2e2f20df))
+
 # [1.59.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.58.5...v1.59.0) (2026-06-02)
 
 
