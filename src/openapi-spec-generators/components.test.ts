@@ -402,6 +402,10 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('Version Resolution Fallback', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('should read version from package.json successfully', () => {
       const info = buildInfo();
       expect(info.version).not.toBe('0.0.0');
@@ -409,11 +413,21 @@ describe('OpenAPI Component Builders', () => {
     });
 
     it('should have a fallback version when package.json read fails', () => {
-      // This test verifies the fallback exists in the code
-      // Testing actual read failures requires mocking fs, which can conflict with other tests
-      const info = buildInfo();
-      expect(info.version).toBeDefined();
-      expect(typeof info.version).toBe('string');
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const packageJsonReader = jest.fn(() => {
+        throw new Error('package.json unavailable');
+      });
+
+      const info = buildInfo({ packageJsonReader });
+
+      expect(info.version).toBe('0.0.0');
+      expect(packageJsonReader).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Unable to derive API version from package.json candidates; defaulting to 0.0.0',
+        expect.objectContaining({
+          candidatesTried: expect.arrayContaining([expect.stringContaining('package.json unavailable')]),
+        })
+      );
     });
   });
 
