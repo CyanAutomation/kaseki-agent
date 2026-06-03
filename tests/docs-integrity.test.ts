@@ -54,6 +54,18 @@ describe('Documentation link integrity', () => {
     return anchors;
   };
 
+  const collectHeadingTexts = (content: string): Set<string> => {
+    const headings = new Set<string>();
+    const headingRegex = /^(#{1,6}\s+.+)$/gm;
+    let headingMatch: RegExpExecArray | null;
+
+    while ((headingMatch = headingRegex.exec(content)) !== null) {
+      headings.add(headingMatch[1]);
+    }
+
+    return headings;
+  };
+
   const extractMarkdownLinks = (content: string): Array<{ text: string; link: string }> => {
     const links: Array<{ text: string; link: string }> = [];
     let match: RegExpExecArray | null;
@@ -73,6 +85,48 @@ describe('Documentation link integrity', () => {
     }
     return filePart.startsWith('./') ? filePart.substring(2) : filePart;
   };
+
+  it('GOAL_SETTING_GUIDE.md should cross-reference evaluation docs with existing headed targets', () => {
+    const goalGuidePath = path.join(docsDir, 'GOAL_SETTING_GUIDE.md');
+    expect(fs.existsSync(goalGuidePath)).toBe(true);
+
+    const goalGuideContent = fs.readFileSync(goalGuidePath, 'utf8');
+    const linksByTarget = new Map(
+      extractMarkdownLinks(goalGuideContent).map(({ text, link }) => [link, { text, link }])
+    );
+
+    const expectedEvaluationReferences = [
+      {
+        fileName: 'EVALUATION_BEST_PRACTICES.md',
+        link: './EVALUATION_BEST_PRACTICES.md',
+        text: 'Evaluation Best Practices',
+        headings: ['# Evaluation Best Practices for Kaseki-Agent', '## Part 4: Feedback Loop Integration'],
+      },
+      {
+        fileName: 'FEEDBACK_LOOP_INTEGRATION.md',
+        link: './FEEDBACK_LOOP_INTEGRATION.md',
+        text: 'Feedback Loop Integration',
+        headings: [
+          '# Feedback Loop Integration for Kaseki-Agent Evaluations',
+          '## Feedback Path 1: Goal Quality Scoring',
+          '## Feedback Path 2: Kaseki Improvement Opportunities',
+        ],
+      },
+    ];
+
+    expectedEvaluationReferences.forEach(({ fileName, link, text, headings }) => {
+      const parsedLink = linksByTarget.get(fileName);
+      expect(parsedLink).toEqual({ text, link });
+
+      const targetPath = path.join(docsDir, fileName);
+      expect(fs.existsSync(targetPath)).toBe(true);
+
+      const targetHeadings = collectHeadingTexts(fs.readFileSync(targetPath, 'utf8'));
+      headings.forEach((heading) => {
+        expect(targetHeadings).toContain(heading);
+      });
+    });
+  });
 
   it('checks exact cross-document links, expected headings, and markdown link targets for evaluation docs', () => {
     evaluationDocs.forEach((fileName) => {
