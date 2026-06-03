@@ -46,6 +46,7 @@ run_startup_checks() {
   local mode="$1"
   shift
 
+  LAST_STATUS=0
   LAST_OUTPUT="$({
     env \
       HOME="$TMP_ROOT/home" \
@@ -60,9 +61,6 @@ run_startup_checks() {
       "$@" \
       runuser -u nobody -- bash scripts/startup-checks.sh "$mode"
   } 2>&1)" || LAST_STATUS=$?
-  if [ -z "${LAST_STATUS+x}" ]; then
-    LAST_STATUS=0
-  fi
 }
 
 assert_status() {
