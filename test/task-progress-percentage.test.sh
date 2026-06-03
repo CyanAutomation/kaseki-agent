@@ -62,37 +62,6 @@ expected_percentage=$((finished_count * 100 / total_count))
 assert_equal "2" "$finished_count" "Correctly counted 2 finished stages"
 assert_equal "40" "$expected_percentage" "Calculated correct percentage (2/5 = 40%)"
 
-test_case "Progress calculation with no completed stages"
-
-cat > "$TEST_DIR/progress_empty.jsonl" <<'EOF'
-{"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"started"}
-EOF
-
-finished_count_empty=$(grep -c '"status":"finished"' "$TEST_DIR/progress_empty.jsonl" || true)
-total_count=5
-expected_percentage_empty=$((finished_count_empty * 100 / total_count))
-
-assert_equal "0" "$finished_count_empty" "No finished stages detected"
-assert_equal "0" "$expected_percentage_empty" "Calculated correct percentage (0/5 = 0%)"
-
-test_case "Progress calculation with all completed stages"
-
-# All stages finished
-cat > "$TEST_DIR/progress_complete.jsonl" <<'EOF'
-{"timestamp":"2024-05-25T10:00:00Z","stage":"clone repository","status":"finished"}
-{"timestamp":"2024-05-25T10:05:00Z","stage":"pi coding agent","status":"finished"}
-{"timestamp":"2024-05-25T10:10:00Z","stage":"quality checks","status":"finished"}
-{"timestamp":"2024-05-25T10:15:00Z","stage":"validation","status":"finished"}
-{"timestamp":"2024-05-25T10:20:00Z","stage":"complete","status":"finished"}
-EOF
-
-finished_count_all=$(grep -c '"status":"finished"' "$TEST_DIR/progress_complete.jsonl" || true)
-total_count=5
-expected_percentage_all=$((finished_count_all * 100 / total_count))
-
-assert_equal "5" "$finished_count_all" "All 5 stages finished"
-assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/5 = 100%)"
-
 # ============================================================================
 # TEST SUITE 2: Edge cases
 # Note: Stage filtering by configuration and metadata-provided stage lists are
@@ -101,29 +70,13 @@ assert_equal "100" "$expected_percentage_all" "Calculated correct percentage (5/
 # ============================================================================
 
 # ============================================================================
-# TEST SUITE 4: Bug fix - 1000% percentage issue
+# TEST SUITE 3: Semantic boundary coverage
 # ============================================================================
-
-test_case "Bug fix: Prevent 1000% calculation errors"
-
-# Scenario 1: Single stage completed (should be 100%, not 1000%)
-cat > "$TEST_DIR/progress_single_stage.jsonl" <<'EOF'
-{"timestamp":"2024-05-25T10:00:00Z","stage":"quick-fix","status":"finished"}
-EOF
-
-finished_single=$(grep -c '"status":"finished"' "$TEST_DIR/progress_single_stage.jsonl" || echo "0")
-total_single=1
-expected_single=$((finished_single * 100 / total_single))
-
-assert_equal "1" "$finished_single" "Single stage marked as finished"
-assert_equal "100" "$expected_single" "Single completed stage = 100%, not 1000%"
-
-# Scenario 2: Ensure result never exceeds 100% (handles off-by-one in stage counting)
-# If somehow completedStages > totalStages due to a bug, final result should still cap at 100%
-# Note: TypeScript tests in src/utils/status-response-builder.test.ts provide comprehensive coverage
-# for:
-# - Clamping behavior with semantic scenarios (fewer denominator stages than finished observed)
-# - Boundary conditions: zero/all/over-completed stages with taskProgressPercent assertions
+# Boundary scenarios for zero completed stages, all completed stages, and
+# over-completed stage streams are covered in
+# src/utils/status-response-builder.test.ts through the production
+# StatusResponseBuilder.addTaskProgressInfo path with taskProgressPercent
+# assertions.
 
 # ============================================================================
 
