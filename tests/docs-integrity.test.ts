@@ -97,6 +97,13 @@ describe('Documentation link integrity', () => {
             return;
           }
 
+          if (link.startsWith('#')) {
+            const anchor = link.substring(1);
+            const anchors = collectAnchors(content);
+            expect(anchors).toContain(anchor);
+            return;
+          }
+
           const [rawFilePart, anchor] = link.split('#');
           const filePart = normalizeDocLink(rawFilePart);
           const targetPath = filePart ? path.join(docsDir, filePart) : sourcePath;
