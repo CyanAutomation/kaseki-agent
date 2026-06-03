@@ -7,7 +7,6 @@
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { processHashlineEventsFromFile } from './hashline-event-handler.js';
 
 async function main() {
@@ -32,12 +31,10 @@ async function main() {
     // Process events
     const { results, summary } = await processHashlineEventsFromFile(inputJsonl, workspaceDir);
 
-    // Write results
-    if (results.length > 0) {
-      const resultsJsonl = results.map((r) => JSON.stringify(r)).join('\n') + '\n';
-      fs.writeFileSync(outputJsonl, resultsJsonl, 'utf-8');
-      console.log(`Wrote ${results.length} hashline event results to ${outputJsonl}`);
-    }
+    // Write results (always write, even if empty)
+    const resultsJsonl = results.length > 0 ? results.map((r) => JSON.stringify(r)).join('\n') + '\n' : '';
+    fs.writeFileSync(outputJsonl, resultsJsonl, 'utf-8');
+    console.log(`Wrote ${results.length} hashline event results to ${outputJsonl}`);
 
     // Write summary
     fs.writeFileSync(outputSummary, JSON.stringify(summary, null, 2), 'utf-8');

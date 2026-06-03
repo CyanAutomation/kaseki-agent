@@ -100,6 +100,7 @@ RUN chmod +x \
     && cp dist/timestamp-tracker.js /app/lib/timestamp-tracker.js \
     && cp dist/pi-progress-stream.js /app/lib/pi-progress-stream.js \
     && cp dist/pi-progress-summarizer.js /app/lib/pi-progress-summarizer.js \
+    && cp dist/hashline-event-handler-cli.js /app/lib/hashline-event-handler-cli.js \
     && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
@@ -123,6 +124,7 @@ RUN chmod +x \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
     && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \
+    && install -m 0755 /app/lib/hashline-event-handler-cli.js /usr/local/bin/kaseki-hashline-event-handler \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
@@ -218,6 +220,7 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/pi-progress-stream.js /usr/local/bin/kaseki-pi-progress-stream \
     && install -m 0755 /app/lib/pi-progress-summarizer.js /usr/local/bin/pi-progress-summarizer.js \
     && install -m 0755 /app/lib/validation-output-filter.js /usr/local/bin/validation-output-filter \
+    && install -m 0755 /app/lib/hashline-event-handler-cli.js /usr/local/bin/kaseki-hashline-event-handler \
     && install -m 0755 /app/lib/event-aggregator.js /usr/local/bin/event-aggregator.js \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
