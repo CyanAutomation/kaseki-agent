@@ -92,7 +92,7 @@ describe('Documentation link integrity', () => {
 
     const goalGuideContent = fs.readFileSync(goalGuidePath, 'utf8');
     const linksByTarget = new Map(
-      extractMarkdownLinks(goalGuideContent).map(({ text, link }) => [normalizeDocLink(link), { text, link }])
+      extractMarkdownLinks(goalGuideContent).map(({ text, link }) => [link, { text, link }])
     );
 
     const expectedEvaluationReferences = [
