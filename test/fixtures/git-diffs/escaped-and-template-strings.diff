@@ -1,0 +1,25 @@
+diff --git a/src/utils.ts b/src/utils.ts
+index 1234567..abcdefg 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -10,7 +10,7 @@ export function formatMessage(name: string): string {
+   // This is a longer message string
+   // with multiple lines
+-  return `Hello "${name}", welcome to the parser`;
++  return `Hello "${name}", welcome to the system`;
+ }
+ 
+ export function escapeSpecial(text: string): string {
+@@ -20,12 +20,12 @@ export function escapeSpecial(text: string): string {
+   if (text.includes("\\n")) {
+     return "newline detected";
+   }
+-  if (text.includes("\\\"")) {
++  if (text.includes("\\"")) {
+     return "quote detected";
+   }
+   // Special regex: /test\d{2,}/
+-  const regex = /test\d{1,}/;
++  const regex = /test\d{2,}/;
+   return regex.test(text) ? "matched" : "not matched";
+ }

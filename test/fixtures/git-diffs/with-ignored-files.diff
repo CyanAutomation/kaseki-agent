@@ -1,0 +1,25 @@
+diff --git a/src/api/response.ts b/src/api/response.ts
+index 1234567..abcdefg 100644
+--- a/src/api/response.ts
++++ b/src/api/response.ts
+@@ -5,7 +5,7 @@ export interface ApiResponse {
+ 
+ export function buildResponse(code: number, message: string): ApiResponse {
+   if (code >= 400) {
+-    return { code, message: "Request failed" };
++    return { code, message: "HTTP error occurred" };
+   }
+   return { code, message };
+ }
+diff --git a/dist/index.js b/dist/index.js
+index 1234567..abcdefg 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -5,7 +5,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
+ var response_1 = require("./api/response");
+ 
+ function buildResponse(code, message) {
+-    return { code: code, message: "Request failed" };
++    return { code: code, message: "HTTP error occurred" };
+ }
+ exports.default = buildResponse;

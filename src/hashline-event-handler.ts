@@ -107,11 +107,11 @@ function isHashlineEditCall(event: PiEvent): boolean {
   // Check for hashline_edit in various field positions
   // (Pi might structure it differently depending on model/API)
   const toolName =
-    event.tool_name || 
-    (event as any).call?.name || 
+    event.tool_name ||
+    (event as any).call?.name ||
     (event as any).tool?.name ||
     '';
-  
+
   return toolName === 'hashline_edit' || (event as any).name === 'hashline_edit';
 }
 
@@ -263,7 +263,7 @@ async function main() {
 }
 
 // Run if called directly
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+
 if (typeof require !== 'undefined' && require.main === module) {
   main().catch((error) => {
     console.error(error);

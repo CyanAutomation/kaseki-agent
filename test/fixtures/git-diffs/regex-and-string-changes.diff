@@ -1,0 +1,20 @@
+diff --git a/src/validator.ts b/src/validator.ts
+index 1234567..abcdefg 100644
+--- a/src/validator.ts
++++ b/src/validator.ts
+@@ -15,7 +15,7 @@ export class Validator {
+   validate(input: string): boolean {
+     const emailRegex = /^[a-z0-9]+@[a-z]+\.[a-z]{2,}$/i;
+     if (!emailRegex.test(input)) {
+-      throw new Error("Invalid email format");
++      throw new Error("Email validation failed");
+     }
+     return true;
+   }
+@@ -25,7 +25,7 @@ export class Validator {
+   validatePhone(phone: string): boolean {
+-    const phoneRegex = /^1?[-.\s]?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}$/;
++    const phoneRegex = /^1?[-.\s]?\(?[0-9]{3}\)?[-.\s]?[0-9]{4}[-.\s]?[0-9]{4}$/;
+     return phoneRegex.test(phone);
+   }
+ }
