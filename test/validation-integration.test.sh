@@ -83,7 +83,7 @@ with_workspace_repo_missing() {
   if [ -e /workspace/repo ] || [ -L /workspace/repo ]; then
     WORKSPACE_REPO_STATE="moved"
     WORKSPACE_REPO_BACKUP="$TEST_ROOT/workspace-repo.backup"
-    mv /workspace/repo "$WORKSPACE_REPO_BACKUP"
+    mv /workspace/repo "$WORKSPACE_REPO_BACKUP" 2>/dev/null || fail "Failed to backup /workspace/repo"
   else
     WORKSPACE_REPO_STATE="absent"
   fi
