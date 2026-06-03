@@ -11,7 +11,6 @@ This guide provides practical monitoring and observability strategies for the Ha
 **What to Track**: How often agents use the hashline_edit tool
 
 **Metric Definition**:
-
 ```
 adoption_rate = runs_with_hashline_events / total_runs
 ```
@@ -19,7 +18,6 @@ adoption_rate = runs_with_hashline_events / total_runs
 **Target**: > 50% of applicable runs (runs that modify files)
 
 **Collection**:
-
 ```bash
 # Count runs with hashline events
 find /agents/kaseki-results -name "hashline-summary.json" | wc -l
@@ -34,7 +32,6 @@ echo "Adoption: $(( adopted * 100 / total ))%"
 ```
 
 **Dashboard Query** (Prometheus):
-
 ```promql
 count(hashline_events_total) / count(kaseki_run_total)
 ```
@@ -44,7 +41,6 @@ count(hashline_events_total) / count(kaseki_run_total)
 **What to Track**: Percentage of hashline edits that succeed
 
 **Metric Definition**:
-
 ```
 success_rate = applied_edits / (applied_edits + rejected_edits)
 ```
@@ -52,7 +48,6 @@ success_rate = applied_edits / (applied_edits + rejected_edits)
 **Target**: > 95%
 
 **Collection**:
-
 ```bash
 # Extract stats from all runs
 for summary in /agents/kaseki-results/*/hashline-summary.json; do
@@ -63,7 +58,6 @@ done | awk '{applied += $1; rejected += $2} END {
 ```
 
 **Dashboard Query**:
-
 ```promql
 sum(hashline_applied_total) / (sum(hashline_applied_total) + sum(hashline_rejected_total))
 ```
@@ -73,14 +67,12 @@ sum(hashline_applied_total) / (sum(hashline_applied_total) + sum(hashline_reject
 **What to Track**: Why edits are rejected and how often
 
 **Common Reasons**:
-
 - "start_hash not found" → content moved/changed
 - "end_hash not found" → incomplete context
 - "file not found" → wrong file path
 - "invalid edit" → malformed request
 
 **Collection**:
-
 ```bash
 # Find all rejections
 for events in /agents/kaseki-results/*/hashline-events.jsonl; do
@@ -89,7 +81,6 @@ done | sort | uniq -c | sort -rn
 ```
 
 **Expected Output**:
-
 ```
      42 "start_hash not found"      ← stale anchors (OK, expected)
       3 "file not found"            ← path issues (investigate)
@@ -97,7 +88,6 @@ done | sort | uniq -c | sort -rn
 ```
 
 **Dashboard Query**:
-
 ```promql
 topk(10, sum by (reason) (hashline_rejected_total))
 ```
@@ -107,7 +97,6 @@ topk(10, sum by (reason) (hashline_rejected_total))
 **What to Track**: Speed of hashline event processing
 
 **Metric Definition**:
-
 ```
 duration_ms = time to process all edits in a run
 avg_duration = sum(duration_ms) / count(runs_with_edits)
@@ -116,7 +105,6 @@ avg_duration = sum(duration_ms) / count(runs_with_edits)
 **Target**: < 50ms average (< 5ms per edit)
 
 **Collection**:
-
 ```bash
 # Extract duration from all runs
 for summary in /agents/kaseki-results/*/hashline-summary.json; do
@@ -128,7 +116,6 @@ done | awk '{sum += $1; count++} END {
 ```
 
 **Dashboard Query**:
-
 ```promql
 histogram_quantile(0.95, rate(hashline_duration_seconds_bucket[1h]))
 ```
@@ -138,7 +125,6 @@ histogram_quantile(0.95, rate(hashline_duration_seconds_bucket[1h]))
 **What to Track**: Total lines changed by hashline edits
 
 **Metric Definition**:
-
 ```
 total_lines_modified = sum of linesModified across all edits
 avg_lines_per_edit = total_lines_modified / count(edits)
@@ -147,7 +133,6 @@ avg_lines_per_edit = total_lines_modified / count(edits)
 **Target**: 1-10 lines per edit (typical refactor size)
 
 **Collection**:
-
 ```bash
 # Extract lines modified
 for summary in /agents/kaseki-results/*/hashline-summary.json; do
@@ -164,7 +149,6 @@ done | awk '{sum += $1; count++} END {
 ### Critical Alerts
 
 **High Rejection Rate**:
-
 ```
 IF success_rate < 0.90 for 5 consecutive runs
 THEN ALERT "Hashline rejection rate > 10%"
@@ -172,14 +156,12 @@ SEVERITY: HIGH
 ```
 
 **Immediate Action**:
-
 1. Check rejection reasons
 2. If "start_hash not found": increase context_lines
 3. If "file not found": verify working directory
 4. Review recent changes to kaseki-agent.sh
 
 **High Processing Time**:
-
 ```
 IF avg_duration_ms > 100 for 5 consecutive runs
 THEN ALERT "Hashline processing slower than expected"
@@ -187,7 +169,6 @@ SEVERITY: MEDIUM
 ```
 
 **Immediate Action**:
-
 1. Check file sizes being edited
 2. If large files: implement caching
 3. Review recent code changes
@@ -196,7 +177,6 @@ SEVERITY: MEDIUM
 ### Warning Alerts
 
 **Low Adoption**:
-
 ```
 IF adoption_rate < 0.30 for 1 day
 THEN ALERT "Hashline adoption rate low"
@@ -204,14 +184,12 @@ SEVERITY: LOW
 ```
 
 **Investigation**:
-
 1. Verify KASEKI_HASHLINE_EDITS=1
 2. Check if Pi model supports hashline_edit
 3. Review agent task prompts
 4. Check for feature flag bugs
 
 **Increased Errors**:
-
 ```
 IF error_count > 5 for 1 hour
 THEN ALERT "Hashline processing errors increasing"
@@ -219,7 +197,6 @@ SEVERITY: MEDIUM
 ```
 
 **Investigation**:
-
 1. Check error types in hashline-events.jsonl
 2. Look for recent code changes
 3. Verify Docker image is latest
@@ -249,35 +226,28 @@ scrape_configs:
 **Panels**:
 
 1. **Feature Adoption** (Gauge):
-
    ```promql
    count(hashline_events_total) / count(kaseki_run_total) * 100
    ```
-
    Target: 50%
 
 2. **Success Rate** (Gauge):
-
    ```promql
    sum(hashline_applied_total) / (sum(hashline_applied_total) + sum(hashline_rejected_total)) * 100
    ```
-
    Target: > 95%
 
 3. **Processing Time** (Line Graph):
-
    ```promql
    histogram_quantile(0.95, rate(hashline_duration_seconds_bucket[5m]))
    ```
 
 4. **Rejections by Reason** (Bar Chart):
-
    ```promql
    topk(5, sum by (reason) (rate(hashline_rejected_total[1h])))
    ```
 
 5. **Lines Modified** (Area Chart):
-
    ```promql
    sum(rate(hashline_lines_modified_total[1h]))
    ```
@@ -299,7 +269,6 @@ Every kaseki run produces a summary with key metrics:
 ```
 
 **What to Look For**:
-
 - `applied > 0`: Feature is being used ✓
 - `rejected` close to `applied`: Success rate low ⚠
 - `duration_ms < 50`: Performance good ✓
@@ -325,7 +294,6 @@ Detailed per-edit results (one JSON per line):
 ```
 
 **Analysis Script**:
-
 ```bash
 #!/bin/bash
 # Analyze hashline results across multiple runs
@@ -408,27 +376,22 @@ success_rate=$(grep -oP '"applied":\K[0-9]+' /agents/kaseki-results/*/hashline-s
 ### Issue: Adoption Rate 0%
 
 **Check**:
-
 1. Feature enabled?
-
    ```bash
    grep KASEKI_HASHLINE_EDITS kaseki-agent.sh | head -1
    ```
 
 2. Image updated?
-
    ```bash
    docker inspect kaseki-agent | grep "hashline"
    ```
 
 3. Any errors?
-
    ```bash
    grep -i "hashline" /agents/kaseki-results/*/stdout.log | head -10
    ```
 
 **Fix**:
-
 - Rebuild Docker image with latest code
 - Ensure KASEKI_HASHLINE_EDITS=1 in environment
 - Check Pi model supports hashline_edit tool
@@ -436,7 +399,6 @@ success_rate=$(grep -oP '"applied":\K[0-9]+' /agents/kaseki-results/*/hashline-s
 ### Issue: High Rejection Rate
 
 **Analysis**:
-
 ```bash
 # Find most common rejection reason
 for events in /agents/kaseki-results/*/hashline-events.jsonl; do
@@ -445,13 +407,11 @@ done | jq -r '.reason' | sort | uniq -c | sort -rn
 ```
 
 **If "start_hash not found"** (most common):
-
 - Content is moving between reads and edits
 - Solution: Increase context_lines in validation
 - Or: Add more specific guidance to task prompt
 
 **If "file not found"**:
-
 - Agent is targeting wrong file paths
 - Solution: Check workspace directory setup
 - Or: Add file path clarification to prompt
@@ -459,7 +419,6 @@ done | jq -r '.reason' | sort | uniq -c | sort -rn
 ### Issue: Performance Degradation
 
 **Check**:
-
 ```bash
 # Look for slow runs
 for summary in /agents/kaseki-results/*/hashline-summary.json; do
@@ -471,7 +430,6 @@ done
 ```
 
 **Analysis**:
-
 ```bash
 # Which files are being edited?
 for events in /agents/kaseki-results/*/hashline-events.jsonl; do
@@ -480,7 +438,6 @@ done | sort | uniq -c | sort -rn
 ```
 
 **Fix Options**:
-
 - If large files: Implement hash caching
 - If many edits: Optimize validator
 - If content big: Consider streaming
@@ -490,7 +447,6 @@ done | sort | uniq -c | sort -rn
 ### Monthly Reports
 
 Generate monthly summary:
-
 ```bash
 #!/bin/bash
 month=$1  # e.g., "2026-05"

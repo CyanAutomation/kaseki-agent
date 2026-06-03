@@ -1819,14 +1819,12 @@ Before implementing, clarify:
 ### Implementation Artifacts
 
 **Source Code** (600+ lines):
-
 - `src/hashline-validator.ts` (280 lines) — Core validation logic
 - `src/hashline-event-handler.ts` (220 lines) — JSONL event processing
 - `src/hashline-event-handler-cli.ts` (100 lines) — CLI wrapper
 - `src/lib/hashline-types.ts` (80 lines) — TypeScript interfaces
 
 **Tests** (1000+ lines):
-
 - `tests/hashline-validator.test.ts` (20 tests)
 - `tests/hashline-event-handler.test.ts` (11 tests)
 - `test/hashline-integration.test.sh` (5 tests)
@@ -1834,14 +1832,12 @@ Before implementing, clarify:
 - `test/phase4-prompt-enhancement.test.sh` (7 tests)
 
 **Documentation**:
-
 - `docs/PI_TOOL_HASHLINE_EDIT.md` — Tool specification for Pi CLI
 - `docs/internal/HASHLINE_ARCHITECTURE.md` — Complete architecture guide
 - `docs/QUICK_START.md` — Updated with hashline feature
 - Integration guide in `kaseki-agent.sh` build_agent_prompt()
 
 **Container Updates**:
-
 - `Dockerfile` — Added hashline handler installation
 - `docker-compose.yml` — No changes required
 
@@ -1878,7 +1874,6 @@ TOTAL:                       48/48 tests ✅
 ### Configuration
 
 **Enable/Disable**:
-
 ```bash
 # Enable hashline editing (default)
 export KASEKI_HASHLINE_EDITS=1
@@ -1888,7 +1883,6 @@ export KASEKI_HASHLINE_EDITS=0
 ```
 
 **Task Prompt Integration**:
-
 - When enabled, agent prompt includes hashline_edit tool definition
 - When disabled, prompt uses standard file editing instructions
 - Default: Enabled globally; can be disabled per-run
@@ -1902,7 +1896,6 @@ export KASEKI_HASHLINE_EDITS=0
 3. **Phase 3 (Optional)**: Expand to additional model types
 
 **Success Criteria**:
-
 - Success rate > 95% on valid anchors ✅
 - No unexpected validation failures ✅
 - Build/test times unchanged ✅
@@ -1911,18 +1904,15 @@ export KASEKI_HASHLINE_EDITS=0
 ### Integration Points
 
 **kaseki-agent.sh**:
-
 - Line 35: KASEKI_HASHLINE_EDITS initialization
 - Line 3379: build_agent_prompt() includes hashline guidance
 - Line 7428+: Hashline validation phase (non-fatal)
 
 **Docker**:
-
 - Hashline handler compiled and installed in image
 - Available in both build and production stages
 
 **Pi CLI Integration**:
-
 - Expects tool_call events with tool_name='hashline_edit'
 - Flexible event structure handling (multiple Pi model formats)
 - Graceful degradation if tool not available
@@ -1930,13 +1920,11 @@ export KASEKI_HASHLINE_EDITS=0
 ### Monitoring & Observability
 
 **Artifacts Generated** (per run):
-
 - `hashline-events.jsonl` — Per-edit results
 - `hashline-summary.json` — Aggregated statistics
 - `result-summary.md` — Human-readable status
 
 **Metrics Available**:
-
 - Applied edits count
 - Rejected edits count
 - Total lines modified
