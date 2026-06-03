@@ -19,27 +19,9 @@ const MIN_LITERAL_LENGTH = 3;
 const MAX_LITERAL_LENGTH = 160;
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo']);
 
-function parseArgs(argv) {
-  const options = {
-    diff: process.env.KASEKI_EXPECTATION_DIFF || DEFAULT_DIFF,
-    output: process.env.KASEKI_EXPECTATION_WARNINGS || DEFAULT_OUTPUT,
-    progress: process.env.KASEKI_PROGRESS_LOG || DEFAULT_PROGRESS,
-    repo: process.env.KASEKI_REPO_DIR || (fs.existsSync('/workspace/repo') ? '/workspace/repo' : process.cwd()),
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '--diff') options.diff = argv[++index];
-    else if (arg === '--output') options.output = argv[++index];
-    else if (arg === '--progress') options.progress = argv[++index];
-    else if (arg === '--repo') options.repo = argv[++index];
-    else if (arg === '--help' || arg === '-h') {
-      console.log('Usage: node scripts/detect-expectation-mismatches.js [--repo DIR] [--diff FILE] [--output FILE] [--progress FILE]');
-      process.exit(0);
-    }
-  }
-  return options;
-}
+// ============================================================================
+// REUSABLE UTILITIES (standalone for backward compatibility & composition)
+// ============================================================================
 
 function readFileIfExists(filePath) {
   try {
@@ -78,34 +60,267 @@ function unescapeLiteral(raw) {
   }
 }
 
-function extractStringLiterals(line) {
-  const literals = [];
-  const literalRe = /(['"`])((?:\\.|(?!\1).)*?)\1/g;
-  let match;
-  while ((match = literalRe.exec(line)) !== null) {
-    const value = unescapeLiteral(match[2]);
-    if (isLikelyExpectationValue(value)) literals.push(value);
+// ============================================================================
+// EXTRACTOR CLASSES (testable, composable)
+// ============================================================================
+
+/**
+ * Extracts and validates string literals from source code
+ * Handles: single/double/backtick quotes, escaped characters, template literals, Unicode
+ */
+class StringExtractor {
+  /**
+   * Extract string literals from a line of source code
+   * @param {string} line - Source code line
+   * @returns {string[]} Extracted and filtered string values
+   */
+  static extract(line) {
+    const literals = [];
+    const literalRe = /(['"`])((?:\\.|(?!\1).)*?)\1/g;
+    let match;
+    while ((match = literalRe.exec(line)) !== null) {
+      const value = StringExtractor.unescape(match[2]);
+      if (StringExtractor.isLikelyExpectation(value)) literals.push(value);
+    }
+    return literals;
   }
-  return literals;
+
+  /**
+   * Unescape string literal content
+   * @param {string} raw - Raw escaped string content
+   * @returns {string} Unescaped value
+   */
+  static unescape(raw) {
+    return unescapeLiteral(raw);
+  }
+
+  /**
+   * Filter: is this likely a test expectation value?
+   * Rejects: empty, too short/long, numeric-only, URLs
+   * @param {string} value - Candidate value
+   * @returns {boolean}
+   */
+  static isLikelyExpectation(value) {
+    if (!value) return false;
+    if (value.length < MIN_LITERAL_LENGTH || value.length > MAX_LITERAL_LENGTH) return false;
+    if (/^[\s\d._/-]+$/.test(value)) return false;
+    if (/^https?:\/\//i.test(value)) return false;
+    return /[A-Za-z]/.test(value);
+  }
 }
 
-function extractRegexFragments(line) {
-  const fragments = [];
-  const regexRe = /(?<![\w)$\]])\/((?:\\.|[^/\\\n]){3,})\/[dgimsuvy]*/g;
-  let match;
-  while ((match = regexRe.exec(line)) !== null) {
-    const fragment = match[1];
-    if (isLikelyExpectationValue(fragment)) fragments.push(fragment);
+/**
+ * Extracts and validates regex patterns from source code
+ * Handles: lookbehind constraints, flags, multiline patterns
+ */
+class RegexExtractor {
+  /**
+   * Extract regex fragments from a line of source code
+   * @param {string} line - Source code line
+   * @returns {string[]} Extracted and filtered regex patterns
+   */
+  static extract(line) {
+    const fragments = [];
+    const regexRe = /(?<![\w)$\]])\/((?:\\.|[^/\\\n]){3,})\/[dgimsuvy]*/g;
+    let match;
+    while ((match = regexRe.exec(line)) !== null) {
+      const fragment = match[1];
+      if (RegexExtractor.isLikelyExpectation(fragment)) fragments.push(fragment);
+    }
+    return fragments;
   }
-  return fragments;
+
+  /**
+   * Filter: is this likely a test expectation pattern?
+   * @param {string} value - Candidate regex pattern
+   * @returns {boolean}
+   */
+  static isLikelyExpectation(value) {
+    if (!value) return false;
+    if (value.length < MIN_LITERAL_LENGTH || value.length > MAX_LITERAL_LENGTH) return false;
+    if (/^[\s\d._/-]+$/.test(value)) return false;
+    return /[A-Za-z]/.test(value);
+  }
 }
+
+/**
+ * Parses unified git diffs and detects changed values
+ * Handles: hunks, removed/added lines, type matching (strings vs regexes)
+ */
+class GitDiffParser {
+  /**
+   * Parse a unified diff and extract changed candidates
+   * @param {string} diffText - Unified diff content
+   * @returns {Array} Changed value candidates with types and line numbers
+   */
+  static parse(diffText) {
+    const candidates = [];
+    let currentFile = '';
+    let oldLine = 0;
+    let newLine = 0;
+    let removed = [];
+    let added = [];
+
+    const flushPairs = () => {
+      if (!currentFile || !isProductionFile(currentFile)) {
+        removed = [];
+        added = [];
+        return;
+      }
+
+      for (const oldItem of removed) {
+        let best = null;
+        for (const newItem of added) {
+          if (oldItem.type !== newItem.type) continue;
+          if (oldItem.value === newItem.value) continue;
+          const score = similarityScore(oldItem.value, newItem.value);
+          if (score >= SIMILARITY_THRESHOLD && (!best || score > best.score)) best = { ...newItem, score };
+        }
+        if (!best) continue;
+        const categories = categoriesFor(oldItem.value, `${oldItem.line}\n${best.line}`, oldItem.type);
+        if (categories.length === 0 || !hasExpectationSignal(oldItem.value, `${oldItem.line}\n${best.line}`)) continue;
+        candidates.push({
+          productionFile: currentFile,
+          oldValue: oldItem.value,
+          newValue: best.value,
+          literalType: oldItem.type,
+          category: categories[0],
+          categories,
+          oldLine: oldItem.lineNumber,
+          newLine: best.lineNumber,
+          oldSourceLine: oldItem.line.trim(),
+          newSourceLine: best.line.trim(),
+        });
+      }
+      removed = [];
+      added = [];
+    };
+
+    for (const line of diffText.split('\n')) {
+      if (line.startsWith('diff --git ')) {
+        flushPairs();
+        currentFile = '';
+        continue;
+      }
+      if (line.startsWith('+++ b/')) {
+        currentFile = normalizeDiffPath(line.slice('+++ '.length));
+        continue;
+      }
+      const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunk) {
+        flushPairs();
+        oldLine = Number(hunk[1]);
+        newLine = Number(hunk[2]);
+        continue;
+      }
+      if (!currentFile) continue;
+      if (line.startsWith('-') && !line.startsWith('---')) {
+        const source = line.slice(1);
+        const strings = StringExtractor.extract(source).map(value => ({ value, type: 'string' }));
+        const regexes = RegexExtractor.extract(source).map(value => ({ value, type: 'regex' }));
+        removed.push(...strings.concat(regexes).map(item => ({ ...item, line: source, lineNumber: oldLine })));
+        oldLine += 1;
+        continue;
+      }
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        const source = line.slice(1);
+        const strings = StringExtractor.extract(source).map(value => ({ value, type: 'string' }));
+        const regexes = RegexExtractor.extract(source).map(value => ({ value, type: 'regex' }));
+        added.push(...strings.concat(regexes).map(item => ({ ...item, line: source, lineNumber: newLine })));
+        newLine += 1;
+        continue;
+      }
+      if (!line.startsWith('\\')) {
+        oldLine += 1;
+        newLine += 1;
+      }
+    }
+    flushPairs();
+
+    const seen = new Set();
+    return candidates.filter(candidate => {
+      const key = `${candidate.productionFile}\0${candidate.oldValue}\0${candidate.newValue}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+}
+
+/**
+ * Walks test files in a repository and ranks them by relevance
+ * Handles: directory traversal, filtering (node_modules, .git), relative path conversion
+ */
+class FileWalker {
+  /**
+   * Walk repository and find all test files
+   * @param {string} repoDir - Repository root directory
+   * @returns {string[]} Array of test file paths (relative to repo)
+   */
+  static findTestFiles(repoDir) {
+    const found = [];
+    const walk = (relativeDir) => {
+      const absoluteDir = path.join(repoDir, relativeDir);
+      let entries = [];
+      try {
+        entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+        if (entry.isDirectory()) {
+          if (!IGNORED_DIRS.has(entry.name)) walk(relativePath);
+        } else if (entry.isFile() && isTestFile(relativePath)) {
+          found.push(relativePath);
+        }
+      }
+    };
+    walk('');
+    return found;
+  }
+
+  /**
+   * Find test files related to a production file, ranked by relevance
+   * @param {string} productionFile - Production file path
+   * @param {string[]} allTestFiles - All available test file paths
+   * @returns {string[]} Ranked test file paths (highest relevance first)
+   */
+  static relatedTestFiles(productionFile, allTestFiles) {
+    const productionBase = FileWalker.basenameWithoutExt(productionFile);
+    const productionDir = path.dirname(productionFile).replace(/\\/g, '/');
+    const ranked = allTestFiles
+      .map(testFile => {
+        const testBase = FileWalker.basenameWithoutExt(testFile);
+        let score = 0;
+        if (testBase === productionBase) score += 5;
+        if (testFile.includes(productionBase)) score += 3;
+        if (testFile.startsWith(`${productionDir}/`)) score += 2;
+        if (testFile.startsWith('tests/')) score += 1;
+        return { testFile, score };
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.testFile.localeCompare(b.testFile))
+      .map(item => item.testFile);
+    return ranked.length > 0 ? ranked : allTestFiles;
+  }
+
+  /**
+   * Extract basename without test-specific extensions
+   * @param {string} filePath - File path
+   * @returns {string} Basename without extensions
+   */
+  static basenameWithoutExt(filePath) {
+    return path.basename(filePath).replace(/\.(test|spec)\.[cm]?[jt]sx?$/i, '').replace(/\.[cm]?[jt]sx?$/i, '');
+  }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS (used by both classes and main logic)
+// ============================================================================
 
 function isLikelyExpectationValue(value) {
-  if (!value) return false;
-  if (value.length < MIN_LITERAL_LENGTH || value.length > MAX_LITERAL_LENGTH) return false;
-  if (/^[\s\d._/-]+$/.test(value)) return false;
-  if (/^https?:\/\//i.test(value)) return false;
-  return /[A-Za-z]/.test(value);
+  return StringExtractor.isLikelyExpectation(value);
 }
 
 function hasExpectationSignal(value, contextLine) {
@@ -131,143 +346,32 @@ function similarityScore(oldValue, newValue) {
   return intersection / Math.max(oldTokens.size, newTokens.size);
 }
 
+// ============================================================================
+// LEGACY STANDALONE FUNCTIONS (backward compatibility with tests)
+// ============================================================================
+
+function extractStringLiterals(line) {
+  return StringExtractor.extract(line);
+}
+
+function extractRegexFragments(line) {
+  return RegexExtractor.extract(line);
+}
+
 function parseChangedCandidates(diffText) {
-  const candidates = [];
-  let currentFile = '';
-  let oldLine = 0;
-  let newLine = 0;
-  let removed = [];
-  let added = [];
-
-  function flushPairs() {
-    if (!currentFile || !isProductionFile(currentFile)) {
-      removed = [];
-      added = [];
-      return;
-    }
-
-    for (const oldItem of removed) {
-      let best = null;
-      for (const newItem of added) {
-        if (oldItem.type !== newItem.type) continue;
-        if (oldItem.value === newItem.value) continue;
-        const score = similarityScore(oldItem.value, newItem.value);
-        if (score >= SIMILARITY_THRESHOLD && (!best || score > best.score)) best = { ...newItem, score };
-      }
-      if (!best) continue;
-      const categories = categoriesFor(oldItem.value, `${oldItem.line}\n${best.line}`, oldItem.type);
-      if (categories.length === 0 || !hasExpectationSignal(oldItem.value, `${oldItem.line}\n${best.line}`)) continue;
-      candidates.push({
-        productionFile: currentFile,
-        oldValue: oldItem.value,
-        newValue: best.value,
-        literalType: oldItem.type,
-        category: categories[0],
-        categories,
-        oldLine: oldItem.lineNumber,
-        newLine: best.lineNumber,
-        oldSourceLine: oldItem.line.trim(),
-        newSourceLine: best.line.trim(),
-      });
-    }
-    removed = [];
-    added = [];
-  }
-
-  for (const line of diffText.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      flushPairs();
-      currentFile = '';
-      continue;
-    }
-    if (line.startsWith('+++ b/')) {
-      currentFile = normalizeDiffPath(line.slice('+++ '.length));
-      continue;
-    }
-    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (hunk) {
-      flushPairs();
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (!currentFile) continue;
-    if (line.startsWith('-') && !line.startsWith('---')) {
-      const source = line.slice(1);
-      const strings = extractStringLiterals(source).map(value => ({ value, type: 'string' }));
-      const regexes = extractRegexFragments(source).map(value => ({ value, type: 'regex' }));
-      removed.push(...strings.concat(regexes).map(item => ({ ...item, line: source, lineNumber: oldLine })));
-      oldLine += 1;
-      continue;
-    }
-    if (line.startsWith('+') && !line.startsWith('+++')) {
-      const source = line.slice(1);
-      const strings = extractStringLiterals(source).map(value => ({ value, type: 'string' }));
-      const regexes = extractRegexFragments(source).map(value => ({ value, type: 'regex' }));
-      added.push(...strings.concat(regexes).map(item => ({ ...item, line: source, lineNumber: newLine })));
-      newLine += 1;
-      continue;
-    }
-    if (!line.startsWith('\\')) {
-      oldLine += 1;
-      newLine += 1;
-    }
-  }
-  flushPairs();
-
-  const seen = new Set();
-  return candidates.filter(candidate => {
-    const key = `${candidate.productionFile}\0${candidate.oldValue}\0${candidate.newValue}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return GitDiffParser.parse(diffText);
 }
 
 function walkTestFiles(repoDir) {
-  const found = [];
-  function walk(relativeDir) {
-    const absoluteDir = path.join(repoDir, relativeDir);
-    let entries = [];
-    try {
-      entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) walk(relativePath);
-      } else if (entry.isFile() && isTestFile(relativePath)) {
-        found.push(relativePath);
-      }
-    }
-  }
-  walk('');
-  return found;
+  return FileWalker.findTestFiles(repoDir);
 }
 
 function basenameWithoutExt(filePath) {
-  return path.basename(filePath).replace(/\.(test|spec)\.[cm]?[jt]sx?$/i, '').replace(/\.[cm]?[jt]sx?$/i, '');
+  return FileWalker.basenameWithoutExt(filePath);
 }
 
 function relatedTestFiles(candidate, allTests) {
-  const productionBase = basenameWithoutExt(candidate.productionFile);
-  const productionDir = path.dirname(candidate.productionFile).replace(/\\/g, '/');
-  const ranked = allTests
-    .map(testFile => {
-      const testBase = basenameWithoutExt(testFile);
-      let score = 0;
-      if (testBase === productionBase) score += 5;
-      if (testFile.includes(productionBase)) score += 3;
-      if (testFile.startsWith(`${productionDir}/`)) score += 2;
-      if (testFile.startsWith('tests/')) score += 1;
-      return { testFile, score };
-    })
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.testFile.localeCompare(b.testFile))
-    .map(item => item.testFile);
-  return ranked.length > 0 ? ranked : allTests;
+  return FileWalker.relatedTestFiles(candidate.productionFile, allTests);
 }
 
 function lineNumberFor(content, needle) {
@@ -288,12 +392,12 @@ function refineCategory(candidate, testContext) {
 }
 
 function findMismatches(repoDir, candidates) {
-  const allTests = walkTestFiles(repoDir);
+  const allTests = FileWalker.findTestFiles(repoDir);
   const findings = [];
   const seen = new Set();
 
   for (const candidate of candidates) {
-    for (const testFile of relatedTestFiles(candidate, allTests)) {
+    for (const testFile of FileWalker.relatedTestFiles(candidate.productionFile, allTests)) {
       const absoluteTest = path.join(repoDir, testFile);
       const content = readFileIfExists(absoluteTest);
       if (!content.includes(candidate.oldValue)) continue;
@@ -340,6 +444,28 @@ function appendProgress(filePath, findings, candidateCount) {
   fs.appendFileSync(filePath, `[expectation-mismatch] ${timestamp} ${findings.length} warning(s): ${summary}; details=/results/expectation-mismatch-warnings.jsonl\n`);
 }
 
+function parseArgs(argv) {
+  const options = {
+    diff: process.env.KASEKI_EXPECTATION_DIFF || DEFAULT_DIFF,
+    output: process.env.KASEKI_EXPECTATION_WARNINGS || DEFAULT_OUTPUT,
+    progress: process.env.KASEKI_PROGRESS_LOG || DEFAULT_PROGRESS,
+    repo: process.env.KASEKI_REPO_DIR || (fs.existsSync('/workspace/repo') ? '/workspace/repo' : process.cwd()),
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--diff') options.diff = argv[++index];
+    else if (arg === '--output') options.output = argv[++index];
+    else if (arg === '--progress') options.progress = argv[++index];
+    else if (arg === '--repo') options.repo = argv[++index];
+    else if (arg === '--help' || arg === '-h') {
+      console.log('Usage: node scripts/detect-expectation-mismatches.js [--repo DIR] [--diff FILE] [--output FILE] [--progress FILE]');
+      process.exit(0);
+    }
+  }
+  return options;
+}
+
 export function detectExpectationMismatches(options) {
   const diffText = readFileIfExists(options.diff);
   const candidates = diffText ? parseChangedCandidates(diffText) : [];
@@ -349,7 +475,14 @@ export function detectExpectationMismatches(options) {
   return { candidates, findings };
 }
 
-// Export individual functions for testing
+// ============================================================================
+// EXPORTS (for testing and external use)
+// ============================================================================
+
+// Extractor classes (new)
+export { StringExtractor, RegexExtractor, GitDiffParser, FileWalker };
+
+// Backward compatibility (legacy functions)
 export {
   parseArgs,
   readFileIfExists,
@@ -380,3 +513,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const options = parseArgs(process.argv.slice(2));
   detectExpectationMismatches(options);
 }
+

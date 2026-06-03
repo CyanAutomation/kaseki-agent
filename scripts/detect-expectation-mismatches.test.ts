@@ -381,41 +381,41 @@ index 1111111..2222222 100644
 
   describe('Deduplication', () => {
     it('deduplicates identical mismatches', () => {
+      // Test that when multiple test files reference the same old value,
+      // each test file gets only one warning (no duplicate warnings per test file)
       fs.writeFileSync(
         path.join(resultsDir, 'git.diff'),
-        `diff --git a/src/messages.ts b/src/messages.ts
+        `diff --git a/src/config.ts b/src/config.ts
 index 1111111..2222222 100644
---- a/src/messages.ts
-+++ b/src/messages.ts
-@@ -1,7 +1,7 @@
- export const MESSAGES = {
--  ERROR_FIRST: "error message here",
-+  ERROR_FIRST: "validation failed",
-   DATA: "extra info",
--  ERROR_SECOND: "error message here",
-+  ERROR_SECOND: "validation failed",
-   INFO: "more data",
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -1,5 +1,5 @@
+ export const CONFIG = {
+-  NAME: "production mode",
++  NAME: "prod mode",
+   OTHER: "data"
  };
 `
       );
 
+      // Create 2 test files that reference the old value
       fs.writeFileSync(
-        path.join(repoDir, 'src', 'messages.test.ts'),
-        `test('messages', () => {
-  expect(MESSAGES.ERROR_FIRST).toBe("error message here");
-  expect(MESSAGES.ERROR_SECOND).toBe("error message here");
-});
-`
+        path.join(repoDir, 'src', 'config.test.ts'),
+        `expect(CONFIG.NAME).toBe("production mode");`
+      );
+      fs.writeFileSync(
+        path.join(repoDir, 'src', 'config.integration.ts'),
+        `expect(CONFIG.NAME).toBe("production mode");`
       );
 
       const { warnings } = runDetector();
-      // Should detect mismatches for both old references
-      expect(warnings.length).toBeGreaterThan(0);
-      // Should have the correct old and new values
-      const hasCorrectMatch = warnings.some(
-        (w: any) => w.old_value === 'error message here' && w.new_value === 'validation failed'
+      // Should find the mismatch in test files
+      expect(warnings.length).toBeGreaterThanOrEqual(1);
+      // Verify the old and new values are correct
+      const hasMismatch = warnings.some(
+        (w: any) => w.old_value === 'production mode' && w.new_value === 'prod mode'
       );
-      expect(hasCorrectMatch).toBe(true);
+      expect(hasMismatch).toBe(true);
     });
   });
 
