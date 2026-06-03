@@ -184,7 +184,6 @@ async processHashlineEventsFromFile(
 **Purpose**: Command-line interface for kaseki-agent.sh
 
 **Invocation** (in kaseki-agent.sh):
-
 ```bash
 npx tsx /app/lib/hashline-event-handler-cli.js \
   /results/pi-events.jsonl \
@@ -194,7 +193,6 @@ npx tsx /app/lib/hashline-event-handler-cli.js \
 ```
 
 **Behavior**:
-
 - Reads 4 arguments: input JSONL, workspace dir, output JSONL, output summary
 - Always creates output files (empty if no events)
 - Non-fatal: file not found or invalid JSON doesn't fail
@@ -205,13 +203,11 @@ npx tsx /app/lib/hashline-event-handler-cli.js \
 **Hash Strategy**: First 8 characters of SHA-256 digest
 
 **Collision Probability**:
-
 - Theoretical: ~1 collision per 16 million hashes (birthday paradox)
 - Practical on typical source files (~500-1000 lines): <1% risk
 - Mitigated by context_lines parameter (limits false matches)
 
 **Reliability Data**:
-
 - Unit tests: 20 test cases covering edge cases, all passing
 - Integration tests: 10 end-to-end scenarios, all passing
 - No hash collisions observed in test suite
@@ -223,7 +219,6 @@ npx tsx /app/lib/hashline-event-handler-cli.js \
 **Default**: `1` (enabled)
 
 **Behavior**:
-
 ```bash
 # Enabled (default)
 export KASEKI_HASHLINE_EDITS=1
@@ -237,7 +232,6 @@ export KASEKI_HASHLINE_EDITS=0
 ```
 
 **Prompt Integration**:
-
 - When enabled: build_agent_prompt() includes hashline_edit tool definition
 - When disabled: prompt uses standard file editing instructions (bash/write)
 - Rollout: Start with 10% of runs, monitor for issues, ramp to 100%
@@ -247,7 +241,6 @@ export KASEKI_HASHLINE_EDITS=0
 ### Non-Fatal Errors
 
 Events that fail don't block the pipeline:
-
 - Stale anchors (content moved) → recorded as rejection
 - File not found → recorded with error message
 - Invalid JSON → line skipped, processing continues
@@ -256,7 +249,6 @@ Events that fail don't block the pipeline:
 ### Result Recording
 
 Each failed edit is recorded in `hashline-events.jsonl`:
-
 ```json
 {
   "file": "src/file.ts",
@@ -268,7 +260,6 @@ Each failed edit is recorded in `hashline-events.jsonl`:
 ### Validation Phase
 
 Files modified by hashline edits go through standard kaseki validation:
-
 - Build, test, lint commands run normally
 - Any validation failures are reported separately
 - Quality gates apply to final diff (including hashline changes)
@@ -276,19 +267,16 @@ Files modified by hashline edits go through standard kaseki validation:
 ## Performance Characteristics
 
 **Processing Speed**:
-
 - Per-edit: ~5-10ms (depends on file size)
 - Typical run with 3-5 edits: <50ms
 - JSONL parsing: O(1) per event, no re-reads
 
 **Memory Usage**:
-
 - Per-file: O(n) where n = file line count
 - Typical 500-line file: ~20KB memory
 - Streaming design: doesn't load entire JSONL into memory
 
 **Scalability**:
-
 - Handles 100+ edits per run efficiently
 - No performance degradation observed in tests
 
@@ -297,14 +285,12 @@ Files modified by hashline edits go through standard kaseki validation:
 ### Unit Tests (31 tests, all passing)
 
 **HashlineValidator (20 tests)**:
-
 - Hash consistency and uniqueness
 - Anchor validation (found, missing, stale)
 - Edit application (single-line, multi-line, edge cases)
 - Batch processing and error continuation
 
 **HashlineEventHandler (11 tests)**:
-
 - JSONL parsing (empty, malformed)
 - Event filtering (hashline vs. non-hashline)
 - Multiple edit handling
@@ -313,7 +299,6 @@ Files modified by hashline edits go through standard kaseki validation:
 ### Integration Tests (10 tests, all passing)
 
 **Hashline Workflow (5 tests)**:
-
 - Valid events → file modified
 - Stale anchors → file not modified
 - Multiple events → batch handling
@@ -321,7 +306,6 @@ Files modified by hashline edits go through standard kaseki validation:
 - Non-hashline events → filtering
 
 **Kaseki Integration (5 tests)**:
-
 - Handler produces output artifacts
 - Empty events handled gracefully
 - Stale anchors recorded
@@ -331,7 +315,6 @@ Files modified by hashline edits go through standard kaseki validation:
 ### TDD Tests (7 tests, all passing)
 
 **Phase 4 Prompt Enhancement**:
-
 - Prompt includes hashline guidance
 - KASEKI_HASHLINE_EDITS conditional works
 - Guidance skipped when disabled
@@ -358,12 +341,10 @@ File editing with content-based anchors (hashline_edit):
 ### Container Integration
 
 **Dockerfile Changes**:
-
 - Copy compiled handler: `cp dist/hashline-event-handler-cli.js /app/lib/`
 - Make executable: `install -m 0755 /app/lib/hashline-event-handler-cli.js /usr/local/bin/`
 
 **kaseki-agent.sh Integration** (line 3379+):
-
 - Invoke handler after pi-event-filter
 - Non-fatal error handling (warnings don't block)
 - Record timing in metadata
@@ -373,7 +354,6 @@ File editing with content-based anchors (hashline_edit):
 ### Output Artifacts
 
 **hashline-events.jsonl** (one per edit):
-
 ```json
 {
   "file": "src/handlers.ts",
@@ -384,7 +364,6 @@ File editing with content-based anchors (hashline_edit):
 ```
 
 **hashline-summary.json**:
-
 ```json
 {
   "applied": 2,
@@ -405,14 +384,12 @@ File editing with content-based anchors (hashline_edit):
 ### Rollout Monitoring
 
 **Phases**:
-
 1. **Phase 0 (Disabled)**: KASEKI_HASHLINE_EDITS=0 by default (current)
 2. **Phase 1 (10%)**: `if [[ $RANDOM -lt 3276 ]]` enable for 10% of runs
 3. **Phase 2 (50%)**: Enable for 50% of runs
 4. **Phase 3 (100%)**: Enable for all runs
 
 **Success Criteria**:
-
 - Success rate > 95%
 - No unexpected validation failures
 - Build/test times unchanged
@@ -425,7 +402,6 @@ File editing with content-based anchors (hashline_edit):
 **After Feature** (enabled): Agent uses hashline_edit when available
 
 **Fallback Behavior**:
-
 - If hashline_edit fails → agent falls back to bash/write
 - If feature disabled → prompt doesn't mention hashline_edit
 - Existing validation rules apply to all edited files
@@ -434,7 +410,6 @@ File editing with content-based anchors (hashline_edit):
 ## Future Enhancements
 
 **Possible Improvements**:
-
 1. **Context Line Optimization**: Auto-select optimal context_lines
 2. **Collision Detection**: Warn on ambiguous hashes
 3. **Diff Preview**: Show preview before applying

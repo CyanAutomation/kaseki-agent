@@ -20,27 +20,23 @@ This document outlines the safe, phased rollout strategy for the Hashline Conten
 **Risk Level**: Low (comprehensive test coverage, non-fatal errors)
 
 **Configuration**:
-
 ```bash
 export KASEKI_HASHLINE_EDITS=1  # Default
 ```
 
 **Rollout Actions**:
-
 1. ✅ Deploy kaseki-agent image with hashline support
 2. ✅ Enable hashline guidance in all task prompts
 3. ✅ Monitor hashline event handler logs
 4. ✅ Track success/rejection metrics
 
 **Success Criteria**:
-
 - Agent promptly uses hashline_edit tool for file modifications
 - No unexpected validation failures
 - Rejection rate < 5% (stale anchors only)
 - Build/test performance unchanged
 
 **Monitoring Dashboard** (recommended):
-
 - Total hashline events processed
 - Applied vs. rejected edits
 - Rejection reasons (stale anchor, file not found, etc.)
@@ -54,7 +50,6 @@ export KASEKI_HASHLINE_EDITS=1  # Default
 **Focus**: Observability, tuning, metrics collection
 
 **Actions**:
-
 1. Collect baseline metrics on hashline usage
 2. Identify common rejection patterns
 3. Optimize context_lines parameter based on real data
@@ -70,7 +65,6 @@ export KASEKI_HASHLINE_EDITS=1  # Default
 | Success rate | >95% | 100% (test) |
 
 **Tuning Opportunities**:
-
 - If rejection rate high → increase context_lines
 - If processing time high → cache file hashes
 - If adoption low → enhance task prompt examples
@@ -79,14 +73,12 @@ export KASEKI_HASHLINE_EDITS=1  # Default
 ### Phase 3: Gradual Rollback (Emergency Only)
 
 **When to Trigger**:
-
 - Production incident related to hashline edits
 - Unexpected validation failures
 - Performance degradation
 - Data corruption (extremely unlikely)
 
 **Actions**:
-
 ```bash
 # Disable hashline for new runs
 export KASEKI_HASHLINE_EDITS=0
@@ -96,7 +88,6 @@ export KASEKI_HASHLINE_EDITS=0
 ```
 
 **Recovery Procedure**:
-
 1. Disable feature in production
 2. Collect all hashline-summary.json files
 3. Analyze rejection patterns
@@ -160,21 +151,18 @@ KASEKI_HASHLINE_EDITS=0 ./run-kaseki.sh
 ### Recommended Alerts
 
 1. **High Rejection Rate**:
-
    ```sql
    IF (rejected_edits / (applied_edits + rejected_edits)) > 0.1
    THEN alert("Hashline rejection rate high: >10%")
    ```
 
 2. **Processing Time Spike**:
-
    ```sql
    IF duration_ms > 100 for consecutive runs
    THEN alert("Hashline processing slower than normal")
    ```
 
 3. **Zero Adoption**:
-
    ```sql
    IF (runs_with_hashline_events / total_runs) < 0.01
    THEN alert("Hashline not being used by agents")
@@ -183,7 +171,6 @@ KASEKI_HASHLINE_EDITS=0 ./run-kaseki.sh
 ### Dashboard Queries
 
 **Total Events Processed** (daily):
-
 ```
 SELECT COUNT(*) as total_edits
   FROM kaseki_results
@@ -192,7 +179,6 @@ SELECT COUNT(*) as total_edits
 ```
 
 **Success Rate** (last 30 days):
-
 ```
 SELECT 
   SUM(applied) / (SUM(applied) + SUM(rejected)) as success_rate,
@@ -205,7 +191,6 @@ ORDER BY date DESC
 ```
 
 **Rejection Reasons** (most common):
-
 ```
 SELECT reason, COUNT(*) as frequency
 FROM kaseki_results
@@ -221,13 +206,11 @@ LIMIT 10
 ### Issue: High Rejection Rate (>10%)
 
 **Diagnosis**:
-
 1. Check `hashline-summary.json` for rejection reasons
 2. Most common: "start_hash not found" → stale anchors
 3. Solution: Increase context_lines in validator
 
 **Fix**:
-
 ```typescript
 // src/hashline-validator.ts
 if (contextLines < 5) {
@@ -236,7 +219,6 @@ if (contextLines < 5) {
 ```
 
 **Redeploy**:
-
 ```bash
 npm run build
 docker build -t kaseki-agent:fixed .
@@ -247,13 +229,11 @@ docker push kaseki-agent:fixed
 ### Issue: Performance Degradation
 
 **Diagnosis**:
-
 1. Check hashline duration_ms in metadata
 2. If > 100ms consistently, likely large file
 3. Solution: Optimize hash computation
 
 **Fix**: Implement caching in HashlineValidator
-
 ```typescript
 private lineHashCache: Map<string, string[]> = new Map();
 
@@ -272,19 +252,16 @@ async getLineHashes(filePath: string): Promise<string[]> {
 ### Issue: Zero Adoption
 
 **Diagnosis**:
-
 1. Check if feature is enabled: `KASEKI_HASHLINE_EDITS=1`
 2. Check if Pi CLI supports hashline_edit tool
 3. Check agent prompt includes hashline guidance
 
 **Possible Causes**:
-
 - Feature disabled by mistake: `KASEKI_HASHLINE_EDITS=0`
 - Pi model doesn't support hashline_edit (use fallback)
 - Task prompt not mentioning hashline_edit (update prompt)
 
 **Fix**:
-
 ```bash
 # Verify feature enabled
 echo $KASEKI_HASHLINE_EDITS
@@ -296,27 +273,23 @@ grep -i "hashline" /results/pi-task-prompt.txt
 ## Rollout Timeline
 
 ### Week 1: Deployment
-
 - [ ] Deploy image with hashline support
 - [ ] Enable in staging environment
 - [ ] Verify basic functionality
 - [ ] Monitor for errors
 
 ### Week 2: Full Production
-
 - [ ] Deploy to production (100%)
 - [ ] Set up monitoring dashboard
 - [ ] Document metrics in runbook
 
 ### Week 3-4: Observation
-
 - [ ] Collect baseline metrics
 - [ ] Identify tuning opportunities
 - [ ] Document lessons learned
 - [ ] Update documentation
 
 ### Ongoing: Maintenance
-
 - [ ] Monitor rejection rates
 - [ ] Track performance metrics
 - [ ] Respond to issues
@@ -325,7 +298,6 @@ grep -i "hashline" /results/pi-task-prompt.txt
 ## Testing Before Rollout
 
 **Automated Tests** (all passing):
-
 - ✅ 20 unit tests (HashlineValidator)
 - ✅ 11 unit tests (HashlineEventHandler)
 - ✅ 5 integration tests (CLI workflow)
@@ -333,7 +305,6 @@ grep -i "hashline" /results/pi-task-prompt.txt
 - ✅ 7 TDD prompt enhancement tests
 
 **Manual Testing Checklist**:
-
 - [ ] Run single-run with hashline enabled
 - [ ] Verify hashline edits applied correctly
 - [ ] Check artifacts generated (hashline-events.jsonl, hashline-summary.json)
@@ -343,7 +314,6 @@ grep -i "hashline" /results/pi-task-prompt.txt
 - [ ] Test with stale anchors (rejection recorded)
 
 **Staging Validation**:
-
 - [ ] Deploy to staging cluster
 - [ ] Run 10 sample tasks with hashline
 - [ ] Verify success rate >95%
@@ -355,19 +325,16 @@ grep -i "hashline" /results/pi-task-prompt.txt
 ### Internal Teams
 
 **Engineering**:
-
 - Notify on deployment
 - Share runbook with monitoring setup
 - Provide alert thresholds
 
 **DevOps/Platform**:
-
 - Update deployment documentation
 - Add metrics to dashboards
 - Create playbooks for alerts
 
 **Support**:
-
 - Document feature for agents
 - Provide troubleshooting guide
 - Share FAQ
@@ -375,19 +342,16 @@ grep -i "hashline" /results/pi-task-prompt.txt
 ### External Communication
 
 **When Deploying**:
-
 - Announce new feature in changelog
 - Link to documentation
 - Provide examples
 
 **When Enabling**:
-
 - No customer notification needed (internal improvement)
 - Update internal documentation
 - Prepare response to questions
 
 **If Issues Occur**:
-
 - Document incident
 - Post-mortem after resolution
 - Share lessons learned
@@ -395,14 +359,12 @@ grep -i "hashline" /results/pi-task-prompt.txt
 ## Success Criteria
 
 **Deployment Success**:
-
 - ✅ Feature deployed to production
 - ✅ 48 tests passing
 - ✅ Monitoring in place
 - ✅ Runbook documented
 
 **Operational Success** (after 2 weeks):
-
 - Success rate > 95% on valid anchors
 - Rejection rate < 5%
 - Processing time < 50ms per edit
@@ -410,7 +372,6 @@ grep -i "hashline" /results/pi-task-prompt.txt
 - Agent adoption of tool > 50% of applicable runs
 
 **Long-term Success** (after 4 weeks):
-
 - Validation failure rate reduced by 5-15%
 - Cost savings measured (token reduction)
 - Best practices documented
