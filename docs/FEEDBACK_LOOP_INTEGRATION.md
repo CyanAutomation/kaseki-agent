@@ -2,6 +2,8 @@
 
 This document explains how evaluation verdicts feed back into the goal-setting quality scoring and Kaseki process improvement systems, closing the feedback loops that enable continuous optimization.
 
+Related docs: [Goal-Setting Agent Guide](./GOAL_SETTING_GUIDE.md) and [Evaluation Best Practices](./EVALUATION_BEST_PRACTICES.md).
+
 ---
 
 ## Overview
