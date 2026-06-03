@@ -963,6 +963,10 @@ build_stages_array() {
   if [[ "$KASEKI_PRE_AGENT_VALIDATION" == "1" ]]; then
     stages+=("pre-agent validation")
   fi
+
+  if [[ "$KASEKI_GOAL_SETTING" == "1" ]]; then
+    stages+=("pi goal-setting agent")
+  fi
   
   if [[ "$KASEKI_SCOUTING" == "1" ]]; then
     stages+=("pi scouting agent")
