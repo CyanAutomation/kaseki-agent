@@ -74,7 +74,7 @@ cleanup_workspace_repo() {
 }
 
 cleanup_results_dir() {
-  if [ "${RESULTS_PREEXISTED:-1}" = "0" ]; then
+  if [ "${RESULTS_PREEXISTED:-0}" = "0" ]; then
     rm -rf /results
   fi
 }
