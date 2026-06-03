@@ -1,0 +1,22 @@
+diff --git a/src/parser.ts b/src/parser.ts
+index 1234567..abcdefg 100644
+--- a/src/parser.ts
++++ b/src/parser.ts
+@@ -10,7 +10,7 @@ export function parse(input: string): ParsedData {
+   const result = parseInput(input);
+   
+   if (!result) {
+-    throw new Error("Parser failed");
++    throw new Error("Parsing error occurred");
+   }
+   
+   return result;
+@@ -20,7 +20,7 @@ export function validate(data: ParsedData): boolean {
+   console.log("Starting validation");
+   
+   if (data.status !== "success") {
+-    return false;
++    return false; // validation failed
+   }
+   
+   return true;

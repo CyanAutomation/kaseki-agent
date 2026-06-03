@@ -188,7 +188,7 @@ line 3`;
       expect(result.valid).toBe(false);
       // Accept either message - both indicate anchor validation failure
       expect(
-        result.reason?.includes('not found') || 
+        result.reason?.includes('not found') ||
         result.reason?.includes('End anchor found before start anchor')
       ).toBe(true);
     });

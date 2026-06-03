@@ -6,6 +6,7 @@ import process from 'node:process';
 const DEFAULT_DIFF = '/results/git.diff';
 const DEFAULT_OUTPUT = '/results/expectation-mismatch-warnings.jsonl';
 const DEFAULT_PROGRESS = '/results/progress.log';
+const SIMILARITY_THRESHOLD = 0.30; // Lowered from 0.35 to catch more similar values
 const CATEGORY_PATTERNS = [
   { category: 'stage_name', pattern: /\b(stage|phase|step|status)(?:\b|[A-Z_:-])/i },
   { category: 'parser_output', pattern: /\b(parse|parser|parsed|format|serialize|output|message|label|name|title|description)\b/i },
@@ -61,7 +62,12 @@ function isTestFile(filePath) {
 }
 
 function isProductionFile(filePath) {
-  return PRODUCTION_EXT_RE.test(filePath) && !isTestFile(filePath) && !filePath.endsWith('.d.ts');
+  if (!PRODUCTION_EXT_RE.test(filePath)) return false;
+  if (isTestFile(filePath)) return false;
+  if (filePath.endsWith('.d.ts')) return false;
+  // Exclude build artifacts and common ignored directories
+  if (/^(dist|build|coverage|\.next|\.turbo|node_modules)\//.test(filePath)) return false;
+  return true;
 }
 
 function unescapeLiteral(raw) {
@@ -146,7 +152,7 @@ function parseChangedCandidates(diffText) {
         if (oldItem.type !== newItem.type) continue;
         if (oldItem.value === newItem.value) continue;
         const score = similarityScore(oldItem.value, newItem.value);
-        if (score >= 0.35 && (!best || score > best.score)) best = { ...newItem, score };
+        if (score >= SIMILARITY_THRESHOLD && (!best || score > best.score)) best = { ...newItem, score };
       }
       if (!best) continue;
       const categories = categoriesFor(oldItem.value, `${oldItem.line}\n${best.line}`, oldItem.type);
@@ -342,6 +348,33 @@ export function detectExpectationMismatches(options) {
   appendProgress(options.progress, findings, candidates.length);
   return { candidates, findings };
 }
+
+// Export individual functions for testing
+export {
+  parseArgs,
+  readFileIfExists,
+  ensureParent,
+  normalizeDiffPath,
+  isTestFile,
+  isProductionFile,
+  unescapeLiteral,
+  extractStringLiterals,
+  extractRegexFragments,
+  isLikelyExpectationValue,
+  hasExpectationSignal,
+  categoriesFor,
+  similarityScore,
+  parseChangedCandidates,
+  walkTestFiles,
+  basenameWithoutExt,
+  relatedTestFiles,
+  lineNumberFor,
+  contextAround,
+  refineCategory,
+  findMismatches,
+  writeJsonl,
+  appendProgress,
+};
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const options = parseArgs(process.argv.slice(2));
