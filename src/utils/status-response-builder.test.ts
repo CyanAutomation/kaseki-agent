@@ -378,18 +378,26 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeLessThan(35);
     });
 
-    it('should use metadata stages when available', () => {
+    it('should use metadata-provided stages to calculate taskProgressPercent', () => {
       const job: Partial<Job> = {
         id: 'job-1',
         status: 'running',
         resultDir: '/results/job-1',
+        request: {
+          repoUrl: 'https://github.com/test/repo',
+          ref: 'main',
+          taskMode: 'patch',
+          publishMode: 'pr',
+        } as any,
       };
 
       const metadataContent = JSON.stringify({
         stages: ['stage1', 'stage2', 'stage3', 'stage4'],
       });
 
-      // Progress shows only stage1 and stage2 finished
+      // Progress shows only stage1 and stage2 finished. These names are not in the
+      // derived orchestrator stages, so a 50% result proves metadata.stages is the
+      // denominator used by the production status response path.
       const progressContent = [
         JSON.stringify({ stage: 'stage1', status: 'finished', detail: 'finished' }),
         JSON.stringify({ stage: 'stage2', status: 'finished', detail: 'finished' }),
@@ -409,16 +417,19 @@ describe('StatusResponseBuilder', () => {
         return '';
       });
 
-      const response: StatusResponse = {
-        id: 'job-1',
-        status: 'running',
-      };
+      const response = builder.buildStatus(job as Job);
 
-      builder['addTaskProgressInfo'](response, job as Job);
-
-      // Should use metadata stages as denominator (4 stages total)
-      // With 2 stages finished: (2/4) * 100 = 50%
+      // Should use metadata stages as denominator (4 stages total).
+      // With 2 stages finished: (2/4) * 100 = 50%.
       expect(response.taskProgressPercent).toBe(50);
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl');
+      });
+
+      const responseWithoutMetadataStages = builder.buildStatus(job as Job);
+
+      expect(responseWithoutMetadataStages.taskProgressPercent).not.toBe(50);
     });
 
     it('should read progress from progress.jsonl file', () => {
