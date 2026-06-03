@@ -78,7 +78,12 @@ function createConfig(tempDir: string): KasekiApiConfig {
 }
 
 function createFixture(): PreflightFixture {
-  const tempDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-test-'));
+  // Ensure /agents directory exists for test fixtures
+  const agentsDir = '/agents';
+  if (!fs.existsSync(agentsDir)) {
+    fs.mkdirSync(agentsDir, { recursive: true });
+  }
+  const tempDir = fs.mkdtempSync(path.join(agentsDir, 'kaseki-preflight-test-'));
   const config = createConfig(tempDir);
   const kasekiRoot = path.join(tempDir, 'agents');
   const resultsDir = path.join(kasekiRoot, 'kaseki-results');
