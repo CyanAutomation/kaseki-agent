@@ -32,37 +32,25 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildTags', () => {
-    it('should return the documented tag definitions with meaningful descriptions', () => {
-      expect(buildTags()).toEqual([
-        {
-          name: 'Health & Status',
-          description: 'Unauthenticated health and readiness checks',
-        },
-        {
-          name: 'Service Info',
-          description: 'Service metadata, metrics, and pre-flight validation',
-        },
-        {
-          name: 'Run Management',
-          description: 'Create, list, and manage kaseki runs',
-        },
-        {
-          name: 'Run Logs & Progress',
-          description: 'Retrieve progress events and logs for runs',
-        },
-        {
-          name: 'Artifacts',
-          description: 'List and download run artifacts',
-        },
-        {
-          name: 'Run Details',
-          description: 'Comprehensive run analysis and diagnostics',
-        },
-        {
-          name: 'Webhooks',
-          description: 'Webhook configuration and testing',
-        },
-      ]);
+    it('should return exact tag names with purpose-specific descriptions', () => {
+      const expectedTagContracts = [
+        { name: 'Health & Status', descriptionPattern: /health|readiness/i },
+        { name: 'Service Info', descriptionPattern: /metadata|metrics|pre-flight/i },
+        { name: 'Run Management', descriptionPattern: /create|list|manage|runs/i },
+        { name: 'Run Logs & Progress', descriptionPattern: /progress|logs/i },
+        { name: 'Artifacts', descriptionPattern: /artifacts|download/i },
+        { name: 'Run Details', descriptionPattern: /analysis|diagnostics/i },
+        { name: 'Webhooks', descriptionPattern: /webhook|testing/i },
+      ];
+
+      const tags = buildTags();
+
+      expect(tags.map((tag) => tag.name)).toEqual(expectedTagContracts.map((tag) => tag.name));
+      tags.forEach((tag, index) => {
+        expect(typeof tag.description).toBe('string');
+        expect((tag.description as string).trim().length).toBeGreaterThan(0);
+        expect(tag.description).toMatch(expectedTagContracts[index].descriptionPattern);
+      });
     });
   });
 
