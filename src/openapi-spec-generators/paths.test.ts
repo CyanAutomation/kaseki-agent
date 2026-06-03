@@ -6,6 +6,109 @@ import { buildAllPaths } from './paths';
 import { buildErrorResponseSchema, buildRunRequestSchema, buildRunResponseSchema } from './schemas';
 
 describe('OpenAPI Path Builders', () => {
+  const routeContracts = [
+    { path: '/health', method: 'get', operationId: 'getHealth', requiresAuth: false, statuses: ['200'] },
+    { path: '/ready', method: 'get', operationId: 'getReady', requiresAuth: false, statuses: ['200', '503'] },
+    {
+      path: '/api/metrics',
+      method: 'get',
+      operationId: 'getMetrics',
+      requiresAuth: true,
+      statuses: ['200', '401'],
+    },
+    {
+      path: '/api/preflight',
+      method: 'get',
+      operationId: 'getPreFlight',
+      requiresAuth: true,
+      statuses: ['200', '401'],
+    },
+    {
+      path: '/api/validate',
+      method: 'post',
+      operationId: 'validateTask',
+      requiresAuth: true,
+      statuses: ['200', '400', '401'],
+    },
+    {
+      path: '/api/runs',
+      method: 'get',
+      operationId: 'listRuns',
+      requiresAuth: true,
+      statuses: ['200', '401'],
+    },
+    {
+      path: '/api/runs',
+      method: 'post',
+      operationId: 'triggerRun',
+      requiresAuth: true,
+      statuses: ['200', '202', '400', '401'],
+    },
+    {
+      path: '/api/runs/{id}/status',
+      method: 'get',
+      operationId: 'getRunStatus',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/runs/{id}/cancel',
+      method: 'post',
+      operationId: 'cancelRun',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/runs/{id}/progress',
+      method: 'get',
+      operationId: 'getRunProgress',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/runs/{id}/logs/{logtype}',
+      method: 'get',
+      operationId: 'getRunLog',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/runs/{id}/artifacts',
+      method: 'get',
+      operationId: 'getRunArtifacts',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/results/{id}/{file}',
+      method: 'get',
+      operationId: 'downloadArtifact',
+      requiresAuth: true,
+      statuses: ['200', '401', '404', '422'],
+    },
+    {
+      path: '/api/runs/{id}/analysis',
+      method: 'get',
+      operationId: 'getRunAnalysis',
+      requiresAuth: true,
+      statuses: ['200', '401', '404'],
+    },
+    {
+      path: '/api/improvements',
+      method: 'get',
+      operationId: 'getRunImprovements',
+      requiresAuth: true,
+      statuses: ['200', '401'],
+    },
+    {
+      path: '/api/webhooks/test',
+      method: 'post',
+      operationId: 'testWebhook',
+      requiresAuth: true,
+      statuses: ['200', '400', '401'],
+    },
+  ];
+
   let errorSchema: Record<string, unknown>;
   let requestSchema: Record<string, unknown>;
   let responseSchema: Record<string, unknown>;
@@ -17,87 +120,7 @@ describe('OpenAPI Path Builders', () => {
   });
 
   describe('buildAllPaths', () => {
-    it.each([
-      { path: '/health', method: 'get', operationId: 'getHealth', requiresAuth: false, statuses: ['200'] },
-      { path: '/ready', method: 'get', operationId: 'getReady', requiresAuth: false, statuses: ['200', '503'] },
-      {
-        path: '/api/metrics',
-        method: 'get',
-        operationId: 'getMetrics',
-        requiresAuth: true,
-        statuses: ['200', '401'],
-      },
-      {
-        path: '/api/preflight',
-        method: 'get',
-        operationId: 'getPreFlight',
-        requiresAuth: true,
-        statuses: ['200', '401'],
-      },
-      {
-        path: '/api/validate',
-        method: 'post',
-        operationId: 'validateTask',
-        requiresAuth: true,
-        statuses: ['200', '400', '401'],
-      },
-      {
-        path: '/api/runs',
-        method: 'get',
-        operationId: 'listRuns',
-        requiresAuth: true,
-        statuses: ['200', '401'],
-      },
-      {
-        path: '/api/runs',
-        method: 'post',
-        operationId: 'triggerRun',
-        requiresAuth: true,
-        statuses: ['200', '202', '400', '401'],
-      },
-      {
-        path: '/api/runs/{id}/status',
-        method: 'get',
-        operationId: 'getRunStatus',
-        requiresAuth: true,
-        statuses: ['200', '401', '404'],
-      },
-      {
-        path: '/api/runs/{id}/cancel',
-        method: 'post',
-        operationId: 'cancelRun',
-        requiresAuth: true,
-        statuses: ['200', '401', '404'],
-      },
-      {
-        path: '/api/runs/{id}/logs/{logtype}',
-        method: 'get',
-        operationId: 'getRunLog',
-        requiresAuth: true,
-        statuses: ['200', '401', '404'],
-      },
-      {
-        path: '/api/runs/{id}/artifacts',
-        method: 'get',
-        operationId: 'getRunArtifacts',
-        requiresAuth: true,
-        statuses: ['200', '401', '404'],
-      },
-      {
-        path: '/api/results/{id}/{file}',
-        method: 'get',
-        operationId: 'downloadArtifact',
-        requiresAuth: true,
-        statuses: ['200', '401', '404', '422'],
-      },
-      {
-        path: '/api/runs/{id}/analysis',
-        method: 'get',
-        operationId: 'getRunAnalysis',
-        requiresAuth: true,
-        statuses: ['200', '401', '404'],
-      },
-    ])(
+    it.each(routeContracts)(
       'should define route contract for $method $path',
       ({ path, method, operationId, requiresAuth, statuses }) => {
         const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
@@ -111,31 +134,31 @@ describe('OpenAPI Path Builders', () => {
         } else {
           expect(pathDef[method].security).toBeUndefined();
         }
-        expect(Object.keys(pathDef[method].responses).sort()).toEqual(statuses.sort());
+        expect(Object.keys(pathDef[method].responses).sort()).toEqual([...statuses].sort());
       }
     );
+
+    it('should define only expected route contract paths and methods', () => {
+      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
+      const expectedContractsByPath = routeContracts.reduce<Record<string, string[]>>(
+        (contractsByPath, { path, method }) => ({
+          ...contractsByPath,
+          [path]: [...(contractsByPath[path] ?? []), method],
+        }),
+        {}
+      );
+
+      expect(Object.keys(paths).sort()).toEqual(Object.keys(expectedContractsByPath).sort());
+      Object.entries(expectedContractsByPath).forEach(([path, methods]) => {
+        expect(Object.keys(paths[path] as Record<string, unknown>).sort()).toEqual([...methods].sort());
+      });
+    });
 
     it('should have at least 14 endpoints', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
       const pathKeys = Object.keys(paths);
 
       expect(pathKeys.length).toBeGreaterThanOrEqual(14);
-    });
-
-    it('each endpoint should have at least one operation (GET, POST, etc)', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      Object.entries(paths).forEach(([_, pathDef]) => {
-        const def = pathDef as Record<string, unknown>;
-        const hasOperation =
-          def.get !== undefined ||
-          def.post !== undefined ||
-          def.put !== undefined ||
-          def.delete !== undefined ||
-          def.patch !== undefined;
-
-        expect(hasOperation).toBe(true);
-      });
     });
 
     it('each operation should have operationId', () => {
