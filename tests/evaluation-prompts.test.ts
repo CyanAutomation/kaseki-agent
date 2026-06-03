@@ -430,8 +430,6 @@ NODE
   describe('Analysis Scripts', () => {
     it('collect-feedback.js should satisfy the feedback collection contract', () => {
       const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
-      expect(fs.existsSync(collectFeedbackPath)).toBe(true);
-
       const collectFeedbackContent = fs.readFileSync(collectFeedbackPath, 'utf8');
       const shellContent = fs.readFileSync(kasekiAgentPath, 'utf8');
 
