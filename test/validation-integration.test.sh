@@ -61,7 +61,7 @@ setup_results_dir() {
     RESULTS_PREEXISTED=0
     mkdir -p /results || fail "Failed to create /results directory"
   fi
-  : > /results/quality.log
+  : > /results/quality.log || fail "Failed to initialize /results/quality.log"
 }
 
 cleanup_workspace_repo() {
