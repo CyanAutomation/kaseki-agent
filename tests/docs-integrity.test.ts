@@ -57,6 +57,9 @@ describe('Documentation link integrity', () => {
 
   const normalizeDocLink = (link: string): string => {
     const [filePart] = link.split('#');
+    if (!filePart) {
+      return '';
+    }
     return filePart.startsWith('./') ? filePart.substring(2) : filePart;
   };
 
