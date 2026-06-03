@@ -22,12 +22,48 @@ describe('Documentation link integrity', () => {
     ['EVALUATION_BEST_PRACTICES.md', ['GOAL_SETTING_GUIDE.md', 'FEEDBACK_LOOP_INTEGRATION.md']],
   ]);
 
-  const requiredDocHeadings = new Map<string, string[]>([
-    ['GOAL_SETTING_GUIDE.md', ['## See Also']],
-    ['EVALUATION_BEST_PRACTICES.md', ['## Part 4: Feedback Loop Integration', '## References']],
+  const requiredEvaluationDocSections = new Map<string, string[]>([
+    [
+      'GOAL_SETTING_GUIDE.md',
+      [
+        '## Overview',
+        '## Why Goal-Setting?',
+        '## What Makes a Good Goal?',
+        '## Configuration',
+        '## How Goal-Setting Works',
+        '## Failure Modes',
+        '## Best Practices',
+        '## Test Updates in Goals',
+        '## Troubleshooting',
+        '## See Also',
+      ],
+    ],
+    [
+      'EVALUATION_BEST_PRACTICES.md',
+      [
+        '## Why Evaluation Matters',
+        '## Part 1: Goal-Check Evaluation Best Practices',
+        '## Part 2: Run-Evaluation Best Practices',
+        '## Part 3: Integrating Goal-Setting Context into Evaluations',
+        '## Part 4: Feedback Loop Integration',
+        '## Part 5: Evaluation Confidence Calibration Worksheet',
+        '## Part 6: Review Checklist for Evaluators',
+        '## References',
+      ],
+    ],
     [
       'FEEDBACK_LOOP_INTEGRATION.md',
-      ['## Feedback Path 1: Goal Quality Scoring', '## Feedback Path 2: Kaseki Improvement Opportunities'],
+      [
+        '## Overview',
+        '## Feedback Path 1: Goal Quality Scoring',
+        '## Feedback Path 2: Kaseki Improvement Opportunities',
+        '## Integration Points',
+        '## Concrete Examples',
+        '## Data Schema',
+        '## Feedback Loop Best Practices',
+        '## Monitoring & Dashboards (Future Capability)',
+        '## Summary',
+      ],
     ],
   ]);
 
@@ -115,7 +151,7 @@ describe('Documentation link integrity', () => {
     ];
 
     expectedEvaluationReferences.forEach(({ fileName, link, text, headings }) => {
-      const parsedLink = linksByTarget.get(fileName);
+      const parsedLink = linksByTarget.get(link);
       expect(parsedLink).toEqual({ text, link });
 
       const targetPath = path.join(docsDir, fileName);
@@ -128,7 +164,7 @@ describe('Documentation link integrity', () => {
     });
   });
 
-  it('checks exact cross-document links, expected headings, and markdown link targets for evaluation docs', () => {
+  it('checks exact cross-document links, required contractual sections, and markdown link targets for evaluation docs', () => {
     evaluationDocs.forEach((fileName) => {
       const sourcePath = path.join(docsDir, fileName);
       expect(fs.existsSync(sourcePath)).toBe(true);
@@ -141,8 +177,9 @@ describe('Documentation link integrity', () => {
         expect(linkTargets).toContain(requiredLink);
       });
 
-      requiredDocHeadings.get(fileName)?.forEach((requiredHeading) => {
-        expect(content).toContain(requiredHeading);
+      const headings = collectHeadingTexts(content);
+      requiredEvaluationDocSections.get(fileName)?.forEach((requiredSection) => {
+        expect(headings).toContain(requiredSection);
       });
 
       links.forEach(({ link }) => {
