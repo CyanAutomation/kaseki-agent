@@ -4,7 +4,7 @@
  * Handles Docker operations: image pulling, container spawning, log streaming
  */
 
-import { execSync, spawn } from 'child_process';
+import { execFileSync, execSync, spawn } from 'child_process';
 import { createLogger } from '../logger';
 
 const logger = createLogger('docker');
@@ -73,7 +73,7 @@ export class DockerManager {
    */
   static imageExists(image: string): boolean {
     try {
-      execSync(`docker inspect ${image} > /dev/null 2>&1`, { shell: '/bin/bash' });
+      execFileSync('docker', ['image', 'inspect', image], { stdio: 'ignore' });
       return true;
     } catch {
       return false;
