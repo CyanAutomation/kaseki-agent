@@ -4,6 +4,23 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.62.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.61.0...v1.62.0) (2026-06-04)
+
+
+### Bug Fixes
+
+* improve success rate calculation formatting in ToolReliabilityAggregator ([923ebb0](https://github.com/CyanAutomation/kaseki-agent/commit/923ebb0c0fbda95ac55c5c8e48a696c206954610))
+
+
+### Features
+
+* add explicit mount for worker container access to results directory in docker-compose ([c5f45f4](https://github.com/CyanAutomation/kaseki-agent/commit/c5f45f47a3b93a9da086a94cddae0735a4c8956e))
+* add tool reliability and execution time metrics tracking ([490aab8](https://github.com/CyanAutomation/kaseki-agent/commit/490aab8b85ec738eff023d01bd629e57fe7b612a))
+* enhance privilege operation timeout and add permission verification ([6713d8f](https://github.com/CyanAutomation/kaseki-agent/commit/6713d8f45b71f277e38cb039dd5e3849c37df96b))
+* implement error classification and enhance JSON output for setup results ([81a8ea3](https://github.com/CyanAutomation/kaseki-agent/commit/81a8ea35b440ca25cf1070b472395a2b1026d77e))
+* implement validation infrastructure and refactor host setup script ([0023e89](https://github.com/CyanAutomation/kaseki-agent/commit/0023e8932c865312330c07382ae8bbc2fd6ae06b))
+* update API version to 1.61.0 and enhance PiEvent interface with optional text field ([0dadd72](https://github.com/CyanAutomation/kaseki-agent/commit/0dadd721ea4a2574fcbd537fc2cc940674b2b38d))
+
 # [1.61.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.60.0...v1.61.0) (2026-06-04)
 
 
