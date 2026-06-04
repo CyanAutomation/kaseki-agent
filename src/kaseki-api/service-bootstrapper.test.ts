@@ -247,12 +247,10 @@ describe('ServiceBootstrapper', () => {
       expect(mockExit).toHaveBeenCalledWith(0);
     });
 
-    it('should enforce hard timeout on graceful shutdown', async () => {
-      // For this test, we DO NOT await gracefulShutdown because it will hang
-      // We want to test that the timeout fires.
+    it('should enforce hard timeout on graceful shutdown', () => {
+      jest.useFakeTimers();
       const mockExit = jest.fn() as unknown as (code: number) => never;
-
-      // Make webhook shutdown never resolve
+      const forceExitAfterMs = 50;
       const hungWebhookShutdown = new Promise<void>(() => {});
       const mockServices = {
         scheduler: { shutdown: jest.fn() },
@@ -260,20 +258,21 @@ describe('ServiceBootstrapper', () => {
         idempotencyStore: { shutdown: jest.fn() },
       };
 
-      // Use real timers but a very short timeout
-      gracefulShutdown({
+      void gracefulShutdown({
         server: mockServer as Server,
         scheduler: mockServices.scheduler,
         webhookManager: mockServices.webhookManager,
         idempotencyStore: mockServices.idempotencyStore,
         exit: mockExit,
-        forceExitAfterMs: 50,
+        forceExitAfterMs,
       });
 
-      // Wait for the timeout to fire
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(jest.getTimerCount()).toBe(1);
+
+      jest.advanceTimersByTime(forceExitAfterMs);
 
       expect(mockExit).toHaveBeenCalledWith(1);
+      jest.useRealTimers();
     });
 
     it('should handle server close errors gracefully', async () => {
