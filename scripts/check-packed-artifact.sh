@@ -19,6 +19,10 @@ fi
 package_tgz="${tgz_files[0]}"
 tar -xzf "$package_tgz" -C "$EXTRACT_DIR"
 
+# Resolve production dependencies as they would be available beside an installed
+# package without performing another network-dependent npm install.
+ln -s "$ROOT_DIR/node_modules" "$EXTRACT_DIR/package/node_modules"
+
 cli_file="$EXTRACT_DIR/package/dist/cli/KasekiCLI.js"
 if [[ ! -f "$cli_file" ]]; then
   printf 'Packed artifact is missing expected file: package/dist/cli/KasekiCLI.js\n' >&2
@@ -35,11 +39,14 @@ if ! grep -Fq "import('./commands/SetupCommand.js')" "$cli_file"; then
   exit 1
 fi
 
-PACKED_DIST_DIR="$EXTRACT_DIR/package/dist" node <<'NODE'
+PACKED_PACKAGE_DIR="$EXTRACT_DIR/package" node <<'NODE'
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
-const distDir = process.env.PACKED_DIST_DIR;
+const packageDir = process.env.PACKED_PACKAGE_DIR;
+const distDir = path.join(packageDir, 'dist');
+const distLibDir = path.join(distDir, 'lib');
 const pattern = /import\(\s*(['"])(\.{1,2}\/(?:[^'"]*?(?:\/|^))?[^'".\/]+)\1\s*\)/g;
 const matches = [];
 
@@ -77,8 +84,22 @@ function scanFile(filePath) {
   }
 }
 
-if (!distDir || !fs.existsSync(distDir)) {
+if (!packageDir || !fs.existsSync(distDir)) {
   console.error(`Packed dist directory does not exist: ${distDir}`);
+  process.exit(1);
+}
+
+if (!fs.existsSync(distLibDir)) {
+  console.error(`Packed artifact is missing expected directory: ${path.relative(packageDir, distLibDir)}`);
+  process.exit(1);
+}
+
+const distLibModules = fs.readdirSync(distLibDir, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+  .map((entry) => path.join(distLibDir, entry.name));
+
+if (distLibModules.length === 0) {
+  console.error('Packed artifact contains no runtime modules in dist/lib/');
   process.exit(1);
 }
 
@@ -91,6 +112,24 @@ if (matches.length > 0) {
   }
   process.exit(1);
 }
+
+(async () => {
+  for (const modulePath of distLibModules) {
+    try {
+      await import(pathToFileURL(modulePath).href);
+    } catch (error) {
+      console.error(`Unable to import packed runtime module ${path.relative(packageDir, modulePath)}:`);
+      console.error(error);
+      process.exit(1);
+    }
+  }
+
+  console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules.`);
+})().catch((error) => {
+  console.error('Unexpected error during module import validation:');
+  console.error(error);
+  process.exit(1);
+});
 NODE
 
-printf '✓ Packed artifact contains SetupCommand.js dynamic import and no extensionless relative dynamic imports.\n'
+printf '✓ Packed artifact contains dist/lib runtime modules, SetupCommand.js dynamic import, and no extensionless relative dynamic imports.\n'
