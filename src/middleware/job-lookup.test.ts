@@ -83,16 +83,14 @@ describe('jobLookupMiddleware', () => {
     middleware(mockReq as Request, mockRes as Response, next);
 
     expect(mockRes.status).toHaveBeenCalledWith(400);
-    expect(nextCalled).toBe(false);
-  });
-
-  it('should not call scheduler.getJob when job ID is missing', () => {
-    mockReq.params = {};
-
-    const middleware = jobLookupMiddleware(mockScheduler);
-    middleware(mockReq as Request, mockRes as Response, next);
-
+    expect(mockRes.json).toHaveBeenCalledWith({
+      type: 'https://api.kaseki.local/errors#bad-request',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'Job ID is required',
+    });
     expect(mockScheduler.getJob).not.toHaveBeenCalled();
+    expect(nextCalled).toBe(false);
   });
 
   it('should return proper error response format for 404', () => {
