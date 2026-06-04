@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.61.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.60.0...v1.61.0) (2026-06-04)
+
+
+### Bug Fixes
+
+* harden packed-artifact runtime validation ([#574](https://github.com/CyanAutomation/kaseki-agent/issues/574)) ([8d0f8db](https://github.com/CyanAutomation/kaseki-agent/commit/8d0f8dba7e1c52d63101efa23e914ce6ff3e3586))
+* validate packed artifact from clean install ([893312f](https://github.com/CyanAutomation/kaseki-agent/commit/893312f7bf5743ade35ffa269b7fe57ab503b866))
+
+
+### Features
+
+* add exit code 86 for scouting validation failure and related troubleshooting steps ([0b0bc1e](https://github.com/CyanAutomation/kaseki-agent/commit/0b0bc1e2722fcb86b4076af5f62ea02160a03e08))
+
 # [1.60.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.59.0...v1.60.0) (2026-06-03)
 
 
