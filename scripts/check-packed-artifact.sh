@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-pack.XXXXXX")"
-EXTRACT_DIR="$(mktemp -d "${TMPDIR}/extract.XXXXXX")"
+INSTALL_DIR="$(mktemp -d "${TMPDIR}/install.XXXXXX")"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$ROOT_DIR"
@@ -17,13 +17,18 @@ if [[ "${#tgz_files[@]}" -ne 1 ]]; then
 fi
 
 package_tgz="${tgz_files[0]}"
-tar -xzf "$package_tgz" -C "$EXTRACT_DIR"
+# Install the tarball and only its declared production dependencies into a clean
+# prefix so validation cannot accidentally use the repository's node_modules.
+npm install \
+  --prefix "$INSTALL_DIR" \
+  --ignore-scripts \
+  --omit=dev \
+  --no-audit \
+  --no-fund \
+  "$package_tgz" >/dev/null
 
-# Resolve production dependencies as they would be available beside an installed
-# package without performing another network-dependent npm install.
-ln -s "$ROOT_DIR/node_modules" "$EXTRACT_DIR/package/node_modules"
-
-cli_file="$EXTRACT_DIR/package/dist/cli/KasekiCLI.js"
+package_dir="$INSTALL_DIR/node_modules/@cyanautomation/kaseki-agent"
+cli_file="$package_dir/dist/cli/KasekiCLI.js"
 if [[ ! -f "$cli_file" ]]; then
   printf 'Packed artifact is missing expected file: package/dist/cli/KasekiCLI.js\n' >&2
   exit 1
@@ -39,10 +44,10 @@ if ! grep -Fq "import('./commands/SetupCommand.js')" "$cli_file"; then
   exit 1
 fi
 
-PACKED_PACKAGE_DIR="$EXTRACT_DIR/package" node <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const { pathToFileURL } = require('url');
+PACKED_PACKAGE_DIR="$package_dir" node --input-type=module <<'NODE'
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const packageDir = process.env.PACKED_PACKAGE_DIR;
 const distDir = path.join(packageDir, 'dist');
@@ -113,23 +118,17 @@ if (matches.length > 0) {
   process.exit(1);
 }
 
-(async () => {
-  for (const modulePath of distLibModules) {
-    try {
-      await import(pathToFileURL(modulePath).href);
-    } catch (error) {
-      console.error(`Unable to import packed runtime module ${path.relative(packageDir, modulePath)}:`);
-      console.error(error);
-      process.exit(1);
-    }
+for (const modulePath of distLibModules) {
+  try {
+    await import(pathToFileURL(modulePath).href);
+  } catch (error) {
+    console.error(`Unable to import packed runtime module ${path.relative(packageDir, modulePath)}:`);
+    console.error(error);
+    process.exit(1);
   }
+}
 
-  console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules.`);
-})().catch((error) => {
-  console.error('Unexpected error during module import validation:');
-  console.error(error);
-  process.exit(1);
-});
+console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules.`);
 NODE
 
 printf '✓ Packed artifact contains dist/lib runtime modules, SetupCommand.js dynamic import, and no extensionless relative dynamic imports.\n'
