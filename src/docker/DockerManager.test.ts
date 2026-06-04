@@ -1,5 +1,5 @@
 import { DockerManager, ContainerConfig } from './DockerManager';
-import { execSync, spawn } from 'child_process';
+import { execFileSync, execSync, spawn } from 'child_process';
 
 // Mock child_process
 jest.mock('child_process');
@@ -61,18 +61,32 @@ describe('DockerManager', () => {
   });
 
   describe('imageExists', () => {
-    it('should return true when image exists', () => {
-      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
-      const result = DockerManager.imageExists('test:latest');
-      expect(result).toBe(true);
-    });
+    it.each([
+      {
+        description: 'the image exists',
+        expectedResult: true,
+      },
+      {
+        description: 'the image inspection fails',
+        inspectionError: new Error('Image not found'),
+        expectedResult: false,
+      },
+    ])('safely inspects the image when $description', ({ inspectionError, expectedResult }) => {
+      if (inspectionError) {
+        (execFileSync as jest.Mock).mockImplementation(() => {
+          throw inspectionError;
+        });
+      } else {
+        (execFileSync as jest.Mock).mockReturnValue(Buffer.from(''));
+      }
 
-    it('should return false when image does not exist', () => {
-      (execSync as jest.Mock).mockImplementation(() => {
-        throw new Error('Image not found');
-      });
       const result = DockerManager.imageExists('test:latest');
-      expect(result).toBe(false);
+
+      expect(execFileSync).toHaveBeenCalledTimes(1);
+      expect(execFileSync).toHaveBeenCalledWith('docker', ['image', 'inspect', 'test:latest'], {
+        stdio: 'ignore',
+      });
+      expect(result).toBe(expectedResult);
     });
   });
 
