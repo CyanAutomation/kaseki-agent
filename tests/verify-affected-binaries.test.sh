@@ -56,6 +56,11 @@ assert.equal(
 );
 
 const routesModule = await import(pathToFileURL(routesPath));
+assert.equal(
+  typeof routesModule.classifyDockerFailure,
+  'function',
+  'kaseki-api-routes should export classifyDockerFailure',
+);
 const classification = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon');
 assert.match(
   classification.detail,
