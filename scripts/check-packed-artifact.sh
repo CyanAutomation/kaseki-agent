@@ -125,7 +125,11 @@ if (matches.length > 0) {
   }
 
   console.log(`✓ Imported ${distLibModules.length} packed dist/lib runtime modules.`);
-})();
+})().catch((error) => {
+  console.error('Unexpected error during module import validation:');
+  console.error(error);
+  process.exit(1);
+});
 NODE
 
 printf '✓ Packed artifact contains dist/lib runtime modules, SetupCommand.js dynamic import, and no extensionless relative dynamic imports.\n'
