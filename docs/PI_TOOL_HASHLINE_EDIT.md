@@ -11,6 +11,7 @@
 The `hashline_edit` tool enables Pi to perform file edits using hash-based content anchors instead of line numbers or text-based string replacement. This eliminates friction from context drift between read and edit phases.
 
 **Problem Solved**:
+
 - ✗ Current: String-based patches fail when file context changes between read and write
 - ✗ Current: Line number edits become stale after previous edits shift lines
 - ✗ Current: Retry loops consume tokens on patch failures
@@ -23,6 +24,7 @@ The `hashline_edit` tool enables Pi to perform file edits using hash-based conte
 ## Tool Definition
 
 ### Name
+
 ```
 hashline_edit
 ```
@@ -102,6 +104,7 @@ const hash = getLineHash('  return 42;'); // → 'a1b2c3d4'
 ### Collision Risk
 
 With 8-character SHA-256 prefixes:
+
 - Hash space: ~16.7 million possible values
 - In typical source files: <1% collision probability
 - Mitigation: If collision detected, runtime requests retry with more `context_lines`
@@ -121,6 +124,7 @@ With 8-character SHA-256 prefixes:
 ### Example: Good vs. Bad Anchors
 
 **✓ Good**: Single replacement with clear context
+
 ```json
 {
   "anchor": {
@@ -133,6 +137,7 @@ With 8-character SHA-256 prefixes:
 ```
 
 **✗ Bad**: Ambiguous or too loose context
+
 ```json
 {
   "anchor": {
@@ -164,6 +169,7 @@ Kaseki validates anchors and applies edit:
 ### Validation Failures
 
 #### Anchor Not Found
+
 ```json
 {
   "status": "rejected",
@@ -175,6 +181,7 @@ Kaseki validates anchors and applies edit:
 **Action**: Pi should retry with fresh file read
 
 #### End Anchor Not Within Context
+
 ```json
 {
   "status": "rejected",
@@ -186,6 +193,7 @@ Kaseki validates anchors and applies edit:
 **Action**: Pi should increase `context_lines` and retry
 
 #### File Not Found
+
 ```json
 {
   "status": "rejected",
@@ -221,6 +229,7 @@ pi --model "$KASEKI_MODEL" \
 ### Fallback Handling
 
 If Pi doesn't support `hashline_edit`:
+
 1. Kaseki removes tool from manifest
 2. Pi uses bash/write tools (existing behavior)
 3. No breaking changes; graceful degradation
@@ -242,6 +251,7 @@ export KASEKI_HASHLINE_EDITS=0
 ## Example Workflow
 
 ### 1. Pi Reads File
+
 ```python
 # Pi reads to understand structure
 with open('src/auth.ts', 'r') as f:
@@ -250,6 +260,7 @@ with open('src/auth.ts', 'r') as f:
 ```
 
 ### 2. Pi Calls hashline_edit
+
 ```json
 {
   "type": "tool_call",
@@ -267,6 +278,7 @@ with open('src/auth.ts', 'r') as f:
 ```
 
 ### 3. Kaseki Validates & Applies
+
 ```
 ✓ start_hash d4e5f6a7 found at line 45
 ✓ end_hash c8b9a0d1 found at line 50
@@ -276,6 +288,7 @@ with open('src/auth.ts', 'r') as f:
 ```
 
 ### 4. Validation Runs
+
 ```bash
 npm run test   # Runs with new code
 npm run build  # Compiles successfully
