@@ -375,6 +375,75 @@ write_host_state() {
   printf 'ok: state file written to %s\n' "$state_file"
 }
 
+# Phase 3: Error classification helper (categorize errors for remediation)
+classify_error() {
+  local error_message="$1"
+  
+  if echo "$error_message" | grep -iq 'permission denied'; then
+    echo "permission-denied"
+  elif echo "$error_message" | grep -iq 'read-only\|read only'; then
+    echo "read-only-mount"
+  elif echo "$error_message" | grep -iq 'ownership'; then
+    echo "ownership-mismatch"
+  elif echo "$error_message" | grep -iq 'not found\|does not exist'; then
+    echo "not-found"
+  elif echo "$error_message" | grep -iq 'timeout'; then
+    echo "timeout"
+  else
+    echo "unknown"
+  fi
+}
+
+# Phase 3: Enhanced setup results with structured output
+write_setup_results_enhanced() {
+  local home_dir="$1"
+  local exit_code="$2"
+  local message="$3"
+  local probe_status="${4:-unknown}"
+  local template_status="${5:-unknown}"
+  local kaseki_dir="$home_dir/.kaseki"
+  local results_file="$kaseki_dir/setup-results.json"
+
+  mkdir -p "$kaseki_dir"
+  chmod 0700 "$kaseki_dir"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    return 0  # jq not available, skip JSON generation
+  fi
+
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  local temp_file="${results_file}.tmp"
+  local status_name="ok"
+  [ "$exit_code" != "0" ] && status_name="failed"
+
+  jq -n \
+    --arg timestamp "$timestamp" \
+    --arg mode "$([ "$KASEKI_CHECK_ONLY" = "1" ] && echo "check-only" || echo "setup")" \
+    --arg status "$status_name" \
+    --arg message "$message" \
+    --arg exit_code "$exit_code" \
+    --arg version "2" \
+    --arg probe_status "$probe_status" \
+    --arg template_status "$template_status" \
+    '{
+      timestamp: $timestamp,
+      mode: $mode,
+      status: $status,
+      message: $message,
+      exit_code: ($exit_code | tonumber),
+      version: $version,
+      checks: {
+        checkout_freshness_probe: $probe_status,
+        template_ready: $template_status
+      }
+    }' > "$temp_file"
+
+  chmod 0644 "$temp_file"
+  mv "$temp_file" "$results_file"
+}
+
 write_setup_results() {
   local home_dir="$1"
   local exit_code="$2"
@@ -649,21 +718,25 @@ print_recreate_hint_if_needed
 
 # Phase 2: Template verification (hardened - check executability, not just existence)
 log_info "Stage 8: Template verification"
+template_status="unknown"
 if [ ! -f "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
   printf 'missing: template runner at %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
   printf 'remediation: run kaseki-agent host setup --fix\n'
+  template_status="missing"
   if [ "$KASEKI_FIX" != "1" ]; then
     status=1
   fi
 elif [ ! -x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
   printf 'error: template runner exists but is not executable: %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
   printf 'remediation: run chmod +x %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
+  template_status="not-executable"
   if [ "$KASEKI_FIX" = "1" ]; then
     chmod +x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" 2>/dev/null || true
   fi
   status=1
 else
   log_pass "Template runner is ready and executable"
+  template_status="ok"
 fi
 echo ""
 
@@ -674,8 +747,8 @@ if [ "$KASEKI_RECREATE_API" = "1" ]; then
   echo ""
 fi
 
-# Final results
-write_setup_results "$KASEKI_EFFECTIVE_HOST_HOME" "$status" "Setup complete"
+# Phase 3: Final results with enhanced structured output
+write_setup_results_enhanced "$KASEKI_EFFECTIVE_HOST_HOME" "$status" "Setup complete" "$checkout_probe_status" "$template_status"
 
 if [ "$status" -ne 0 ]; then
   log_error "Kaseki host setup incomplete. Details above." >&2
