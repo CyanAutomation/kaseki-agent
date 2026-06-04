@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-pack.XXXXXX")"
-INSTALL_DIR="$(mktemp -d "${TMPDIR}/install.XXXXXX")"
+INSTALL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-install.XXXXXX")"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$ROOT_DIR"
