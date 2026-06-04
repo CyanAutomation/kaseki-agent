@@ -25,12 +25,26 @@ KASEKI_ROOT="$TMP_DIR/kaseki"
 REPO_URL='https://example.com/repo"quoted"'
 GIT_REF='feature/"quoted"/branch'
 OPENROUTER_API_KEY_FILE="$TMP_DIR/missing-secret"
-DOCKER_BIN="$(command -v docker || true)"
-if [ -z "$DOCKER_BIN" ]; then
-  echo "Skipping run-kaseki-json.test.sh because docker is not available" >&2
+FAKE_BIN="$TMP_DIR/bin"
+FAKE_DOCKER_LOG="$TMP_DIR/docker.log"
+mkdir -p "$FAKE_BIN"
+
+cat > "$FAKE_BIN/docker" <<'DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" >> "$FAKE_DOCKER_LOG"
+if [ "${1:-}" = "system" ] && [ "${2:-}" = "df" ] && [ "$#" -eq 2 ]; then
+  printf 'fake docker disk usage\n'
   exit 0
 fi
-TEST_PATH="$(dirname "$DOCKER_BIN"):/usr/bin:/bin"
+
+printf 'Unexpected fake docker invocation: %s\n' "$*" >&2
+exit 99
+DOCKER
+chmod +x "$FAKE_BIN/docker"
+TEST_PATH="$FAKE_BIN:/usr/bin:/bin"
+export FAKE_DOCKER_LOG
 
 set +e
 env \
@@ -86,7 +100,7 @@ env \
   REPO_URL="$REPO_URL" \
   GIT_REF="$GIT_REF" \
   OPENROUTER_API_KEY_FILE="$OPENROUTER_API_KEY_FILE" \
-  "$ROOT_DIR/run-kaseki.sh" >/tmp/kaseki-json-rerun.out 2>/tmp/kaseki-json-rerun.err
+  "$ROOT_DIR/run-kaseki.sh" >"$TMP_DIR/rerun.out" 2>"$TMP_DIR/rerun.err"
 rerun_status=$?
 set -e
 
@@ -102,5 +116,17 @@ fi
 
 if grep -q "node: command not found" "$result_dir/stderr.log"; then
   echo "run-kaseki.sh should not require node on the host" >&2
+  exit 1
+fi
+
+if [ "$(grep -Fxc 'system df' "$FAKE_DOCKER_LOG")" -ne 2 ]; then
+  echo "Expected fake Docker cleanup probe to run once per invocation" >&2
+  cat "$FAKE_DOCKER_LOG" >&2
+  exit 1
+fi
+
+if grep -Fqv 'system df' "$FAKE_DOCKER_LOG"; then
+  echo "Unexpected fake Docker invocation recorded" >&2
+  cat "$FAKE_DOCKER_LOG" >&2
   exit 1
 fi
