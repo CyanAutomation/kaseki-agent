@@ -116,8 +116,8 @@ export class ToolReliabilityAggregator {
       this.totalToolCalls === 0
         ? 0
         : Math.round(
-            (this.successfulToolCalls / this.totalToolCalls) * 10000
-          ) / 100;
+          (this.successfulToolCalls / this.totalToolCalls) * 10000
+        ) / 100;
 
     return {
       total_tool_calls: this.totalToolCalls,
