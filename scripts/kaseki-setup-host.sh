@@ -260,7 +260,7 @@ run_checkout_freshness_probe() {
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ]; then
     # Phase 4: Parallel privilege tool testing
-    run_privilege_tools_parallel "$checkout_dir" "${probe_command[@]}" "$stderr_file" "$resolved_user_name" "$resolved_group_name" || true
+    run_privilege_tools_parallel "$checkout_dir" "$stderr_file" "$resolved_user_name" "$resolved_group_name" "${probe_command[@]}" || true
   else
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   fi
@@ -347,10 +347,11 @@ write_host_state() {
 # Runs privilege tools in parallel and returns success on first success
 run_privilege_tools_parallel() {
   local checkout_dir="$1"
-  local probe_command=("${2[@]}")
-  local stderr_file="$3"
-  local resolved_user_name="$4"
-  local resolved_group_name="$5"
+  local stderr_file="$2"
+  local resolved_user_name="$3"
+  local resolved_group_name="$4"
+  shift 4
+  local probe_command=("$@")
   
   local temp_dir
   temp_dir=$(mktemp -d)
