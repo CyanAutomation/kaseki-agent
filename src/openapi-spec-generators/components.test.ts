@@ -105,13 +105,6 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('buildServers', () => {
-    it('should return array of server definitions', () => {
-      const servers = buildServers();
-
-      expect(Array.isArray(servers)).toBe(true);
-      expect(servers.length).toBeGreaterThan(0);
-    });
-
     it('should include localhost development server', () => {
       const servers = buildServers();
       const localhost = servers.find((s) => (s.url as string).includes('localhost'));
