@@ -62,6 +62,11 @@ assert.equal(
   'kaseki-api-routes should export classifyDockerFailure',
 );
 const classification = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon');
+const classification = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon');
+assert.ok(
+  classification && typeof classification === 'object',
+  'classifyDockerFailure should return an object',
+);
 assert.match(
   classification.detail,
   /unreachable/,
