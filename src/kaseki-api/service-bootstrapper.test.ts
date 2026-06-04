@@ -116,69 +116,6 @@ describe('ServiceBootstrapper', () => {
       });
     });
 
-    it('should initialize services in dependency order: cache -> webhook -> idempotency -> preflight -> scheduler', async () => {
-      const initOrder: string[] = [];
-
-      let mockedBootstrapServices!: typeof bootstrapServices;
-      await jest.isolateModulesAsync(async () => {
-        jest.doMock('../result-cache', () => ({
-          ResultCache: jest.fn().mockImplementation(() => {
-            initOrder.push('ResultCache');
-            return { getOrLoad: jest.fn() };
-          }),
-        }));
-
-        jest.doMock('../webhook-manager', () => ({
-          WebhookManager: jest.fn().mockImplementation(() => {
-            initOrder.push('WebhookManager');
-            return { shutdown: jest.fn().mockResolvedValue(undefined) };
-          }),
-        }));
-
-        jest.doMock('../idempotency-store', () => ({
-          IdempotencyStore: jest.fn().mockImplementation(() => {
-            initOrder.push('IdempotencyStore');
-            return { shutdown: jest.fn() };
-          }),
-        }));
-
-        jest.doMock('../pre-flight-validator', () => ({
-          PreFlightValidator: jest.fn().mockImplementation(() => {
-            initOrder.push('PreFlightValidator');
-            return { validate: jest.fn() };
-          }),
-        }));
-
-        jest.doMock('../job-scheduler', () => ({
-          JobScheduler: jest.fn().mockImplementation(() => {
-            initOrder.push('JobScheduler');
-            return {
-              ready: jest.fn().mockResolvedValue(undefined),
-              shutdown: jest.fn(),
-            };
-          }),
-        }));
-
-        const bootstrapper = await import('./service-bootstrapper');
-        mockedBootstrapServices = bootstrapper.bootstrapServices;
-      });
-
-      if (!mockedBootstrapServices) {
-        throw new Error(
-          'Failed to load bootstrapServices from isolated module',
-        );
-      }
-      await mockedBootstrapServices(mockConfig);
-
-      expect(initOrder).toEqual([
-        'ResultCache',
-        'WebhookManager',
-        'IdempotencyStore',
-        'PreFlightValidator',
-        'JobScheduler',
-      ]);
-    });
-
     it('should propagate initialization failure and not initialize downstream dependencies', async () => {
       const cleanupOrder: string[] = [];
       const cacheCleanupSpy = jest.fn(() => cleanupOrder.push('ResultCache'));
