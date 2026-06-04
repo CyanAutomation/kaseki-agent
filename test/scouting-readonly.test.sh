@@ -111,7 +111,7 @@ fi
 # Check for diagnostic files
 if [ -f "$TEST_RESULTS/filesystem-readonly-reason.txt" ]; then
   printf "%b✓ PASS: Diagnostic file created: filesystem-readonly-reason.txt%b\n" "$GREEN" "$NC"
-  printf "  Reason: $(cat "$TEST_RESULTS/filesystem-readonly-reason.txt")\n"
+  printf "  Reason: %s\n" "$(cat "$TEST_RESULTS/filesystem-readonly-reason.txt")"
 else
   printf "%b⚠ WARN: Diagnostic file not found: filesystem-readonly-reason.txt%b\n" "$YELLOW" "$NC"
 fi

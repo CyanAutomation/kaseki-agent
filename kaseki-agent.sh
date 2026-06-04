@@ -625,6 +625,7 @@ validate_scouting_artifact() {
       reason_code="missing_file"
       reason_details="1 critical scouting validation error: scouting-candidate.json"
     fi
+    # shellcheck disable=SC2016
     node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount /results as read-write (docker run -v /path:/results:rw)" : "ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>> /results/scouting-stderr.log || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
