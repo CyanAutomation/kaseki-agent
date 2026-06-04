@@ -124,7 +124,7 @@ for (const modulePath of distLibModules) {
   } catch (error) {
     console.error(`Unable to import packed runtime module ${path.relative(packageDir, modulePath)}:`);
     console.error(error);
-    process.exit(1);
+    throw error;
   }
 }
 
