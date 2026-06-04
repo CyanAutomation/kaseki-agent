@@ -56,6 +56,10 @@ services:
       #   - API service stores persistent results in /agents/kaseki-results/{instance}
       #   - Auto-initializes /agents/kaseki-template on first startup
       - /agents:/agents:rw
+      # /agents/kaseki-results: Explicit mount for worker container access
+      #   - Worker containers spawned by API service need direct access to this directory
+      #   - Must be writable for scouting and validation artifacts
+      - /agents/kaseki-results:/agents/kaseki-results:rw
       # Secrets: one read-only host directory mount. Put all required files in
       # /home/pi/secrets, or set KASEKI_HOST_SECRETS_DIR to another directory.
       - ${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro
