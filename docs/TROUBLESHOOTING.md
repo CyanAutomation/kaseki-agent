@@ -20,6 +20,8 @@ Exit Code?
   ├─ 6: Secret detected → Audit code for credentials
   ├─ 7: Validation failed → Check pre-validation.log or
       validation.log
+  ├─ 86: Scouting failed → Check Docker volume mounts
+      (read-only /results?)
   ├─ 124: Timeout → Increase KASEKI_AGENT_TIMEOUT_SECONDS
   └─ 127: Command not found → Verify installation
 ```
@@ -47,6 +49,7 @@ See [EXIT_CODES.md](EXIT_CODES.md) for detailed per-code reference. Quick lookup
   credentials |
 | **7** | Validation failed | pre-validation.log or validation.log | See "Validation
   Failures" below |
+| **86** | Scouting validation failed | filesystem-readonly-reason.txt, scouting-validation-errors.jsonl | Check /results volume mount flags (must be :rw) |
 | **124** | Agent timeout | pi-summary.json `elapsed_seconds` | Increase
   KASEKI_AGENT_TIMEOUT_SECONDS |
 | **127** | Command not found | stdout.log, stderr.log | Reinstall; verify
@@ -194,6 +197,144 @@ After fixing permissions, verify the startup checks pass:
 # Or restart the service
 docker-compose restart kaseki-api
 ```
+
+---
+
+## Read-Only Filesystem Issues (Exit Code 86)
+
+### Problem: Scouting Fails with Exit Code 86
+
+**Symptoms:**
+
+- Container exits with code 86 immediately after scouting phase
+- Error message: "scouting-candidate.json" missing
+- stderr shows: "Read-only file system"
+- File `/results/filesystem-readonly-reason.txt` exists and indicates read-only mount
+
+**Root Cause:**
+
+The `/results` directory is mounted with read-only (`:ro`) flag, preventing the scouting Pi agent from writing the artifact file. This is different from the `--read-only` container security flag, which is intentional security hardening. The issue is an accidental read-only mount flag on the `/results` volume.
+
+### Diagnosis
+
+1. **Check filesystem status:**
+
+   ```bash
+   cat /agents/kaseki-results/kaseki-N/filesystem-readonly-reason.txt
+   cat /agents/kaseki-results/kaseki-N/filesystem-writable-at-start.txt
+   ```
+
+2. **Check scouting validation errors:**
+
+   ```bash
+   cat /agents/kaseki-results/kaseki-N/scouting-validation-errors.jsonl
+   ```
+
+3. **Verify /results volume mount (if using run-kaseki.sh):**
+
+   ```bash
+   # Check the run-kaseki.sh script:
+   grep -A 5 "RESULT_DIR.*results" run-kaseki.sh
+   
+   # Should show:
+   # -v "$RESULT_DIR:/results:rw"  ← must have :rw flag
+   ```
+
+4. **Verify /results volume mount (if using docker-compose.yml):**
+
+   ```bash
+   # Check the docker-compose.yml:
+   grep -A 2 "volumes:" docker-compose.yml
+   
+   # Should show /results as writable:
+   # /agents:/agents:rw
+   # (or /results:/results:rw if mounted separately)
+   ```
+
+### Fixes
+
+#### Fix 1: For `run-kaseki.sh` (single-run execution)
+
+Verify the volume mount has `:rw` flag:
+
+```bash
+# Correct:
+docker run -v /path/to/results:/results:rw kaseki-template:latest
+
+# Wrong (causes exit 86):
+docker run -v /path/to/results:/results:ro kaseki-template:latest
+```
+
+The `run-kaseki.sh` script should automatically set `:rw`, but if it doesn't, edit the script and verify line ~1104:
+
+```bash
+-v "$RESULT_DIR:/results:rw"  # ← Must have :rw flag
+```
+
+#### Fix 2: For `docker-compose.yml` (API service)
+
+Ensure `/results` is mounted as writable:
+
+```yaml
+services:
+  kaseki-api:
+    volumes:
+      - /agents:/agents:rw  # ← Correct: includes /results
+      # or explicitly:
+      - /agents/kaseki-results:/results:rw  # ← Also correct
+```
+
+Do NOT mount `/results` with `:ro` flag.
+
+#### Fix 3: For container with `--read-only` flag
+
+The `--read-only` container flag is intentional security hardening. To make it compatible with artifact writing:
+
+**Option A: Use volume mount with :rw flag** (Recommended)
+
+```bash
+docker run --read-only \
+  -v /agents/kaseki-results:/results:rw \  # ← Override read-only for /results
+  kaseki-template:latest
+```
+
+**Option B: Use tmpfs mount** (In-memory, cleared on container exit)
+
+```bash
+docker run --read-only \
+  --tmpfs /results:rw,size=256m \  # ← tmpfs allows writes even in read-only container
+  kaseki-template:latest
+```
+
+**Option C: Remove --read-only flag** (Less secure)
+
+```bash
+docker run \
+  -v /agents/kaseki-results:/results:rw \
+  kaseki-template:latest
+```
+
+### Prevention
+
+1. Always use `:rw` flag for artifact volume mounts:
+
+   ```bash
+   -v "$RESULT_DIR:/results:rw"  # Always add :rw
+   ```
+
+2. In docker-compose.yml, mount `/agents` as writable (which includes `/results`):
+
+   ```yaml
+   volumes:
+     - /agents:/agents:rw  # ← Covers /agents/kaseki-results too
+   ```
+
+3. Verify volume mounts before running:
+
+   ```bash
+   # Check what's mounted in the container
+   docker inspect <container-id> | jq '.Mounts'
+   ```
 
 ---
 
