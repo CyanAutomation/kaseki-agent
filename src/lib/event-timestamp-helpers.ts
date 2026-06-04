@@ -16,7 +16,7 @@ export interface PiEvent {
     model?: string;
     api?: string;
     timestamp?: string | number;
-    content?: Array<{ type: string }>;
+    content?: Array<{ type: string; text?: string }>;
   };
   assistantMessageEvent?: {
     type?: string;
@@ -24,13 +24,13 @@ export interface PiEvent {
       model?: string;
       api?: string;
       timestamp?: string | number;
-      content?: Array<{ type: string }>;
+      content?: Array<{ type: string; text?: string }>;
     };
     partial?: {
       model?: string;
       api?: string;
       timestamp?: string | number;
-      content?: Array<{ type: string }>;
+      content?: Array<{ type: string; text?: string }>;
     };
   };
 }

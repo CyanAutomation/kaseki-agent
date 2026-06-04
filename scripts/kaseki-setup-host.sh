@@ -213,30 +213,6 @@ normalize_secrets_dir() {
   done
 }
 
-verify_permission_changes() {
-  local dir="$1" expected_owner="$2" expected_mode="$3"
-  local actual_owner actual_mode
-  
-  if [ ! -d "$dir" ]; then
-    return 1
-  fi
-  
-  actual_owner=$(stat -c '%U:%G' "$dir" 2>/dev/null || stat -f '%Su:%Sg' "$dir" 2>/dev/null || echo "unknown:unknown")
-  actual_mode=$(stat -c '%a' "$dir" 2>/dev/null || stat -f '%OLp' "$dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/' || echo "unknown")
-  
-  if [ "$actual_owner" != "$expected_owner" ]; then
-    printf 'warning: ownership mismatch for %s (actual: %s, expected: %s). May be on read-only mount.\n' "$dir" "$actual_owner" "$expected_owner" >&2
-    return 1
-  fi
-  
-  if [ "$actual_mode" != "$expected_mode" ]; then
-    printf 'warning: permission mismatch for %s (actual: %s, expected: %s). May be on read-only mount.\n' "$dir" "$actual_mode" "$expected_mode" >&2
-    return 1
-  fi
-  
-  return 0
-}
-
 run_checkout_freshness_probe() {
   local checkout_dir="$1"
   local probe_status="skipped"
@@ -365,25 +341,6 @@ write_host_state() {
   mv "$temp_file" "$state_file"
   
   printf 'ok: state file written to %s\n' "$state_file"
-}
-
-# Phase 3: Error classification helper (categorize errors for remediation)
-classify_error() {
-  local error_message="$1"
-  
-  if echo "$error_message" | grep -iq 'permission denied'; then
-    echo "permission-denied"
-  elif echo "$error_message" | grep -iq 'read-only\|read only'; then
-    echo "read-only-mount"
-  elif echo "$error_message" | grep -iq 'ownership'; then
-    echo "ownership-mismatch"
-  elif echo "$error_message" | grep -iq 'not found\|does not exist'; then
-    echo "not-found"
-  elif echo "$error_message" | grep -iq 'timeout'; then
-    echo "timeout"
-  else
-    echo "unknown"
-  fi
 }
 
 # Phase 4: Parallel privilege tool testing helper
@@ -735,7 +692,6 @@ recreate_api_if_requested() {
 }
 
 status=0
-script_start_time=$(date +%s%N)
 
 # Phase 1: Host Prerequisites validation
 log_info "Stage 1: Host Prerequisites"

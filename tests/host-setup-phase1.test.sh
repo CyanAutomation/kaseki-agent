@@ -21,17 +21,6 @@ TESTS_FAILED=0
 TESTS_SKIPPED=0
 
 # Test utilities
-assert_exit_code() {
-  local expected="$1" actual="$2" test_name="$3"
-  if [ "$actual" = "$expected" ]; then
-    TESTS_PASSED=$((TESTS_PASSED + 1))
-    [ "$VERBOSE" = "1" ] && echo "  ✓ $test_name (exit=$actual)"
-  else
-    TESTS_FAILED=$((TESTS_FAILED + 1))
-    echo "  ✗ $test_name (expected=$expected, actual=$actual)" >&2
-  fi
-}
-
 assert_file_exists() {
   local file="$1" test_name="$2"
   if [ -f "$file" ]; then
@@ -70,15 +59,17 @@ assert_json_valid() {
   fi
 }
 
-# --- Phase 1 Tests ---
-
 # Test 1: validation-stages.sh exists and is executable
 test_validation_stages_exists() {
   echo "Test 1: validation-stages.sh exists"
   assert_file_exists "$SCRIPT_DIR/scripts/validation-stages.sh" "validation-stages.sh is present"
-  [ -x "$SCRIPT_DIR/scripts/validation-stages.sh" ] && \
-    { TESTS_PASSED=$((TESTS_PASSED + 1)); [ "$VERBOSE" = "1" ] && echo "  ✓ validation-stages.sh is executable"; } || \
-    { TESTS_FAILED=$((TESTS_FAILED + 1)); echo "  ✗ validation-stages.sh is not executable" >&2; }
+  if [ -x "$SCRIPT_DIR/scripts/validation-stages.sh" ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    [ "$VERBOSE" = "1" ] && echo "  ✓ validation-stages.sh is executable"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  ✗ validation-stages.sh is not executable" >&2
+  fi
 }
 
 # Test 2: validation-stages.sh sources without error
