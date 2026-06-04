@@ -180,4 +180,123 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.lines).toHaveLength(2);
     expect(result.summary.invalid_json_lines).toBe(1);
   });
+
+  test('tracks tool reliability metrics in summary', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: { model: 'test-model', api: 'test-api' },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          model: 'test-model',
+          api: 'test-api',
+          content: [{ type: 'output_text', text: 'Successfully completed' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:01.500Z',
+        message: { model: 'test-model', api: 'test-api' },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        message: {
+          model: 'test-model',
+          api: 'test-api',
+          content: [{ type: 'output_text', text: 'Error: operation failed' }],
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.tool_reliability).toBeDefined();
+    expect(result.summary.tool_reliability?.total_tool_calls).toBe(2);
+    expect(result.summary.tool_reliability?.successful_tool_calls).toBe(1);
+    expect(result.summary.tool_reliability?.failed_tool_calls).toBe(1);
+    expect(result.summary.tool_reliability?.success_rate_percent).toBe(50);
+  });
+
+  test('includes per-tool statistics in summary', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: { model: 'test-model', api: 'test-api' },
+        tool_name: 'read_file',
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          model: 'test-model',
+          api: 'test-api',
+          content: [{ type: 'output_text', text: 'Success' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: '2026-01-01T00:00:01.500Z',
+        message: { model: 'test-model', api: 'test-api' },
+        tool_name: 'read_file',
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: '2026-01-01T00:00:02.000Z',
+        message: {
+          model: 'test-model',
+          api: 'test-api',
+          content: [{ type: 'output_text', text: 'Error: timeout' }],
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.tool_stats).toBeDefined();
+    expect(result.summary.tool_stats?.read_file).toBeDefined();
+    expect(result.summary.tool_stats?.read_file.total).toBe(2);
+    expect(result.summary.tool_stats?.read_file.successful).toBe(1);
+    expect(result.summary.tool_stats?.read_file.failed).toBe(1);
+    expect(result.summary.tool_stats?.read_file.success_rate_percent).toBe(50);
+  });
+
+  test('tracks execution time metrics (API vs tool)', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'agent_start',
+        timestamp: 1000, // Unix epoch in seconds
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: 1000.5,
+        message: { model: 'test-model', api: 'test-api' },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: 1001,
+        message: {
+          model: 'test-model',
+          api: 'test-api',
+          content: [{ type: 'output_text', text: 'Success' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'agent_end',
+        timestamp: 1005, // 5 seconds after start
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.execution_time).toBeDefined();
+    expect(result.summary.execution_time?.api_time_seconds).toBe(5);
+    expect(result.summary.execution_time?.tool_time_seconds).toBe(0);
+    expect(result.summary.execution_time?.total_time_seconds).toBe(5);
+  });
 });
