@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.62.0...v1.62.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* correct argument order in run_privilege_tools_parallel function ([1f9d1e7](https://github.com/CyanAutomation/kaseki-agent/commit/1f9d1e705035ad9c920ef0f4736ed42e9433d620))
+
 # [1.62.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.61.0...v1.62.0) (2026-06-04)
 
 
