@@ -376,6 +376,48 @@ resolve_github_secret_file() {
   printf '%s' "$canonical_path"
 }
 
+check_results_writable() {
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  log_info "Checking $results_dir writability for scouting/validation artifacts..."
+
+  if [ ! -d "$results_dir" ]; then
+    log_error "$results_dir is not mounted (critical for kaseki operations)"
+    log_error "  Fix: Mount $results_dir as a writable volume on the host"
+    return 2
+  fi
+
+  if [ ! -w "$results_dir" ]; then
+    log_error "$results_dir exists but is NOT WRITABLE by UID $CONTAINER_UID (READ-ONLY filesystem detected)"
+    log_error "  This will cause scouting and validation to fail silently:"
+    log_error "  - Scouting agent will exit 0 but /results/scouting-candidate.json will be missing"
+    log_error "  - Validation logs and artifacts cannot be written"
+    log_error "  "
+    log_error "  Fix 1 (Preferred): Mount /results as read-write"
+    log_error "    docker run -v /path/to/results:/results:rw ..."
+    log_error "  "
+    log_error "  Fix 2: Run container without --read-only flag"
+    log_error "    docker run --read-only=false ..."
+    log_error "  "
+    log_error "  Fix 3: Use a tmpfs overlay for /results"
+    log_error "    docker run --tmpfs /results:rw ..."
+    return 2
+  fi
+
+  # Test actual write capability with a temporary file
+  local test_file="$results_dir/.kaseki-writable-test-$$"
+  if ! touch "$test_file" 2>/dev/null; then
+    log_error "$results_dir appears writable but touch failed (unexpected filesystem error)"
+    return 2
+  fi
+  if ! rm -f "$test_file" 2>/dev/null; then
+    log_warn "$results_dir: write succeeded but delete failed (unusual permissions state)"
+    return 0  # Write succeeded, so treat as ok despite delete failure
+  fi
+
+  log_pass "$results_dir is writable (can create and delete test files)"
+  return 0
+}
+
 check_worker_mounts() {
   local -a worker_paths=(/workspace /results /cache)
   local exit_code=0
@@ -429,6 +471,7 @@ main() {
       ;;
     worker)
       check_worker_mounts || overall_exit=$?
+      check_results_writable || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))

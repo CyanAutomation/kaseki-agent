@@ -618,10 +618,14 @@ validate_scouting_artifact() {
 
   : > "$validation_error_file"
   if [ ! -f "$candidate_artifact" ]; then
-    reason_code="missing_file"
-    reason_details="1 critical scouting validation error: scouting-candidate.json"
-    # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const error={timestamp:new Date().toISOString(),reason_code:"missing_file",field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" 2>> /results/scouting-stderr.log || true
+    if [ -f /results/filesystem-readonly-reason.txt ]; then
+      reason_code="readonly_filesystem"
+      reason_details="1 critical scouting validation error: scouting-candidate.json missing due to read-only filesystem"
+    else
+      reason_code="missing_file"
+      reason_details="1 critical scouting validation error: scouting-candidate.json"
+    fi
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount /results as read-write (docker run -v /path:/results:rw)" : "ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>> /results/scouting-stderr.log || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
@@ -7274,6 +7278,66 @@ fi
 
 PI_VERSION="$(pi --version 2>&1 | head -n 1 || true)"
 printf 'Pi version: %s\n' "$PI_VERSION"
+
+# === Phase 1: Early Filesystem Diagnostics (Before Scouting) ===
+# Detects read-only filesystem constraints that would cause silent scouting failures
+check_filesystem_capabilities() {
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local filesystem_writable=true
+  local readonly_reason=""
+  
+  emit_progress "filesystem capabilities check" "verifying write capabilities for artifacts"
+  
+  # Test /results/ writability
+  if [ ! -w "$results_dir" ]; then
+    filesystem_writable=false
+    readonly_reason="/results is READ-ONLY (Docker mounted with :ro or container --read-only flag)"
+    emit_error_event "readonly_filesystem_detected" "$readonly_reason" "continue"
+    {
+      printf '\n[FILESYSTEM DIAGNOSTIC] READ-ONLY FILESYSTEM DETECTED\n'
+      printf 'Details:\n'
+      printf '  - Directory: %s\n' "$results_dir"
+      printf '  - Status: exists but NOT WRITABLE\n'
+      printf '  - Container UID: %d\n' "$(id -u)"
+      printf '  - Expected reason: Docker mounted with :ro flag or container --read-only\n'
+      printf '\nImpact:\n'
+      printf '  - Scouting Pi agent will exit 0 but /results/scouting-candidate.json will be MISSING\n'
+      printf '  - Validation logs and artifacts cannot be written\n'
+      printf '  - This causes exit code 86 (scouting validation failure)\n'
+      printf '\nFix: Remount /results as read-write\n'
+      printf '  docker run -v /path/to/results:/results:rw ...\n'
+      printf 'Or remove --read-only flag from Docker run command\n'
+    } | tee -a /results/scouting-stderr.log
+  else
+    # Test actual write capability
+    local test_file="$results_dir/.kaseki-fs-test-$$"
+    if ! touch "$test_file" 2>/dev/null; then
+      filesystem_writable=false
+      readonly_reason="/results is not writable (touch failed despite appearing writable)"
+      emit_error_event "filesystem_write_test_failed" "$readonly_reason" "continue"
+    else
+      rm -f "$test_file" 2>/dev/null || true
+      emit_progress "filesystem capabilities check" "✓ /results is writable"
+    fi
+  fi
+  
+  # Record in metadata for post-mortem analysis
+  printf '%s\n' "$filesystem_writable" > /results/filesystem-writable-at-start.txt
+  [ -n "$readonly_reason" ] && printf '%s\n' "$readonly_reason" > /results/filesystem-readonly-reason.txt
+  
+  if [ "$filesystem_writable" = "false" ]; then
+    if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ]; then
+      emit_progress "baseline validation preparation" "DISABLED due to read-only filesystem detected"
+      KASEKI_BASELINE_VALIDATION_ENABLED="0"
+      printf '[filesystem-diagnostic] Baseline validation auto-disabled due to read-only filesystem\n' | tee -a /results/quality.log
+    fi
+    return 1
+  fi
+  return 0
+}
+
+# Call diagnostics before scouting
+check_filesystem_capabilities || true  # non-fatal; scouting will fail with actionable exit 86
 
 # Goal-setting agent runs first (before scouting) to upgrade the user prompt into a mature goal
 if [ "$KASEKI_GOAL_SETTING" = "1" ]; then
