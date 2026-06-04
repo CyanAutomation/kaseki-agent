@@ -29,79 +29,91 @@ describe('ServiceBootstrapper', () => {
   });
 
   describe('bootstrapServices', () => {
-    it('should bootstrap service contracts and invoke each service method successfully', async () => {
-      const artifactGetOrLoad = jest.fn().mockResolvedValue('cached-result');
-      const webhookShutdown = jest.fn().mockResolvedValue(undefined);
-      const idempotencyShutdown = jest.fn();
-      const preFlightValidate = jest.fn().mockResolvedValue({ valid: true });
-      const schedulerShutdown = jest.fn();
+    it('should return wired services only after the scheduler is ready', async () => {
+      const artifactCache = { clearAll: jest.fn() };
+      const webhookManager = {
+        shutdown: jest.fn().mockResolvedValue(undefined),
+      };
+      const idempotencyStore = { shutdown: jest.fn() };
+      const preFlightValidator = { validate: jest.fn() };
+      let resolveSchedulerReady!: () => void;
+      const schedulerReady = new Promise<void>((resolve) => {
+        resolveSchedulerReady = resolve;
+      });
+      const scheduler = {
+        ready: jest.fn().mockReturnValue(schedulerReady),
+        shutdown: jest.fn(),
+      };
+      const resultCacheConstructor = jest.fn().mockReturnValue(artifactCache);
+      const webhookManagerConstructor = jest
+        .fn()
+        .mockReturnValue(webhookManager);
+      const idempotencyStoreConstructor = jest
+        .fn()
+        .mockReturnValue(idempotencyStore);
+      const preFlightValidatorConstructor = jest
+        .fn()
+        .mockReturnValue(preFlightValidator);
+      const schedulerConstructor = jest.fn().mockReturnValue(scheduler);
 
       let mockedBootstrapServices!: typeof bootstrapServices;
       await jest.isolateModulesAsync(async () => {
         jest.doMock('../result-cache', () => ({
-          ResultCache: jest
-            .fn()
-            .mockImplementation(() => ({ getOrLoad: artifactGetOrLoad })),
+          ResultCache: resultCacheConstructor,
         }));
-
         jest.doMock('../webhook-manager', () => ({
-          WebhookManager: jest
-            .fn()
-            .mockImplementation(() => ({ shutdown: webhookShutdown })),
+          WebhookManager: webhookManagerConstructor,
         }));
-
         jest.doMock('../idempotency-store', () => ({
-          IdempotencyStore: jest
-            .fn()
-            .mockImplementation(() => ({ shutdown: idempotencyShutdown })),
+          IdempotencyStore: idempotencyStoreConstructor,
         }));
-
         jest.doMock('../pre-flight-validator', () => ({
-          PreFlightValidator: jest
-            .fn()
-            .mockImplementation(() => ({ validate: preFlightValidate })),
+          PreFlightValidator: preFlightValidatorConstructor,
         }));
-
         jest.doMock('../job-scheduler', () => ({
-          JobScheduler: jest.fn().mockImplementation(() => ({
-            ready: jest.fn().mockResolvedValue(undefined),
-            shutdown: schedulerShutdown,
-          })),
+          JobScheduler: schedulerConstructor,
         }));
 
         const bootstrapper = await import('./service-bootstrapper');
         mockedBootstrapServices = bootstrapper.bootstrapServices;
       });
 
-      if (!mockedBootstrapServices) {
-        throw new Error(
-          'Failed to load bootstrapServices from isolated module',
-        );
-      }
-
-      const services = await mockedBootstrapServices(mockConfig);
-
-      await expect(
-        services.artifactCache.getOrLoad('cache-key' as any),
-      ).resolves.toBe('cached-result');
-      await expect(
-        services.preFlightValidator.validate({
-          repoUrl: 'https://example.com/repo.git',
-          ref: 'main',
-        } as any),
-      ).resolves.toEqual({ valid: true });
-      await expect(services.webhookManager.shutdown()).resolves.toBeUndefined();
-      services.idempotencyStore.shutdown();
-      services.scheduler.shutdown();
-
-      expect(artifactGetOrLoad).toHaveBeenCalledWith('cache-key');
-      expect(preFlightValidate).toHaveBeenCalledWith({
-        repoUrl: 'https://example.com/repo.git',
-        ref: 'main',
+      const bootstrapPromise = mockedBootstrapServices(mockConfig);
+      let bootstrapSettled = false;
+      void bootstrapPromise.then(() => {
+        bootstrapSettled = true;
       });
-      expect(webhookShutdown).toHaveBeenCalledTimes(1);
-      expect(idempotencyShutdown).toHaveBeenCalledTimes(1);
-      expect(schedulerShutdown).toHaveBeenCalledTimes(1);
+      await Promise.resolve();
+
+      expect(scheduler.ready).toHaveBeenCalledTimes(1);
+      expect(bootstrapSettled).toBe(false);
+      expect(resultCacheConstructor).toHaveBeenCalledWith({
+        maxEntries: mockConfig.artifactCacheMaxEntries,
+        ttlMs: mockConfig.artifactCacheTtlMs,
+        maxFileBytes: mockConfig.artifactCacheMaxFileBytes,
+      });
+      expect(webhookManagerConstructor).toHaveBeenCalledWith(
+        mockConfig.resultsDir,
+      );
+      expect(idempotencyStoreConstructor).toHaveBeenCalledWith(
+        mockConfig.resultsDir,
+        24,
+      );
+      expect(preFlightValidatorConstructor).toHaveBeenCalledWith();
+      expect(schedulerConstructor).toHaveBeenCalledWith(
+        mockConfig,
+        webhookManager,
+        artifactCache,
+      );
+
+      resolveSchedulerReady();
+      await expect(bootstrapPromise).resolves.toEqual({
+        artifactCache,
+        webhookManager,
+        idempotencyStore,
+        preFlightValidator,
+        scheduler,
+      });
     });
 
     it('should initialize services in dependency order: cache -> webhook -> idempotency -> preflight -> scheduler', async () => {
@@ -168,8 +180,11 @@ describe('ServiceBootstrapper', () => {
     });
 
     it('should propagate initialization failure and not initialize downstream dependencies', async () => {
-      const cacheCleanupSpy = jest.fn();
-      const webhookShutdownSpy = jest.fn().mockResolvedValue(undefined);
+      const cleanupOrder: string[] = [];
+      const cacheCleanupSpy = jest.fn(() => cleanupOrder.push('ResultCache'));
+      const webhookShutdownSpy = jest.fn(async () => {
+        cleanupOrder.push('WebhookManager');
+      });
       const schedulerCtorSpy = jest.fn();
       const preFlightCtorSpy = jest.fn();
       const initError = new Error('IdempotencyStore failed to initialize');
@@ -221,6 +236,7 @@ describe('ServiceBootstrapper', () => {
       expect(schedulerCtorSpy).not.toHaveBeenCalled();
       expect(webhookShutdownSpy).toHaveBeenCalledTimes(1);
       expect(cacheCleanupSpy).toHaveBeenCalledTimes(1);
+      expect(cleanupOrder).toEqual(['WebhookManager', 'ResultCache']);
     });
   });
 
