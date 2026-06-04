@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Kaseki host setup — Prepare host for Kaseki API service
+# Validates and fixes: /agents structure, secrets permissions, checkout freshness, bootstrap
+# Integrates with unified validation-stages.sh infrastructure for consistency
+#
+# Exit codes:
+#   0 = success (setup complete or already in good state)
+#   1 = fatal error (blocking operation or check failed)
+#   2 = permission/access error (likely fixable)
+
 KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
 KASEKI_CHECKOUT_DIR="${KASEKI_CHECKOUT_DIR:-$KASEKI_ROOT/kaseki-agent}"
@@ -8,8 +17,18 @@ KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_CONTAINER_UID="${KASEKI_CONTAINER_UID:-10000}"
 KASEKI_CONTAINER_GID="${KASEKI_CONTAINER_GID:-10000}"
 KASEKI_FIX="${KASEKI_FIX:-0}"
+KASEKI_CHECK_ONLY="${KASEKI_CHECK_ONLY:-0}"
 KASEKI_RECREATE_API="${KASEKI_RECREATE_API:-0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source validation infrastructure (Phase 1 consolidation)
+if [ -f "$SCRIPT_DIR/validation-stages.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/validation-stages.sh"
+else
+  printf 'error: validation-stages.sh not found at %s\n' "$SCRIPT_DIR/validation-stages.sh" >&2
+  exit 1
+fi
 
 detect_invoking_home() {
   if [ -n "${KASEKI_HOST_HOME:-}" ]; then
@@ -31,23 +50,41 @@ while [ "$#" -gt 0 ]; do
     --fix)
       KASEKI_FIX="1"
       ;;
+    --check-only)
+      KASEKI_CHECK_ONLY="1"
+      ;;
     --recreate-api)
       KASEKI_RECREATE_API="1"
       ;;
     --help|-h)
       cat <<HELP
-Usage: scripts/kaseki-setup-host.sh [--fix] [--recreate-api]
+Usage: scripts/kaseki-setup-host.sh [--fix] [--check-only] [--recreate-api]
 
-Checks and optionally prepares a Kaseki API host.
+Validates and optionally prepares a Kaseki API host.
 
 Options:
   --fix           Create/fix /agents, logs, secrets modes, and bootstrap when possible.
+  --check-only    Validate host state without making any changes (implies --no-fix).
   --recreate-api  Remove/recreate the kaseki-api container after fixing bind mounts.
 
 Environment:
-  KASEKI_HOST_SECRETS_DIR=$KASEKI_HOST_SECRETS_DIR
+  KASEKI_HOST_SECRETS_DIR=${KASEKI_EFFECTIVE_HOST_HOME:-~}/secrets
   KASEKI_CONTAINER_UID=$KASEKI_CONTAINER_UID
   KASEKI_CONTAINER_GID=$KASEKI_CONTAINER_GID
+
+Outputs:
+  ~/.kaseki/host-state.json       Host state and probe results
+  ~/.kaseki/setup-results.json    Structured validation results (Phase 1+)
+
+Examples:
+  # Validate current state without changes
+  kaseki-agent host setup --check-only
+
+  # Fix host setup
+  sudo kaseki-agent host setup --fix
+
+  # Fix and verify
+  sudo kaseki-agent host setup --fix && kaseki-agent host setup --check-only
 HELP
       exit 0
       ;;
@@ -58,6 +95,11 @@ HELP
   esac
   shift
 done
+
+# If --check-only is set, disable --fix
+if [ "$KASEKI_CHECK_ONLY" = "1" ]; then
+  KASEKI_FIX="0"
+fi
 
 run_privileged() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -295,6 +337,45 @@ write_host_state() {
   printf 'ok: state file written to %s\n' "$state_file"
 }
 
+write_setup_results() {
+  local home_dir="$1"
+  local exit_code="$2"
+  local message="$3"
+  local kaseki_dir="$home_dir/.kaseki"
+  local results_file="$kaseki_dir/setup-results.json"
+
+  mkdir -p "$kaseki_dir"
+  chmod 0700 "$kaseki_dir"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    return 0  # jq not available, skip JSON generation
+  fi
+
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+  local temp_file="${results_file}.tmp"
+
+  jq -n \
+    --arg timestamp "$timestamp" \
+    --arg mode "$([ "$KASEKI_CHECK_ONLY" = "1" ] && echo "check-only" || echo "setup")" \
+    --arg status "$([ "$exit_code" = "0" ] && echo "ok" || echo "failed")" \
+    --arg message "$message" \
+    --arg exit_code "$exit_code" \
+    --arg version "1" \
+    '{
+      timestamp: $timestamp,
+      mode: $mode,
+      status: $status,
+      message: $message,
+      exit_code: ($exit_code | tonumber),
+      version: $version
+    }' > "$temp_file"
+
+  chmod 0644 "$temp_file"
+  mv "$temp_file" "$results_file"
+}
+
 has_deleted_kaseki_bind_mount() {
   if ! command -v docker >/dev/null 2>&1; then
     return 1
@@ -453,46 +534,105 @@ recreate_api_if_requested() {
 
 status=0
 
-ensure_dir "$KASEKI_ROOT" 0775 || status=1
-ensure_dir "$KASEKI_ROOT/kaseki-results" 0775 || status=1
-ensure_dir "$KASEKI_ROOT/kaseki-runs" 0775 || status=1
-ensure_dir "$KASEKI_ROOT/kaseki-cache" 0775 || status=1
-ensure_dir "$KASEKI_LOG_DIR" 0775 || true
+# Phase 1: Host Prerequisites validation
+log_info "Stage 1: Host Prerequisites"
+validate_host_prerequisites || status=$?
+echo ""
 
-check_writable "$KASEKI_ROOT/kaseki-results" || status=1
+# Early exit if prerequisites fail in check-only mode
+if [ "$KASEKI_CHECK_ONLY" = "1" ] && [ "$status" -gt 0 ]; then
+  write_setup_results "$KASEKI_EFFECTIVE_HOST_HOME" "$status" "Prerequisites validation failed"
+  exit "$status"
+fi
 
-printf 'using host secrets directory: %s\n' "$KASEKI_HOST_SECRETS_DIR"
-normalize_secrets_dir "$KASEKI_HOST_SECRETS_DIR"
+# Ensure directories exist (only if --fix is set)
+if [ "$KASEKI_FIX" = "1" ]; then
+  log_info "Stage 2: Creating/fixing directories"
+  ensure_dir "$KASEKI_ROOT" 0775 || status=1
+  ensure_dir "$KASEKI_ROOT/kaseki-results" 0775 || status=1
+  ensure_dir "$KASEKI_ROOT/kaseki-runs" 0775 || status=1
+  ensure_dir "$KASEKI_ROOT/kaseki-cache" 0775 || status=1
+  ensure_dir "$KASEKI_LOG_DIR" 0775 || true
 
-fix_checkout_permissions_if_exists
-ensure_git_safe_directory
-verify_git_safe_directory
-bootstrap_checkout_if_possible || status=$?
+  check_writable "$KASEKI_ROOT/kaseki-results" || status=1
+  echo ""
 
+  # Normalize secrets permissions
+  log_info "Stage 3: Normalizing secrets directory"
+  normalize_secrets_dir "$KASEKI_HOST_SECRETS_DIR"
+  echo ""
+
+  # Fix checkout permissions and git safe.directory
+  log_info "Stage 4: Configuring git and checkout permissions"
+  fix_checkout_permissions_if_exists
+  ensure_git_safe_directory
+  verify_git_safe_directory
+  echo ""
+
+  # Bootstrap if possible (Phase 2: only if freshness probe will pass)
+  log_info "Stage 5: Bootstrap checkout"
+  bootstrap_checkout_if_possible || status=$?
+  echo ""
+else
+  # Check-only: report current state without changes
+  log_info "Stage 2-5: Check-only mode (no changes)"
+  printf 'using host secrets directory: %s\n' "$KASEKI_HOST_SECRETS_DIR"
+  check_writable "$KASEKI_ROOT/kaseki-results" || status=1
+  echo ""
+fi
+
+# Phase 2: Verify fixes applied (if --fix was used)
+if [ "$KASEKI_FIX" = "1" ]; then
+  log_info "Stage 6: Verifying fixes applied"
+  validate_host_fixes_applied || status=$?
+  echo ""
+fi
+
+# Checkout freshness probe
+log_info "Stage 7: Checkout freshness probe"
 probe_payload="$(run_checkout_freshness_probe "$KASEKI_CHECKOUT_DIR")"
 IFS="|" read -r checkout_probe_status checkout_probe_detail checkout_probe_remediation <<< "$probe_payload"
 printf "checkout-freshness-probe: %s\n" "$checkout_probe_status"
 printf "%s\n" "$checkout_probe_detail"
 if [ "$checkout_probe_status" != "ok" ] && [ -n "$checkout_probe_remediation" ]; then
   printf "remediation: %s\n" "$checkout_probe_remediation"
-  status=1
+  if [ "$KASEKI_FIX" = "1" ]; then
+    status=1  # Fail if --fix was used but probe failed
+  fi
 fi
+echo ""
 
+# Write host state
 write_host_state "$KASEKI_EFFECTIVE_HOST_HOME" "$KASEKI_HOST_SECRETS_DIR" "$checkout_probe_status" "$checkout_probe_detail" "$checkout_probe_remediation"
 print_recreate_hint_if_needed
 
+# Template verification
+log_info "Stage 8: Template verification"
 if [ ! -x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
   printf 'missing: template runner at %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
   printf 'remediation: run kaseki-agent host setup --fix\n'
   if [ "$KASEKI_FIX" != "1" ]; then
     status=1
   fi
+else
+  log_pass "Template runner is ready"
+fi
+echo ""
+
+# API recreation (if requested)
+if [ "$KASEKI_RECREATE_API" = "1" ]; then
+  log_info "Stage 9: API container recreation"
+  recreate_api_if_requested || status=$?
+  echo ""
 fi
 
-recreate_api_if_requested || status=$?
+# Final results
+write_setup_results "$KASEKI_EFFECTIVE_HOST_HOME" "$status" "Setup complete"
 
 if [ "$status" -ne 0 ]; then
-  printf 'kaseki host setup incomplete. Details above. Common remediation steps:\n' >&2
+  log_error "Kaseki host setup incomplete. Details above." >&2
+  printf '\n' >&2
+  printf 'Common remediation steps:\n' >&2
   printf '\n' >&2
   printf '1. Ensure git safe.directory is configured:\n' >&2
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
