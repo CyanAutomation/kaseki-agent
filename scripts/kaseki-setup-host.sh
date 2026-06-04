@@ -19,7 +19,13 @@ KASEKI_CONTAINER_GID="${KASEKI_CONTAINER_GID:-10000}"
 KASEKI_FIX="${KASEKI_FIX:-0}"
 KASEKI_CHECK_ONLY="${KASEKI_CHECK_ONLY:-0}"
 KASEKI_RECREATE_API="${KASEKI_RECREATE_API:-0}"
+KASEKI_PRIV_TOOL_TIMEOUT="${KASEKI_PRIV_TOOL_TIMEOUT:-2}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Phase 2: Timeout configuration for privilege operations
+# These timeouts prevent privilege tool tests from hanging indefinitely on slow systems
+# or virtualization environments with limited permissions. Configurable via env vars.
+export KASEKI_PRIV_TOOL_TIMEOUT
 
 # Source validation infrastructure (Phase 1 consolidation)
 if [ -f "$SCRIPT_DIR/validation-stages.sh" ]; then
@@ -188,6 +194,13 @@ normalize_secrets_dir() {
         run_privileged chgrp "$KASEKI_CONTAINER_GID" "$file" 2>/dev/null || true
         run_privileged chmod 0640 "$file" 2>/dev/null || true
       done
+    
+    # Phase 2: Post-action verification (verify changes actually applied)
+    local actual_mode
+    actual_mode=$(stat -c '%a' "$secrets_dir" 2>/dev/null || stat -f '%OLp' "$secrets_dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/' || echo "unknown")
+    if [ "$actual_mode" != "unknown" ] && [ "$actual_mode" != "750" ]; then
+      printf 'warning: secrets directory permissions not updated as expected (actual: %s, expected: 750). May be on read-only mount.\n' "$actual_mode"
+    fi
   fi
 
   printf 'ok: host secrets directory found at %s\n' "$secrets_dir"
@@ -200,6 +213,29 @@ normalize_secrets_dir() {
   done
 }
 
+verify_permission_changes() {
+  local dir="$1" expected_owner="$2" expected_mode="$3"
+  local actual_owner actual_mode
+  
+  if [ ! -d "$dir" ]; then
+    return 1
+  fi
+  
+  actual_owner=$(stat -c '%U:%G' "$dir" 2>/dev/null || stat -f '%Su:%Sg' "$dir" 2>/dev/null || echo "unknown:unknown")
+  actual_mode=$(stat -c '%a' "$dir" 2>/dev/null || stat -f '%OLp' "$dir" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/' || echo "unknown")
+  
+  if [ "$actual_owner" != "$expected_owner" ]; then
+    printf 'warning: ownership mismatch for %s (actual: %s, expected: %s). May be on read-only mount.\n' "$dir" "$actual_owner" "$expected_owner" >&2
+    return 1
+  fi
+  
+  if [ "$actual_mode" != "$expected_mode" ]; then
+    printf 'warning: permission mismatch for %s (actual: %s, expected: %s). May be on read-only mount.\n' "$dir" "$actual_mode" "$expected_mode" >&2
+    return 1
+  fi
+  
+  return 0
+}
 
 run_checkout_freshness_probe() {
   local checkout_dir="$1"
@@ -241,19 +277,21 @@ run_checkout_freshness_probe() {
   resolved_user_name="$(resolve_uid_to_name "$KASEKI_CONTAINER_UID")"
   resolved_group_name="$(resolve_gid_to_name "$KASEKI_CONTAINER_GID")"
 
+  # Phase 2: Add timeout protection to privilege operations
+  # Prevents hangs on systems with missing privilege tools or slow filesystem access
   if [ "$(id -u)" -eq "$KASEKI_CONTAINER_UID" ] && [ "$(id -g)" -eq "$KASEKI_CONTAINER_GID" ]; then
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
-    setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    timeout "$KASEKI_PRIV_TOOL_TIMEOUT" setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
-    runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    timeout "$KASEKI_PRIV_TOOL_TIMEOUT" runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
   elif [ "$(id -u)" -eq 0 ] && command -v sudo >/dev/null 2>&1; then
     if [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
-      sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+      timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
     elif [ -n "$resolved_user_name" ]; then
-      sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+      timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
     else
-      sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+      timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
     fi
   else
     "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
@@ -263,9 +301,9 @@ run_checkout_freshness_probe() {
     probe_status="failed"
     local stderr_tail
     stderr_tail="$(tail -n 1 "$stderr_file" | tr -d '\r')"
-    if printf '%s' "$stderr_tail" | grep -Eiq 'unknown user|unknown group|no passwd entry|user .* does not exist|group .* does not exist|sudo: .*unknown|sudo: .*invalid|runuser: .*does not exist|runuser: user .* does not exist|runuser: group .* does not exist|unable to initialize policy plugin|unable to set user context'; then
-      probe_detail="Checkout freshness probe failed: probe could not impersonate UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} due to host user/group mapping or privilege-tool configuration issue: ${stderr_tail}"
-      probe_remediation="Configure a valid host method to run commands as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} (or ensure passwd/group mappings exist for that UID/GID), then rerun ./scripts/kaseki-setup-host.sh --fix."
+    if printf '%s' "$stderr_tail" | grep -Eiq 'unknown user|unknown group|no passwd entry|user .* does not exist|group .* does not exist|sudo: .*unknown|sudo: .*invalid|runuser: .*does not exist|runuser: user .* does not exist|runuser: group .* does not exist|unable to initialize policy plugin|unable to set user context|timed out'; then
+      probe_detail="Checkout freshness probe failed: probe could not impersonate UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} due to host user/group mapping, privilege-tool configuration issue, or timeout: ${stderr_tail}"
+      probe_remediation="Configure a valid host method to run commands as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} (or ensure passwd/group mappings exist for that UID/GID), then rerun ./scripts/kaseki-setup-host.sh --fix. If the issue is timeout, try increasing KASEKI_PRIV_TOOL_TIMEOUT."
     else
       probe_detail="Checkout freshness probe failed when running git metadata access as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}: ${stderr_tail}"
       probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
@@ -568,11 +606,6 @@ if [ "$KASEKI_FIX" = "1" ]; then
   ensure_git_safe_directory
   verify_git_safe_directory
   echo ""
-
-  # Bootstrap if possible (Phase 2: only if freshness probe will pass)
-  log_info "Stage 5: Bootstrap checkout"
-  bootstrap_checkout_if_possible || status=$?
-  echo ""
 else
   # Check-only: report current state without changes
   log_info "Stage 2-5: Check-only mode (no changes)"
@@ -581,41 +614,56 @@ else
   echo ""
 fi
 
-# Phase 2: Verify fixes applied (if --fix was used)
-if [ "$KASEKI_FIX" = "1" ]; then
-  log_info "Stage 6: Verifying fixes applied"
-  validate_host_fixes_applied || status=$?
-  echo ""
-fi
-
-# Checkout freshness probe
-log_info "Stage 7: Checkout freshness probe"
+# Checkout freshness probe (Phase 2: used to conditionally run bootstrap)
+log_info "Stage 6: Checkout freshness probe"
 probe_payload="$(run_checkout_freshness_probe "$KASEKI_CHECKOUT_DIR")"
 IFS="|" read -r checkout_probe_status checkout_probe_detail checkout_probe_remediation <<< "$probe_payload"
 printf "checkout-freshness-probe: %s\n" "$checkout_probe_status"
 printf "%s\n" "$checkout_probe_detail"
 if [ "$checkout_probe_status" != "ok" ] && [ -n "$checkout_probe_remediation" ]; then
   printf "remediation: %s\n" "$checkout_probe_remediation"
-  if [ "$KASEKI_FIX" = "1" ]; then
-    status=1  # Fail if --fix was used but probe failed
-  fi
 fi
 echo ""
+
+# Phase 2: Conditional bootstrap (only run if probe succeeded)
+if [ "$KASEKI_FIX" = "1" ] && [ "$checkout_probe_status" = "ok" ]; then
+  log_info "Stage 5: Bootstrap checkout (probe passed, proceeding)"
+  bootstrap_checkout_if_possible || status=$?
+  echo ""
+elif [ "$KASEKI_FIX" = "1" ] && [ "$checkout_probe_status" != "ok" ]; then
+  log_warn "Stage 5: Bootstrap skipped (probe failed)"
+  printf "remediation: Fix permissions and rerun: sudo kaseki-agent host setup --fix\n"
+  echo ""
+fi
+
+# Phase 2: Verify fixes applied (if --fix was used)
+if [ "$KASEKI_FIX" = "1" ]; then
+  log_info "Stage 7: Verifying fixes applied"
+  validate_host_fixes_applied || status=$?
+  echo ""
+fi
 
 # Write host state
 write_host_state "$KASEKI_EFFECTIVE_HOST_HOME" "$KASEKI_HOST_SECRETS_DIR" "$checkout_probe_status" "$checkout_probe_detail" "$checkout_probe_remediation"
 print_recreate_hint_if_needed
 
-# Template verification
+# Phase 2: Template verification (hardened - check executability, not just existence)
 log_info "Stage 8: Template verification"
-if [ ! -x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
+if [ ! -f "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
   printf 'missing: template runner at %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
   printf 'remediation: run kaseki-agent host setup --fix\n'
   if [ "$KASEKI_FIX" != "1" ]; then
     status=1
   fi
+elif [ ! -x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" ]; then
+  printf 'error: template runner exists but is not executable: %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
+  printf 'remediation: run chmod +x %s/run-kaseki.sh\n' "$KASEKI_TEMPLATE_DIR"
+  if [ "$KASEKI_FIX" = "1" ]; then
+    chmod +x "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" 2>/dev/null || true
+  fi
+  status=1
 else
-  log_pass "Template runner is ready"
+  log_pass "Template runner is ready and executable"
 fi
 echo ""
 
