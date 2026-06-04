@@ -17,6 +17,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 | **6** | Security | Secret Detected | Secret scan detected potential credentials in diff/workspace |
 | **7** | Quality Gate | Validation Allowlist Violation | Files changed during validation are outside allowlist |
 | **8** | Goal Check | Goal Unmet | Goal-check evaluator determined the scouting objective was not met after retries |
+| **86** | Scouting | Scouting Validation Failed | Scouting artifact missing or invalid (check Docker volume mounts) |
 | **124** | Timeout | Agent Timeout | Agent invocation exceeded `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | **127** | Docker | Docker Init Failed | Docker container initialization failed (missing entrypoint script) |
 | **141** | Validation | SIGPIPE | Validation output filter crashed or exited unexpectedly (broken pipe) |
@@ -168,6 +169,111 @@ test/build commands) are outside the validation allowlist.
   necessary patterns, OR
 4. Adjust validation commands to not modify unintended
   files
+
+---
+
+### 86 — Scouting Validation Failed
+
+The scouting phase failed because the scouting artifact file (`/results/scouting-candidate.json`) was not created or is invalid.
+
+**Root causes:**
+
+1. **Read-only `/results` volume mount** — The `/results` directory is mounted as read-only (`:ro` flag or `--read-only` container flag without writable volume mount). This prevents the Pi agent from writing the artifact file.
+2. **Missing volume mount** — The `/results` directory is not mounted as a volume or tmpfs, causing writes to fail silently.
+3. **Permissions issue** — The container user (UID 10000) cannot write to `/results` due to incorrect permissions.
+4. **Scouting disabled** — Scouting was explicitly disabled via `KASEKI_SCOUTING=0`.
+5. **Pi agent crash** — The scouting Pi invocation crashed before writing the artifact.
+
+**Diagnosis:**
+
+1. Check the filesystem diagnostics:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/filesystem-readonly-reason.txt
+   cat /agents/kaseki-results/<instance-id>/filesystem-writable-at-start.txt
+   ```
+
+2. Check if the artifact file exists:
+
+   ```bash
+   ls -la /agents/kaseki-results/<instance-id>/scouting-candidate.json
+   ```
+
+3. Check for read-only filesystem errors in stderr:
+
+   ```bash
+   grep -i "read-only" /agents/kaseki-results/<instance-id>/stderr.log
+   ```
+
+4. Review the scouting validation errors:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/scouting-validation-errors.jsonl
+   ```
+
+**Action:**
+
+1. **For read-only `/results` volume:**
+
+   - If using `run-kaseki.sh`: Verify `/results` is mounted with `:rw` flag:
+
+     ```bash
+     -v "$RESULT_DIR:/results:rw"  # Correct
+     -v "$RESULT_DIR:/results:ro"  # Wrong — causes exit 86
+     ```
+
+   - If using `docker-compose.yml`: Ensure `/results` is listed as a writable volume:
+
+     ```yaml
+     volumes:
+       - /agents:/agents:rw      # Correct
+       - /results:/results:ro    # Wrong — causes exit 86
+     ```
+
+   - If using `--read-only` container flag: Ensure `/results` is mounted or tmpfs'd as writable:
+
+     ```bash
+     docker run --read-only \
+       -v /path/to/results:/results:rw \  # Must have :rw flag
+       kaseki-template:latest
+     ```
+
+2. **For missing `/results` mount:**
+
+   - Create and mount the `/results` directory:
+
+     ```bash
+     mkdir -p /agents/kaseki-results/<instance-id>
+     docker run -v /agents/kaseki-results/<instance-id>:/results:rw kaseki-template:latest
+     ```
+
+3. **For permission issues:**
+
+   - Ensure `/results` is writable by UID 10000:
+
+     ```bash
+     mkdir -p /agents/kaseki-results/<instance-id>
+     chmod 755 /agents/kaseki-results/<instance-id>
+     chown -R 10000:10000 /agents/kaseki-results/<instance-id}
+     ```
+
+4. **For Scouting disabled:**
+
+   - Enable scouting by setting `KASEKI_SCOUTING=1` in environment or config
+
+5. **For Pi agent crash:**
+
+   - Check Pi agent stderr:
+
+     ```bash
+     tail -50 /agents/kaseki-results/<instance-id>/stderr.log
+     ```
+
+   - Enable debug logging:
+
+     ```bash
+     KASEKI_DEBUG_RAW_EVENTS=1 kaseki-agent run ...
+     ```
 
 ---
 
