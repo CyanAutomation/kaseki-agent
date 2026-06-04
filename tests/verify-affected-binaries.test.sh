@@ -1,82 +1,77 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verification test for all three affected binaries
-# Checks that pi-event-filter, kaseki-api-routes, and job-scheduler 
-# have correct import paths to their helper modules in the compiled output
+# Runtime smoke test for compiled entry points that depend on shared helpers.
+# Run `npm run build` before this test so dist/ reflects the current sources.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+for entry_point in pi-event-filter.js job-scheduler.js kaseki-api-routes.js; do
+  if [ ! -f "$ROOT_DIR/dist/$entry_point" ]; then
+    printf 'FAIL: missing compiled entry point dist/%s; run npm run build first\n' "$entry_point" >&2
+    exit 1
+  fi
+done
 
-echo -e "${BLUE}=========================================="
-echo "Binary Module Import Verification"
-echo "==========================================${NC}"
+# Executing pi-event-filter exercises its event timestamp helper through the
+# compiled CLI's observable filtered-event and summary outputs.
+printf '%s\n' '{"type":"session_start","timestamp":"2026-06-04T12:00:00.000Z"}' > "$TMP_DIR/events.jsonl"
+node "$ROOT_DIR/dist/pi-event-filter.js" \
+  "$TMP_DIR/events.jsonl" \
+  "$TMP_DIR/filtered.jsonl" \
+  "$TMP_DIR/summary.json"
 
-FAILED=0
+node --input-type=module - \
+  "$TMP_DIR/filtered.jsonl" \
+  "$TMP_DIR/summary.json" \
+  "$ROOT_DIR/dist/job-scheduler.js" \
+  "$ROOT_DIR/dist/kaseki-api-routes.js" <<'EOF_NODE'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
-# Test 1: pi-event-filter imports event-timestamp-helpers
-echo ""
-echo -e "${YELLOW}[1/5]${NC} Verifying pi-event-filter imports..."
-if grep -q "from ['\"]./lib/event-timestamp-helpers.js['\"]" "$ROOT_DIR/dist/pi-event-filter.js"; then
-  echo -e "${GREEN}[OK]${NC} pi-event-filter correctly imports ./lib/event-timestamp-helpers.js"
-else
-  echo -e "${RED}[FAILED]${NC} pi-event-filter missing import for event-timestamp-helpers"
-  FAILED=$((FAILED + 1))
-fi
+const [filteredPath, summaryPath, schedulerPath, routesPath] = process.argv.slice(2);
 
-# Test 2: event-timestamp-helpers exports required symbols
-echo -e "${YELLOW}[2/5]${NC} Verifying event-timestamp-helpers exports..."
-if grep -q "export.*extractEventTimestamp\|exports.extractEventTimestamp" "$ROOT_DIR/dist/lib/event-timestamp-helpers.js"; then
-  echo -e "${GREEN}[OK]${NC} event-timestamp-helpers correctly exports extractEventTimestamp"
-else
-  echo -e "${RED}[FAILED]${NC} event-timestamp-helpers missing extractEventTimestamp export"
-  FAILED=$((FAILED + 1))
-fi
+const filtered = fs.readFileSync(filteredPath, 'utf8').trim();
+assert.equal(
+  filtered,
+  '{"type":"session_start","timestamp":"2026-06-04T12:00:00.000Z"}',
+  'pi-event-filter should preserve the runtime event',
+);
 
-# Test 3: kaseki-api-routes imports subprocess-helpers
-echo -e "${YELLOW}[3/5]${NC} Verifying kaseki-api-routes imports..."
-if grep -q "from ['\"]./lib/subprocess-helpers\|require(['\"]./lib/subprocess-helpers" "$ROOT_DIR/dist/kaseki-api-routes.js"; then
-  echo -e "${GREEN}[OK]${NC} kaseki-api-routes correctly imports ./lib/subprocess-helpers"
-else
-  echo -e "${RED}[FAILED]${NC} kaseki-api-routes missing import for subprocess-helpers"
-  FAILED=$((FAILED + 1))
-fi
+const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+assert.equal(
+  summary.first_event_at,
+  '2026-06-04T12:00:00.000Z',
+  'pi-event-filter should use the timestamp helper when building its summary',
+);
 
-# Test 4: job-scheduler imports subprocess-helpers
-echo -e "${YELLOW}[4/5]${NC} Verifying job-scheduler imports..."
-if grep -q "from ['\"]./lib/subprocess-helpers\|require(['\"]./lib/subprocess-helpers" "$ROOT_DIR/dist/job-scheduler.js"; then
-  echo -e "${GREEN}[OK]${NC} job-scheduler correctly imports ./lib/subprocess-helpers"
-else
-  echo -e "${RED}[FAILED]${NC} job-scheduler missing import for subprocess-helpers"
-  FAILED=$((FAILED + 1))
-fi
+const schedulerModule = await import(pathToFileURL(schedulerPath));
+assert.equal(
+  typeof schedulerModule.JobScheduler,
+  'function',
+  'job-scheduler should load with its runtime helper dependencies',
+);
 
-# Test 5: subprocess-helpers exports required symbols
-echo -e "${YELLOW}[5/5]${NC} Verifying subprocess-helpers exports..."
-if grep -q "export.*execDockerCommand\|export.*execSubprocess\|exports.execDockerCommand\|exports.execSubprocess" "$ROOT_DIR/dist/lib/subprocess-helpers.js"; then
-  echo -e "${GREEN}[OK]${NC} subprocess-helpers correctly exports required functions"
-else
-  echo -e "${RED}[FAILED]${NC} subprocess-helpers missing required function exports"
-  FAILED=$((FAILED + 1))
-fi
+const routesModule = await import(pathToFileURL(routesPath));
+assert.equal(
+  typeof routesModule.classifyDockerFailure,
+  'function',
+  'kaseki-api-routes should export classifyDockerFailure',
+);
+const classification = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon');
+const classification = routesModule.classifyDockerFailure('Cannot connect to the Docker daemon');
+assert.ok(
+  classification && typeof classification === 'object',
+  'classifyDockerFailure should return an object',
+);
+assert.match(
+  classification.detail,
+  /unreachable/,
+  'kaseki-api-routes should expose a working subprocess-helper function',
+);
+EOF_NODE
 
-# Summary
-echo ""
-if [ $FAILED -eq 0 ]; then
-  echo -e "${GREEN}=========================================="
-  echo "All binary verification tests passed!"
-  echo "=========================================${NC}"
-  exit 0
-else
-  echo -e "${RED}=========================================="
-  echo "$FAILED verification test(s) FAILED"
-  echo "=========================================${NC}"
-  exit 1
-fi
+printf '✓ compiled entry points and their helper modules load and run successfully\n'
