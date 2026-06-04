@@ -14,18 +14,49 @@ describe('DockerManager', () => {
   });
 
   describe('isDockerAvailable', () => {
-    it('should return true when docker is available', () => {
-      (execSync as jest.Mock).mockReturnValue(Buffer.from(''));
-      const result = DockerManager.isDockerAvailable();
-      expect(result).toBe(true);
+    const missingDockerError = Object.assign(new Error('spawnSync docker ENOENT'), {
+      code: 'ENOENT',
     });
 
-    it('should return false when docker is not available', () => {
-      (execSync as jest.Mock).mockImplementation(() => {
-        throw new Error('Docker not found');
-      });
+    it.each([
+      {
+        description: 'docker responds successfully',
+        commandResult: Buffer.from(''),
+        expectedAvailability: true,
+      },
+      {
+        description: 'docker returns unexpected output with a successful exit',
+        commandResult: Buffer.from('unexpected output'),
+        expectedAvailability: true,
+      },
+      {
+        description: 'the docker command fails',
+        commandError: new Error('Cannot connect to the Docker daemon'),
+        expectedAvailability: false,
+      },
+      {
+        description: 'the docker binary is missing',
+        commandError: missingDockerError,
+        expectedAvailability: false,
+      },
+    ])('probes docker and reports availability when $description', ({
+      commandResult,
+      commandError,
+      expectedAvailability,
+    }) => {
+      if (commandError) {
+        (execSync as jest.Mock).mockImplementation(() => {
+          throw commandError;
+        });
+      } else {
+        (execSync as jest.Mock).mockReturnValue(commandResult);
+      }
+
       const result = DockerManager.isDockerAvailable();
-      expect(result).toBe(false);
+
+      expect(execSync).toHaveBeenCalledTimes(1);
+      expect(execSync).toHaveBeenCalledWith('docker ps > /dev/null 2>&1', { shell: '/bin/bash' });
+      expect(result).toBe(expectedAvailability);
     });
   });
 
