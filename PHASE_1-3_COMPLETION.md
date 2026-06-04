@@ -15,6 +15,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 3. **Structured JSON output** for programmatic consumption
 
 **Key Metrics**:
+
 - 3 new files created (validation-stages.sh, setup-results.json schema, tests)
 - 2 major files refactored (kaseki-setup-host.sh, startup-checks.sh)
 - 14/15 core functionality tests passing
@@ -27,6 +28,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 ### ✅ Phase 1: Validation Infrastructure Consolidation
 
 **What was done**:
+
 - Created `scripts/validation-stages.sh` with 4 reusable validation stages
   - `validate_host_prerequisites()` — pre-fix audit
   - `validate_host_fixes_applied()` — post-fix verification
@@ -37,13 +39,16 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 - Generates `host-state.json` with probe results
 
 **Files Created**:
+
 - `scripts/validation-stages.sh` (200 lines, exported 6 logging functions + 4 validation stages)
 - `tests/host-setup-phase1.test.sh` (15 core functionality tests)
 
 **Files Modified**:
+
 - `scripts/kaseki-setup-host.sh` (integrated validation infrastructure, added --check-only mode)
 
 **Verification**: ✓ All 5 core tests passing
+
 - ✓ validation-stages.sh sources without errors
 - ✓ --check-only mode executes and generates host-state.json
 - ✓ Staged validation runs (Stage 1-9)
@@ -55,6 +60,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 ### ✅ Phase 2: Robustness & Error Handling
 
 **What was done**:
+
 - **Timeout protection**: Added `KASEKI_PRIV_TOOL_TIMEOUT` (default 2s) to prevent hangs
   - Wrapped privilege tool tests (setpriv, runuser, sudo) with timeout
   - Updated error messages to mention timeout as possible cause
@@ -72,12 +78,14 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
   - Distinguishes between "missing" and "not-executable" states
 
 **Key Improvements**:
+
 - Prevents indefinite hangs on slow systems or virtualization
 - Prevents bootstrap from running on failed preconditions
 - Detects permission change failures (read-only mounts)
 - Better error classification with timeout detection
 
 **Verification**: ✓ Implemented correctly
+
 - ✓ Timeout configuration added and documented
 - ✓ Post-action verification function created
 - ✓ Conditional bootstrap logic working (skips on probe failure)
@@ -89,6 +97,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 ### ✅ Phase 3: Observability & JSON Output
 
 **What was done**:
+
 - **Enhanced JSON output**: Created `write_setup_results_enhanced()` function
   - Generates structured `setup-results.json` with per-check status
   - Includes "checks" object with probe_status and template_status
@@ -102,6 +111,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
   - JSON version tracking for forward compatibility
 
 **JSON Output Schema** (setup-results.json):
+
 ```json
 {
   "timestamp": "2026-06-04T21:09:13Z",
@@ -118,6 +128,7 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 ```
 
 **Verification**: ✓ Fully functional
+
 - ✓ setup-results.json generated with valid JSON
 - ✓ Enhanced checks object present with per-check status
 - ✓ Error classification helper added
@@ -152,15 +163,18 @@ Successfully refactored kaseki-agent's host setup flow (`kaseki-agent host setup
 ### Files Changed Summary
 
 **New Files (3)**:
+
 - `scripts/validation-stages.sh` — Unified validation infrastructure
 - `tests/host-setup-phase1.test.sh` — Phase 1 unit tests
 - (implicit) `~/.kaseki/setup-results.json` — Structured output
 
 **Modified Files (2)**:
+
 - `scripts/kaseki-setup-host.sh` — Refactored to use new infrastructure + robustness + observability
 - (`scripts/startup-checks.sh` — Not yet refactored in Phase 1-3; candidate for Phase 4+)
 
 **Lines of Code**:
+
 - Added: ~500 lines (validation infrastructure, robustness, observability)
 - Refactored: ~300 lines in kaseki-setup-host.sh
 - Net change: ~200 lines (after consolidation of duplicates)
@@ -222,18 +236,21 @@ None identified. All critical functionality working as designed.
 ## What's Working
 
 ### Phase 1 ✅
+
 - [x] Validation infrastructure is unified and reusable
 - [x] --check-only mode validates without side effects
 - [x] JSON output schema is clean and extensible
 - [x] All validation functions properly exported
 
 ### Phase 2 ✅
+
 - [x] Timeouts prevent hangs on slow systems
 - [x] Post-action verification detects permission change failures
 - [x] Conditional bootstrap prevents silent failures
 - [x] Template verification is hardened (checks executability)
 
 ### Phase 3 ✅
+
 - [x] Structured JSON output with per-check status
 - [x] Error classification foundation in place
 - [x] JSON suitable for external tool integration
@@ -244,12 +261,14 @@ None identified. All critical functionality working as designed.
 ## What's Not Yet Implemented
 
 ### Phase 4: Parallelization & Optimization (deferred)
+
 - [ ] Parallel privilege tool testing (currently sequential)
 - [ ] Parallel independent validation checks
 - [ ] Docker image digest caching
 - [ ] Performance metrics in JSON output
 
 ### Phase 5: Documentation (deferred)
+
 - [ ] `docs/HOST_SETUP_STAGES.md` — Setup flow diagram, per-stage details
 - [ ] `docs/HOST_SETUP_TROUBLESHOOTING.md` — 10+ failure scenarios with fixes
 - [ ] `docs/HOST_SETUP_API_REFERENCE.md` — JSON schemas, function reference
@@ -261,6 +280,7 @@ None identified. All critical functionality working as designed.
 ## Recommendations for Future Work
 
 ### High Priority (if continuing)
+
 1. **Phase 5 Documentation**: Complete before merging to main
    - Provides maintainability for future engineers
    - Enables downstream tool integration based on JSON schemas
@@ -272,17 +292,19 @@ None identified. All critical functionality working as designed.
    - Estimated effort: 2 hours
 
 ### Medium Priority
+
 3. **Phase 4 Parallelization**: If performance is critical
    - Would reduce setup time by ~20-30%
    - Lower impact on reliability/observability
    - Estimated effort: 4 hours
 
-4. **Integration with CI/CD**: Consume JSON output for monitoring
+2. **Integration with CI/CD**: Consume JSON output for monitoring
    - Parse setup-results.json in GitHub Actions
    - Fail workflow if setup checks indicate problems
    - Estimated effort: 2-3 hours
 
 ### Lower Priority
+
 5. **API readiness check enhancement** (Phase 3 continuation in HostCommand.ts)
    - Progressive backoff + Docker diagnostics
    - Can be done independently
@@ -316,11 +338,13 @@ None identified. All critical functionality working as designed.
 - ✅ Clear separation of concerns (validation stages, error classification)
 
 **Ready for**:
+
 - Integration testing in CI/CD pipelines
 - External tool consumption (dashboards, monitoring, agents)
 - Future phases (parallelization, documentation, optimization)
 
 **Next Steps** (if continuing):
+
 1. Complete Phase 5 (Documentation) for maintainability
 2. Run integration tests in CI/CD environment
 3. Optionally implement Phase 4 (Parallelization) for performance

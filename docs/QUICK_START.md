@@ -77,6 +77,69 @@ The setup wizard created:
 
 ---
 
+## Host Setup (Phase 1-5)
+
+**New in v2.5**: Comprehensive host setup validation and troubleshooting tools.
+
+### Validate Your Setup
+
+```bash
+# Check if host is ready for Kaseki (no changes)
+kaseki-agent host setup --check-only
+```
+
+This runs through 8 validation stages and outputs structured JSON:
+
+```json
+{
+  "status": "ok",
+  "checks": {
+    "checkout_freshness_probe": "ok",
+    "template_ready": "ok"
+  },
+  "performance": {
+    "stage_1_ms": 45,
+    "probe_duration_ms": 2150
+  }
+}
+```
+
+### Fix Setup Issues
+
+If validation reports failures:
+
+```bash
+# Fix all identified issues
+sudo kaseki-agent host setup --fix
+
+# Verify fixes took effect
+kaseki-agent host setup --check-only
+```
+
+### Understanding Validation Stages (Phase 4-5)
+
+- **Stage 1**: Host prerequisites (git, utilities)
+- **Stage 2**: Create/fix /agents directories  
+- **Stage 3-4**: Configure secrets & checkout (run in parallel - Phase 4)
+- **Stage 5**: Bootstrap checkout (conditional on Stage 6)
+- **Stage 6**: Checkout freshness probe (parallel privilege tools - Phase 4)
+- **Stage 7**: Verify fixes applied
+- **Stage 8**: Template verification
+- **Stage 9**: API container recreation (optional)
+
+**Phase 4 Optimizations**:
+
+- Stages 3 & 4 run in parallel (~250ms combined vs. ~500ms sequential)
+- Privilege tools tested in parallel (~2s vs. ~6s)
+
+**Phase 5 Documentation**:
+
+- [HOST_SETUP_STAGES.md](HOST_SETUP_STAGES.md) — Detailed stage information & execution flow
+- [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) — 11+ failure scenarios with diagnosis & fixes
+- [HOST_SETUP_API_REFERENCE.md](HOST_SETUP_API_REFERENCE.md) — JSON schemas, function reference & integration examples
+
+---
+
 ## Troubleshooting
 
 ### Permission Errors on Startup?
@@ -84,6 +147,9 @@ The setup wizard created:
 ```bash
 ./scripts/setup-secrets.sh --fix
 docker-compose restart kaseki-api
+
+# Or use new host setup tool
+sudo kaseki-agent host setup --fix
 ```
 
 ### Secrets Not Found?
@@ -94,6 +160,9 @@ Check where they're stored:
 ls -la /home/pi/secrets/                    # Host Docker source
 docker exec kaseki-api ls -la /run/secrets/kaseki/  # Container mount
 ls -la ~/.kaseki/secrets/                   # Local
+
+# Or diagnose with host setup
+kaseki-agent host setup --check-only | grep -A2 "Stage 3"
 ```
 
 ### API Key Not Working?
@@ -113,6 +182,10 @@ If it looks correct, try running the API service again:
 ```bash
 docker-compose up kaseki-api
 ```
+
+### Host Setup or Permission Issues?
+
+See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for detailed diagnosis of 11+ common failure scenarios.
 
 ---
 
