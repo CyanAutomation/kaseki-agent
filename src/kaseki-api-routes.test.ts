@@ -2665,12 +2665,21 @@ describe('kaseki-api-routes template bootstrap health', () => {
     fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-preflight.sh'), '#!/usr/bin/env bash\n');
   }
 
-  function writeCheckoutActivateDoctor(exitCode: number, stderr: string): string {
+  function writeCheckoutActivateDoctor(exitCode: number, stderr: string, stdout = ''): string {
     const activatePath = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
     fs.mkdirSync(path.dirname(activatePath), { recursive: true });
     fs.writeFileSync(
       activatePath,
-      `#!/usr/bin/env bash\nif [[ "$1" == "--json" && "$2" == "doctor" ]]; then\n  echo ${JSON.stringify(stderr)} >&2\n  exit ${exitCode}\nfi\nexit 0\n`,
+      `#!/usr/bin/env bash
+if [[ "$1" == "--json" && "$2" == "doctor" ]]; then
+  if [[ -n ${JSON.stringify(stdout)} ]]; then
+    echo ${JSON.stringify(stdout)}
+  fi
+  echo ${JSON.stringify(stderr)} >&2
+  exit ${exitCode}
+fi
+exit 0
+`,
     );
     fs.chmodSync(activatePath, 0o644);
     return activatePath;
@@ -3047,6 +3056,33 @@ describe('kaseki-api-routes template bootstrap health', () => {
       expect(body.doctorCommand).toBe(`${activatePath} --json doctor`);
       expect(body.doctorStderrTail).toContain('checkout activate doctor failed');
       expect(scheduler.submitJob).not.toHaveBeenCalled();
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/preflight exposes activate doctor stdout diagnostics when JSON doctor fails', async () => {
+    writeRunKasekiDoctor(0, 'doctor ok');
+    const activatePath = writeCheckoutActivateDoctor(17, 'stderr only says doctor failed', JSON.stringify({
+      ok: false,
+      failure: 'missing required jq binary from activate doctor stdout',
+      remediation: 'Install jq or rerun kaseki-activate bootstrap',
+    }));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      const templateCheck = body.checks.find((check: any) => check.name === 'template');
+      expect(templateCheck.ok).toBe(false);
+      expect(templateCheck.doctorCommand).toBe(`${activatePath} --json doctor`);
+      expect(templateCheck.doctorStderrTail).toContain('stderr only says doctor failed');
+      expect(templateCheck.doctorStdoutTail).toContain('missing required jq binary from activate doctor stdout');
+      expect(templateCheck.doctorStdoutTail).toContain('Install jq or rerun kaseki-activate bootstrap');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
