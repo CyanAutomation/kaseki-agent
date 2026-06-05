@@ -24,6 +24,14 @@ set -euo pipefail
 #   - Express server starts listening on configured port
 #   - Ready to accept requests
 
+# Export shared container path defaults before command dispatch so every mode
+# (including the default agent branch) inherits the same core paths.
+export KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
+export KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-/workspace}"
+export KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_DIR}/baseline}"
+export KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
+export KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
+
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
 # Auto-remediation enabled by default (KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=1)
@@ -78,8 +86,6 @@ case "${1:-agent}" in
     # Set required variables and execute agent
     export OPENROUTER_API_KEY_FILE=/secrets/openrouter_api_key
     export KASEKI_INSTANCE="${KASEKI_INSTANCE:-kaseki-run}"
-    export KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
-    
     exec /usr/local/bin/kaseki-agent "$@"
     ;;
   
