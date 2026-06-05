@@ -67,15 +67,160 @@ build_allowlist_regex() {
     }
   });
 
-  test('image entrypoint dispatches api and explicit commands without replacing entrypoint', () => {
+  test('image keeps the packaged entrypoint and default agent command', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
-    const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
 
     expect(dockerfile).toContain('ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]');
     expect(dockerfile).toContain('CMD ["agent"]');
-    expect(entrypoint).toContain('api|kaseki-api)');
-    expect(entrypoint).toContain('exec node /app/dist/kaseki-api-service.js');
-    expect(entrypoint).toContain('exec "$@"');
+  });
+
+  describe('docker-entrypoint command dispatch', () => {
+    const entrypointScript = path.join(repoRoot, 'scripts/docker-entrypoint.sh');
+
+    const withTempRoot = (name: string, callback: (tempRoot: string) => void): void => {
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), name));
+
+      try {
+        callback(tempRoot);
+      } finally {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      }
+    };
+
+    const writeCaptureStub = (stubPath: string, capturePath: string): void => {
+      fs.mkdirSync(path.dirname(stubPath), { recursive: true });
+      fs.writeFileSync(
+        stubPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$0" "$@" > ${JSON.stringify(capturePath)}
+exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
+`,
+      );
+      fs.chmodSync(stubPath, 0o755);
+    };
+
+    const readCapturedArgs = (capturePath: string): string[] =>
+      fs.readFileSync(capturePath, 'utf-8').split('\n').filter(Boolean);
+
+    const runEntrypoint = (args: string[], tempRoot: string) =>
+      spawnSync('bash', [entrypointScript, ...args], {
+        encoding: 'utf-8',
+        env: {
+          PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
+          KASEKI_SKIP_STARTUP_CHECKS: '1',
+        },
+      });
+
+    const withAgentStub = (capturePath: string, callback: () => void): void => {
+      const agentPath = '/usr/local/bin/kaseki-agent';
+      const backupPath = `${agentPath}.kaseki-test-backup-${process.pid}`;
+      const hadExistingAgent = fs.existsSync(agentPath);
+
+      if (hadExistingAgent) {
+        fs.renameSync(agentPath, backupPath);
+      }
+
+      try {
+        writeCaptureStub(agentPath, capturePath);
+        callback();
+      } finally {
+        fs.rmSync(agentPath, { force: true });
+        if (hadExistingAgent) {
+          fs.renameSync(backupPath, agentPath);
+        }
+      }
+    };
+
+    test.each(['api', 'kaseki-api'])('%s dispatches to the API service', (command) => {
+      withTempRoot('kaseki-entrypoint-api-', (tempRoot) => {
+        const capturePath = path.join(tempRoot, 'api-command.args');
+        writeCaptureStub(path.join(tempRoot, 'bin', 'node'), capturePath);
+
+        const result = runEntrypoint([command, '--port', '9000'], tempRoot);
+
+        expect(result.status).toBe(0);
+        expect(result.signal).toBeNull();
+        expect(readCapturedArgs(capturePath)).toEqual([
+          path.join(tempRoot, 'bin', 'node'),
+          '/app/dist/kaseki-api-service.js',
+          '--port',
+          '9000',
+        ]);
+      });
+    });
+
+    test('agent dispatches to the default agent workflow', () => {
+      withTempRoot('kaseki-entrypoint-agent-', (tempRoot) => {
+        const capturePath = path.join(tempRoot, 'agent-command.args');
+
+        withAgentStub(capturePath, () => {
+          const result = runEntrypoint(['agent', 'https://example.test/repo.git', 'main'], tempRoot);
+
+          expect(result.status).toBe(0);
+          expect(result.signal).toBeNull();
+          expect(readCapturedArgs(capturePath)).toEqual([
+            '/usr/local/bin/kaseki-agent',
+            'https://example.test/repo.git',
+            'main',
+          ]);
+        });
+      });
+    });
+
+    test('an explicit command is executed unchanged', () => {
+      withTempRoot('kaseki-entrypoint-explicit-', (tempRoot) => {
+        const capturePath = path.join(tempRoot, 'explicit-command.args');
+        const explicitCommand = path.join(tempRoot, 'bin', 'explicit-command');
+        writeCaptureStub(explicitCommand, capturePath);
+
+        const result = runEntrypoint(['explicit-command', 'one', '--two', 'value with spaces'], tempRoot);
+
+        expect(result.status).toBe(0);
+        expect(result.signal).toBeNull();
+        expect(readCapturedArgs(capturePath)).toEqual([explicitCommand, 'one', '--two', 'value with spaces']);
+      });
+    });
+
+    test('exit codes from the dispatched command are propagated', () => {
+      withTempRoot('kaseki-entrypoint-exit-', (tempRoot) => {
+        const capturePath = path.join(tempRoot, 'exit-command.args');
+        writeCaptureStub(path.join(tempRoot, 'bin', 'failing-command'), capturePath);
+
+        const result = spawnSync('bash', [entrypointScript, 'failing-command'], {
+          encoding: 'utf-8',
+          env: {
+            PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
+            KASEKI_SKIP_STARTUP_CHECKS: '1',
+            KASEKI_ENTRYPOINT_STUB_EXIT: '42',
+          },
+        });
+
+        expect(result.status).toBe(42);
+        expect(result.signal).toBeNull();
+        expect(readCapturedArgs(capturePath)).toEqual([path.join(tempRoot, 'bin', 'failing-command')]);
+      });
+    });
+
+    test('signals from the dispatched command are propagated', () => {
+      withTempRoot('kaseki-entrypoint-signal-', (tempRoot) => {
+        const signalCommand = path.join(tempRoot, 'bin', 'signal-command');
+        fs.mkdirSync(path.dirname(signalCommand), { recursive: true });
+        fs.writeFileSync(
+          signalCommand,
+          `#!/usr/bin/env bash
+set -euo pipefail
+kill -TERM "$$"
+`,
+        );
+        fs.chmodSync(signalCommand, 0o755);
+
+        const result = runEntrypoint(['signal-command'], tempRoot);
+
+        expect(result.status).toBeNull();
+        expect(result.signal).toBe('SIGTERM');
+      });
+    });
   });
 
   test('entrypoint startup-check configuration points at the packaged script path', () => {
