@@ -24,6 +24,34 @@ describe('Evaluation Prompt Enhancements', () => {
     }
   });
 
+  const writeJson = (filePath: string, value: unknown) => {
+    fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+  };
+
+  const renderGoalCheckPrompt = (goalSettingPath: string) => execFileSync(
+    'bash',
+    [
+      '-c',
+      `set -euo pipefail
+eval "$(awk '
+  index($0, "build_goal_check_prompt()") == 1 { emit=1 }
+  index($0, "run_goal_check()") == 1 { emit=0 }
+  emit { print }
+' "$1")"
+GOAL_SETTING_ARTIFACT="$2"
+SCOUTING_ARTIFACT="$3/scouting.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
+TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
+build_goal_check_prompt`,
+      'render-goal-check-prompt',
+      kasekiAgentPath,
+      goalSettingPath,
+      path.dirname(goalSettingPath),
+    ],
+    { encoding: 'utf8' }
+  );
+
   describe('Goal-Check Prompt', () => {
     it('should include goal-setting artifact in prompt context', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
@@ -32,13 +60,42 @@ describe('Evaluation Prompt Enhancements', () => {
       expect(scriptContent).toContain('goal_setting_context');
     });
 
-    it('should mention SMART framework in goal-check prompt', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const goalCheckSection = scriptContent.substring(
-        scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 20000
-      );
-      expect(goalCheckSection.toLowerCase()).toContain('smart');
+    it('should render semantic SMART assessment guidance from the production goal-check prompt builder', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-prompt-contract-'));
+      const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
+
+      try {
+        writeJson(goalSettingPath, {
+          upgraded_goal: 'Add API pagination support with clear request validation and regression coverage.',
+          success_criteria: [
+            'GET /items accepts page and pageSize query parameters with validation for positive integers.',
+            'Pagination metadata includes total, page, pageSize, and totalPages in every successful response.',
+            'Make pagination better.',
+          ],
+          smart_criteria: {
+            specific: 'Pagination applies to GET /items only.',
+            measurable: 'Acceptance criteria are verified by route-level tests and response fields.',
+            achievable: 'Existing route handlers already centralize list responses.',
+            relevant: 'The task asks for API pagination behavior.',
+            time_bound: 'Complete within this coding-agent run.',
+          },
+          anti_patterns: ['Do not change unrelated endpoints.'],
+        });
+
+        const prompt = renderGoalCheckPrompt(goalSettingPath);
+
+        expect(prompt).toContain('## Success Criteria Assessment Contract');
+        expect(prompt).toContain('GOAL_CHECK_CONTRACT_PER_CRITERION_SMART');
+        expect(prompt).toContain('GOAL_CHECK_CONTRACT_EVIDENCE_REQUIRED');
+        expect(prompt).toContain('GOAL_CHECK_CONTRACT_MEASURABLE_ACCEPTANCE_CRITERIA');
+        expect(prompt).toMatch(/each success criterion[\s\S]*all five SMART dimensions/i);
+        expect(prompt).toMatch(/For every met or unmet criterion assessment[\s\S]*cite concrete evidence/i);
+        expect(prompt).toMatch(/measurable acceptance criteria[\s\S]*observable pass\/fail conditions/i);
+        expect(prompt).toMatch(/vague goals or intent statements[\s\S]*insufficient/i);
+        expect(prompt).toContain('Make pagination better.');
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('should include confidence grounding guidance', () => {
