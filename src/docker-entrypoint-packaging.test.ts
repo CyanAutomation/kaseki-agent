@@ -1,14 +1,70 @@
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const repoRoot = path.resolve(__dirname, '..');
 
 describe('Docker runtime packaging', () => {
-  test('worker can resolve allowlist helper from the /app fallback path', () => {
-    const script = fs.readFileSync(path.join(repoRoot, 'kaseki-agent.sh'), 'utf-8');
-    expect(script).toContain('ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/allowlist-helper.sh"');
-    expect(script).toContain('[ -r /app/scripts/allowlist-helper.sh ]');
-    expect(script).toContain('ALLOWLIST_HELPER="/app/scripts/allowlist-helper.sh"');
+  test('worker allowlist helper resolution uses configured fallback and fails clearly when unavailable', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-helper-resolution-'));
+
+    try {
+      const workerDir = path.join(tempRoot, 'worker');
+      const fallbackDir = path.join(tempRoot, 'fallback', 'scripts');
+      const markerPath = path.join(tempRoot, 'fallback-helper-invoked.txt');
+      fs.mkdirSync(workerDir, { recursive: true });
+      fs.mkdirSync(fallbackDir, { recursive: true });
+
+      const workerScript = path.join(workerDir, 'kaseki-agent.sh');
+      fs.copyFileSync(path.join(repoRoot, 'kaseki-agent.sh'), workerScript);
+      fs.chmodSync(workerScript, 0o755);
+
+      const fallbackHelper = path.join(fallbackDir, 'allowlist-helper.sh');
+      fs.writeFileSync(
+        fallbackHelper,
+        `#!/usr/bin/env bash
+printf 'fallback helper invoked\n' > "$KASEKI_ALLOWLIST_HELPER_MARKER"
+build_allowlist_regex() {
+  printf 'fallback-regex:%s\n' "$*"
+}
+`,
+      );
+      fs.chmodSync(fallbackHelper, 0o755);
+
+      const success = spawnSync('bash', [workerScript], {
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          KASEKI_AGENT_HELPER_RESOLUTION_CHECK: '1',
+          KASEKI_ALLOWLIST_HELPER_FALLBACK: fallbackHelper,
+          KASEKI_ALLOWLIST_HELPER_MARKER: markerPath,
+          KASEKI_CHANGED_FILES_ALLOWLIST: 'src/**',
+        },
+      });
+
+      expect(success.status).toBe(0);
+      expect(success.stderr).toBe('');
+      expect(success.stdout).toContain(`allowlist_helper=${fallbackHelper}`);
+      expect(fs.readFileSync(markerPath, 'utf-8')).toBe('fallback helper invoked\n');
+
+      const missingFallback = path.join(tempRoot, 'missing', 'allowlist-helper.sh');
+      const failure = spawnSync('bash', [workerScript], {
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          KASEKI_AGENT_HELPER_RESOLUTION_CHECK: '1',
+          KASEKI_ALLOWLIST_HELPER_FALLBACK: missingFallback,
+        },
+      });
+
+      expect(failure.status).toBe(66);
+      expect(failure.stderr).toBe(
+        `ERROR: Allowlist helper is not readable. Expected packaged helper at ${workerDir}/scripts/allowlist-helper.sh or fallback helper at ${missingFallback}. This worker image or mounted template is incomplete; rebuild the image or restore scripts/allowlist-helper.sh.\n`,
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   test('image entrypoint dispatches api and explicit commands without replacing entrypoint', () => {
