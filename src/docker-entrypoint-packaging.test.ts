@@ -144,7 +144,7 @@ exit 2
         env: {
           ...process.env,
           KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
-          KASEKI_RESULTS_DIR: undefined,
+          KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
         },
       });
 
