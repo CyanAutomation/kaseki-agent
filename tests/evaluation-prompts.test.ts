@@ -978,7 +978,7 @@ console.log(output);
         expect(run.events.some(event => event.event === 'collect-feedback' && event.phase === 'run-evaluation')).toBe(false);
         expect(fs.existsSync(path.join(run.resultsDir, 'kaseki-improvements.jsonl'))).toBe(false);
         expect(fs.readFileSync(path.join(run.resultsDir, 'stage-timings.tsv'), 'utf8'))
-          .toMatch(/^run evaluation	86	/m);
+          .toMatch(/^run evaluation\t86\t/m);
         expect(JSON.parse(fs.readFileSync(path.join(run.resultsDir, 'run-evaluation.json'), 'utf8'))).toMatchObject({
           overall_assessment: 'unknown',
           reviewer_confidence: 'low',
