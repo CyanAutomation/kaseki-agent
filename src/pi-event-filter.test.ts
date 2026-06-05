@@ -299,4 +299,84 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.execution_time?.tool_time_seconds).toBe(0);
     expect(result.summary.execution_time?.total_time_seconds).toBe(5);
   });
+
+  test('tracks token usage metrics from events', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'message_update',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: {
+          model: 'gemini-3-flash',
+          api: 'google',
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            prompt_tokens_details: {
+              cache_creation_input_tokens: 10,
+              cache_read_input_tokens: 80,
+            },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'message_update',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          model: 'gemini-pro',
+          api: 'google',
+          usage: {
+            prompt_tokens: 50,
+            completion_tokens: 25,
+          },
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.token_usage).toBeDefined();
+    expect(result.summary.token_usage?.total_input_tokens).toBe(150);
+    expect(result.summary.token_usage?.total_output_tokens).toBe(75);
+    expect(result.summary.token_usage?.total_cache_creation_tokens).toBe(10);
+    expect(result.summary.token_usage?.total_cache_read_tokens).toBe(80);
+    expect(result.summary.token_usage?.total_tokens).toBe(315);
+  });
+
+  test('provides per-model token statistics', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'message_update',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: {
+          model: 'gemini-3-flash',
+          api: 'google',
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'message_update',
+        timestamp: '2026-01-01T00:00:01.000Z',
+        message: {
+          model: 'gemini-pro',
+          api: 'google',
+          usage: {
+            prompt_tokens: 50,
+            completion_tokens: 25,
+          },
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.model_token_stats).toBeDefined();
+    expect(result.summary.model_token_stats?.['gemini-3-flash']).toBeDefined();
+    expect(result.summary.model_token_stats?.['gemini-3-flash'].input_tokens).toBe(100);
+    expect(result.summary.model_token_stats?.['gemini-3-flash'].output_tokens).toBe(50);
+    expect(result.summary.model_token_stats?.['gemini-pro'].input_tokens).toBe(50);
+    expect(result.summary.model_token_stats?.['gemini-pro'].output_tokens).toBe(25);
+  });
 });

@@ -44,6 +44,24 @@ interface MetricsReport {
       total_seconds: number;
     }
   >;
+  token_usage: {
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_cache_creation_tokens: number;
+    total_cache_read_tokens: number;
+    total_tokens: number;
+    cache_efficiency_percent: number;
+  };
+  model_token_stats: Record<
+    string,
+    {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_tokens: number;
+      cache_read_tokens: number;
+      total_tokens: number;
+    }
+  >;
 }
 
 async function runPiEventFilter(
@@ -352,5 +370,92 @@ describe('Pi Event Filter Metrics Integration', () => {
     const metrics = result.metrics as unknown as MetricsReport;
     expect(metrics.tool_reliability.success_rate_percent).toBe(0);
     expect(metrics.tool_reliability.failed_tool_calls).toBe(2);
+  });
+
+  test('tracks all metrics together: tool reliability + execution time + tokens', async () => {
+    const fixture = [
+      // Agent with token usage
+      JSON.stringify({
+        type: 'agent_start',
+        timestamp: 100,
+        context: 'pi-main',
+      }),
+      JSON.stringify({
+        type: 'message_update',
+        timestamp: 101,
+        message: {
+          model: 'gemini-3-flash',
+          api: 'google',
+          usage: {
+            prompt_tokens: 500,
+            completion_tokens: 200,
+            prompt_tokens_details: {
+              cache_creation_input_tokens: 50,
+              cache_read_input_tokens: 400,
+            },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: 105,
+        message: { model: 'gemini-3-flash', api: 'google' },
+        tool_name: 'read_file',
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: 106,
+        message: {
+          model: 'gemini-3-flash',
+          api: 'google',
+          content: [{ type: 'output_text', text: 'Read 100 lines successfully' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'tool_execution_start',
+        timestamp: 107,
+        message: { model: 'gemini-3-flash', api: 'google' },
+        tool_name: 'execute_bash',
+      }),
+      JSON.stringify({
+        type: 'tool_execution_end',
+        timestamp: 108,
+        message: {
+          model: 'gemini-3-flash',
+          api: 'google',
+          content: [{ type: 'output_text', text: 'Error: command failed' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'agent_end',
+        timestamp: 120, // 20 seconds
+      }),
+    ];
+
+    const result = await runPiEventFilter(fixture);
+    expect(result.exitCode).toBe(0);
+
+    const metrics = result.metrics as unknown as MetricsReport;
+
+    // Verify tool reliability
+    expect(metrics.tool_reliability.total_tool_calls).toBe(2);
+    expect(metrics.tool_reliability.successful_tool_calls).toBe(1);
+    expect(metrics.tool_reliability.failed_tool_calls).toBe(1);
+    expect(metrics.tool_reliability.success_rate_percent).toBe(50);
+
+    // Verify token usage
+    expect(metrics.token_usage.total_input_tokens).toBe(500);
+    expect(metrics.token_usage.total_output_tokens).toBe(200);
+    expect(metrics.token_usage.total_cache_creation_tokens).toBe(50);
+    expect(metrics.token_usage.total_cache_read_tokens).toBe(400);
+    expect(metrics.token_usage.total_tokens).toBe(1150);
+    expect(metrics.token_usage.cache_efficiency_percent).toBeCloseTo(400 / 1150 * 100, 1);
+
+    // Verify execution time
+    expect(metrics.execution_time.api_time_seconds).toBe(20);
+
+    // Verify per-model stats
+    expect(metrics.model_token_stats['gemini-3-flash']).toBeDefined();
+    expect(metrics.model_token_stats['gemini-3-flash'].total_tokens).toBe(1150);
   });
 });
