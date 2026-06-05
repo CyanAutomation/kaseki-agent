@@ -1623,7 +1623,7 @@ check_secret_scan_allowlist() {
     [ -z "$pattern" ] && continue
     
     # Normalize file path: remove leading "${KASEKI_WORKSPACE_DIR}"/repo/, repo/, and ./ if present
-    file_path="${file_path#${KASEKI_WORKSPACE_DIR}/repo/}"
+    file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
     file_path="${file_path#repo/}"
     file_path="${file_path#./}"
     
