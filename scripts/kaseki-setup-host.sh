@@ -355,15 +355,12 @@ run_privilege_tools_parallel() {
   
   local temp_dir
   temp_dir=$(mktemp -d)
-  export temp_dir  # Make accessible to trap handler in subshell contexts
   local success_marker="$temp_dir/success"
   local pids=()
   
   cleanup_parallel() {
-    # shellcheck disable=SC2317
-    rm -rf "$temp_dir"
+    rm -rf "${temp_dir:-}"
   }
-  trap cleanup_parallel EXIT
   
   # Test 1: setpriv (fastest, preferred)
   if [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
@@ -404,6 +401,10 @@ run_privilege_tools_parallel() {
       for pid in "${pids[@]}"; do
         kill "$pid" 2>/dev/null || true
       done
+      for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+      done
+      cleanup_parallel
       return 0
     fi
     sleep 0.1
@@ -416,7 +417,11 @@ run_privilege_tools_parallel() {
   done
   
   # Check if any succeeded
-  [ -f "$success_marker" ] && return 0
+  if [ -f "$success_marker" ]; then
+    cleanup_parallel
+    return 0
+  fi
+  cleanup_parallel
   return 1
 }
 
