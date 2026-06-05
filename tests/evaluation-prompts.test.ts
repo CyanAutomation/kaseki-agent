@@ -488,13 +488,123 @@ NODE
   });
 
   describe('Schema Validation', () => {
-    it('goal-check schema should require met as boolean', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const validationSection = scriptContent.substring(
-        scriptContent.indexOf('typeof artifact.met !== "boolean"'),
-        scriptContent.indexOf('typeof artifact.met !== "boolean"') + 200
-      );
-      expect(validationSection).toContain('boolean');
+    describe('goal-check met validation', () => {
+      const extractGoalCheckValidator = () => {
+        const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+        const startMarker = 'node -e \'\nconst fs = require("node:fs");';
+        const startIndex = scriptContent.indexOf(startMarker, scriptContent.indexOf('validate_goal_check_artifact_with_node()'));
+        expect(startIndex).toBeGreaterThanOrEqual(0);
+
+        const validatorStart = startIndex + "node -e '\n".length;
+        const endMarker = '\n\' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"';
+        const endIndex = scriptContent.indexOf(endMarker, validatorStart);
+        expect(endIndex).toBeGreaterThan(validatorStart);
+
+        return scriptContent.slice(validatorStart, endIndex);
+      };
+
+      const baseGoalCheckArtifact = () => ({
+        met: true as unknown,
+        confidence: 'high',
+        summary: 'The implementation satisfies the requested goal.',
+        retry_prompt: '',
+        evidence: ['src/example.ts:1 shows the requested implementation'],
+        missing: [],
+        validation_notes: [],
+      });
+
+      const runGoalCheckValidator = (artifact: Record<string, unknown>, attempt = 3) => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-validator-'));
+        const candidatePath = path.join(tmpDir, 'candidate.json');
+        const outputPath = path.join(tmpDir, 'goal-check.json');
+        const errorPath = path.join(tmpDir, 'validation-errors.json');
+
+        try {
+          fs.mkdirSync('/results', { recursive: true });
+          fs.writeFileSync(candidatePath, JSON.stringify(artifact));
+          const result = spawnSync(
+            process.execPath,
+            ['-e', extractGoalCheckValidator(), candidatePath, outputPath, String(attempt), errorPath],
+            { encoding: 'utf8' }
+          );
+
+          const validationError = fs.existsSync(errorPath)
+            ? JSON.parse(fs.readFileSync(errorPath, 'utf8'))
+            : undefined;
+          const canonicalArtifact = fs.existsSync(outputPath)
+            ? JSON.parse(fs.readFileSync(outputPath, 'utf8'))
+            : undefined;
+
+          return {
+            status: result.status,
+            stderr: result.stderr,
+            validationError,
+            canonicalArtifact,
+            canonicalArtifactExists: fs.existsSync(outputPath),
+          };
+        } finally {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
+      };
+
+      it.each([
+        ['met=true', true],
+        ['met=false', false],
+      ])('accepts and preserves valid goal-check artifacts with %s through the production validator', (_label, met) => {
+        const result = runGoalCheckValidator({
+          ...baseGoalCheckArtifact(),
+          met,
+          retry_prompt: met ? '' : 'Address the missing acceptance criteria before retrying.',
+          missing: met ? [] : ['Acceptance criteria still need follow-up'],
+        });
+
+        expect(result.status).toBe(0);
+        expect(result.validationError).toBeUndefined();
+        expect(result.canonicalArtifact).toMatchObject({
+          met,
+          confidence: 'high',
+          summary: 'The implementation satisfies the requested goal.',
+          retry_prompt: met ? '' : 'Address the missing acceptance criteria before retrying.',
+          evidence: ['src/example.ts:1 shows the requested implementation'],
+          missing: met ? [] : ['Acceptance criteria still need follow-up'],
+          validation_notes: [],
+          attempt: 3,
+        });
+        expect(typeof result.canonicalArtifact.timestamp).toBe('string');
+      });
+
+      it.each([
+        ['string', 'true'],
+        ['numeric', 1],
+        ['null', null],
+        ['missing', undefined],
+        ['array', [true]],
+        ['object', { value: true }],
+      ])('rejects goal-check artifacts with %s met values through the production validator', (_label, met) => {
+        const artifact = baseGoalCheckArtifact();
+        if (met === undefined) {
+          delete (artifact as Record<string, unknown>).met;
+        } else {
+          artifact.met = met;
+        }
+
+        const result = runGoalCheckValidator(artifact);
+
+        expect(result.status).not.toBe(0);
+        expect(result.canonicalArtifactExists).toBe(false);
+        expect(result.canonicalArtifact).toBeUndefined();
+        expect(result.validationError).toMatchObject({
+          reason_hint: 'schema_mismatch',
+          errors: [
+            expect.objectContaining({
+              field: 'met',
+              expected: 'boolean',
+              severity: 'critical',
+              suggestion: 'met must be true or false',
+            }),
+          ],
+        });
+      });
     });
 
     describe('reviewer_confidence validation', () => {
