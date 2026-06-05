@@ -361,6 +361,10 @@ build_goal_check_prompt
         fs.appendFileSync(filePath, `${JSON.stringify(value)}\n`);
       };
 
+      // Initialize files before any operations that could throw
+      fs.writeFileSync(orchestratorEventsPath, '');
+      fs.writeFileSync(runLogPath, '');
+
       try {
         fs.mkdirSync(path.join(fakeRepo, 'deps', 'fake-dep'), { recursive: true });
         fs.mkdirSync(fakeBin, { recursive: true });
