@@ -19,8 +19,7 @@ trap cleanup EXIT
 
 fail() {
   echo "✗ FAIL: $TEST_NAME: $*" >&2
-    # Set PATH to minimal defaults to simulate a restricted environment
-    export PATH="/usr/local/bin:/usr/bin:/bin"
+  if [ -f "$RUN_LOG" ]; then
     echo "--- kaseki run log ---" >&2
     tail -80 "$RUN_LOG" >&2 || true
   fi
@@ -29,12 +28,12 @@ fail() {
 
 assert_file_contains() {
   local file="$1"
-test_set_path_preserves_custom_path() {
-    export KASEKI_PATH="/custom/bin"
-    set_path_if_unset
-    assertEquals "Custom KASEKI_PATH should remain unchanged" "/custom/bin" "${KASEKI_PATH}"
-}
-
+  local pattern="$2"
+  if ! [ -f "$file" ]; then
+    fail "expected file $file does not exist"
+  fi
+  if ! grep -qE "$pattern" "$file"; then
+    fail "expected $file to contain pattern: $pattern"
   fi
 }
 
