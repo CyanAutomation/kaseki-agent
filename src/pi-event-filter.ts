@@ -5,6 +5,7 @@ import readline from 'node:readline';
 import { EventCounterAggregator } from './event-aggregator.js';
 import { ToolReliabilityAggregator, ToolReliabilitySummary, ToolStats } from './tool-reliability-aggregator.js';
 import { ExecutionTimeAggregator, ExecutionTimeSummary, ExecutionStats } from './execution-time-aggregator.js';
+import { TokenUsageAggregator, TokenUsageSummary, ModelTokenStats } from './token-usage-aggregator.js';
 import { TimestampTracker } from './timestamp-tracker.js';
 import { extractEventTimestamp, PiEvent } from './lib/event-timestamp-helpers.js';
 
@@ -27,6 +28,8 @@ interface Summary {
   execution_time?: ExecutionTimeSummary;
   execution_api_stats?: ExecutionStats;
   execution_tool_stats?: ExecutionStats;
+  token_usage?: TokenUsageSummary;
+  model_token_stats?: ModelTokenStats;
 }
 
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
@@ -159,6 +162,34 @@ function extractPhase(event: PiEvent): string {
   return typeof context === 'string' ? context : 'unknown';
 }
 
+/**
+ * Extract usage information from a Pi event.
+ * Looks for usage in message, assistantMessageEvent, or top-level usage field.
+ */
+function extractUsage(event: PiEvent): any {
+  // Check message.usage (OpenRouter format)
+  if ((event as any).message?.usage) {
+    return (event as any).message.usage;
+  }
+  // Check top-level usage field
+  if ((event as any).usage) {
+    return (event as any).usage;
+  }
+  // Check assistantMessageEvent.usage
+  if ((event as any).assistantMessageEvent?.usage) {
+    return (event as any).assistantMessageEvent.usage;
+  }
+  return null;
+}
+
+/**
+ * Extract model name from event (for token usage association).
+ */
+function extractModelName(event: PiEvent): string {
+  const model = (event as any).message?.model || (event as any).model || 'unknown';
+  return typeof model === 'string' ? model : 'unknown';
+}
+
 async function main(): Promise<void> {
   startRssSampler();
   const input = fs.createReadStream(inputPath, { encoding: 'utf8' });
@@ -168,6 +199,7 @@ async function main(): Promise<void> {
   const aggregator = new EventCounterAggregator();
   const toolReliability = new ToolReliabilityAggregator();
   const executionTime = new ExecutionTimeAggregator();
+  const tokenUsage = new TokenUsageAggregator();
   const tracker = new TimestampTracker();
   let invalidJsonLines = 0;
 
@@ -202,6 +234,13 @@ async function main(): Promise<void> {
     // Record assistant event type
     const assistantType = event.assistantMessageEvent?.type;
     aggregator.recordAssistantEventType(assistantType);
+
+    // Track token usage from events
+    const usage = extractUsage(event);
+    if (usage) {
+      const modelName = extractModelName(event);
+      tokenUsage.recordUsage(modelName, usage);
+    }
 
     // Track agent timing (API invocation time)
     const timestampSecs = extractTimestampSeconds(event);
@@ -251,6 +290,8 @@ async function main(): Promise<void> {
     execution_time: executionTime.getSummary(),
     execution_api_stats: executionTime.getApiStats(),
     execution_tool_stats: executionTime.getToolStats(),
+    token_usage: tokenUsage.getSummary(),
+    model_token_stats: tokenUsage.getModelStats(),
   };
 
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
