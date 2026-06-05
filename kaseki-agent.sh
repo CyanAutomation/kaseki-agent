@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086,SC2016,SC2027,SC1091
 # NOTE: This script intentionally avoids global `set -e` so each stage can
 # record status/timing artifacts before deciding whether to stop.
 set -uo pipefail
