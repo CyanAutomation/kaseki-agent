@@ -107,6 +107,8 @@ SCOUTING_ARTIFACT="$3/scouting.json"
 TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
 TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
+KASEKI_RESULTS_DIR="$3"
+export KASEKI_RESULTS_DIR
 
 # shellcheck source=/dev/null
 source "$FUNCTION_SOURCE"
