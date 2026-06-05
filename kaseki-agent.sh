@@ -19,12 +19,21 @@ KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run l
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
-KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
+KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+export KASEKI_RESULTS_DIR
+KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-/workspace}"
+export KASEKI_WORKSPACE_DIR
+KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_BASELINE_DIR}}"
+export KASEKI_WORKSPACE_BASELINE_DIR
+KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
+export KASEKI_APP_LIB_DIR
+KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
+export KASEKI_CACHE_DIR
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
-KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}"
+KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
 KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
 KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
@@ -58,7 +67,7 @@ KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
 KASEKI_REPO_MEMORY_MODE="${KASEKI_REPO_MEMORY_MODE:-off}"
 KASEKI_REPO_MEMORY_TTL_DAYS="${KASEKI_REPO_MEMORY_TTL_DAYS:-30}"
 KASEKI_REPO_MEMORY_MAX_BYTES="${KASEKI_REPO_MEMORY_MAX_BYTES:-8000}"
-KASEKI_REPO_MEMORY_ROOT="${KASEKI_REPO_MEMORY_ROOT:-/cache/repo-memory}"
+KASEKI_REPO_MEMORY_ROOT="${KASEKI_REPO_MEMORY_ROOT:-${KASEKI_CACHE_DIR}/repo-memory}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}"
 KASEKI_RESTORE_DISALLOWED_CHANGES="${KASEKI_RESTORE_DISALLOWED_CHANGES:-1}"
@@ -134,13 +143,13 @@ TS_PRE_CHECK_DURATION_SECONDS=0
 TS_PRE_CHECK_TIMESTAMP=""
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
-VALIDATION_RAW_LOG="/results/validation-raw.log"
-PRE_VALIDATION_RAW_LOG="/results/pre-validation-raw.log"
-AUTO_LINT_CLEANUP_LOG="/results/auto-lint-cleanup.log"
-AUTO_LINT_CLEANUP_TIMINGS_FILE="/results/auto-lint-cleanup-timings.tsv"
-FILTER_DIAGNOSTICS_LOG="/results/filter-diagnostics.log"
-VALIDATION_ENV_LOG="/results/validation-env.log"
-PRE_VALIDATION_ENV_LOG="/results/pre-validation-env.log"
+VALIDATION_RAW_LOG="${KASEKI_RESULTS_DIR}/validation-raw.log"
+PRE_VALIDATION_RAW_LOG="${KASEKI_RESULTS_DIR}/pre-validation-raw.log"
+AUTO_LINT_CLEANUP_LOG="${KASEKI_RESULTS_DIR}/auto-lint-cleanup.log"
+AUTO_LINT_CLEANUP_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-timings.tsv"
+FILTER_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/filter-diagnostics.log"
+VALIDATION_ENV_LOG="${KASEKI_RESULTS_DIR}/validation-env.log"
+PRE_VALIDATION_ENV_LOG="${KASEKI_RESULTS_DIR}/pre-validation-env.log"
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
@@ -154,25 +163,25 @@ GITHUB_OPERATION_PHASE=""
 ACTUAL_MODEL="unknown"
 GITHUB_PR_URL=""
 GITHUB_SKIP_REASONS=()
-VALIDATION_TIMINGS_FILE="/results/validation-timings.tsv"
-PRE_VALIDATION_TIMINGS_FILE="/results/pre-validation-timings.tsv"
-STAGE_TIMINGS_FILE="/results/stage-timings.tsv"
-DEPENDENCY_CACHE_LOG="/results/dependency-cache.log"
+VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/validation-timings.tsv"
+PRE_VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv"
+STAGE_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/stage-timings.tsv"
+DEPENDENCY_CACHE_LOG="${KASEKI_RESULTS_DIR}/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
 SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
 GOAL_SETTING_RAW_EVENTS="/tmp/pi-goal-setting-events.raw.jsonl"
 GOAL_CHECK_RAW_EVENTS="/tmp/pi-goal-check-events.raw.jsonl"
 RUN_EVALUATION_RAW_EVENTS="/tmp/pi-run-evaluation-events.raw.jsonl"
-SCOUTING_ARTIFACT="/results/scouting.json"
-SCOUTING_CANDIDATE_ARTIFACT="/results/scouting-candidate.json"
-GOAL_SETTING_ARTIFACT="/results/goal-setting.json"
-GOAL_SETTING_CANDIDATE_ARTIFACT="/results/goal-setting-candidate.json"
-GOAL_CHECK_CANDIDATE_ARTIFACT="/results/goal-check-candidate.json"
-RUN_EVALUATION_ARTIFACT="/results/run-evaluation.json"
-RUN_EVALUATION_CANDIDATE_ARTIFACT="/results/run-evaluation-candidate.json"
-TEST_IMPACT_WARNINGS_ARTIFACT="/results/test-impact-warnings.log"
-EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="/results/expectation-mismatch-warnings.jsonl"
-KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-/workspace/.kaseki-cache}"
+SCOUTING_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting.json"
+SCOUTING_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting-candidate.json"
+GOAL_SETTING_ARTIFACT="${KASEKI_RESULTS_DIR}/goal-setting.json"
+GOAL_SETTING_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/goal-setting-candidate.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/goal-check-candidate.json"
+RUN_EVALUATION_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+RUN_EVALUATION_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation-candidate.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/test-impact-warnings.log"
+EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/expectation-mismatch-warnings.jsonl"
+KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
 KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
 KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS="${KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS:-30}"
@@ -184,7 +193,7 @@ KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-/opt/kas
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_GIT_CACHE_MODE="${KASEKI_GIT_CACHE_MODE:-mirror}"
-KASEKI_GIT_CACHE_ROOT="${KASEKI_GIT_CACHE_ROOT:-/cache/git}"
+KASEKI_GIT_CACHE_ROOT="${KASEKI_GIT_CACHE_ROOT:-${KASEKI_CACHE_DIR}/git}"
 KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS="${KASEKI_GIT_CACHE_FETCH_TIMEOUT_SECONDS:-120}"
 GIT_CACHE_KEY=""
 GIT_CACHE_MIRROR=""
@@ -201,12 +210,12 @@ REPO_MEMORY_COMMIT_SHA="unknown"
 
 # Track last executed command for better error reporting
 LAST_COMMAND=""
-LAST_COMMAND_LOG="/results/last-command.log"
+LAST_COMMAND_LOG="${KASEKI_RESULTS_DIR}/last-command.log"
 
 # Signal handler for graceful termination
 handle_termination() {
   local signal="$1"
-  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a /results/progress.log
+  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
   # Exit with standard code for signal (128 + signal_number)
   # SIGINT = 130, SIGTERM = 143
   if [ "$signal" = "SIGINT" ]; then
@@ -243,8 +252,8 @@ setup_host_logging_mirror() {
   if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     host_log_file="$KASEKI_LOG_DIR/${base_name}-${stamp}.log"
-    exec > >(tee -a /results/stdout.log | tee -a "$host_log_file") \
-      2> >(tee -a /results/stderr.log | tee -a "$host_log_file" >&2)
+    exec > >(tee -a ${KASEKI_RESULTS_DIR}/stdout.log | tee -a "$host_log_file") \
+      2> >(tee -a ${KASEKI_RESULTS_DIR}/stderr.log | tee -a "$host_log_file" >&2)
     printf 'Host log mirror: %s\n' "$host_log_file"
     return 0
   fi
@@ -252,7 +261,7 @@ setup_host_logging_mirror() {
     printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
     exit 1
   fi
-  exec > >(tee -a /results/stdout.log) 2> >(tee -a /results/stderr.log >&2)
+  exec > >(tee -a ${KASEKI_RESULTS_DIR}/stdout.log) 2> >(tee -a ${KASEKI_RESULTS_DIR}/stderr.log >&2)
   printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)\n' "$KASEKI_LOG_DIR" >&2
 }
 
@@ -310,7 +319,7 @@ if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
   exit 0
 fi
 
-mkdir_paths=(/results)
+mkdir_paths=(${KASEKI_RESULTS_DIR})
 if [ -n "${HOME:-}" ]; then
   mkdir_paths+=("${HOME}")
 fi
@@ -327,41 +336,41 @@ if ! mkdir -p "${mkdir_paths[@]}"; then
   printf 'Error: Failed to create required runtime directories.\n' >&2
   exit 1
 fi
-: > /results/stdout.log
-: > /results/stderr.log
-: > /results/pi-events.jsonl
-: > /results/pi-summary.json
-: > /results/scouting-events.jsonl
-: > /results/scouting-summary.json
-: > /results/scouting-validation-errors.jsonl
-: > /results/scouting-validation-summary.txt
-: > /results/goal-check-events.jsonl
-: > /results/goal-check-summary.json
-: > /results/goal-check-stderr.log
-: > /results/goal-check-validation-errors.jsonl
-: > /results/goal-check-validation-summary.txt
-: > /results/goal-check-attempts.jsonl
-: > /results/goal-check.json
-: > /results/run-evaluation-events.jsonl
-: > /results/run-evaluation-summary.json
-: > /results/run-evaluation-stderr.log
-: > /results/run-evaluation.json
+: > ${KASEKI_RESULTS_DIR}/stdout.log
+: > ${KASEKI_RESULTS_DIR}/stderr.log
+: > ${KASEKI_RESULTS_DIR}/pi-events.jsonl
+: > ${KASEKI_RESULTS_DIR}/pi-summary.json
+: > ${KASEKI_RESULTS_DIR}/scouting-events.jsonl
+: > ${KASEKI_RESULTS_DIR}/scouting-summary.json
+: > ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl
+: > ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt
+: > ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl
+: > ${KASEKI_RESULTS_DIR}/goal-check-summary.json
+: > ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+: > ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl
+: > ${KASEKI_RESULTS_DIR}/goal-check-validation-summary.txt
+: > ${KASEKI_RESULTS_DIR}/goal-check-attempts.jsonl
+: > ${KASEKI_RESULTS_DIR}/goal-check.json
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
+: > ${KASEKI_RESULTS_DIR}/run-evaluation.json
 : > "$TEST_IMPACT_WARNINGS_ARTIFACT"
 : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
-: > /results/validation.log
-: > /results/pre-validation.log
+: > ${KASEKI_RESULTS_DIR}/validation.log
+: > ${KASEKI_RESULTS_DIR}/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
 : > "$PRE_VALIDATION_ENV_LOG"
 : > "$AUTO_LINT_CLEANUP_LOG"
 : > "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-: > /results/quality.log
-: > /results/secret-scan.log
-: > /results/git-push.log
-: > /results/progress.log
-: > /results/progress.jsonl
-: > /results/format-check-command.txt
-: > /results/failure.json
-: > /results/result-summary.md
+: > ${KASEKI_RESULTS_DIR}/quality.log
+: > ${KASEKI_RESULTS_DIR}/secret-scan.log
+: > ${KASEKI_RESULTS_DIR}/git-push.log
+: > ${KASEKI_RESULTS_DIR}/progress.log
+: > ${KASEKI_RESULTS_DIR}/progress.jsonl
+: > ${KASEKI_RESULTS_DIR}/format-check-command.txt
+: > ${KASEKI_RESULTS_DIR}/failure.json
+: > ${KASEKI_RESULTS_DIR}/result-summary.md
 : > "$VALIDATION_TIMINGS_FILE"
 : > "$PRE_VALIDATION_TIMINGS_FILE"
 : >> "$STAGE_TIMINGS_FILE"
@@ -528,9 +537,9 @@ validate_scouting_artifact_with_node() {
     "$candidate_artifact" \
     "$final_artifact" \
     "$validation_error_file" \
-    "/results/scouting-validation-errors.jsonl" \
+    "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" \
     >/dev/null \
-    2>> /results/scouting-stderr.log
+    2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log
 }
 
 # Validate scouting artifact and emit structured reason code
@@ -544,7 +553,7 @@ validate_scouting_artifact() {
 
   : > "$validation_error_file"
   if [ ! -f "$candidate_artifact" ]; then
-    if [ -f /results/filesystem-readonly-reason.txt ]; then
+    if [ -f ${KASEKI_RESULTS_DIR}/filesystem-readonly-reason.txt ]; then
       reason_code="readonly_filesystem"
       reason_details="1 critical scouting validation error: scouting-candidate.json missing due to read-only filesystem"
     else
@@ -552,15 +561,15 @@ validate_scouting_artifact() {
       reason_details="1 critical scouting validation error: scouting-candidate.json"
     fi
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at /results/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount /results as read-write (docker run -v /path:/results:rw)" : "ensure the scouting Pi writes exactly one valid JSON object to /results/scouting-candidate.json"}; fs.appendFileSync("/results/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>> /results/scouting-stderr.log || true
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>> "${KASEKI_RESULTS_DIR}/scouting-stderr.log" || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
   fi
 
   printf '%s\n' "$reason_code" > "$reason_file"
-  printf '%s\n' "$reason_details" > /results/scouting-validation-summary.txt
-  printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/scouting-stderr.log
+  printf '%s\n' "$reason_details" > ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt
+  printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
 }
@@ -575,12 +584,14 @@ validate_goal_check_artifact_with_node() {
   # shellcheck disable=SC2016
   node -e '
 const fs = require("node:fs");
+const path = require("node:path");
 const input = process.argv[1];
 const output = process.argv[2];
 const attempt = Number(process.argv[3]);
 const errorLog = process.argv[4];
-const jsonlLog = "/results/goal-check-validation-errors.jsonl";
-const attemptsLog = "/results/goal-check-attempts.jsonl";
+const resultsDir = process.env.KASEKI_RESULTS_DIR || "/results";
+const jsonlLog = path.join(resultsDir, "goal-check-validation-errors.jsonl");
+const attemptsLog = path.join(resultsDir, "goal-check-attempts.jsonl");
 
 function actualType(value) {
   if (value === null) return "null";
@@ -589,11 +600,16 @@ function actualType(value) {
 }
 
 function appendValidationFailure(error) {
-  fs.appendFileSync(jsonlLog, JSON.stringify({
-    timestamp: new Date().toISOString(),
-    attempt,
-    ...error,
-  }) + "\n");
+  try {
+    fs.mkdirSync(path.dirname(jsonlLog), { recursive: true });
+    fs.appendFileSync(jsonlLog, JSON.stringify({
+      timestamp: new Date().toISOString(),
+      attempt,
+      ...error,
+    }) + "\n");
+  } catch (e) {
+    // Non-blocking log failure
+  }
 }
 
 function summarize(errors) {
@@ -626,7 +642,7 @@ try {
     expected: "valid JSON object",
     actual: error && error.message ? String(error.message) : String(error),
     severity: "critical",
-    suggestion: "ensure exactly one valid JSON object is written to /results/goal-check-candidate.json",
+    suggestion: "ensure exactly one valid JSON object is written to ${KASEKI_RESULTS_DIR}/goal-check-candidate.json",
   }]);
 }
 
@@ -679,8 +695,13 @@ if (errors.length) {
 artifact.attempt = attempt;
 artifact.timestamp = new Date().toISOString();
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-fs.appendFileSync(attemptsLog, JSON.stringify(artifact) + "\n");
-' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>> /results/goal-check-stderr.log
+try {
+  fs.mkdirSync(path.dirname(attemptsLog), { recursive: true });
+  fs.appendFileSync(attemptsLog, JSON.stringify(artifact) + "\n");
+} catch (e) {
+  // Non-blocking log failure
+}
+' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>> "${KASEKI_RESULTS_DIR}/goal-check-stderr.log"
 }
 
 validate_goal_check_artifact() {
@@ -688,7 +709,7 @@ validate_goal_check_artifact() {
   local final_artifact="$2"
   local attempt="$3"
   local reason_file="$4"
-  local summary_file="${5:-/results/goal-check-validation-summary.txt}"
+  local summary_file="${5:-${KASEKI_RESULTS_DIR}/goal-check-validation-summary.txt}"
   local validation_error_file="/tmp/goal-check-validation-errors.json"
   local reason_code="valid"
   local reason_details="artifact validation passed"
@@ -698,7 +719,7 @@ validate_goal_check_artifact() {
     reason_code="missing_file"
     reason_details="1 critical goal-check validation error: goal-check-candidate.json"
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at /results/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to /results/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync("/results/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> /results/goal-check-stderr.log || true
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at ${KASEKI_RESULTS_DIR}/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to ${KASEKI_RESULTS_DIR}/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
   elif ! validate_goal_check_artifact_with_node "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); const hint=String(v.reason_hint||""); process.stdout.write(hint === "malformed_json" ? "malformed_json" : "schema_mismatch");}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"goal-check artifact validation failed"));}catch{process.stdout.write("goal-check artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'goal-check artifact validation failed')"
@@ -706,7 +727,7 @@ validate_goal_check_artifact() {
 
   printf '%s\n' "$reason_code" > "$reason_file"
   printf '%s\n' "$reason_details" > "$summary_file"
-  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a /results/goal-check-stderr.log
+  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
 }
@@ -715,20 +736,20 @@ emit_progress() {
   local stage="$1"
   local detail="$2"
   local status="${3:-info}"
-  append_jsonl_object /results/progress.jsonl \
+  append_jsonl_object ${KASEKI_RESULTS_DIR}/progress.jsonl \
     "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "component=kaseki-agent" \
     "stage=$stage" \
     "status=$status" \
     "instance=$INSTANCE_NAME" \
     "detail=$detail"
-  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a /results/progress.log
+  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
 }
 
 emit_event() {
   local event_type="$1"
   shift
-  append_jsonl_object /results/progress.jsonl \
+  append_jsonl_object ${KASEKI_RESULTS_DIR}/progress.jsonl \
     "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "component=kaseki-agent" \
     "event_type=$event_type" \
@@ -741,7 +762,7 @@ emit_error_event() {
   local detail="$2"
   local recovery="${3:-continue}"
   emit_event "error" "error_type=$error_type" "detail=$detail" "recovery_action=$recovery"
-  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a /results/progress.log
+  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
 }
 
 write_metadata() {
@@ -759,7 +780,7 @@ write_metadata() {
     stages_json="[\"unknown\"]"
   fi
   
-  cat > /results/metadata.json <<META
+  cat > ${KASEKI_RESULTS_DIR}/metadata.json <<META
 {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "repo_url": $(printf '%s' "$REPO_URL" | json_encode),
@@ -880,7 +901,7 @@ write_metadata() {
   "stages": $stages_json
 }
 META
-  printf '%s\n' "$exit_code" > /results/exit_code
+  printf '%s\n' "$exit_code" > ${KASEKI_RESULTS_DIR}/exit_code
 }
 
 set_current_stage() {
@@ -935,7 +956,7 @@ build_stages_array() {
 
 write_result_summary() {
   local changed_files changed_files_markdown validation_status pr_status github_skip_reasons_summary goal_check_status
-  changed_files="$(cat /results/changed-files.txt 2>/dev/null || true)"
+  changed_files="$(cat ${KASEKI_RESULTS_DIR}/changed-files.txt 2>/dev/null || true)"
   if [ -n "$changed_files" ]; then
     changed_files_markdown="$(printf '%s\n' "$changed_files" | sed 's/^/  - /')"
   else
@@ -988,7 +1009,7 @@ write_result_summary() {
     goal_check_status="not reached"
   fi
 
-  cat > /results/result-summary.md <<SUMMARY
+  cat > ${KASEKI_RESULTS_DIR}/result-summary.md <<SUMMARY
 # Kaseki Result: $INSTANCE_NAME
 
 - Status: $(if [ "$STATUS" -eq 0 ]; then printf 'passed'; else printf 'failed'; fi)
@@ -1013,7 +1034,7 @@ $(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist r
 $(if [ "$KASEKI_VALIDATION_RUN_ALL_COMMANDS" -eq 1 ]; then printf -- '- **ℹ️ Validation mode: Comprehensive** (KASEKI_VALIDATION_RUN_ALL_COMMANDS=1) - all %d commands executed\n' "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; elif [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
 - Test failure analysis: $TEST_FAILURE_CLASSIFICATION_STATUS
 $(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ "$NEWLY_INTRODUCED_FAILURES_COUNT" -gt 0 ]; then printf '  - ⚠️ **Newly introduced failures: %d**\n' "$NEWLY_INTRODUCED_FAILURES_COUNT"; fi)
-$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f /results/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
+$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
 - Quality checks: $QUALITY_EXIT
 - Secret scan: $SECRET_SCAN_EXIT
 - GitHub PR: $pr_status
@@ -1055,12 +1076,12 @@ SUMMARY
 write_failure_json() {
   local exit_code="$1"
   local stderr_tail
-  stderr_tail="$(tail -20 /results/stderr.log 2>/dev/null || true)"
+  stderr_tail="$(tail -20 ${KASEKI_RESULTS_DIR}/stderr.log 2>/dev/null || true)"
   if [ "$exit_code" -eq 0 ]; then
-    : > /results/failure.json
+    : > ${KASEKI_RESULTS_DIR}/failure.json
     return 0
   fi
-  cat > /results/failure.json <<FAILURE
+  cat > ${KASEKI_RESULTS_DIR}/failure.json <<FAILURE
 {
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "exit_code": $exit_code,
@@ -1078,7 +1099,7 @@ write_failure_json() {
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
-  "artifacts_dir": "/results",
+  "artifacts_dir": "${KASEKI_RESULTS_DIR}",
   "metadata": "metadata.json",
   "stderr": "stderr.log",
   "stdout": "stdout.log",
@@ -1090,28 +1111,28 @@ FAILURE
 
 collect_git_artifacts() {
   DIFF_NONEMPTY=false
-  if [ -d /workspace/repo/.git ]; then
+  if [ -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     while IFS= read -r untracked_file || [ -n "$untracked_file" ]; do
       [ -z "$untracked_file" ] && continue
-      git -C /workspace/repo add -N -- "$untracked_file" 2>/dev/null || true
-    done < <(git -C /workspace/repo ls-files --others --exclude-standard 2>/dev/null || true)
-    git -C /workspace/repo status --short > /results/git.status 2>/dev/null || true
-    git -C /workspace/repo diff -- . > /results/git.diff 2>/dev/null || true
-    git -C /workspace/repo diff --name-only -- . > /results/changed-files.txt 2>/dev/null || true
-    if [ -s /results/git.diff ]; then
+      git -C ${KASEKI_WORKSPACE_DIR}/repo add -N -- "$untracked_file" 2>/dev/null || true
+    done < <(git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --others --exclude-standard 2>/dev/null || true)
+    git -C ${KASEKI_WORKSPACE_DIR}/repo status --short > ${KASEKI_RESULTS_DIR}/git.status 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff -- . > ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only -- . > ${KASEKI_RESULTS_DIR}/changed-files.txt 2>/dev/null || true
+    if [ -s ${KASEKI_RESULTS_DIR}/git.diff ]; then
       DIFF_NONEMPTY=true
     fi
   else
-    : > /results/git.status
-    : > /results/git.diff
-    : > /results/changed-files.txt
+    : > ${KASEKI_RESULTS_DIR}/git.status
+    : > ${KASEKI_RESULTS_DIR}/git.diff
+    : > ${KASEKI_RESULTS_DIR}/changed-files.txt
   fi
 }
 
 run_static_test_impact_check() {
-  local changed_files_file="/results/changed-files.txt"
-  local diff_file="/results/git.diff"
-  local artifact="${TEST_IMPACT_WARNINGS_ARTIFACT:-/results/test-impact-warnings.log}"
+  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
+  local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
+  local artifact="${TEST_IMPACT_WARNINGS_ARTIFACT:-${KASEKI_RESULTS_DIR}/test-impact-warnings.log}"
   local indicator_regex='(parse|parser|regex|regexp|stage|event|format|serialize|name)'
   local production_matches diff_matches warning_detail
 
@@ -1153,7 +1174,7 @@ run_static_test_impact_check() {
     "warning_type=test_impact_without_tests" \
     "artifact=$artifact" \
     "detail=$warning_detail"
-  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a /results/progress.log
+  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
   return 0
 }
 
@@ -1166,21 +1187,21 @@ run_expectation_mismatch_detector() {
   fi
 
   : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
-  if [ ! -s /results/git.diff ]; then
-    printf '[expectation-mismatch] skipped: /results/git.diff is empty\n' >> /results/progress.log
+  if [ ! -s ${KASEKI_RESULTS_DIR}/git.diff ]; then
+    printf '[expectation-mismatch] skipped: ${KASEKI_RESULTS_DIR}/git.diff is empty\n' >> ${KASEKI_RESULTS_DIR}/progress.log
     return 0
   fi
   if [ ! -f "$detector_script" ]; then
-    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a /results/progress.log
+    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
     return 0
   fi
 
   if ! node "$detector_script" \
-    --repo /workspace/repo \
-    --diff /results/git.diff \
+    --repo ${KASEKI_WORKSPACE_DIR}/repo \
+    --diff ${KASEKI_RESULTS_DIR}/git.diff \
     --output "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT" \
-    --progress /results/progress.log; then
-    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a /results/progress.log
+    --progress ${KASEKI_RESULTS_DIR}/progress.log; then
+    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a ${KASEKI_RESULTS_DIR}/progress.log
   fi
 }
 
@@ -1291,7 +1312,7 @@ run_scouting_allowlist_coverage() {
   local scouting_artifact agent_patterns validation_patterns
   scouting_artifact="${1:?missing scouting artifact path}"
   
-  if [ ! -f "$scouting_artifact" ] || [ ! -f /results/changed-files.txt ]; then
+  if [ ! -f "$scouting_artifact" ] || [ ! -f ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
     return 0
   fi
   
@@ -1306,7 +1327,7 @@ run_scouting_allowlist_coverage() {
   validation_warnings=""
   
   if [ -n "$agent_patterns" ] && command -v dry-run-allowlist.sh >/dev/null 2>&1; then
-    agent_coverage="$(dry-run-allowlist.sh --result-dir /results --allowlist "$agent_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+    agent_coverage="$(dry-run-allowlist.sh --result-dir ${KASEKI_RESULTS_DIR} --allowlist "$agent_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
     [ -z "$agent_coverage" ] && agent_coverage="0"
     
     # Check for problematic coverage
@@ -1318,7 +1339,7 @@ run_scouting_allowlist_coverage() {
   fi
   
   if [ -n "$validation_patterns" ] && command -v dry-run-allowlist.sh >/dev/null 2>&1; then
-    validation_coverage="$(dry-run-allowlist.sh --result-dir /results --allowlist "$validation_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+    validation_coverage="$(dry-run-allowlist.sh --result-dir ${KASEKI_RESULTS_DIR} --allowlist "$validation_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
     [ -z "$validation_coverage" ] && validation_coverage="0"
     
     if [ "$validation_coverage" -lt 30 ]; then
@@ -1352,12 +1373,12 @@ run_scouting_allowlist_coverage() {
       if [ -n "$validation_warnings" ]; then
         printf '  ⚠ validation_phase warning: %s\n' "$validation_warnings"
       fi
-    } | tee -a /results/scouting-report.md >> /results/quality.log
+    } | tee -a ${KASEKI_RESULTS_DIR}/scouting-report.md >> ${KASEKI_RESULTS_DIR}/quality.log
   fi
 }
 
 restore_disallowed_changes() {
-  if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d /workspace/repo/.git ]; then
+  if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     return 0
   fi
 
@@ -1370,7 +1391,7 @@ restore_disallowed_changes() {
   coverage=0
 
   # Initialize restoration tracking file
-  : > /results/restoration.jsonl
+  : > ${KASEKI_RESULTS_DIR}/restoration.jsonl
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
@@ -1380,21 +1401,21 @@ restore_disallowed_changes() {
       {
         printf '{"timestamp":"%s","event":"file_evaluated","file":"%s","status":"kept","reason":"matched_allowlist"}\n' \
           "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
-      } >> /results/restoration.jsonl
+      } >> ${KASEKI_RESULTS_DIR}/restoration.jsonl
       continue
     fi
     # File did not match allowlist - restore it
     restored_count=$((restored_count + 1))
-    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a /results/quality.log
+    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
     emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
     {
       printf '{"timestamp":"%s","event":"file_restored","file":"%s","status":"restored","reason":"not_in_allowlist"}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
-    } >> /results/restoration.jsonl
-    git -C /workspace/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
-    git -C /workspace/repo clean -f -- "$changed_file" 2>/dev/null || true
+    } >> ${KASEKI_RESULTS_DIR}/restoration.jsonl
+    git -C ${KASEKI_WORKSPACE_DIR}/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo clean -f -- "$changed_file" 2>/dev/null || true
     restored_any=1
-  done < /results/changed-files.txt
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
 
   # Emit restoration summary to quality.log with actionable guidance
   if [ $((restored_count + kept_count)) -gt 0 ]; then
@@ -1405,12 +1426,12 @@ restore_disallowed_changes() {
       printf '\n[allowlist summary] Restored: %d files; Kept: %d files (coverage: %d%%)\n' "$restored_count" "$kept_count" "$coverage"
       if [ "$restored_count" -gt 0 ] && [ "$coverage" -lt 50 ]; then
         printf '[allowlist note] Low coverage detected. To improve:\n'
-        printf '  1. Run: ./scripts/suggest-allowlist.sh /results (or /agents/kaseki-results/<instance>)\n'
+        printf '  1. Run: ./scripts/suggest-allowlist.sh ${KASEKI_RESULTS_DIR} (or /agents/kaseki-results/<instance>)\n'
         printf '  2. Review suggested patterns in allowlist-suggestions.md\n'
         printf '  3. Update KASEKI_CHANGED_FILES_ALLOWLIST and re-run\n'
         printf 'See docs/QUALITY_GATES.md for more guidance.\n'
       fi
-    } | tee -a /results/quality.log
+    } | tee -a ${KASEKI_RESULTS_DIR}/quality.log
     emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count" "coverage=$coverage"
   fi
 
@@ -1420,7 +1441,7 @@ restore_disallowed_changes() {
 }
 
 generate_restoration_report() {
-  if [ ! -f /results/restoration.jsonl ]; then
+  if [ ! -f ${KASEKI_RESULTS_DIR}/restoration.jsonl ]; then
     printf '[debug] restoration report: skipping - restoration.jsonl not found\n' >&2
     return 0
   fi
@@ -1429,7 +1450,7 @@ generate_restoration_report() {
   
   # Safely extract counts from restoration.jsonl with validation
   printf '[debug] restoration report: extracting counts from restoration.jsonl\n' >&2
-  restored_count=$(grep -c '"status":"restored"' /results/restoration.jsonl 2>/dev/null || true)
+  restored_count=$(grep -c '"status":"restored"' ${KASEKI_RESULTS_DIR}/restoration.jsonl 2>/dev/null || true)
   restored_count=${restored_count:-0}
   printf '[debug] restoration report: restored_count="%s"\n' "$restored_count" >&2
   if ! validate_numeric "restored_count" "$restored_count"; then
@@ -1437,7 +1458,7 @@ generate_restoration_report() {
     return 1
   fi
   
-  kept_count=$(grep -c '"status":"kept"' /results/restoration.jsonl 2>/dev/null || true)
+  kept_count=$(grep -c '"status":"kept"' ${KASEKI_RESULTS_DIR}/restoration.jsonl 2>/dev/null || true)
   kept_count=${kept_count:-0}
   printf '[debug] restoration report: kept_count="%s"\n' "$kept_count" >&2
   if ! validate_numeric "kept_count" "$kept_count"; then
@@ -1475,12 +1496,12 @@ generate_restoration_report() {
     if [ "$restored_count" -gt 0 ]; then
       printf '## Restored Files\n\n'
       printf 'These files were modified by the agent but restored because they fall outside the allowlist:\n\n'
-      grep '"status":"restored"' /results/restoration.jsonl | \
+      grep '"status":"restored"' ${KASEKI_RESULTS_DIR}/restoration.jsonl | \
         sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
-        sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
-      if [ -f /results/restoration-report.md.tmp ]; then
-        cat /results/restoration-report.md.tmp
-        rm -f /results/restoration-report.md.tmp
+        sort | uniq >> ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp 2>/dev/null || true
+      if [ -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp ]; then
+        cat ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+        rm -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
       fi
       printf '\n'
     fi
@@ -1488,12 +1509,12 @@ generate_restoration_report() {
     if [ "$kept_count" -gt 0 ]; then
       printf '## Kept Files (Allowlist Matches)\n\n'
       printf 'These files were in the allowlist and were kept:\n\n'
-      grep '"status":"kept"' /results/restoration.jsonl | \
+      grep '"status":"kept"' ${KASEKI_RESULTS_DIR}/restoration.jsonl | \
         sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
-        sort | uniq >> /results/restoration-report.md.tmp 2>/dev/null || true
-      if [ -f /results/restoration-report.md.tmp ]; then
-        cat /results/restoration-report.md.tmp
-        rm -f /results/restoration-report.md.tmp
+        sort | uniq >> ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp 2>/dev/null || true
+      if [ -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp ]; then
+        cat ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+        rm -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
       fi
       printf '\n'
     fi
@@ -1511,14 +1532,14 @@ generate_restoration_report() {
     printf 'KASEKI_CHANGED_FILES_ALLOWLIST="<your-pattern>" ./run-kaseki.sh\n'
     printf '```\n\n'
     printf "For help on allowlist patterns, see \`docs/QUALITY_GATES.md\`.\n"
-  } > /results/restoration-report.md
+  } > ${KASEKI_RESULTS_DIR}/restoration-report.md
 }
 
 check_validation_allowlist() {
   if [ -z "$KASEKI_VALIDATION_ALLOWLIST" ]; then
     return 0
   fi
-  if [ ! -d /workspace/repo/.git ]; then
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     return 0
   fi
 
@@ -1527,9 +1548,9 @@ check_validation_allowlist() {
   allowlist_regex="$(build_allowlist_regex "$KASEKI_VALIDATION_ALLOWLIST")"
   [ -z "$allowlist_regex" ] && return 0
   validation_violation_count=0
-  validation_before_state_file="/results/validation-before-state.txt"
-  validation_after_state_file="/results/validation-after-state.txt"
-  validation_changed_file="/results/validation-changed-files.txt"
+  validation_before_state_file="${KASEKI_RESULTS_DIR}/validation-before-state.txt"
+  validation_after_state_file="${KASEKI_RESULTS_DIR}/validation-after-state.txt"
+  validation_changed_file="${KASEKI_RESULTS_DIR}/validation-changed-files.txt"
   : > "$validation_changed_file"
 
   if [ -f "$validation_before_state_file" ] && [ -f "$validation_after_state_file" ]; then
@@ -1544,14 +1565,14 @@ check_validation_allowlist() {
         }
       }
     ' "$validation_before_state_file" "$validation_after_state_file" | LC_ALL=C sort -u > "$validation_changed_file"
-  elif [ -f /results/changed-files.txt ]; then
-    cp /results/changed-files.txt "$validation_changed_file"
+  elif [ -f ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+    cp ${KASEKI_RESULTS_DIR}/changed-files.txt "$validation_changed_file"
   fi
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
-      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a /results/quality.log
+      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
       validation_violation_count=$((validation_violation_count + 1))
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
     else
@@ -1563,14 +1584,14 @@ check_validation_allowlist() {
     QUALITY_EXIT=7
     VALIDATION_ALLOWLIST_FAILURE_REASON="validation_allowlist_check: $validation_violation_count file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
     QUALITY_FAILURE_REASON="$VALIDATION_ALLOWLIST_FAILURE_REASON"
-    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a /results/quality.log
+    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
     return 1
   fi
   return 0
 }
 
 check_secret_scan_allowlist() {
-  local allowlist_file="/workspace/repo/.kaseki-secret-allowlist"
+  local allowlist_file="${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist"
   
   # If no allowlist file exists, all matches are failures (real leaks)
   if [ ! -f "$allowlist_file" ]; then
@@ -1583,7 +1604,7 @@ check_secret_scan_allowlist() {
   
   # Read the log into a temp variable to avoid SC2094 (read-write in same pipeline)
   local temp_log
-  temp_log=$(cat /results/secret-scan.log)
+  temp_log=$(cat ${KASEKI_RESULTS_DIR}/secret-scan.log)
   
   while IFS= read -r match_line || [ -n "$match_line" ]; do
     [ -z "$match_line" ] && continue
@@ -1597,8 +1618,8 @@ check_secret_scan_allowlist() {
     
     [ -z "$pattern" ] && continue
     
-    # Normalize file path: remove leading /workspace/repo/, repo/, and ./ if present
-    file_path="${file_path#/workspace/repo/}"
+    # Normalize file path: remove leading ${KASEKI_WORKSPACE_DIR}/repo/, repo/, and ./ if present
+    file_path="${file_path#${KASEKI_WORKSPACE_DIR}/repo/}"
     file_path="${file_path#repo/}"
     file_path="${file_path#./}"
     
@@ -1623,7 +1644,7 @@ check_secret_scan_allowlist() {
     for match in "${secret_matches[@]}"; do
       printf '%s\n' "$match"
     done
-  } > /results/secret-scan.log
+  } > ${KASEKI_RESULTS_DIR}/secret-scan.log
   
   # Exit code 6 only if there are unallowlisted matches
   if [ "$unallowlisted_count" -gt 0 ]; then
@@ -1657,9 +1678,9 @@ finish() {
       printf '[unexpected-failure] Exit code: %d\n' "$code"
       printf '[unexpected-failure] Last command: %s\n' "$LAST_COMMAND"
       printf '[unexpected-failure] Current stage: %s\n' "$CURRENT_STAGE"
-      if [ -f /results/progress.log ]; then
+      if [ -f ${KASEKI_RESULTS_DIR}/progress.log ]; then
         printf '[unexpected-failure] Last 5 progress entries:\n'
-        tail -5 /results/progress.log | sed 's/^/  /'
+        tail -5 ${KASEKI_RESULTS_DIR}/progress.log | sed 's/^/  /'
       fi
     } | tee -a "$LAST_COMMAND_LOG" >&2
     emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
@@ -1668,16 +1689,16 @@ finish() {
   maybe_call_finish_helper collect_git_artifacts
   
   # Analyze test failures and compare baseline vs. working results
-  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f /results/validation-baseline.log ] && [ -f /results/pre-validation.log ]; then
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f ${KASEKI_RESULTS_DIR}/validation-baseline.log ] && [ -f ${KASEKI_RESULTS_DIR}/pre-validation.log ]; then
     set_current_stage "test failure analysis"
     if analyze_test_failures_baseline; then
       TEST_FAILURE_CLASSIFICATION_STATUS="completed"
       # Try to extract newly_introduced_failures_count from JSON output (if jq available)
-      if [ -f /results/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
-        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' /results/test-baseline-comparison.json 2>/dev/null || printf '0')
-      elif [ -f /results/test-baseline-comparison.json ]; then
+      if [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json 2>/dev/null || printf '0')
+      elif [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ]; then
         # Fallback: try to extract with grep/sed if jq not available
-        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' /results/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
       fi
     else
       TEST_FAILURE_CLASSIFICATION_STATUS="failed"
@@ -1691,8 +1712,8 @@ finish() {
   fi
   
   # Debug output for restoration report generation
-  if [ -f /results/restoration.jsonl ]; then
-    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < /results/restoration.jsonl)" >&2
+  if [ -f ${KASEKI_RESULTS_DIR}/restoration.jsonl ]; then
+    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < ${KASEKI_RESULTS_DIR}/restoration.jsonl)" >&2
   else
     printf '[debug] restoration.jsonl does not exist\n' >&2
   fi
@@ -1710,12 +1731,12 @@ finish() {
   
   # Calculate and record maturity score
   if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
-    /app/scripts/kaseki-maturity-score.sh /workspace/repo /results/maturity-score.json 2>/dev/null || true
+    /app/scripts/kaseki-maturity-score.sh ${KASEKI_WORKSPACE_DIR}/repo ${KASEKI_RESULTS_DIR}/maturity-score.json 2>/dev/null || true
   fi
   
   # Calculate and record performance metrics
-  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f /results/stage-timings.tsv ]; then
-    /app/scripts/kaseki-performance-metrics.sh /results/stage-timings.tsv /results/performance-metrics.json 2>/dev/null || true
+  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f ${KASEKI_RESULTS_DIR}/stage-timings.tsv ]; then
+    /app/scripts/kaseki-performance-metrics.sh ${KASEKI_RESULTS_DIR}/stage-timings.tsv ${KASEKI_RESULTS_DIR}/performance-metrics.json 2>/dev/null || true
   fi
   
   maybe_call_finish_helper write_result_summary
@@ -1723,7 +1744,7 @@ finish() {
   # Generate inspect-report.md for inspect mode on success
   if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ "$STATUS" -eq 0 ]; then
     if [ -x /app/scripts/generate-inspect-report.js ]; then
-      node /app/scripts/generate-inspect-report.js /results 2>/dev/null || true
+      node /app/scripts/generate-inspect-report.js ${KASEKI_RESULTS_DIR} 2>/dev/null || true
     fi
   fi
   
@@ -1768,7 +1789,7 @@ run_step_dry() {
   printf '\n==> %s (DRY-RUN: simulated)\n' "$label"
   emit_progress "$label" "started (dry-run)"
   # Show what commands would be run without executing them
-  printf '%s\n' "$@" >> /results/validation.log
+  printf '%s\n' "$@" >> ${KASEKI_RESULTS_DIR}/validation.log
   step_end="$(date +%s)"
   emit_progress "$label" "finished (dry-run, simulated exit 0)"
   record_stage_timing "$label" "0" "$((step_end - step_start))" "dry-run"
@@ -1803,9 +1824,9 @@ is_valid_git_mirror() {
 }
 
 run_direct_clone() {
-  rm -rf /workspace/repo
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
   GIT_CLONE_STRATEGY="direct_shallow"
-  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" ${KASEKI_WORKSPACE_DIR}/repo
 }
 
 clone_with_git_cache() {
@@ -1882,25 +1903,25 @@ clone_with_git_cache() {
   fi
   flock -u 9 || true
 
-  rm -rf /workspace/repo
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
   GIT_CLONE_STRATEGY="reference_shallow"
-  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" /workspace/repo
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" ${KASEKI_WORKSPACE_DIR}/repo
   clone_rc=$?
   if [ "$clone_rc" -eq 0 ]; then
     return 0
   fi
 
-  rm -rf /workspace/repo
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
   GIT_CLONE_STRATEGY="mirror_local"
   emit_error_event "git_cache_reference_clone_failed" "Reference clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; trying local mirror clone" "try_mirror_clone"
-  git clone --branch "$GIT_REF" "$mirror" /workspace/repo
+  git clone --branch "$GIT_REF" "$mirror" ${KASEKI_WORKSPACE_DIR}/repo
   clone_rc=$?
-  if [ "$clone_rc" -eq 0 ] && git -C /workspace/repo rev-parse --verify HEAD >/dev/null 2>&1; then
-    git -C /workspace/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+  if [ "$clone_rc" -eq 0 ] && git -C ${KASEKI_WORKSPACE_DIR}/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+    git -C ${KASEKI_WORKSPACE_DIR}/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
     return 0
   fi
 
-  rm -rf /workspace/repo
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
   GIT_CACHE_STATUS="mirror_clone_failed"
   emit_error_event "git_cache_mirror_clone_failed" "Mirror clone failed for key=$GIT_CACHE_KEY exit=$clone_rc; using direct clone" "fallback_direct_clone"
   run_direct_clone
@@ -2177,7 +2198,7 @@ record_skipped_npm_script_command() {
   local command="$1"
   local script_name="$2"
   local duration_seconds="$3"
-  local log_file="${4:-/results/validation.log}"
+  local log_file="${4:-${KASEKI_RESULTS_DIR}/validation.log}"
   local timings_file="${5:-$VALIDATION_TIMINGS_FILE}"
   local skip_label="${6:-skipped}"
   local classification="${7:-}"
@@ -2211,7 +2232,7 @@ classify_auto_lint_cleanup_command_exit() {
 }
 
 record_skipped_validation_command() {
-  record_skipped_npm_script_command "$1" "$2" "$3" "${4:-/results/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
+  record_skipped_npm_script_command "$1" "$2" "$3" "${4:-${KASEKI_RESULTS_DIR}/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
 }
 
 has_typescript_project() {
@@ -2280,9 +2301,9 @@ run_typescript_precheck() {
   if ! has_npm_build_command "$KASEKI_TS_CHECK_COMMAND"; then
     local missing_script
     missing_script="$(npm_run_script_name "$KASEKI_TS_CHECK_COMMAND")" || missing_script="$KASEKI_TS_CHECK_COMMAND"
-    printf '\n==> TypeScript pre-check\n' | tee -a /results/pre-validation-ts-check.log
-    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a /results/pre-validation-ts-check.log
-    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a /results/pre-validation-ts-check.log
+    printf '\n==> TypeScript pre-check\n' | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
     emit_error_event "typescript_precheck_skipped_missing_script" "TypeScript check skipped: npm script '$missing_script' not defined" "continue"
     emit_progress "typescript precheck" "skipped (npm script '$missing_script' not found)"
     record_stage_timing "typescript precheck" 0 0 "skipped_missing_script"
@@ -2297,8 +2318,8 @@ run_typescript_precheck() {
   {
     printf '\n==> TypeScript pre-check\n'
     printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND"
-    eval "cd /workspace/repo && $KASEKI_TS_CHECK_COMMAND" 2>&1
-  } 2>&1 | tee -a /results/pre-validation-ts-check.log
+    eval "cd ${KASEKI_WORKSPACE_DIR}/repo && $KASEKI_TS_CHECK_COMMAND" 2>&1
+  } 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
   ts_check_exit="${PIPESTATUS[0]}"
   
   ts_check_end="$(date +%s)"
@@ -2322,7 +2343,7 @@ run_typescript_precheck() {
 append_validation_failure_tail() {
   local raw_log="$1"
   local visible_log="$2"
-  local quality_log="${3:-/results/quality.log}"
+  local quality_log="${3:-${KASEKI_RESULTS_DIR}/quality.log}"
 
   if ! [ -s "$raw_log" ]; then
     return 0
@@ -2371,14 +2392,14 @@ run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
 collect_changed_file_set() {
   local output_file="$1"
   : > "$output_file"
-  if [ ! -d /workspace/repo/.git ]; then
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     return 0
   fi
 
   {
-    git -C /workspace/repo diff --name-only -- . 2>/dev/null || true
-    git -C /workspace/repo diff --name-only --cached -- . 2>/dev/null || true
-    git -C /workspace/repo ls-files --others --exclude-standard 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only -- . 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only --cached -- . 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --others --exclude-standard 2>/dev/null || true
   } | sed '/^$/d' | LC_ALL=C sort -u > "$output_file"
 }
 
@@ -2386,7 +2407,7 @@ collect_changed_file_state() {
   local output_file="$1"
   local changed_files_file path staged_hash unstaged_hash content_hash state
   : > "$output_file"
-  if [ ! -d /workspace/repo/.git ]; then
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     return 0
   fi
 
@@ -2395,14 +2416,14 @@ collect_changed_file_state() {
 
   while IFS= read -r path || [ -n "$path" ]; do
     [ -z "$path" ] && continue
-    if git -C /workspace/repo ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
-      staged_hash="$(git -C /workspace/repo diff --binary --cached -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
-      unstaged_hash="$(git -C /workspace/repo diff --binary -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+    if git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+      staged_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo diff --binary --cached -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+      unstaged_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo diff --binary -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
       state="tracked:staged=${staged_hash}:unstaged=${unstaged_hash}"
-    elif [ -f "/workspace/repo/$path" ]; then
-      content_hash="$(git -C /workspace/repo hash-object --no-filters -- "$path" 2>/dev/null || sha256sum "/workspace/repo/$path" 2>/dev/null | awk '{print $1}')"
+    elif [ -f "${KASEKI_WORKSPACE_DIR}/repo/$path" ]; then
+      content_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo hash-object --no-filters -- "$path" 2>/dev/null || sha256sum "${KASEKI_WORKSPACE_DIR}/repo/$path" 2>/dev/null | awk '{print $1}')"
       state="untracked:file=${content_hash}"
-    elif [ -d "/workspace/repo/$path" ]; then
+    elif [ -d "${KASEKI_WORKSPACE_DIR}/repo/$path" ]; then
       state="untracked:directory"
     else
       state="untracked:missing"
@@ -2420,25 +2441,25 @@ restore_cleanup_disallowed_changes() {
 
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
-    printf 'Restoring cleanup-created file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+    printf 'Restoring cleanup-created file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
     emit_event "auto_lint_cleanup_file_restored" "file=$changed_file" "reason=not_in_cleanup_allowlist"
-    git -C /workspace/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
-    git -C /workspace/repo clean -f -- "$changed_file" 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+    git -C ${KASEKI_WORKSPACE_DIR}/repo clean -f -- "$changed_file" 2>/dev/null || true
   done < "$disallowed_file"
 }
 
 check_auto_lint_cleanup_allowlist() {
   local before_file="$1"
   local after_file="$2"
-  local cleanup_created_file="/results/auto-lint-cleanup-created-files.txt"
-  local disallowed_file="/results/auto-lint-cleanup-disallowed-files.txt"
-  local post_restore_file="/results/auto-lint-cleanup-post-restore-files.txt"
+  local cleanup_created_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-created-files.txt"
+  local disallowed_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-disallowed-files.txt"
+  local post_restore_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-post-restore-files.txt"
   local allowlist_patterns allowlist_regex changed_file disallowed_count unrestored_count
 
   : > "$cleanup_created_file"
   : > "$disallowed_file"
   : > "$post_restore_file"
-  if [ ! -d /workspace/repo/.git ]; then
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
     return 0
   fi
 
@@ -2453,7 +2474,7 @@ check_auto_lint_cleanup_allowlist() {
     if [ -n "$allowlist_regex" ] && printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=true" "file=$changed_file"
     else
-      printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+      printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
       printf '%s\n' "$changed_file" >> "$disallowed_file"
       emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=false" "file=$changed_file"
     fi
@@ -2470,12 +2491,12 @@ check_auto_lint_cleanup_allowlist() {
     while IFS= read -r changed_file || [ -n "$changed_file" ]; do
       [ -z "$changed_file" ] && continue
       if grep -Fxq -- "$changed_file" "$post_restore_file"; then
-        printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+        printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
         unrestored_count=$((unrestored_count + 1))
       fi
     done < "$disallowed_file"
     if [ "$unrestored_count" -eq 0 ]; then
-      printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+      printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
       emit_event "auto_lint_cleanup_allowlist_restoration_complete" "restored=$disallowed_count" "unrestored=0"
       collect_git_artifacts
       return 0
@@ -2488,7 +2509,7 @@ check_auto_lint_cleanup_allowlist() {
   AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="cleanup_allowlist_failed"
   QUALITY_EXIT=7
   QUALITY_FAILURE_REASON="auto_lint_cleanup_allowlist: $disallowed_count cleanup-created file(s) outside KASEKI_CHANGED_FILES_ALLOWLIST/KASEKI_VALIDATION_ALLOWLIST"
-  printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" /results/quality.log
+  printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
   emit_error_event "auto_lint_cleanup_allowlist_failed" "$QUALITY_FAILURE_REASON" "continue"
   return 1
 }
@@ -2548,12 +2569,12 @@ run_auto_lint_cleanup() {
     return 0
   fi
 
-  if ! [ -d /workspace/repo ]; then
+  if ! [ -d ${KASEKI_WORKSPACE_DIR}/repo ]; then
     AUTO_LINT_CLEANUP_EXIT=1
     AUTO_LINT_CLEANUP_RESULT="failed"
     AUTO_LINT_CLEANUP_CLASSIFICATION="directory_missing"
     AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION="directory_missing"
-    printf 'ERROR: Working directory /workspace/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+    printf 'ERROR: Working directory ${KASEKI_WORKSPACE_DIR}/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
     printf 'workspace_missing\t%s\t0\tclassification=directory_missing\n' "$AUTO_LINT_CLEANUP_EXIT" >> "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
     record_stage_timing "$stage_label" "$AUTO_LINT_CLEANUP_EXIT" "$(($(date +%s) - stage_start))" "directory_missing classification=directory_missing"
     emit_event "auto_lint_cleanup_finished" "exit_code=$AUTO_LINT_CLEANUP_EXIT" "result=failed" "classification=directory_missing" "reason=directory_missing"
@@ -2561,8 +2582,8 @@ run_auto_lint_cleanup() {
     return 0
   fi
 
-  cleanup_before_file="/results/auto-lint-cleanup-before-files.txt"
-  cleanup_after_file="/results/auto-lint-cleanup-after-files.txt"
+  cleanup_before_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-before-files.txt"
+  cleanup_after_file="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-after-files.txt"
   collect_changed_file_set "$cleanup_before_file"
 
   set +e
@@ -2652,7 +2673,7 @@ baseline_validation_cache_key() {
 }
 
 baseline_validation_cache_dir() {
-  local cache_root="${KASEKI_BASELINE_CACHE_ROOT:-/cache/kaseki-baseline}"
+  local cache_root="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
   local cache_key
   cache_key="$(baseline_validation_cache_key)"
   printf '%s/%s' "$cache_root" "$cache_key"
@@ -2686,19 +2707,19 @@ restore_baseline_validation_from_cache() {
   fi
   
   # Restore cached files to results directory
-  mkdir -p /results
+  mkdir -p ${KASEKI_RESULTS_DIR}
   
-  if ! cp "$cache_dir/validation.log" /results/validation-baseline.log 2>/dev/null; then
+  if ! cp "$cache_dir/validation.log" ${KASEKI_RESULTS_DIR}/validation-baseline.log 2>/dev/null; then
     return 1
   fi
-  if ! cp "$cache_dir/validation-raw.log" /results/validation-baseline-raw.log 2>/dev/null; then
+  if ! cp "$cache_dir/validation-raw.log" ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log 2>/dev/null; then
     return 1
   fi
-  if ! cp "$cache_dir/validation-timings.tsv" /results/validation-baseline-timings.tsv 2>/dev/null; then
+  if ! cp "$cache_dir/validation-timings.tsv" ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv 2>/dev/null; then
     return 1
   fi
   if [ -f "$cache_dir/validation-env.log" ]; then
-    cp "$cache_dir/validation-env.log" /results/validation-baseline-env.log 2>/dev/null || true
+    cp "$cache_dir/validation-env.log" ${KASEKI_RESULTS_DIR}/validation-baseline-env.log 2>/dev/null || true
   fi
   
   return 0
@@ -2715,27 +2736,27 @@ save_baseline_validation_to_cache() {
   mkdir -p "$cache_dir" || return 1
   
   # Save validation results to cache
-  if [ -f /results/validation-baseline.log ]; then
-    cp /results/validation-baseline.log "$cache_dir/validation.log" || return 1
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline.log ]; then
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline.log "$cache_dir/validation.log" || return 1
   fi
   
-  if [ -f /results/validation-baseline-raw.log ]; then
-    cp /results/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log ]; then
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
   fi
   
-  if [ -f /results/validation-baseline-timings.tsv ]; then
-    cp /results/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv ]; then
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
   fi
   
-  if [ -f /results/validation-baseline-env.log ]; then
-    cp /results/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-env.log ]; then
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
   fi
   
   return 0
 }
 
 checkout_baseline_repo() {
-  local baseline_dir="/workspace-baseline"
+  local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   
   # Clean up any existing baseline
   rm -rf "$baseline_dir" 2>/dev/null || true
@@ -2754,20 +2775,20 @@ checkout_baseline_repo() {
     emit_progress "baseline preparation" "installing baseline dependencies"
     if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$KASEKI_LOG_DIR/baseline-npm-ci.log"; then
       emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
-      cd /workspace/repo
+      cd ${KASEKI_WORKSPACE_DIR}/repo
       return 1
     fi
-    cd /workspace/repo
+    cd ${KASEKI_WORKSPACE_DIR}/repo
   fi
   
   return 0
 }
 
 run_baseline_validation() {
-  local baseline_dir="/workspace-baseline"
-  local baseline_log="/results/validation-baseline.log"
-  local baseline_raw_log="/results/validation-baseline-raw.log"
-  local baseline_timings="/results/validation-baseline-timings.tsv"
+  local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local baseline_raw_log="${KASEKI_RESULTS_DIR}/validation-baseline-raw.log"
+  local baseline_timings="${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv"
   local baseline_exit_var="BASELINE_VALIDATION_EXIT"
   local baseline_detail_var="BASELINE_VALIDATION_FAILED_COMMAND_DETAIL"
   local baseline_reason_var="BASELINE_VALIDATION_FAILURE_REASON"
@@ -2789,7 +2810,7 @@ run_baseline_validation() {
     "$baseline_log" \
     "$baseline_raw_log" \
     "$baseline_timings" \
-    "/results/validation-baseline-env.log" \
+    "${KASEKI_RESULTS_DIR}/validation-baseline-env.log" \
     "baseline_validation_failed" \
     "$baseline_exit_var" \
     "$baseline_detail_var" \
@@ -2809,10 +2830,10 @@ run_baseline_validation() {
 }
 
 analyze_test_failures_baseline() {
-  local baseline_log="/results/validation-baseline.log"
-  local working_log="/results/pre-validation.log"
-  local output_file="/results/test-baseline-comparison.json"
-  local results_dir="/results"
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local working_log="${KASEKI_RESULTS_DIR}/pre-validation.log"
+  local output_file="${KASEKI_RESULTS_DIR}/test-baseline-comparison.json"
+  local results_dir="${KASEKI_RESULTS_DIR}"
   
   if [ ! -f "$baseline_log" ] || [ ! -f "$working_log" ]; then
     emit_progress "test failure analysis" "skipped (baseline or working log missing)"
@@ -2853,11 +2874,11 @@ analyze_test_failures_baseline() {
 }
 
 analyze_validation_failure_causality() {
-  local baseline_log="/results/validation-baseline.log"
-  local post_change_log="/results/validation.log"
-  local git_diff="/results/git.diff"
-  local changed_files="/results/changed-files.txt"
-  local output_file="/results/validation-causality-analysis.json"
+  local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
+  local post_change_log="${KASEKI_RESULTS_DIR}/validation.log"
+  local git_diff="${KASEKI_RESULTS_DIR}/git.diff"
+  local changed_files="${KASEKI_RESULTS_DIR}/changed-files.txt"
+  local output_file="${KASEKI_RESULTS_DIR}/validation-causality-analysis.json"
 
   # Skip if no baseline (first run)
   if [ ! -f "$baseline_log" ]; then
@@ -3003,13 +3024,13 @@ run_validation_commands() {
     record_stage_timing "$stage_label" 0 0 "skipped_by_config"
   else
     # Checkpoint: Verify working directory exists before validation.
-    if ! [ -d /workspace/repo ]; then
-      printf 'ERROR: Working directory /workspace/repo does not exist before %s\n' "$stage_label" | tee -a "$log_file"
+    if ! [ -d ${KASEKI_WORKSPACE_DIR}/repo ]; then
+      printf 'ERROR: Working directory ${KASEKI_WORKSPACE_DIR}/repo does not exist before %s\n' "$stage_label" | tee -a "$log_file"
       printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
       printf 'Filesystem state:\n' | tee -a "$log_file"
       find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
       validation_exit_ref=1
-      validation_detail_ref="Working directory /workspace/repo missing before $stage_label"
+      validation_detail_ref="Working directory ${KASEKI_WORKSPACE_DIR}/repo missing before $stage_label"
       validation_reason_ref="$failure_reason_prefix: workspace_missing"
       record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
     else
@@ -3035,7 +3056,7 @@ run_validation_commands() {
           printf '[validation command] working_directory=%s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
           printf '[validation command] node_version=%s\n' "$(node --version 2>&1 || echo '<node not found>')"
           printf '[validation command] npm_version=%s\n' "$(npm --version 2>&1 || echo '<npm not found>')"
-          printf '[validation command] disk_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+          printf '[validation command] disk_available=%s\n' "$(df -h ${KASEKI_RESULTS_DIR} 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
         } | tee -a "$env_log"
         # Use pipefail to catch errors in any stage of the pipe.
         pipefail_was_enabled=0
@@ -3097,7 +3118,7 @@ run_validation_commands() {
           {
             printf '\n[DIAGNOSTICS] Validation pipeline stderr from filter/tee (last 50 lines):\n'
             printf '%s\n' "$FILTER_STDERR_TAIL"
-          } | tee -a "$log_file" /results/quality.log
+          } | tee -a "$log_file" ${KASEKI_RESULTS_DIR}/quality.log
           {
             printf '\n[validation pipeline stderr tail]\n'
             printf '%s\n' "$FILTER_STDERR_TAIL"
@@ -3125,7 +3146,7 @@ run_validation_commands() {
             else
               printf '  (No stderr captured from filter/tee)\n'
             fi
-          } | tee -a "$log_file" /results/quality.log "$FILTER_DIAGNOSTICS_LOG"
+          } | tee -a "$log_file" ${KASEKI_RESULTS_DIR}/quality.log "$FILTER_DIAGNOSTICS_LOG"
         fi
 
         if [ "$validation_infra_failure" = "true" ] && [ "$validation_exit_ref" -eq 0 ]; then
@@ -3149,13 +3170,13 @@ run_validation_commands() {
               printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
               printf 'Working directory status:\n'
               printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-              printf '  /workspace/repo exists: %s\n' "$([ -d /workspace/repo ] && echo 'yes' || echo 'no')"
-              if [ -L /workspace/repo/node_modules ]; then
-                printf '  node_modules is symlink → %s\n' "$(readlink /workspace/repo/node_modules 2>&1 || echo '<readlink failed>')"
+              printf '  ${KASEKI_WORKSPACE_DIR}/repo exists: %s\n' "$([ -d ${KASEKI_WORKSPACE_DIR}/repo ] && echo 'yes' || echo 'no')"
+              if [ -L ${KASEKI_WORKSPACE_DIR}/repo/node_modules ]; then
+                printf '  node_modules is symlink → %s\n' "$(readlink ${KASEKI_WORKSPACE_DIR}/repo/node_modules 2>&1 || echo '<readlink failed>')"
               fi
               printf 'Last 20 lines of validation log:\n'
               tail -20 "$log_file"
-            } | tee -a /results/quality.log
+            } | tee -a ${KASEKI_RESULTS_DIR}/quality.log
           fi
           # Fail-fast: if enabled, stop validation loop at first failure.
           if [ "$KASEKI_VALIDATION_FAIL_FAST" -eq 1 ]; then
@@ -3236,7 +3257,7 @@ write_repo_memory_summary() {
     return 0
   fi
   local updated_at
-  REPO_MEMORY_COMMIT_SHA="$(git -C /workspace/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  REPO_MEMORY_COMMIT_SHA="$(git -C ${KASEKI_WORKSPACE_DIR}/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
   updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   node - "$KASEKI_REPO_MEMORY_MAX_BYTES" "$REPO_MEMORY_FILE" "$KASEKI_RESULTS_DIR" "$REPO_URL" "$GIT_REF" "$REPO_MEMORY_COMMIT_SHA" "$updated_at" "$KASEKI_TASK_MODE" "$STATUS" "$PI_EXIT" "$VALIDATION_EXIT" "$QUALITY_EXIT" "$SECRET_SCAN_EXIT" <<'NODE' || {
 const fs = require('fs');
@@ -3416,9 +3437,9 @@ is_transient_goal_setting_failure() {
   local stderr_content="$2"
 
   # First, check if we have an explicit validation reason code from our helper
-  if [ -f /results/goal-setting-validation-reason.txt ]; then
+  if [ -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt ]; then
     local reason_code
-    reason_code=$(cat /results/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || echo "")
     case "$reason_code" in
       valid)
         return 1
@@ -3597,7 +3618,7 @@ validate_goal_setting_artifact() {
   local candidate_artifact="$1"
   local final_artifact="$2"
   local reason_file="$3"
-  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
 
   if ! [ -f "$candidate_artifact" ]; then
     {
@@ -3637,7 +3658,7 @@ validate_goal_setting_artifact() {
 validate_goal_setting_artifact_with_node() {
   local candidate_artifact="$1"
   local reason_file="$2"
-  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
 
   local validation_output
   validation_output=$(node -e "
@@ -3822,13 +3843,13 @@ run_goal_setting_agent() {
   set_current_stage "pi goal-setting agent"
   
   if [ "$KASEKI_GOAL_SETTING" = "0" ]; then
-    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a /results/goal-setting-stderr.log
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log
     record_stage_timing "pi goal-setting agent" 0 0 "skipped_by_config"
     return 0
   fi
   
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a /results/goal-setting-stderr.log
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log
     record_stage_timing "pi goal-setting agent" 0 0 "dry_run=true"
     return 0
   fi
@@ -3840,23 +3861,23 @@ run_goal_setting_agent() {
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
-    2> >(tee -a /results/goal-setting-stderr.log >&2) \
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log >&2) \
     | tee "$GOAL_SETTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
   GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
   unset goal_setting_prompt
   set +e
 
-  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "/results/goal-setting-validation-reason.txt"; then
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
-    goal_setting_validation_summary="$(cat /results/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
-    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: /results/goal-setting-validation-errors.jsonl)" "continue"
+    goal_setting_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
+    emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
   fi
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
-  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" /results/goal-setting-events.jsonl /results/goal-setting-summary.json 2>> /results/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" /results/goal-setting-events.raw.jsonl 2>/dev/null || true
-  GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>> ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
+  GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   
   record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
   
@@ -3866,7 +3887,7 @@ run_goal_setting_agent() {
   fi
   
   emit_progress "pi goal-setting agent" "wrote goal-setting artifact"
-  rm -f /results/goal-setting-validation-reason.txt 2>/dev/null || true
+  rm -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || true
   
   return 0
 }
@@ -3901,7 +3922,7 @@ write_goal_setting_metrics() {
       model: '${GOAL_SETTING_ACTUAL_MODEL:-unknown}',
       timeout_seconds: ${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}
     };
-    fs.writeFileSync('/results/goal-setting-metrics.json', JSON.stringify(metrics, null, 2) + '\n');
+    fs.writeFileSync('${KASEKI_RESULTS_DIR}/goal-setting-metrics.json', JSON.stringify(metrics, null, 2) + '\n');
   " 2>/dev/null || {
     # Fallback to jq or printf if node fails
     {
@@ -3917,7 +3938,7 @@ write_goal_setting_metrics() {
       printf '  "model": "%s",\n' "${GOAL_SETTING_ACTUAL_MODEL:-unknown}"
       printf '  "timeout_seconds": %d\n' "${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300}"
       printf '}\n'
-    } > /results/goal-setting-metrics.json
+    } > ${KASEKI_RESULTS_DIR}/goal-setting-metrics.json
   }
 }
 
@@ -3926,9 +3947,9 @@ classify_goal_setting_error() {
   local stderr_content="$2"
 
   # Check validation reason file first (most authoritative)
-  if [ -f /results/goal-setting-validation-reason.txt ]; then
+  if [ -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt ]; then
     local reason_code
-    reason_code=$(cat /results/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || echo "")
     case "$reason_code" in
       schema_mismatch)
         echo "GOAL_SETTING_SCHEMA_MISMATCH"
@@ -4007,7 +4028,7 @@ run_goal_setting_agent_with_retry() {
     set -e
 
     # Append stderr to results for logging
-    cat "$goal_setting_stderr_capture" >> /results/goal-setting-stderr.log 2>/dev/null || true
+    cat "$goal_setting_stderr_capture" >> ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log 2>/dev/null || true
     goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
     rm -f "$goal_setting_stderr_capture"
 
@@ -4039,7 +4060,7 @@ run_goal_setting_agent_with_retry() {
         attempt=$((attempt + 1))
         # Reset goal-setting artifacts for retry
         rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
-        rm -f /results/goal-setting-validation-reason.txt 2>/dev/null || true
+        rm -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || true
         continue
       fi
     else
@@ -4073,9 +4094,9 @@ is_transient_scouting_failure() {
   local stderr_content="$2"
 
   # First, check if we have an explicit validation reason code from our helper
-  if [ -f /results/scouting-validation-reason.txt ]; then
+  if [ -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt ]; then
     local reason_code
-    reason_code=$(cat /results/scouting-validation-reason.txt 2>/dev/null || echo "")
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || echo "")
     case "$reason_code" in
       valid)
         # This shouldn't happen when exit_code=86, but just in case
@@ -4210,48 +4231,48 @@ run_scouting_agent() {
   printf '\n==> pi scouting agent\n'
   set_current_stage "pi scouting agent"
   if [ "$KASEKI_SCOUTING" = "0" ]; then
-    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a /results/scouting-stderr.log
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
     record_stage_timing "pi scouting agent" 0 0 "skipped_by_config"
     return 0
   fi
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a /results/scouting-stderr.log
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
     record_stage_timing "pi scouting agent" 0 0 "dry_run=true"
     return 0
   fi
 
   scouting_prompt="$(build_scouting_prompt)"
   scouting_start="$(date +%s)"
-  scout_dirty_before="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
-  chmod -R a-w /workspace/repo 2>> /results/scouting-stderr.log || true
+  scout_dirty_before="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true)"
+  chmod -R a-w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
   set +e
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
-    2> >(tee -a /results/scouting-stderr.log >&2) \
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log >&2) \
     | tee "$SCOUTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
   SCOUTING_EXIT="${PIPESTATUS[0]}"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
   unset scouting_prompt
   set +e
-  chmod -R u+w /workspace/repo 2>> /results/scouting-stderr.log || true
+  chmod -R u+w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
 
-  if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "/results/scouting-validation-reason.txt"; then
+  if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
-    scouting_validation_summary="$(cat /results/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
-    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_summary (full details: /results/scouting-validation-errors.jsonl)" "exit"
+    scouting_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
+    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_summary (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "exit"
   fi
-  scout_dirty_after="$(git status --porcelain 2>> /results/scouting-stderr.log || true)"
+  scout_dirty_after="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
     SCOUTING_EXIT=86
     emit_error_event "pi_scouting_workspace_modified" "Read-only scouting changed repository state before coding" "exit"
   fi
   rm -f "$SCOUTING_CANDIDATE_ARTIFACT"
-  git reset --hard -q HEAD 2>> /results/scouting-stderr.log || true
-  git clean -fd -q 2>> /results/scouting-stderr.log || true
-  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" /results/scouting-events.jsonl /results/scouting-summary.json 2>> /results/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" /results/scouting-events.raw.jsonl 2>/dev/null || true
-  SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  git reset --hard -q HEAD 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+  git clean -fd -q 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
+  SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "artifact=$SCOUTING_ARTIFACT timeout_seconds=$KASEKI_SCOUTING_TIMEOUT_SECONDS"
   if [ "$SCOUTING_EXIT" -ne 0 ]; then
     STATUS="$SCOUTING_EXIT"
@@ -4261,7 +4282,7 @@ run_scouting_agent() {
   fi
   emit_progress "pi scouting agent" "wrote scouting artifact"
   # Clean up validation reason file on success
-  rm -f /results/scouting-validation-reason.txt 2>/dev/null || true
+  rm -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || true
   return 0
 }
 
@@ -4289,7 +4310,7 @@ run_scouting_agent_with_retry() {
     set -e
 
     # Append stderr to results for logging
-    cat "$scouting_stderr_capture" >> /results/scouting-stderr.log 2>/dev/null || true
+    cat "$scouting_stderr_capture" >> ${KASEKI_RESULTS_DIR}/scouting-stderr.log 2>/dev/null || true
     scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
     rm -f "$scouting_stderr_capture"
 
@@ -4308,7 +4329,7 @@ run_scouting_agent_with_retry() {
         # Reset scouting artifacts for retry
         rm -f "$SCOUTING_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>/dev/null || true
         # Clean up validation reason file from previous attempt
-        rm -f /results/scouting-validation-reason.txt 2>/dev/null || true
+        rm -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || true
         continue
       fi
     else
@@ -4332,13 +4353,13 @@ run_scouting_agent_with_retry() {
 
 snapshot_attempt_artifacts() {
   local attempt_dir
-  attempt_dir="/results/attempt-$1"
+  attempt_dir="${KASEKI_RESULTS_DIR}/attempt-$1"
   mkdir -p "$attempt_dir" 2>/dev/null || return 0
   for artifact in \
     pi-events.jsonl pi-summary.json pi-stderr.log git.diff git.status changed-files.txt \
     quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json; do
-    if [ -e "/results/$artifact" ]; then
-      cp "/results/$artifact" "$attempt_dir/$artifact" 2>/dev/null || true
+    if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
+      cp "${KASEKI_RESULTS_DIR}/$artifact" "$attempt_dir/$artifact" 2>/dev/null || true
     fi
   done
 }
@@ -4346,7 +4367,7 @@ snapshot_attempt_artifacts() {
 collect_goal_check_feedback() {
   local instance_name="$1"
   local goal_setting_path="$GOAL_SETTING_ARTIFACT"
-  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
   local goal_check_path="$results_dir/goal-check.json"
   local metadata_path="$results_dir/metadata.json"
   local feedback_file="$results_dir/goal-feedback.jsonl"
@@ -4362,9 +4383,9 @@ collect_goal_check_feedback() {
 
 collect_run_evaluation_feedback() {
   local instance_name="$1"
-  local run_evaluation_path="/results/run-evaluation.json"
-  local metadata_path="/results/metadata.json"
-  local feedback_file="/results/kaseki-improvements.jsonl"
+  local run_evaluation_path="${KASEKI_RESULTS_DIR}/run-evaluation.json"
+  local metadata_path="${KASEKI_RESULTS_DIR}/metadata.json"
+  local feedback_file="${KASEKI_RESULTS_DIR}/kaseki-improvements.jsonl"
 
   # Only collect if run-evaluation succeeded and artifacts exist
   if [ ! -f "$run_evaluation_path" ] || [ "$RUN_EVALUATION_EXIT" -ne 0 ]; then
@@ -4378,14 +4399,14 @@ collect_run_evaluation_feedback() {
 
 build_goal_check_prompt() {
   local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
-  validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
+  validation_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/validation.log 2>/dev/null || true)"
   if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
     validation_context="Validation log tail (last 80 lines):
 $validation_tail"
   else
-    validation_context="Validation log: /results/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
+    validation_context="Validation log: ${KASEKI_RESULTS_DIR}/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
   fi
-  progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/progress.log 2>/dev/null || true)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
     test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
 $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
@@ -4411,7 +4432,7 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
   fi
 
   # Include causality assessment if available (helps interpret validation failures)
-  if [ -f /results/validation-causality-analysis.json ]; then
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-causality-analysis.json ]; then
     # shellcheck disable=SC2016
     causality_context="VALIDATION FAILURE CAUSALITY ASSESSMENT:
 
@@ -4471,11 +4492,11 @@ Determine if the agent successfully met the requirements specified in the goal-s
 
 **Agent Artifacts** (use to verify requirements were met):
 - Scouting report: $SCOUTING_ARTIFACT
-- Changed files: /results/changed-files.txt
-- Git diff: /results/git.diff
-- Validation outcomes (optional evidence; may be absent during pre-validation checks): /results/validation-timings.tsv and /results/validation.log
+- Changed files: ${KASEKI_RESULTS_DIR}/changed-files.txt
+- Git diff: ${KASEKI_RESULTS_DIR}/git.diff
+- Validation outcomes (optional evidence; may be absent during pre-validation checks): ${KASEKI_RESULTS_DIR}/validation-timings.tsv and ${KASEKI_RESULTS_DIR}/validation.log
 - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
-- Coding-agent events: /results/pi-summary.json and /results/pi-events.jsonl
+- Coding-agent events: ${KASEKI_RESULTS_DIR}/pi-summary.json and ${KASEKI_RESULTS_DIR}/pi-events.jsonl
 
 ## Evaluation Framework: SMART Criteria Check
 
@@ -4534,7 +4555,7 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
 - If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
-- Validation logs are optional evidence. If /results/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
+- Validation logs are optional evidence. If ${KASEKI_RESULTS_DIR}/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
 
 ## Required JSON artifact
 
@@ -4585,12 +4606,12 @@ run_goal_check() {
   printf '\n==> goal check\n'
   set_current_stage "goal check"
   if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
-    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a /results/goal-check-stderr.log
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
     record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
     return 0
   fi
   if [ ! -s "$SCOUTING_ARTIFACT" ]; then
-    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a /results/goal-check-stderr.log
+    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
     record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
     return 0
   fi
@@ -4601,15 +4622,15 @@ run_goal_check() {
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
-    2> >(tee -a /results/goal-check-stderr.log >&2) \
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log >&2) \
     | tee "$GOAL_CHECK_RAW_EVENTS" \
-    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
   GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
   unset goal_prompt
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
-  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl /results/goal-check-summary.json 2>> /results/goal-check-stderr.log || true
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl ${KASEKI_RESULTS_DIR}/goal-check-summary.json 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
     # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
@@ -4707,38 +4728,38 @@ if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
   const note = { timestamp: new Date().toISOString(), attempt, event: "goal_check_artifact_recovered_from_assistant_text", artifact: candidatePath, raw_events: rawPath, filtered_events: filteredPath };
-  fs.appendFileSync("/results/goal-check-stderr.log", JSON.stringify(note) + "\n");
+  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-stderr.log", JSON.stringify(note) + "\n");
 }
-' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" /results/goal-check-events.jsonl "$attempt" 2>> /results/goal-check-stderr.log || true
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl "$attempt" 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
   fi
 
-  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" /results/goal-check.json "$attempt" /results/goal-check-validation-reason.txt; then
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" ${KASEKI_RESULTS_DIR}/goal-check.json "$attempt" ${KASEKI_RESULTS_DIR}/goal-check-validation-reason.txt; then
     GOAL_CHECK_EXIT=86
-    goal_check_validation_reason="$(cat /results/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
-    goal_check_validation_summary="$(cat /results/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
+    goal_check_validation_reason="$(cat ${KASEKI_RESULTS_DIR}/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
+    goal_check_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
     case "$goal_check_validation_reason" in
       missing_file)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_missing"
-        emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT ($goal_check_validation_summary; full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_missing" "Goal-check candidate artifact was missing: $GOAL_CHECK_CANDIDATE_ARTIFACT ($goal_check_validation_summary; full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
         ;;
       malformed_json)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_malformed"
-        emit_error_event "goal_check_artifact_malformed" "Goal-check Pi wrote malformed JSON: $goal_check_validation_summary (full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_malformed" "Goal-check Pi wrote malformed JSON: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
         ;;
       *)
         GOAL_CHECK_FAILURE_REASON="goal_check_artifact_invalid"
-        emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict: $goal_check_validation_summary (full details: /results/goal-check-validation-errors.jsonl)" "continue"
+        emit_error_event "goal_check_artifact_invalid" "Goal-check Pi did not write a schema-valid JSON verdict: $goal_check_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl)" "continue"
         ;;
     esac
   fi
   rm -f "$GOAL_CHECK_CANDIDATE_ARTIFACT"
-  GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  GOAL_CHECK_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-check-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ]; then
-    verdict_met="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.met ? "true" : "false")' 2>/dev/null || printf 'false')"
-    retry_prompt="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.retry_prompt || "")' 2>/dev/null || true)"
-    verdict_summary="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.summary || "")' 2>/dev/null || true)"
-    confidence="$(node -e 'const v=require("/results/goal-check.json"); console.log(v.confidence || "unknown")' 2>/dev/null || true)"
+    verdict_met="$(node -e 'try { const v=require(process.argv[1]); console.log(v.met ? "true" : "false"); } catch { console.log("false"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || printf 'false')"
+    retry_prompt="$(node -e 'try { const v=require(process.argv[1]); console.log(v.retry_prompt || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    verdict_summary="$(node -e 'try { const v=require(process.argv[1]); console.log(v.summary || ""); } catch { console.log(""); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
+    confidence="$(node -e 'try { const v=require(process.argv[1]); console.log(v.confidence || "unknown"); } catch { console.log("unknown"); }' "${KASEKI_RESULTS_DIR}/goal-check.json" 2>/dev/null || true)"
     if [ "$verdict_met" = "true" ]; then
       GOAL_CHECK_MET=true
       GOAL_CHECK_RETRY_PROMPT=""
@@ -4761,12 +4782,12 @@ if (valid.size === 1) {
 
 build_run_evaluation_prompt() {
   local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
-  validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"
-  progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"
-  stage_timings="$(tail -80 /results/stage-timings.tsv 2>/dev/null || true)"
-  dependency_cache="$(tail -80 /results/dependency-cache.log 2>/dev/null || true)"
-  restoration_report="$(tail -80 /results/restoration-report.md 2>/dev/null || true)"
-  metadata_text="$(cat /results/metadata.json 2>/dev/null || true)"
+  validation_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/validation.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/progress.log 2>/dev/null || true)"
+  stage_timings="$(tail -80 ${KASEKI_RESULTS_DIR}/stage-timings.tsv 2>/dev/null || true)"
+  dependency_cache="$(tail -80 ${KASEKI_RESULTS_DIR}/dependency-cache.log 2>/dev/null || true)"
+  restoration_report="$(tail -80 ${KASEKI_RESULTS_DIR}/restoration-report.md 2>/dev/null || true)"
+  metadata_text="$(cat ${KASEKI_RESULTS_DIR}/metadata.json 2>/dev/null || true)"
   draft_pr_body="$(build_pr_body)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
     test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
@@ -4812,15 +4833,15 @@ This is NOT another goal-check. The goal-check evaluator already determined if t
 - Quality metrics, SMART criteria, anti-patterns
 
 **Agent Artifacts** (verify goal was realized):
-- Goal-check verdict: /results/goal-check.json
-- Scouting report: /results/scouting.json
-- Changed files: /results/changed-files.txt
-- Git diff and status: /results/git.diff, /results/git.status
-- Validation timings/logs: /results/pre-validation-timings.tsv, /results/validation-timings.tsv, /results/validation.log
+- Goal-check verdict: ${KASEKI_RESULTS_DIR}/goal-check.json
+- Scouting report: ${KASEKI_RESULTS_DIR}/scouting.json
+- Changed files: ${KASEKI_RESULTS_DIR}/changed-files.txt
+- Git diff and status: ${KASEKI_RESULTS_DIR}/git.diff, ${KASEKI_RESULTS_DIR}/git.status
+- Validation timings/logs: ${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation.log
 - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
-- Stage timings: /results/stage-timings.tsv
-- Progress log: /results/progress.log
-- Metadata: /results/metadata.json
+- Stage timings: ${KASEKI_RESULTS_DIR}/stage-timings.tsv
+- Progress log: ${KASEKI_RESULTS_DIR}/progress.log
+- Metadata: ${KASEKI_RESULTS_DIR}/metadata.json
 
 ## Evaluation Framework
 
@@ -5034,12 +5055,12 @@ run_run_evaluation() {
   printf '\n==> run evaluation\n'
   set_current_stage "run evaluation"
   if [ "$KASEKI_RUN_EVALUATION" != "1" ]; then
-    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a /results/run-evaluation-stderr.log
+    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
     record_stage_timing "run evaluation" 0 0 "skipped_by_config"
     return 0
   fi
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a /results/run-evaluation-stderr.log
+    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
     record_stage_timing "run evaluation" 0 0 "dry_run=true"
     return 0
   fi
@@ -5048,19 +5069,19 @@ run_run_evaluation() {
   write_metadata "$STATUS"
   evaluation_prompt="$(build_run_evaluation_prompt)"
   evaluation_start="$(date +%s)"
-  eval_dirty_before="$(git status --porcelain 2>> /results/run-evaluation-stderr.log || true)"
-  chmod -R a-w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+  eval_dirty_before="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true)"
+  chmod -R a-w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
   set +e
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
-    2> >(tee -a /results/run-evaluation-stderr.log >&2) \
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log >&2) \
     | tee "$RUN_EVALUATION_RAW_EVENTS" \
-    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
   RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
   unset evaluation_prompt
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
-  chmod -R u+w /workspace/repo 2>> /results/run-evaluation-stderr.log || true
+  chmod -R u+w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
   set +e
 
   if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! node -e '
@@ -5090,15 +5111,15 @@ artifact.timestamp = new Date().toISOString();
 artifact.model = model;
 artifact.actual_model = actualModel;
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> /results/run-evaluation-stderr.log; then
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log; then
     RUN_EVALUATION_EXIT=86
     emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact" "continue"
   fi
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
-  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" /results/run-evaluation-events.jsonl /results/run-evaluation-summary.json 2>> /results/run-evaluation-stderr.log || true
-  RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require("/results/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
+  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+  RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   if [ -s "$RUN_EVALUATION_ARTIFACT" ]; then
-    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> /results/run-evaluation-stderr.log || true
+    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
 const fs = require('fs');
 const [file, actualModel] = process.argv.slice(2);
 const artifact = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -5107,12 +5128,12 @@ fs.writeFileSync(file, JSON.stringify(artifact, null, 2) + '\n');
 NODE
   fi
 
-  eval_dirty_after="$(git status --porcelain 2>> /results/run-evaluation-stderr.log || true)"
+  eval_dirty_after="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true)"
   if [ "$eval_dirty_before" != "$eval_dirty_after" ]; then
     RUN_EVALUATION_EXIT=86
     emit_error_event "run_evaluation_workspace_modified" "Read-only run evaluation changed repository state; restoring workspace" "continue"
-    git reset --hard -q HEAD 2>> /results/run-evaluation-stderr.log || true
-    git clean -fd -q 2>> /results/run-evaluation-stderr.log || true
+    git reset --hard -q HEAD 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+    git clean -fd -q 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
   fi
 
   if [ "$RUN_EVALUATION_EXIT" -ne 0 ] || [ ! -s "$RUN_EVALUATION_ARTIFACT" ]; then
@@ -5209,19 +5230,19 @@ META
 log_github_private_key_metadata() {
   local key_file="$1"
   local health_log="$2"
-  local metadata_file="/results/github-app-private-key-metadata.json"
+  local metadata_file="${KASEKI_RESULTS_DIR}/github-app-private-key-metadata.json"
   github_private_key_metadata_json "$key_file" > "$metadata_file"
   printf '[health-check] GitHub App private key metadata: %s\n' "$(tr -d '\n' < "$metadata_file")" | tee -a "$health_log"
 }
 
 
 github_askpass_runtime_dir() {
-  printf '%s\n' "${KASEKI_GITHUB_ASKPASS_DIR:-/results}"
+  printf '%s\n' "${KASEKI_GITHUB_ASKPASS_DIR:-${KASEKI_RESULTS_DIR}}"
 }
 
 create_github_askpass_helper() {
   local log_file log_prefix askpass_dir askpass_file username_smoke_output password_smoke_output
-  log_file="${1:-/results/git-push.log}"
+  log_file="${1:-${KASEKI_RESULTS_DIR}/git-push.log}"
   log_prefix="${2:-[github-askpass]}"
   GITHUB_ASKPASS_FILE=""
 
@@ -5299,7 +5320,7 @@ EOF_ASKPASS
 check_github_operations_health() {
   # Preflight health check for github operations before pi agent runs
   # Tests: GitHub App secrets, git config, Node.js token generation capability
-  local health_log="${KASEKI_HEALTH_LOG:-/results/github-health-check.log}"
+  local health_log="${KASEKI_HEALTH_LOG:-${KASEKI_RESULTS_DIR}/github-health-check.log}"
   github_preflight_fail() {
     local classification="$1"
     local remediation="$2"
@@ -5553,7 +5574,7 @@ validate_github_api_response() {
   local http_status response log_file error_type error_message json_valid
   http_status="$1"
   response="$2"
-  log_file="${3:-/results/git-push.log}"
+  log_file="${3:-${KASEKI_RESULTS_DIR}/git-push.log}"
   
   # Try to parse error info from response
   error_type="unknown"
@@ -5661,7 +5682,7 @@ apply_github_pr_labels() {
   repo="$2"
   issue_number="$3"
   token="$4"
-  log_file="${5:-/results/git-push.log}"
+  log_file="${5:-${KASEKI_RESULTS_DIR}/git-push.log}"
 
   if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ] || [ -z "$token" ]; then
     printf 'Warning: skipping PR label application because owner, repo, issue number, or token is missing\n' | tee -a "$log_file" >&2
@@ -5715,7 +5736,7 @@ request_owner_review() {
   local pr_response token log_file owner_login owner_type pr_number repo owner
   pr_response="$1"
   token="$2"
-  log_file="${3:-/results/git-push.log}"
+  log_file="${3:-${KASEKI_RESULTS_DIR}/git-push.log}"
   
   if [ -z "$pr_response" ] || [ -z "$token" ]; then
     printf 'Warning: skipping owner review request because PR response or token is missing\n' | tee -a "$log_file" >&2
@@ -5780,7 +5801,7 @@ request_owner_review() {
   
   # Request owner review with retry logic
   local retry_count=0 max_retries=2 request_success=0 backoff_delay=2
-  local review_request_log="/results/owner-review-request.log"
+  local review_request_log="${KASEKI_RESULTS_DIR}/owner-review-request.log"
   : > "$review_request_log"
   
   while [ $retry_count -le "$max_retries" ]; do
@@ -5973,7 +5994,7 @@ derive_pr_title() {
 
   candidate="$(printf '%s' "${TASK_PROMPT:-}" | sanitize_pr_metadata_text)"
   prompt_for_prefix="$candidate"
-  if [ -s /results/result-summary.md ]; then
+  if [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
     summary_candidate="$(
       awk '
         /^##[[:space:]]+Summary[[:space:]]*$/ { in_summary=1; next }
@@ -5984,13 +6005,13 @@ derive_pr_title() {
           sub(/^[[:space:]]*[0-9]+[.)][[:space:]]+/, "", line)
           if (line !~ /^[[:space:]]*$/) { print line; exit }
         }
-      ' /results/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
+      ' ${KASEKI_RESULTS_DIR}/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
     )"
   fi
   if [ -n "$summary_candidate" ]; then
     candidate="$summary_candidate"
-  elif [ -z "$candidate" ] && [ -s /results/result-summary.md ]; then
-    candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' /results/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
+  elif [ -z "$candidate" ] && [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
+    candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' ${KASEKI_RESULTS_DIR}/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
   fi
 
   candidate="$(printf '%s' "$candidate" | sed -E 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//' | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/(^|[[:space:]])[0-9]+[.)][[:space:]]+/\1/g; s/(^|[[:space:]])[-*][[:space:]]+/\1/g; s/userfacing/user-facing/Ig; s/customerfacing/customer-facing/Ig; s/front[ -]?end/frontend/Ig; s/back[ -]?end/backend/Ig; s/full[ -]?stack/full-stack/Ig; s/^[[:space:]]+//; s/[[:space:]]+$//')"
@@ -6000,8 +6021,8 @@ derive_pr_title() {
     candidate="$stripped"
   fi
 
-  if [ -s /results/changed-files.txt ]; then
-    changed_files="$(sanitize_pr_metadata_text < /results/changed-files.txt || true)"
+  if [ -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+    changed_files="$(sanitize_pr_metadata_text < ${KASEKI_RESULTS_DIR}/changed-files.txt || true)"
   else
     changed_files=""
   fi
@@ -6072,7 +6093,7 @@ format_pr_command_results() {
 }
 
 format_pr_changed_files() {
-  local changed_files_file="/results/changed-files.txt"
+  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
   local details_threshold=8
   if [ ! -s "$changed_files_file" ]; then
     printf '0 files changed.\n'
@@ -6162,8 +6183,8 @@ build_pr_agent_review() {
   case "$validation_pass_flag" in
     ''|*[!0-9-]*) validation_pass_flag=0 ;;
   esac
-  local goal_file="/results/goal-check.json"
-  local scouting_file="/results/scouting.json"
+  local goal_file="${KASEKI_RESULTS_DIR}/goal-check.json"
+  local scouting_file="${KASEKI_RESULTS_DIR}/scouting.json"
   local goal_summary evidence missing validation_notes risks
 
   goal_summary=""
@@ -6212,7 +6233,7 @@ NODE
 }
 
 build_pr_agent_evaluation() {
-  local evaluation_file="/results/run-evaluation.json"
+  local evaluation_file="${KASEKI_RESULTS_DIR}/run-evaluation.json"
   if [ ! -s "$evaluation_file" ]; then
     return 0
   fi
@@ -6310,8 +6331,8 @@ NODE
 }
 
 build_pr_improvements_summary() {
-  local changed_files_file="/results/changed-files.txt"
-  local diff_file="/results/git.diff"
+  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
+  local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
   local total=0 source_count=0 test_count=0 docs_count=0 config_count=0 other_count=0
   local path lower additions deletions summary_rows=0 summary_source=""
   local artifact raw_line line safe_line summary_capture=0 content json_text
@@ -6331,10 +6352,10 @@ build_pr_improvements_summary() {
     done < "$changed_files_file"
   fi
 
-  if [ -s /results/result-summary.md ]; then
-    summary_source="/results/result-summary.md"
+  if [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
+    summary_source="${KASEKI_RESULTS_DIR}/result-summary.md"
   else
-    for artifact in /results/analysis.md /results/pi-summary.json; do
+    for artifact in ${KASEKI_RESULTS_DIR}/analysis.md ${KASEKI_RESULTS_DIR}/pi-summary.json; do
       if [ -s "$artifact" ]; then
         summary_source="$artifact"
         break
@@ -6394,7 +6415,7 @@ EOF_JSON_SUMMARY
             continue
             ;;
         esac
-        if [ "$summary_capture" -eq 0 ] && [ "$summary_source" = "/results/result-summary.md" ]; then
+        if [ "$summary_capture" -eq 0 ] && [ "$summary_source" = "${KASEKI_RESULTS_DIR}/result-summary.md" ]; then
           continue
         fi
         line="$(printf '%s' "$raw_line" | sanitize_pr_metadata_text)"
@@ -6520,7 +6541,7 @@ $(build_pr_improvements_summary)
 ## Agent review
 $(build_pr_agent_review "$all_validation_statuses_pass")
 
-$(if [ -s /results/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
+$(if [ -s ${KASEKI_RESULTS_DIR}/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
 ## Validation
 ### Validation statuses
 - Pre-agent validation: $pre_validation_status
@@ -6569,11 +6590,11 @@ run_github_operations() {
     owner="$GITHUB_REPO_OWNER"
     repo="$GITHUB_REPO_NAME"
   else
-    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a /results/git-push.log >&2
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     return 7
   fi
   
-  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /results/git-push.log
+  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   GITHUB_OPERATION_PHASE="setup"
   
   # Set git user for commits
@@ -6582,7 +6603,7 @@ run_github_operations() {
   
   # Generate GitHub App installation token
   GITHUB_OPERATION_PHASE="token_generation"
-  printf 'Generating GitHub App installation token...\n' | tee -a /results/git-push.log
+  printf 'Generating GitHub App installation token...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
   local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
   token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
@@ -6603,7 +6624,7 @@ run_github_operations() {
     if [ "$token_parse_result" != "$token_error" ]; then
       token_http_status="${token_parse_result#*$'\t'}"
     fi
-    printf 'Failed to generate token: %s\n' "$token_error" | tee -a /results/git-push.log >&2
+    printf 'Failed to generate token: %s\n' "$token_error" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_API_ERROR_TYPE="github_app_token_error"
     GITHUB_API_ERROR_MESSAGE="$token_error"
     GITHUB_API_HTTP_STATUS="$token_http_status"
@@ -6613,83 +6634,83 @@ run_github_operations() {
   fi
   
   # Use helper to extract token from JSON response
-  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /results/git-push.log; then
-    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a /results/git-push.log >&2
+  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" ${KASEKI_RESULTS_DIR}/git-push.log; then
+    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
   if [ -z "$token" ]; then
-    printf -- 'Failed to extract token from response (empty result)\n' | tee -a /results/git-push.log >&2
+    printf -- 'Failed to extract token from response (empty result)\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
-  printf 'Token generated successfully\n' | tee -a /results/git-push.log
+  printf 'Token generated successfully\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   
   # Create and push feature branch
   GITHUB_OPERATION_PHASE="branch_creation"
   feature_branch="kaseki/$INSTANCE_NAME"
-  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a /results/git-push.log
+  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   git checkout -b "$feature_branch" || {
-    printf 'Failed to create branch\n' | tee -a /results/git-push.log >&2
+    printf 'Failed to create branch\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   }
   
   # Commit changes (git should already have changes from pi agent)
   GITHUB_OPERATION_PHASE="commit"
-  printf 'Committing changes...\n' | tee -a /results/git-push.log
-  if [ ! -s /results/changed-files.txt ]; then
-    printf 'No changed files to stage\n' | tee -a /results/git-push.log >&2
+  printf 'Committing changes...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+  if [ ! -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+    printf 'No changed files to stage\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     git add -- "$changed_file" || {
-      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a /results/git-push.log >&2
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
       GITHUB_PUSH_EXIT=7
       return 7
     }
-  done < /results/changed-files.txt
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
   if ! git commit -m "Kaseki: $INSTANCE_NAME"; then
-    printf 'No changes to commit or commit failed\n' | tee -a /results/git-push.log >&2
+    printf 'No changes to commit or commit failed\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
   # Push branch
   GITHUB_OPERATION_PHASE="push"
-  printf 'Pushing branch to GitHub...\n' | tee -a /results/git-push.log
+  printf 'Pushing branch to GitHub...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   local askpass_file
-  if ! create_github_askpass_helper /results/git-push.log 'GitHub credential helper'; then
+  if ! create_github_askpass_helper ${KASEKI_RESULTS_DIR}/git-push.log 'GitHub credential helper'; then
     return 8
   fi
   askpass_file="$GITHUB_ASKPASS_FILE"
 
   KASEKI_GITHUB_TOKEN="$token" GIT_ASKPASS="$askpass_file" GIT_TERMINAL_PROMPT=0 \
-    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a /results/git-push.log
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   git_push_exit="${PIPESTATUS[0]:-1}"
   if [ "$git_push_exit" -eq 0 ]; then
-    printf 'Branch pushed successfully\n' | tee -a /results/git-push.log
+    printf 'Branch pushed successfully\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   else
     rm -f "$askpass_file"
-    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a /results/git-push.log >&2
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     GITHUB_PUSH_EXIT="$git_push_exit"
     return "$git_push_exit"
   fi
   rm -f "$askpass_file"
 
   if [ "$KASEKI_PUBLISH_MODE" = "branch" ]; then
-    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a /results/git-push.log
+    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
     GITHUB_PR_EXIT=0
     GITHUB_OPERATION_PHASE="completed"
     unset token
     return 0
   fi
   if ! is_pr_creation_mode; then
-    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a /results/git-push.log
+    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
     GITHUB_PR_EXIT=0
     GITHUB_OPERATION_PHASE="completed"
     unset token
@@ -6699,7 +6720,7 @@ run_github_operations() {
   # Create pull request. Both pr and draft_pr push a branch and create a PR;
   # only draft_pr marks the GitHub Pulls API request as draft.
   GITHUB_OPERATION_PHASE="pr_creation"
-  printf 'Creating pull request...\n' | tee -a /results/git-push.log
+  printf 'Creating pull request...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   emit_progress "github operations" "pr_creation_starting"
   local pr_title pr_body pr_response pr_url pr_number pr_http_status pr_draft_json
   pr_title="$(derive_pr_title)"
@@ -6723,7 +6744,7 @@ run_github_operations() {
 - Generated at (UTC): $fallback_timestamp
 EOF
 )
-    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a /results/git-push.log >&2
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
   fi
   if is_pr_draft_mode; then
     pr_draft_json=true
@@ -6737,7 +6758,7 @@ EOF
   
   while [ $retry_count -le "$max_retries" ]; do
     if [ $retry_count -gt 0 ]; then
-      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a /results/git-push.log
+      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
       emit_progress "github operations" "pr_creation_attempt $((retry_count + 1))/$max_retries"
       sleep "$backoff_delay"
       # Exponential backoff: 2s, 4s, 8s
@@ -6747,31 +6768,31 @@ EOF
     
     # Capture both response and HTTP status code
     local pr_response_file temp_status_file
-    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n' | tee -a /results/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
-    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n' | tee -a /results/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
     
     if [ $retry_count -eq 0 ] && [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a /results/git-push.log
+      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
     fi
     
     # Encode PR title and body as JSON strings
     local pr_title_json pr_body_json
     pr_title_json='""'
     pr_body_json='""'
-    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" /results/git-push.log; then
-      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a /results/git-push.log >&2
+    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" ${KASEKI_RESULTS_DIR}/git-push.log; then
+      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
-    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" /results/git-push.log; then
-      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a /results/git-push.log >&2
+    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" ${KASEKI_RESULTS_DIR}/git-push.log; then
+      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
     
     # Validate both variables are non-empty before using in curl
     if [ -z "$pr_title_json" ] || [ -z "$pr_body_json" ]; then
-      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a /results/git-push.log >&2
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
@@ -6796,7 +6817,7 @@ EOF
     
     if [ $curl_exit -ne 0 ]; then
       # curl command itself failed (network error, timeout, etc.)
-      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a /results/git-push.log >&2
+      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
       GITHUB_API_HTTP_STATUS="0"
       if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
         retry_count=$((retry_count + 1))
@@ -6814,43 +6835,43 @@ EOF
     fi
     
     if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a /results/git-push.log
+      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
     fi
     
     # Validate the API response
-    if validate_github_api_response "$pr_http_status" "$pr_response" /results/git-push.log; then
+    if validate_github_api_response "$pr_http_status" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
       # API returned success (201); now extract the URL and issue number using helper
-      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" /results/git-push.log; then
-        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a /results/git-push.log >&2
+      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
+        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
         emit_error_event "github_pr_response_malformed" "Failed to parse PR API response to extract html_url" "exit"
         GITHUB_PR_EXIT=9
         pr_url=""
       fi
-      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" /results/git-push.log; then
-        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a /results/git-push.log >&2
+      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
         pr_number=""
       fi
       
       if [ -n "$pr_url" ]; then
         GITHUB_PR_URL="$pr_url"
         GITHUB_PR_EXIT=0
-        printf 'Pull request created: %s\n' "$pr_url" | tee -a /results/git-push.log
+        printf 'Pull request created: %s\n' "$pr_url" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
         if [ -n "$pr_number" ]; then
-          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /results/git-push.log || true
+          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" ${KASEKI_RESULTS_DIR}/git-push.log || true
           # Request repository owner as reviewer for personal repos
-          request_owner_review "$pr_response" "$token" /results/git-push.log || true
+          request_owner_review "$pr_response" "$token" ${KASEKI_RESULTS_DIR}/git-push.log || true
         else
-          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a /results/git-push.log >&2
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
         fi
         pr_created=1
         rm -f "$pr_response_file"
         break
       else
         # HTTP 201 but no html_url in response - malformed response
-        printf 'Pull request API returned success (201) but response missing html_url field\n' | tee -a /results/git-push.log >&2
+        printf 'Pull request API returned success (201) but response missing html_url field\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
         emit_error_event "github_pr_response_malformed" "GitHub PR API returned 201 but response missing html_url field" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a /results/git-push.log
+          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
         fi
         GITHUB_PR_EXIT=9
         pr_created=0
@@ -6860,17 +6881,17 @@ EOF
     else
       # API returned an error
       if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
-        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a /results/git-push.log
+        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
         continue
       else
         # Permanent error, give up
-        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE" | tee -a /results/git-push.log >&2
+        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
         emit_error_event "github_pr_api_failed" "GitHub API error ($GITHUB_API_ERROR_TYPE): $GITHUB_API_ERROR_MESSAGE (HTTP $GITHUB_API_HTTP_STATUS)" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a /results/git-push.log
-          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a /results/git-push.log
+          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
         fi
         GITHUB_PR_EXIT=9
         pr_created=0
@@ -6903,7 +6924,7 @@ if [ "$GITHUB_APP_ENABLED" = "1" ]; then
     printf 'ERROR: GitHub operations preflight health check failed\n' >&2
     printf 'GitHub App is enabled but configuration or dependencies are missing.\n' >&2
     printf 'Proceeding with kaseki run, but GitHub operations will be skipped or fail.\n' >&2
-    emit_error_event "github_preflight_failed" "GitHub operations health check failed; check /results/github-health-check.log for details" "continue"
+    emit_error_event "github_preflight_failed" "GitHub operations health check failed; check ${KASEKI_RESULTS_DIR}/github-health-check.log for details" "continue"
   fi
 fi
 
@@ -6927,7 +6948,7 @@ unset OPENROUTER_API_KEY secret_content
 if [ -z "$openrouter_api_key" ]; then
   set_current_stage "agent setup"
   openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a /results/pi-stderr.log >&2
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
@@ -6938,7 +6959,7 @@ fi
 if ! run_clone_repository; then
   exit 0
 fi
-cd /workspace/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
+cd ${KASEKI_WORKSPACE_DIR}/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
 
 prepare_dependencies() {
   if [ ! -f package.json ]; then
@@ -7168,7 +7189,7 @@ if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ "$KASEKI_PRE_AGENT_VALID
         emit_progress "baseline validation cache" "failed to save (non-blocking)"
       fi
       # Cleanup baseline workspace to save space
-      rm -rf /workspace-baseline 2>/dev/null || true
+      rm -rf ${KASEKI_WORKSPACE_BASELINE_DIR} 2>/dev/null || true
     else
       BASELINE_CACHE_STATUS="checkout_failed"
       emit_error_event "baseline_checkout_failed" "Failed to setup baseline for test failure comparison; continuing without baseline" "continue"
@@ -7185,13 +7206,13 @@ if [ "$KASEKI_PRE_AGENT_VALIDATION" = "0" ]; then
   printf '\n==> pre-agent validation\n'
   set_current_stage "pre-agent validation"
   emit_progress "pre-agent validation" "skipped by KASEKI_PRE_AGENT_VALIDATION=0"
-  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a /results/pre-validation.log
+  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/pre-validation.log
   record_stage_timing "pre-agent validation" 0 0 "skipped_by_config"
 else
   run_validation_commands \
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
-    /results/pre-validation.log \
+    ${KASEKI_RESULTS_DIR}/pre-validation.log \
     "$PRE_VALIDATION_RAW_LOG" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
     "$PRE_VALIDATION_ENV_LOG" \
@@ -7220,7 +7241,7 @@ set_current_stage "typescript precheck"
 if ! run_typescript_precheck; then
   if [ "$KASEKI_SCOUTING" = "1" ]; then
     # If scouting is enabled (experimental path), continue anyway with warning
-    printf 'WARNING: TypeScript pre-check failed, but continuing due to scouting mode being enabled.\n' | tee -a /results/quality.log
+    printf 'WARNING: TypeScript pre-check failed, but continuing due to scouting mode being enabled.\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log
   else
     # Without scouting, TypeScript failures are fatal
     STATUS="$TS_PRE_CHECK_EXIT"
@@ -7236,16 +7257,16 @@ printf 'Pi version: %s\n' "$PI_VERSION"
 # === Phase 1: Early Filesystem Diagnostics (Before Scouting) ===
 # Detects read-only filesystem constraints that would cause silent scouting failures
 check_filesystem_capabilities() {
-  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
   local filesystem_writable=true
   local readonly_reason=""
   
   emit_progress "filesystem capabilities check" "verifying write capabilities for artifacts"
   
-  # Test /results/ writability
+  # Test ${KASEKI_RESULTS_DIR}/ writability
   if [ ! -w "$results_dir" ]; then
     filesystem_writable=false
-    readonly_reason="/results is READ-ONLY (Docker mounted with :ro or container --read-only flag)"
+    readonly_reason="${KASEKI_RESULTS_DIR} is READ-ONLY (Docker mounted with :ro or container --read-only flag)"
     emit_error_event "readonly_filesystem_detected" "$readonly_reason" "continue"
     {
       printf '\n[FILESYSTEM DIAGNOSTIC] READ-ONLY FILESYSTEM DETECTED\n'
@@ -7255,35 +7276,35 @@ check_filesystem_capabilities() {
       printf '  - Container UID: %d\n' "$(id -u)"
       printf '  - Expected reason: Docker mounted with :ro flag or container --read-only\n'
       printf '\nImpact:\n'
-      printf '  - Scouting Pi agent will exit 0 but /results/scouting-candidate.json will be MISSING\n'
+      printf '  - Scouting Pi agent will exit 0 but ${KASEKI_RESULTS_DIR}/scouting-candidate.json will be MISSING\n'
       printf '  - Validation logs and artifacts cannot be written\n'
       printf '  - This causes exit code 86 (scouting validation failure)\n'
-      printf '\nFix: Remount /results as read-write\n'
-      printf '  docker run -v /path/to/results:/results:rw ...\n'
+      printf '\nFix: Remount ${KASEKI_RESULTS_DIR} as read-write\n'
+      printf '  docker run -v /path/to${KASEKI_RESULTS_DIR}:${KASEKI_RESULTS_DIR}:rw ...\n'
       printf 'Or remove --read-only flag from Docker run command\n'
-    } | tee -a /results/scouting-stderr.log
+    } | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
   else
     # Test actual write capability
     local test_file="$results_dir/.kaseki-fs-test-$$"
     if ! touch "$test_file" 2>/dev/null; then
       filesystem_writable=false
-      readonly_reason="/results is not writable (touch failed despite appearing writable)"
+      readonly_reason="${KASEKI_RESULTS_DIR} is not writable (touch failed despite appearing writable)"
       emit_error_event "filesystem_write_test_failed" "$readonly_reason" "continue"
     else
       rm -f "$test_file" 2>/dev/null || true
-      emit_progress "filesystem capabilities check" "✓ /results is writable"
+      emit_progress "filesystem capabilities check" "✓ ${KASEKI_RESULTS_DIR} is writable"
     fi
   fi
   
   # Record in metadata for post-mortem analysis
-  printf '%s\n' "$filesystem_writable" > /results/filesystem-writable-at-start.txt
-  [ -n "$readonly_reason" ] && printf '%s\n' "$readonly_reason" > /results/filesystem-readonly-reason.txt
+  printf '%s\n' "$filesystem_writable" > ${KASEKI_RESULTS_DIR}/filesystem-writable-at-start.txt
+  [ -n "$readonly_reason" ] && printf '%s\n' "$readonly_reason" > ${KASEKI_RESULTS_DIR}/filesystem-readonly-reason.txt
   
   if [ "$filesystem_writable" = "false" ]; then
     if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ]; then
       emit_progress "baseline validation preparation" "DISABLED due to read-only filesystem detected"
       KASEKI_BASELINE_VALIDATION_ENABLED="0"
-      printf '[filesystem-diagnostic] Baseline validation auto-disabled due to read-only filesystem\n' | tee -a /results/quality.log
+      printf '[filesystem-diagnostic] Baseline validation auto-disabled due to read-only filesystem\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log
     fi
     return 1
   fi
@@ -7333,7 +7354,7 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
       export KASEKI_VALIDATION_ALLOWLIST="$merged_validation_allowlist"
       
       # Log merge decisions with structured JSON construction so pattern text is escaped safely.
-      append_jsonl_object /results/metadata.jsonl \
+      append_jsonl_object ${KASEKI_RESULTS_DIR}/metadata.jsonl \
         "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         "event=allowlist_merge" \
         "scouting_agent_patterns=$scouting_agent_patterns" \
@@ -7346,14 +7367,14 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
       allowlist_merge_status="merged"
       
       # Run coverage validation with dry-run
-      if [ -s /results/changed-files.txt ]; then
-        run_scouting_allowlist_coverage "$SCOUTING_ARTIFACT" 2>&1 | tee -a /results/quality.log
+      if [ -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+        run_scouting_allowlist_coverage "$SCOUTING_ARTIFACT" 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/quality.log
       fi
       
       emit_progress "derive allowlist from scouting" "finished (status=$allowlist_merge_status)"
     else
       # Pattern validation failed - fail fast
-      printf 'ERROR: Derived allowlist patterns failed validation. Cannot proceed.\n' | tee -a /results/quality.log >&2
+      printf 'ERROR: Derived allowlist patterns failed validation. Cannot proceed.\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log >&2
       STATUS=86
       FAILED_COMMAND="allowlist pattern validation"
       emit_error_event "scouting_allowlist_invalid" "Derived allowlist patterns failed validation" "exit"
@@ -7361,7 +7382,7 @@ if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
     fi
   else
     # Derivation failed - log and fail fast
-    printf 'ERROR: Failed to derive allowlist from scouting artifact: %s\n' "$scouting_output" | tee -a /results/quality.log >&2
+    printf 'ERROR: Failed to derive allowlist from scouting artifact: %s\n' "$scouting_output" | tee -a ${KASEKI_RESULTS_DIR}/quality.log >&2
     STATUS=86
     FAILED_COMMAND="allowlist derivation from scouting"
     emit_error_event "scouting_allowlist_derivation_failed" "Failed to derive allowlist from scouting artifact" "exit"
@@ -7399,7 +7420,7 @@ if [ "$KASEKI_DRY_RUN" = "1" ]; then
     printf '  Model: %s\n' "$KASEKI_MODEL"
     printf '  Timeout: %s seconds\n' "$KASEKI_AGENT_TIMEOUT_SECONDS"
     printf '  Task: %s\n' "$TASK_PROMPT"
-  } | tee -a /results/pi-stderr.log
+  } | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log
   emit_progress "pi coding agent" "skipped (dry-run)"
   record_stage_timing "pi coding agent" "0" "$PI_DURATION_SECONDS" "dry_run=true"
 else
@@ -7411,9 +7432,9 @@ else
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$agent_prompt" \
-    2> >(tee -a /results/pi-stderr.log >&2) \
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2) \
     | tee "$RAW_EVENTS" \
-    | kaseki-pi-progress-stream /results/progress.jsonl /results/progress.log
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
   PI_EXIT="${PIPESTATUS[0]}"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
@@ -7422,7 +7443,7 @@ else
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 
   if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
-    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl
   fi
 
   PI_EXTRACTION_DEPS_OK=1
@@ -7433,7 +7454,7 @@ else
       missing_executables+=("$required_exec")
     fi
   done
-  for helper_file in /app/lib/event-aggregator.js /app/lib/timestamp-tracker.js /app/lib/progress-stream-utils.js; do
+  for helper_file in ${KASEKI_APP_LIB_DIR}/event-aggregator.js ${KASEKI_APP_LIB_DIR}/timestamp-tracker.js ${KASEKI_APP_LIB_DIR}/progress-stream-utils.js; do
     if [ ! -f "$helper_file" ]; then
       missing_helpers+=("$helper_file")
     fi
@@ -7446,34 +7467,34 @@ else
     [ -z "$missing_helpers_joined" ] && missing_helpers_joined="none"
     extraction_error=$(node -e "console.log(JSON.stringify({error:'pi_extraction_dependency_missing',missing_executables:process.argv[1],missing_helpers:process.argv[2],action:'Ensure required Pi binaries are on PATH and helper files exist in the image before running extraction'}))" "$missing_execs_joined" "$missing_helpers_joined")
     printf '%s
-' "$extraction_error" | tee -a /results/pi-stderr.log /results/quality.log >&2
+' "$extraction_error" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log ${KASEKI_RESULTS_DIR}/quality.log >&2
     emit_error_event "pi_extraction_dependency_missing" "missing executables: $missing_execs_joined; missing helpers: $missing_helpers_joined; ensure Pi binaries are in PATH and /app/lib helpers are present" "abort_extraction"
     if [ "$STATUS" -eq 0 ]; then
       STATUS=87
       FAILED_COMMAND="pi artifact extraction dependency validation"
     fi
-    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl 2>/dev/null || true
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl 2>/dev/null || true
   fi
 
   FILTER_EXIT=0
   if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
     set +e
-    kaseki-pi-event-filter "$RAW_EVENTS" /results/pi-events.jsonl /results/pi-summary.json
+    kaseki-pi-event-filter "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.jsonl ${KASEKI_RESULTS_DIR}/pi-summary.json
     FILTER_EXIT=$?
     set +e
   fi
   if [ "$FILTER_EXIT" -ne 0 ]; then
-    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a /results/quality.log
-    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a /results/pi-stderr.log >&2
+    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
     emit_error_event "pi_event_filter_failed" "kaseki-pi-event-filter exited with code $FILTER_EXIT" "continue"
     if [ "$STATUS" -eq 0 ]; then
       STATUS="$FILTER_EXIT"
       FAILED_COMMAND="kaseki-pi-event-filter"
     fi
-    cp "$RAW_EVENTS" /results/pi-events.raw.jsonl 2>/dev/null || true
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl 2>/dev/null || true
   fi
-  if [ -s "$RAW_EVENTS" ] && { [ ! -s /results/pi-events.jsonl ] || [ ! -s /results/pi-summary.json ]; }; then
-    printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a /results/pi-stderr.log >&2
+  if [ -s "$RAW_EVENTS" ] && { [ ! -s ${KASEKI_RESULTS_DIR}/pi-events.jsonl ] || [ ! -s ${KASEKI_RESULTS_DIR}/pi-summary.json ]; }; then
+    printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
     emit_error_event "pi_event_export_incomplete" "RAW_EVENTS has data but exported artifacts are empty or missing" "continue"
     if [ "$STATUS" -eq 0 ]; then
       STATUS=86
@@ -7482,16 +7503,16 @@ else
   fi
 
   # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
-  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s /results/pi-events.jsonl ]; then
+  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s ${KASEKI_RESULTS_DIR}/pi-events.jsonl ]; then
     emit_progress "hashline validation" "started"
     HASHLINE_EXIT=0
     set +e
-    npx tsx /app/lib/hashline-event-handler-cli.js /results/pi-events.jsonl /workspace /results/hashline-events.jsonl /results/hashline-summary.json 2>> /results/hashline-validation.log
+    npx tsx ${KASEKI_APP_LIB_DIR}/hashline-event-handler-cli.js ${KASEKI_RESULTS_DIR}/pi-events.jsonl /workspace ${KASEKI_RESULTS_DIR}/hashline-events.jsonl ${KASEKI_RESULTS_DIR}/hashline-summary.json 2>> ${KASEKI_RESULTS_DIR}/hashline-validation.log
     HASHLINE_EXIT=$?
     set +e
 
     if [ "$HASHLINE_EXIT" -ne 0 ]; then
-      printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a /results/hashline-validation.log
+      printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/hashline-validation.log
       emit_event "warning" "warning_type=hashline_validation_failed" "detail=hashline_edit processing exited with code $HASHLINE_EXIT"
     else
       emit_progress "hashline validation" "completed"
@@ -7522,7 +7543,7 @@ else
     }
     var m='';
     try{
-      var summary=require('/results/pi-summary.json');
+      var summary=require('${KASEKI_RESULTS_DIR}/pi-summary.json');
       m=clean(summary.selected_model)||clean(summary.model)||fromSummaryModels(summary);
     }catch{}
     if(!m){
@@ -7548,7 +7569,7 @@ fi
 
 if [ "$KASEKI_DRY_RUN" != "1" ]; then
   if [ "$PI_EXIT" -eq 124 ]; then
-    printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a /results/pi-stderr.log >&2
+    printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
     if [ "$STATUS" -eq 0 ]; then
       STATUS=124
       FAILED_COMMAND="pi coding agent timeout"
@@ -7587,11 +7608,11 @@ printf '\n==> quality checks\n'
 set_current_stage "quality checks"
 emit_progress "quality checks" "started"
 stage_start="$(date +%s)"
-diff_size="$(wc -c < /results/git.diff | tr -d ' ')"
+diff_size="$(wc -c < ${KASEKI_RESULTS_DIR}/git.diff | tr -d ' ')"
 if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_EXIT=4
   QUALITY_FAILURE_REASON="max_diff_bytes: $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes"
-  printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a /results/quality.log
+  printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
   emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
 else
   emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=true" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
@@ -7606,17 +7627,17 @@ if [ -n "$allowlist_regex" ]; then
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
       QUALITY_EXIT=5
       QUALITY_FAILURE_REASON="allowlist_check: file '$changed_file' not in allowlist"
-      printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a /results/quality.log
+      printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
       emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=false" "file=$changed_file"
     else
       emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=true" "file=$changed_file"
     fi
-  done < /results/changed-files.txt
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
 fi
 
 if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['format:check'] ? 0 : 1)" 2>/dev/null; then
   format_command="npm run format:check"
-  printf '%s\n' "$format_command" >> /results/format-check-command.txt
+  printf '%s\n' "$format_command" >> ${KASEKI_RESULTS_DIR}/format-check-command.txt
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
@@ -7625,7 +7646,7 @@ run_expectation_mismatch_detector
 
 pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
-  pre_validation_goal_check_diff_hash="$(sha256sum /results/git.diff 2>/dev/null | awk '{print $1}')"
+  pre_validation_goal_check_diff_hash="$(sha256sum ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
   snapshot_attempt_artifacts "$coding_attempt"
@@ -7657,18 +7678,18 @@ log_validation_environment() {
     printf '[validation environment] PATH=%s\n' "$PATH"
     printf '[validation environment] NODE_OPTIONS=%s\n' "${NODE_OPTIONS:-<not set>}"
     printf '[validation environment] NODE_PATH=%s\n' "${NODE_PATH:-<not set>}"
-    printf '[validation environment] disk_space_available=%s\n' "$(df -h /results 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
-    printf '[validation environment] disk_space_used=%s\n' "$(du -sh /results 2>/dev/null | cut -f1 || echo '<du failed>')"
-  } | tee -a /results/validation.log "$VALIDATION_ENV_LOG"
+    printf '[validation environment] disk_space_available=%s\n' "$(df -h ${KASEKI_RESULTS_DIR} 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+    printf '[validation environment] disk_space_used=%s\n' "$(du -sh ${KASEKI_RESULTS_DIR} 2>/dev/null | cut -f1 || echo '<du failed>')"
+  } | tee -a ${KASEKI_RESULTS_DIR}/validation.log "$VALIDATION_ENV_LOG"
 }
 log_validation_environment
-collect_changed_file_state /results/validation-before-state.txt
+collect_changed_file_state ${KASEKI_RESULTS_DIR}/validation-before-state.txt
 
 if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KASEKI_VALIDATION_COMMANDS" = "none" ]; then
   run_validation_commands \
     "validation" \
     "$KASEKI_VALIDATION_COMMANDS" \
-    /results/validation.log \
+    ${KASEKI_RESULTS_DIR}/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
     "$VALIDATION_ENV_LOG" \
@@ -7677,7 +7698,7 @@ elif [ "$QUALITY_EXIT" -ne 0 ]; then
   printf '\n==> validation\n'
   set_current_stage "validation"
   emit_progress "validation" "started"
-  printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a /results/validation.log
+  printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/validation.log
   VALIDATION_EXIT="$QUALITY_EXIT"
   if [ -z "$VALIDATION_FAILURE_REASON" ]; then
     VALIDATION_FAILURE_REASON="quality_gate_failed: $QUALITY_FAILURE_REASON"
@@ -7688,14 +7709,14 @@ elif [ "$PI_EXIT" -ne 0 ] && [ "$KASEKI_VALIDATE_AFTER_AGENT_FAILURE" != "1" ]; 
   printf '\n==> validation\n'
   set_current_stage "validation"
   emit_progress "validation" "started"
-  printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a /results/validation.log
+  printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/validation.log
   record_stage_timing "validation" "$PI_EXIT" 0 "skipped_after_agent_failure"
   emit_progress "validation" "finished with exit $VALIDATION_EXIT"
 else
   run_validation_commands \
     "validation" \
     "$KASEKI_VALIDATION_COMMANDS" \
-    /results/validation.log \
+    ${KASEKI_RESULTS_DIR}/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
     "$VALIDATION_ENV_LOG" \
@@ -7709,18 +7730,18 @@ fi
 
 # Check validation-phase allowlist (if configured)
 if [ "$VALIDATION_EXIT" -eq 0 ]; then
-  collect_changed_file_state /results/validation-after-state.txt
+  collect_changed_file_state ${KASEKI_RESULTS_DIR}/validation-after-state.txt
   collect_git_artifacts
   if ! check_validation_allowlist; then
     : # Exit code already set in check_validation_allowlist
   fi
 fi
 
-post_validation_goal_check_diff_hash="$(sha256sum /results/git.diff 2>/dev/null | awk '{print $1}')"
+post_validation_goal_check_diff_hash="$(sha256sum ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null | awk '{print $1}')"
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
   [ -n "$pre_validation_goal_check_diff_hash" ] && [ -n "$post_validation_goal_check_diff_hash" ] && \
   [ "$post_validation_goal_check_diff_hash" != "$pre_validation_goal_check_diff_hash" ]; then
-  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a /results/goal-check-stderr.log
+  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
   emit_progress "goal check" "re-running after validation changed the final diff (attempt $coding_attempt)"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
@@ -7754,14 +7775,14 @@ printf '\n==> secret scan\n'
 set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 stage_start="$(date +%s)"
-: > /results/secret-scan.log
+: > ${KASEKI_RESULTS_DIR}/secret-scan.log
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
-  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a /results/secret-scan.log
+  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a ${KASEKI_RESULTS_DIR}/secret-scan.log
   SECRET_SCAN_EXIT=0
   record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
 else
   # Run the initial scan
-  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' /results /workspace/repo/.git /workspace/repo/src /workspace/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > /results/secret-scan.log; then
+  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' ${KASEKI_RESULTS_DIR} ${KASEKI_WORKSPACE_DIR}/repo/.git ${KASEKI_WORKSPACE_DIR}/repo/src ${KASEKI_WORKSPACE_DIR}/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > ${KASEKI_RESULTS_DIR}/secret-scan.log; then
     # Matches found - check against allowlist
     if check_secret_scan_allowlist; then
       # All matches are allowlisted
@@ -7814,7 +7835,7 @@ printf '\n==> github operations\n'
 set_current_stage "github operations"
 emit_progress "github operations" "started"
 stage_start="$(date +%s)"
-: > /results/git-push.log
+: > ${KASEKI_RESULTS_DIR}/git-push.log
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
@@ -7833,7 +7854,7 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
     GITHUB_OPERATION_PHASE="secrets"
-    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a /results/git-push.log >&2
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
     emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
   fi
@@ -7845,7 +7866,7 @@ else
     "$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$DIFF_NONEMPTY" \
-    "$GITHUB_APP_ENABLED" | tee -a /results/git-push.log
+    "$GITHUB_APP_ENABLED" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
   emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
 fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
