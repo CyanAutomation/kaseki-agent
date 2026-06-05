@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.65.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.5...v1.65.0) (2026-06-05)
+
+
+### Bug Fixes
+
+* increase tmpfs size for agent containers in Docker run commands ([b30981d](https://github.com/CyanAutomation/kaseki-agent/commit/b30981d32499379f90b3d34a2747ef8f08cdd3ec))
+* Update pi-coding-agent version to 0.77.0 in Dockerfile and documentation ([3abee37](https://github.com/CyanAutomation/kaseki-agent/commit/3abee37f60a39b2ecef3cb14ddcfee3a27bd8b20))
+
+
+### Features
+
+* Implement token usage tracking and aggregation in Pi event stream ([614dd53](https://github.com/CyanAutomation/kaseki-agent/commit/614dd53db43388c7a04df614e3c1d3863e1c56e9))
+
 ## [1.64.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.4...v1.64.5) (2026-06-05)
 
 
