@@ -343,6 +343,247 @@ build_goal_check_prompt
       return JSON.parse(output);
     };
 
+
+    type GoalCheckScenario = 'success' | 'pi-exit-failure' | 'malformed-artifact';
+
+    const runGoalCheckOrchestration = (scenario: GoalCheckScenario) => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `goal-check-orchestration-${scenario}-`));
+      const fakeRepo = path.join(tmpDir, 'fake-repo');
+      const fakeBin = path.join(tmpDir, 'bin');
+      const resultsDir = path.join(tmpDir, 'results');
+      const workspaceRepo = path.join(tmpDir, 'repo');
+      const appLib = path.join(tmpDir, 'app', 'lib');
+      const orchestratorEventsPath = path.join(tmpDir, 'orchestrator-events.jsonl');
+      const runLogPath = path.join(tmpDir, 'kaseki-run.log');
+      const modifiedScriptPath = path.join(tmpDir, 'kaseki-agent-modified.sh');
+
+      const appendJsonLine = (filePath: string, value: unknown) => {
+        fs.appendFileSync(filePath, `${JSON.stringify(value)}\n`);
+      };
+
+      try {
+        fs.mkdirSync(path.join(fakeRepo, 'deps', 'fake-dep'), { recursive: true });
+        fs.mkdirSync(fakeBin, { recursive: true });
+        fs.mkdirSync(resultsDir, { recursive: true });
+        fs.mkdirSync(workspaceRepo, { recursive: true });
+        fs.mkdirSync(appLib, { recursive: true });
+        fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+        fs.copyFileSync(
+          path.join(projectRoot, 'scripts', 'allowlist-helper.sh'),
+          path.join(tmpDir, 'scripts', 'allowlist-helper.sh')
+        );
+        fs.copyFileSync(
+          path.join(projectRoot, 'scripts', 'scouting-allowlist.js'),
+          path.join(tmpDir, 'scripts', 'scouting-allowlist.js')
+        );
+        for (const appLibFile of ['event-aggregator.js', 'timestamp-tracker.js', 'progress-stream-utils.js']) {
+          fs.writeFileSync(path.join(appLib, appLibFile), '');
+        }
+        fs.writeFileSync(orchestratorEventsPath, '');
+
+        const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8')
+          .replaceAll('${KASEKI_WORKSPACE_DIR}/repo', workspaceRepo)
+          .replaceAll('/workspace/repo', workspaceRepo)
+          .replaceAll('/results', resultsDir)
+          .replaceAll('/app/lib', appLib);
+        fs.writeFileSync(modifiedScriptPath, scriptContent, { mode: 0o700 });
+
+        writeJson(path.join(fakeRepo, 'package.json'), {
+          name: `fake-goal-check-orchestration-${scenario}`,
+          version: '1.0.0',
+          private: true,
+          scripts: { check: 'exit 0' },
+          dependencies: { 'fake-dep': 'file:deps/fake-dep' },
+        });
+        writeJson(path.join(fakeRepo, 'deps', 'fake-dep', 'package.json'), {
+          name: 'fake-dep',
+          version: '1.0.0',
+          private: true,
+        });
+        fs.writeFileSync(
+          path.join(fakeRepo, 'package-lock.json'),
+          JSON.stringify({
+            name: `fake-goal-check-orchestration-${scenario}`,
+            version: '1.0.0',
+            lockfileVersion: 3,
+            requires: true,
+            packages: {
+              '': {
+                name: `fake-goal-check-orchestration-${scenario}`,
+                version: '1.0.0',
+                dependencies: { 'fake-dep': 'file:deps/fake-dep' },
+              },
+              'deps/fake-dep': { version: '1.0.0' },
+              'node_modules/fake-dep': { resolved: 'deps/fake-dep', link: true },
+            },
+          })
+        );
+        execFileSync('git', ['-C', fakeRepo, 'init', '-q', '-b', 'main']);
+        execFileSync('git', ['-C', fakeRepo, 'add', 'package.json', 'package-lock.json', 'deps/fake-dep/package.json']);
+        execFileSync('git', [
+          '-C', fakeRepo,
+          '-c', 'user.email=kaseki-test@example.invalid',
+          '-c', 'user.name=Kaseki Test',
+          'commit', '-q', '-m', 'initial',
+        ]);
+
+        const piStubPath = path.join(fakeBin, 'pi');
+        fs.writeFileSync(piStubPath, `#!/usr/bin/env bash
+set -uo pipefail
+if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+prompt="\${*: -1}"
+append_event() {
+  node - "$ORCHESTRATOR_EVENTS" "$1" "${scenario}" <<'NODE'
+const fs = require('node:fs');
+const [file, stage, scenario] = process.argv.slice(2);
+fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.now() }) + '\\n');
+NODE
+}
+if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
+  append_event goal-setting
+  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+  append_event scouting
+  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
+elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  append_event goal-check
+  if [ "${scenario}" = "pi-exit-failure" ]; then
+    printf '{"type":"message","model":"test-model"}\n'
+    exit 42
+  elif [ "${scenario}" = "malformed-artifact" ]; then
+    printf '{"met":true,"confidence":"high"' > "$RESULTS_DIR/goal-check-candidate.json"
+  else
+    printf '%s\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  fi
+else
+  append_event coding
+fi
+printf '{"type":"message","model":"test-model"}\n'
+`);
+
+        fs.writeFileSync(path.join(fakeBin, 'kaseki-pi-progress-stream'), '#!/usr/bin/env bash\ncat\n');
+        fs.writeFileSync(path.join(fakeBin, 'kaseki-pi-event-filter'), '#!/usr/bin/env bash\ncat "$1" > "$2"\nprintf \'{"selected_model":"test-model"}\\n\' > "$3"\n');
+        fs.writeFileSync(path.join(fakeBin, 'timeout'), '#!/usr/bin/env bash\nshift 2\n"$@"\n');
+        fs.writeFileSync(path.join(fakeBin, 'validation-output-filter'), '#!/usr/bin/env bash\ncat\n');
+        for (const entry of fs.readdirSync(fakeBin)) {
+          fs.chmodSync(path.join(fakeBin, entry), 0o700);
+        }
+
+        fs.writeFileSync(path.join(tmpDir, 'collect-feedback.js'), `#!/usr/bin/env node
+const fs = require('node:fs');
+const [phase, instanceName, goalSettingPath, goalCheckPath, metadataPath] = process.argv.slice(2);
+const resultsDir = process.env.KASEKI_RESULTS_DIR;
+const stageTimingsPath = resultsDir + '/stage-timings.tsv';
+const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
+const goalCheck = JSON.parse(fs.readFileSync(goalCheckPath, 'utf8'));
+const payload = {
+  event: 'collect-feedback',
+  phase,
+  instanceName,
+  paths: { goalSettingPath, goalCheckPath, metadataPath },
+  goalCheckMet: goalCheck.met,
+  sawCompletedGoalCheck: /^goal check\\t0\\t/m.test(stageTimings),
+  at: Date.now(),
+};
+fs.appendFileSync(process.env.ORCHESTRATOR_EVENTS, JSON.stringify(payload) + '\\n');
+console.log(JSON.stringify(payload));
+`, { mode: 0o700 });
+
+        const result = spawnSync('bash', [modifiedScriptPath], {
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            REPO_URL: fakeRepo,
+            GIT_REF: 'main',
+            TASK_PROMPT: 'inspect then code',
+            OPENROUTER_API_KEY: 'test',
+            GITHUB_APP_ENABLED: '0',
+            KASEKI_INSTANCE: 'orchestration-instance',
+            KASEKI_GIT_CACHE_MODE: 'off',
+            KASEKI_GOAL_CHECK_MAX_RETRIES: '0',
+            KASEKI_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'dependency-cache'),
+            KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'image-cache'),
+            KASEKI_PRE_AGENT_VALIDATION_COMMANDS: 'npm run check',
+            KASEKI_VALIDATION_COMMANDS: ':',
+            KASEKI_ALLOW_EMPTY_DIFF: '1',
+            KASEKI_RUN_EVALUATION: '0',
+            ORCHESTRATOR_EVENTS: orchestratorEventsPath,
+            RESULTS_DIR: resultsDir,
+          },
+        });
+        fs.writeFileSync(runLogPath, `${result.stdout}\n${result.stderr}`);
+
+        const events = fs.readFileSync(orchestratorEventsPath, 'utf8')
+          .trim()
+          .split(/\n+/)
+          .filter(Boolean)
+          .map(line => JSON.parse(line));
+
+        return { tmpDir, result, resultsDir, events, orchestratorEventsPath, runLogPath };
+      } catch (error) {
+        appendJsonLine(orchestratorEventsPath, { event: 'setup-error', message: (error as Error).message });
+        fs.writeFileSync(runLogPath, fs.existsSync(runLogPath) ? fs.readFileSync(runLogPath, 'utf8') : '');
+        throw error;
+      }
+    };
+
+    const cleanupGoalCheckOrchestration = (run: ReturnType<typeof runGoalCheckOrchestration>) => {
+      fs.rmSync(run.tmpDir, { recursive: true, force: true });
+    };
+
+    it('should collect goal-check feedback after the orchestration completes goal-check with the expected paths', () => {
+      const run = runGoalCheckOrchestration('success');
+
+      try {
+        expect(run.result.status).toBe(0);
+        const goalCheckIndex = run.events.findIndex(event => event.event === 'pi' && event.stage === 'goal-check');
+        const feedbackIndex = run.events.findIndex(event => event.event === 'collect-feedback');
+        expect(goalCheckIndex).toBeGreaterThanOrEqual(0);
+        expect(feedbackIndex).toBeGreaterThan(goalCheckIndex);
+
+        const feedbackEvent = run.events[feedbackIndex];
+        expect(feedbackEvent).toMatchObject({
+          phase: 'goal-check',
+          instanceName: 'orchestration-instance',
+          goalCheckMet: true,
+          sawCompletedGoalCheck: true,
+          paths: {
+            goalSettingPath: path.join(run.resultsDir, 'goal-setting.json'),
+            goalCheckPath: path.join(run.resultsDir, 'goal-check.json'),
+            metadataPath: path.join(run.resultsDir, 'metadata.json'),
+          },
+        });
+        expect(fs.existsSync(path.join(run.resultsDir, 'goal-feedback.jsonl'))).toBe(true);
+        const feedbackArtifact = fs.readFileSync(path.join(run.resultsDir, 'goal-feedback.jsonl'), 'utf8').trim();
+        expect(JSON.parse(feedbackArtifact)).toMatchObject(feedbackEvent);
+      } finally {
+        cleanupGoalCheckOrchestration(run);
+      }
+    });
+
+    it.each([
+      { scenario: 'pi-exit-failure' as const, expectedExit: 8, expectedTimingExit: '42' },
+      { scenario: 'malformed-artifact' as const, expectedExit: 8, expectedTimingExit: '86' },
+    ])('should not collect goal-check feedback when goal-check $scenario prevents a completed verdict', ({ scenario, expectedExit, expectedTimingExit }) => {
+      const run = runGoalCheckOrchestration(scenario);
+
+      try {
+        expect(run.result.status).toBe(expectedExit);
+        expect(run.events.some(event => event.event === 'pi' && event.stage === 'goal-check')).toBe(true);
+        expect(run.events.some(event => event.event === 'collect-feedback')).toBe(false);
+        expect(fs.existsSync(path.join(run.resultsDir, 'goal-feedback.jsonl'))).toBe(false);
+        expect(fs.readFileSync(path.join(run.resultsDir, 'stage-timings.tsv'), 'utf8'))
+          .toMatch(new RegExp(`^goal check\\t${expectedTimingExit}\\t`, 'm'));
+        if (scenario === 'malformed-artifact') {
+          expect(fs.readFileSync(path.join(run.resultsDir, 'goal-check-validation-reason.txt'), 'utf8').trim())
+            .toBe('malformed_json');
+        }
+      } finally {
+        cleanupGoalCheckOrchestration(run);
+      }
+    });
+
     it('should collect goal-check feedback with the expected artifact contract', () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-feedback-contract-'));
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
