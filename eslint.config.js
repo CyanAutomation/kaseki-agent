@@ -48,7 +48,9 @@ const nodeGlobals = {
   URL: 'readonly',
   URLSearchParams: 'readonly',
   // Node.js crypto
-  crypto: 'readonly'
+  crypto: 'readonly',
+  // Node.js performance
+  performance: 'readonly'
 };
 
 const jestGlobals = {

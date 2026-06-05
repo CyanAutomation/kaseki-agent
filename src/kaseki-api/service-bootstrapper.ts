@@ -156,7 +156,7 @@ export async function bootstrapServices(
 
     const errorMessage = err instanceof Error ? err.message : String(err);
     const totalBootstrapDuration = performance.now() - bootstrapStartTime;
-    logger.error('Failed to bootstrap services', { 
+    logger.error('Failed to bootstrap services', {
       error: errorMessage,
       durationMs: totalBootstrapDuration.toFixed(1),
     });

@@ -341,10 +341,10 @@ export class ContainerPreflightDiagnostics {
     }
 
     // Enhanced diagnostics for not-configured state
-    const currentDirs = configuredDirs.length > 0 
+    const currentDirs = configuredDirs.length > 0
       ? `${configuredDirs.join(', ')}`
       : 'none configured';
-    
+
     return {
       name: 'git-safe-directory',
       ok: false,
