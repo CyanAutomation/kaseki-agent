@@ -991,6 +991,8 @@ function checkWorkerSmokeTest(
         'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
         '-e',
         'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
+        '-e',
+        'KASEKI_RESULTS_DIR=/results',
         '-v',
         `${workspaceDir}:/workspace:rw`,
         '-v',

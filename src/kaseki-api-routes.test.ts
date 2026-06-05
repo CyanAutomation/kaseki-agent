@@ -691,7 +691,16 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       expect(runArgs).toEqual(expect.arrayContaining([
         'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
         'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
+        'KASEKI_RESULTS_DIR=/results',
       ]));
+      expect(runArgs.slice(runArgs.indexOf('-e'), runArgs.indexOf('-v'))).toContain(
+        'KASEKI_RESULTS_DIR=/results',
+      );
+      expect(runArgs.slice(runArgs.indexOf('--entrypoint'))).toEqual(expect.arrayContaining([
+        '--entrypoint',
+        '/scripts/startup-checks.sh',
+      ]));
+      expect(runArgs).not.toContain('/scripts/docker-entrypoint.sh');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
       if (originalHostSecretsDir === undefined) {
