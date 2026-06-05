@@ -1,0 +1,2872 @@
+
+> @cyanautomation/kaseki-agent@1.64.3 lint
+> npm run lint:js && npm run lint:sh || true
+
+
+> @cyanautomation/kaseki-agent@1.64.3 lint:js
+> eslint . src/ --ignore-pattern dist/
+
+
+> @cyanautomation/kaseki-agent@1.64.3 lint:sh
+> shellcheck -x kaseki-agent.sh scripts/docker-entrypoint.sh run-kaseki-json.test.sh
+
+
+In kaseki-agent.sh line 273:
+  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 310:
+    exec > >(tee -a ${KASEKI_RESULTS_DIR}/stdout.log | tee -a "$host_log_file") \
+                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    exec > >(tee -a "${KASEKI_RESULTS_DIR}"/stdout.log | tee -a "$host_log_file") \
+
+
+In kaseki-agent.sh line 311:
+      2> >(tee -a ${KASEKI_RESULTS_DIR}/stderr.log | tee -a "$host_log_file" >&2)
+                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      2> >(tee -a "${KASEKI_RESULTS_DIR}"/stderr.log | tee -a "$host_log_file" >&2)
+
+
+In kaseki-agent.sh line 319:
+  exec > >(tee -a ${KASEKI_RESULTS_DIR}/stdout.log) 2> >(tee -a ${KASEKI_RESULTS_DIR}/stderr.log >&2)
+                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  exec > >(tee -a "${KASEKI_RESULTS_DIR}"/stdout.log) 2> >(tee -a "${KASEKI_RESULTS_DIR}"/stderr.log >&2)
+
+
+In kaseki-agent.sh line 340:
+: > ${KASEKI_RESULTS_DIR}/stdout.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/stdout.log
+
+
+In kaseki-agent.sh line 341:
+: > ${KASEKI_RESULTS_DIR}/stderr.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/stderr.log
+
+
+In kaseki-agent.sh line 342:
+: > ${KASEKI_RESULTS_DIR}/pi-events.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/pi-events.jsonl
+
+
+In kaseki-agent.sh line 343:
+: > ${KASEKI_RESULTS_DIR}/pi-summary.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/pi-summary.json
+
+
+In kaseki-agent.sh line 344:
+: > ${KASEKI_RESULTS_DIR}/scouting-events.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl
+
+
+In kaseki-agent.sh line 345:
+: > ${KASEKI_RESULTS_DIR}/scouting-summary.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/scouting-summary.json
+
+
+In kaseki-agent.sh line 346:
+: > ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl
+
+
+In kaseki-agent.sh line 347:
+: > ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt
+
+
+In kaseki-agent.sh line 348:
+: > ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl
+
+
+In kaseki-agent.sh line 349:
+: > ${KASEKI_RESULTS_DIR}/goal-check-summary.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
+
+
+In kaseki-agent.sh line 350:
+: > ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
+
+In kaseki-agent.sh line 351:
+: > ${KASEKI_RESULTS_DIR}/goal-check-validation-errors.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
+
+
+In kaseki-agent.sh line 352:
+: > ${KASEKI_RESULTS_DIR}/goal-check-validation-summary.txt
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-validation-summary.txt
+
+
+In kaseki-agent.sh line 353:
+: > ${KASEKI_RESULTS_DIR}/goal-check-attempts.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check-attempts.jsonl
+
+
+In kaseki-agent.sh line 354:
+: > ${KASEKI_RESULTS_DIR}/goal-check.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/goal-check.json
+
+
+In kaseki-agent.sh line 355:
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl
+
+
+In kaseki-agent.sh line 356:
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
+
+
+In kaseki-agent.sh line 357:
+: > ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+
+
+In kaseki-agent.sh line 358:
+: > ${KASEKI_RESULTS_DIR}/run-evaluation.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/run-evaluation.json
+
+
+In kaseki-agent.sh line 361:
+: > ${KASEKI_RESULTS_DIR}/validation.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/validation.log
+
+
+In kaseki-agent.sh line 362:
+: > ${KASEKI_RESULTS_DIR}/pre-validation.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/pre-validation.log
+
+
+In kaseki-agent.sh line 367:
+: > ${KASEKI_RESULTS_DIR}/quality.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 368:
+: > ${KASEKI_RESULTS_DIR}/secret-scan.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+
+
+In kaseki-agent.sh line 369:
+: > ${KASEKI_RESULTS_DIR}/git-push.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 370:
+: > ${KASEKI_RESULTS_DIR}/progress.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 371:
+: > ${KASEKI_RESULTS_DIR}/progress.jsonl
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/progress.jsonl
+
+
+In kaseki-agent.sh line 372:
+: > ${KASEKI_RESULTS_DIR}/format-check-command.txt
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/format-check-command.txt
+
+
+In kaseki-agent.sh line 373:
+: > ${KASEKI_RESULTS_DIR}/failure.json
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/failure.json
+
+
+In kaseki-agent.sh line 374:
+: > ${KASEKI_RESULTS_DIR}/result-summary.md
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/result-summary.md
+
+
+In kaseki-agent.sh line 543:
+    2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+
+
+In kaseki-agent.sh line 557:
+    if [ -f ${KASEKI_RESULTS_DIR}/filesystem-readonly-reason.txt ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if [ -f "${KASEKI_RESULTS_DIR}"/filesystem-readonly-reason.txt ]; then
+
+
+In kaseki-agent.sh line 572:
+  printf '%s\n' "$reason_details" > ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt
+                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '%s\n' "$reason_details" > "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt
+
+
+In kaseki-agent.sh line 573:
+  printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
+                                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+
+
+In kaseki-agent.sh line 723:
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at ${KASEKI_RESULTS_DIR}/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to ${KASEKI_RESULTS_DIR}/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at ${KASEKI_RESULTS_DIR}/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to ${KASEKI_RESULTS_DIR}/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+
+
+In kaseki-agent.sh line 731:
+  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+                                                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
+
+In kaseki-agent.sh line 740:
+  append_jsonl_object ${KASEKI_RESULTS_DIR}/progress.jsonl \
+                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  append_jsonl_object "${KASEKI_RESULTS_DIR}"/progress.jsonl \
+
+
+In kaseki-agent.sh line 747:
+  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 753:
+  append_jsonl_object ${KASEKI_RESULTS_DIR}/progress.jsonl \
+                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  append_jsonl_object "${KASEKI_RESULTS_DIR}"/progress.jsonl \
+
+
+In kaseki-agent.sh line 766:
+  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 784:
+  cat > ${KASEKI_RESULTS_DIR}/metadata.json <<META
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  cat > "${KASEKI_RESULTS_DIR}"/metadata.json <<META
+
+
+In kaseki-agent.sh line 905:
+  printf '%s\n' "$exit_code" > ${KASEKI_RESULTS_DIR}/exit_code
+                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '%s\n' "$exit_code" > "${KASEKI_RESULTS_DIR}"/exit_code
+
+
+In kaseki-agent.sh line 960:
+  changed_files="$(cat ${KASEKI_RESULTS_DIR}/changed-files.txt 2>/dev/null || true)"
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  changed_files="$(cat "${KASEKI_RESULTS_DIR}"/changed-files.txt 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 1013:
+  cat > ${KASEKI_RESULTS_DIR}/result-summary.md <<SUMMARY
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  cat > "${KASEKI_RESULTS_DIR}"/result-summary.md <<SUMMARY
+
+
+In kaseki-agent.sh line 1038:
+$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
+
+
+In kaseki-agent.sh line 1080:
+  stderr_tail="$(tail -20 ${KASEKI_RESULTS_DIR}/stderr.log 2>/dev/null || true)"
+                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  stderr_tail="$(tail -20 "${KASEKI_RESULTS_DIR}"/stderr.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 1082:
+    : > ${KASEKI_RESULTS_DIR}/failure.json
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    : > "${KASEKI_RESULTS_DIR}"/failure.json
+
+
+In kaseki-agent.sh line 1085:
+  cat > ${KASEKI_RESULTS_DIR}/failure.json <<FAILURE
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  cat > "${KASEKI_RESULTS_DIR}"/failure.json <<FAILURE
+
+
+In kaseki-agent.sh line 1115:
+  if [ -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+          ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 1118:
+      git -C ${KASEKI_WORKSPACE_DIR}/repo add -N -- "$untracked_file" 2>/dev/null || true
+             ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      git -C "${KASEKI_WORKSPACE_DIR}"/repo add -N -- "$untracked_file" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1119:
+    done < <(git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --others --exclude-standard 2>/dev/null || true)
+                    ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    done < <(git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true)
+
+
+In kaseki-agent.sh line 1120:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo status --short > ${KASEKI_RESULTS_DIR}/git.status 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo status --short > "${KASEKI_RESULTS_DIR}"/git.status 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1121:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff -- . > ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff -- . > "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1122:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only -- . > ${KASEKI_RESULTS_DIR}/changed-files.txt 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only -- . > "${KASEKI_RESULTS_DIR}"/changed-files.txt 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1123:
+    if [ -s ${KASEKI_RESULTS_DIR}/git.diff ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if [ -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
+
+
+In kaseki-agent.sh line 1127:
+    : > ${KASEKI_RESULTS_DIR}/git.status
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    : > "${KASEKI_RESULTS_DIR}"/git.status
+
+
+In kaseki-agent.sh line 1128:
+    : > ${KASEKI_RESULTS_DIR}/git.diff
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    : > "${KASEKI_RESULTS_DIR}"/git.diff
+
+
+In kaseki-agent.sh line 1129:
+    : > ${KASEKI_RESULTS_DIR}/changed-files.txt
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    : > "${KASEKI_RESULTS_DIR}"/changed-files.txt
+
+
+In kaseki-agent.sh line 1178:
+  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 1191:
+  if [ ! -s ${KASEKI_RESULTS_DIR}/git.diff ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
+
+
+In kaseki-agent.sh line 1192:
+    printf '[expectation-mismatch] skipped: ${KASEKI_RESULTS_DIR}/git.diff is empty\n' >> ${KASEKI_RESULTS_DIR}/progress.log
+           ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[expectation-mismatch] skipped: ${KASEKI_RESULTS_DIR}/git.diff is empty\n' >> "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 1196:
+    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 1201:
+    --repo ${KASEKI_WORKSPACE_DIR}/repo \
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    --repo "${KASEKI_WORKSPACE_DIR}"/repo \
+
+
+In kaseki-agent.sh line 1202:
+    --diff ${KASEKI_RESULTS_DIR}/git.diff \
+           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    --diff "${KASEKI_RESULTS_DIR}"/git.diff \
+
+
+In kaseki-agent.sh line 1204:
+    --progress ${KASEKI_RESULTS_DIR}/progress.log; then
+               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    --progress "${KASEKI_RESULTS_DIR}"/progress.log; then
+
+
+In kaseki-agent.sh line 1205:
+    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a ${KASEKI_RESULTS_DIR}/progress.log
+                                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 1316:
+  if [ ! -f "$scouting_artifact" ] || [ ! -f ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -f "$scouting_artifact" ] || [ ! -f "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+
+
+In kaseki-agent.sh line 1331:
+    agent_coverage="$(dry-run-allowlist.sh --result-dir ${KASEKI_RESULTS_DIR} --allowlist "$agent_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    agent_coverage="$(dry-run-allowlist.sh --result-dir "${KASEKI_RESULTS_DIR}" --allowlist "$agent_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+
+
+In kaseki-agent.sh line 1343:
+    validation_coverage="$(dry-run-allowlist.sh --result-dir ${KASEKI_RESULTS_DIR} --allowlist "$validation_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    validation_coverage="$(dry-run-allowlist.sh --result-dir "${KASEKI_RESULTS_DIR}" --allowlist "$validation_patterns" 2>/dev/null | grep -oP '(?<=Coverage: )\d+(?=%)' | head -n 1 || true)"
+
+
+In kaseki-agent.sh line 1377:
+    } | tee -a ${KASEKI_RESULTS_DIR}/scouting-report.md >> ${KASEKI_RESULTS_DIR}/quality.log
+               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    } | tee -a "${KASEKI_RESULTS_DIR}"/scouting-report.md >> "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 1382:
+  if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+                                                               ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ "$KASEKI_RESTORE_DISALLOWED_CHANGES" != "1" ] || [ ! -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 1395:
+  : > ${KASEKI_RESULTS_DIR}/restoration.jsonl
+      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  : > "${KASEKI_RESULTS_DIR}"/restoration.jsonl
+
+
+In kaseki-agent.sh line 1405:
+      } >> ${KASEKI_RESULTS_DIR}/restoration.jsonl
+           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      } >> "${KASEKI_RESULTS_DIR}"/restoration.jsonl
+
+
+In kaseki-agent.sh line 1410:
+    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 1415:
+    } >> ${KASEKI_RESULTS_DIR}/restoration.jsonl
+         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    } >> "${KASEKI_RESULTS_DIR}"/restoration.jsonl
+
+
+In kaseki-agent.sh line 1416:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1417:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo clean -f -- "$changed_file" 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo clean -f -- "$changed_file" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1419:
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
+         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
+
+
+In kaseki-agent.sh line 1430:
+        printf '  1. Run: ./scripts/suggest-allowlist.sh ${KASEKI_RESULTS_DIR} (or /agents/kaseki-results/<instance>)\n'
+               ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 1435:
+    } | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 1445:
+  if [ ! -f ${KASEKI_RESULTS_DIR}/restoration.jsonl ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
+
+
+In kaseki-agent.sh line 1454:
+  restored_count=$(grep -c '"status":"restored"' ${KASEKI_RESULTS_DIR}/restoration.jsonl 2>/dev/null || true)
+                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  restored_count=$(grep -c '"status":"restored"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)
+
+
+In kaseki-agent.sh line 1462:
+  kept_count=$(grep -c '"status":"kept"' ${KASEKI_RESULTS_DIR}/restoration.jsonl 2>/dev/null || true)
+                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  kept_count=$(grep -c '"status":"kept"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)
+
+
+In kaseki-agent.sh line 1500:
+      grep '"status":"restored"' ${KASEKI_RESULTS_DIR}/restoration.jsonl | \
+                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      grep '"status":"restored"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl | \
+
+
+In kaseki-agent.sh line 1502:
+        sort | uniq >> ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp 2>/dev/null || true
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        sort | uniq >> "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1503:
+      if [ -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp ]; then
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if [ -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp ]; then
+
+
+In kaseki-agent.sh line 1504:
+        cat ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        cat "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
+
+
+In kaseki-agent.sh line 1505:
+        rm -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        rm -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
+
+
+In kaseki-agent.sh line 1513:
+      grep '"status":"kept"' ${KASEKI_RESULTS_DIR}/restoration.jsonl | \
+                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      grep '"status":"kept"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl | \
+
+
+In kaseki-agent.sh line 1515:
+        sort | uniq >> ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp 2>/dev/null || true
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        sort | uniq >> "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1516:
+      if [ -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp ]; then
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if [ -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp ]; then
+
+
+In kaseki-agent.sh line 1517:
+        cat ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        cat "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
+
+
+In kaseki-agent.sh line 1518:
+        rm -f ${KASEKI_RESULTS_DIR}/restoration-report.md.tmp
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        rm -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
+
+
+In kaseki-agent.sh line 1536:
+  } > ${KASEKI_RESULTS_DIR}/restoration-report.md
+      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  } > "${KASEKI_RESULTS_DIR}"/restoration-report.md
+
+
+In kaseki-agent.sh line 1543:
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 1569:
+  elif [ -f ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  elif [ -f "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+
+
+In kaseki-agent.sh line 1570:
+    cp ${KASEKI_RESULTS_DIR}/changed-files.txt "$validation_changed_file"
+       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "${KASEKI_RESULTS_DIR}"/changed-files.txt "$validation_changed_file"
+
+
+In kaseki-agent.sh line 1576:
+      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 1588:
+    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 1608:
+  temp_log=$(cat ${KASEKI_RESULTS_DIR}/secret-scan.log)
+                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  temp_log=$(cat "${KASEKI_RESULTS_DIR}"/secret-scan.log)
+
+
+In kaseki-agent.sh line 1623:
+    file_path="${file_path#${KASEKI_WORKSPACE_DIR}/repo/}"
+                           ^---------------------^ SC2295 (info): Expansions inside ${..} need to be quoted separately, otherwise they match as patterns.
+
+Did you mean: 
+    file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
+
+
+In kaseki-agent.sh line 1648:
+  } > ${KASEKI_RESULTS_DIR}/secret-scan.log
+      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  } > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+
+
+In kaseki-agent.sh line 1682:
+      if [ -f ${KASEKI_RESULTS_DIR}/progress.log ]; then
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if [ -f "${KASEKI_RESULTS_DIR}"/progress.log ]; then
+
+
+In kaseki-agent.sh line 1684:
+        tail -5 ${KASEKI_RESULTS_DIR}/progress.log | sed 's/^/  /'
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        tail -5 "${KASEKI_RESULTS_DIR}"/progress.log | sed 's/^/  /'
+
+
+In kaseki-agent.sh line 1693:
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f ${KASEKI_RESULTS_DIR}/validation-baseline.log ] && [ -f ${KASEKI_RESULTS_DIR}/pre-validation.log ]; then
+                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ] && [ -f "${KASEKI_RESULTS_DIR}"/pre-validation.log ]; then
+
+
+In kaseki-agent.sh line 1698:
+      if [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ] && command -v jq >/dev/null 2>&1; then
+
+
+In kaseki-agent.sh line 1699:
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json 2>/dev/null || printf '0')
+                                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(jq -r '.summary.total_newly_introduced // 0' "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json 2>/dev/null || printf '0')
+
+
+In kaseki-agent.sh line 1700:
+      elif [ -f ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json ]; then
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      elif [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ]; then
+
+
+In kaseki-agent.sh line 1702:
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' ${KASEKI_RESULTS_DIR}/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
+                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        NEWLY_INTRODUCED_FAILURES_COUNT=$(grep -o '"total_newly_introduced": [0-9]*' "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json 2>/dev/null | grep -o '[0-9]*$' || printf '0')
+
+
+In kaseki-agent.sh line 1716:
+  if [ -f ${KASEKI_RESULTS_DIR}/restoration.jsonl ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
+
+
+In kaseki-agent.sh line 1717:
+    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < ${KASEKI_RESULTS_DIR}/restoration.jsonl)" >&2
+                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < "${KASEKI_RESULTS_DIR}"/restoration.jsonl)" >&2
+
+
+In kaseki-agent.sh line 1735:
+    /app/scripts/kaseki-maturity-score.sh ${KASEKI_WORKSPACE_DIR}/repo ${KASEKI_RESULTS_DIR}/maturity-score.json 2>/dev/null || true
+                                          ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1739:
+  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f ${KASEKI_RESULTS_DIR}/stage-timings.tsv ]; then
+                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -x /app/scripts/kaseki-performance-metrics.sh ] && [ -f "${KASEKI_RESULTS_DIR}"/stage-timings.tsv ]; then
+
+
+In kaseki-agent.sh line 1740:
+    /app/scripts/kaseki-performance-metrics.sh ${KASEKI_RESULTS_DIR}/stage-timings.tsv ${KASEKI_RESULTS_DIR}/performance-metrics.json 2>/dev/null || true
+                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    /app/scripts/kaseki-performance-metrics.sh "${KASEKI_RESULTS_DIR}"/stage-timings.tsv "${KASEKI_RESULTS_DIR}"/performance-metrics.json 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1748:
+      node /app/scripts/generate-inspect-report.js ${KASEKI_RESULTS_DIR} 2>/dev/null || true
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      node /app/scripts/generate-inspect-report.js "${KASEKI_RESULTS_DIR}" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 1793:
+  printf '%s\n' "$@" >> ${KASEKI_RESULTS_DIR}/validation.log
+                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '%s\n' "$@" >> "${KASEKI_RESULTS_DIR}"/validation.log
+
+
+In kaseki-agent.sh line 1828:
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
+         ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1830:
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" ${KASEKI_WORKSPACE_DIR}/repo
+                                                      ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1907:
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
+         ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1909:
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" ${KASEKI_WORKSPACE_DIR}/repo
+                                                                                    ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  git clone --reference-if-able "$mirror" --depth 1 --branch "$GIT_REF" "$REPO_URL" "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1915:
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
+         ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1918:
+  git clone --branch "$GIT_REF" "$mirror" ${KASEKI_WORKSPACE_DIR}/repo
+                                          ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  git clone --branch "$GIT_REF" "$mirror" "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 1920:
+  if [ "$clone_rc" -eq 0 ] && git -C ${KASEKI_WORKSPACE_DIR}/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+                                     ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ "$clone_rc" -eq 0 ] && git -C "${KASEKI_WORKSPACE_DIR}"/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+
+
+In kaseki-agent.sh line 1921:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo remote set-url origin "$REPO_URL" >/dev/null 2>&1 || true
+
+
+In kaseki-agent.sh line 1925:
+  rm -rf ${KASEKI_WORKSPACE_DIR}/repo
+         ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -rf "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 2305:
+    printf '\n==> TypeScript pre-check\n' | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '\n==> TypeScript pre-check\n' | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+
+
+In kaseki-agent.sh line 2306:
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND" | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+
+
+In kaseki-agent.sh line 2307:
+    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'skipped: npm script "%s" not found in package.json\n' "$missing_script" | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+
+
+In kaseki-agent.sh line 2323:
+  } 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log
+                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  } 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
+
+
+In kaseki-agent.sh line 2396:
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 2401:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only -- . 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only -- . 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2402:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo diff --name-only --cached -- . 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only --cached -- . 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2403:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --others --exclude-standard 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2411:
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 2420:
+    if git -C ${KASEKI_WORKSPACE_DIR}/repo ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+              ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+
+
+In kaseki-agent.sh line 2421:
+      staged_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo diff --binary --cached -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+                            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      staged_hash="$(git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --binary --cached -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+
+
+In kaseki-agent.sh line 2422:
+      unstaged_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo diff --binary -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+                              ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      unstaged_hash="$(git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --binary -- "$path" 2>/dev/null | sha256sum | awk '{print $1}')"
+
+
+In kaseki-agent.sh line 2425:
+      content_hash="$(git -C ${KASEKI_WORKSPACE_DIR}/repo hash-object --no-filters -- "$path" 2>/dev/null || sha256sum "${KASEKI_WORKSPACE_DIR}/repo/$path" 2>/dev/null | awk '{print $1}')"
+                             ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      content_hash="$(git -C "${KASEKI_WORKSPACE_DIR}"/repo hash-object --no-filters -- "$path" 2>/dev/null || sha256sum "${KASEKI_WORKSPACE_DIR}/repo/$path" 2>/dev/null | awk '{print $1}')"
+
+
+In kaseki-agent.sh line 2445:
+    printf 'Restoring cleanup-created file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Restoring cleanup-created file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 2447:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo restore --staged --worktree -- "$changed_file" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2448:
+    git -C ${KASEKI_WORKSPACE_DIR}/repo clean -f -- "$changed_file" 2>/dev/null || true
+           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git -C "${KASEKI_WORKSPACE_DIR}"/repo clean -f -- "$changed_file" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2463:
+  if [ ! -d ${KASEKI_WORKSPACE_DIR}/repo/.git ]; then
+            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -d "${KASEKI_WORKSPACE_DIR}"/repo/.git ]; then
+
+
+In kaseki-agent.sh line 2478:
+      printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 2495:
+        printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 2500:
+      printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Auto lint cleanup restored %s cleanup-created file(s) outside allowlist.\n' "$disallowed_count" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 2513:
+  printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'ERROR: %s\n' "$QUALITY_FAILURE_REASON" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 2573:
+  if ! [ -d ${KASEKI_WORKSPACE_DIR}/repo ]; then
+            ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
+
+
+In kaseki-agent.sh line 2578:
+    printf 'ERROR: Working directory ${KASEKI_WORKSPACE_DIR}/repo does not exist before auto lint cleanup.\n' | tee -a "$AUTO_LINT_CLEANUP_LOG"
+           ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 2711:
+  mkdir -p ${KASEKI_RESULTS_DIR}
+           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  mkdir -p "${KASEKI_RESULTS_DIR}"
+
+
+In kaseki-agent.sh line 2713:
+  if ! cp "$cache_dir/validation.log" ${KASEKI_RESULTS_DIR}/validation-baseline.log 2>/dev/null; then
+                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! cp "$cache_dir/validation.log" "${KASEKI_RESULTS_DIR}"/validation-baseline.log 2>/dev/null; then
+
+
+In kaseki-agent.sh line 2716:
+  if ! cp "$cache_dir/validation-raw.log" ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log 2>/dev/null; then
+                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! cp "$cache_dir/validation-raw.log" "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log 2>/dev/null; then
+
+
+In kaseki-agent.sh line 2719:
+  if ! cp "$cache_dir/validation-timings.tsv" ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv 2>/dev/null; then
+                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! cp "$cache_dir/validation-timings.tsv" "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv 2>/dev/null; then
+
+
+In kaseki-agent.sh line 2723:
+    cp "$cache_dir/validation-env.log" ${KASEKI_RESULTS_DIR}/validation-baseline-env.log 2>/dev/null || true
+                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "$cache_dir/validation-env.log" "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2740:
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline.log ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
+
+
+In kaseki-agent.sh line 2741:
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline.log "$cache_dir/validation.log" || return 1
+       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline.log "$cache_dir/validation.log" || return 1
+
+
+In kaseki-agent.sh line 2744:
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log ]; then
+
+
+In kaseki-agent.sh line 2745:
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
+       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-raw.log "$cache_dir/validation-raw.log" || return 1
+
+
+In kaseki-agent.sh line 2748:
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv ]; then
+
+
+In kaseki-agent.sh line 2749:
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
+       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-timings.tsv "$cache_dir/validation-timings.tsv" || return 1
+
+
+In kaseki-agent.sh line 2752:
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-baseline-env.log ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log ]; then
+
+
+In kaseki-agent.sh line 2753:
+    cp ${KASEKI_RESULTS_DIR}/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
+       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "${KASEKI_RESULTS_DIR}"/validation-baseline-env.log "$cache_dir/validation-env.log" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 2779:
+      cd ${KASEKI_WORKSPACE_DIR}/repo
+         ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      cd "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 2782:
+    cd ${KASEKI_WORKSPACE_DIR}/repo
+       ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cd "${KASEKI_WORKSPACE_DIR}"/repo
+
+
+In kaseki-agent.sh line 3028:
+    if ! [ -d ${KASEKI_WORKSPACE_DIR}/repo ]; then
+              ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if ! [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
+
+
+In kaseki-agent.sh line 3029:
+      printf 'ERROR: Working directory ${KASEKI_WORKSPACE_DIR}/repo does not exist before %s\n' "$stage_label" | tee -a "$log_file"
+             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 3060:
+          printf '[validation command] disk_available=%s\n' "$(df -h ${KASEKI_RESULTS_DIR} 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          printf '[validation command] disk_available=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+
+
+In kaseki-agent.sh line 3122:
+          } | tee -a "$log_file" ${KASEKI_RESULTS_DIR}/quality.log
+                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 3150:
+          } | tee -a "$log_file" ${KASEKI_RESULTS_DIR}/quality.log "$FILTER_DIAGNOSTICS_LOG"
+                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          } | tee -a "$log_file" "${KASEKI_RESULTS_DIR}"/quality.log "$FILTER_DIAGNOSTICS_LOG"
+
+
+In kaseki-agent.sh line 3174:
+              printf '  ${KASEKI_WORKSPACE_DIR}/repo exists: %s\n' "$([ -d ${KASEKI_WORKSPACE_DIR}/repo ] && echo 'yes' || echo 'no')"
+                     ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+                                                                           ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+              printf '  ${KASEKI_WORKSPACE_DIR}/repo exists: %s\n' "$([ -d "${KASEKI_WORKSPACE_DIR}"/repo ] && echo 'yes' || echo 'no')"
+
+
+In kaseki-agent.sh line 3175:
+              if [ -L ${KASEKI_WORKSPACE_DIR}/repo/node_modules ]; then
+                      ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+              if [ -L "${KASEKI_WORKSPACE_DIR}"/repo/node_modules ]; then
+
+
+In kaseki-agent.sh line 3176:
+                printf '  node_modules is symlink → %s\n' "$(readlink ${KASEKI_WORKSPACE_DIR}/repo/node_modules 2>&1 || echo '<readlink failed>')"
+                                                                      ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+                printf '  node_modules is symlink → %s\n' "$(readlink "${KASEKI_WORKSPACE_DIR}"/repo/node_modules 2>&1 || echo '<readlink failed>')"
+
+
+In kaseki-agent.sh line 3180:
+            } | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+            } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 3261:
+  REPO_MEMORY_COMMIT_SHA="$(git -C ${KASEKI_WORKSPACE_DIR}/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
+                                   ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  REPO_MEMORY_COMMIT_SHA="$(git -C "${KASEKI_WORKSPACE_DIR}"/repo rev-parse HEAD 2>/dev/null || printf 'unknown')"
+
+
+In kaseki-agent.sh line 3441:
+  if [ -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt ]; then
+
+
+In kaseki-agent.sh line 3443:
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+
+
+In kaseki-agent.sh line 3847:
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log
+                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log
+
+
+In kaseki-agent.sh line 3853:
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log
+                                                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log
+
+
+In kaseki-agent.sh line 3865:
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log >&2) \
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log >&2) \
+
+
+In kaseki-agent.sh line 3867:
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
+                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 3875:
+    goal_setting_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
+                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
+
+
+In kaseki-agent.sh line 3880:
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>> ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
+                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                                                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.raw.jsonl 2>/dev/null || true
+
+
+In kaseki-agent.sh line 3891:
+  rm -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || true
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+
+
+In kaseki-agent.sh line 3942:
+    } > ${KASEKI_RESULTS_DIR}/goal-setting-metrics.json
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    } > "${KASEKI_RESULTS_DIR}"/goal-setting-metrics.json
+
+
+In kaseki-agent.sh line 3951:
+  if [ -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt ]; then
+
+
+In kaseki-agent.sh line 3953:
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || echo "")
+
+
+In kaseki-agent.sh line 4032:
+    cat "$goal_setting_stderr_capture" >> ${KASEKI_RESULTS_DIR}/goal-setting-stderr.log 2>/dev/null || true
+                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cat "$goal_setting_stderr_capture" >> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4064:
+        rm -f ${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt 2>/dev/null || true
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4098:
+  if [ -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt ]; then
+
+
+In kaseki-agent.sh line 4100:
+    reason_code=$(cat ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || echo "")
+                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    reason_code=$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || echo "")
+
+
+In kaseki-agent.sh line 4235:
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
+                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+
+
+In kaseki-agent.sh line 4240:
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
+                                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+
+
+In kaseki-agent.sh line 4247:
+  scout_dirty_before="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true)"
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  scout_dirty_before="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
+
+
+In kaseki-agent.sh line 4248:
+  chmod -R a-w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+               ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+
+
+In kaseki-agent.sh line 4253:
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log >&2) \
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log >&2) \
+
+
+In kaseki-agent.sh line 4255:
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
+                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 4260:
+  chmod -R u+w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+               ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+
+
+In kaseki-agent.sh line 4264:
+    scouting_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
+                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    scouting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
+
+
+In kaseki-agent.sh line 4267:
+  scout_dirty_after="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true)"
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  scout_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
+
+
+In kaseki-agent.sh line 4273:
+  git reset --hard -q HEAD 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  git reset --hard -q HEAD 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+
+
+In kaseki-agent.sh line 4274:
+  git clean -fd -q 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || true
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  git clean -fd -q 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+
+
+In kaseki-agent.sh line 4275:
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>> ${KASEKI_RESULTS_DIR}/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4286:
+  rm -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || true
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  rm -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4314:
+    cat "$scouting_stderr_capture" >> ${KASEKI_RESULTS_DIR}/scouting-stderr.log 2>/dev/null || true
+                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cat "$scouting_stderr_capture" >> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4333:
+        rm -f ${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt 2>/dev/null || true
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        rm -f "${KASEKI_RESULTS_DIR}"/scouting-validation-reason.txt 2>/dev/null || true
+
+
+In kaseki-agent.sh line 4403:
+  validation_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/validation.log 2>/dev/null || true)"
+                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4410:
+  progress_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/progress.log 2>/dev/null || true)"
+                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4436:
+  if [ -f ${KASEKI_RESULTS_DIR}/validation-causality-analysis.json ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-causality-analysis.json ]; then
+
+
+In kaseki-agent.sh line 4610:
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+                                                                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
+
+In kaseki-agent.sh line 4615:
+    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
+
+In kaseki-agent.sh line 4626:
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log >&2) \
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log >&2) \
+
+
+In kaseki-agent.sh line 4628:
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
+                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 4634:
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl ${KASEKI_RESULTS_DIR}/goal-check-summary.json 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+
+
+In kaseki-agent.sh line 4734:
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-check-events.jsonl "$attempt" 2>> ${KASEKI_RESULTS_DIR}/goal-check-stderr.log || true
+                                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+
+
+In kaseki-agent.sh line 4737:
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" ${KASEKI_RESULTS_DIR}/goal-check.json "$attempt" ${KASEKI_RESULTS_DIR}/goal-check-validation-reason.txt; then
+                                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$attempt" "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt; then
+
+
+In kaseki-agent.sh line 4739:
+    goal_check_validation_reason="$(cat ${KASEKI_RESULTS_DIR}/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
+                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    goal_check_validation_reason="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-reason.txt 2>/dev/null || printf 'schema_mismatch')"
+
+
+In kaseki-agent.sh line 4740:
+    goal_check_validation_summary="$(cat ${KASEKI_RESULTS_DIR}/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
+                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    goal_check_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-check-validation-summary.txt 2>/dev/null || printf 'goal-check artifact validation failed')"
+
+
+In kaseki-agent.sh line 4786:
+  validation_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/validation.log 2>/dev/null || true)"
+                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4787:
+  progress_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/progress.log 2>/dev/null || true)"
+                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4788:
+  stage_timings="$(tail -80 ${KASEKI_RESULTS_DIR}/stage-timings.tsv 2>/dev/null || true)"
+                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  stage_timings="$(tail -80 "${KASEKI_RESULTS_DIR}"/stage-timings.tsv 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4789:
+  dependency_cache="$(tail -80 ${KASEKI_RESULTS_DIR}/dependency-cache.log 2>/dev/null || true)"
+                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  dependency_cache="$(tail -80 "${KASEKI_RESULTS_DIR}"/dependency-cache.log 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4790:
+  restoration_report="$(tail -80 ${KASEKI_RESULTS_DIR}/restoration-report.md 2>/dev/null || true)"
+                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  restoration_report="$(tail -80 "${KASEKI_RESULTS_DIR}"/restoration-report.md 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 4791:
+  metadata_text="$(cat ${KASEKI_RESULTS_DIR}/metadata.json 2>/dev/null || true)"
+                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  metadata_text="$(cat "${KASEKI_RESULTS_DIR}"/metadata.json 2>/dev/null || true)"
+
+
+In kaseki-agent.sh line 5059:
+    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
+                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+
+
+In kaseki-agent.sh line 5064:
+    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log
+                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+
+
+In kaseki-agent.sh line 5073:
+  eval_dirty_before="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true)"
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  eval_dirty_before="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true)"
+
+
+In kaseki-agent.sh line 5074:
+  chmod -R a-w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+               ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5079:
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log >&2) \
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log >&2) \
+
+
+In kaseki-agent.sh line 5081:
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
+                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 5085:
+  chmod -R u+w ${KASEKI_WORKSPACE_DIR}/repo 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+               ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5115:
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log; then
+                                                                                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log; then
+
+
+In kaseki-agent.sh line 5120:
+  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5123:
+    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5132:
+  eval_dirty_after="$(git status --porcelain 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true)"
+                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  eval_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true)"
+
+
+In kaseki-agent.sh line 5136:
+    git reset --hard -q HEAD 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git reset --hard -q HEAD 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5137:
+    git clean -fd -q 2>> ${KASEKI_RESULTS_DIR}/run-evaluation-stderr.log || true
+                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git clean -fd -q 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+
+
+In kaseki-agent.sh line 5998:
+  if [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
+
+
+In kaseki-agent.sh line 6009:
+      ' ${KASEKI_RESULTS_DIR}/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
+        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      ' "${KASEKI_RESULTS_DIR}"/result-summary.md 2>/dev/null | sanitize_pr_metadata_text
+
+
+In kaseki-agent.sh line 6014:
+  elif [ -z "$candidate" ] && [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
+                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  elif [ -z "$candidate" ] && [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
+
+
+In kaseki-agent.sh line 6015:
+    candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' ${KASEKI_RESULTS_DIR}/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
+                                                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    candidate="$(sed -n '/^- Status:/p; /^- Changed files:/p; /^- Validation:/p' "${KASEKI_RESULTS_DIR}"/result-summary.md 2>/dev/null | head -n 3 | sanitize_pr_metadata_text)"
+
+
+In kaseki-agent.sh line 6025:
+  if [ -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+
+
+In kaseki-agent.sh line 6026:
+    changed_files="$(sanitize_pr_metadata_text < ${KASEKI_RESULTS_DIR}/changed-files.txt || true)"
+                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    changed_files="$(sanitize_pr_metadata_text < "${KASEKI_RESULTS_DIR}"/changed-files.txt || true)"
+
+
+In kaseki-agent.sh line 6356:
+  if [ -s ${KASEKI_RESULTS_DIR}/result-summary.md ]; then
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -s "${KASEKI_RESULTS_DIR}"/result-summary.md ]; then
+
+
+In kaseki-agent.sh line 6545:
+$(if [ -s ${KASEKI_RESULTS_DIR}/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
+          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+$(if [ -s "${KASEKI_RESULTS_DIR}"/run-evaluation.json ]; then printf '## Agent evaluation\n%s\n\n' "$(build_pr_agent_evaluation)"; fi)
+
+
+In kaseki-agent.sh line 6594:
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6598:
+  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6607:
+  printf 'Generating GitHub App installation token...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Generating GitHub App installation token...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6628:
+    printf 'Failed to generate token: %s\n' "$token_error" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Failed to generate token: %s\n' "$token_error" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6638:
+  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6639:
+    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6645:
+    printf -- 'Failed to extract token from response (empty result)\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf -- 'Failed to extract token from response (empty result)\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6650:
+  printf 'Token generated successfully\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Token generated successfully\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6655:
+  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6657:
+    printf 'Failed to create branch\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Failed to create branch\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6664:
+  printf 'Committing changes...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Committing changes...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6665:
+  if [ ! -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ ! -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+
+
+In kaseki-agent.sh line 6666:
+    printf 'No changed files to stage\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'No changed files to stage\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6673:
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6677:
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
+         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
+
+
+In kaseki-agent.sh line 6679:
+    printf 'No changes to commit or commit failed\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'No changes to commit or commit failed\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6686:
+  printf 'Pushing branch to GitHub...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Pushing branch to GitHub...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6688:
+  if ! create_github_askpass_helper ${KASEKI_RESULTS_DIR}/git-push.log 'GitHub credential helper'; then
+                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if ! create_github_askpass_helper "${KASEKI_RESULTS_DIR}"/git-push.log 'GitHub credential helper'; then
+
+
+In kaseki-agent.sh line 6694:
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6697:
+    printf 'Branch pushed successfully\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Branch pushed successfully\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6700:
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6707:
+    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6714:
+    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6724:
+  printf 'Creating pull request...\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Creating pull request...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6748:
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6762:
+      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6772:
+    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+                                                                                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+
+
+In kaseki-agent.sh line 6773:
+    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+                                                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+
+
+In kaseki-agent.sh line 6776:
+      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6783:
+    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                                                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6784:
+      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6788:
+    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6789:
+      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6796:
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6821:
+      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6839:
+      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6843:
+    if validate_github_api_response "$pr_http_status" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    if validate_github_api_response "$pr_http_status" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6845:
+      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                                                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6846:
+        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6851:
+      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" ${KASEKI_RESULTS_DIR}/git-push.log; then
+                                                                                                                                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+
+
+In kaseki-agent.sh line 6852:
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6859:
+        printf 'Pull request created: %s\n' "$pr_url" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'Pull request created: %s\n' "$pr_url" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6861:
+          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" ${KASEKI_RESULTS_DIR}/git-push.log || true
+                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" "${KASEKI_RESULTS_DIR}"/git-push.log || true
+
+
+In kaseki-agent.sh line 6863:
+          request_owner_review "$pr_response" "$token" ${KASEKI_RESULTS_DIR}/git-push.log || true
+                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          request_owner_review "$pr_response" "$token" "${KASEKI_RESULTS_DIR}"/git-push.log || true
+
+
+In kaseki-agent.sh line 6865:
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6872:
+        printf 'Pull request API returned success (201) but response missing html_url field\n' | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'Pull request API returned success (201) but response missing html_url field\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6875:
+          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6885:
+        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6891:
+        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 6894:
+          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                                                                            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6895:
+          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 6952:
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
+                                                                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+
+
+In kaseki-agent.sh line 6963:
+cd ${KASEKI_WORKSPACE_DIR}/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
+   ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
+
+
+In kaseki-agent.sh line 7193:
+      rm -rf ${KASEKI_WORKSPACE_BASELINE_DIR} 2>/dev/null || true
+             ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      rm -rf "${KASEKI_WORKSPACE_BASELINE_DIR}" 2>/dev/null || true
+
+
+In kaseki-agent.sh line 7210:
+  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a ${KASEKI_RESULTS_DIR}/pre-validation.log
+                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation.log
+
+
+In kaseki-agent.sh line 7216:
+    ${KASEKI_RESULTS_DIR}/pre-validation.log \
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    "${KASEKI_RESULTS_DIR}"/pre-validation.log \
+
+
+In kaseki-agent.sh line 7245:
+    printf 'WARNING: TypeScript pre-check failed, but continuing due to scouting mode being enabled.\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'WARNING: TypeScript pre-check failed, but continuing due to scouting mode being enabled.\n' | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7280:
+      printf '  - Scouting Pi agent will exit 0 but ${KASEKI_RESULTS_DIR}/scouting-candidate.json will be MISSING\n'
+             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 7283:
+      printf '\nFix: Remount ${KASEKI_RESULTS_DIR} as read-write\n'
+             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 7284:
+      printf '  docker run -v /path/to${KASEKI_RESULTS_DIR}:${KASEKI_RESULTS_DIR}:rw ...\n'
+             ^-- SC2016 (info): Expressions don't expand in single quotes, use double quotes for that.
+
+
+In kaseki-agent.sh line 7286:
+    } | tee -a ${KASEKI_RESULTS_DIR}/scouting-stderr.log
+               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    } | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+
+
+In kaseki-agent.sh line 7301:
+  printf '%s\n' "$filesystem_writable" > ${KASEKI_RESULTS_DIR}/filesystem-writable-at-start.txt
+                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '%s\n' "$filesystem_writable" > "${KASEKI_RESULTS_DIR}"/filesystem-writable-at-start.txt
+
+
+In kaseki-agent.sh line 7302:
+  [ -n "$readonly_reason" ] && printf '%s\n' "$readonly_reason" > ${KASEKI_RESULTS_DIR}/filesystem-readonly-reason.txt
+                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  [ -n "$readonly_reason" ] && printf '%s\n' "$readonly_reason" > "${KASEKI_RESULTS_DIR}"/filesystem-readonly-reason.txt
+
+
+In kaseki-agent.sh line 7308:
+      printf '[filesystem-diagnostic] Baseline validation auto-disabled due to read-only filesystem\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf '[filesystem-diagnostic] Baseline validation auto-disabled due to read-only filesystem\n' | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7358:
+      append_jsonl_object ${KASEKI_RESULTS_DIR}/metadata.jsonl \
+                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      append_jsonl_object "${KASEKI_RESULTS_DIR}"/metadata.jsonl \
+
+
+In kaseki-agent.sh line 7371:
+      if [ -s ${KASEKI_RESULTS_DIR}/changed-files.txt ]; then
+              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      if [ -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
+
+
+In kaseki-agent.sh line 7372:
+        run_scouting_allowlist_coverage "$SCOUTING_ARTIFACT" 2>&1 | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+        run_scouting_allowlist_coverage "$SCOUTING_ARTIFACT" 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7378:
+      printf 'ERROR: Derived allowlist patterns failed validation. Cannot proceed.\n' | tee -a ${KASEKI_RESULTS_DIR}/quality.log >&2
+                                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'ERROR: Derived allowlist patterns failed validation. Cannot proceed.\n' | tee -a "${KASEKI_RESULTS_DIR}"/quality.log >&2
+
+
+In kaseki-agent.sh line 7386:
+    printf 'ERROR: Failed to derive allowlist from scouting artifact: %s\n' "$scouting_output" | tee -a ${KASEKI_RESULTS_DIR}/quality.log >&2
+                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'ERROR: Failed to derive allowlist from scouting artifact: %s\n' "$scouting_output" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log >&2
+
+
+In kaseki-agent.sh line 7424:
+  } | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log
+             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  } | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log
+
+
+In kaseki-agent.sh line 7436:
+    2> >(tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2) \
+                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2) \
+
+
+In kaseki-agent.sh line 7438:
+    | kaseki-pi-progress-stream ${KASEKI_RESULTS_DIR}/progress.jsonl ${KASEKI_RESULTS_DIR}/progress.log
+                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+
+
+In kaseki-agent.sh line 7447:
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl
+                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl
+
+
+In kaseki-agent.sh line 7471:
+' "$extraction_error" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log ${KASEKI_RESULTS_DIR}/quality.log >&2
+                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+' "$extraction_error" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/quality.log >&2
+
+
+In kaseki-agent.sh line 7477:
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl 2>/dev/null || true
+                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
+
+
+In kaseki-agent.sh line 7483:
+    kaseki-pi-event-filter "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.jsonl ${KASEKI_RESULTS_DIR}/pi-summary.json
+                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    kaseki-pi-event-filter "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
+
+
+In kaseki-agent.sh line 7488:
+    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7489:
+    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
+                                                                                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+
+
+In kaseki-agent.sh line 7495:
+    cp "$RAW_EVENTS" ${KASEKI_RESULTS_DIR}/pi-events.raw.jsonl 2>/dev/null || true
+                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
+
+
+In kaseki-agent.sh line 7497:
+  if [ -s "$RAW_EVENTS" ] && { [ ! -s ${KASEKI_RESULTS_DIR}/pi-events.jsonl ] || [ ! -s ${KASEKI_RESULTS_DIR}/pi-summary.json ]; }; then
+                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ -s "$RAW_EVENTS" ] && { [ ! -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ] || [ ! -s "${KASEKI_RESULTS_DIR}"/pi-summary.json ]; }; then
+
+
+In kaseki-agent.sh line 7498:
+    printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
+                                                                                                                          ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+
+
+In kaseki-agent.sh line 7507:
+  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s ${KASEKI_RESULTS_DIR}/pi-events.jsonl ]; then
+                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ]; then
+
+
+In kaseki-agent.sh line 7511:
+    npx tsx ${KASEKI_APP_LIB_DIR}/hashline-event-handler-cli.js ${KASEKI_RESULTS_DIR}/pi-events.jsonl /workspace ${KASEKI_RESULTS_DIR}/hashline-events.jsonl ${KASEKI_RESULTS_DIR}/hashline-summary.json 2>> ${KASEKI_RESULTS_DIR}/hashline-validation.log
+            ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                 ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    npx tsx "${KASEKI_APP_LIB_DIR}"/hashline-event-handler-cli.js "${KASEKI_RESULTS_DIR}"/pi-events.jsonl /workspace "${KASEKI_RESULTS_DIR}"/hashline-events.jsonl "${KASEKI_RESULTS_DIR}"/hashline-summary.json 2>> "${KASEKI_RESULTS_DIR}"/hashline-validation.log
+
+
+In kaseki-agent.sh line 7516:
+      printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/hashline-validation.log
+                                                                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'Warning: hashline validation exited with code %s (non-fatal; continuing pipeline)\n' "$HASHLINE_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/hashline-validation.log
+
+
+In kaseki-agent.sh line 7573:
+    printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a ${KASEKI_RESULTS_DIR}/pi-stderr.log >&2
+                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf 'pi timeout after %ss (exit 124)\n' "$KASEKI_AGENT_TIMEOUT_SECONDS" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+
+
+In kaseki-agent.sh line 7612:
+diff_size="$(wc -c < ${KASEKI_RESULTS_DIR}/git.diff | tr -d ' ')"
+                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+diff_size="$(wc -c < "${KASEKI_RESULTS_DIR}"/git.diff | tr -d ' ')"
+
+
+In kaseki-agent.sh line 7616:
+  printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                                                       ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7631:
+      printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a ${KASEKI_RESULTS_DIR}/quality.log
+                                                                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+      printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+
+
+In kaseki-agent.sh line 7636:
+  done < ${KASEKI_RESULTS_DIR}/changed-files.txt
+         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
+
+
+In kaseki-agent.sh line 7641:
+  printf '%s\n' "$format_command" >> ${KASEKI_RESULTS_DIR}/format-check-command.txt
+                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '%s\n' "$format_command" >> "${KASEKI_RESULTS_DIR}"/format-check-command.txt
+
+
+In kaseki-agent.sh line 7650:
+  pre_validation_goal_check_diff_hash="$(sha256sum ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null | awk '{print $1}')"
+                                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  pre_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
+
+
+In kaseki-agent.sh line 7682:
+    printf '[validation environment] disk_space_available=%s\n' "$(df -h ${KASEKI_RESULTS_DIR} 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+                                                                         ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[validation environment] disk_space_available=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
+
+
+In kaseki-agent.sh line 7683:
+    printf '[validation environment] disk_space_used=%s\n' "$(du -sh ${KASEKI_RESULTS_DIR} 2>/dev/null | cut -f1 || echo '<du failed>')"
+                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf '[validation environment] disk_space_used=%s\n' "$(du -sh "${KASEKI_RESULTS_DIR}" 2>/dev/null | cut -f1 || echo '<du failed>')"
+
+
+In kaseki-agent.sh line 7684:
+  } | tee -a ${KASEKI_RESULTS_DIR}/validation.log "$VALIDATION_ENV_LOG"
+             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  } | tee -a "${KASEKI_RESULTS_DIR}"/validation.log "$VALIDATION_ENV_LOG"
+
+
+In kaseki-agent.sh line 7687:
+collect_changed_file_state ${KASEKI_RESULTS_DIR}/validation-before-state.txt
+                           ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+collect_changed_file_state "${KASEKI_RESULTS_DIR}"/validation-before-state.txt
+
+
+In kaseki-agent.sh line 7693:
+    ${KASEKI_RESULTS_DIR}/validation.log \
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    "${KASEKI_RESULTS_DIR}"/validation.log \
+
+
+In kaseki-agent.sh line 7702:
+  printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/validation.log
+                                                                                                    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Validation skipped because quality gates failed with exit %s.\n' "$QUALITY_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
+
+
+In kaseki-agent.sh line 7713:
+  printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a ${KASEKI_RESULTS_DIR}/validation.log
+                                                                                                                                                                     ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Validation skipped because pi coding agent failed with exit %s. Set KASEKI_VALIDATE_AFTER_AGENT_FAILURE=1 to run validation anyway.\n' "$PI_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/validation.log
+
+
+In kaseki-agent.sh line 7720:
+    ${KASEKI_RESULTS_DIR}/validation.log \
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    "${KASEKI_RESULTS_DIR}"/validation.log \
+
+
+In kaseki-agent.sh line 7734:
+  collect_changed_file_state ${KASEKI_RESULTS_DIR}/validation-after-state.txt
+                             ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  collect_changed_file_state "${KASEKI_RESULTS_DIR}"/validation-after-state.txt
+
+
+In kaseki-agent.sh line 7741:
+post_validation_goal_check_diff_hash="$(sha256sum ${KASEKI_RESULTS_DIR}/git.diff 2>/dev/null | awk '{print $1}')"
+                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+post_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
+
+
+In kaseki-agent.sh line 7745:
+  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a ${KASEKI_RESULTS_DIR}/goal-check-stderr.log
+                                                                                                                               ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
+
+In kaseki-agent.sh line 7779:
+: > ${KASEKI_RESULTS_DIR}/secret-scan.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+
+
+In kaseki-agent.sh line 7781:
+  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a ${KASEKI_RESULTS_DIR}/secret-scan.log
+                                                                                  ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a "${KASEKI_RESULTS_DIR}"/secret-scan.log
+
+
+In kaseki-agent.sh line 7786:
+  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' ${KASEKI_RESULTS_DIR} ${KASEKI_WORKSPACE_DIR}/repo/.git ${KASEKI_WORKSPACE_DIR}/repo/src ${KASEKI_WORKSPACE_DIR}/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > ${KASEKI_RESULTS_DIR}/secret-scan.log; then
+                                              ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                    ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                      ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                       ^---------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                                                                                                                                                                                                      ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > "${KASEKI_RESULTS_DIR}"/secret-scan.log; then
+
+
+In kaseki-agent.sh line 7839:
+: > ${KASEKI_RESULTS_DIR}/git-push.log
+    ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+: > "${KASEKI_RESULTS_DIR}"/git-push.log
+
+
+In kaseki-agent.sh line 7858:
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log >&2
+                                                                                                                        ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+
+
+In kaseki-agent.sh line 7870:
+    "$GITHUB_APP_ENABLED" | tee -a ${KASEKI_RESULTS_DIR}/git-push.log
+                                   ^-------------------^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean: 
+    "$GITHUB_APP_ENABLED" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2016 -- Expressions don't expand in singl...
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...
+  https://www.shellcheck.net/wiki/SC2295 -- Expansions inside ${..} need to b...
