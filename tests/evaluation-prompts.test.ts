@@ -518,7 +518,14 @@ console.log(JSON.stringify(payload));
           .trim()
           .split(/\n+/)
           .filter(Boolean)
-          .map(line => JSON.parse(line));
+          .map(line => {
+            try {
+              return JSON.parse(line);
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
 
         return { tmpDir, result, resultsDir, events, orchestratorEventsPath, runLogPath };
       } catch (error) {
