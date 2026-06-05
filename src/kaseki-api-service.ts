@@ -9,6 +9,7 @@ import { generateOpenAPISpec } from './openapi-spec-generator';
 import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized } from './kaseki-api/setup-orchestrator';
 import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
 import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './startup/container-preflight';
+import { getNpmVersion } from './kaseki-api/npm-version';
 import {
   initSentry,
   sentryRequestHandler,
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
 
   // Log detailed startup information
   logger.info(`KASEKI_RESULTS_DIR: ${config.resultsDir}`);
+
+  // Detect npm version (async, with graceful fallback)
+  const npmVersion = await getNpmVersion();
+
   logger.event('service_startup_config', {
     port: config.port,
     host: config.host,
@@ -83,7 +88,7 @@ async function main(): Promise<void> {
     artifactCacheTtlMs: config.artifactCacheTtlMs,
     artifactCacheMaxFileBytes: config.artifactCacheMaxFileBytes,
     nodeVersion: process.versions.node,
-    npmVersion: process.versions.npm || 'unknown',
+    npmVersion,
     platform: process.platform,
     arch: process.arch,
   });
@@ -103,7 +108,8 @@ async function main(): Promise<void> {
     cpuUsage: JSON.stringify(process.cpuUsage()),
   });
 
-  // Bootstrap all services
+  // Bootstrap all services with timing measurement
+  const bootstrapStartTime = performance.now();
   const {
     artifactCache,
     webhookManager,
@@ -111,13 +117,25 @@ async function main(): Promise<void> {
     preFlightValidator,
     scheduler
   } = await bootstrapServices(config);
+  const bootstrapDurationMs = performance.now() - bootstrapStartTime;
 
   // Run container preflight diagnostics (non-blocking startup checks)
   // Results are cached and accessible via /api/preflight endpoint
   logger.info('Running container preflight diagnostics...');
+  const preflightStartTime = performance.now();
   const containerPreflight = new ContainerPreflightDiagnostics(config);
   const preflightChecks = containerPreflight.run();
+  const preflightDurationMs = performance.now() - preflightStartTime;
   logContainerPreflightResults(preflightChecks);
+
+  // Log startup completion with timing summary
+  const preflightWarnings = preflightChecks.filter(c => !c.ok).length;
+  logger.event('service_startup_complete', {
+    bootstrapDurationMs: Math.round(bootstrapDurationMs),
+    preflightDurationMs: Math.round(preflightDurationMs),
+    preflightWarningsCount: preflightWarnings,
+    preflightOkCount: preflightChecks.filter(c => c.ok).length,
+  });
 
   // Create Express app
   const app = express();

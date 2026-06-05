@@ -49,55 +49,87 @@ export interface ShutdownDeps {
 export async function bootstrapServices(
   config: KasekiApiConfig,
 ): Promise<BootstrappedServices> {
+  const bootstrapStartTime = performance.now();
   logger.info('Starting service bootstrap');
 
   const cleanupTasks: Array<{ name: string; run: () => void | Promise<void> }> =
     [];
 
+  const componentTimings: { name: string; durationMs: number }[] = [];
+
   try {
     // 1. Create artifact cache (no dependencies)
+    const cacheStartTime = performance.now();
     logger.info('Initializing ResultCache');
     const artifactCache = new ResultCache({
       maxEntries: config.artifactCacheMaxEntries,
       ttlMs: config.artifactCacheTtlMs,
       maxFileBytes: config.artifactCacheMaxFileBytes,
     });
-    logger.info('ResultCache initialized');
+    const cacheDuration = performance.now() - cacheStartTime;
+    componentTimings.push({ name: 'ResultCache', durationMs: cacheDuration });
+    logger.info(`ResultCache initialized (${cacheDuration.toFixed(1)}ms)`);
     cleanupTasks.push({
       name: 'ResultCache',
       run: () => artifactCache.clearAll(),
     });
 
     // 2. Create webhook manager (depends on: resultsDir)
+    const webhookStartTime = performance.now();
     logger.info('Initializing WebhookManager');
     const webhookManager = new WebhookManager(config.resultsDir);
-    logger.info('WebhookManager initialized');
+    const webhookDuration = performance.now() - webhookStartTime;
+    componentTimings.push({ name: 'WebhookManager', durationMs: webhookDuration });
+    logger.info(`WebhookManager initialized (${webhookDuration.toFixed(1)}ms)`);
     cleanupTasks.push({
       name: 'WebhookManager',
       run: () => webhookManager.shutdown(),
     });
 
     // 3. Create idempotency store (depends on: resultsDir)
+    const idempotencyStartTime = performance.now();
     logger.info('Initializing IdempotencyStore');
     const idempotencyStore = new IdempotencyStore(config.resultsDir, 24);
-    logger.info('IdempotencyStore initialized');
+    const idempotencyDuration = performance.now() - idempotencyStartTime;
+    componentTimings.push({ name: 'IdempotencyStore', durationMs: idempotencyDuration });
+    logger.info(`IdempotencyStore initialized (${idempotencyDuration.toFixed(1)}ms)`);
     cleanupTasks.push({
       name: 'IdempotencyStore',
       run: () => idempotencyStore.shutdown(),
     });
 
     // 4. Create pre-flight validator (no dependencies)
+    const validatorStartTime = performance.now();
     logger.info('Initializing PreFlightValidator');
     const preFlightValidator = new PreFlightValidator();
-    logger.info('PreFlightValidator initialized');
+    const validatorDuration = performance.now() - validatorStartTime;
+    componentTimings.push({ name: 'PreFlightValidator', durationMs: validatorDuration });
+    logger.info(`PreFlightValidator initialized (${validatorDuration.toFixed(1)}ms)`);
 
     // 5. Create scheduler (depends on: config, webhookManager, artifactCache)
+    const schedulerStartTime = performance.now();
     logger.info('Initializing JobScheduler');
     const scheduler = new JobScheduler(config, webhookManager, artifactCache);
     await scheduler.ready();
-    logger.info('JobScheduler initialized');
+    const schedulerDuration = performance.now() - schedulerStartTime;
+    componentTimings.push({ name: 'JobScheduler', durationMs: schedulerDuration });
+    logger.info(`JobScheduler initialized (${schedulerDuration.toFixed(1)}ms)`);
 
-    logger.info('Service bootstrap complete');
+    // Detect slow components and warn
+    const slowComponentThreshold = 1000; // 1 second
+    const slowComponents = componentTimings.filter(c => c.durationMs > slowComponentThreshold);
+    if (slowComponents.length > 0) {
+      logger.warn('Slow component initialization detected during bootstrap:', {
+        slowComponents: slowComponents.map(c => `${c.name} (${c.durationMs.toFixed(1)}ms)`),
+      });
+    }
+
+    const totalBootstrapDuration = performance.now() - bootstrapStartTime;
+    logger.info('Service bootstrap complete', {
+      totalDurationMs: totalBootstrapDuration.toFixed(1),
+      componentCount: componentTimings.length,
+      components: componentTimings,
+    });
 
     return {
       artifactCache,
@@ -123,7 +155,11 @@ export async function bootstrapServices(
     }
 
     const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error('Failed to bootstrap services', { error: errorMessage });
+    const totalBootstrapDuration = performance.now() - bootstrapStartTime;
+    logger.error('Failed to bootstrap services', { 
+      error: errorMessage,
+      durationMs: totalBootstrapDuration.toFixed(1),
+    });
     throw new Error(`Service bootstrap failed: ${errorMessage}`, {
       cause: err,
     });
