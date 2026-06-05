@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.0...v1.64.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* Test collect-feedback via CLI and export ESM helpers ([#586](https://github.com/CyanAutomation/kaseki-agent/issues/586)) ([8b35d12](https://github.com/CyanAutomation/kaseki-agent/commit/8b35d12bf74010ad39bb9c3488a9ccd525c257f7))
+
 # [1.64.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.63.0...v1.64.0) (2026-06-05)
 
 
