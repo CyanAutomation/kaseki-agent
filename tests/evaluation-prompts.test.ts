@@ -343,7 +343,6 @@ build_goal_check_prompt
       return JSON.parse(output);
     };
 
-
     type GoalCheckScenario = 'success' | 'pi-exit-failure' | 'malformed-artifact';
 
     const runGoalCheckOrchestration = (scenario: GoalCheckScenario) => {
