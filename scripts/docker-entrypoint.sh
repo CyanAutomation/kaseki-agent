@@ -26,6 +26,8 @@ set -euo pipefail
 
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
+# Auto-remediation enabled by default (KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=1)
+# Set KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0 to disable auto-fixes (e.g., git safe.directory config)
 if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
   /scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}" || {
     exit_code=$?

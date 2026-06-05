@@ -355,6 +355,7 @@ run_privilege_tools_parallel() {
   
   local temp_dir
   temp_dir=$(mktemp -d)
+  export temp_dir  # Make accessible to trap handler in subshell contexts
   local success_marker="$temp_dir/success"
   local pids=()
   
@@ -387,7 +388,7 @@ run_privilege_tools_parallel() {
       elif [ -n "$resolved_user_name" ]; then
         timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
       else
-        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "#${KASEKI_CONTAINER_UID}" -g "#${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
+        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "#${KASEKI_CONTAINER_UID}" -g "${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
       fi && touch "$success_marker"
     ) &
     pids+=("$!")

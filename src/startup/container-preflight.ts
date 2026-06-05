@@ -34,33 +34,62 @@ export class ContainerPreflightDiagnostics {
   }
 
   /**
+   * Helper to measure elapsed time for a check
+   */
+  private measureCheck(
+    fn: () => PreflightCheck,
+  ): PreflightCheck {
+    const startTime = performance.now();
+    const result = fn();
+    const elapsedMs = performance.now() - startTime;
+    return { ...result, elapsedMs };
+  }
+
+  /**
    * Run all container-safe preflight checks.
    * Returns structured array of PreflightCheck results.
    * All checks are non-blocking and safe to run as UID 10000.
    */
   run(): PreflightCheck[] {
+    const runStartTime = performance.now();
     const checks: PreflightCheck[] = [];
 
     // ✅ Check 1: /agents directory structure exists and is readable
-    checks.push(this.checkSetupCompleteness());
+    checks.push(this.measureCheck(() => this.checkSetupCompleteness()));
 
     // ✅ Check 2: Secrets directory is readable
-    checks.push(this.checkSecretsReadable());
+    checks.push(this.measureCheck(() => this.checkSecretsReadable()));
 
     // ✅ Check 3: Checkout directory exists and is readable
-    checks.push(this.checkCheckoutExists());
+    checks.push(this.measureCheck(() => this.checkCheckoutExists()));
 
     // ✅ Check 4: Git freshness probe (can we read .git metadata?)
-    checks.push(this.checkGitFreshness());
+    checks.push(this.measureCheck(() => this.checkGitFreshness()));
 
     // ✅ Check 5: Git safe.directory configuration
-    checks.push(this.checkGitSafeDirectory());
+    checks.push(this.measureCheck(() => this.checkGitSafeDirectory()));
 
     // ✅ Check 6: Template bootstrap files present
-    checks.push(this.checkTemplateBootstrap());
+    checks.push(this.measureCheck(() => this.checkTemplateBootstrap()));
 
     // ✅ Check 7: Deleted bind mounts
-    checks.push(this.checkDeletedBindMounts());
+    checks.push(this.measureCheck(() => this.checkDeletedBindMounts()));
+
+    // Log timing summary
+    const totalElapsed = performance.now() - runStartTime;
+    const slowChecks = checks.filter(c => (c.elapsedMs || 0) > 100); // Warn if any check > 100ms
+    if (slowChecks.length > 0) {
+      logger.debug('Slow preflight checks detected', {
+        checks: slowChecks.map(c => ({
+          name: c.name,
+          elapsedMs: c.elapsedMs?.toFixed(1),
+        })),
+      });
+    }
+    logger.debug('Container preflight checks completed', {
+      checkCount: checks.length,
+      totalElapsedMs: totalElapsed.toFixed(1),
+    });
 
     return checks;
   }
@@ -311,10 +340,15 @@ export class ContainerPreflightDiagnostics {
       };
     }
 
+    // Enhanced diagnostics for not-configured state
+    const currentDirs = configuredDirs.length > 0 
+      ? `${configuredDirs.join(', ')}`
+      : 'none configured';
+    
     return {
       name: 'git-safe-directory',
       ok: false,
-      detail: `Git safe.directory not configured for ${checkoutDir}`,
+      detail: `Git safe.directory not configured for ${checkoutDir}. Currently: ${currentDirs}`,
       remediation: `Configure: git config --global --add safe.directory ${checkoutDir}`,
     };
   }

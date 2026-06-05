@@ -416,6 +416,7 @@ export interface PreflightCheck {
   remoteUrl?: string;
   doctorCommand?: string;
   doctorStderrTail?: string;
+  elapsedMs?: number; // Time to run this check in milliseconds
 }
 
 export interface PreflightResponse {

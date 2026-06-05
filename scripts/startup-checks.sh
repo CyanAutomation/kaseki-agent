@@ -3,11 +3,28 @@
 # startup-checks.sh — Validate Docker environment before startup
 #
 # Checks that required directories and secret files are accessible.
-# Reports issues with clear fix instructions. Does NOT attempt auto-fixes.
+# Reports issues with clear fix instructions. Supports auto-remediation
+# for fixable issues like git safe.directory configuration.
+#
+# Usage:
+#   startup-checks.sh [MODE]
+#   startup-checks.sh [MODE] [--no-remediate]
+#
+# Modes:
+#   all              - Full startup validation + git checks (default)
+#   permissions      - Just /agents directory permissions
+#   bootstrap        - Bootstrap file availability
+#   quick/boot       - Fast minimal check
+#   worker           - Worker container mounts
+#   baseline-validation - Setup + bootstrap + secrets
+#
+# Auto-remediation:
+#   Enabled by default (KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=1)
+#   Controlled via environment variable or --no-remediate flag
 #
 # Exit codes:
 #   0 = all checks passed
-#   2 = error (missing required resource or unreadable secret)
+#   2 = error (missing required resource or unreadable secret, blocking startup)
 #   3 = warning (suboptimal but execution can continue)
 
 set -euo pipefail
@@ -20,6 +37,12 @@ KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"
 KASEKI_SECRETS_DIR="${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
 MODE="${1:-all}"
 KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK="${KASEKI_ALLOW_LOCAL_DEV_SECRET_FALLBACK:-0}"
+
+# Parse optional flags (e.g., --no-remediate)
+KASEKI_STARTUP_CHECK_AUTO_REMEDIATE="${KASEKI_STARTUP_CHECK_AUTO_REMEDIATE:-1}"
+if [ "${2:-}" = "--no-remediate" ]; then
+  KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0
+fi
 
 CONTAINER_UID="${CONTAINER_UID:-$(id -u)}"
 CONTAINER_GID="${CONTAINER_GID:-$(id -g)}"
@@ -440,6 +463,58 @@ check_worker_mounts() {
   return "$exit_code"
 }
 
+check_git_safe_directory() {
+  log_info "Checking git safe.directory configuration..."
+
+  local checkout_dir="${KASEKI_CHECKOUT_DIR:-/agents/kaseki-agent}"
+  local auto_remediate="${KASEKI_STARTUP_CHECK_AUTO_REMEDIATE:-1}"
+  
+  if [ ! -d "$checkout_dir/.git" ]; then
+    log_info "Git directory not found; cannot verify safe.directory configuration (normal on first startup)"
+    return 0
+  fi
+
+  # Read current git config to check if safe.directory is set
+  local configured_dirs
+  configured_dirs=$(git config --global --get-all safe.directory 2>/dev/null || echo "")
+  
+  # Check if checkout_dir is in the configured dirs
+  local is_configured=false
+  if [ -n "$configured_dirs" ]; then
+    while IFS= read -r dir; do
+      if [ "$dir" = "$checkout_dir" ]; then
+        is_configured=true
+        break
+      fi
+    done <<< "$configured_dirs"
+  fi
+
+  if [ "$is_configured" = true ]; then
+    log_pass "Git safe.directory is configured for $checkout_dir"
+    return 0
+  fi
+
+  # Git safe.directory is not configured
+  local remediation_cmd="git config --global --add safe.directory $checkout_dir"
+  
+  if [ "$auto_remediate" = "1" ]; then
+    # Auto-remediate: apply the fix
+    if git config --global --add safe.directory "$checkout_dir" 2>/dev/null; then
+      log_pass "Git safe.directory auto-configured for $checkout_dir"
+      return 0
+    else
+      log_warn "Could not auto-configure git safe.directory (permission issue)"
+      log_info "  To fix manually: $remediation_cmd"
+      return 3
+    fi
+  else
+    # Just warn; don't fix
+    log_warn "Git safe.directory not configured for $checkout_dir"
+    log_info "  To fix: $remediation_cmd"
+    return 3
+  fi
+}
+
 # --- Main execution ---
 
 main() {
@@ -458,6 +533,7 @@ main() {
       check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       check_github_app_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_git_safe_directory || overall_exit=$((overall_exit > $? ? overall_exit : $?))
       ;;
     permissions)
       check_kaseki_root || overall_exit=$?
