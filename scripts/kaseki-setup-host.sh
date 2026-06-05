@@ -360,6 +360,7 @@ run_privilege_tools_parallel() {
   local pids=()
   
   cleanup_parallel() {
+    # shellcheck disable=SC2317
     rm -rf "$temp_dir"
   }
   trap cleanup_parallel EXIT

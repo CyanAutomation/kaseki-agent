@@ -37,7 +37,7 @@ export async function getNpmVersion(): Promise<string> {
     if (version && /^\d+\.\d+\.\d+/.test(version)) {
       return version;
     }
-  } catch (err) {
+  } catch {
     // npm command failed or timed out; silently fall through
   }
 
