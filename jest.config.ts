@@ -23,6 +23,7 @@ const config: Config = {
         esModuleInterop: true,
         module: 'ESNext',
         target: 'ESNext',
+        lib: ['ES2024'],
       },
     }],
   },

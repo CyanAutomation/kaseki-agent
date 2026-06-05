@@ -1162,9 +1162,22 @@ if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/scripts/scouting-allowlist
   SCOUTING_ALLOWLIST_HELPER="/app/scripts/scouting-allowlist.js"
 fi
 # shellcheck source=scripts/allowlist-helper.sh
-. "$ALLOWLIST_HELPER"
+. "$ALLOWLIST_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
+  exit 1
+}
+
+# Verify the helper was sourced successfully by checking for the required function
+if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
+  printf 'ERROR: build_allowlist_regex function not found after sourcing %s\n' "$ALLOWLIST_HELPER" >&2
+  exit 1
+fi
+
 if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
-  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null
+  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1 || {
+    printf 'ERROR: build_allowlist_regex exited with status %d\n' $? >&2
+    exit 1
+  }
   printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
   exit 0
 fi
