@@ -74,11 +74,11 @@ KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run l
 KASEKI_SKIP_MISSING_NPM_SCRIPTS="${KASEKI_SKIP_MISSING_NPM_SCRIPTS:-1}"
 KASEKI_DEBUG_RAW_EVENTS="${KASEKI_DEBUG_RAW_EVENTS:-0}"
 KASEKI_STREAM_PROGRESS="${KASEKI_STREAM_PROGRESS:-1}"
-KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"
 export KASEKI_RESULTS_DIR
 KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-/workspace}"
 export KASEKI_WORKSPACE_DIR
-KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_BASELINE_DIR}}"
+KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_DIR}/baseline}"
 export KASEKI_WORKSPACE_BASELINE_DIR
 KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
 export KASEKI_APP_LIB_DIR
@@ -3619,7 +3619,7 @@ validate_goal_setting_artifact() {
   local candidate_artifact="$1"
   local final_artifact="$2"
   local reason_file="$3"
-  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+  local results_dir="$KASEKI_RESULTS_DIR"
 
   if ! [ -f "$candidate_artifact" ]; then
     {
@@ -3659,7 +3659,7 @@ validate_goal_setting_artifact() {
 validate_goal_setting_artifact_with_node() {
   local candidate_artifact="$1"
   local reason_file="$2"
-  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+  local results_dir="$KASEKI_RESULTS_DIR"
 
   local validation_output
   validation_output=$(node -e "
@@ -4368,7 +4368,7 @@ snapshot_attempt_artifacts() {
 collect_goal_check_feedback() {
   local instance_name="$1"
   local goal_setting_path="$GOAL_SETTING_ARTIFACT"
-  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+  local results_dir="$KASEKI_RESULTS_DIR"
   local goal_check_path="$results_dir/goal-check.json"
   local metadata_path="$results_dir/metadata.json"
   local feedback_file="$results_dir/goal-feedback.jsonl"
@@ -7258,7 +7258,7 @@ printf 'Pi version: %s\n' "$PI_VERSION"
 # === Phase 1: Early Filesystem Diagnostics (Before Scouting) ===
 # Detects read-only filesystem constraints that would cause silent scouting failures
 check_filesystem_capabilities() {
-  local results_dir="${KASEKI_RESULTS_DIR:-${KASEKI_RESULTS_DIR}}"
+  local results_dir="$KASEKI_RESULTS_DIR"
   local filesystem_writable=true
   local readonly_reason=""
   
