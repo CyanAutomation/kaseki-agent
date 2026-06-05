@@ -1130,10 +1130,32 @@ run_expectation_mismatch_detector() {
   fi
 }
 
+resolve_allowlist_helper() {
+  local script_dir="$1"
+  local script_relative_helper="$script_dir/scripts/allowlist-helper.sh"
+  local fallback_helper="${KASEKI_ALLOWLIST_HELPER_FALLBACK:-/app/scripts/allowlist-helper.sh}"
+
+  if [ -r "$script_relative_helper" ]; then
+    printf '%s\n' "$script_relative_helper"
+    return 0
+  fi
+
+  if [ -r "$fallback_helper" ]; then
+    printf '%s\n' "$fallback_helper"
+    return 0
+  fi
+
+  printf 'ERROR: Allowlist helper is not readable. Expected packaged helper at %s or fallback helper at %s. This worker image or mounted template is incomplete; rebuild the image or restore scripts/allowlist-helper.sh.\n' \
+    "$script_relative_helper" \
+    "$fallback_helper" >&2
+  return 66
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/allowlist-helper.sh"
-if [ ! -r "$ALLOWLIST_HELPER" ] && [ -r /app/scripts/allowlist-helper.sh ]; then
-  ALLOWLIST_HELPER="/app/scripts/allowlist-helper.sh"
+ALLOWLIST_HELPER="$(resolve_allowlist_helper "$SCRIPT_DIR")"
+allowlist_helper_status=$?
+if [ "$allowlist_helper_status" -ne 0 ]; then
+  exit "$allowlist_helper_status"
 fi
 SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/scouting-allowlist.js"
 if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/scripts/scouting-allowlist.js ]; then
@@ -1141,6 +1163,11 @@ if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/scripts/scouting-allowlist
 fi
 # shellcheck source=scripts/allowlist-helper.sh
 . "$ALLOWLIST_HELPER"
+if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
+  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null
+  printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
+  exit 0
+fi
 
 derive_allowlist_from_scouting() {
   local scouting_artifact
