@@ -8,6 +8,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+export KASEKI_WORKSPACE_DIR="$TMP_DIR"
+export KASEKI_RESULTS_DIR="$TMP_DIR/results"
+
 # shellcheck source=../scripts/allowlist-helper.sh
 . "$ROOT_DIR/scripts/allowlist-helper.sh"
 
