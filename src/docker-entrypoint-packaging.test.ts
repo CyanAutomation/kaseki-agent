@@ -127,7 +127,12 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
       } finally {
         fs.rmSync(agentPath, { force: true });
         if (hadExistingAgent) {
-          fs.renameSync(backupPath, agentPath);
+          try {
+            fs.renameSync(backupPath, agentPath);
+          } catch (error) {
+            console.error(`Failed to restore kaseki-agent from ${backupPath} to ${agentPath}:`, error);
+            throw error;
+          }
         }
       }
     };
