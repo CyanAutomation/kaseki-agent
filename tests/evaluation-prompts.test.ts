@@ -444,19 +444,19 @@ NODE
 }
 if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
   append_event goal-setting
-  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["goal-check should run"]}' > "$KASEKI_RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   append_event scouting
-  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
+  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$KASEKI_RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   append_event goal-check
   if [ "${scenario}" = "pi-exit-failure" ]; then
     printf '{"type":"message","model":"test-model"}\n'
     exit 42
   elif [ "${scenario}" = "malformed-artifact" ]; then
-    printf '{"met":true,"confidence":"high"' > "$RESULTS_DIR/goal-check-candidate.json"
+    printf '{"met":true,"confidence":"high"' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
   else
-    printf '%s\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$RESULTS_DIR/goal-check-candidate.json"
+    printf '%s\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
   fi
 else
   append_event coding
@@ -472,7 +472,7 @@ printf '{"type":"message","model":"test-model"}\n'
           fs.chmodSync(path.join(fakeBin, entry), 0o700);
         }
 
-        fs.writeFileSync(path.join(tmpDir, 'collect-feedback.js'), `#!/usr/bin/env node
+        fs.writeFileSync(path.join(tmpDir, 'scripts', 'collect-feedback.js'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const [phase, instanceName, goalSettingPath, goalCheckPath, metadataPath] = process.argv.slice(2);
 const resultsDir = process.env.KASEKI_RESULTS_DIR;
@@ -511,8 +511,8 @@ console.log(JSON.stringify(payload));
             KASEKI_VALIDATION_COMMANDS: ':',
             KASEKI_ALLOW_EMPTY_DIFF: '1',
             KASEKI_RUN_EVALUATION: '0',
+            KASEKI_RESULTS_DIR: resultsDir,
             ORCHESTRATOR_EVENTS: orchestratorEventsPath,
-            RESULTS_DIR: resultsDir,
           },
         });
         fs.writeFileSync(runLogPath, `${result.stdout}\n${result.stderr}`);
@@ -546,6 +546,11 @@ console.log(JSON.stringify(payload));
       const run = runGoalCheckOrchestration('success');
 
       try {
+        if (run.result.status !== 0) {
+          console.log('TEST ERROR: Exit code', run.result.status);
+          console.log('STDOUT:', run.result.stdout.slice(0, 500));
+          console.log('STDERR:', run.result.stderr.slice(0, 500));
+        }
         expect(run.result.status).toBe(0);
         const goalCheckIndex = run.events.findIndex(event => event.event === 'pi' && event.stage === 'goal-check');
         const feedbackIndex = run.events.findIndex(event => event.event === 'collect-feedback');
@@ -777,19 +782,19 @@ NODE
 }
 if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
   append_event goal-setting
-  printf '%s\\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["run-evaluation should run"],"quality_score":88,"quality_metrics":{"specificity":4}}' > "$RESULTS_DIR/goal-setting-candidate.json"
+  printf '%s\\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":["run-evaluation should run"],"quality_score":88,"quality_metrics":{"specificity":4}}' > "$KASEKI_RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   append_event scouting
-  printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
+  printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$KASEKI_RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   append_event goal-check
-  printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$RESULTS_DIR/goal-check-candidate.json"
+  printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
 elif printf '%s' "$prompt" | grep -q 'read-only run-evaluation Pi agent'; then
   append_event run-evaluation
   if [ "${scenario}" = "malformed-artifact" ]; then
-    printf '{"overall_assessment":"good"' > "$RESULTS_DIR/run-evaluation-candidate.json"
+    printf '{"overall_assessment":"good"' > "$KASEKI_RESULTS_DIR/run-evaluation-candidate.json"
   elif [ "${scenario}" = "success" ]; then
-    printf '%s\\n' '{"overall_assessment":"good","reviewer_confidence":"high","task_completion_score":4,"summary":"The task was completed with strong evidence.","pr_summary":"Adds the requested behavioral assertion.","human_review_focus":["Confirm test coverage intent"],"efficiency_findings":["No repeated collection work"],"warnings":[],"stage_value":[{"stage":"scouting","value":"medium","reason":"Identified impacted files"},{"stage":"run_evaluation","value":"high","reason":"Captured evaluator output"}],"kaseki_improvement_opportunities":[{"category":"goal_setting","priority":"low","suggestion":"Keep goals specific"},{"category":"evaluation","priority":"medium","suggestion":"Keep contract tests behavioral"}]}' > "$RESULTS_DIR/run-evaluation-candidate.json"
+    printf '%s\\n' '{"overall_assessment":"good","reviewer_confidence":"high","task_completion_score":4,"summary":"The task was completed with strong evidence.","pr_summary":"Adds the requested behavioral assertion.","human_review_focus":["Confirm test coverage intent"],"efficiency_findings":["No repeated collection work"],"warnings":[],"stage_value":[{"stage":"scouting","value":"medium","reason":"Identified impacted files"},{"stage":"run_evaluation","value":"high","reason":"Captured evaluator output"}],"kaseki_improvement_opportunities":[{"category":"goal_setting","priority":"low","suggestion":"Keep goals specific"},{"category":"evaluation","priority":"medium","suggestion":"Keep contract tests behavioral"}]}' > "$KASEKI_RESULTS_DIR/run-evaluation-candidate.json"
   fi
 else
   append_event coding
@@ -815,7 +820,7 @@ cat
           fs.chmodSync(path.join(fakeBin, entry), 0o700);
         }
 
-        fs.writeFileSync(path.join(tmpDir, 'collect-feedback.js'), `#!/usr/bin/env node
+        fs.writeFileSync(path.join(tmpDir, 'scripts', 'collect-feedback.js'), `#!/usr/bin/env node
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 
@@ -873,9 +878,8 @@ console.log(output);
             KASEKI_VALIDATION_COMMANDS: ':',
             KASEKI_ALLOW_EMPTY_DIFF: '1',
             KASEKI_RUN_EVALUATION: '1',
-            ORCHESTRATOR_EVENTS: orchestratorEventsPath,
-            RESULTS_DIR: resultsDir,
             KASEKI_RESULTS_DIR: resultsDir,
+            ORCHESTRATOR_EVENTS: orchestratorEventsPath,
           },
         });
         fs.writeFileSync(runLogPath, `${result.stdout}\n${result.stderr}`);
