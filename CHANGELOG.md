@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.2...v1.64.3) (2026-06-05)
+
+
+### Bug Fixes
+
+* export entrypoint path defaults before dispatch ([78b2bd3](https://github.com/CyanAutomation/kaseki-agent/commit/78b2bd3281f700876428ccc7c4a81b4e45a06757))
+* export entrypoint path defaults before dispatch ([#595](https://github.com/CyanAutomation/kaseki-agent/issues/595)) ([aa27e7d](https://github.com/CyanAutomation/kaseki-agent/commit/aa27e7d78bc536e33751a088a63203ac51f17407))
+
 ## [1.64.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.1...v1.64.2) (2026-06-05)
 
 
