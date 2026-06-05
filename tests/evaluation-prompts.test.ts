@@ -89,6 +89,7 @@ describe('Evaluation Prompt Enhancements', () => {
     let tmpDir: string | undefined;
 
     try {
+    try {
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-renderer-'));
       const functionPath = path.join(tmpDir, 'goal-check-function.sh');
       const rendererPath = path.join(tmpDir, 'render-goal-check-prompt.sh');
