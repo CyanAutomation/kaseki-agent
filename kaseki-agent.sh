@@ -3,6 +3,60 @@
 # record status/timing artifacts before deciding whether to stop.
 set -uo pipefail
 
+# Early exit for helper resolution check - must happen before variable initialization
+if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
+  # Define helper resolution function locally
+  resolve_allowlist_helper() {
+    local script_dir="$1"
+    local script_relative_helper="$script_dir/scripts/allowlist-helper.sh"
+    local fallback_helper="${KASEKI_ALLOWLIST_HELPER_FALLBACK:-/app/scripts/allowlist-helper.sh}"
+
+    if [ -r "$script_relative_helper" ]; then
+      printf '%s\n' "$script_relative_helper"
+      return 0
+    fi
+
+    if [ -r "$fallback_helper" ]; then
+      printf '%s\n' "$fallback_helper"
+      return 0
+    fi
+
+    printf 'ERROR: Allowlist helper is not readable. Expected packaged helper at %s or fallback helper at %s. This worker image or mounted template is incomplete; rebuild the image or restore scripts/allowlist-helper.sh.\n' \
+      "$script_relative_helper" \
+      "$fallback_helper" >&2
+    return 66
+  }
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ALLOWLIST_HELPER="$(resolve_allowlist_helper "$SCRIPT_DIR")"
+  allowlist_helper_status=$?
+  if [ "$allowlist_helper_status" -ne 0 ]; then
+    exit "$allowlist_helper_status"
+  fi
+
+  # Source the helper
+  . "$ALLOWLIST_HELPER" || {
+    printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
+    exit 1
+  }
+
+  # Verify the helper was sourced successfully
+  if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
+    printf 'ERROR: build_allowlist_regex function not found after sourcing %s\n' "$ALLOWLIST_HELPER" >&2
+    exit 1
+  fi
+
+  # Call the function to verify it works
+  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1 || {
+    printf 'ERROR: build_allowlist_regex exited with status %d\n' $? >&2
+    exit 1
+  }
+
+  # Output and exit
+  printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
+  exit 0
+fi
+
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
@@ -264,60 +318,6 @@ setup_host_logging_mirror() {
   exec > >(tee -a ${KASEKI_RESULTS_DIR}/stdout.log) 2> >(tee -a ${KASEKI_RESULTS_DIR}/stderr.log >&2)
   printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)\n' "$KASEKI_LOG_DIR" >&2
 }
-
-# Early exit for helper resolution check - must happen before any directory creation
-if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
-  # Define helper resolution function locally
-  resolve_allowlist_helper() {
-    local script_dir="$1"
-    local script_relative_helper="$script_dir/scripts/allowlist-helper.sh"
-    local fallback_helper="${KASEKI_ALLOWLIST_HELPER_FALLBACK:-/app/scripts/allowlist-helper.sh}"
-
-    if [ -r "$script_relative_helper" ]; then
-      printf '%s\n' "$script_relative_helper"
-      return 0
-    fi
-
-    if [ -r "$fallback_helper" ]; then
-      printf '%s\n' "$fallback_helper"
-      return 0
-    fi
-
-    printf 'ERROR: Allowlist helper is not readable. Expected packaged helper at %s or fallback helper at %s. This worker image or mounted template is incomplete; rebuild the image or restore scripts/allowlist-helper.sh.\n' \
-      "$script_relative_helper" \
-      "$fallback_helper" >&2
-    return 66
-  }
-
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  ALLOWLIST_HELPER="$(resolve_allowlist_helper "$SCRIPT_DIR")"
-  allowlist_helper_status=$?
-  if [ "$allowlist_helper_status" -ne 0 ]; then
-    exit "$allowlist_helper_status"
-  fi
-
-  # Source the helper
-  . "$ALLOWLIST_HELPER" || {
-    printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
-    exit 1
-  }
-
-  # Verify the helper was sourced successfully
-  if ! declare -f build_allowlist_regex >/dev/null 2>&1; then
-    printf 'ERROR: build_allowlist_regex function not found after sourcing %s\n' "$ALLOWLIST_HELPER" >&2
-    exit 1
-  fi
-
-  # Call the function to verify it works
-  build_allowlist_regex "${KASEKI_CHANGED_FILES_ALLOWLIST:-}" >/dev/null 2>&1 || {
-    printf 'ERROR: build_allowlist_regex exited with status %d\n' $? >&2
-    exit 1
-  }
-
-  # Output and exit
-  printf 'allowlist_helper=%s\n' "$ALLOWLIST_HELPER"
-  exit 0
-fi
 
 mkdir_paths=(${KASEKI_RESULTS_DIR})
 if [ -n "${HOME:-}" ]; then
