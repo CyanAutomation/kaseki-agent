@@ -193,13 +193,13 @@ export function healthReportToMarkdown(report: StartupHealthReport): string {
  */
 function getStatusEmoji(status: string): string {
   switch (status) {
-    case 'ok':
-      return '✅';
-    case 'degraded':
-      return '⚠️';
-    case 'error':
-      return '❌';
-    default:
-      return '❓';
+  case 'ok':
+    return '✅';
+  case 'degraded':
+    return '⚠️';
+  case 'error':
+    return '❌';
+  default:
+    return '❓';
   }
 }

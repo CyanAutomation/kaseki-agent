@@ -140,7 +140,7 @@ async function main(): Promise<void> {
       'PreFlightValidator': 0,
       'JobScheduler': 0,
     };
-    
+
     const healthReport = generateStartupHealthReport(
       bootstrapDurationMs,
       preflightDurationMs,

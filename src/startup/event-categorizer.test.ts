@@ -1,6 +1,6 @@
 /**
  * Tests for Event Categorizer
- * 
+ *
  * Categorizes startup events by type and rank
  */
 

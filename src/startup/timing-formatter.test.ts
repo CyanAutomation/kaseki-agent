@@ -1,6 +1,6 @@
 /**
  * Tests for Timing Formatter
- * 
+ *
  * Consistent formatting of startup timing data
  */
 

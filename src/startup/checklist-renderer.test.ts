@@ -1,6 +1,6 @@
 /**
  * Tests for Checklist Renderer
- * 
+ *
  * Renders visual startup checklist as text/markdown
  */
 
