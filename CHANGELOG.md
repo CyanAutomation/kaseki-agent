@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.4...v1.64.5) (2026-06-05)
+
+
+### Bug Fixes
+
+* Add missing shellcheck directive for improved linting ([3d49bac](https://github.com/CyanAutomation/kaseki-agent/commit/3d49bacbd25a47eaf59973989ef5436f97eb57d6))
+* Correct quoting for file path normalization in check_secret_scan_allowlist function ([6e8be32](https://github.com/CyanAutomation/kaseki-agent/commit/6e8be325a8cffeee2113c9da076bd8afe9c4f081))
+* Ensure proper quoting for KASEKI_RESULTS_DIR in scripts and tests ([a049fea](https://github.com/CyanAutomation/kaseki-agent/commit/a049fea9f0ac7e6a8e9d6aebb102a5eb9e2e8531))
+
 ## [1.64.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.3...v1.64.4) (2026-06-05)
 
 
