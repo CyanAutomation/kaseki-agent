@@ -20,7 +20,7 @@ run_case() {
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 
-  sed "s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
+  sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
   chmod +x "$case_dir/kaseki-agent-modified.sh"
 
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$fake_repo/package.json"

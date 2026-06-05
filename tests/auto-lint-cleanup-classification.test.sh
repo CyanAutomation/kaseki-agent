@@ -13,6 +13,9 @@ fi
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+export KASEKI_WORKSPACE_DIR="$TMP_DIR"
+export KASEKI_RESULTS_DIR="$TMP_DIR/results"
+
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 assert_file_contains() {

@@ -6,6 +6,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+export KASEKI_WORKSPACE_DIR="$TMP_DIR/workspace"
+export KASEKI_RESULTS_DIR="$TMP_DIR/results"
+
 # Load only repository-memory and prompt helpers from kaseki-agent.sh.
 eval "$(awk '
   /^compute_repo_memory_key\(\)/ { emit=1 }

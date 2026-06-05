@@ -27,7 +27,7 @@ touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/p
 : > "$PI_CALLS"
 
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
-sed "s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
+sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
 chmod +x "$MODIFIED_SCRIPT"
 
 printf '%s\n' '{"name":"fake-goal-fallback-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json"

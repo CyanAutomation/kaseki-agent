@@ -372,7 +372,13 @@ run_privilege_tools_parallel() {
   : >"$stderr_file"
 
   local temp_dir
-  temp_dir=$(mktemp -d)
+  # Create temp directory with TMPDIR support (for containerized environments)
+  # Fail fast with clear error if temp directory cannot be created
+  if ! temp_dir=$(TMPDIR="${TMPDIR:-/tmp}" mktemp -d 2>/dev/null); then
+    printf 'error: failed to create temporary directory for privilege probe in %s\n' "${TMPDIR:-/tmp}" >"$stderr_file"
+    return 1
+  fi
+
   local success_marker="$temp_dir/success"
   local pids=()
   local failure_stderr_files=()

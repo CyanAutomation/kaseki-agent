@@ -13,7 +13,7 @@ WORKSPACE_REPO="$TMP_DIR/repo"
 APP_LIB="$TMP_DIR/app/lib"
 PI_CALLS="$TMP_DIR/pi-calls.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'cat "$RESULTS_DIR/scouting-validation-errors.jsonl" 2>/dev/null; rm -rf "$TMP_DIR"' EXIT
 
 fail() {
   echo "FAIL: $TEST_NAME: $*" >&2
@@ -25,7 +25,7 @@ mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
-sed "s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
+sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
 chmod +x "$MODIFIED_SCRIPT"
 
 printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json"
