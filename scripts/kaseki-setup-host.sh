@@ -256,29 +256,46 @@ run_checkout_freshness_probe() {
   # Phase 4: Use parallel privilege tool testing when running as root
   # Runs setpriv, runuser, and sudo in parallel; returns on first success
   # This reduces probe time from ~6 seconds (sequential 3×2s timeouts) to ~2 seconds (first success)
+  local probe_exit_status=0
   if [ "$(id -u)" -eq "$KASEKI_CONTAINER_UID" ] && [ "$(id -g)" -eq "$KASEKI_CONTAINER_GID" ]; then
-    "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    if "${probe_command[@]}" >/dev/null 2>"$stderr_file"; then
+      probe_exit_status=0
+    else
+      probe_exit_status=$?
+    fi
   elif [ "$(id -u)" -eq 0 ]; then
     # Phase 4: Parallel privilege tool testing
-    run_privilege_tools_parallel "$checkout_dir" "$stderr_file" "$resolved_user_name" "$resolved_group_name" "${probe_command[@]}" || true
+    if run_privilege_tools_parallel "$checkout_dir" "$stderr_file" "$resolved_user_name" "$resolved_group_name" "${probe_command[@]}"; then
+      probe_exit_status=0
+    else
+      probe_exit_status=$?
+    fi
   else
-    "${probe_command[@]}" >/dev/null 2>"$stderr_file" || true
+    if "${probe_command[@]}" >/dev/null 2>"$stderr_file"; then
+      probe_exit_status=0
+    else
+      probe_exit_status=$?
+    fi
   fi
 
-  if [ -s "$stderr_file" ]; then
+  if [ "$probe_exit_status" -eq 0 ]; then
+    probe_status="ok"
+    probe_detail="Checkout freshness probe passed for ${checkout_dir} as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
+  else
     probe_status="failed"
     local stderr_tail
-    stderr_tail="$(tail -n 1 "$stderr_file" | tr -d '\r')"
-    if printf '%s' "$stderr_tail" | grep -Eiq 'unknown user|unknown group|no passwd entry|user .* does not exist|group .* does not exist|sudo: .*unknown|sudo: .*invalid|runuser: .*does not exist|runuser: user .* does not exist|runuser: group .* does not exist|unable to initialize policy plugin|unable to set user context|timed out'; then
+    if [ -s "$stderr_file" ]; then
+      stderr_tail="$(tail -n 1 "$stderr_file" | tr -d '\r')"
+    else
+      stderr_tail="probe command exited with status ${probe_exit_status} without stderr output"
+    fi
+    if printf '%s' "$stderr_tail" | grep -Eiq 'unknown user|unknown group|no passwd entry|user .* does not exist|group .* does not exist|sudo: .*unknown|sudo: .*invalid|runuser: .*does not exist|runuser: user .* does not exist|runuser: group .* does not exist|unable to initialize policy plugin|unable to set user context|timed out|no usable privilege tool'; then
       probe_detail="Checkout freshness probe failed: probe could not impersonate UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} due to host user/group mapping, privilege-tool configuration issue, or timeout: ${stderr_tail}"
       probe_remediation="Configure a valid host method to run commands as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID} (or ensure passwd/group mappings exist for that UID/GID), then rerun ./scripts/kaseki-setup-host.sh --fix. If the issue is timeout, try increasing KASEKI_PRIV_TOOL_TIMEOUT."
     else
       probe_detail="Checkout freshness probe failed when running git metadata access as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}: ${stderr_tail}"
       probe_remediation="Fix ownership/permissions so ${checkout_dir} and ${checkout_dir}/.git are readable by UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
     fi
-  else
-    probe_status="ok"
-    probe_detail="Checkout freshness probe passed for ${checkout_dir} as UID:GID ${KASEKI_CONTAINER_UID}:${KASEKI_CONTAINER_GID}."
   fi
   cleanup_probe_stderr_file
 
@@ -352,75 +369,111 @@ run_privilege_tools_parallel() {
   local resolved_group_name="$4"
   shift 4
   local probe_command=("$@")
-  
+  : >"$stderr_file"
+
   local temp_dir
   temp_dir=$(mktemp -d)
   local success_marker="$temp_dir/success"
   local pids=()
-  
+  local failure_stderr_files=()
+  local setpriv_stderr="$temp_dir/setpriv.stderr"
+  local runuser_stderr="$temp_dir/runuser.stderr"
+  local sudo_stderr="$temp_dir/sudo.stderr"
+
   cleanup_parallel() {
     rm -rf "${temp_dir:-}"
   }
-  
+
+  stop_parallel_jobs() {
+    local pid
+    for pid in "${pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+    done
+    for pid in "${pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  }
+
+  copy_selected_failure_stderr() {
+    local candidate
+    for candidate in "${failure_stderr_files[@]}"; do
+      if [ -s "$candidate" ]; then
+        cp "$candidate" "$stderr_file"
+        return 0
+      fi
+    done
+    printf 'no usable privilege tool succeeded for %s\n' "$checkout_dir" >"$stderr_file"
+  }
+
   # Test 1: setpriv (fastest, preferred)
   if [ "$(id -u)" -eq 0 ] && command -v setpriv >/dev/null 2>&1; then
+    failure_stderr_files+=("$setpriv_stderr")
     (
-      timeout "$KASEKI_PRIV_TOOL_TIMEOUT" setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" && touch "$success_marker"
+      if timeout "$KASEKI_PRIV_TOOL_TIMEOUT" setpriv --reuid "$KASEKI_CONTAINER_UID" --regid "$KASEKI_CONTAINER_GID" --clear-groups -- "${probe_command[@]}" >/dev/null 2>"$setpriv_stderr"; then
+        touch "$success_marker"
+      fi
     ) &
     pids+=("$!")
   fi
-  
+
   # Test 2: runuser (if resolved user/group available)
   if [ "$(id -u)" -eq 0 ] && command -v runuser >/dev/null 2>&1 && [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
+    failure_stderr_files+=("$runuser_stderr")
     (
-      timeout "$KASEKI_PRIV_TOOL_TIMEOUT" runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file" && touch "$success_marker"
+      if timeout "$KASEKI_PRIV_TOOL_TIMEOUT" runuser -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$runuser_stderr"; then
+        touch "$success_marker"
+      fi
     ) &
     pids+=("$!")
   fi
-  
+
   # Test 3: sudo (fallback, slowest)
   if [ "$(id -u)" -eq 0 ] && command -v sudo >/dev/null 2>&1; then
+    failure_stderr_files+=("$sudo_stderr")
     (
       if [ -n "$resolved_user_name" ] && [ -n "$resolved_group_name" ]; then
-        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
+        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -g "$resolved_group_name" -- "${probe_command[@]}" >/dev/null 2>"$sudo_stderr"
       elif [ -n "$resolved_user_name" ]; then
-        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
+        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "$resolved_user_name" -- "${probe_command[@]}" >/dev/null 2>"$sudo_stderr"
       else
-        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "#${KASEKI_CONTAINER_UID}" -g "${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$stderr_file"
+        timeout "$KASEKI_PRIV_TOOL_TIMEOUT" sudo -u "#${KASEKI_CONTAINER_UID}" -g "${KASEKI_CONTAINER_GID}" -- "${probe_command[@]}" >/dev/null 2>"$sudo_stderr"
       fi && touch "$success_marker"
     ) &
     pids+=("$!")
   fi
-  
+
+  if [ "${#pids[@]}" -eq 0 ]; then
+    copy_selected_failure_stderr
+    cleanup_parallel
+    return 1
+  fi
+
   # Wait for any process to succeed (check success marker while processes run)
-  local timeout_elapsed=0
-  local max_wait=$((KASEKI_PRIV_TOOL_TIMEOUT + 1))
-  while [ $timeout_elapsed -lt $max_wait ]; do
+  local wait_attempt=0
+  local max_wait_attempts=$(( (KASEKI_PRIV_TOOL_TIMEOUT + 1) * 10 ))
+  while [ "$wait_attempt" -lt "$max_wait_attempts" ]; do
     if [ -f "$success_marker" ]; then
-      # Kill remaining background processes
-      for pid in "${pids[@]}"; do
-        kill "$pid" 2>/dev/null || true
-      done
-      for pid in "${pids[@]}"; do
-        wait "$pid" 2>/dev/null || true
-      done
+      stop_parallel_jobs
       cleanup_parallel
       return 0
     fi
     sleep 0.1
-    timeout_elapsed=$(( timeout_elapsed + 1 ))
+    wait_attempt=$(( wait_attempt + 1 ))
   done
-  
+
   # Wait for all processes to complete
   for pid in "${pids[@]}"; do
     wait "$pid" 2>/dev/null || true
   done
-  
-  # Check if any succeeded
+
+  # Check if any succeeded. On success, leave the shared stderr empty so failed
+  # parallel attempts cannot turn a successful privilege probe into a failure.
   if [ -f "$success_marker" ]; then
     cleanup_parallel
     return 0
   fi
+
+  copy_selected_failure_stderr
   cleanup_parallel
   return 1
 }
