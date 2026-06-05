@@ -48,6 +48,7 @@ const TEMPLATE_REMEDIATION =
 const DEFAULT_TEMPLATE_DOCTOR_TIMEOUT_MS = 15000;
 const DEFAULT_TEMPLATE_HEALTH_CACHE_TTL_MS = 60_000;
 const TEMPLATE_DOCTOR_STDERR_TAIL_LINES = 25;
+const TEMPLATE_DOCTOR_STDOUT_TAIL_LINES = 25;
 const REQUIRED_TEMPLATE_FILES = [
   'run-kaseki.sh',
   'kaseki-agent.sh',
@@ -86,6 +87,7 @@ interface TemplateHealthStatus {
   doctorExitCode?: number | null;
   doctorSignal?: NodeJS.Signals | null;
   doctorStderrTail?: string;
+  doctorStdoutTail?: string;
   detail: string;
   remediation?: string;
 }
@@ -421,9 +423,14 @@ function validateTemplateDoctor(
   checkoutDir: string,
 ): TemplateHealthStatus | null {
   const stderr = `${doctorResult.stderr || ''}${doctorResult.error ? `\n${doctorResult.error.message}` : ''}`;
+  const stdout = `${doctorResult.stdout || ''}`;
   const doctorStderrTail = tailTextByLines(
     stderr,
     TEMPLATE_DOCTOR_STDERR_TAIL_LINES,
+  );
+  const doctorStdoutTail = tailTextByLines(
+    stdout,
+    TEMPLATE_DOCTOR_STDOUT_TAIL_LINES,
   );
   const doctorArgs = fs.existsSync(
     path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'),
@@ -445,6 +452,7 @@ function validateTemplateDoctor(
       doctorExitCode: doctorResult.status,
       doctorSignal: doctorResult.signal,
       doctorStderrTail,
+      doctorStdoutTail,
       detail: timedOut
         ? `Template doctor timed out after ${getTemplateDoctorTimeoutMs()}ms: ${doctorArgs}`
         : `Template doctor failed: ${doctorArgs} exited with ${doctorResult.status ?? 'unknown'}`,
@@ -507,6 +515,10 @@ function buildTemplateHealthStatus(
     doctorExitCode: doctorResult.status,
     doctorSignal: doctorResult.signal,
     doctorStderrTail: '',
+    doctorStdoutTail: tailTextByLines(
+      `${doctorResult.stdout || ''}`,
+      TEMPLATE_DOCTOR_STDOUT_TAIL_LINES,
+    ),
     detail: `Template runner passed doctor check: ${runScript}`,
   };
 }
@@ -1187,6 +1199,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     checkoutRef: templateHealth.checkoutRef,
     doctorCommand: templateHealth.doctorCommand,
     doctorStderrTail: templateHealth.doctorStderrTail,
+    doctorStdoutTail: templateHealth.doctorStdoutTail,
   });
   checks.push({
     name: 'checkout-freshness',
@@ -1525,6 +1538,7 @@ export function createApiRouter(
               checkoutRef: templateHealth.checkoutRef ?? 'unknown',
               doctorCommand: templateHealth.doctorCommand,
               doctorStderrTail: templateHealth.doctorStderrTail,
+              doctorStdoutTail: templateHealth.doctorStdoutTail,
               remediation: TEMPLATE_REMEDIATION,
             },
           };
