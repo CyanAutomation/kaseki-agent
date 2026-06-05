@@ -31,6 +31,7 @@ export KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-/workspace}"
 export KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_DIR}/baseline}"
 export KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
 export KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
+KASEKI_AGENT_BIN="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
 
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
@@ -61,7 +62,7 @@ case "${1:-agent}" in
     # Health check and diagnostics
     # Usage: docker run kaseki-agent doctor
     shift || true
-    exec /usr/local/bin/kaseki-agent --doctor
+    exec "$KASEKI_AGENT_BIN" --doctor
     ;;
   
   run-mode)
@@ -86,7 +87,7 @@ case "${1:-agent}" in
     # Set required variables and execute agent
     export OPENROUTER_API_KEY_FILE=/secrets/openrouter_api_key
     export KASEKI_INSTANCE="${KASEKI_INSTANCE:-kaseki-run}"
-    exec /usr/local/bin/kaseki-agent "$@"
+    exec "$KASEKI_AGENT_BIN" "$@"
     ;;
   
   setup-remote)
@@ -100,7 +101,7 @@ case "${1:-agent}" in
     # Standard agent execution (existing mode)
     # Usage: docker run kaseki-agent agent <repo> <ref>
     shift || true
-    exec /usr/local/bin/kaseki-agent "$@"
+    exec "$KASEKI_AGENT_BIN" "$@"
     ;;
   
   api|kaseki-api)
