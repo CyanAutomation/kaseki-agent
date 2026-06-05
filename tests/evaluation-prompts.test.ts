@@ -475,7 +475,7 @@ const [phase, instanceName, goalSettingPath, goalCheckPath, metadataPath] = proc
 const resultsDir = process.env.KASEKI_RESULTS_DIR;
 const stageTimingsPath = resultsDir + '/stage-timings.tsv';
 const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
-const goalCheck = JSON.parse(fs.readFileSync(goalCheckPath, 'utf8'));
+const goalCheck = fs.existsSync(goalCheckPath) ? JSON.parse(fs.readFileSync(goalCheckPath, 'utf8')) : { met: false };
 const payload = {
   event: 'collect-feedback',
   phase,
