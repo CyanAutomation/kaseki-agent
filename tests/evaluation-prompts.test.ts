@@ -71,7 +71,7 @@ TEST_IMPACT_WARNINGS_ARTIFACT="$2/test-impact-warnings.json"
 GOAL_CHECK_CANDIDATE_ARTIFACT="$2/goal-check-candidate.json"
 TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
 
-if ! declare -F build_goal_check_prompt > /dev/null; then
+if ! declare -f build_goal_check_prompt > /dev/null; then
   echo "Error: build_goal_check_prompt function not found" >&2
   exit 1
 fi
