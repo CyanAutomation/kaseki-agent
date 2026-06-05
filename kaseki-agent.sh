@@ -7804,7 +7804,6 @@ fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
 
 run_run_evaluation
-collect_run_evaluation_feedback "$INSTANCE_NAME"
 
 build_github_skip_reasons() {
   GITHUB_SKIP_REASONS=()
