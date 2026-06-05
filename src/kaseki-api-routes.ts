@@ -956,6 +956,27 @@ function workerSmokeStartupSecretsRemediation(
   return 'The API can read host secrets, but the nested worker smoke test did not receive the same files. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.';
 }
 
+function workerSmokeStartupResultsRemediation(
+  detail: string | undefined,
+): string | undefined {
+  if (!detail) {
+    return undefined;
+  }
+
+  const normalized = detail.toLowerCase();
+  const includesStartupResultsWarning = [
+    '/agents/kaseki-results is not mounted',
+    '/results is not mounted',
+    'error detected; startup blocked',
+  ].some((warning) => normalized.includes(warning));
+
+  if (!includesStartupResultsWarning) {
+    return undefined;
+  }
+
+  return 'The worker smoke container reached startup checks, but its results directory bind mount is missing or not writable. Ensure KASEKI_RESULTS_DIR=/results is passed to the worker smoke container and bind-mount the configured results directory to that path with write access. If KASEKI_RESULTS_DIR is changed, the smoke container must mount that configured results directory writable.';
+}
+
 function checkWorkerSmokeTest(
   config: KasekiApiConfig,
   image: string,
@@ -1021,6 +1042,9 @@ function checkWorkerSmokeTest(
     const startupSecretsRemediation = workerSmokeStartupSecretsRemediation(
       result.detail,
     );
+    const startupResultsRemediation = workerSmokeStartupResultsRemediation(
+      result.detail,
+    );
     const classified = result.classification || {
       detail: result.detail || 'Worker container smoke test failed.',
       remediation:
@@ -1030,7 +1054,10 @@ function checkWorkerSmokeTest(
       name: 'worker-smoke',
       ok: false,
       detail: classified.detail,
-      remediation: startupSecretsRemediation || classified.remediation,
+      remediation:
+        startupSecretsRemediation ||
+        startupResultsRemediation ||
+        classified.remediation,
     };
   } catch (err) {
     return {

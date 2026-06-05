@@ -717,6 +717,65 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight reports results mount remediation for worker startup-check failures', async () => {
+    execDockerCommandMock.mockImplementation((args: string[]) => {
+      if (args[0] === 'run') {
+        return {
+          ok: false,
+          status: 3,
+          detail: [
+            '/agents/kaseki-results is not mounted',
+            'Error detected; startup blocked',
+          ].join('\n'),
+        };
+      }
+
+      return {
+        ok: true,
+        stdout: args[0] === 'version' ? '24.0.0 -> 24.0.0' : undefined,
+      };
+    });
+
+    const resultsDir = fs.mkdtempSync(
+      path.join('/tmp', 'kaseki-preflight-worker-missing-results-'),
+    );
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(
+      scheduler,
+      config,
+    );
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect([200, 503]).toContain(res.status);
+      const body = (await res.json()) as any;
+      const workerSmokeCheck = body.checks.find(
+        (check: any) => check.name === 'worker-smoke',
+      );
+
+      expect(workerSmokeCheck).toEqual(
+        expect.objectContaining({
+          ok: false,
+          detail: expect.stringContaining(
+            '/agents/kaseki-results is not mounted',
+          ),
+          remediation: expect.stringMatching(
+            /results (directory|dir|mount)|KASEKI_RESULTS_DIR/i,
+          ),
+        }),
+      );
+      expect(workerSmokeCheck.remediation).not.toMatch(
+        /Docker daemon|Docker socket|docker\.sock/i,
+      );
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports host secrets remediation for worker startup-check missing secrets', async () => {
     execDockerCommandMock.mockImplementation((args: string[]) => {
       if (args[0] === 'run') {
