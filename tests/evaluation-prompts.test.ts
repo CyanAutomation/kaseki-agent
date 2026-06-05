@@ -47,11 +47,11 @@ describe('Evaluation Prompt Enhancements', () => {
     const expectedMarkers = [
       'build_goal_check_prompt() {',
       'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
-      'validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"',
-      'progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"',
+      'validation_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/validation.log 2>/dev/null || true)"',
+      'progress_tail="$(tail -80 ${KASEKI_RESULTS_DIR}/progress.log 2>/dev/null || true)"',
       'if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then',
       'if [ -f "$GOAL_SETTING_ARTIFACT" ]; then',
-      'if [ -f /results/validation-causality-analysis.json ]; then',
+      'if [ -f ${KASEKI_RESULTS_DIR}/validation-causality-analysis.json ]; then',
       'cat <<EOF',
       '## Required JSON artifact',
       '$goal_setting_context',
@@ -308,16 +308,17 @@ build_goal_check_prompt
     });
 
     it('should enforce test impact in scouting artifact validation', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+      const scoutingHelperPath = path.join(projectRoot, 'scripts', 'scouting-allowlist.js');
+      const scriptContent = fs.readFileSync(scoutingHelperPath, 'utf8');
       const validationSection = scriptContent.substring(
-        scriptContent.indexOf('validate_scouting_artifact_with_node()'),
-        scriptContent.indexOf('validate_scouting_artifact()')
+        scriptContent.indexOf('export function validateScoutingArtifactObject(artifact) {'),
+        scriptContent.indexOf('export function validateScoutingArtifact(inputPath, outputPath, options = {}) {')
       );
 
-      expect(validationSection).toContain('"test_impact"');
+      expect(validationSection).toMatch(/['"]test_impact['"]/);
       expect(validationSection).toContain('Array.isArray(artifact.test_impact)');
-      expect(validationSection).toContain('test_impact[${index}]');
-      expect(validationSection).toContain('"critical"');
+      expect(validationSection).toMatch(/test_impact\[\$\{?index\}?\]/);
+      expect(validationSection).toMatch(/['"]critical['"]/);
     });
   });
 
@@ -606,7 +607,13 @@ build_goal_check_prompt
           const result = spawnSync(
             process.execPath,
             ['-e', extractGoalCheckValidator(), candidatePath, outputPath, String(attempt), errorPath],
-            { encoding: 'utf8' }
+            {
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                KASEKI_RESULTS_DIR: tmpDir,
+              },
+            }
           );
 
           const validationError = fs.existsSync(errorPath)

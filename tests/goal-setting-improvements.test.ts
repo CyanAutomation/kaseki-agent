@@ -668,11 +668,22 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         writeFileSync(join(appLib, 'timestamp-tracker.js'), '');
         writeFileSync(join(appLib, 'progress-stream-utils.js'), '');
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
+
+        const workspaceBaseline = join(tempDir, 'workspace-baseline');
+        const kasekiLogDir = join(tempDir, 'var-log-kaseki');
+        const cacheDir = join(tempDir, 'cache');
+        mkdirSync(workspaceBaseline, { recursive: true });
+        mkdirSync(kasekiLogDir, { recursive: true });
+        mkdirSync(cacheDir, { recursive: true });
 
         const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8')
-          .replaceAll('/workspace/repo', workspaceRepo)
+          .replaceAll('/workspace-baseline', workspaceBaseline)
+          .replaceAll('/workspace', tempDir)
           .replaceAll('/results', resultsDir)
-          .replaceAll('/app/lib', appLib);
+          .replaceAll('/app/lib', appLib)
+          .replaceAll('/var/log/kaseki', kasekiLogDir)
+          .replaceAll('/cache', cacheDir);
         writeFileSync(modifiedScript, scriptSource, { mode: 0o755 });
 
         writeFileSync(
@@ -738,25 +749,40 @@ printf '{"type":"message","model":"test-model"}\n'
         writeFileSync(join(fakeBin, 'validation-output-filter'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
         writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nmkdir -p node_modules\nexit 0\n', { mode: 0o755 });
 
-        execFileSync('bash', [modifiedScript], {
-          env: {
-            ...process.env,
-            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
-            REPO_URL: fakeRepo,
-            GIT_REF: 'main',
-            TASK_PROMPT: 'retry original prompt',
-            OPENROUTER_API_KEY: 'test',
-            GITHUB_APP_ENABLED: '0',
-            KASEKI_GIT_CACHE_MODE: 'off',
-            KASEKI_DEPENDENCY_CACHE_DIR: join(tempDir, 'dependency-cache'),
-            KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: join(tempDir, 'image-cache'),
-            KASEKI_PRE_AGENT_VALIDATION_COMMANDS: 'npm run check',
-            KASEKI_VALIDATION_COMMANDS: ':',
-            KASEKI_ALLOW_EMPTY_DIFF: '1',
-          },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          maxBuffer: 10 * 1024 * 1024,
-        });
+        try {
+          execFileSync('bash', [modifiedScript], {
+            env: {
+              ...process.env,
+              PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+              KASEKI_RESULTS_DIR: resultsDir,
+              KASEKI_WORKSPACE_DIR: tempDir,
+              KASEKI_WORKSPACE_BASELINE_DIR: workspaceBaseline,
+              KASEKI_APP_LIB_DIR: appLib,
+              KASEKI_LOG_DIR: kasekiLogDir,
+              KASEKI_CACHE_DIR: cacheDir,
+              KASEKI_STRICT_HOST_LOGGING: '0',
+              KASEKI_BASELINE_VALIDATION_ENABLED: '0',
+              REPO_URL: fakeRepo,
+              GIT_REF: 'main',
+              TASK_PROMPT: 'retry original prompt',
+              OPENROUTER_API_KEY: 'test',
+              GITHUB_APP_ENABLED: '0',
+              KASEKI_GIT_CACHE_MODE: 'off',
+              KASEKI_DEPENDENCY_CACHE_DIR: join(tempDir, 'dependency-cache'),
+              KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: join(tempDir, 'image-cache'),
+              KASEKI_PRE_AGENT_VALIDATION_COMMANDS: 'npm run check',
+              KASEKI_VALIDATION_COMMANDS: ':',
+              KASEKI_ALLOW_EMPTY_DIFF: '1',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            maxBuffer: 10 * 1024 * 1024,
+          });
+        } catch (err: any) {
+          console.error('Modified script failed:');
+          console.error('stdout:', err.stdout?.toString());
+          console.error('stderr:', err.stderr?.toString());
+          throw err;
+        }
 
         const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
         expect(piCallOrder).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding', 'goal-check']);
