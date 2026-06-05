@@ -8,6 +8,9 @@
   "risks": [],
   "suggested_allowlist": {
     "agent_patterns": [],
-    "validation_patterns": [7]
-  }
+    "validation_patterns": [
+      7
+    ]
+  },
+  "test_impact": []
 }

@@ -470,143 +470,15 @@ validate_scouting_artifact_with_node() {
   local final_artifact="$2"
   local validation_error_file="$3"
 
-  # shellcheck disable=SC2016
-  node -e '
-const fs = require("node:fs");
-const input = process.argv[1];
-const output = process.argv[2];
-const errorLog = process.argv[3];
-const jsonlLog = "/results/scouting-validation-errors.jsonl";
-
-function actualType(value) {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  return typeof value;
+  node "$SCOUTING_ALLOWLIST_HELPER" validate \
+    "$candidate_artifact" \
+    "$final_artifact" \
+    "$validation_error_file" \
+    "/results/scouting-validation-errors.jsonl" \
+    >/dev/null \
+    2>> /results/scouting-stderr.log
 }
 
-function appendValidationFailure(reasonCode, error) {
-  fs.appendFileSync(jsonlLog, JSON.stringify({
-    timestamp: new Date().toISOString(),
-    reason_code: reasonCode,
-    ...error,
-  }) + "\n");
-}
-
-function summarize(errors) {
-  const critical = errors.filter((error) => error.severity === "critical").length;
-  const warning = errors.filter((error) => error.severity === "warning").length;
-  const counts = [];
-  if (critical) counts.push(`${critical} critical`);
-  if (warning) counts.push(`${warning} warning`);
-  const fields = errors.slice(0, 2).map((error) => error.field).join(", ");
-  const suffix = errors.length > 2 ? `, +${errors.length - 2} more` : "";
-  return `${counts.join(", ")} scouting validation ${errors.length === 1 ? "error" : "errors"}: ${fields}${suffix}`;
-}
-
-let artifact;
-try {
-  artifact = JSON.parse(fs.readFileSync(input, "utf8"));
-} catch (err) {
-  const reasonCode = "malformed_json";
-  const error = {
-    field: "root",
-    expected: "exactly one valid JSON object",
-    actual: err && err.message ? String(err.message) : "JSON parse failed",
-    severity: "critical",
-    suggestion: "ensure exactly one valid JSON object is written to /results/scouting-candidate.json",
-  };
-  appendValidationFailure(reasonCode, error);
-  fs.writeFileSync(errorLog, JSON.stringify({
-    reason_code: reasonCode,
-    details: summarize([error]),
-    errors: [error],
-  }) + "\n");
-  process.exit(1);
-}
-
-const errors = [];
-const addError = (field, expected, actual, severity, suggestion) => {
-  errors.push({ field, expected, actual, severity, suggestion });
-};
-const arrayKeys = ["requirements", "relevant_files", "observations", "plan", "validation", "risks", "test_impact"];
-
-if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
-  addError("root", "object", actualType(artifact), "critical", "Scouting artifact must be a JSON object, not an array/null/primitive");
-} else {
-  if (typeof artifact.task !== "string" || !artifact.task.trim()) {
-    addError("task", "non-empty string", typeof artifact.task === "string" ? "empty string" : actualType(artifact.task), "critical", "task must be a non-empty string describing the requested work");
-  }
-  for (const key of arrayKeys) {
-    if (!Array.isArray(artifact[key])) {
-      addError(key, "array", actualType(artifact[key]), "critical", `${key} must be an array in the scouting handoff`);
-    }
-  }
-  if (Array.isArray(artifact.relevant_files)) {
-    artifact.relevant_files.forEach((item, index) => {
-      if (!item || typeof item.path !== "string" || typeof item.reason !== "string") {
-        addError(`relevant_files[${index}]`, "object with string path and string reason", actualType(item), "warning", "Each relevant_files entry must include path and reason strings");
-      }
-    });
-  }
-  if (Array.isArray(artifact.test_impact)) {
-    artifact.test_impact.forEach((item, index) => {
-      if (!item || typeof item.path !== "string" || !item.path.trim() || typeof item.reason !== "string" || !item.reason.trim()) {
-        addError(`test_impact[${index}]`, "object with non-empty string path and non-empty string reason", actualType(item), "critical", "Each test_impact entry must include the impacted test path and expectation reason strings");
-      }
-      // Validate optional test_examples field
-      if (item.test_examples !== undefined) {
-        if (!Array.isArray(item.test_examples)) {
-          addError(`test_impact[${index}].test_examples`, "array of example objects or undefined", actualType(item.test_examples), "warning", "test_examples must be an array of objects with type, pattern, description, before, and after fields");
-        } else {
-          item.test_examples.forEach((example, exIdx) => {
-            if (!example || typeof example !== "object" || !["added_assertion", "modified_assertion", "added_test_case", "added_pattern"].includes(example.type)) {
-              addError(`test_impact[${index}].test_examples[${exIdx}].type`, "added_assertion|modified_assertion|added_test_case|added_pattern", actualType(example && example.type), "warning", "Each test_example must have a valid type");
-            }
-            if (!example || typeof example.pattern !== "string") {
-              addError(`test_impact[${index}].test_examples[${exIdx}].pattern`, "string", actualType(example && example.pattern), "warning", "Each test_example must have a pattern string");
-            }
-            if (!example || typeof example.before !== "string" || typeof example.after !== "string") {
-              addError(`test_impact[${index}].test_examples[${exIdx}]`, "before and after strings", "missing or invalid", "warning", "Each test_example must have before and after code snippets");
-            }
-          });
-        }
-      }
-    });
-  }
-
-  // Validate suggested_allowlist (optional but if present, must be valid)
-  if (artifact.suggested_allowlist) {
-    if (typeof artifact.suggested_allowlist !== "object" || Array.isArray(artifact.suggested_allowlist)) {
-      addError("suggested_allowlist", "object", actualType(artifact.suggested_allowlist), "warning", "suggested_allowlist must be an object with agent_patterns and validation_patterns arrays");
-    } else {
-      if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
-        addError("suggested_allowlist.agent_patterns", "array of strings", actualType(artifact.suggested_allowlist.agent_patterns), "warning", "agent_patterns must be an array of glob pattern strings");
-      } else if (!artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === "string")) {
-        addError("suggested_allowlist.agent_patterns", "array of strings", "array with non-strings", "warning", "All agent_patterns entries must be strings");
-      }
-      if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
-        addError("suggested_allowlist.validation_patterns", "array of strings", actualType(artifact.suggested_allowlist.validation_patterns), "warning", "validation_patterns must be an array of glob pattern strings");
-      } else if (!artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === "string")) {
-        addError("suggested_allowlist.validation_patterns", "array of strings", "array with non-strings", "warning", "All validation_patterns entries must be strings");
-      }
-    }
-  }
-}
-
-if (errors.length) {
-  const onlyTaskMissing = errors.length === 1 && errors[0].field === "task";
-  const reasonCode = onlyTaskMissing ? "missing_required_fields" : "schema_mismatch";
-  for (const error of errors) appendValidationFailure(reasonCode, error);
-  fs.writeFileSync(errorLog, JSON.stringify({
-    reason_code: reasonCode,
-    details: summarize(errors),
-    errors,
-  }) + "\n");
-  process.exit(1);
-}
-fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-' "$candidate_artifact" "$final_artifact" "$validation_error_file" 2>> /results/scouting-stderr.log
-}
 # Validate scouting artifact and emit structured reason code
 validate_scouting_artifact() {
   local candidate_artifact="$1"
@@ -1263,46 +1135,25 @@ ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/allowlist-helper.sh"
 if [ ! -r "$ALLOWLIST_HELPER" ] && [ -r /app/scripts/allowlist-helper.sh ]; then
   ALLOWLIST_HELPER="/app/scripts/allowlist-helper.sh"
 fi
+SCOUTING_ALLOWLIST_HELPER="$SCRIPT_DIR/scripts/scouting-allowlist.js"
+if [ ! -r "$SCOUTING_ALLOWLIST_HELPER" ] && [ -r /app/scripts/scouting-allowlist.js ]; then
+  SCOUTING_ALLOWLIST_HELPER="/app/scripts/scouting-allowlist.js"
+fi
 # shellcheck source=scripts/allowlist-helper.sh
 . "$ALLOWLIST_HELPER"
 
 derive_allowlist_from_scouting() {
-  local scouting_artifact agent_patterns validation_patterns
+  local scouting_artifact
   scouting_artifact="${1:?missing scouting artifact path}"
-  
+
   if [ ! -f "$scouting_artifact" ]; then
     printf 'derive_allowlist_from_scouting: scouting artifact not found: %s\n' "$scouting_artifact" >&2
     return 1
   fi
-  
-  # Extract patterns from scouting.json
-  agent_patterns="$(node -e "
-    try {
-      const fs = require('node:fs');
-      const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-      if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
-        console.log(artifact.suggested_allowlist.agent_patterns.join(' '));
-      }
-    } catch (e) {
-      console.error('Error parsing scouting artifact:', e.message);
-    }
-  " "$scouting_artifact" 2>/dev/null)"
-  
-  validation_patterns="$(node -e "
-    try {
-      const fs = require('node:fs');
-      const artifact = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-      if (artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
-        console.log(artifact.suggested_allowlist.validation_patterns.join(' '));
-      }
-    } catch (e) {
-      console.error('Error parsing scouting artifact:', e.message);
-    }
-  " "$scouting_artifact" 2>/dev/null)"
-  
-  printf '%s\n' "$agent_patterns"
-  printf '%s\n' "$validation_patterns"
+
+  node "$SCOUTING_ALLOWLIST_HELPER" derive "$scouting_artifact"
 }
+
 
 validate_allowlist_patterns() {
   local patterns_str test_regex
