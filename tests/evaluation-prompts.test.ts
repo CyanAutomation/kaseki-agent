@@ -15,6 +15,11 @@ import { execFileSync, spawnSync } from 'child_process';
 
 describe('Evaluation Prompt Enhancements', () => {
   let kasekiAgentPath: string;
+  let cachedScriptContent: string;
+  let cachedGoalCheckSection: string;
+  let cachedRunEvaluationSection: string;
+  let cachedScoutingSection: string;
+  let cachedAgentSection: string;
   const projectRoot = process.cwd();
 
   beforeAll(() => {
@@ -22,6 +27,27 @@ describe('Evaluation Prompt Enhancements', () => {
     if (!fs.existsSync(kasekiAgentPath)) {
       throw new Error(`kaseki-agent.sh not found at ${kasekiAgentPath}`);
     }
+
+    // Cache the entire script content once to avoid repeated file reads
+    cachedScriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+
+    // Pre-extract commonly used sections
+    cachedGoalCheckSection = cachedScriptContent.substring(
+      cachedScriptContent.indexOf('build_goal_check_prompt()'),
+      cachedScriptContent.indexOf('build_goal_check_prompt()') + 20000
+    );
+    cachedRunEvaluationSection = cachedScriptContent.substring(
+      cachedScriptContent.indexOf('build_run_evaluation_prompt()'),
+      cachedScriptContent.indexOf('build_run_evaluation_prompt()') + 20000
+    );
+    cachedScoutingSection = cachedScriptContent.substring(
+      cachedScriptContent.indexOf('build_scouting_prompt()'),
+      cachedScriptContent.indexOf('run_scouting_agent()')
+    );
+    cachedAgentSection = cachedScriptContent.substring(
+      cachedScriptContent.indexOf('build_agent_prompt()'),
+      cachedScriptContent.indexOf('is_transient_goal_setting_failure()')
+    );
   });
 
   const writeJson = (filePath: string, value: unknown) => {
@@ -29,7 +55,8 @@ describe('Evaluation Prompt Enhancements', () => {
   };
 
   const extractGoalCheckPromptFunction = () => {
-    const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+    // Use cached script content instead of reading file
+    const scriptContent = cachedScriptContent;
     const startMarker = 'build_goal_check_prompt() {';
     const endMarker = '\n}\n\nrun_goal_check() {';
     const startIndex = scriptContent.indexOf(startMarker);
@@ -137,10 +164,9 @@ build_goal_check_prompt
 
   describe('Goal-Check Prompt', () => {
     it('should include goal-setting artifact in prompt context', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      expect(scriptContent).toContain('GOAL_SETTING_ARTIFACT');
-      expect(scriptContent).toContain('build_goal_check_prompt');
-      expect(scriptContent).toContain('goal_setting_context');
+      expect(cachedScriptContent).toContain('GOAL_SETTING_ARTIFACT');
+      expect(cachedScriptContent).toContain('build_goal_check_prompt');
+      expect(cachedScriptContent).toContain('goal_setting_context');
     });
 
     it('should render semantic SMART assessment guidance from the production goal-check prompt builder', () => {
@@ -182,31 +208,18 @@ build_goal_check_prompt
     });
 
     it('should include confidence grounding guidance', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const goalCheckSection = scriptContent.substring(
-        scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 20000
-      );
-      expect(goalCheckSection).toContain('confidence');
-      expect(goalCheckSection.toLowerCase()).toContain('grounding');
+      expect(cachedGoalCheckSection).toContain('confidence');
+      expect(cachedGoalCheckSection.toLowerCase()).toContain('grounding');
     });
 
     it('should request specific evidence with file/line references', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const goalCheckSection = scriptContent.substring(
-        scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 20000
-      );
-      expect(goalCheckSection).toContain('specific');
-      expect(goalCheckSection).toContain('verifiable');
-      expect(goalCheckSection).toContain('line');
+      expect(cachedGoalCheckSection).toContain('specific');
+      expect(cachedGoalCheckSection).toContain('verifiable');
+      expect(cachedGoalCheckSection).toContain('line');
     });
 
     it('should maintain required JSON schema fields', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const goalCheckSection = scriptContent.substring(
-        scriptContent.indexOf('build_goal_check_prompt()'),
-        scriptContent.indexOf('build_goal_check_prompt()') + 20000);
+      const goalCheckSection = cachedGoalCheckSection;
       expect(goalCheckSection).toContain('"met"');
       expect(goalCheckSection).toContain('"confidence"');
       expect(goalCheckSection).toContain('"summary"');
@@ -217,40 +230,23 @@ build_goal_check_prompt
 
   describe('Run-Evaluation Prompt', () => {
     it('should include goal-setting artifact for quality context', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const runEvalSection = scriptContent.substring(
-        scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000
-      );
-      expect(runEvalSection).toContain('GOAL_SETTING_ARTIFACT');
-      expect(runEvalSection).toContain('goal_setting_context');
+      expect(cachedRunEvaluationSection).toContain('GOAL_SETTING_ARTIFACT');
+      expect(cachedRunEvaluationSection).toContain('goal_setting_context');
     });
 
     it('should mention goal quality influence on reviewer confidence', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const runEvalSection = scriptContent.substring(
-        scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
-      expect(runEvalSection.toLowerCase()).toContain('quality');
-      expect(runEvalSection.toLowerCase()).toContain('confidence');
-      expect(runEvalSection).toContain('goal');
+      expect(cachedRunEvaluationSection.toLowerCase()).toContain('quality');
+      expect(cachedRunEvaluationSection.toLowerCase()).toContain('confidence');
+      expect(cachedRunEvaluationSection).toContain('goal');
     });
 
     it('should include stage value assessment framework', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const runEvalSection = scriptContent.substring(
-        scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 20000);
-      expect(runEvalSection).toContain('stage');
-      expect(runEvalSection).toContain('value');
+      expect(cachedRunEvaluationSection).toContain('stage');
+      expect(cachedRunEvaluationSection).toContain('value');
     });
 
     it('should provide kaseki improvement categories and guidance', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const runEvalSection = scriptContent.substring(
-        scriptContent.indexOf('build_run_evaluation_prompt()'),
-        scriptContent.indexOf('build_run_evaluation_prompt()') + 8000
-      );
+      const runEvalSection = cachedRunEvaluationSection;
       expect(runEvalSection).toContain('category');
       expect(runEvalSection).toContain('priority');
       expect(runEvalSection).toContain('goal_setting');
@@ -280,33 +276,21 @@ build_goal_check_prompt
 
   describe('Scouting and Coding Prompt Test Impact Guidance', () => {
     it('should require scouting JSON test impact for parser and output contract changes', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const scoutingSection = scriptContent.substring(
-        scriptContent.indexOf('build_scouting_prompt()'),
-        scriptContent.indexOf('run_scouting_agent()')
-      );
-
-      expect(scoutingSection).toContain('"test_impact"');
-      expect(scoutingSection).toContain('parsing logic');
-      expect(scoutingSection).toContain('output format');
-      expect(scoutingSection).toContain('naming conventions');
-      expect(scoutingSection).toContain('expectation strings');
-      expect(scoutingSection).toContain('progress/event fields');
+      expect(cachedScoutingSection).toContain('"test_impact"');
+      expect(cachedScoutingSection).toContain('parsing logic');
+      expect(cachedScoutingSection).toContain('output format');
+      expect(cachedScoutingSection).toContain('naming conventions');
+      expect(cachedScoutingSection).toContain('expectation strings');
+      expect(cachedScoutingSection).toContain('progress/event fields');
     });
 
     it('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const agentSection = scriptContent.substring(
-        scriptContent.indexOf('build_agent_prompt()'),
-        scriptContent.indexOf('is_transient_goal_setting_failure()')
-      );
-
-      expect(agentSection).toContain('test_impact files');
-      expect(agentSection).toContain('parser logic');
-      expect(agentSection).toContain('output format');
-      expect(agentSection).toContain('naming conventions');
-      expect(agentSection).toContain('expectation strings');
-      expect(agentSection).toContain('progress/event fields');
+      expect(cachedAgentSection).toContain('test_impact files');
+      expect(cachedAgentSection).toContain('parser logic');
+      expect(cachedAgentSection).toContain('output format');
+      expect(cachedAgentSection).toContain('naming conventions');
+      expect(cachedAgentSection).toContain('expectation strings');
+      expect(cachedAgentSection).toContain('progress/event fields');
     });
 
     it('should enforce test impact in scouting artifact validation', () => {
