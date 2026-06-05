@@ -28,37 +28,68 @@ describe('Evaluation Prompt Enhancements', () => {
     fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
   };
 
-  const renderGoalCheckPrompt = (goalSettingPath: string) => execFileSync(
-    'bash',
-    [
-      '-c',
-      `set -euo pipefail
-# Source the script safely in a restricted subshell
-source "$1"
-GOAL_SETTING_ARTIFACT="$2"
-SCOUTING_ARTIFACT="$3/scouting.json"
-TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
-GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
+  const extractGoalCheckPromptFunction = () => {
+    const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+    const startMarker = 'build_goal_check_prompt() {';
+    const endMarker = '\n}\n\nrun_goal_check() {';
+    const startIndex = scriptContent.indexOf(startMarker);
+    if (startIndex === -1) {
+      throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
+    }
+
+    const endIndex = scriptContent.indexOf(endMarker, startIndex);
+    if (endIndex === -1) {
+      throw new Error('Unable to find the end of build_goal_check_prompt before run_goal_check');
+    }
+
+    const functionText = scriptContent.slice(startIndex, endIndex + 2);
+    if (!functionText.startsWith(startMarker) || !functionText.endsWith('\n}')) {
+      throw new Error('Extracted goal-check prompt builder failed boundary validation');
+    }
+    if (!functionText.includes('cat <<EOF') || !functionText.includes('## Required JSON artifact')) {
+      throw new Error('Extracted goal-check prompt builder is missing expected prompt body markers');
+    }
+
+    return functionText;
+  };
+
+  const renderGoalCheckPrompt = (goalSettingPath: string) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-renderer-'));
+    const rendererPath = path.join(tmpDir, 'render-goal-check-prompt.sh');
+
+    try {
+      fs.writeFileSync(
+        rendererPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+
+${extractGoalCheckPromptFunction()}
+
+GOAL_SETTING_ARTIFACT="$1"
+SCOUTING_ARTIFACT="$2/scouting.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="$2/test-impact-warnings.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="$2/goal-check-candidate.json"
 TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
-# Verify function exists before calling
-if ! declare -f build_goal_check_prompt > /dev/null; then
+
+if ! declare -F build_goal_check_prompt > /dev/null; then
   echo "Error: build_goal_check_prompt function not found" >&2
   exit 1
 fi
-build_goal_check_prompt`,
-GOAL_SETTING_ARTIFACT="$2"
-SCOUTING_ARTIFACT="$3/scouting.json"
-TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
-GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
-TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
-build_goal_check_prompt`,
-      'render-goal-check-prompt',
-      kasekiAgentPath,
-      goalSettingPath,
-      path.dirname(goalSettingPath),
-    ],
-    { encoding: 'utf8' }
-  );
+
+build_goal_check_prompt
+`,
+        { mode: 0o700 }
+      );
+
+      return execFileSync(
+        'bash',
+        [rendererPath, goalSettingPath, path.dirname(goalSettingPath)],
+        { encoding: 'utf8' }
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  };
 
   describe('Goal-Check Prompt', () => {
     it('should include goal-setting artifact in prompt context', () => {
