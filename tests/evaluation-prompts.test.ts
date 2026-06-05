@@ -184,160 +184,114 @@ describe('Evaluation Prompt Enhancements', () => {
   });
 
   describe('Feedback Collection Integration', () => {
+    const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
+
+    const writeJson = (filePath: string, value: unknown) => {
+      fs.writeFileSync(filePath, JSON.stringify(value));
+    };
+
+    const runCollectFeedback = (args: string[]) => spawnSync(
+      process.execPath,
+      [collectFeedbackPath, ...args],
+      { encoding: 'utf8' }
+    );
+
+    const parseJsonStdout = (stdout: string) => {
+      const output = stdout.trim();
+      expect(output).not.toBe('');
+      return JSON.parse(output);
+    };
+
     it('should collect goal-check feedback with the expected artifact contract', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const functionStart = scriptContent.indexOf('collect_goal_check_feedback() {');
-      expect(functionStart).toBeGreaterThanOrEqual(0);
-
-      const functionEnd = scriptContent.indexOf('\n}\n\ncollect_run_evaluation_feedback()', functionStart);
-      expect(functionEnd).toBeGreaterThan(functionStart);
-      const collectGoalCheckFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
-
-      const lines = scriptContent.split('\n').map((line) => line.trim());
-      const runGoalCheckLine = lines.findIndex((line) => line === 'run_goal_check "$coding_attempt"');
-      expect(runGoalCheckLine).toBeGreaterThanOrEqual(0);
-      const nextCommand = lines.slice(runGoalCheckLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
-      expect(nextCommand).toBe('collect_goal_check_feedback "$INSTANCE_NAME"');
-
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-feedback-contract-'));
-      const fakeBin = path.join(tmpDir, 'bin');
-      const fakeScriptsDir = path.join(tmpDir, 'scripts');
-      const nodeArgsLog = path.join(tmpDir, 'node-args.log');
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
-      const resultsDir = path.join(tmpDir, 'results');
+      const goalCheckPath = path.join(tmpDir, 'goal-check.json');
+      const metadataPath = path.join(tmpDir, 'metadata.json');
 
       try {
-        fs.mkdirSync(fakeBin, { recursive: true });
-        fs.mkdirSync(fakeScriptsDir, { recursive: true });
-        fs.mkdirSync(resultsDir, { recursive: true });
-        fs.writeFileSync(path.join(fakeScriptsDir, 'collect-feedback.js'), '// fixture path only\n');
-        fs.writeFileSync(goalSettingPath, JSON.stringify({ quality_score: 91, success_criteria: ['specific', 'measurable'] }));
-        fs.writeFileSync(
-          path.join(fakeBin, 'node'),
-          `#!/usr/bin/env bash\nprintf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}\nprintf '%s\\n' '{"phase":"goal_check","goal_check_verdict":{"met":true,"confidence":"high","evidenceCount":2,"missingCount":1},"goal_quality":{"score":91,"smart_criteria_count":2}}'\n`,
-          { mode: 0o755 }
-        );
-
-        fs.writeFileSync(path.join(resultsDir, 'goal-check.json'), JSON.stringify({
+        writeJson(goalSettingPath, {
+          quality_score: 91,
+          quality_metrics: {
+            specificity: 5,
+            measurability: 4,
+            achievability: 5,
+          },
+          success_criteria: ['specific', 'measurable', 'achievable'],
+        });
+        writeJson(goalCheckPath, {
           met: true,
           confidence: 'high',
-          evidence: [{ file: 'src/example.ts', line: 12 }, { file: 'tests/example.test.ts', line: 4 }],
-          missing: [{ requirement: 'none' }],
-          summary: 'Goal met',
-        }));
-        fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({
+          evidence: [
+            { file: 'src/example.ts', line: 12, reason: 'Implementation changed' },
+            { file: 'tests/example.test.ts', line: 4, reason: 'Behavior covered' },
+          ],
+          missing: [{ requirement: 'None remaining' }],
+          summary: 'Goal met with direct evidence.',
+          retry_prompt: '',
+        });
+        writeJson(metadataPath, {
           validation_passed: true,
-          coding_attempts: 1,
+          coding_attempts: 2,
+          total_duration_seconds: 42,
           goal_check_met: true,
-        }));
+        });
 
-        const fixture = `set -euo pipefail\n${collectGoalCheckFeedbackFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(fakeScriptsDir)}\nGOAL_SETTING_ARTIFACT=${JSON.stringify(goalSettingPath)}\nGOAL_CHECK_EXIT=0\nKASEKI_RESULTS_DIR=${JSON.stringify(resultsDir)}\ncollect_goal_check_feedback contract-instance\n`;
-        execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
-
-        const nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
-        expect(nodeArgs).toEqual([
-          path.join(fakeScriptsDir, 'collect-feedback.js'),
+        const result = runCollectFeedback([
           'goal-check',
           'contract-instance',
           goalSettingPath,
-          path.join(resultsDir, 'goal-check.json'),
-          path.join(resultsDir, 'metadata.json'),
+          goalCheckPath,
+          metadataPath,
         ]);
 
-        const feedbackLines = fs.readFileSync(path.join(resultsDir, 'goal-feedback.jsonl'), 'utf8').trim().split('\n');
-        expect(feedbackLines).toHaveLength(1);
-        const feedback = JSON.parse(feedbackLines[0]);
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+        const feedback = parseJsonStdout(result.stdout);
         expect(feedback).toMatchObject({
+          instance_name: 'contract-instance',
           phase: 'goal_check',
+          goal_quality: {
+            score: 91,
+            metrics: {
+              specificity: 5,
+              measurability: 4,
+              achievability: 5,
+            },
+            smart_criteria_count: 3,
+          },
           goal_check_verdict: {
             met: true,
             confidence: 'high',
             evidenceCount: 2,
             missingCount: 1,
           },
-          goal_quality: {
-            score: 91,
-            smart_criteria_count: 2,
+          outcomes: {
+            validation_passed: true,
+            coding_attempts: 2,
+            total_duration_seconds: 42,
+            goal_check_met: true,
+          },
+          correlation: {
+            goal_quality: 91,
+            verdict_met: true,
+            success: true,
+            confidence_grade: 'high',
+            notes: [],
           },
         });
+        expect(new Date(feedback.timestamp).toString()).not.toBe('Invalid Date');
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });
 
     it('should collect run-evaluation feedback from the schema-valid artifact contract', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const functionStart = scriptContent.indexOf('collect_run_evaluation_feedback() {');
-      expect(functionStart).toBeGreaterThanOrEqual(0);
-
-      let functionEnd = scriptContent.indexOf('\n}\n\nbuild_goal_check_prompt()', functionStart);
-      if (functionEnd === -1) {
-        functionEnd = scriptContent.indexOf('\n}\n\n\nbuild_goal_check_prompt()', functionStart);
-      }
-      if (functionEnd === -1) {
-        functionEnd = scriptContent.indexOf('\n}\n', functionStart);
-      }
-      expect(functionEnd).toBeGreaterThan(functionStart);
-      const collectRunEvaluationFeedbackFunction = scriptContent.slice(functionStart, functionEnd + 3);
-
-      const runEvaluationFunctionStart = scriptContent.indexOf('run_run_evaluation() {');
-      expect(runEvaluationFunctionStart).toBeGreaterThanOrEqual(0);
-      const runEvaluationFunctionEnd = scriptContent.indexOf('\n}\n\n', runEvaluationFunctionStart);
-      if (runEvaluationFunctionEnd === -1 || runEvaluationFunctionEnd <= runEvaluationFunctionStart) {
-        throw new Error('Could not find end of run_run_evaluation function');
-      }
-      expect(runEvaluationFunctionEnd).toBeGreaterThan(runEvaluationFunctionStart);
-      const runEvaluationFunction = scriptContent.slice(runEvaluationFunctionStart, runEvaluationFunctionEnd + 3);
-
-      expect(collectRunEvaluationFeedbackFunction).toContain('local run_evaluation_path="/results/run-evaluation.json"');
-      expect(collectRunEvaluationFeedbackFunction).toContain('local feedback_file="/results/kaseki-improvements.jsonl"');
-      expect(collectRunEvaluationFeedbackFunction).toContain('node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"');
-      expect(runEvaluationFunction).toContain('"$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT"');
-      expect(runEvaluationFunction).toContain('artifact.overall_assessment');
-      expect(runEvaluationFunction).toContain('artifact.reviewer_confidence');
-      expect(runEvaluationFunction).toContain('artifact.task_completion_score');
-
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-evaluation-feedback-contract-'));
-      const fakeBin = path.join(tmpDir, 'bin');
-      const nodeArgsLog = path.join(tmpDir, 'node-args.log');
-      const resultsDir = path.join(tmpDir, 'results');
-      const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
-      const isolatedFunction = collectRunEvaluationFeedbackFunction
-        .replace(/local run_evaluation_path="\/results\/run-evaluation.json"/, `local run_evaluation_path="${resultsDir}/run-evaluation.json"`)
-        .replace(/local feedback_file="\/results\/kaseki-improvements.jsonl"/, `local feedback_file="${resultsDir}/kaseki-improvements.jsonl"`)
-        .replace(/local metadata_path="\/results\/metadata.json"/, `local metadata_path="${resultsDir}/metadata.json"`);
+      const runEvaluationPath = path.join(tmpDir, 'run-evaluation.json');
+      const metadataPath = path.join(tmpDir, 'metadata.json');
 
       try {
-        fs.mkdirSync(fakeBin, { recursive: true });
-        fs.mkdirSync(resultsDir, { recursive: true });
-        fs.writeFileSync(
-          path.join(fakeBin, 'node'),
-          `#!/usr/bin/env bash
-printf '%s\\n' "$@" > ${JSON.stringify(nodeArgsLog)}
-${JSON.stringify(process.execPath)} - "$@" <<'NODE'
-const fs = require('fs');
-const [, phase, instanceName, runEvaluationPath, metadataPath] = process.argv.slice(2);
-const runEvaluation = JSON.parse(fs.readFileSync(runEvaluationPath, 'utf8'));
-const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-console.log(JSON.stringify({
-  instance_name: instanceName,
-  phase: phase.replace('-', '_'),
-  assessment: {
-    overall_assessment: runEvaluation.overall_assessment || 'unknown',
-    reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
-    task_completion_score: runEvaluation.task_completion_score || 0,
-  },
-  outcomes: {
-    validation_passed: metadata.validation_passed === true,
-    coding_attempts: metadata.coding_attempts || 1,
-    goal_check_met: metadata.goal_check_met === true,
-  },
-}));
-NODE
-`,
-          { mode: 0o755 }
-        );
-        fs.writeFileSync(path.join(resultsDir, 'run-evaluation.json'), JSON.stringify({
+        writeJson(runEvaluationPath, {
           overall_assessment: 'good',
           reviewer_confidence: 'high',
           task_completion_score: 4,
@@ -346,144 +300,133 @@ NODE
           human_review_focus: ['Confirm test coverage intent'],
           efficiency_findings: ['No repeated collection work'],
           warnings: [],
-          stage_value: [{ stage: 'evaluation', value: 'high', reason: 'Captures evaluator output' }],
-          kaseki_improvement_opportunities: [{ category: 'evaluation', priority: 'medium', suggestion: 'Keep contract tests behavioral' }],
-        }));
-        fs.writeFileSync(path.join(resultsDir, 'metadata.json'), JSON.stringify({
-          validation_passed: true,
-          coding_attempts: 1,
-          goal_check_met: true,
-          total_duration_seconds: 42,
-        }));
+          stage_value: [
+            { stage: 'scouting', value: 'medium', reason: 'Identified impacted files' },
+            { stage: 'evaluation', value: 'high', reason: 'Captured evaluator output' },
+          ],
+          kaseki_improvement_opportunities: [
+            { category: 'goal_setting', priority: 'low', suggestion: 'Keep goals specific' },
+            { category: 'evaluation', priority: 'medium', suggestion: 'Keep contract tests behavioral' },
+          ],
+        });
+        writeJson(metadataPath, {
+          validation_passed: false,
+          coding_attempts: 3,
+          total_duration_seconds: 99,
+          goal_check_met: false,
+        });
 
-        const fixture = `set -euo pipefail\n${isolatedFunction}\nPATH=${JSON.stringify(fakeBin)}:$PATH\nSCRIPT_DIR=${JSON.stringify(path.dirname(collectFeedbackPath))}\nRUN_EVALUATION_EXIT=0\ncollect_run_evaluation_feedback contract-instance\n`;
-        try {
-          execFileSync('bash', ['-c', fixture], { encoding: 'utf8' });
-        } catch (error: any) {
-          throw new Error(`Bash script execution failed: ${error.message}\nStderr: ${error.stderr || 'N/A'}`);
-        }
-
-        let nodeArgs: string[];
-        try {
-          nodeArgs = fs.readFileSync(nodeArgsLog, 'utf8').trim().split('\n');
-        } catch (error: any) {
-          throw new Error(`Failed to read node args log: ${error.message}`);
-        }
-        expect(nodeArgs).toEqual([
-          collectFeedbackPath,
+        const result = runCollectFeedback([
           'run-evaluation',
           'contract-instance',
-          path.join(resultsDir, 'run-evaluation.json'),
-          path.join(resultsDir, 'metadata.json'),
+          runEvaluationPath,
+          metadataPath,
         ]);
 
-        let feedbackLines: string[];
-        try {
-          feedbackLines = fs.readFileSync(path.join(resultsDir, 'kaseki-improvements.jsonl'), 'utf8').trim().split('\n');
-        } catch (error: any) {
-          throw new Error(`Failed to read feedback file: ${error.message}`);
-        }
-        expect(feedbackLines).toHaveLength(1);
-        let feedback: any;
-        try {
-          feedback = JSON.parse(feedbackLines[0]);
-        } catch (error: any) {
-          throw new Error(`Failed to parse feedback JSON: ${error.message}\nContent: ${feedbackLines[0]}`);
-        }
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+        const feedback = parseJsonStdout(result.stdout);
         expect(feedback).toMatchObject({
+          instance_name: 'contract-instance',
           phase: 'run_evaluation',
           assessment: {
             overall_assessment: 'good',
             reviewer_confidence: 'high',
             task_completion_score: 4,
           },
+          stage_values: [
+            { stage: 'scouting', value: 'medium' },
+            { stage: 'evaluation', value: 'high' },
+          ],
+          improvements: [
+            { category: 'goal_setting', priority: 'low' },
+            { category: 'evaluation', priority: 'medium' },
+          ],
           outcomes: {
-            validation_passed: true,
-            coding_attempts: 1,
-            goal_check_met: true,
+            validation_passed: false,
+            coding_attempts: 3,
+            total_duration_seconds: 99,
+            goal_check_met: false,
           },
         });
+        expect(new Date(feedback.timestamp).toString()).not.toBe('Invalid Date');
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });
 
-    it('should call collect_goal_check_feedback after goal-check', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const lines = scriptContent.split('\n').map((line) => line.trim());
-      const runGoalCheckLine = lines.findIndex((line) => line === 'run_goal_check "$coding_attempt"');
-      expect(runGoalCheckLine).toBeGreaterThanOrEqual(0);
-      const nextCommand = lines.slice(runGoalCheckLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
-      expect(nextCommand).toBe('collect_goal_check_feedback "$INSTANCE_NAME"');
+    it('should report CLI usage and phase errors at execution time', () => {
+      const noArgs = runCollectFeedback([]);
+      expect(noArgs.status).toBe(1);
+      expect(noArgs.stderr).toContain('Usage: collect-feedback.js <phase> <instance_name> [paths...]');
+
+      const incompleteGoalCheck = runCollectFeedback(['goal-check', 'contract-instance']);
+      expect(incompleteGoalCheck.status).toBe(1);
+      expect(incompleteGoalCheck.stderr).toContain('Usage: collect-feedback.js goal-check');
+
+      const incompleteRunEvaluation = runCollectFeedback(['run-evaluation', 'contract-instance']);
+      expect(incompleteRunEvaluation.status).toBe(1);
+      expect(incompleteRunEvaluation.stderr).toContain('Usage: collect-feedback.js run-evaluation');
+
+      const unknownPhase = runCollectFeedback(['unknown-phase', 'contract-instance']);
+      expect(unknownPhase.status).toBe(1);
+      expect(unknownPhase.stderr).toContain('Unknown phase: unknown-phase');
     });
 
-    it('should call collect_run_evaluation_feedback after run-evaluation', () => {
-      const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
-      const lines = scriptContent.split('\n').map((line) => line.trim());
-      const runEvalLine = lines.findIndex((line) => line === 'run_run_evaluation');
-      expect(runEvalLine).toBeGreaterThanOrEqual(0);
-      const nextCommand = lines.slice(runEvalLine + 1).find((line) => line.length > 0 && !line.startsWith('#'));
-      expect(nextCommand).toBe('collect_run_evaluation_feedback "$INSTANCE_NAME"');
-    });
-  });
+    it('should fall back to default feedback values and warn when artifact JSON cannot be parsed', () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feedback-parse-error-'));
+      const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
+      const goalCheckPath = path.join(tmpDir, 'goal-check.json');
+      const metadataPath = path.join(tmpDir, 'metadata.json');
 
-  describe('Analysis Scripts', () => {
-    it('collect-feedback.js should satisfy the feedback collection contract', () => {
-      const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
-      const collectFeedbackContent = fs.readFileSync(collectFeedbackPath, 'utf8');
-      const shellContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+      try {
+        fs.writeFileSync(goalSettingPath, '{not-json');
+        fs.writeFileSync(goalCheckPath, '{not-json');
+        fs.writeFileSync(metadataPath, '{not-json');
 
-      expect(collectFeedbackContent).toMatch(
-        /node collect-feedback\.js goal-check <instance_name> <goal_setting_json> <goal_check_json> <metadata_json>/
-      );
-      expect(collectFeedbackContent).toMatch(
-        /node collect-feedback\.js run-evaluation <instance_name> <run_evaluation_json> <metadata_json>/
-      );
+        const result = runCollectFeedback([
+          'goal-check',
+          'contract-instance',
+          goalSettingPath,
+          goalCheckPath,
+          metadataPath,
+        ]);
 
-      const definesGoalCheckHandler = /function collectGoalCheckFeedback\(instanceName, goalSettingPath, goalCheckPath, metadataPath\)/.test(
-        collectFeedbackContent
-      );
-      const exportsGoalCheckHandler = /(?:module\.)?exports(?:\s*\.\s*collectGoalCheckFeedback|\s*=\s*\{[^}]*collectGoalCheckFeedback[^}]*\})/.test(collectFeedbackContent);
-      expect(definesGoalCheckHandler || exportsGoalCheckHandler).toBe(true);
-
-      const definesRunEvaluationHandler = /function collectRunEvaluationFeedback\(instanceName, runEvaluationPath, metadataPath\)/.test(
-        collectFeedbackContent
-      );
-      const exportsRunEvaluationHandler = /(?:module\.)?exports(?:\s*\.\s*collectRunEvaluationFeedback|\s*=\s*\{[^}]*collectRunEvaluationFeedback[^}]*\})/.test(collectFeedbackContent);
-      expect(definesRunEvaluationHandler || exportsRunEvaluationHandler).toBe(true);
-
-      expect(collectFeedbackContent).toContain("phase === 'goal-check'");
-      expect(collectFeedbackContent).toContain('collectGoalCheckFeedback(instanceName, args[2], args[3], args[4])');
-      expect(collectFeedbackContent).toContain("phase === 'run-evaluation'");
-      expect(collectFeedbackContent).toContain('collectRunEvaluationFeedback(instanceName, args[2], args[3])');
-
-      [
-        'quality_metrics',
-        'quality_score',
-        'success_criteria',
-        'met',
-        'confidence',
-        'evidence',
-        'missing',
-        'overall_assessment',
-        'reviewer_confidence',
-        'task_completion_score',
-        'stage_value',
-        'kaseki_improvement_opportunities',
-        'validation_passed',
-        'coding_attempts',
-        'total_duration_seconds',
-        'goal_check_met',
-      ].forEach((fieldName) => {
-        expect(collectFeedbackContent).toContain(fieldName);
-      });
-
-      expect(shellContent).toContain(
-        'node "$SCRIPT_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path"'
-      );
-      expect(shellContent).toContain(
-        'node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path"'
-      );
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain(`Failed to parse JSON from ${goalSettingPath}`);
+        expect(result.stderr).toContain(`Failed to parse JSON from ${goalCheckPath}`);
+        expect(result.stderr).toContain(`Failed to parse JSON from ${metadataPath}`);
+        expect(parseJsonStdout(result.stdout)).toMatchObject({
+          instance_name: 'contract-instance',
+          phase: 'goal_check',
+          goal_quality: {
+            score: 0,
+            metrics: {},
+            smart_criteria_count: 0,
+          },
+          goal_check_verdict: {
+            met: false,
+            confidence: 'unknown',
+            evidenceCount: 0,
+            missingCount: 0,
+          },
+          outcomes: {
+            validation_passed: false,
+            coding_attempts: 1,
+            total_duration_seconds: 0,
+            goal_check_met: false,
+          },
+          correlation: {
+            goal_quality: 0,
+            verdict_met: false,
+            success: false,
+            confidence_grade: 'unknown',
+            notes: [],
+          },
+        });
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 

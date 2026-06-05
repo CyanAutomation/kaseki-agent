@@ -8,9 +8,10 @@
  *   node collect-feedback.js run-evaluation <instance_name> <run_evaluation_json> <metadata_json>
  */
 
-const fs = require('fs');
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-function parseJson(filePath) {
+export function parseJson(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) {
       return {};
@@ -22,7 +23,7 @@ function parseJson(filePath) {
   }
 }
 
-function collectGoalCheckFeedback(instanceName, goalSettingPath, goalCheckPath, metadataPath) {
+export function collectGoalCheckFeedback(instanceName, goalSettingPath, goalCheckPath, metadataPath) {
   const goalSetting = parseJson(goalSettingPath);
   const goalCheck = parseJson(goalCheckPath);
   const metadata = parseJson(metadataPath);
@@ -67,7 +68,7 @@ function collectGoalCheckFeedback(instanceName, goalSettingPath, goalCheckPath, 
   return feedback;
 }
 
-function collectRunEvaluationFeedback(instanceName, runEvaluationPath, metadataPath) {
+export function collectRunEvaluationFeedback(instanceName, runEvaluationPath, metadataPath) {
   const runEvaluation = parseJson(runEvaluationPath);
   const metadata = parseJson(metadataPath);
 
@@ -88,7 +89,7 @@ function collectRunEvaluationFeedback(instanceName, runEvaluationPath, metadataP
   return feedback;
 }
 
-function extractOutcomes(metadata) {
+export function extractOutcomes(metadata) {
   return {
     validation_passed: metadata.validation_passed === true,
     coding_attempts: metadata.coding_attempts || 1,
@@ -97,7 +98,7 @@ function extractOutcomes(metadata) {
   };
 }
 
-function computeCorrelationNotes(qualityScore, verdict, outcomes) {
+export function computeCorrelationNotes(qualityScore, verdict, outcomes) {
   const notes = [];
 
   if (qualityScore >= 85 && !verdict.met) {
@@ -116,14 +117,14 @@ function computeCorrelationNotes(qualityScore, verdict, outcomes) {
   return notes;
 }
 
-function parseStageValues(stageValues) {
+export function parseStageValues(stageValues) {
   return stageValues.map((s) => ({
     stage: s.stage || 'unknown',
     value: s.value || 'unknown',
   }));
 }
 
-function parseImprovements(improvements) {
+export function parseImprovements(improvements) {
   return improvements.map((imp) => ({
     category: imp.category || 'unknown',
     priority: imp.priority || 'medium',
@@ -164,4 +165,6 @@ function main() {
   console.log(JSON.stringify(feedback));
 }
 
-main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main();
+}
