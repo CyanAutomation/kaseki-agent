@@ -8,6 +8,17 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+assert_no_temp_dir_unbound_variable() {
+  local label="$1"
+  local output="$2"
+  if printf '%s' "$output" | grep -q 'temp_dir: unbound variable'; then
+    fail "unexpected temp_dir: unbound variable output on ${label}: $output"
+  fi
+  if printf '%s' "$output" | grep -qi 'unbound variable'; then
+    fail "unexpected unbound variable output on ${label}: $output"
+  fi
+}
+
 probe_source="$TMP_DIR/probe-source.sh"
 {
   echo 'set -euo pipefail'
@@ -41,9 +52,7 @@ chmod +x "$test_runner"
 if ! output="$("$test_runner" 2>&1)"; then
   fail "probe runner failed: $output"
 fi
-if printf '%s' "$output" | grep -qi 'unbound variable'; then
-  fail "unexpected unbound variable output: $output"
-fi
+assert_no_temp_dir_unbound_variable "checkout success path" "$output"
 
 missing_checkout="$TMP_DIR/does-not-exist"
 missing_runner="$TMP_DIR/run-probe-missing.sh"
@@ -67,9 +76,7 @@ if [ "$before_tmp_count" -ne "$after_tmp_count" ]; then
   fail "temporary file count changed on early return path: before=$before_tmp_count after=$after_tmp_count"
 fi
 
-if printf '%s' "$missing_output" | grep -qi 'unbound variable'; then
-  fail "unexpected unbound variable output on early return path: $missing_output"
-fi
+assert_no_temp_dir_unbound_variable "checkout early return path" "$missing_output"
 
 
 parallel_source="$TMP_DIR/parallel-source.sh"
@@ -81,6 +88,12 @@ parallel_source="$TMP_DIR/parallel-source.sh"
     in_func { print }
   ' "$SCRIPT_UNDER_TEST"
 } > "$parallel_source"
+
+for required_parallel_token in run_privilege_tools_parallel cleanup_parallel success_marker; do
+  if ! grep -q "$required_parallel_token" "$parallel_source"; then
+    fail "parallel source fixture is missing distinctive token: $required_parallel_token"
+  fi
+done
 
 fake_bin="$TMP_DIR/fake-bin"
 mkdir -p "$fake_bin"
@@ -155,19 +168,20 @@ PATH="$fake_bin:/usr/bin:/bin"
 KASEKI_PRIV_TOOL_TIMEOUT=2
 KASEKI_CONTAINER_UID="$(id -u)"
 KASEKI_CONTAINER_GID="$(id -g)"
-KASEKI_FAKE_TEMP_DIR="$TMP_DIR/parallel-temp"
+KASEKI_FAKE_TEMP_DIR="$TMP_DIR/cleanup_parallel-success-temp"
 export PATH KASEKI_PRIV_TOOL_TIMEOUT KASEKI_CONTAINER_UID KASEKI_CONTAINER_GID KASEKI_FAKE_TEMP_DIR
 . "$parallel_source"
 stderr_file="$TMP_DIR/parallel.stderr"
 run_privilege_tools_parallel "$checkout_dir" "\$stderr_file" "" "" bash -c 'exit 0'
 if [ -s "\$stderr_file" ]; then
-  echo "parallel success leaked stderr: \$(cat "\$stderr_file")" >&2
+  echo "parallel success leaked stderr from failing sudoers_audit fallback: \$(cat "\$stderr_file")" >&2
   exit 1
 fi
 if [ -d "\$KASEKI_FAKE_TEMP_DIR" ]; then
   echo "parallel temp dir still exists after success: \$KASEKI_FAKE_TEMP_DIR" >&2
   exit 1
 fi
+KASEKI_FAKE_TEMP_DIR="$TMP_DIR/cleanup_parallel-failure-temp"
 run_privilege_tools_parallel "$checkout_dir" "\$stderr_file" "" "" bash -c 'exit 42' && {
   echo "parallel failure command unexpectedly succeeded" >&2
   exit 1
@@ -186,9 +200,7 @@ chmod +x "$parallel_runner"
 if ! parallel_output="$("$parallel_runner" 2>&1)"; then
   fail "parallel privilege runner failed: $parallel_output"
 fi
-if printf '%s' "$parallel_output" | grep -qi 'unbound variable'; then
-  fail "unexpected unbound variable output on parallel path: $parallel_output"
-fi
+assert_no_temp_dir_unbound_variable "run_privilege_tools_parallel cleanup_parallel path" "$parallel_output"
 checkout_parallel_runner="$TMP_DIR/run-checkout-parallel.sh"
 cat > "$checkout_parallel_runner" <<RUNNER
 #!/usr/bin/env bash
@@ -197,7 +209,7 @@ PATH="$fake_bin:/usr/bin:/bin"
 KASEKI_PRIV_TOOL_TIMEOUT=2
 KASEKI_CONTAINER_UID=12345
 KASEKI_CONTAINER_GID=23456
-KASEKI_FAKE_TEMP_DIR="$TMP_DIR/checkout-parallel-temp"
+KASEKI_FAKE_TEMP_DIR="$TMP_DIR/checkout-cleanup_parallel-temp"
 KASEKI_FAKE_SETPRIV_DELAY=0.2
 KASEKI_FAKE_SUDO_MARKER="$TMP_DIR/fake-sudo-called"
 export PATH KASEKI_PRIV_TOOL_TIMEOUT KASEKI_CONTAINER_UID KASEKI_CONTAINER_GID KASEKI_FAKE_TEMP_DIR KASEKI_FAKE_SETPRIV_DELAY KASEKI_FAKE_SUDO_MARKER
@@ -224,9 +236,7 @@ chmod +x "$checkout_parallel_runner"
 if ! checkout_parallel_output="$("$checkout_parallel_runner" 2>&1)"; then
   fail "checkout parallel privilege regression failed: $checkout_parallel_output"
 fi
-if printf '%s' "$checkout_parallel_output" | grep -qi 'unbound variable'; then
-  fail "unexpected unbound variable output on checkout parallel path: $checkout_parallel_output"
-fi
+assert_no_temp_dir_unbound_variable "root-simulated checkout parallel path" "$checkout_parallel_output"
 
 
 audit_fake_bin="$TMP_DIR/audit-fake-bin"
@@ -296,8 +306,6 @@ chmod +x "$audit_runner"
 if ! audit_output="$("$audit_runner" 2>&1)"; then
   fail "audit plugin privilege classification regression failed: $audit_output"
 fi
-if printf '%s' "$audit_output" | grep -qi 'unbound variable'; then
-  fail "unexpected unbound variable output on audit plugin classification path: $audit_output"
-fi
+assert_no_temp_dir_unbound_variable "sudoers_audit classification path" "$audit_output"
 
 echo "PASS: checkout freshness probe and parallel privilege cleanup work"
