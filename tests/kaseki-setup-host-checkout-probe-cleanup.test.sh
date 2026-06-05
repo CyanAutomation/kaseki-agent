@@ -228,4 +228,76 @@ if printf '%s' "$checkout_parallel_output" | grep -qi 'unbound variable'; then
   fail "unexpected unbound variable output on checkout parallel path: $checkout_parallel_output"
 fi
 
+
+audit_fake_bin="$TMP_DIR/audit-fake-bin"
+mkdir -p "$audit_fake_bin"
+cat > "$audit_fake_bin/id" <<'FAKE_ID'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "-u" ]; then
+  printf '0\n'
+  exit 0
+elif [ "${1:-}" = "-g" ]; then
+  printf '0\n'
+  exit 0
+fi
+exec /usr/bin/id "$@"
+FAKE_ID
+cat > "$audit_fake_bin/timeout" <<'FAKE_TIMEOUT'
+#!/usr/bin/env bash
+set -euo pipefail
+shift
+exec "$@"
+FAKE_TIMEOUT
+cat > "$audit_fake_bin/setpriv" <<'FAKE_SETPRIV'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 1
+FAKE_SETPRIV
+cat > "$audit_fake_bin/sudo" <<'FAKE_SUDO'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'sudo: error initializing audit plugin sudoers_audit\n' >&2
+exit 1
+FAKE_SUDO
+chmod +x "$audit_fake_bin"/*
+
+audit_runner="$TMP_DIR/run-audit-plugin-probe.sh"
+cat > "$audit_runner" <<RUNNER
+#!/usr/bin/env bash
+set -euo pipefail
+PATH="$audit_fake_bin:/usr/bin:/bin"
+KASEKI_PRIV_TOOL_TIMEOUT=2
+KASEKI_CONTAINER_UID=12345
+KASEKI_CONTAINER_GID=23456
+export PATH KASEKI_PRIV_TOOL_TIMEOUT KASEKI_CONTAINER_UID KASEKI_CONTAINER_GID
+. "$probe_source"
+probe_payload="\$(run_checkout_freshness_probe "$checkout_dir")"
+IFS='|' read -r probe_status probe_detail probe_remediation <<< "\$probe_payload"
+if [ "\$probe_status" != "failed" ]; then
+  echo "audit plugin probe unexpectedly returned non-failed status: \$probe_payload" >&2
+  exit 1
+fi
+if ! printf '%s' "\$probe_detail" | grep -qi 'host privilege-tool configuration'; then
+  echo "audit plugin probe detail did not identify host privilege-tool configuration: \$probe_payload" >&2
+  exit 1
+fi
+if ! printf '%s' "\$probe_remediation" | grep -Eqi 'privilege-tool configuration.*sudo|sudo.*audit.*sudoers_audit'; then
+  echo "audit plugin probe remediation did not point to privilege-tool/sudo configuration: \$probe_payload" >&2
+  exit 1
+fi
+if printf '%s' "\$probe_remediation" | grep -qi 'Fix ownership/permissions'; then
+  echo "audit plugin probe remediation incorrectly pointed to checkout ownership: \$probe_payload" >&2
+  exit 1
+fi
+exit 0
+RUNNER
+chmod +x "$audit_runner"
+if ! audit_output="$("$audit_runner" 2>&1)"; then
+  fail "audit plugin privilege classification regression failed: $audit_output"
+fi
+if printf '%s' "$audit_output" | grep -qi 'unbound variable'; then
+  fail "unexpected unbound variable output on audit plugin classification path: $audit_output"
+fi
+
 echo "PASS: checkout freshness probe and parallel privilege cleanup work"
