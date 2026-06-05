@@ -482,3 +482,67 @@ export interface Job {
   idempotencyKey?: string; // Idempotency key for deduplication
   effectiveTimeoutSeconds?: number; // Resolved timeout applied to this job
 }
+
+/**
+ * Issue found during startup (from preflight checks or bootstrap)
+ */
+export interface StartupIssue {
+  severity: 'blocking' | 'warning' | 'info';
+  component: string;
+  detail: string;
+  remediation?: string;
+  autoFixable?: boolean;
+  timestamp?: string;
+}
+
+/**
+ * Component initialization timing
+ */
+export interface ComponentTiming {
+  name: string;
+  durationMs: number;
+  status?: 'ok' | 'warning';
+  reason?: string;
+}
+
+/**
+ * Unified startup health report
+ * Consolidates bootstrap timing, preflight checks, and environment info
+ */
+export interface StartupHealthReport {
+  timestamp: string;
+  status: 'ok' | 'degraded' | 'error';
+  summary: {
+    passed: number;
+    warnings: number;
+    blocking: number;
+  };
+  timing: {
+    bootstrapMs: number;
+    preflightMs: number;
+    totalMs: number;
+  };
+  components: Record<string, ComponentTiming>;
+  preflight?: Record<
+    string,
+    {
+      ok: boolean;
+      elapsedMs?: number;
+      detail?: string;
+    }
+  >;
+  issues: StartupIssue[];
+}
+
+/**
+ * Preflight health summary with grouped remediation
+ */
+export interface PreflightSummary {
+  timestamp: string;
+  status: 'ok' | 'degraded';
+  checks: {
+    passed: number;
+    warnings: number;
+  };
+  issues: StartupIssue[];
+}

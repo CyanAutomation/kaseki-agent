@@ -10,6 +10,8 @@ import { initializeSetup, assertSupportedNodeVersion, ensureTemplateInitialized 
 import { bootstrapServices, gracefulShutdown, type ShutdownDeps } from './kaseki-api/service-bootstrapper';
 import { ContainerPreflightDiagnostics, logContainerPreflightResults } from './startup/container-preflight';
 import { getNpmVersion } from './kaseki-api/npm-version';
+import { generateStartupHealthReport } from './kaseki-api/startup-health-reporter';
+import { writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
 import {
   initSentry,
   sentryRequestHandler,
@@ -127,6 +129,40 @@ async function main(): Promise<void> {
   const preflightChecks = containerPreflight.run();
   const preflightDurationMs = performance.now() - preflightStartTime;
   logContainerPreflightResults(preflightChecks);
+
+  // Generate unified startup health report (Phase 4 improvement)
+  // Consolidates bootstrap timing, preflight checks, and environment into one report
+  try {
+    const componentTimings = {
+      'ResultCache': 0,  // Would come from bootstrapServices in production
+      'WebhookManager': 0,
+      'IdempotencyStore': 0,
+      'PreFlightValidator': 0,
+      'JobScheduler': 0,
+    };
+    
+    const healthReport = generateStartupHealthReport(
+      bootstrapDurationMs,
+      preflightDurationMs,
+      preflightChecks,
+      componentTimings
+    );
+
+    // Write health report artifacts (JSON and markdown)
+    writeStartupHealthArtifacts(config.resultsDir, healthReport);
+
+    logger.event('health_report_generated', {
+      status: healthReport.status,
+      passed: healthReport.summary.passed,
+      warnings: healthReport.summary.warnings,
+      blocking: healthReport.summary.blocking,
+      totalMs: healthReport.timing.totalMs,
+    });
+  } catch (err) {
+    logger.warn('Failed to generate startup health report', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Log startup completion with timing summary
   const preflightWarnings = preflightChecks.filter(c => !c.ok).length;
