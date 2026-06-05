@@ -22,22 +22,35 @@ describe('Docker runtime packaging', () => {
     expect(entrypoint).toContain('exec "$@"');
   });
 
-  test('final image exposes startup checks at the path used by the entrypoint', () => {
-    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+  test('entrypoint startup-check configuration points at the packaged script path', () => {
     const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
-    const startupChecks = fs.readFileSync(path.join(repoRoot, 'scripts/startup-checks.sh'), 'utf-8');
-    const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf-8');
 
-    expect(entrypoint).toContain('/scripts/startup-checks.sh');
-    expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh');
-    expect(dockerfile).toContain('ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh');
+    expect(entrypoint).toContain('KASEKI_SKIP_STARTUP_CHECKS:-0');
+    expect(entrypoint).toContain('/scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}"');
+    expect(entrypoint).toContain('Startup checks failed: blocking startup issue detected');
+  });
+
+  test('startup-check script preserves container defaults and supported modes', () => {
+    const startupChecks = fs.readFileSync(path.join(repoRoot, 'scripts/startup-checks.sh'), 'utf-8');
+
     expect(startupChecks).toContain('KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$KASEKI_ROOT/kaseki-results}"');
     expect(startupChecks).toContain('KASEKI_RUNS_DIR="${KASEKI_RUNS_DIR:-$KASEKI_ROOT/kaseki-runs}"');
     expect(startupChecks).toContain('quick|boot)');
     expect(startupChecks).toContain('baseline-validation)');
+  });
+
+  test('compose mounts the configured secret directory read-only', () => {
+    const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf-8');
+
     expect(compose).toContain('KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"');
-    expect(compose).toContain(':/run/secrets/kaseki:ro');
+    expect(compose).toContain('${KASEKI_HOST_SECRETS_DIR:-/home/pi/secrets}:/run/secrets/kaseki:ro');
+  });
+
+  test('compose health check reaches the readiness endpoint', () => {
+    const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf-8');
+
     expect(compose).toContain("fetch('http://127.0.0.1:8080/ready')");
+    expect(compose).toContain("process.exit(d.status==='ready'?0:1)");
   });
 
   test('template deployment preserves the configured image ref and records digest separately', () => {
