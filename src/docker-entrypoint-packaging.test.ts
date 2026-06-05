@@ -306,11 +306,136 @@ exit 2
   });
 
   test('template deployment preserves the configured image ref and records digest separately', () => {
-    const deployScript = fs.readFileSync(path.join(repoRoot, 'scripts/deploy-pi-template.sh'), 'utf-8');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-template-deploy-'));
+    const configuredImage = 'registry.example.test/cyanautomation/kaseki-agent:test-tag';
+    const resolvedDigest = 'registry.example.test/cyanautomation/kaseki-agent@sha256:111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000';
 
-    expect(deployScript).toContain('REQUESTED_IMAGE="${KASEKI_IMAGE:-docker.io/cyanautomation/kaseki-agent:latest}"');
-    expect(deployScript).toContain('printf \'%s\\n\' "$configured_image" > "$target/.kaseki-image"');
-    expect(deployScript).toContain('docker image inspect "$deployed_image" --format');
-    expect(deployScript).not.toContain('IMAGE="$resolved_digest"');
+    const writeDockerStub = (binDir: string): void => {
+      fs.mkdirSync(binDir, { recursive: true });
+      const dockerStub = path.join(binDir, 'docker');
+      fs.writeFileSync(
+        dockerStub,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$KASEKI_DOCKER_CALL_LOG"
+
+if [ "${'${1:-}'}" = "image" ] && [ "${'${2:-}'}" = "inspect" ]; then
+  if [ "${'${KASEKI_DOCKER_INSPECT_FAIL:-0}'}" = "1" ]; then
+    printf 'simulated inspect failure for %s\n' "${'${3:-}'}" >&2
+    exit 1
+  fi
+  case " $* " in
+    *" --format "*) printf '%s\n' "$KASEKI_DOCKER_REPO_DIGEST" ;;
+    *) printf '[{"RepoDigests":["%s"]}]\n' "$KASEKI_DOCKER_REPO_DIGEST" ;;
+  esac
+  exit 0
+fi
+
+case "${'${1:-}'}" in
+  pull)
+    exit 0
+    ;;
+  create)
+    printf 'kaseki-test-container-%s\n' "${'${RANDOM:-1}'}"
+    exit 0
+    ;;
+  cp)
+    if [ "${'${3:-}'}" = "-" ]; then
+      printf 'template probe\n'
+      exit 0
+    fi
+    target="${'${3:-}'}"
+    mkdir -p "$target/scripts" "$target/lib/secrets"
+    for file in \
+      run-kaseki.sh \
+      kaseki \
+      kaseki-agent.sh \
+      scripts/kaseki-preflight.sh \
+      lib/pi-event-filter.js \
+      lib/pi-progress-stream.js \
+      lib/kaseki-report.js \
+      lib/github-app-token.js \
+      lib/github-app-private-key.js \
+      lib/github-utils.js \
+      lib/logger.js \
+      lib/secrets/host-secrets-reader.js
+    do
+      mkdir -p "$target/$(dirname "$file")"
+      printf 'deployed %s\n' "$file" > "$target/$file"
+    done
+    exit 0
+    ;;
+  rm)
+    exit 0
+    ;;
+esac
+
+printf 'unexpected docker invocation: %s\n' "$*" >&2
+exit 64
+`,
+      );
+      fs.chmodSync(dockerStub, 0o755);
+    };
+
+    const runDeploy = (name: string, env: NodeJS.ProcessEnv = {}) => {
+      const homeDir = path.join(tempRoot, name);
+      const targetDir = path.join(homeDir, 'kaseki-template');
+      const logDir = path.join(homeDir, 'logs');
+      const binDir = path.join(homeDir, 'bin');
+      const dockerCallLog = path.join(homeDir, 'docker-calls.log');
+      fs.mkdirSync(homeDir, { recursive: true });
+      writeDockerStub(binDir);
+
+      const result = spawnSync('bash', [path.join(repoRoot, 'scripts/deploy-pi-template.sh')], {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          HOME: homeDir,
+          KASEKI_TEMPLATE_DIR: targetDir,
+          KASEKI_IMAGE: configuredImage,
+          KASEKI_IMAGE_PULL_POLICY: 'always',
+          KASEKI_BUILD_IMAGE_IF_TEMPLATE_MISSING: '0',
+          KASEKI_LOG_DIR: logDir,
+          KASEKI_DOCKER_CALL_LOG: dockerCallLog,
+          KASEKI_DOCKER_REPO_DIGEST: resolvedDigest,
+          ...env,
+        },
+      });
+
+      return { dockerCallLog, result, targetDir };
+    };
+
+    try {
+      const success = runDeploy('success');
+
+      expect(success.result.status).toBe(0);
+      expect(success.result.stderr).toBe('');
+      expect(fs.readFileSync(path.join(success.targetDir, '.kaseki-image'), 'utf-8')).toBe(`${configuredImage}\n`);
+      expect(fs.readFileSync(path.join(success.targetDir, '.kaseki-image-digest'), 'utf-8')).toBe(`${resolvedDigest}\n`);
+      expect(JSON.parse(fs.readFileSync(path.join(success.targetDir, '.kaseki-template-version'), 'utf-8'))).toMatchObject({
+        image: configuredImage,
+        deployedImage: configuredImage,
+        imageDigest: resolvedDigest,
+      });
+      expect(fs.readFileSync(path.join(success.targetDir, '.kaseki-image'), 'utf-8')).not.toContain('@sha256:');
+      expect(fs.readFileSync(success.dockerCallLog, 'utf-8')).toContain(`image inspect ${configuredImage}`);
+
+      const inspectFailure = runDeploy('inspect-failure', { KASEKI_DOCKER_INSPECT_FAIL: '1' });
+
+      expect(inspectFailure.result.status).toBe(0);
+      expect(inspectFailure.result.stderr).toBe('');
+      expect(inspectFailure.result.stdout).toContain('No repo digest found for image reference; continuing with tag');
+      expect(fs.readFileSync(path.join(inspectFailure.targetDir, '.kaseki-image'), 'utf-8')).toBe(`${configuredImage}\n`);
+      expect(fs.existsSync(path.join(inspectFailure.targetDir, '.kaseki-image-digest'))).toBe(false);
+      expect(JSON.parse(fs.readFileSync(path.join(inspectFailure.targetDir, '.kaseki-template-version'), 'utf-8'))).toMatchObject({
+        image: configuredImage,
+        deployedImage: configuredImage,
+        imageDigest: '',
+      });
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
