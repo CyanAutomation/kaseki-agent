@@ -626,6 +626,7 @@ function summarize(errors) {
 
 function fail(reasonHint, errors) {
   for (const error of errors) appendValidationFailure(error);
+  fs.mkdirSync(path.dirname(errorLog), { recursive: true });
   fs.writeFileSync(errorLog, JSON.stringify({
     reason_hint: reasonHint,
     details: summarize(errors),
@@ -643,7 +644,7 @@ try {
     expected: "valid JSON object",
     actual: error && error.message ? String(error.message) : String(error),
     severity: "critical",
-    suggestion: "ensure exactly one valid JSON object is written to "${KASEKI_RESULTS_DIR}"/goal-check-candidate.json",
+    suggestion: `ensure exactly one valid JSON object is written to ${resultsDir}/goal-check-candidate.json`,
   }]);
 }
 
@@ -1189,6 +1190,7 @@ run_expectation_mismatch_detector() {
 
   : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
   if [ ! -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
+    # shellcheck disable=SC2086
     printf '[expectation-mismatch] skipped: "${KASEKI_RESULTS_DIR}"/git.diff is empty\n' >> ${KASEKI_RESULTS_DIR}/progress.log
     return 0
   fi
