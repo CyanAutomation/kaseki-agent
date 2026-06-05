@@ -58,6 +58,21 @@ log_warn()  { echo -e "${YELLOW}⚠${NC} $*" >&2; }
 log_error() { echo -e "${RED}✗${NC} $*" >&2; }
 log_info()  { echo -e "${BLUE}ℹ${NC} $*" >&2; }
 
+merge_startup_status() {
+  local current="$1"
+  local next="$2"
+
+  if [ "$current" -eq 2 ] || [ "$next" -eq 2 ]; then
+    printf '2'
+  elif [ "$current" -eq 3 ] || [ "$next" -eq 3 ]; then
+    printf '3'
+  elif [ "$next" -ne 0 ]; then
+    printf '%s' "$next"
+  else
+    printf '%s' "$current"
+  fi
+}
+
 check_path_components_traversable() {
   local target_path="$1"
   local current=""
@@ -302,15 +317,15 @@ check_github_app_secrets() {
 
   check_secret_file_sources \
     "GitHub App ID" \
-    "$github_app_id_file" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
 
   check_secret_file_sources \
     "GitHub App Client ID" \
-    "$github_app_client_id_file" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_client_id_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
 
   check_secret_file_sources \
     "GitHub App private key" \
-    "$github_app_private_key_file" || exit_code=$((exit_code > $? ? exit_code : $?))
+    "$github_app_private_key_file" || exit_code=$(merge_startup_status "$exit_code" "$?")
 
   if [ "$exit_code" -eq 0 ]; then
     return 0
@@ -526,38 +541,38 @@ main() {
 
   case "$MODE" in
     all)
-      check_kaseki_root || overall_exit=$?
-      check_subdirectories || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_github_app_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_git_safe_directory || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_subdirectories || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_bootstrap_status || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_github_app_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_github_app_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_git_safe_directory || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     permissions)
-      check_kaseki_root || overall_exit=$?
-      check_subdirectories || overall_exit=$?
+      check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_subdirectories || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     bootstrap)
-      check_bootstrap_status || overall_exit=$?
+      check_bootstrap_status || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     quick|boot)
-      check_kaseki_root || overall_exit=$?
+      check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     worker)
-      check_worker_mounts || overall_exit=$?
-      check_results_writable || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_api_key || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_github_app_secrets || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_github_app_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_worker_mounts || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_results_writable || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_github_app_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_github_app_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     baseline-validation)
-      check_kaseki_root || overall_exit=$?
-      check_subdirectories || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_bootstrap_status || overall_exit=$((overall_exit > $? ? overall_exit : $?))
-      check_secret_paths || overall_exit=$((overall_exit > $? ? overall_exit : $?))
+      check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_subdirectories || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_bootstrap_status || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     *)
       log_error "Unknown mode: $MODE"
