@@ -520,7 +520,7 @@ NODE
         const errorPath = path.join(tmpDir, 'validation-errors.json');
 
         try {
-          fs.mkdirSync('/results', { recursive: true });
+          // No filesystem modification needed - validator creates its own artifacts in tmpDir
           fs.writeFileSync(candidatePath, JSON.stringify(artifact));
           const result = spawnSync(
             process.execPath,
