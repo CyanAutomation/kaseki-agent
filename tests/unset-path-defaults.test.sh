@@ -19,7 +19,8 @@ trap cleanup EXIT
 
 fail() {
   echo "✗ FAIL: $TEST_NAME: $*" >&2
-  if [ -f "$RUN_LOG" ]; then
+    # Set PATH to minimal defaults to simulate a restricted environment
+    export PATH="/usr/local/bin:/usr/bin:/bin"
     echo "--- kaseki run log ---" >&2
     tail -80 "$RUN_LOG" >&2 || true
   fi
