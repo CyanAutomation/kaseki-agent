@@ -42,7 +42,7 @@ describe('Evaluation Prompt Enhancements', () => {
       throw new Error('Unable to find the end of build_goal_check_prompt before run_goal_check');
     }
 
-    const functionText = scriptContent.slice(startIndex, endIndex + 2);
+    const functionText = scriptContent.slice(startIndex, endIndex + '\n}'.length);
     if (!functionText.startsWith(startMarker) || !functionText.endsWith('\n}')) {
       throw new Error('Extracted goal-check prompt builder failed boundary validation');
     }
