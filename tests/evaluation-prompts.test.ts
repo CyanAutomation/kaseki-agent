@@ -37,28 +37,82 @@ describe('Evaluation Prompt Enhancements', () => {
       throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
     }
 
+    const endIndex = scriptContent.indexOf(endMarker, startIndex);
+    if (endIndex === -1) {
+      throw new Error('Unable to find expected build_goal_check_prompt boundary before run_goal_check');
+    }
+
+    const functionText = scriptContent.slice(startIndex, endIndex + '\n}'.length);
+    const nestedFunctionDefinitions = functionText.match(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{/gm) ?? [];
+    const expectedMarkers = [
+      'build_goal_check_prompt() {',
+      'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
+      'validation_tail="$(tail -80 /results/validation.log 2>/dev/null || true)"',
+      'progress_tail="$(tail -80 /results/progress.log 2>/dev/null || true)"',
+      'if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then',
+      'if [ -f "$GOAL_SETTING_ARTIFACT" ]; then',
+      'if [ -f /results/validation-causality-analysis.json ]; then',
+      'cat <<EOF',
+      '## Required JSON artifact',
+      '$goal_setting_context',
+      '$causality_context',
+      '$test_impact_context',
+      '$validation_context',
+      '$progress_tail',
+      'EOF',
+    ];
+
+    if (!functionText.startsWith(startMarker)) {
+      throw new Error('Extracted goal-check prompt function has an unexpected start boundary');
+    }
+    if (!functionText.endsWith('\n}')) {
+      throw new Error('Extracted goal-check prompt function has an unexpected end boundary');
+    }
+    if (functionText.includes('\nrun_goal_check() {')) {
+      throw new Error('Extracted goal-check prompt function includes run_goal_check');
+    }
+    if (nestedFunctionDefinitions.length !== 1 || nestedFunctionDefinitions[0] !== startMarker) {
+      throw new Error('Extracted goal-check prompt function includes unexpected function definitions');
+    }
+
+    const missingMarkers = expectedMarkers.filter(marker => !functionText.includes(marker));
+    if (missingMarkers.length > 0) {
+      throw new Error(
+        `Extracted goal-check prompt function is missing expected markers: ${missingMarkers.join(', ')}`
+      );
+    }
+
+    return functionText;
+  };
+
   const renderGoalCheckPrompt = (goalSettingPath: string) => {
     let tmpDir: string | undefined;
 
     try {
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-renderer-'));
+      const functionPath = path.join(tmpDir, 'goal-check-function.sh');
       const rendererPath = path.join(tmpDir, 'render-goal-check-prompt.sh');
+
+      fs.writeFileSync(functionPath, `${extractGoalCheckPromptFunction()}\n`, { mode: 0o600 });
+      execFileSync('bash', ['-n', functionPath]);
 
       fs.writeFileSync(
         rendererPath,
         `#!/usr/bin/env bash
 set -euo pipefail
 
-${extractGoalCheckPromptFunction()}
-
-GOAL_SETTING_ARTIFACT="$1"
-SCOUTING_ARTIFACT="$2/scouting.json"
-TEST_IMPACT_WARNINGS_ARTIFACT="$2/test-impact-warnings.json"
-GOAL_CHECK_CANDIDATE_ARTIFACT="$2/goal-check-candidate.json"
+FUNCTION_SOURCE="$1"
+GOAL_SETTING_ARTIFACT="$2"
+SCOUTING_ARTIFACT="$3/scouting.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
 TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
 
-if ! declare -F build_goal_check_prompt > /dev/null; then
-  echo "Error: build_goal_check_prompt function not found" >&2
+# shellcheck source=/dev/null
+source "$FUNCTION_SOURCE"
+
+if ! declare -f build_goal_check_prompt > /dev/null; then
+  echo "Error: build_goal_check_prompt function not found or has no body" >&2
   exit 1
 fi
 
@@ -69,7 +123,7 @@ build_goal_check_prompt
 
       return execFileSync(
         'bash',
-        [rendererPath, goalSettingPath, path.dirname(goalSettingPath)],
+        [rendererPath, functionPath, goalSettingPath, path.dirname(goalSettingPath)],
         { encoding: 'utf8' }
       );
     } finally {
