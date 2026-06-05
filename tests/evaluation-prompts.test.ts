@@ -503,6 +503,7 @@ console.log(JSON.stringify(payload));
             OPENROUTER_API_KEY: 'test',
             GITHUB_APP_ENABLED: '0',
             KASEKI_INSTANCE: 'orchestration-instance',
+            KASEKI_WORKSPACE_DIR: tmpDir,
             KASEKI_GIT_CACHE_MODE: 'off',
             KASEKI_GOAL_CHECK_MAX_RETRIES: '0',
             KASEKI_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'dependency-cache'),
@@ -546,11 +547,6 @@ console.log(JSON.stringify(payload));
       const run = runGoalCheckOrchestration('success');
 
       try {
-        if (run.result.status !== 0) {
-          console.log('TEST ERROR: Exit code', run.result.status);
-          console.log('STDOUT:', run.result.stdout.slice(0, 500));
-          console.log('STDERR:', run.result.stderr.slice(0, 500));
-        }
         expect(run.result.status).toBe(0);
         const goalCheckIndex = run.events.findIndex(event => event.event === 'pi' && event.stage === 'goal-check');
         const feedbackIndex = run.events.findIndex(event => event.event === 'collect-feedback');
@@ -870,6 +866,7 @@ console.log(output);
             OPENROUTER_API_KEY: 'test',
             GITHUB_APP_ENABLED: '0',
             KASEKI_INSTANCE: 'orchestration-instance',
+            KASEKI_WORKSPACE_DIR: tmpDir,
             KASEKI_GIT_CACHE_MODE: 'off',
             KASEKI_GOAL_CHECK: '0',
             KASEKI_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'dependency-cache'),
