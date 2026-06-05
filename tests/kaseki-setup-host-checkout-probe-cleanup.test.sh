@@ -13,12 +13,18 @@ probe_source="$TMP_DIR/probe-source.sh"
   echo 'set -euo pipefail'
   awk '/^resolve_uid_to_name\(\)/,/^}/' "$SCRIPT_UNDER_TEST"
   awk '/^resolve_gid_to_name\(\)/,/^}/' "$SCRIPT_UNDER_TEST"
+  awk '
+    /^run_privilege_tools_parallel\(\)/ { in_func=1 }
+    /^# Phase 4: Performance tracking helpers/ { in_func=0 }
+    in_func { print }
+  ' "$SCRIPT_UNDER_TEST"
   awk '/^run_checkout_freshness_probe\(\)/,/^}/' "$SCRIPT_UNDER_TEST"
 } > "$probe_source"
 
 checkout_dir="$TMP_DIR/repo"
 mkdir -p "$checkout_dir"
 git -C "$checkout_dir" init >/dev/null 2>&1
+git -C "$checkout_dir" -c user.name='Kaseki Test' -c user.email='kaseki-test@example.com' commit --allow-empty -m 'initial' >/dev/null 2>&1
 
 test_runner="$TMP_DIR/run-probe.sh"
 cat > "$test_runner" <<RUNNER
@@ -95,6 +101,9 @@ set -euo pipefail
 if [ "${1:-}" = "-u" ]; then
   printf '0\n'
   exit 0
+elif [ "${1:-}" = "-g" ]; then
+  printf '0\n'
+  exit 0
 fi
 exec /usr/bin/id "$@"
 FAKE_ID
@@ -107,6 +116,7 @@ FAKE_TIMEOUT
 cat > "$fake_bin/setpriv" <<'FAKE_SETPRIV'
 #!/usr/bin/env bash
 set -euo pipefail
+sleep "${KASEKI_FAKE_SETPRIV_DELAY:-0}"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --)
@@ -129,6 +139,10 @@ FAKE_SETPRIV
 cat > "$fake_bin/sudo" <<'FAKE_SUDO'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'fake sudo failure should be ignored on parallel success\n' >&2
+if [ -n "${KASEKI_FAKE_SUDO_MARKER:-}" ]; then
+  : >"$KASEKI_FAKE_SUDO_MARKER"
+fi
 exit 1
 FAKE_SUDO
 chmod +x "$fake_bin"/*
@@ -146,6 +160,10 @@ export PATH KASEKI_PRIV_TOOL_TIMEOUT KASEKI_CONTAINER_UID KASEKI_CONTAINER_GID K
 . "$parallel_source"
 stderr_file="$TMP_DIR/parallel.stderr"
 run_privilege_tools_parallel "$checkout_dir" "\$stderr_file" "" "" bash -c 'exit 0'
+if [ -s "\$stderr_file" ]; then
+  echo "parallel success leaked stderr: \$(cat "\$stderr_file")" >&2
+  exit 1
+fi
 if [ -d "\$KASEKI_FAKE_TEMP_DIR" ]; then
   echo "parallel temp dir still exists after success: \$KASEKI_FAKE_TEMP_DIR" >&2
   exit 1
@@ -154,6 +172,10 @@ run_privilege_tools_parallel "$checkout_dir" "\$stderr_file" "" "" bash -c 'exit
   echo "parallel failure command unexpectedly succeeded" >&2
   exit 1
 }
+if ! grep -q 'fake sudo failure should be ignored on parallel success' "\$stderr_file"; then
+  echo "parallel failure did not copy selected fallback stderr: \$(cat "\$stderr_file")" >&2
+  exit 1
+fi
 if [ -d "\$KASEKI_FAKE_TEMP_DIR" ]; then
   echo "parallel temp dir still exists after failure: \$KASEKI_FAKE_TEMP_DIR" >&2
   exit 1
@@ -166,6 +188,44 @@ if ! parallel_output="$("$parallel_runner" 2>&1)"; then
 fi
 if printf '%s' "$parallel_output" | grep -qi 'unbound variable'; then
   fail "unexpected unbound variable output on parallel path: $parallel_output"
+fi
+checkout_parallel_runner="$TMP_DIR/run-checkout-parallel.sh"
+cat > "$checkout_parallel_runner" <<RUNNER
+#!/usr/bin/env bash
+set -euo pipefail
+PATH="$fake_bin:/usr/bin:/bin"
+KASEKI_PRIV_TOOL_TIMEOUT=2
+KASEKI_CONTAINER_UID=12345
+KASEKI_CONTAINER_GID=23456
+KASEKI_FAKE_TEMP_DIR="$TMP_DIR/checkout-parallel-temp"
+KASEKI_FAKE_SETPRIV_DELAY=0.2
+KASEKI_FAKE_SUDO_MARKER="$TMP_DIR/fake-sudo-called"
+export PATH KASEKI_PRIV_TOOL_TIMEOUT KASEKI_CONTAINER_UID KASEKI_CONTAINER_GID KASEKI_FAKE_TEMP_DIR KASEKI_FAKE_SETPRIV_DELAY KASEKI_FAKE_SUDO_MARKER
+. "$probe_source"
+probe_payload="\$(run_checkout_freshness_probe "$checkout_dir")"
+case "\$probe_payload" in
+  ok\|*) ;;
+  *)
+    echo "checkout freshness probe did not return ok after setpriv success: \$probe_payload" >&2
+    exit 1
+    ;;
+esac
+if [ ! -f "\$KASEKI_FAKE_SUDO_MARKER" ]; then
+  echo "fake sudo fallback did not run during parallel probe regression" >&2
+  exit 1
+fi
+if printf '%s' "\$probe_payload" | grep -q 'fake sudo failure'; then
+  echo "checkout freshness probe leaked fallback stderr despite success: \$probe_payload" >&2
+  exit 1
+fi
+exit 0
+RUNNER
+chmod +x "$checkout_parallel_runner"
+if ! checkout_parallel_output="$("$checkout_parallel_runner" 2>&1)"; then
+  fail "checkout parallel privilege regression failed: $checkout_parallel_output"
+fi
+if printf '%s' "$checkout_parallel_output" | grep -qi 'unbound variable'; then
+  fail "unexpected unbound variable output on checkout parallel path: $checkout_parallel_output"
 fi
 
 echo "PASS: checkout freshness probe and parallel privilege cleanup work"
