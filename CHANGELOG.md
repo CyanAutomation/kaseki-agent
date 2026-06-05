@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.63.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.62.1...v1.63.0) (2026-06-05)
+
+
+### Bug Fixes
+
+* enhance error handling and logging in service bootstrapper, improve ESLint config, and refine container preflight diagnostics ([d09f49f](https://github.com/CyanAutomation/kaseki-agent/commit/d09f49f959b8160951fe04c6b1dade7eedecff32))
+
+
+### Features
+
+* update API version to 1.62.1 and enhance startup checks with auto-remediation support ([4416b8d](https://github.com/CyanAutomation/kaseki-agent/commit/4416b8d03fe6c9febdd88bedca2dcbcac0a46fe7))
+
 ## [1.62.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.62.0...v1.62.1) (2026-06-04)
 
 
