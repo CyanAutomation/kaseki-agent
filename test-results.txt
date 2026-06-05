@@ -2,3 +2,5 @@
 > @cyanautomation/kaseki-agent@1.65.0 test:unit
 > jest --passWithNoTests
 
+
+[kaseki-report.test] runtime_ms=8.23
