@@ -1,0 +1,4 @@
+
+> @cyanautomation/kaseki-agent@1.65.0 test:unit
+> jest --passWithNoTests
+

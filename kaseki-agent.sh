@@ -4382,7 +4382,7 @@ collect_goal_check_feedback() {
   fi
 
   # Use node script to collect feedback, append as JSONL
-  node "$SCRIPT_DIR/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+  node "$SCRIPT_DIR/scripts/collect-feedback.js" goal-check "$instance_name" "$goal_setting_path" "$goal_check_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
 }
 
 collect_run_evaluation_feedback() {
@@ -4397,7 +4397,7 @@ collect_run_evaluation_feedback() {
   fi
 
   # Use node script to collect feedback, append as JSONL
-  node "$SCRIPT_DIR/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
+  node "$SCRIPT_DIR/scripts/collect-feedback.js" run-evaluation "$instance_name" "$run_evaluation_path" "$metadata_path" 2>/dev/null | tee -a "$feedback_file" >/dev/null || true
 }
 
 
