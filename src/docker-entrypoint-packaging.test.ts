@@ -86,6 +86,79 @@ build_allowlist_regex() {
     expect(entrypoint).toContain('Startup checks failed: blocking startup issue detected');
   });
 
+  test('entrypoint exports shared path defaults before command dispatch', () => {
+    const entrypoint = fs.readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8');
+    const resultsDefaultIndex = entrypoint.indexOf('export KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"');
+    const workspaceDefaultIndex = entrypoint.indexOf('export KASEKI_WORKSPACE_DIR="${KASEKI_WORKSPACE_DIR:-/workspace}"');
+    const baselineDefaultIndex = entrypoint.indexOf('export KASEKI_WORKSPACE_BASELINE_DIR="${KASEKI_WORKSPACE_BASELINE_DIR:-${KASEKI_WORKSPACE_DIR}/baseline}"');
+    const caseIndex = entrypoint.indexOf('case "${1:-agent}" in');
+    const runModeIndex = entrypoint.indexOf('run-mode)');
+
+    expect(resultsDefaultIndex).toBeGreaterThanOrEqual(0);
+    expect(workspaceDefaultIndex).toBeGreaterThanOrEqual(0);
+    expect(baselineDefaultIndex).toBeGreaterThanOrEqual(0);
+    expect(resultsDefaultIndex).toBeLessThan(caseIndex);
+    expect(workspaceDefaultIndex).toBeLessThan(caseIndex);
+    expect(baselineDefaultIndex).toBeLessThan(caseIndex);
+    expect(entrypoint.indexOf('export KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-/results}"', runModeIndex)).toBe(-1);
+  });
+
+  test('default agent branch inherits path defaults when KASEKI_RESULTS_DIR is unset', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-entrypoint-agent-defaults-'));
+
+    try {
+      const startupChecks = path.join(tempRoot, 'startup-checks.sh');
+      const agentStub = path.join(tempRoot, 'kaseki-agent');
+      const entrypointScript = path.join(tempRoot, 'docker-entrypoint.sh');
+      const agentEnvPath = path.join(tempRoot, 'agent-env.txt');
+
+      fs.writeFileSync(
+        startupChecks,
+        `#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+`,
+      );
+      fs.chmodSync(startupChecks, 0o755);
+
+      fs.writeFileSync(
+        agentStub,
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf 'results=%s\nworkspace=%s\nbaseline=%s\n' "$KASEKI_RESULTS_DIR" "$KASEKI_WORKSPACE_DIR" "$KASEKI_WORKSPACE_BASELINE_DIR" > "$KASEKI_ENTRYPOINT_AGENT_ENV"
+printf 'Missing OpenRouter API key: deliberate startup configuration error\n' >&2
+exit 2
+`,
+      );
+      fs.chmodSync(agentStub, 0o755);
+
+      const entrypoint = fs
+        .readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8')
+        .replace('/scripts/startup-checks.sh', startupChecks)
+        .replaceAll('/usr/local/bin/kaseki-agent', agentStub);
+      fs.writeFileSync(entrypointScript, entrypoint);
+      fs.chmodSync(entrypointScript, 0o755);
+
+      const result = spawnSync('bash', [entrypointScript], {
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
+          KASEKI_RESULTS_DIR: undefined,
+        },
+      });
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('deliberate startup configuration error');
+      expect(result.stderr).not.toContain('unbound variable');
+      expect(fs.readFileSync(agentEnvPath, 'utf-8')).toBe(
+        'results=/results\nworkspace=/workspace\nbaseline=/workspace/baseline\n',
+      );
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   test('startup-check script preserves container defaults and supported modes', () => {
     const startupChecks = fs.readFileSync(path.join(repoRoot, 'scripts/startup-checks.sh'), 'utf-8');
 
