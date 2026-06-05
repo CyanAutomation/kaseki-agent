@@ -33,11 +33,19 @@ describe('Evaluation Prompt Enhancements', () => {
     [
       '-c',
       `set -euo pipefail
-eval "$(awk '
-  index($0, "build_goal_check_prompt()") == 1 { emit=1 }
-  index($0, "run_goal_check()") == 1 { emit=0 }
-  emit { print }
-' "$1")"
+# Source the script safely in a restricted subshell
+source "$1"
+GOAL_SETTING_ARTIFACT="$2"
+SCOUTING_ARTIFACT="$3/scouting.json"
+TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
+GOAL_CHECK_CANDIDATE_ARTIFACT="$3/goal-check-candidate.json"
+TASK_PROMPT="Add pagination support with concrete acceptance criteria and reject vague goals."
+# Verify function exists before calling
+if ! declare -f build_goal_check_prompt > /dev/null; then
+  echo "Error: build_goal_check_prompt function not found" >&2
+  exit 1
+fi
+build_goal_check_prompt`,
 GOAL_SETTING_ARTIFACT="$2"
 SCOUTING_ARTIFACT="$3/scouting.json"
 TEST_IMPACT_WARNINGS_ARTIFACT="$3/test-impact-warnings.json"
