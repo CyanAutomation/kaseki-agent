@@ -35,6 +35,7 @@ if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
   fi
 
   # Source the helper
+  # shellcheck source=/dev/null
   . "$ALLOWLIST_HELPER" || {
     printf 'ERROR: Failed to source %s (exit code: %d)\n' "$ALLOWLIST_HELPER" $? >&2
     exit 1
@@ -319,7 +320,7 @@ setup_host_logging_mirror() {
   printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)\n' "$KASEKI_LOG_DIR" >&2
 }
 
-mkdir_paths=(${KASEKI_RESULTS_DIR})
+mkdir_paths=("${KASEKI_RESULTS_DIR}")
 if [ -n "${HOME:-}" ]; then
   mkdir_paths+=("${HOME}")
 fi
