@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.65.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.65.0...v1.65.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* add KASEKI_WORKSPACE_DIR to environment variables in orchestration tests ([19bbb06](https://github.com/CyanAutomation/kaseki-agent/commit/19bbb06a127e8291d14d96379160ff970e9b0e75))
+* correct tab character in run-evaluation result file path validation ([f8b40cb](https://github.com/CyanAutomation/kaseki-agent/commit/f8b40cb78a2cac4275264a9daa8892c1fc543a76))
+* optimize evaluation prompt tests by caching script content to reduce file reads ([36f6031](https://github.com/CyanAutomation/kaseki-agent/commit/36f60310fe4c9fc0e86fa442955ba6c465511c2e))
+* update feedback script path and increment API version to 1.65.0 ([ce36a0d](https://github.com/CyanAutomation/kaseki-agent/commit/ce36a0d51cc3d7abc50d6cb90a37ea1b760dbb04))
+* update result file paths to use KASEKI_RESULTS_DIR and improve script organization ([cd9260d](https://github.com/CyanAutomation/kaseki-agent/commit/cd9260daea689f5ddea1657d408534ecbc887756))
+
 # [1.65.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.5...v1.65.0) (2026-06-05)
 
 
