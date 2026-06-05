@@ -87,13 +87,13 @@ build_allowlist_regex() {
       }
     };
 
-    const writeCaptureStub = (stubPath: string, capturePath: string): void => {
+    const writeCaptureStub = (stubPath: string): void => {
       fs.mkdirSync(path.dirname(stubPath), { recursive: true });
       fs.writeFileSync(
         stubPath,
         `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$0" "$@" > ${JSON.stringify(capturePath)}
+printf '%s\n' "$0" "$@" > "$KASEKI_TEST_CAPTURE_PATH"
 exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
 `,
       );
@@ -103,45 +103,23 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
     const readCapturedArgs = (capturePath: string): string[] =>
       fs.readFileSync(capturePath, 'utf-8').split('\n').filter(Boolean);
 
-    const runEntrypoint = (args: string[], tempRoot: string) =>
+    const runEntrypoint = (args: string[], tempRoot: string, env: NodeJS.ProcessEnv = {}) =>
       spawnSync('bash', [entrypointScript, ...args], {
         encoding: 'utf-8',
         env: {
+          ...process.env,
           PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
           KASEKI_SKIP_STARTUP_CHECKS: '1',
+          ...env,
         },
       });
-
-    const withAgentStub = (capturePath: string, callback: () => void): void => {
-      const agentPath = '/usr/local/bin/kaseki-agent';
-      const backupPath = `${agentPath}.kaseki-test-backup-${process.pid}`;
-      const hadExistingAgent = fs.existsSync(agentPath);
-
-      if (hadExistingAgent) {
-        fs.renameSync(agentPath, backupPath);
-      }
-
-      try {
-        writeCaptureStub(agentPath, capturePath);
-        callback();
-      } finally {
-        fs.rmSync(agentPath, { force: true });
-        if (hadExistingAgent) {
-          try {
-            fs.renameSync(backupPath, agentPath);
-          } catch (error) {
-            console.error(`Failed to restore kaseki-agent from ${backupPath} to ${agentPath}:`, error);
-          }
-        }
-      }
-    };
 
     test.each(['api', 'kaseki-api'])('%s dispatches to the API service', (command) => {
       withTempRoot('kaseki-entrypoint-api-', (tempRoot) => {
         const capturePath = path.join(tempRoot, 'api-command.args');
-        writeCaptureStub(path.join(tempRoot, 'bin', 'node'), capturePath);
+        writeCaptureStub(path.join(tempRoot, 'bin', 'node'));
 
-        const result = runEntrypoint([command, '--port', '9000'], tempRoot);
+        const result = runEntrypoint([command, '--port', '9000'], tempRoot, { KASEKI_TEST_CAPTURE_PATH: capturePath });
 
         expect(result.status).toBe(0);
         expect(result.signal).toBeNull();
@@ -154,38 +132,20 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
       });
     });
 
-    test('agent dispatches to the default agent workflow', () => {
-      // Check if we have write permissions to /usr/local/bin
-      const agentPath = '/usr/local/bin/kaseki-agent';
-      const testFile = `${agentPath}.kaseki-test-permission-check-${process.pid}`;
-      let canWrite = false;
-      try {
-        fs.writeFileSync(testFile, '');
-        fs.rmSync(testFile, { force: true });
-        canWrite = true;
-      } catch {
-        // Skip test if we don't have permission
-      }
-
-      if (!canWrite) {
-        // Skip test if we can't write to /usr/local/bin
-        return;
-      }
-
+    test('agent dispatches to the configured agent workflow', () => {
       withTempRoot('kaseki-entrypoint-agent-', (tempRoot) => {
         const capturePath = path.join(tempRoot, 'agent-command.args');
+        const agentPath = path.join(tempRoot, 'bin', 'kaseki-agent');
+        writeCaptureStub(agentPath);
 
-        withAgentStub(capturePath, () => {
-          const result = runEntrypoint(['agent', 'https://example.test/repo.git', 'main'], tempRoot);
-
-          expect(result.status).toBe(0);
-          expect(result.signal).toBeNull();
-          expect(readCapturedArgs(capturePath)).toEqual([
-            '/usr/local/bin/kaseki-agent',
-            'https://example.test/repo.git',
-            'main',
-          ]);
+        const result = runEntrypoint(['agent', 'https://example.test/repo.git', 'main'], tempRoot, {
+          KASEKI_AGENT_BIN: agentPath,
+          KASEKI_TEST_CAPTURE_PATH: capturePath,
         });
+
+        expect(result.status).toBe(0);
+        expect(result.signal).toBeNull();
+        expect(readCapturedArgs(capturePath)).toEqual([agentPath, 'https://example.test/repo.git', 'main']);
       });
     });
 
@@ -193,9 +153,11 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
       withTempRoot('kaseki-entrypoint-explicit-', (tempRoot) => {
         const capturePath = path.join(tempRoot, 'explicit-command.args');
         const explicitCommand = path.join(tempRoot, 'bin', 'explicit-command');
-        writeCaptureStub(explicitCommand, capturePath);
+        writeCaptureStub(explicitCommand);
 
-        const result = runEntrypoint(['explicit-command', 'one', '--two', 'value with spaces'], tempRoot);
+        const result = runEntrypoint(['explicit-command', 'one', '--two', 'value with spaces'], tempRoot, {
+          KASEKI_TEST_CAPTURE_PATH: capturePath,
+        });
 
         expect(result.status).toBe(0);
         expect(result.signal).toBeNull();
@@ -206,15 +168,11 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
     test('exit codes from the dispatched command are propagated', () => {
       withTempRoot('kaseki-entrypoint-exit-', (tempRoot) => {
         const capturePath = path.join(tempRoot, 'exit-command.args');
-        writeCaptureStub(path.join(tempRoot, 'bin', 'failing-command'), capturePath);
+        writeCaptureStub(path.join(tempRoot, 'bin', 'failing-command'));
 
-        const result = spawnSync('bash', [entrypointScript, 'failing-command'], {
-          encoding: 'utf-8',
-          env: {
-            PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
-            KASEKI_SKIP_STARTUP_CHECKS: '1',
-            KASEKI_ENTRYPOINT_STUB_EXIT: '42',
-          },
+        const result = runEntrypoint(['failing-command'], tempRoot, {
+          KASEKI_ENTRYPOINT_STUB_EXIT: '42',
+          KASEKI_TEST_CAPTURE_PATH: capturePath,
         });
 
         expect(result.status).toBe(42);
@@ -300,8 +258,7 @@ exit 2
 
       const entrypoint = fs
         .readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8')
-        .replace('/scripts/startup-checks.sh', startupChecks)
-        .replaceAll('/usr/local/bin/kaseki-agent', agentStub);
+        .replace('/scripts/startup-checks.sh', startupChecks);
       fs.writeFileSync(entrypointScript, entrypoint);
       fs.chmodSync(entrypointScript, 0o755);
 
@@ -309,6 +266,7 @@ exit 2
         encoding: 'utf-8',
         env: {
           ...process.env,
+          KASEKI_AGENT_BIN: agentStub,
           KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
         },
       });
