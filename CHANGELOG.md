@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.1...v1.64.2) (2026-06-05)
+
+
+### Bug Fixes
+
+* Add helper resolution check for allowlist and export KASEKI_RESULTS_DIR ([8e65c77](https://github.com/CyanAutomation/kaseki-agent/commit/8e65c77dcf6e7d71cf9161ca6a43fde80a15dbdb))
+* Add shellcheck directive for allowlist helper and correct array syntax for mkdir_paths ([96d4d22](https://github.com/CyanAutomation/kaseki-agent/commit/96d4d22f13d316903d77500553d1afb5caff9b6c))
+
 ## [1.64.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.64.0...v1.64.1) (2026-06-05)
 
 
