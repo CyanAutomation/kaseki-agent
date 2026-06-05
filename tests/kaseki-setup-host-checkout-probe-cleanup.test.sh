@@ -8,16 +8,25 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+contains_bash_unbound_variable() {
+  local output="$1"
+  printf '%s' "$output" | grep -Eqi '(^|[^[:alnum:]_])[[:alnum:]_]+: unbound variable([^[:alnum:]_]|$)'
+}
+
 assert_no_temp_dir_unbound_variable() {
   local label="$1"
   local output="$2"
-  if printf '%s' "$output" | grep -q 'temp_dir: unbound variable'; then
+  if printf '%s' "$output" | grep -Eqi '(^|[^[:alnum:]_])temp_dir: unbound variable([^[:alnum:]_]|$)'; then
     fail "unexpected temp_dir: unbound variable output on ${label}: $output"
   fi
-  if printf '%s' "$output" | grep -qi 'unbound variable'; then
-    fail "unexpected unbound variable output on ${label}: $output"
+  if contains_bash_unbound_variable "$output"; then
+    fail "unexpected shell unbound variable output on ${label}: $output"
   fi
 }
+
+if ! contains_bash_unbound_variable './script.sh: line 42: temp_dir: unbound variable'; then
+  fail 'unbound-variable matcher did not recognize a Bash temp_dir diagnostic'
+fi
 
 probe_source="$TMP_DIR/probe-source.sh"
 {
