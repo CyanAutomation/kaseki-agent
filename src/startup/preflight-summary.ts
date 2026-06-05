@@ -60,14 +60,14 @@ export function formatRemediationList(checks: PreflightCheck[]): string {
   for (const check of failedChecks) {
     const autoFixable = isAutoFixable(check.name);
     lines.push(`### ${check.name}`);
-    lines.push(`**Status:** ⚠️ Warning\n`);
+    lines.push('**Status:** ⚠️ Warning\n');
 
     if (check.detail) {
       lines.push(`**Issue:** ${check.detail}\n`);
     }
 
     if (check.remediation) {
-      lines.push(`**Fix:**\n\`\`\`bash`);
+      lines.push('**Fix:**\n```bash');
       lines.push(check.remediation);
       lines.push('```\n');
     }

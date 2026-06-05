@@ -1,6 +1,6 @@
 /**
  * Tests for Preflight Summary
- * 
+ *
  * Groups preflight check results and remediations by severity
  */
 

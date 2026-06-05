@@ -37,6 +37,8 @@ import { createGitHubIssuesRoutes } from './routes/github-issues-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
+import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
+import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
@@ -1339,7 +1341,6 @@ export function createApiRouter(
    */
   router.get('/startup-health', (_req: Request, res: Response): void => {
     try {
-      const { getCachedStartupHealthReport } = require('./kaseki-api/startup-summary-artifact');
       const report = getCachedStartupHealthReport();
 
       if (!report) {
@@ -1368,8 +1369,6 @@ export function createApiRouter(
    */
   router.get('/startup-health/markdown', (_req: Request, res: Response): void => {
     try {
-      const { getCachedStartupHealthReport } = require('./kaseki-api/startup-summary-artifact');
-      const { healthReportToMarkdown } = require('./kaseki-api/startup-health-reporter');
       const report = getCachedStartupHealthReport();
 
       if (!report) {

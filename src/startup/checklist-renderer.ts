@@ -204,15 +204,15 @@ export class ChecklistRenderer {
    */
   private getIcon(state: ItemState): string {
     switch (state) {
-      case 'complete':
-        return '✓';
-      case 'in-progress':
-        return '⟳';
-      case 'failed':
-        return '✗';
-      case 'pending':
-      default:
-        return '□';
+    case 'complete':
+      return '✓';
+    case 'in-progress':
+      return '⟳';
+    case 'failed':
+      return '✗';
+    case 'pending':
+    default:
+      return '□';
     }
   }
 }

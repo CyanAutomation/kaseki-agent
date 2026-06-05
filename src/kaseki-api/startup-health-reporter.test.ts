@@ -1,6 +1,6 @@
 /**
  * Tests for Startup Health Reporter
- * 
+ *
  * Consolidates bootstrap, preflight, and environment data into a unified health report
  */
 

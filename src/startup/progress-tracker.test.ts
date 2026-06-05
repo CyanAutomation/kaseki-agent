@@ -1,6 +1,6 @@
 /**
  * Tests for Progress Tracker
- * 
+ *
  * Tracks startup event counts and completion percentages
  */
 
