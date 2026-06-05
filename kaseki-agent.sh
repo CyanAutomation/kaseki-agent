@@ -4420,6 +4420,14 @@ Determine if the agent successfully met the requirements specified in the goal-s
 
 For each dimension, provide evidence by citing specific file locations, test names, or validation results.
 
+## Success Criteria Assessment Contract
+
+Use this contract when reading the goal-setting artifact:
+
+- GOAL_CHECK_CONTRACT_PER_CRITERION_SMART: Assess each success criterion or acceptance criterion independently against all five SMART dimensions (Specific, Measurable, Achievable, Relevant, Time-bound), not just the overall goal.
+- GOAL_CHECK_CONTRACT_EVIDENCE_REQUIRED: For every met or unmet criterion assessment, cite concrete evidence from the diff, changed files, tests, validation results, or other listed artifacts.
+- GOAL_CHECK_CONTRACT_MEASURABLE_ACCEPTANCE_CRITERIA: Treat measurable acceptance criteria as observable pass/fail conditions; flag vague goals or intent statements as insufficient unless the implementation evidence maps them to concrete, verifiable outcomes.
+
 ## Evidence Requirements
 
 Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:
