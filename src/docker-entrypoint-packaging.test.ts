@@ -89,11 +89,13 @@ build_allowlist_regex() {
 
     const writeCaptureStub = (stubPath: string, capturePath: string): void => {
       fs.mkdirSync(path.dirname(stubPath), { recursive: true });
+      fs.writeFileSync(`${stubPath}.capture-path`, capturePath);
       fs.writeFileSync(
         stubPath,
         `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$0" "$@" > ${JSON.stringify(capturePath)}
+capture_path="$(< "${'${BASH_SOURCE[0]}'}".capture-path)"
+printf '%s\n' "$0" "$@" > "$capture_path"
 exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
 `,
       );
@@ -103,39 +105,16 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
     const readCapturedArgs = (capturePath: string): string[] =>
       fs.readFileSync(capturePath, 'utf-8').split('\n').filter(Boolean);
 
-    const runEntrypoint = (args: string[], tempRoot: string) =>
+    const runEntrypoint = (args: string[], tempRoot: string, env: NodeJS.ProcessEnv = {}) =>
       spawnSync('bash', [entrypointScript, ...args], {
         encoding: 'utf-8',
         env: {
+          ...process.env,
           PATH: `${path.join(tempRoot, 'bin')}:${process.env.PATH ?? ''}`,
           KASEKI_SKIP_STARTUP_CHECKS: '1',
+          ...env,
         },
       });
-
-    const withAgentStub = (capturePath: string, callback: () => void): void => {
-      const agentPath = '/usr/local/bin/kaseki-agent';
-      const backupPath = `${agentPath}.kaseki-test-backup-${process.pid}`;
-      const hadExistingAgent = fs.existsSync(agentPath);
-
-      if (hadExistingAgent) {
-        fs.renameSync(agentPath, backupPath);
-      }
-
-      try {
-        writeCaptureStub(agentPath, capturePath);
-        callback();
-      } finally {
-        fs.rmSync(agentPath, { force: true });
-        if (hadExistingAgent) {
-          try {
-            fs.renameSync(backupPath, agentPath);
-          } catch (error) {
-            console.error(`Failed to restore kaseki-agent from ${backupPath} to ${agentPath}:`, error);
-            throw error;
-          }
-        }
-      }
-    };
 
     test.each(['api', 'kaseki-api'])('%s dispatches to the API service', (command) => {
       withTempRoot('kaseki-entrypoint-api-', (tempRoot) => {
@@ -155,21 +134,19 @@ exit "${'${KASEKI_ENTRYPOINT_STUB_EXIT:-0}'}"
       });
     });
 
-    test('agent dispatches to the default agent workflow', () => {
+    test('agent dispatches to the configured agent workflow without touching the system binary', () => {
       withTempRoot('kaseki-entrypoint-agent-', (tempRoot) => {
         const capturePath = path.join(tempRoot, 'agent-command.args');
+        const agentPath = path.join(tempRoot, 'bin', 'kaseki-agent');
+        writeCaptureStub(agentPath, capturePath);
 
-        withAgentStub(capturePath, () => {
-          const result = runEntrypoint(['agent', 'https://example.test/repo.git', 'main'], tempRoot);
-
-          expect(result.status).toBe(0);
-          expect(result.signal).toBeNull();
-          expect(readCapturedArgs(capturePath)).toEqual([
-            '/usr/local/bin/kaseki-agent',
-            'https://example.test/repo.git',
-            'main',
-          ]);
+        const result = runEntrypoint(['agent', 'https://example.test/repo.git', 'main'], tempRoot, {
+          KASEKI_AGENT_BIN: agentPath,
         });
+
+        expect(result.status).toBe(0);
+        expect(result.signal).toBeNull();
+        expect(readCapturedArgs(capturePath)).toEqual([agentPath, 'https://example.test/repo.git', 'main']);
       });
     });
 
@@ -284,8 +261,7 @@ exit 2
 
       const entrypoint = fs
         .readFileSync(path.join(repoRoot, 'scripts/docker-entrypoint.sh'), 'utf-8')
-        .replace('/scripts/startup-checks.sh', startupChecks)
-        .replaceAll('/usr/local/bin/kaseki-agent', agentStub);
+        .replace('/scripts/startup-checks.sh', startupChecks);
       fs.writeFileSync(entrypointScript, entrypoint);
       fs.chmodSync(entrypointScript, 0o755);
 
@@ -294,6 +270,7 @@ exit 2
         env: {
           ...process.env,
           KASEKI_ENTRYPOINT_AGENT_ENV: agentEnvPath,
+          KASEKI_AGENT_BIN: agentStub,
         },
       });
 
