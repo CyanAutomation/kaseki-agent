@@ -371,6 +371,7 @@ jobs:
           docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            --tmpfs /agents:rw,nosuid,nodev,size=512m \
             --security-opt no-new-privileges:true \
             --cap-drop ALL \
             -e KASEKI_INSTANCE=kaseki-smoke \
@@ -428,6 +429,7 @@ jobs:
           docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+            --tmpfs /agents:rw,nosuid,nodev,size=512m \
             --security-opt no-new-privileges:true \
             --cap-drop ALL \
             -e KASEKI_INSTANCE=kaseki-smoke-ghcr \
