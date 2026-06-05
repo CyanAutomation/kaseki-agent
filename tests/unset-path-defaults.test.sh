@@ -29,12 +29,12 @@ fail() {
 
 assert_file_contains() {
   local file="$1"
-  local pattern="$2"
-  if ! [ -f "$file" ]; then
-    fail "expected file $file does not exist"
-  fi
-  if ! grep -qE "$pattern" "$file"; then
-    fail "expected $file to contain pattern: $pattern"
+test_set_path_preserves_custom_path() {
+    export KASEKI_PATH="/custom/bin"
+    set_path_if_unset
+    assertEquals "Custom KASEKI_PATH should remain unchanged" "/custom/bin" "${KASEKI_PATH}"
+}
+
   fi
 }
 
