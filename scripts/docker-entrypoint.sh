@@ -33,6 +33,10 @@ export KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
 export KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
 export KASEKI_AGENT_BIN="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
 
+if [ -n "${HOME:-}" ]; then
+  mkdir -p "$HOME" 2>/dev/null || true
+fi
+
 # Phase 2: Run early startup checks to catch permission and config issues
 # This runs before any kaseki operation to prevent silent failures
 # Auto-remediation enabled by default (KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=1)
