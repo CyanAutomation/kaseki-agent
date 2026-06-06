@@ -19,6 +19,10 @@ assert_valid_nonempty_json() {
   local output="$1"
 
   [ -n "$output" ] || return 1
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'ERROR: jq is required but not installed\n' >&2
+    return 1
+  fi
   printf '%s' "$output" | jq -e . >/dev/null
 }
 
