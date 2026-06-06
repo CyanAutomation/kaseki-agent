@@ -4,6 +4,26 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.66.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.65.3...v1.66.0) (2026-06-06)
+
+
+### Bug Fixes
+
+* correct URL return value in artifact routes test and improve bash condition syntax ([6a099be](https://github.com/CyanAutomation/kaseki-agent/commit/6a099bebacdc3c49f8816cda364cd4e0e0bd25f0))
+* enhance cleanup in Jest setup to prevent handle leaks and reset mocks ([44f7b18](https://github.com/CyanAutomation/kaseki-agent/commit/44f7b181557476581378aee6fed617a2056bbc06))
+* enhance resource cleanup in tests and job scheduler to prevent handle leaks ([1ccc18e](https://github.com/CyanAutomation/kaseki-agent/commit/1ccc18e81a51f8bd0a9102a8a5b3d6de61bd8c86))
+* escape newline character in JSON string for event logging ([ebd6955](https://github.com/CyanAutomation/kaseki-agent/commit/ebd6955fc4da8675794dd27d5da90a34126fe567))
+
+
+### Features
+
+* add artifact utilities and tests for content type classification ([7658d9b](https://github.com/CyanAutomation/kaseki-agent/commit/7658d9b6d45dcb7636e4343b2ff7408884061d26))
+* add copy-to-clipboard functionality for recommended artifacts and enhance toast notifications ([76aac00](https://github.com/CyanAutomation/kaseki-agent/commit/76aac000ce88f3fbc7b2d10629c5c6544e29133e))
+* add KASEKI_GOAL_CHECK environment variable for goal-check configuration ([e077476](https://github.com/CyanAutomation/kaseki-agent/commit/e077476aa059c4f6ace56e78557174f333e4e38d))
+* add KASEKI_SKIP_PERMISSION_VALIDATION for test isolation in entrypoint ([12000b2](https://github.com/CyanAutomation/kaseki-agent/commit/12000b259afbbfb2319e6bf6bb372343f739eb1d))
+* implement copy-to-clipboard functionality with toast notifications ([163b05f](https://github.com/CyanAutomation/kaseki-agent/commit/163b05fcd6918b6ad0b1303394e3dd6b283599d0))
+* optimize artifact content type lookup for recommended artifacts ([80ed439](https://github.com/CyanAutomation/kaseki-agent/commit/80ed43940828303362816631f30a78bc4e55d704))
+
 ## [1.65.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.65.2...v1.65.3) (2026-06-06)
 
 
