@@ -52,18 +52,7 @@ else
 fi
 
 echo ""
-echo "Test 5: Simulate the bug - unvalidated '-' would cause printf to fail"
-# This would have been the original bug
-unvalidated_count="-"
-if printf 'test: %d\n' "$unvalidated_count" > /dev/null 2>&1; then
-  # This might succeed due to bash interpolation, but with real code it would fail
-  echo "  ⓘ INFO: Bash accepted unquoted '-', but with proper quoting it would fail"
-else
-  echo "  ✓ PASS: Unvalidated '-' causes printf to fail"
-fi
-
-echo ""
-echo "Test 6: Verify grep count fallback never returns '-'"
+echo "Test 5: Verify grep count fallback never returns '-'"
 test_file=$(mktemp)
 trap 'rm -f "$test_file"' EXIT
 
@@ -77,7 +66,7 @@ else
 fi
 
 echo ""
-echo "Test 7: json_encode availability"
+echo "Test 6: json_encode availability"
 source <(sed -n '/^# Safely encode value/,/^}/p' "$SCRIPT_DIR/kaseki-agent.sh" | head -20)
 
 output=$(printf 'test' | json_encode 2>/dev/null || true)
