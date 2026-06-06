@@ -27,8 +27,13 @@ describe('getNpmVersion', () => {
   });
 
   it('should not throw if npm is not in PATH', async () => {
-    expect(async () => {
-      await getNpmVersion();
-    }).not.toThrow();
+    await expect(
+      getNpmVersion({
+        npmVersion: undefined,
+        execSync: () => {
+          throw new Error('npm is not in PATH');
+        },
+      })
+    ).resolves.toBe('unknown');
   });
 });
