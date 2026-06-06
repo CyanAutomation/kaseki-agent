@@ -425,7 +425,15 @@ export interface PreflightResponse {
   timestamp: string;
   checks: PreflightCheck[];
   containerStartup?: {
+    /**
+     * Historical startup-cache record only. These checks are not rerun for the
+     * current /api/preflight request and are excluded from current readiness.
+     */
+    scope: 'cached-startup';
+    readinessImpact: 'excluded-from-current-readiness';
+    current: false;
     timestamp: string;
+    cachedAt: string;
     checks: PreflightCheck[];
   };
   image?: string;

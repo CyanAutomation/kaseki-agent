@@ -147,6 +147,33 @@ function buildServiceInfoPaths(
                         },
                       },
                     },
+                    containerStartup: {
+                      type: 'object',
+                      description:
+                        'Cached startup diagnostics retained as boot history only; excluded from current readiness.',
+                      properties: {
+                        scope: { type: 'string', enum: ['cached-startup'] },
+                        readinessImpact: {
+                          type: 'string',
+                          enum: ['excluded-from-current-readiness'],
+                        },
+                        current: { type: 'boolean', enum: [false] },
+                        timestamp: { type: 'string', format: 'date-time' },
+                        cachedAt: { type: 'string', format: 'date-time' },
+                        checks: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              name: { type: 'string' },
+                              ok: { type: 'boolean' },
+                              detail: { type: 'string' },
+                              remediation: { type: 'string' },
+                            },
+                          },
+                        },
+                      },
+                    },
                     warnings: { type: 'array', items: { type: 'string' } },
                     errors: { type: 'array', items: { type: 'string' } },
                   },

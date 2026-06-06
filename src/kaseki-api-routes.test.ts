@@ -33,6 +33,7 @@ import { readArtifactContent } from './routes/artifact-routes';
 import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { createApiRouter } from './kaseki-api-routes';
+import { clearContainerPreflightResults, logContainerPreflightResults } from './startup/container-preflight';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import {
@@ -637,6 +638,11 @@ describe('kaseki-api-routes preflight diagnostics', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    clearContainerPreflightResults();
+  });
+
+  afterEach(() => {
+    clearContainerPreflightResults();
   });
 
   test('classifies Docker socket permission failures with actionable remediation', () => {
@@ -653,6 +659,50 @@ describe('kaseki-api-routes preflight diagnostics', () => {
 
     expect(result.detail).toMatch(/unreachable/);
     expect(result.remediation).toMatch(/daemon/);
+  });
+
+  test('GET /api/preflight labels cached startup diagnostics as historical only', async () => {
+    const startupTimestamp = '2026-01-02T03:04:05.000Z';
+    jest.useFakeTimers().setSystemTime(new Date(startupTimestamp));
+    logContainerPreflightResults([
+      {
+        name: 'setup-completeness',
+        ok: false,
+        detail: 'Missing directories observed during container startup',
+        remediation: 'Run: sudo kaseki-agent host setup --fix',
+      },
+    ]);
+    jest.useRealTimers();
+
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-cached-startup-'));
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = (await res.json()) as any;
+
+      expect(res.status).toBe(200);
+      expect(body.status).not.toBe('error');
+      expect(body.checks.map((check: any) => check.name)).not.toContain('setup-completeness');
+      expect(body.containerStartup).toEqual(expect.objectContaining({
+        scope: 'cached-startup',
+        readinessImpact: 'excluded-from-current-readiness',
+        current: false,
+        timestamp: startupTimestamp,
+        cachedAt: startupTimestamp,
+      }));
+      expect(body.containerStartup.checks).toEqual([expect.objectContaining({
+        name: 'setup-completeness',
+        ok: false,
+      })]);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
   });
 
   function getWorkerSmokeDockerRunArgs(): string[] {
