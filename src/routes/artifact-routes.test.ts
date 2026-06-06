@@ -13,14 +13,15 @@ jest.mock('../job-scheduler');
 jest.mock('../result-cache');
 
 async function listen(app: express.Express): Promise<{ server: Server; url: string }> {
-  const server = await new Promise<Server>((resolve) => {
+  const server = await new Promise<Server>((resolve, reject) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
+    nextServer.on('error', reject);
   });
   const address = server.address();
   if (!address || typeof address === 'string') {
     throw new Error('Expected test server to bind to a TCP port');
   }
-  return { server, url: `http://127.0.0.1:${address.port}` };
+  return { server, url: ` };
 }
 
 async function close(server: Server): Promise<void> {
