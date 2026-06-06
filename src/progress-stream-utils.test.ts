@@ -1,24 +1,18 @@
 import { sanitizeToolName } from './progress-stream-utils.js';
 
 describe('sanitizeToolName', () => {
-  it('strips XML/HTML tags', () => {
-    expect(sanitizeToolName('ls -la</arg_value>')).toBe('ls -la');
-    expect(sanitizeToolName('<tool>bash</tool>')).toBe('bash');
-  });
-
-  it('returns "tool" when empty after stripping', () => {
-    expect(sanitizeToolName('')).toBe('tool');
-    expect(sanitizeToolName('   ')).toBe('tool');
-    expect(sanitizeToolName('<foo></foo>')).toBe('tool');
-    expect(sanitizeToolName('</arg_value>')).toBe('tool');
-  });
-
-  it('trims whitespace', () => {
-    expect(sanitizeToolName('  read_file  ')).toBe('read_file');
-  });
-
-  it('collapses whitespace and strips control characters', () => {
-    expect(sanitizeToolName('bash\n\t\r  -lc\u0000echo hi\u0007')).toBe('bash -lc echo hi');
+  it.each([
+    ['  read_file  ', 'read_file'],
+    ['bash    -lc   echo hi', 'bash -lc echo hi'],
+    ['bash\n\t\r  -lc\u0000echo hi\u0007', 'bash -lc echo hi'],
+    ['   ', 'tool'],
+    ['', 'tool'],
+    ['ls -la</arg_value>', 'ls -la'],
+    ['<tool>bash</tool>', 'bash'],
+    ['<foo></foo>', 'tool'],
+    ['</arg_value>', 'tool'],
+  ])('normalizes %p to %p', (input, expected) => {
+    expect(sanitizeToolName(input)).toBe(expected);
   });
 
   it('truncates to 100 characters', () => {
