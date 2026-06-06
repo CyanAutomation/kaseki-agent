@@ -33,9 +33,8 @@ export async function getNpmVersion(
 ): Promise<string> {
   // Try process.versions.npm first (should be available in Node.js with npm)
   // This is fast and requires no subprocess
-  const npmVersion = Object.prototype.hasOwnProperty.call(options, 'npmVersion')
-    ? options.npmVersion
-    : process.versions.npm;
+  const npmVersion =
+    options.npmVersion !== undefined ? options.npmVersion : process.versions.npm;
 
   if (npmVersion) {
     return npmVersion;
