@@ -1241,7 +1241,60 @@ const controllerPage = String.raw`<!doctype html>
         white-space: pre-wrap;
         word-wrap: break-word;
       }
-      @keyframes fadeIn {
+      .artifact-copy-btn {
+        padding: var(--space-1) var(--space-2);
+        background: var(--color-surface-low);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text);
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        transition: all var(--transition-fast) var(--transition-easing);
+      }
+      .artifact-copy-btn:hover {
+        background: var(--color-surface-high);
+        border-color: var(--color-border-strong);
+      }
+      .toast-container {
+        position: fixed;
+        bottom: var(--space-3);
+        right: var(--space-3);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        z-index: 10000;
+        pointer-events: none;
+      }
+      .toast {
+        padding: var(--space-2) var(--space-3);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-lg);
+        font-size: var(--font-size-sm);
+        white-space: nowrap;
+        animation: fadeInOut 2.6s ease-in-out forwards;
+        pointer-events: auto;
+      }
+      .toast.success {
+        background: var(--color-success-bg);
+        color: var(--color-success);
+        border: 1px solid var(--color-success);
+      }
+      .toast.error {
+        background: var(--color-alert-bg);
+        color: var(--color-alert);
+        border: 1px solid var(--color-alert);
+      }
+      .toast.info {
+        background: var(--color-surface-low);
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+      }
+      @keyframes fadeInOut {
+        0% { opacity: 0; transform: translateY(10px); }
+        10% { opacity: 1; transform: translateY(0); }
+        90% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(10px); }
+      }
         from { opacity: 0; }
         to { opacity: 1; }
       }
@@ -2274,10 +2327,71 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       /**
-       * Determines whether an artifact should be displayed inline based on content type.
-       * Binary artifacts (zip, gzip, SBOM, etc.) are excluded from the UI.
+       * Display a toast notification to the user.
+       * Auto-dismisses after the specified duration.
        */
-      function isTextContentType(contentType) {
+      function showToast(message: string, type: 'success' | 'error' | 'info' = 'success', durationMs: number = 2000) {
+        const container = document.querySelector('#toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        // Remove toast after duration (total animation is 2.6s with fadeInOut, but we control removal)
+        setTimeout(() => {
+          container.removeChild(toast);
+        }, durationMs + 300); // Add 300ms for fade-out animation
+      }
+
+      /**
+       * Copy text to clipboard using modern Clipboard API or fallback.
+       */
+      async function copyToClipboard(text: string): Promise<void> {
+        try {
+          // Try modern Clipboard API
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            showToast('Copied!', 'success', 2000);
+          } else {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (success) {
+              showToast('Copied!', 'success', 2000);
+            } else {
+              showToast('Copy failed - please try again', 'error', 2000);
+            }
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Copy failed';
+          showToast(`Copy failed: ${message}`, 'error', 2000);
+        }
+      }
+
+      /**
+       * Extract text content from artifact display element.
+       */
+      function extractArtifactContent(): string | null {
+        const preEl = document.querySelector('.artifact-content .artifact-content-pre');
+        if (preEl) {
+          return preEl.textContent;
+        }
+        const mdEl = document.querySelector('.artifact-content .artifact-content-markdown');
+        if (mdEl) {
+          return mdEl.textContent;
+        }
+        return null;
+      }
+
+      
         if (!contentType) return true; // Default to true if unknown
         const type = contentType.toLowerCase();
         
@@ -2351,12 +2465,36 @@ const controllerPage = String.raw`<!doctype html>
           const container = document.createElement('div');
           container.className = 'artifact-content';
           
-          // Add artifact name as title
-          const titleEl = document.createElement('div');
-          titleEl.className = 'artifact-content-title';
-          titleEl.textContent = artifactName;
-          container.appendChild(titleEl);
-          
+          // Add toolbar row: title on left, copy button on right
+          const toolbarRow = document.createElement('div');
+          toolbarRow.style.display = 'flex';
+          toolbarRow.style.justifyContent = 'space-between';
+          toolbarRow.style.alignItems = 'center';
+          toolbarRow.style.gap = 'var(--space-2)';
+
+          // Title span
+          const titleSpan = document.createElement('span');
+          titleSpan.textContent = artifactName;
+          toolbarRow.appendChild(titleSpan);
+
+          // Copy button (icon only)
+          const copyBtn = document.createElement('button');
+          copyBtn.className = 'artifact-copy-btn';
+          copyBtn.type = 'button';
+          copyBtn.setAttribute('aria-label', 'Copy artifact content');
+          copyBtn.innerHTML = '📋';
+          copyBtn.addEventListener('click', async () => {
+            const content = extractArtifactContent();
+            if (content) {
+              await copyToClipboard(content);
+            } else {
+              showToast('No content to copy', 'error', 2000);
+            }
+          });
+          toolbarRow.appendChild(copyBtn);
+
+          container.appendChild(toolbarRow);
+
           // Add back button
           const backBtn = document.createElement('button');
           backBtn.className = 'artifact-back-btn';
@@ -2672,6 +2810,7 @@ const controllerPage = String.raw`<!doctype html>
 
       loadRunsList({ preserveOutput: true });
     </script>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
   </body>
 </html>
 `;
