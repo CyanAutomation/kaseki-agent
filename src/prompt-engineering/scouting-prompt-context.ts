@@ -6,7 +6,7 @@
  */
 
 import type { BuildCapabilityInfo } from '../build-capability-detector';
-import type { AsyncImpactAnalysis } from './async-impact-analyzer';
+import type { AsyncImpactAnalysis } from '../scouting/async-impact-analyzer';
 
 export interface ScoutingPromptContext {
   buildContext: string;
@@ -51,14 +51,14 @@ export function buildAsyncContext(asyncImpact: AsyncImpactAnalysis | null): stri
 
   // Mock files section
   if (asyncImpact.mockFiles.length > 0) {
-    const mocks = asyncImpact.mockFiles.slice(0, 5).map(f => `\`${f}\``).join(', ');
+    const mocks = asyncImpact.mockFiles.slice(0, 5).map((f: string) => `\`${f}\``).join(', ');
     const more = asyncImpact.mockFiles.length > 5 ? ` (and ${asyncImpact.mockFiles.length - 5} more)` : '';
     sections.push(`- **Mock Files to Update**: ${mocks}${more}`);
   }
 
   // Test files section
   if (asyncImpact.testFiles.length > 0) {
-    const tests = asyncImpact.testFiles.slice(0, 5).map(f => `\`${f}\``).join(', ');
+    const tests = asyncImpact.testFiles.slice(0, 5).map((f: string) => `\`${f}\``).join(', ');
     const more = asyncImpact.testFiles.length > 5 ? ` (and ${asyncImpact.testFiles.length - 5} more)` : '';
     sections.push(`- **Test Files to Update**: ${tests}${more}`);
     sections.push('  - Update assertions to handle async/await behavior');
@@ -67,7 +67,7 @@ export function buildAsyncContext(asyncImpact: AsyncImpactAnalysis | null): stri
 
   // Interface files section
   if (asyncImpact.interfaceFiles.length > 0) {
-    const interfaces = asyncImpact.interfaceFiles.slice(0, 3).map(f => `\`${f}\``).join(', ');
+    const interfaces = asyncImpact.interfaceFiles.slice(0, 3).map((f: string) => `\`${f}\``).join(', ');
     sections.push(
       `- **Interface Files**: Review and update type signatures in ${interfaces}`,
     );
@@ -75,7 +75,7 @@ export function buildAsyncContext(asyncImpact: AsyncImpactAnalysis | null): stri
 
   // Consumer files section
   if (asyncImpact.consumerFiles.length > 0) {
-    const consumers = asyncImpact.consumerFiles.slice(0, 3).map(f => `\`${f}\``).join(', ');
+    const consumers = asyncImpact.consumerFiles.slice(0, 3).map((f: string) => `\`${f}\``).join(', ');
     sections.push(`- **Consumer Files** (may need interface updates): ${consumers}`);
   }
 
