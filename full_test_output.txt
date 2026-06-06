@@ -1,0 +1,8 @@
+
+> @cyanautomation/kaseki-agent@1.66.0 test:ci
+> npm run build && npm run type-check && npm run test:unit && bash run-kaseki-json.test.sh && bash tests/allowlist-glob.test.sh && bash tests/restore-disallowed-changes.test.sh && bash tests/auto-lint-cleanup-allowlist.test.sh && bash tests/auto-lint-cleanup-classification.test.sh && bash tests/validation-allowlist-state.test.sh && bash tests/trailing-whitespace-cleanup.test.sh && bash tests/dependency-cache-key.test.sh && bash tests/dependency-restore-mode.test.sh && bash tests/startup-check-status-aggregation.test.sh && bash tests/doctor-template-parity.test.sh && bash tests/npm-install-flags.test.sh && bash tests/repo-memory.test.sh && bash tests/unset-path-defaults.test.sh && bash tests/pre-agent-validation-order.test.sh && bash tests/scouting-order.test.sh && bash tests/goal-check-malformed-artifact.test.sh && bash scripts/test-github-app.sh && bash tests/github-app-token-install-layout.test.sh && bash tests/github-preflight-helper-load.test.sh
+
+
+> @cyanautomation/kaseki-agent@1.66.0 build
+> tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js
+

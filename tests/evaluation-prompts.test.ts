@@ -786,6 +786,8 @@ elif printf '%s' "$prompt" | grep -Eq 'RUN_EVALUATION_CANDIDATE_ARTIFACT|run-eva
   fi
 else
   append_event coding
+  # Debug: log unmatched prompt to a file in resultsDir to see why classification failed
+  printf "UNMATCHED PROMPT:\n%s\n" "$prompt" > "$KASEKI_RESULTS_DIR/unmatched-prompt.log"
 fi
 printf '{"type":"message","model":"test-model"}\\n'
 `);
