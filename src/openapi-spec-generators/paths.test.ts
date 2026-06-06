@@ -350,15 +350,112 @@ describe('OpenAPI Path Builders', () => {
 
     it('should have summary and description for endpoints', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      Object.entries(paths).forEach(([_, pathDef]) => {
+      const methods = ['get', 'post', 'put', 'delete', 'patch'];
+      const placeholderPattern = /^(summary|description|endpoint|api endpoint|todo|tbd|n\/a|none)$/i;
+      const expectedSummaryTermsByOperationId: Record<string, string[]> = {
+        cancelRun: ['cancel', 'run'],
+        downloadArtifact: ['download', 'artifact'],
+        getHealth: ['health', 'check'],
+        getMetrics: ['prometheus', 'metrics'],
+        getPreFlight: ['pre-flight', 'validation'],
+        getReady: ['readiness', 'probe'],
+        getRunAnalysis: ['run', 'analysis'],
+        getRunArtifacts: ['list', 'artifacts'],
+        getRunImprovements: ['improvement', 'findings'],
+        getRunLog: ['log', 'file'],
+        getRunProgress: ['progress', 'events'],
+        getRunStatus: ['run', 'status'],
+        listRuns: ['list', 'runs'],
+        testWebhook: ['test', 'webhook'],
+        triggerRun: ['trigger', 'run'],
+        validateTask: ['validate', 'task'],
+      };
+      const criticalDescriptionExpectations = [
+        {
+          operationId: 'getReady',
+          terms: ['ready', 'queue', 'scheduler'],
+        },
+        {
+          operationId: 'getPreFlight',
+          terms: ['controller', 'docker', 'github app'],
+        },
+        {
+          operationId: 'validateTask',
+          terms: ['task configuration', 'pre-flight', 'prompt', 'constraints'],
+        },
+        {
+          operationId: 'triggerRun',
+          terms: ['queue', '202 accepted', 'id', 'poll status'],
+        },
+        {
+          operationId: 'getRunStatus',
+          terms: ['current status', 'progress', 'elapsed time', 'timeout risk'],
+        },
+        {
+          operationId: 'getRunProgress',
+          terms: ['progress events', 'server-sent events', 'sse', 'stream=sse'],
+        },
+        {
+          operationId: 'getRunLog',
+          terms: ['stdout', 'stderr', 'validation', 'large logs', 'truncated'],
+        },
+        {
+          operationId: 'downloadArtifact',
+          terms: ['specific artifact file', 'metadata.json', '/api/runs/{id}/artifacts'],
+        },
+        {
+          operationId: 'getRunAnalysis',
+          terms: ['post-run analysis', 'metadata', 'validation results', 'failure details'],
+        },
+        {
+          operationId: 'getRunImprovements',
+          terms: ['run-evaluation artifacts', 'stage timings', 'dashboards'],
+        },
+      ];
+      const operations = Object.entries(paths).flatMap(([route, pathDef]) => {
         const def = pathDef as Record<string, any>;
-        const methods = ['get', 'post', 'put', 'delete', 'patch'];
 
-        methods.forEach((method) => {
-          if (def[method]) {
-            expect(def[method].summary || def[method].description).toBeDefined();
-          }
+        return methods
+          .filter((method) => Boolean(def[method]))
+          .map((method) => ({
+            method,
+            route,
+            operation: def[method],
+          }));
+      });
+      const operationsById = Object.fromEntries(
+        operations.map(({ operation }) => [operation.operationId, operation])
+      );
+
+      expect(Object.keys(operationsById).sort()).toEqual(
+        Object.keys(expectedSummaryTermsByOperationId).sort()
+      );
+
+      operations.forEach(({ operation }) => {
+        const summary = operation.summary?.trim();
+        const expectedSummaryTerms = expectedSummaryTermsByOperationId[operation.operationId];
+
+        expect(summary).toEqual(expect.any(String));
+        expect(summary.length).toBeGreaterThanOrEqual(8);
+        expect(summary).not.toMatch(placeholderPattern);
+        expect(summary).not.toMatch(/todo|fixme|placeholder/i);
+        expect(expectedSummaryTerms).toBeDefined();
+        expectedSummaryTerms.forEach((term) => {
+          expect(summary.toLowerCase()).toContain(term);
+        });
+      });
+
+      criticalDescriptionExpectations.forEach(({ operationId, terms }) => {
+        const operation = operationsById[operationId];
+        const description = operation?.description?.trim();
+
+        expect(operation).toBeDefined();
+        expect(description).toEqual(expect.any(String));
+        expect(description.length).toBeGreaterThanOrEqual(40);
+        expect(description).not.toMatch(placeholderPattern);
+        expect(description).not.toMatch(/todo|fixme|placeholder/i);
+        terms.forEach((term) => {
+          expect(description.toLowerCase()).toContain(term);
         });
       });
     });
