@@ -107,10 +107,14 @@ const controllerPage = String.raw`<!doctype html>
         /* Status — Success */
         --color-ok:      #2ff801;
         --color-ok-text: #d7ffc5;
+        --color-success: #2ff801;
+        --color-success-bg: color-mix(in srgb, var(--color-ok) 15%, transparent);
 
-        /* Status — Error */
+        /* Status — Error / Alert */
         --color-bad:    #ffb4ab;
         --color-bad-bg: #93000a;
+        --color-alert:    #ffb4ab;
+        --color-alert-bg: #93000a;
 
         /* Color alpha variants for overlays */
         --color-focus-overlay-15: color-mix(in srgb, var(--color-focus) 15%, transparent);
@@ -1851,6 +1855,13 @@ const controllerPage = String.raw`<!doctype html>
             return; // Skip binary artifacts
           }
           
+          // Create wrapper container for button and copy button
+          const wrapper = document.createElement('div');
+          wrapper.style.display = 'flex';
+          wrapper.style.gap = 'var(--space-1)';
+          wrapper.style.alignItems = 'center';
+
+          // Main artifact button
           const button = document.createElement('button');
           button.className = 'secondary toolbar-button-no-wrap';
           button.type = 'button';
@@ -1859,7 +1870,61 @@ const controllerPage = String.raw`<!doctype html>
           button.addEventListener('click', (event) => {
             run(event.currentTarget, artifactUrl(runId, fileName), { auth: true });
           });
-          recommendedArtifactLinks.appendChild(button);
+          wrapper.appendChild(button);
+
+          // Copy button for recommended artifacts
+          const copyBtn = document.createElement('button');
+          copyBtn.className = 'artifact-copy-btn';
+          copyBtn.type = 'button';
+          copyBtn.setAttribute('aria-label', 'Copy ' + fileName);
+          copyBtn.innerHTML = '📋';
+          copyBtn.style.minWidth = '32px';
+          copyBtn.style.padding = 'var(--space-1)';
+          
+          copyBtn.addEventListener('click', async (event) => {
+            event.stopPropagation(); // Prevent opening modal
+            try {
+              const token = sessionStorage.getItem('kasekiApiToken');
+              const response = await fetch(artifactUrl(runId, fileName), {
+                headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+              });
+              
+              if (!response.ok) {
+                let errorMsg = 'Error loading artifact';
+                if (response.status === 401) {
+                  errorMsg = 'Authentication failed';
+                } else if (response.status === 404) {
+                  errorMsg = 'Artifact not found';
+                }
+                showToast(errorMsg, 'error', 2000);
+                return;
+              }
+              
+              const contentType = response.headers.get('content-type') || '';
+              const isJson = contentType.includes('json');
+              const content = isJson ? await response.json() : await response.text();
+              
+              // Extract text content
+              let textToCopy = '';
+              if (contentType.includes('json')) {
+                textToCopy = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+              } else {
+                textToCopy = String(content);
+              }
+              
+              if (textToCopy) {
+                await copyToClipboard(textToCopy);
+              } else {
+                showToast('No content to copy', 'error', 2000);
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Copy failed';
+              showToast('Copy failed: ' + message, 'error', 2000);
+            }
+          });
+          wrapper.appendChild(copyBtn);
+
+          recommendedArtifactLinks.appendChild(wrapper);
         });
         recommendedArtifacts.hidden = false;
       }
