@@ -273,11 +273,19 @@ describe('validation-causality-analysis', () => {
         signals: {},
       };
       const outputPath = path.join(tempDir, 'causality.json');
+      const beforeGenerate = Date.now();
       generateCausalityAnalysisArtifact(assessment, outputPath);
+      const afterGenerate = Date.now();
 
       const content = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));
       expect(content.timestamp).toBeDefined();
-      expect(new Date(content.timestamp)).toBeInstanceOf(Date);
+      expect(typeof content.timestamp).toBe('string');
+      expect(content.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+      const parsedTimestamp = Date.parse(content.timestamp);
+      expect(Number.isNaN(parsedTimestamp)).toBe(false);
+      expect(parsedTimestamp).toBeGreaterThanOrEqual(beforeGenerate);
+      expect(parsedTimestamp).toBeLessThanOrEqual(afterGenerate);
     });
 
     it('should handle write errors gracefully', () => {
