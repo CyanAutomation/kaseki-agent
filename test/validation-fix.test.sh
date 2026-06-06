@@ -263,17 +263,18 @@ test_directory_checkpoint() {
   create_controlled_repo "$fake_repo"
 
   mkdir -p "$tmpdir/bin"
-  cat > "$tmpdir/bin/date" <<EOF_DATE
+  cat > "$tmpdir/bin/date" <<'EOF_DATE'
 #!/usr/bin/env bash
-if [ -n "\${KASEKI_WORKSPACE_DIR:-}" ] && \
-   [ ! -e "\$KASEKI_WORKSPACE_DIR/.repo-renamed-before-validation" ] && \
-   [ -f "\${KASEKI_RESULTS_DIR:-}/progress.log" ] && \
-   grep -q 'pre-agent validation' "\$KASEKI_RESULTS_DIR/progress.log" 2>/dev/null; then
-  touch "\$KASEKI_WORKSPACE_DIR/.repo-renamed-before-validation"
-  mv "\$KASEKI_WORKSPACE_DIR/repo" "\$KASEKI_WORKSPACE_DIR/repo.missing-before-validation"
+if [ -n "${KASEKI_WORKSPACE_DIR:-}" ] && \
+   [ ! -e "$KASEKI_WORKSPACE_DIR/.repo-renamed-before-validation" ] && \
+   [ -f "${KASEKI_RESULTS_DIR:-}/progress.log" ] && \
+   grep -q 'pre-agent validation' "$KASEKI_RESULTS_DIR/progress.log" 2>/dev/null; then
+  touch "$KASEKI_WORKSPACE_DIR/.repo-renamed-before-validation"
+  mv "$KASEKI_WORKSPACE_DIR/repo" "$KASEKI_WORKSPACE_DIR/repo.missing-before-validation"
 fi
-exec "$real_date" "\$@"
+exec REAL_DATE_PATH "$@"
 EOF_DATE
+
   chmod +x "$tmpdir/bin/date"
 
   if run_kaseki_agent_for_validation \
