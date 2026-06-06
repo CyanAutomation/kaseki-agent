@@ -14,6 +14,7 @@ PI_MARKER="$TMP_DIR/pi-invoked.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 RESULTS_DIR="$TMP_DIR/results"
 WORKSPACE_REPO="$TMP_DIR/repo"
+APP_LIB="$TMP_DIR/app/lib"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -44,13 +45,13 @@ if [ ! -f "$DIST_FILTER" ]; then
   fail "dist/validation-output-filter.js is missing; run npm run build before this test"
 fi
 
-mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$TMP_DIR/scripts"
+mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
 cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
 
 # Create a temporary version of the script with paths redirected to $TMP_DIR
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
-sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g" "$SCRIPT_UNDER_TEST" > "$MODIFIED_SCRIPT"
+sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$SCRIPT_UNDER_TEST" > "$MODIFIED_SCRIPT"
 chmod +x "$MODIFIED_SCRIPT"
 
 mkdir -p "$FAKE_REPO/deps/fake-dep"
@@ -124,6 +125,7 @@ chmod +x "$FAKE_BIN/validation-output-filter"
 
 set +e
 env \
+  KASEKI_WORKSPACE_DIR="$TMP_DIR" \
   PATH="$FAKE_BIN:$PATH" \
   REPO_URL="$FAKE_REPO" \
   GIT_REF="main" \

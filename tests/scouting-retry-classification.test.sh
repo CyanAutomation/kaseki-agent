@@ -20,7 +20,7 @@ run_case() {
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 
-  sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
+  sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
   chmod +x "$case_dir/kaseki-agent-modified.sh"
 
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$fake_repo/package.json"
@@ -61,7 +61,7 @@ EOF_VALIDATION_FILTER
   chmod +x "$fake_bin"/*
 
   set +e
-  env PATH="$fake_bin:$PATH" REPO_URL="$fake_repo" GIT_REF=main TASK_PROMPT="inspect then code" OPENROUTER_API_KEY=test \
+  env KASEKI_WORKSPACE_DIR="$case_dir" PATH="$fake_bin:$PATH" REPO_URL="$fake_repo" GIT_REF=main TASK_PROMPT="inspect then code" OPENROUTER_API_KEY=test \
     GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_DEPENDENCY_CACHE_DIR="$case_dir/dependency-cache" \
     KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$case_dir/image-cache" KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
     KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 bash "$case_dir/kaseki-agent-modified.sh" > "$run_log" 2>&1
