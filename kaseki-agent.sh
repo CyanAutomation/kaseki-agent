@@ -2947,13 +2947,14 @@ try {
 }
 EOF
 
-  # Try to run the analysis using ts-node or node directly
+  # Try to run the analysis through the TypeScript CLI.
   if command -v npx >/dev/null 2>&1; then
-    npx -y ts-node "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
-      # If ts-node fails, try a simpler approach: just note that analysis was attempted
-      emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
-      return 0
-    }
+    npx -y tsx "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || \
+      npx -y ts-node --esm "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
+        # If TypeScript execution fails, just note that analysis was attempted.
+        emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
+        return 0
+      }
   else
     emit_progress "validation causality analysis" "npx not available; skipping detailed causality breakdown"
     return 0

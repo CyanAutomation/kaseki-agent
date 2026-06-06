@@ -40,22 +40,108 @@ setup_test_env() {
   log_test "Test environment setup at $TEMP_TEST_DIR"
 }
 
-# Test 1: Verify integration function exists in shell
-test_shell_integration() {
-  log_test "Testing shell integration function"
-  
+# Test 1: Exercise the validation-failure causality path from kaseki-agent.sh
+# with fixture validation logs and assert user-observable outputs.
+test_validation_failure_path() {
+  log_test "Testing validation failure causality path"
+
   cd "$REPO_ROOT"
-  
-  if grep -q "analyze_validation_failure_causality()" kaseki-agent.sh; then
-    log_pass "analyze_validation_failure_causality function defined in kaseki-agent.sh"
+
+  local results_dir="$TEMP_TEST_DIR/results"
+  mkdir -p "$results_dir"
+
+  cat > "$results_dir/validation-baseline.log" << 'EOF'
+PASS  src/index.test.ts (1.234 s)
+  ✓ should parse input
+  ✓ should validate config
+EOF
+
+  cat > "$results_dir/validation.log" << 'EOF'
+FAIL  src/index.test.ts (2.456 s)
+  ✓ should parse input
+  ✗ should validate config - Error: Expected true but got false
+Error: Expected true but got false
+    at validateConfig (src/index.ts:6:10)
+EOF
+
+  cat > "$results_dir/git.diff" << 'EOF'
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -5,7 +5,7 @@ export function validateConfig(config: Config) {
+-  return config.version !== undefined;
++function validateConfig(config: Config) {
++  return config.version === undefined;
+ }
+EOF
+
+  cat > "$results_dir/changed-files.txt" << 'EOF'
+src/index.ts
+EOF
+
+  local harness="$TEMP_TEST_DIR/run-causality-path.sh"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -euo pipefail\n'
+    printf 'cd %q\n' "$REPO_ROOT"
+    printf 'export KASEKI_RESULTS_DIR=%q\n' "$results_dir"
+    cat << 'EOF'
+emit_progress() {
+  printf '[progress] %s %s: %s\n' "$1" "${3:-info}" "$2" >> "$KASEKI_RESULTS_DIR/progress.log"
+}
+EOF
+    sed -n '/^analyze_validation_failure_causality() {/,/^run_validation_commands() {/p' kaseki-agent.sh | sed '$d'
+    printf '\nanalyze_validation_failure_causality\n'
+  } > "$harness"
+  chmod +x "$harness"
+
+  if "$harness" > "$TEMP_TEST_DIR/causality-stdout.log" 2> "$TEMP_TEST_DIR/causality-stderr.log"; then
+    log_pass "Causality path exits successfully after validation failure analysis"
   else
-    log_fail "analyze_validation_failure_causality function not found in kaseki-agent.sh"
+    cat "$TEMP_TEST_DIR/causality-stdout.log" >&2 || true
+    cat "$TEMP_TEST_DIR/causality-stderr.log" >&2 || true
+    log_fail "Causality path exited with failure"
   fi
-  
-  if grep -q "analyze_validation_failure_causality" kaseki-agent.sh | grep -q "VALIDATION_EXIT.*-ne 0"; then
-    log_pass "Causality analysis is called when validation fails"
+
+  local artifact_file="$results_dir/validation-causality-analysis.json"
+  if [ -f "$artifact_file" ]; then
+    log_pass "Causality path produced validation-causality-analysis.json"
   else
-    log_pass "Causality analysis integration verified"
+    cat "$results_dir/progress.log" >&2 || true
+    log_fail "Causality artifact was not produced"
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    jq . "$artifact_file" >/dev/null 2>&1 || log_fail "Causality artifact is invalid JSON"
+
+    local failure_type
+    failure_type=$(jq -r '.assessment.failureType' "$artifact_file")
+    if [ "$failure_type" = "change_related" ]; then
+      log_pass "Causality artifact classifies the fixture failure as change_related"
+    else
+      jq . "$artifact_file" >&2 || true
+      log_fail "Unexpected causality failure classification: $failure_type"
+    fi
+
+    local regression_count
+    regression_count=$(jq -r '.assessment.signals.comparativeResults.analysis.regressionCount' "$artifact_file")
+    if [ "$regression_count" -ge 1 ]; then
+      log_pass "Causality artifact records at least one new regression"
+    else
+      jq . "$artifact_file" >&2 || true
+      log_fail "Causality artifact did not record the fixture regression"
+    fi
+
+    local changed_file_marker
+    changed_file_marker=$(jq -r '[.assessment.signals.logMarkers.markers[]? | select(.type == "changed_file" and .found == true)] | length' "$artifact_file")
+    if [ "$changed_file_marker" -ge 1 ]; then
+      log_pass "Causality artifact records a changed-file marker from the failure log"
+    else
+      jq . "$artifact_file" >&2 || true
+      log_fail "Causality artifact did not record a changed-file marker"
+    fi
+  else
+    log_pass "Causality artifact exists (jq not available for field checks)"
   fi
 }
 
@@ -72,108 +158,12 @@ test_unit_tests() {
   fi
 }
 
-# Test 3: Test with real-world scenario
-test_real_world_scenario() {
-  log_test "Testing real-world failure scenario"
-  
-  # Create temporary log files
-  local baseline_log="$TEMP_TEST_DIR/baseline.log"
-  local post_log="$TEMP_TEST_DIR/post.log"
-  local diff_file="$TEMP_TEST_DIR/git.diff"
-  local changed_files="$TEMP_TEST_DIR/changed-files.txt"
-  
-  # Scenario: new test failure introduced by change
-  cat > "$baseline_log" << 'EOF'
-PASS  src/index.test.ts (1.234 s)
-  ✓ should parse input
-  ✓ should validate config
-EOF
-  
-  cat > "$post_log" << 'EOF'
-FAIL  src/index.test.ts (2.456 s)
-  ✓ should parse input
-  ✗ should validate config - Error: Expected true but got false
-EOF
-  
-  cat > "$diff_file" << 'EOF'
-diff --git a/src/index.ts b/src/index.ts
---- a/src/index.ts
-+++ b/src/index.ts
-@@ -5,7 +5,7 @@ export function validateConfig(config: Config) {
--  return config.version !== undefined;
-+  return config.version === undefined; // Bug: inverted logic
- }
-EOF
-  
-  cat > "$changed_files" << 'EOF'
-src/index.ts
-EOF
-  
-  log_pass "Real-world test scenario created"
-}
-
-# Test 4: Verify causality analysis artifact format
-test_artifact_format() {
-  log_test "Verifying causality analysis artifact format"
-  
-  cd "$REPO_ROOT"
-  
-  # Create a simple artifact to verify format
-  local artifact_file="$TEMP_TEST_DIR/causality.json"
-  cat > "$artifact_file" << 'EOF'
-{
-  "timestamp": "2024-06-02T12:00:00.000Z",
-  "assessment": {
-    "failureType": "change_related",
-    "confidence": 0.85,
-    "rationale": "New test failure introduced by change",
-    "signals": {
-      "comparativeResults": {
-        "analysis": {
-          "newlyFailing": ["should validate config"],
-          "newlyPassing": [],
-          "consistentlyFailing": [],
-          "regressionCount": 1,
-          "improvementCount": 0
-        },
-        "indicatesChangeRelated": true,
-        "weight": 0.4
-      }
-    }
-  },
-  "version": "1.0"
-}
-EOF
-  
-  # Verify JSON is valid
-  if command -v jq >/dev/null 2>&1; then
-    if jq . "$artifact_file" >/dev/null 2>&1; then
-      log_pass "Causality artifact format is valid JSON"
-    else
-      log_fail "Artifact JSON is invalid"
-    fi
-    
-    # Verify required fields
-    local failureType
-    failureType=$(jq -r '.assessment.failureType' "$artifact_file")
-    if [ "$failureType" = "change_related" ]; then
-      log_pass "Artifact contains required verdict field"
-    else
-      log_fail "Verdict field missing or invalid"
-    fi
-  else
-    log_pass "Artifact format verified (jq not available)"
-  fi
-}
-
 main() {
   log_test "Validation failure causality analysis integration tests"
   setup_test_env
   
-  test_shell_integration
+  test_validation_failure_path
   test_unit_tests
-  test_real_world_scenario
-  test_artifact_format
   
   log_pass "All causality analysis integration tests passed!"
 }
