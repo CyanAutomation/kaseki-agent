@@ -409,6 +409,7 @@ export interface PreflightCheck {
   ok: boolean;
   detail?: string;
   remediation?: string;
+  remediationAttemptError?: string; // Error message if auto-remediation failed
   templatePath?: string;
   checkoutRef?: string;
   localRef?: string;
