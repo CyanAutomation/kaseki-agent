@@ -9,7 +9,7 @@
 
 import type { SmartCriterion, AntiPatterns, GoalSettingOutput } from '../types/goal-setting';
 import type { BuildCapabilityInfo } from '../build-capability-detector';
-import type { AsyncImpactAnalysis } from './async-impact-analyzer';
+import type { AsyncImpactAnalysis } from '../scouting/async-impact-analyzer';
 
 /**
  * Enhance goal-setting output with build and async criteria
@@ -199,14 +199,13 @@ export function validateGoalCriteria(
       errors.push('Goal must include async mock compatibility criterion when async changes detected');
     }
 
-    const hasAsyncCriterion = goal.success_criteria?.some(
+    const hasTestCriterion = goal.success_criteria?.some(
       c =>
-        (typeof c === 'string' && (c.toLowerCase().includes('async') || c.toLowerCase().includes('test')))
-        || (typeof c === 'object'
-          && (c.criterion.toLowerCase().includes('async') || c.criterion.toLowerCase().includes('test'))),
+        (typeof c === 'string' && c.toLowerCase().includes('test'))
+        || (typeof c === 'object' && c.criterion.toLowerCase().includes('test')),
     );
 
-    if (!hasAsyncCriterion) {
+    if (!hasTestCriterion) {
       errors.push('Goal must include async test update criterion when async changes detected');
     }
   }

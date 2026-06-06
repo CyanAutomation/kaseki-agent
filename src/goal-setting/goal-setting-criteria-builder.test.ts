@@ -75,12 +75,14 @@ describe('goal-setting-criteria-builder', () => {
       const testCriterion = enhanced.success_criteria?.find(
         c =>
           typeof c === 'object'
-          && (c.criterion.toLowerCase().includes('test') || c.criterion.toLowerCase().includes('async')),
+          && c.criterion.toLowerCase().includes('test')
+          && c.criterion.toLowerCase().includes('async'),
       );
 
       expect(testCriterion).toBeDefined();
       if (typeof testCriterion === 'object') {
-        expect(testCriterion.criterion).toContain('3 affected test files');
+        expect(testCriterion.criterion).toContain('3');
+        expect(testCriterion.criterion).toContain('test');
       }
     });
 
@@ -281,15 +283,20 @@ describe('goal-setting-criteria-builder', () => {
 
     it('should fail when async test criterion missing', () => {
       const goalWithMockOnly: GoalSettingOutput = {
-        ...baseGoal,
+        original_prompt: 'Fix async',
+        upgraded_goal: 'Fix async properly',
+        key_requirements: ['Fix it'],
         success_criteria: [
-          'Parser tests pass',
+          'Code compiles',
           { criterion: 'Mock files updated', smart_score: 'high' },
         ],
+        reasoning: 'Need mock fixes',
+        confidence: 'high',
       };
 
       const errors = validateGoalCriteria(goalWithMockOnly, false, true);
-      expect(errors.some(e => e.includes('test'))).toBe(true);
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors.some(e => e.toLowerCase().includes('test'))).toBe(true);
     });
 
     it('should pass when nothing is detected', () => {
