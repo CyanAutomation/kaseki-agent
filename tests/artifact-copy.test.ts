@@ -34,12 +34,12 @@ describe('Copy-to-Clipboard Functionality', () => {
       const showToast = (message: string, type = 'success', durationMs = 2000) => {
         const container = document.querySelector('#toast-container');
         if (!container) return;
-        
+
         const toast = document.createElement('div');
         toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
-        
+
         setTimeout(() => {
           if (container.contains(toast)) {
             container.removeChild(toast);
@@ -48,7 +48,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       };
 
       showToast('Copied!', 'success', 2000);
-      
+
       const toast = toastContainer.querySelector('.toast.success');
       expect(toast).toBeTruthy();
       expect(toast?.textContent).toBe('Copied!');
@@ -58,12 +58,12 @@ describe('Copy-to-Clipboard Functionality', () => {
       const showToast = (message: string, type = 'success', durationMs = 2000) => {
         const container = document.querySelector('#toast-container');
         if (!container) return;
-        
+
         const toast = document.createElement('div');
         toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
-        
+
         setTimeout(() => {
           if (container.contains(toast)) {
             container.removeChild(toast);
@@ -72,7 +72,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       };
 
       showToast('Copy failed', 'error', 2000);
-      
+
       const toast = toastContainer.querySelector('.toast.error');
       expect(toast).toBeTruthy();
       expect(toast?.textContent).toBe('Copy failed');
@@ -80,16 +80,16 @@ describe('Copy-to-Clipboard Functionality', () => {
 
     it('should auto-remove toast after duration', (done) => {
       jest.useFakeTimers();
-      
+
       const showToast = (message: string, type = 'success', durationMs = 2000) => {
         const container = document.querySelector('#toast-container');
         if (!container) return;
-        
+
         const toast = document.createElement('div');
         toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
-        
+
         setTimeout(() => {
           if (container.contains(toast)) {
             container.removeChild(toast);
@@ -99,10 +99,10 @@ describe('Copy-to-Clipboard Functionality', () => {
 
       showToast('Test', 'success', 2000);
       expect(toastContainer.children.length).toBe(1);
-      
+
       jest.advanceTimersByTime(2300);
       expect(toastContainer.children.length).toBe(0);
-      
+
       jest.useRealTimers();
       done();
     });
@@ -111,12 +111,12 @@ describe('Copy-to-Clipboard Functionality', () => {
       const showToast = (message: string, type = 'success', durationMs = 2000) => {
         const container = document.querySelector('#toast-container');
         if (!container) return;
-        
+
         const toast = document.createElement('div');
         toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
-        
+
         setTimeout(() => {
           if (container.contains(toast)) {
             container.removeChild(toast);
@@ -127,7 +127,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       showToast('Toast 1', 'success');
       showToast('Toast 2', 'info');
       showToast('Toast 3', 'error');
-      
+
       expect(toastContainer.children.length).toBe(3);
       expect(toastContainer.children[0].textContent).toBe('Toast 1');
       expect(toastContainer.children[1].textContent).toBe('Toast 2');
@@ -138,12 +138,12 @@ describe('Copy-to-Clipboard Functionality', () => {
       const showToast = (message: string, type = 'success', durationMs = 2000) => {
         const container = document.querySelector('#toast-container');
         if (!container) return;
-        
+
         const toast = document.createElement('div');
         toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
-        
+
         setTimeout(() => {
           if (container.contains(toast)) {
             container.removeChild(toast);
@@ -154,7 +154,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       showToast('Success', 'success');
       showToast('Error', 'error');
       showToast('Info', 'info');
-      
+
       expect(toastContainer.querySelector('.toast.success')).toBeTruthy();
       expect(toastContainer.querySelector('.toast.error')).toBeTruthy();
       expect(toastContainer.querySelector('.toast.info')).toBeTruthy();
@@ -183,7 +183,7 @@ describe('Copy-to-Clipboard Functionality', () => {
 
       await copyToClipboard('test content');
       expect(writeTextMock).toHaveBeenCalledWith('test content');
-      
+
       // Restore original clipboard
       (navigator as any).clipboard = originalClipboard;
     });
@@ -218,7 +218,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       button.className = 'artifact-copy-btn';
       button.textContent = '📋';
       button.setAttribute('aria-label', 'Copy artifact content');
-      
+
       expect(button.className).toBe('artifact-copy-btn');
       expect(button.getAttribute('aria-label')).toBe('Copy artifact content');
       expect(button.textContent).toContain('📋');
@@ -227,17 +227,17 @@ describe('Copy-to-Clipboard Functionality', () => {
     it('should extract content from modal artifact display', () => {
       const contentDiv = document.createElement('div');
       contentDiv.className = 'artifact-content';
-      
+
       const pre = document.createElement('pre');
       pre.className = 'artifact-content-pre';
       pre.textContent = 'test content';
       contentDiv.appendChild(pre);
-      
+
       document.body.appendChild(contentDiv);
-      
+
       const extractedContent = contentDiv.querySelector('.artifact-content-pre')?.textContent;
       expect(extractedContent).toBe('test content');
-      
+
       document.body.removeChild(contentDiv);
     });
 
@@ -245,7 +245,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       const button = document.createElement('button');
       button.className = 'artifact-copy-btn';
       button.setAttribute('aria-label', 'Copy result-summary.md');
-      
+
       expect(button.getAttribute('aria-label')).toBe('Copy result-summary.md');
     });
   });
@@ -255,19 +255,19 @@ describe('Copy-to-Clipboard Functionality', () => {
       const wrapper = document.createElement('div');
       wrapper.style.display = 'flex';
       wrapper.style.gap = '8px';
-      
+
       const artifactBtn = document.createElement('button');
       artifactBtn.className = 'secondary toolbar-button-no-wrap';
       artifactBtn.textContent = 'result.json';
-      
+
       const copyBtn = document.createElement('button');
       copyBtn.className = 'artifact-copy-btn';
       copyBtn.textContent = '📋';
       copyBtn.setAttribute('aria-label', 'Copy result.json');
-      
+
       wrapper.appendChild(artifactBtn);
       wrapper.appendChild(copyBtn);
-      
+
       expect(wrapper.children.length).toBe(2);
       expect(wrapper.children[0]).toBe(artifactBtn);
       expect(wrapper.children[1]).toBe(copyBtn);
@@ -276,12 +276,12 @@ describe('Copy-to-Clipboard Functionality', () => {
     it('should prevent event propagation to avoid opening modal', () => {
       const copyBtn = document.createElement('button');
       let propagationStopped = false;
-      
+
       copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         propagationStopped = true;
       });
-      
+
       // Simulate click
       copyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       expect(propagationStopped).toBe(true);
@@ -312,7 +312,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       const button = document.createElement('button');
       button.className = 'artifact-copy-btn';
       button.setAttribute('aria-label', 'Copy artifact content');
-      
+
       expect(button.getAttribute('aria-label')).toBeTruthy();
     });
 
@@ -321,7 +321,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       container.id = 'toast-container';
       container.setAttribute('aria-live', 'polite');
       container.setAttribute('aria-atomic', 'true');
-      
+
       expect(container.getAttribute('aria-live')).toBe('polite');
       expect(container.getAttribute('aria-atomic')).toBe('true');
     });
@@ -330,12 +330,12 @@ describe('Copy-to-Clipboard Functionality', () => {
       const button = document.createElement('button');
       button.className = 'artifact-copy-btn';
       button.type = 'button';
-      
+
       document.body.appendChild(button);
       button.focus();
-      
+
       expect(document.activeElement).toBe(button);
-      
+
       document.body.removeChild(button);
     });
   });
@@ -352,7 +352,7 @@ describe('Copy-to-Clipboard Functionality', () => {
         expect(typeof cmd).toBe('string');
         return true;
       };
-      
+
       const success = mockExecCommand('copy');
       expect(typeof success).toBe('boolean');
       expect(success).toBe(true);
