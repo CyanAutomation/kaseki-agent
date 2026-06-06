@@ -237,13 +237,71 @@ describe('validation-causality-analysis', () => {
     });
 
     it('should include all signals in assessment', () => {
-      const baseline = 'PASS';
-      const postChange = 'FAIL';
-      const diff = '+function func() {}';
-      const assessment = assessCausality(baseline, postChange, diff, ['src/file.ts']);
+      const baseline = `
+        PASS src/order-service.test.ts
+          ✓ should calculate discounted totals
+          ✓ should validate order total
+      `;
+      const postChange = `
+        FAIL src/order-service.test.ts
+          ✓ should calculate discounted totals
+          ✗ should validate order total
+          Error: Expected validateOrderTotal to return true
+          at validateOrderTotal (src/order-service.ts:42:12)
+          at Object.<anonymous> (src/order-service.test.ts:18:3)
+      `;
+      const diff = `
+diff --git a/src/order-service.ts b/src/order-service.ts
++export function validateOrderTotal(order: Order) {
++  return order.total > 0;
++}
+`;
+      const changedFiles = ['src/order-service.ts', 'src/unrelated-helper.ts'];
+
+      const assessment = assessCausality(baseline, postChange, diff, changedFiles);
+
+      expect(assessment.failureType).toBe('change_related');
+
       expect(assessment.signals.comparativeResults).toBeDefined();
+      expect(assessment.signals.comparativeResults?.indicatesChangeRelated).toBe(true);
+      expect(assessment.signals.comparativeResults?.analysis.regressionCount).toBeGreaterThan(0);
+      expect(assessment.signals.comparativeResults?.analysis.newlyFailing).toContain(
+        '✗ should validate order total'
+      );
+      expect(assessment.signals.comparativeResults?.analysis.consistentlyFailing).toEqual([]);
+
       expect(assessment.signals.logMarkers).toBeDefined();
+      expect(assessment.signals.logMarkers?.indicatesChangeRelated).toBe(true);
+      expect(assessment.signals.logMarkers?.markers).toContainEqual(
+        expect.objectContaining({
+          type: 'changed_file',
+          pattern: 'order-service.ts',
+          found: true,
+          context: expect.stringContaining('src/order-service.ts'),
+        })
+      );
+      expect(assessment.signals.logMarkers?.markers).toContainEqual(
+        expect.objectContaining({
+          type: 'changed_file',
+          pattern: 'unrelated-helper.ts',
+          found: false,
+        })
+      );
+      expect(
+        assessment.signals.logMarkers?.markers.some(
+          marker => marker.type === 'infra_failure' && marker.found
+        )
+      ).toBe(false);
+
       expect(assessment.signals.codeImpact).toBeDefined();
+      expect(assessment.signals.codeImpact?.indicatesChangeRelated).toBe(true);
+      expect(assessment.signals.codeImpact?.analysis.changedIdentifiers).toContain(
+        'validateOrderTotal'
+      );
+      expect(assessment.signals.codeImpact?.analysis.foundInFailure).toContain(
+        'validateOrderTotal'
+      );
+      expect(assessment.signals.codeImpact?.analysis.correlationStrength).toBe('high');
     });
   });
 
