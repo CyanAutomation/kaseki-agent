@@ -123,7 +123,11 @@ export default [
         document: 'readonly',
         window: 'readonly',
         navigator: 'readonly',
-        MouseEvent: 'readonly'
+        MouseEvent: 'readonly',
+        HTMLElement: 'readonly',
+        HTMLInputElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        Element: 'readonly'
       }
     },
     plugins: {
