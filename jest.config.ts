@@ -4,7 +4,12 @@ const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: './',
-  testMatch: ['<rootDir>/src/**/*.test.ts', '<rootDir>/scripts/**/*.test.ts', '<rootDir>/tests/**/*.test.ts'],
+  testMatch: [
+    '<rootDir>/src/**/*.test.ts',
+    '<rootDir>/scripts/**/*.test.ts',
+    '<rootDir>/test/**/*.test.ts',
+    '<rootDir>/tests/**/*.test.ts',
+  ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   maxWorkers: process.env.CI ? '50%' : 4,
   collectCoverageFrom: [
