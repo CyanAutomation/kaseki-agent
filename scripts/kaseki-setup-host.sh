@@ -662,21 +662,42 @@ ensure_git_safe_directory() {
 
   local status_code=0
 
-  # Configure safe.directory for current context (usually root when run via sudo)
-  local existing_safe_dirs
-  existing_safe_dirs="$(git config --global --get-all safe.directory 2>/dev/null || true)"
-  if printf '%s\n' "$existing_safe_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
-    printf 'ok: git safe.directory already present for current user context\n'
+  # Phase 1: Configure system-wide safe.directory (preferred approach for container isolation)
+  # System config (/etc/gitconfig) is visible to all users including container UID 10000
+  local existing_system_dirs
+  existing_system_dirs="$(git config --system --get-all safe.directory 2>/dev/null || true)"
+  if printf '%s\n' "$existing_system_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
+    printf 'ok: git safe.directory already present in system config\n'
   else
-    if git config --global --add safe.directory "$KASEKI_CHECKOUT_DIR" >/dev/null 2>&1; then
-      printf 'ok: configured git safe.directory for current user context\n'
+    if git config --system --add safe.directory "$KASEKI_CHECKOUT_DIR" >/dev/null 2>&1; then
+      printf 'ok: configured git safe.directory in system config (/etc/gitconfig)\n'
     else
-      printf 'warning: failed to configure git safe.directory for current user context\n'
+      printf 'warning: failed to configure git safe.directory in system config (requires root); falling back to user configs\n'
       status_code=1
     fi
   fi
 
-  # If running via sudo, also configure safe.directory for the invoking user
+  # Phase 2: Fallback to user-level config for current context (usually root when run via sudo)
+  # Only perform this if system config failed
+  if [ "$status_code" -ne 0 ]; then
+    local existing_safe_dirs
+    existing_safe_dirs="$(git config --global --get-all safe.directory 2>/dev/null || true)"
+    if printf '%s\n' "$existing_safe_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
+      printf 'ok: git safe.directory already present for current user context\n'
+      status_code=0
+    else
+      if git config --global --add safe.directory "$KASEKI_CHECKOUT_DIR" >/dev/null 2>&1; then
+        printf 'ok: configured git safe.directory for current user context\n'
+        status_code=0
+      else
+        printf 'warning: failed to configure git safe.directory for current user context\n'
+        status_code=1
+      fi
+    fi
+  fi
+
+  # Phase 3: If running via sudo, also configure safe.directory for the invoking user
+  # This ensures the user who invoked sudo can work with the checkout directly
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     local invoking_user_config
     invoking_user_config="$(sudo -u "$SUDO_USER" git config --global --get-all safe.directory 2>/dev/null || true)"
@@ -687,17 +708,17 @@ ensure_git_safe_directory() {
         printf 'ok: configured git safe.directory for invoking user (%s)\n' "$SUDO_USER"
       else
         printf 'warning: failed to configure git safe.directory for invoking user (%s)\n' "$SUDO_USER"
-        status_code=1
       fi
     fi
   fi
 
   if [ "$status_code" -ne 0 ]; then
-    printf 'remediation: if you see dubious ownership errors, try manually running as the invoking user:\n'
+    printf 'remediation: git safe.directory configuration failed\n'
+    printf '  If you see dubious ownership errors, verify system config or try manually:\n'
+    printf '    sudo git config --system --add safe.directory "%s"\n' "$KASEKI_CHECKOUT_DIR"
     if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-      printf '  sudo -u %s git config --global --add safe.directory "%s"\n' "$SUDO_USER" "$KASEKI_CHECKOUT_DIR"
+      printf '  Or for invoking user: sudo -u %s git config --global --add safe.directory "%s"\n' "$SUDO_USER" "$KASEKI_CHECKOUT_DIR"
     fi
-    printf '  And as root: git config --global --add safe.directory "%s"\n' "$KASEKI_CHECKOUT_DIR"
   fi
 
   return 0
@@ -713,6 +734,14 @@ verify_git_safe_directory() {
     return 0
   fi
 
+  # Check system-wide config first (preferred, visible to all users including containers)
+  local existing_system_dirs
+  existing_system_dirs="$(git config --system --get-all safe.directory 2>/dev/null || true)"
+  if printf '%s\n' "$existing_system_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
+    return 0
+  fi
+
+  # Check current user context config (usually root)
   local existing_safe_dirs
   existing_safe_dirs="$(git config --global --get-all safe.directory 2>/dev/null || true)"
   if printf '%s\n' "$existing_safe_dirs" | grep -Fxq "$KASEKI_CHECKOUT_DIR"; then
@@ -730,10 +759,10 @@ verify_git_safe_directory() {
 
   # Safe.directory not configured anywhere; warn but don't fail (bootstrap might still work)
   printf 'warning: git safe.directory not found for checkout. If bootstrap fails with "dubious ownership", run:\n'
+  printf '  sudo git config --system --add safe.directory "%s"\n' "$KASEKI_CHECKOUT_DIR"
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    printf '  sudo -u %s git config --global --add safe.directory "%s"\n' "$SUDO_USER" "$KASEKI_CHECKOUT_DIR"
+    printf '  Or: sudo -u %s git config --global --add safe.directory "%s"\n' "$SUDO_USER" "$KASEKI_CHECKOUT_DIR"
   fi
-  printf '  git config --global --add safe.directory "%s"\n' "$KASEKI_CHECKOUT_DIR"
   return 0
 }
 

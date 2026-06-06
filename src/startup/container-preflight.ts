@@ -311,11 +311,17 @@ export class ContainerPreflightDiagnostics {
 
   /**
    * Check 5: Git Safe.directory Configuration
-   * Read-only check: verify git config has safe.directory set (to prevent future dubious ownership).
-   * This is a soft check — git can work even if not set yet, but it's a warning sign.
+   * Verify git config has safe.directory set. If not configured and auto-remediation
+   * is enabled (default), attempts to configure it automatically.
+   *
+   * Environment Variables:
+   * - KASEKI_STARTUP_CHECK_AUTO_REMEDIATE: '0' to disable auto-remediation (default: enabled)
+   * - KASEKI_SAFE_DIRECTORY_SCOPE: 'system' to use --system scope, 'global' for --global (default: global)
    */
   private checkGitSafeDirectory(): PreflightCheck {
     const checkoutDir = process.env.KASEKI_CHECKOUT_DIR || '/agents/kaseki-agent';
+    const autoRemediateEnabled = process.env.KASEKI_STARTUP_CHECK_AUTO_REMEDIATE !== '0';
+    const scope = process.env.KASEKI_SAFE_DIRECTORY_SCOPE || 'global';
 
     if (!fs.existsSync(path.join(checkoutDir, '.git'))) {
       return {
@@ -327,13 +333,13 @@ export class ContainerPreflightDiagnostics {
     }
 
     // Read current git config to check if safe.directory is set
-    const result = spawnSync('git', ['config', '--global', '--get-all', 'safe.directory'], {
+    const checkResult = spawnSync('git', ['config', `--${scope}`, '--get-all', 'safe.directory'], {
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const configuredDirs = (result.stdout || '').trim().split('\n').filter(Boolean);
+    const configuredDirs = (checkResult.stdout || '').trim().split('\n').filter(Boolean);
     const isConfigured = configuredDirs.includes(checkoutDir);
 
     if (isConfigured) {
@@ -344,7 +350,49 @@ export class ContainerPreflightDiagnostics {
       };
     }
 
-    // Enhanced diagnostics for not-configured state
+    // Not configured — attempt auto-remediation if enabled
+    if (autoRemediateEnabled) {
+      const remediationResult = spawnSync('git', ['config', `--${scope}`, '--add', 'safe.directory', checkoutDir], {
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      if (remediationResult.status === 0) {
+        logger.debug('Auto-remediated git safe.directory configuration', {
+          checkoutDir,
+          scope,
+        });
+        return {
+          name: 'git-safe-directory',
+          ok: true,
+          detail: `Git safe.directory auto-configured for ${checkoutDir} (scope: ${scope})`,
+        };
+      }
+
+      // Remediation failed — log the error and return failure
+      const errorMsg = (remediationResult.stderr || '').substring(0, 200);
+      logger.warn('Failed to auto-remediate git safe.directory', {
+        checkoutDir,
+        scope,
+        error: errorMsg,
+      });
+
+      // Enhanced diagnostics for not-configured state
+      const currentDirs = configuredDirs.length > 0
+        ? `${configuredDirs.join(', ')}`
+        : 'none configured';
+
+      return {
+        name: 'git-safe-directory',
+        ok: false,
+        detail: `Git safe.directory not configured for ${checkoutDir}. Currently: ${currentDirs}`,
+        remediation: `Configure: git config --${scope} --add safe.directory ${checkoutDir}`,
+        remediationAttemptError: errorMsg,
+      };
+    }
+
+    // Auto-remediation disabled — just report the issue
     const currentDirs = configuredDirs.length > 0
       ? `${configuredDirs.join(', ')}`
       : 'none configured';
@@ -353,7 +401,7 @@ export class ContainerPreflightDiagnostics {
       name: 'git-safe-directory',
       ok: false,
       detail: `Git safe.directory not configured for ${checkoutDir}. Currently: ${currentDirs}`,
-      remediation: `Configure: git config --global --add safe.directory ${checkoutDir}`,
+      remediation: `Configure: git config --${scope} --add safe.directory ${checkoutDir}`,
     };
   }
 
