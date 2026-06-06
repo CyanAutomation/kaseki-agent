@@ -327,8 +327,11 @@ index 1111111..2222222 100644
       );
 
       const { warnings } = runDetector();
-      // May or may not match depending on tokenization - just verify no crashes
-      expect(Array.isArray(warnings)).toBe(true);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toMatchObject({
+        old_value: 'Hello 世界',
+        new_value: 'Hello 世界 v2',
+      });
     });
 
     it('handles escaped characters in strings', () => {
