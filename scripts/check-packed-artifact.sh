@@ -2,9 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Canonical packed-artifact smoke coverage for the publish path. This replaces
+# the legacy Docker-focused dist/lib packaging entry point by validating the
+# produced npm artifact after build, installed in isolation with production
+# dependencies only.
 TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-pack.XXXXXX")"
 INSTALL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-install.XXXXXX")"
-trap 'rm -rf "$TMPDIR"' EXIT
+trap 'rm -rf "$TMPDIR" "$INSTALL_DIR"' EXIT
 
 cd "$ROOT_DIR"
 
