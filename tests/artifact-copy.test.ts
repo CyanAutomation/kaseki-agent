@@ -474,8 +474,8 @@ async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
   throw lastError;
 }
 
-async function waitForElement(selector: string): Promise<any> {
-  let element: any = null;
+async function waitForElement(selector: string): Promise<Element> {
+  let element: Element | null = null;
   await waitFor(() => {
     element = document.querySelector(selector);
     expect(element).toBeTruthy();
