@@ -106,3 +106,19 @@ afterEach(() => {
   // Clear any remaining console overrides from suppression system
   (global as any).__kasekiCapturedLogs = [];
 });
+
+/**
+ * Global afterAll hook to clean up global resources after all tests complete
+ * This prevents handle leaks that span test suites
+ */
+afterAll(() => {
+  // Restore the process.exit spy completely
+  processExitSpy.mockRestore();
+
+  // Clear all timers
+  jest.clearAllTimers();
+
+  // Clear captured logs
+  (global as any).__kasekiCapturedLogs = [];
+  delete (global as any).__kasekiCapturedLogs;
+});

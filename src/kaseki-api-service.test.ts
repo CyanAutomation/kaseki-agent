@@ -341,6 +341,7 @@ describe('Kaseki API Request Validation', () => {
 describe('Job Scheduler', () => {
   let scheduler: JobScheduler;
   let resultsDir: string;
+  let webhookManager: WebhookManager;
 
   beforeEach(() => {
     resultsDir = fs.mkdtempSync('/tmp/kaseki-api-service-test-');
@@ -355,12 +356,13 @@ describe('Job Scheduler', () => {
       logLevel: 'info' as const,
     };
 
-    const webhookManager = new WebhookManager(resultsDir);
+    webhookManager = new WebhookManager(resultsDir);
     scheduler = new JobScheduler(config, webhookManager);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     scheduler.shutdown();
+    await webhookManager.shutdown();
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 

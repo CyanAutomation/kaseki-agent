@@ -449,8 +449,12 @@ export class WebhookManager extends EventEmitter {
     }
 
     this.persistDeliveryLog();
+    
     this.logger.event('webhook_manager_shutdown', {
       queueSize: this.deliveryQueue.length,
     });
+
+    // Clean up all event listeners to prevent handle leaks
+    this.removeAllListeners();
   }
 }

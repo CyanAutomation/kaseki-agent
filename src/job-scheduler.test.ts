@@ -33,6 +33,7 @@ class MockProcess extends EventEmitter {
 }
 
 const tempDirs: string[] = [];
+const webhookManagersToCleanup: WebhookManager[] = [];
 
 function createResultsDir(): string {
   const dir = fs.mkdtempSync('/tmp/kaseki-job-scheduler-test-');
@@ -49,8 +50,23 @@ function cleanupResultsDirs(): void {
   }
 }
 
+async function cleanupWebhookManagers(): Promise<void> {
+  while (webhookManagersToCleanup.length > 0) {
+    const manager = webhookManagersToCleanup.pop();
+    if (manager) {
+      try {
+        await manager.shutdown();
+      } catch {
+        // Ignore errors during cleanup
+      }
+    }
+  }
+}
+
 function createMockWebhookManager(): WebhookManager {
-  return new WebhookManager(createResultsDir());
+  const manager = new WebhookManager(createResultsDir());
+  webhookManagersToCleanup.push(manager);
+  return manager;
 }
 
 type TestPersistedStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -87,7 +103,7 @@ describe('JobScheduler timeout lifecycle', () => {
     delete process.env.KASEKI_AUTO_LINT_CLEANUP_COMMANDS;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     secretValueCache.clear();
     delete process.env.KASEKI_LIVE_PROGRESS_CACHE_TTL_MS;
     delete process.env.KASEKI_AUTO_LINT_CLEANUP;
@@ -96,6 +112,7 @@ describe('JobScheduler timeout lifecycle', () => {
     delete process.env.GITHUB_APP_CLIENT_ID_FILE;
     delete process.env.GITHUB_APP_PRIVATE_KEY_FILE;
     jest.useRealTimers();
+    await cleanupWebhookManagers();
     cleanupResultsDirs();
   });
 
