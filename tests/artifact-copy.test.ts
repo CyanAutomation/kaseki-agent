@@ -24,8 +24,8 @@ describe('Copy-to-Clipboard Functionality', () => {
 
   afterEach(() => {
     // Cleanup
-    if (toastContainer && toastContainer.parentNode) {
-      document.body.removeChild(toastContainer);
+    if (toastContainer && toastContainer.isConnected) {
+      toastContainer.remove();
     }
     // Clear all timers
     jest.clearAllTimers();
@@ -310,12 +310,67 @@ describe('Copy-to-Clipboard Functionality', () => {
   });
 
   describe('Accessibility', () => {
-    it('should have aria-label for copy button', () => {
-      const button = document.createElement('button');
-      button.className = 'artifact-copy-btn';
-      button.setAttribute('aria-label', 'Copy artifact content');
+    it('should have aria-label for copy button', async () => {
+      const controllerPage = await getControllerPage();
+      document.open();
+      document.write(controllerPage.replace(/<script>[\s\S]*?<\/script>/, ''));
+      document.close();
 
-      expect(button.getAttribute('aria-label')).toBeTruthy();
+      const fetchMock = jest.fn(async (input: any) => {
+        const url = String(input);
+        if (url === '/api/runs') {
+          return jsonResponse({ runs: [] });
+        }
+        if (url === '/api/runs/kaseki-1/status') {
+          return jsonResponse({ id: 'kaseki-1', status: 'completed' });
+        }
+        if (url === '/api/runs/kaseki-1/artifacts') {
+          return jsonResponse({
+            artifacts: [
+              {
+                name: 'result.txt',
+                contentType: 'text/plain',
+                available: true,
+                size: '22 B',
+              },
+            ],
+          });
+        }
+        if (url === '/api/results/kaseki-1/result.txt') {
+          return textResponse('copyable artifact text', 'text/plain');
+        }
+        throw new Error('Unexpected fetch URL: ' + url);
+      });
+      Object.defineProperty(window, 'fetch', {
+        configurable: true,
+        value: fetchMock,
+      });
+      Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        value: fetchMock,
+      });
+
+      runControllerScript(controllerPage);
+
+      const tokenInput = document.querySelector('#header-api-token') as HTMLInputElement | null;
+      const runIdInput = document.querySelector('#run-id') as HTMLInputElement | null;
+      expect(tokenInput).toBeTruthy();
+      expect(runIdInput).toBeTruthy();
+      tokenInput!.value = 'kaseki-test-token';
+      runIdInput!.value = 'kaseki-1';
+
+      (document.querySelector('#full-results-btn') as HTMLButtonElement).click();
+      (document.querySelector('.tab-btn[data-tab="artifacts"]') as HTMLButtonElement).click();
+
+      const artifactItem = await waitForElement('.artifact-item');
+      (artifactItem as HTMLButtonElement).click();
+
+      const copyButton = await waitForElement('.artifact-content .artifact-copy-btn');
+      const accessibleName = copyButton.getAttribute('aria-label')?.trim() ?? '';
+
+      expect(copyButton).toBeTruthy();
+      expect(accessibleName).not.toBe('');
+      expect(accessibleName).toBe('Copy artifact content');
     });
 
     it('should make toast container have aria-live for screen readers', () => {
@@ -407,7 +462,7 @@ describe('Copy-to-Clipboard Functionality', () => {
       (document.querySelector('#status-check') as any).click();
 
       const copyButton = await waitForElement('[aria-label="Copy result.json"]');
-      copyButton.click();
+      (copyButton as HTMLButtonElement).click();
 
       await waitFor(() => expect(execCommandMock).toHaveBeenCalledWith('copy'));
       expect(document.querySelector('.toast.success')?.textContent).toBe('Copied!');
@@ -425,10 +480,10 @@ async function getControllerPage(): Promise<string> {
       path: '/ui',
       headers: {},
     };
-    const res = {
+    const res: any = {
       set: jest.fn().mockReturnThis(),
       type: jest.fn().mockReturnThis(),
-      send: jest.fn((body: string) => {
+      send: jest.fn((body: string): any => {
         resolve(body);
         return res;
       }),
@@ -460,6 +515,18 @@ function jsonResponse(payload: unknown): Response {
   } as unknown as Response;
 }
 
+function textResponse(body: string, contentType: string): Response {
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null,
+    },
+    json: jest.fn().mockRejectedValue(new Error('Text response does not contain JSON')),
+    text: jest.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
+
 async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -468,7 +535,7 @@ async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
       return;
     } catch (error) {
       lastError = error;
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
   throw lastError;
