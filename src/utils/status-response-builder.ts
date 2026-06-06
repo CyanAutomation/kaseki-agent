@@ -16,7 +16,7 @@ import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 import type { ResultCache } from '../result-cache';
 
-const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log'] as const;
+const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-validation-errors.jsonl',
   'goal-check-stderr.log',
@@ -254,6 +254,7 @@ export class StatusResponseBuilder {
       resultSummaryMd: keyFileAvailability['result-summary.md'],
       failureJson: keyFileAvailability['failure.json'],
       stderrLog: keyFileAvailability['stderr.log'],
+      stdoutLog: keyFileAvailability['stdout.log'],
       availableFiles: artifactFiles.filter((fileName) => isAvailable(fileName)),
       ...(includeGoalCheckDiagnostics ? { diagnosticFiles } : {}),
     };
@@ -299,8 +300,10 @@ export class StatusResponseBuilder {
           'failure.json',
           'analysis.md',
           'result-summary.md',
+          'stderr.log',
+          'stdout.log',
         ]
-        : ['failure.json', 'analysis.md', 'result-summary.md'];
+        : ['failure.json', 'analysis.md', 'result-summary.md', 'stderr.log', 'stdout.log'];
 
       response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
     }

@@ -397,6 +397,62 @@ function validateTemplateFiles(
   return null;
 }
 
+function hashFile(filePath: string): string | undefined {
+  try {
+    return crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(filePath))
+      .digest('hex');
+  } catch {
+    return undefined;
+  }
+}
+
+function checkTemplateActivatorParity(
+  templateDir: string,
+  checkoutDir: string,
+): PreflightCheck {
+  const checkoutActivator = path.join(checkoutDir, 'scripts', 'kaseki-activate.sh');
+  const templateActivator = path.join(templateDir, 'scripts', 'kaseki-activate.sh');
+  const checkoutHash = hashFile(checkoutActivator);
+  const templateHash = hashFile(templateActivator);
+
+  if (!checkoutHash || !templateHash) {
+    return {
+      name: 'template-activator-parity',
+      ok: false,
+      detail: !checkoutHash
+        ? `Checkout activator is not readable: ${checkoutActivator}`
+        : `Template activator is not readable: ${templateActivator}`,
+      remediation: TEMPLATE_REMEDIATION,
+      checkoutActivator,
+      templateActivator,
+    };
+  }
+
+  if (checkoutHash !== templateHash) {
+    return {
+      name: 'template-activator-parity',
+      ok: false,
+      detail: 'Template activator differs from checkout activator; deployed template may be stale.',
+      remediation: TEMPLATE_REMEDIATION,
+      checkoutActivator,
+      templateActivator,
+      checkoutHash,
+      templateHash,
+    };
+  }
+
+  return {
+    name: 'template-activator-parity',
+    ok: true,
+    detail: 'Template activator matches checkout activator.',
+    checkoutActivator,
+    templateActivator,
+    checksum: checkoutHash,
+  };
+}
+
 function runTemplateDoctor(runScript: string, checkoutDir: string) {
   const activateScript = path.join(
     checkoutDir,
@@ -1201,6 +1257,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     doctorStderrTail: templateHealth.doctorStderrTail,
     doctorStdoutTail: templateHealth.doctorStdoutTail,
   });
+  checks.push(checkTemplateActivatorParity(templateDir, checkoutDir));
   checks.push({
     name: 'checkout-freshness',
     ok: freshness.ok,

@@ -221,6 +221,8 @@ export type DiagnosticEntryPoint =
   | 'failure.json'
   | 'analysis.md'
   | 'result-summary.md'
+  | 'stderr.log'
+  | 'stdout.log'
   | 'goal-check-validation-errors.jsonl'
   | 'goal-check-stderr.log';
 
@@ -263,6 +265,7 @@ export interface StatusResponse {
     resultSummaryMd: boolean;
     failureJson: boolean;
     stderrLog: boolean;
+    stdoutLog: boolean;
     availableFiles: string[];
     /** Additional diagnostic artifacts recommended for the current failure reason. */
     diagnosticFiles?: string[];
@@ -418,6 +421,11 @@ export interface PreflightCheck {
   doctorCommand?: string;
   doctorStderrTail?: string;
   doctorStdoutTail?: string;
+  checkoutActivator?: string;
+  templateActivator?: string;
+  checkoutHash?: string;
+  templateHash?: string;
+  checksum?: string;
   elapsedMs?: number; // Time to run this check in milliseconds
 }
 

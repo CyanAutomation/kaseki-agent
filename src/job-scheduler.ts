@@ -301,6 +301,7 @@ export class JobScheduler {
         job.request.maxDiffBytes || this.config.maxDiffBytes,
       ),
       KASEKI_AGENT_TIMEOUT_SECONDS: String(effectiveTimeoutSeconds),
+      KASEKI_HOST_CACHE_DIR: process.env.KASEKI_HOST_CACHE_DIR || '/agents/kaseki-cache',
     };
 
     // Inspect mode always skips pre-agent validation for speed (fast by default)
