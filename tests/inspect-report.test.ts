@@ -197,7 +197,7 @@ describe('inspect-report generation', () => {
     expect(report).toContain('No significant findings detected');
   });
 
-  test('report file is created at expected location', () => {
+  test('report file is created at expected location with meaningful fallback content', () => {
     fs.writeFileSync(path.join(tempDir, 'pi-events.jsonl'), '');
     fs.writeFileSync(path.join(tempDir, 'pi-summary.json'), '{}');
 
@@ -207,7 +207,25 @@ describe('inspect-report generation', () => {
     expect(fs.existsSync(reportPath)).toBe(true);
 
     const content = fs.readFileSync(reportPath, 'utf8');
-    expect(content.length).toBeGreaterThan(0);
+    expect(content).toMatch(/^# Inspect Report$/m);
+    expect(content).toMatch(/^## Summary$/m);
+    expect(content).toMatch(/^## Statistics$/m);
+    expect(content).toMatch(/^## Recommendations$/m);
+
+    // Empty pi-summary.json should still produce a valid statistics table with
+    // the required event count, while omitting unavailable optional metrics.
+    expect(content).toContain('| Metric | Value |');
+    expect(content).toContain('| Pi events | 0 |');
+    expect(content).not.toContain('| Tool executions |');
+    expect(content).not.toContain('| Tokens used |');
+    expect(content).not.toContain('| Model |');
+
+    // Missing optional artifacts and no findings should use default/fallback
+    // report text instead of producing blank or placeholder-only sections.
+    expect(content).toContain('No significant findings detected during analysis.');
+    expect(content).toContain('- Analysis complete with no issues identified');
+    expect(content).toContain('- Repository appears to be in good health');
+    expect(content).not.toContain('## Files Analyzed');
   });
 
   test('includes token counts when available', () => {
