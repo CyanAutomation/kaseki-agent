@@ -200,6 +200,101 @@ docker-compose restart kaseki-api
 
 ---
 
+## Git Safe.directory Configuration Issues
+
+### Problem: "Dubious Ownership" or Git Errors When Reading Repository
+
+**Symptoms:**
+
+- Container preflight check fails with: `fatal: unsafe repository (...) is owned by someone else`
+- Error message: `Git safe.directory not configured for /agents/kaseki-agent`
+- Template doctor check fails after successful host setup
+- Error output: `Writable Kaseki directories: failed to create /agents/kaseki-runs, ...`
+
+**Root Cause:**
+
+Git enforces strict ownership checks when a repository is owned by a different user than the one running git. When the checkout directory is owned by root but the container runs as UID 10000, git refuses to read the repository unless `safe.directory` is configured.
+
+The issue typically manifests as a multi-stage problem:
+1. **Host setup** (runs as root) configures git only for root context → passes doctor check on host
+2. **Container startup** (runs as UID 10000) cannot access root's git config → fails preflight check in container
+
+### Solution: Three-Layered Approach
+
+#### Layer 1: Automatic Remediation (Active by Default)
+
+The container automatically attempts to configure git safe.directory during startup (via `container-preflight.ts`):
+
+```bash
+# Enabled by default; disable with:
+KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0  # Diagnostic mode: see all problems
+```
+
+This auto-remediation is safe and non-blocking—if it fails, the API continues to start but will surface the issue via `/api/preflight` endpoint.
+
+#### Layer 2: System-Wide Configuration (Persistent & Visible to All Users)
+
+During host setup, git safe.directory is configured at the system level (`/etc/gitconfig`), which is visible to all users including UID 10000 containers:
+
+```bash
+# Run this on the host to fix:
+sudo kaseki-agent host setup --fix
+
+# Verification on host:
+git config --system --get-all safe.directory | grep kaseki-agent
+# Expected: /agents/kaseki-agent
+```
+
+This is the **preferred approach** for multi-user systems and containers.
+
+#### Layer 3: Pre-Configured in Docker Image (Defense-in-Depth)
+
+The Dockerfile pre-configures git safe.directory at image build time:
+
+```dockerfile
+RUN git config --system --add safe.directory /agents/kaseki-agent
+```
+
+This eliminates runtime configuration entirely and guarantees the setting exists regardless of host setup.
+
+### Manual Troubleshooting
+
+If preflight still fails after setup, diagnose and fix manually:
+
+```bash
+# 1. Check current status
+sudo kaseki-agent host preflight
+
+# 2. Verify system config exists
+git config --system --get-all safe.directory | grep kaseki-agent
+
+# 3. Manual system-wide configuration (if needed)
+sudo git config --system --add safe.directory /agents/kaseki-agent
+
+# 4. Verify inside container
+docker-compose exec kaseki-api git config --system --get-all safe.directory
+
+# 5. Restart API service
+docker-compose restart kaseki-api
+```
+
+### Environment Variables for Customization
+
+| Variable | Values | Default | Purpose |
+|----------|--------|---------|---------|
+| `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE` | `1` / `0` | `1` | Enable auto-remediation in container |
+| `KASEKI_SAFE_DIRECTORY_SCOPE` | `global` / `system` | `global` | Git config scope (auto-remediation only) |
+
+### Best Practices
+
+1. **Always run** `sudo kaseki-agent host setup --fix` after deploying or upgrading
+2. **Verify system config**: `git config --system --get-all safe.directory` should include `/agents/kaseki-agent`
+3. **Check container access**: `docker-compose exec kaseki-api git config --system --get-all safe.directory`
+4. **Use system scope** for containers (not global), as system config is visible to all users
+5. **Disable auto-remediate** (`KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0`) only for diagnostics, then re-enable
+
+---
+
 ## Read-Only Filesystem Issues (Exit Code 86)
 
 ### Problem: Scouting Fails with Exit Code 86

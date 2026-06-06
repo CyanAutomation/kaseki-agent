@@ -49,6 +49,48 @@ if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
   }
 fi
 
+# Phase 2b: Validate directory permissions for container user (UID 10000)
+# This is a critical check before the API starts—if directories aren't writable,
+# the API will fail to store results. Container runs as UID 10000:10000 per docker-compose.yml
+validate_directory_permissions() {
+  local uid="${KASEKI_CONTAINER_UID:-10000}"
+  local gid="${KASEKI_CONTAINER_GID:-10000}"
+  
+  # Directories that must be writable by the container user
+  local required_dirs=(
+    "${KASEKI_ROOT:-/agents}"
+    "${KASEKI_ROOT:-/agents}/kaseki-results"
+    "${KASEKI_ROOT:-/agents}/kaseki-runs"
+    "${KASEKI_ROOT:-/agents}/kaseki-cache"
+  )
+  
+  for dir in "${required_dirs[@]}"; do
+    if [ ! -d "$dir" ]; then
+      echo "warning: required directory does not exist: $dir" >&2
+      echo "  remediation: run 'sudo kaseki-agent host setup --fix' on the host" >&2
+      continue
+    fi
+    
+    # Test write access by the current process (running as UID 10000)
+    if ! [ -w "$dir" ]; then
+      echo "error: directory is not writable by container user ($uid:$gid): $dir" >&2
+      echo "  current ownership: $(ls -ld "$dir" | awk '{print $3":"$4}')" >&2
+      echo "  remediation: run 'sudo kaseki-agent host setup --fix' on the host" >&2
+      return 1
+    fi
+  done
+  
+  return 0
+}
+
+# Only validate permissions for API mode (not for agent or one-off runs)
+if [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; then
+  validate_directory_permissions || {
+    echo "error: directory permissions validation failed; cannot start API" >&2
+    exit 1
+  }
+fi
+
 # Phase 1: Dispatch to appropriate command handler
 case "${1:-agent}" in
   setup)

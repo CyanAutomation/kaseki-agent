@@ -1262,6 +1262,46 @@ Advanced and experimental configuration variables.
   KASEKI_REPO_MEMORY_MAX_BYTES=5000000
   ```
 
+### `KASEKI_STARTUP_CHECK_AUTO_REMEDIATE`
+
+- **Type**: `boolean` (string: `'1'` or `'0'`)
+- **Default**: `1` (enabled)
+- **Paths**: Container startup (API service only)
+- **Description**: Enable automatic remediation of startup configuration issues
+- **Behavior**:
+  - When enabled: Automatically fixes recoverable issues like missing git safe.directory configuration
+  - When disabled (`'0'`): Reports issues without attempting fixes; useful for diagnosing setup problems
+- **Details**:
+  - Applies to `container-preflight.ts` checks that run at container startup
+  - Currently handles: git safe.directory auto-configuration when not set
+  - Does NOT affect host-side setup (run `sudo kaseki-agent host setup --fix` for that)
+- **Use case**: Set to `'0'` when troubleshooting startup issues to see all problems without auto-fixes
+- **Example**:
+
+  ```bash
+  KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0  # Disable auto-remediation (diagnostic mode)
+  ```
+
+### `KASEKI_SAFE_DIRECTORY_SCOPE`
+
+- **Type**: `string` (enum)
+- **Default**: `global`
+- **Paths**: Container startup (API service only)
+- **Description**: Git config scope for safe.directory configuration
+- **Options**:
+  - `global`: Store in user's global git config (`~/.gitconfig`)
+  - `system`: Store in system-wide git config (`/etc/gitconfig`, visible to all users including containers)
+- **Details**:
+  - `system` scope is preferred for multi-user or container scenarios as it's visible to all users
+  - `global` scope only applies to the current user context
+  - If system scope configuration fails, falls back to global
+- **Note**: This is primarily used by auto-remediation in container startup checks
+- **Example**:
+
+  ```bash
+  KASEKI_SAFE_DIRECTORY_SCOPE=system  # Use system-wide config (preferred for containers)
+  ```
+
 ---
 
 ## Configuration Precedence
