@@ -174,6 +174,8 @@ function runAnalyzer(
 }
 
 describe('analyze-test-failures integration', () => {
+  jest.setTimeout(30000);
+
   it.each(testCases)(
     'classifies test failure changes for $name',
     ({

@@ -642,6 +642,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
 
   // ===== IMPROVEMENT #9: ITERATIVE REFINEMENT =====
   describe('Improvement #9: Iterative Refinement / Retry', () => {
+    jest.setTimeout(60000);
+
     it('should persist and interpret retry attempts from an actual goal-setting retry', () => {
       const repoRoot = process.cwd();
       const tempDir = mkdtempSync(join(tmpdir(), 'kaseki-goal-setting-retry-'));

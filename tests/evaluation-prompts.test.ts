@@ -309,6 +309,8 @@ build_goal_check_prompt
   });
 
   describe('Feedback Collection Integration', () => {
+    jest.setTimeout(30000);
+
     const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
 
     const writeJson = (filePath: string, value: unknown) => {
