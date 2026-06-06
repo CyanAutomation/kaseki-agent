@@ -88,7 +88,8 @@ validate_directory_permissions() {
 }
 
 # Only validate permissions for API mode (not for agent or one-off runs)
-if [ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]; then
+# Can be skipped via KASEKI_SKIP_PERMISSION_VALIDATION=1 (useful for test isolation)
+if [ "${KASEKI_SKIP_PERMISSION_VALIDATION:-0}" != "1" ] && ([ "${1:-agent}" = "api" ] || [ "${1:-agent}" = "kaseki-api" ]); then
   validate_directory_permissions || {
     echo "error: directory permissions validation failed; cannot start API" >&2
     exit 1
