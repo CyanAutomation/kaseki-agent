@@ -74,7 +74,7 @@ validate_directory_permissions() {
     # Test write access by the current process (running as UID 10000)
     if ! [ -w "$dir" ]; then
       echo "error: directory is not writable by container user ($uid:$gid): $dir" >&2
-      echo "  current ownership: $(ls -ld "$dir" | awk '{print $3":"$4}')" >&2
+      echo "  current ownership: $(stat -c '%U:%G' "$dir")" >&2
       echo "  remediation: run 'sudo kaseki-agent host setup --fix' on the host" >&2
       return 1
     fi

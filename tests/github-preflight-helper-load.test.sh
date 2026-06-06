@@ -55,8 +55,10 @@ awk '
 # These variables are used by sourced functions
 REPO_URL="https://github.com/acme/widgets"
 KASEKI_GITHUB_PREFLIGHT_AUTH_CHECK=0
+KASEKI_RESULTS_DIR="$TMP_DIR"
+KASEKI_HEALTH_LOG="$HEALTH_LOG"
 KASEKI_SECRETS_DIR="$SECRETS_DIR"
-export KASEKI_SECRETS_DIR
+export KASEKI_RESULTS_DIR KASEKI_HEALTH_LOG KASEKI_SECRETS_DIR
 
 if check_github_operations_health >"$TMP_DIR/stdout.log" 2>"$TMP_DIR/stderr.log"; then
   printf '✗ health check unexpectedly passed when github-app-token could not resolve imports\n'
