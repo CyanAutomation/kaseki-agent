@@ -7,7 +7,7 @@
  * @returns npm version string (e.g., "10.2.4") or "unknown" on failure
  */
 
-import { execSync } from 'child_process';
+import { execSync, type ExecSyncOptionsWithStringEncoding } from 'child_process';
 
 /**
  * Get the installed npm version
@@ -18,16 +18,34 @@ import { execSync } from 'child_process';
  *
  * @returns Promise<string> - npm version or 'unknown'
  */
-export async function getNpmVersion(): Promise<string> {
+type NpmVersionExecSync = (
+  command: string,
+  options: ExecSyncOptionsWithStringEncoding
+) => string;
+
+interface GetNpmVersionOptions {
+  npmVersion?: string;
+  execSync?: NpmVersionExecSync;
+}
+
+export async function getNpmVersion(
+  options: GetNpmVersionOptions = {}
+): Promise<string> {
   // Try process.versions.npm first (should be available in Node.js with npm)
   // This is fast and requires no subprocess
-  if (process.versions.npm) {
-    return process.versions.npm;
+  const npmVersion = Object.prototype.hasOwnProperty.call(options, 'npmVersion')
+    ? options.npmVersion
+    : process.versions.npm;
+
+  if (npmVersion) {
+    return npmVersion;
   }
 
   // Fallback: try `npm --version` command
+  const execNpmVersion = options.execSync ?? execSync;
+
   try {
-    const version = execSync('npm --version', {
+    const version = execNpmVersion('npm --version', {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
