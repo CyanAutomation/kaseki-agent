@@ -28,6 +28,7 @@ extract_function() {
 }
 
 mkdir -p "$TMP_DIR/results"
+KASEKI_RESULTS_DIR="$TMP_DIR/results"
 INSTANCE_NAME='instance "quoted"'
 
 eval "$(extract_function json_object_from_pairs)"
@@ -40,15 +41,25 @@ emit_progress 'stage "one"' $'line one\nline two' 'ok,status'
 
 node - "$TMP_DIR/results/progress.jsonl" <<'NODE'
 const fs = require('node:fs');
+
+function assertField(object, field, expected) {
+  if (object[field] !== expected) {
+    throw new Error(`unexpected ${field}: ${object[field]}`);
+  }
+}
+
 const lines = fs.readFileSync(process.argv[2], 'utf8').trimEnd().split('\n');
 const event = JSON.parse(lines[0]);
-    assertEquals "Should return non-zero exit code for malformed JSON" "1" "$?"
-if (event.event_type !== 'quoted_event') throw new Error(`unexpected event_type: ${event.event_type}`);
-if (event.detail !== 'value with "quotes", comma, and = sign') throw new Error(`unexpected detail: ${event.detail}`);
-if (event.path !== 'src/a b.ts') throw new Error(`unexpected path: ${event.path}`);
+const progress = JSON.parse(lines[1]);
+
+assertField(event, 'event_type', 'quoted_event');
+assertField(event, 'detail', 'value with "quotes", comma, and = sign');
+assertField(event, 'path', 'src/a b.ts');
 if (Object.prototype.hasOwnProperty.call(event, '')) throw new Error('empty key should be ignored');
-if (progress.stage !== 'stage "one"') throw new Error(`unexpected stage: ${progress.stage}`);
-if (progress.detail !== 'line one\nline two') throw new Error(`unexpected progress detail: ${progress.detail}`);
+
+assertField(progress, 'stage', 'stage "one"');
+assertField(progress, 'status', 'ok,status');
+assertField(progress, 'detail', 'line one\nline two');
 NODE
 pass 'emit_event and emit_progress write valid escaped JSONL'
 
