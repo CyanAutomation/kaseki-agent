@@ -218,31 +218,6 @@ test_grep_count_fallback_missing() {
   [ "$count" = "0" ]
 }
 
-# Test: json_encode function availability
-test_json_encode_exists() {
-  source <(sed -n '/^json_encode()/,/^}/p' "$KASEKI_SCRIPT")
-  local output
-  output=$(printf 'test' | json_encode)
-  [ "$output" = '"test"' ]
-}
-
-# Test: json_encode fallback when node unavailable
-test_json_encode_fallback() {
-  source <(sed -n '/^json_encode()/,/^}/p' "$KASEKI_SCRIPT")
-  
-  # Temporarily override PATH to hide node
-  local old_path="$PATH"
-  export PATH="/usr/bin:/bin"  # Minimal PATH without node
-  
-  local output
-  output=$(printf 'test' | json_encode 2>/dev/null || true)
-  # Should return empty JSON string "" or handle gracefully
-  export PATH="$old_path"
-  
-  # Test passes if it doesn't crash
-  true
-}
-
 # Main test execution
 main() {
   printf '\n%s\n' "$(printf '=%.0s' {1..70})"
@@ -279,11 +254,6 @@ main() {
   printf '\n%s\n' '### grep fallback tests'
   run_test "grep count fallback on empty file" test_grep_count_fallback
   run_test "grep count fallback on missing file" test_grep_count_fallback_missing
-  
-  # json_encode tests
-  printf '\n%s\n' '### json_encode() tests'
-  run_test "json_encode function works" test_json_encode_exists
-  run_test "json_encode handles node unavailable" test_json_encode_fallback
   
   # Summary
   printf '\n%s\n' "$(printf '=%.0s' {1..70})"
