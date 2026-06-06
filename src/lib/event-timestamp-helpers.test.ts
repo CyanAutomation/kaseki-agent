@@ -130,16 +130,17 @@ describe('event-timestamp-helpers', () => {
 
     it('should return current time when no timestamp available', () => {
       const event: PiEvent = {};
+      const beforeCall = Date.now();
       const result = getEventTimestampISO(event);
-      // Just verify it's a valid ISO string
-      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-    });
+      const afterCall = Date.now();
 
-    it('should never return null', () => {
-      const event: PiEvent = {};
-      const result = getEventTimestampISO(event);
-      expect(result).not.toBeNull();
-      expect(result).not.toBeUndefined();
+      expect(typeof result).toBe('string');
+      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+      const parsed = Date.parse(result);
+      expect(Number.isNaN(parsed)).toBe(false);
+      expect(parsed).toBeGreaterThanOrEqual(beforeCall);
+      expect(parsed).toBeLessThanOrEqual(afterCall);
     });
 
     it('should use fallback chain if direct timestamp missing', () => {
