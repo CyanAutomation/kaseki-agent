@@ -133,7 +133,7 @@ prepare_agent_copy() {
   mkdir -p "$case_dir/scripts" "$results_dir" "$workspace_repo" "$app_lib"
   cp "$ROOT_DIR/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
-  sed "s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" \
+  sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" \
     "$ROOT_DIR/kaseki-agent.sh" > "$case_dir/kaseki-agent.sh"
   chmod +x "$case_dir/kaseki-agent.sh"
   create_minimal_repo "$source_repo"
@@ -153,6 +153,7 @@ run_agent_case() {
 
   set +e
   env \
+    KASEKI_WORKSPACE_DIR="$case_dir" \
     REPO_URL="$source_repo" \
     GIT_REF=main \
     KASEKI_DRY_RUN=1 \
