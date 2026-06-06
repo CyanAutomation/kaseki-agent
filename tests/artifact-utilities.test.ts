@@ -128,41 +128,118 @@ describe('Artifact Utilities', () => {
     });
 
     it('should work with artifact metadata from registry', () => {
-      // Get a sample of actual artifacts from the registry
+      // Get a sample of actual artifacts from the registry.
       const sampleArtifacts = Object.values(ARTIFACT_METADATA_REGISTRY).slice(0, 10);
       const filtered = filterTextArtifacts(sampleArtifacts);
 
-      // All artifacts in the current registry should be text
-      expect(filtered.length).toBe(sampleArtifacts.length);
-
-      // Verify no binary artifacts in the filtered list
-      filtered.forEach(artifact => {
-        const binaryTypes = [
-          'application/zip',
-          'application/gzip',
-          'application/x-tar',
-          'application/vnd.cyclonedx+json',
-          'application/octet-stream',
-        ];
-        expect(binaryTypes).not.toContain(artifact.contentType);
-      });
+      // Match the classifier contract rather than requiring every registry artifact to be text.
+      expect(filtered).toEqual(
+        sampleArtifacts.filter(artifact => isTextArtifact(artifact.contentType))
+      );
     });
   });
 
   describe('Artifact registry validation', () => {
-    it('should have all artifacts in the registry be text artifacts', () => {
-      const allArtifacts = Object.values(ARTIFACT_METADATA_REGISTRY);
+    it('should define the text preview and download-only artifact contract', () => {
+      const previewableArtifacts = [
+        { name: 'metadata.json', contentType: 'application/json' },
+        { name: 'result-summary.md', contentType: 'text/markdown' },
+        { name: 'analysis.md', contentType: 'text/markdown' },
+        { name: 'inspect-report.md', contentType: 'text/markdown' },
+        { name: 'failure.json', contentType: 'application/json' },
+        { name: 'pi-events.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'pi-summary.json', contentType: 'application/json' },
+        { name: 'goal-setting.json', contentType: 'application/json' },
+        { name: 'goal-setting-summary.json', contentType: 'application/json' },
+        { name: 'goal-setting-events.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'goal-setting-stderr.log', contentType: 'text/plain' },
+        { name: 'goal-setting-validation-errors.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'goal-setting-metrics.json', contentType: 'application/json' },
+        { name: 'scouting.json', contentType: 'application/json' },
+        { name: 'scouting-summary.json', contentType: 'application/json' },
+        { name: 'scouting-events.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'scouting-events.raw.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'scouting-stderr.log', contentType: 'text/plain' },
+        { name: 'scouting-validation-errors.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'scouting-validation-summary.txt', contentType: 'text/plain' },
+        { name: 'goal-check.json', contentType: 'application/json' },
+        { name: 'goal-check-attempts.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'goal-check-events.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'goal-check-summary.json', contentType: 'application/json' },
+        { name: 'goal-check-stderr.log', contentType: 'text/plain' },
+        { name: 'goal-check-validation-errors.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'run-evaluation.json', contentType: 'application/json' },
+        { name: 'run-evaluation-events.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'run-evaluation-summary.json', contentType: 'application/json' },
+        { name: 'run-evaluation-stderr.log', contentType: 'text/plain' },
+        { name: 'progress.log', contentType: 'text/plain' },
+        { name: 'progress.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'stdout.log', contentType: 'text/plain' },
+        { name: 'stderr.log', contentType: 'text/plain' },
+        { name: 'pre-validation.log', contentType: 'text/plain' },
+        { name: 'pre-validation-timings.tsv', contentType: 'text/tab-separated-values' },
+        { name: 'validation.log', contentType: 'text/plain' },
+        { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values' },
+        { name: 'quality.log', contentType: 'text/plain' },
+        { name: 'stage-timings.tsv', contentType: 'text/tab-separated-values' },
+        { name: 'git.diff', contentType: 'text/plain' },
+        { name: 'git.status', contentType: 'text/plain' },
+        { name: 'changed-files.txt', contentType: 'text/plain' },
+        { name: 'git-push.log', contentType: 'text/plain' },
+        { name: 'restoration.jsonl', contentType: 'application/x-jsonl' },
+        { name: 'restoration-report.md', contentType: 'text/markdown' },
+        { name: 'secret-scan.log', contentType: 'text/plain' },
+        { name: 'dependency-cache.log', contentType: 'text/plain' },
+        { name: 'exit_code', contentType: 'text/plain' },
+        { name: 'format-check-command.txt', contentType: 'text/plain' },
+      ];
+      const downloadOnlyArtifacts = [
+        { name: 'archive.zip', contentType: 'application/zip' },
+        { name: 'debug-bundle.tar', contentType: 'application/x-tar' },
+        { name: 'logs.tar.gz', contentType: 'application/gzip' },
+        { name: 'sbom.json', contentType: 'application/vnd.cyclonedx+json' },
+        { name: 'raw-output.bin', contentType: 'application/octet-stream' },
+      ];
 
-      const binaryArtifacts = allArtifacts.filter(artifact => !isTextArtifact(artifact.contentType));
+      previewableArtifacts.forEach(expectedArtifact => {
+        expect(ARTIFACT_METADATA_REGISTRY[expectedArtifact.name]).toMatchObject(expectedArtifact);
+        expect(isTextArtifact(expectedArtifact.contentType)).toBe(true);
+        expect(isTextArtifact(expectedArtifact.name)).toBe(true);
+      });
 
-      // As of current state, all artifacts should be text
-      // This test ensures we're notified if binary artifacts are added
-      expect(binaryArtifacts).toHaveLength(0);
+      downloadOnlyArtifacts.forEach(expectedArtifact => {
+        expect(isTextArtifact(expectedArtifact.contentType)).toBe(false);
+        expect(isTextArtifact(expectedArtifact.name)).toBe(false);
+      });
 
-      if (binaryArtifacts.length > 0) {
-        const binaryNames = binaryArtifacts.map(a => a.name).join(', ');
-        console.warn(`Binary artifacts found in registry: ${binaryNames}`);
-      }
+      const previewableArtifactByName = new Map(
+        previewableArtifacts.map(artifact => [artifact.name, artifact])
+      );
+      const previewableArtifact = (name: string) => {
+        const artifact = previewableArtifactByName.get(name);
+        expect(artifact).toBeDefined();
+        return artifact!;
+      };
+      const mixedRegistryFixture = [
+        previewableArtifact('metadata.json'),
+        downloadOnlyArtifacts[0],
+        previewableArtifact('result-summary.md'),
+        downloadOnlyArtifacts[1],
+        previewableArtifact('pi-events.jsonl'),
+        downloadOnlyArtifacts[2],
+        previewableArtifact('pre-validation-timings.tsv'),
+        downloadOnlyArtifacts[3],
+        previewableArtifact('format-check-command.txt'),
+        downloadOnlyArtifacts[4],
+      ];
+
+      expect(filterTextArtifacts(mixedRegistryFixture)).toEqual([
+        previewableArtifact('metadata.json'),
+        previewableArtifact('result-summary.md'),
+        previewableArtifact('pi-events.jsonl'),
+        previewableArtifact('pre-validation-timings.tsv'),
+        previewableArtifact('format-check-command.txt'),
+      ]);
     });
 
     it('should classify representative user-facing registry artifacts for preview behavior', () => {
