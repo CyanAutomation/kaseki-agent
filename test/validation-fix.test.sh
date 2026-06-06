@@ -154,7 +154,7 @@ if [ "${1:-}" = "--version" ]; then
   exit 0
 fi
 printf 'unexpected pi invocation: %s\n' "$*" >&2
-exit 97
+exit 1
 EOF_PI
   chmod +x "$fake_bin/pi"
 
