@@ -2,6 +2,8 @@
  * @jest-environment jsdom
  */
 
+import { createWebRouter } from '../src/kaseki-api-web';
+
 /**
  * Artifact Copy-to-Clipboard - Test Suite
  *
@@ -346,16 +348,137 @@ describe('Copy-to-Clipboard Functionality', () => {
       expect(typeof isSecureContext).toBe('boolean');
     });
 
-    it('should have fallback for execCommand', () => {
-      // In jsdom, execCommand may not be available. Mock it for testing.
-      const mockExecCommand = (cmd: string): boolean => {
-        expect(typeof cmd).toBe('string');
-        return true;
-      };
+    it('should use document.execCommand fallback through the artifact UI copy action', async () => {
+      const controllerPage = await getControllerPage();
+      document.open();
+      document.write(controllerPage.replace(/<script>[\s\S]*?<\/script>/, ''));
+      document.close();
 
-      const success = mockExecCommand('copy');
-      expect(typeof success).toBe('boolean');
-      expect(success).toBe(true);
+      window.sessionStorage.setItem('kasekiApiToken', 'kaseki-test-token');
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: undefined,
+      });
+      Object.defineProperty(window, 'isSecureContext', {
+        configurable: true,
+        value: true,
+      });
+
+      const execCommandMock = jest.fn().mockReturnValue(true);
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: execCommandMock,
+      });
+
+      const fetchMock = jest.fn(async (input: any) => {
+        const url = String(input);
+        if (url === '/api/runs') {
+          return jsonResponse({ runs: [] });
+        }
+        if (url === '/api/runs/kaseki-1/status') {
+          return jsonResponse({ id: 'kaseki-1', status: 'completed' });
+        }
+        if (url === '/api/runs/kaseki-1/artifacts') {
+          return jsonResponse({
+            recommended: ['result.json'],
+            artifacts: [{ name: 'result.json', contentType: 'application/json' }],
+          });
+        }
+        if (url === '/api/results/kaseki-1/result.json') {
+          return jsonResponse({ copied: true, source: 'artifact' });
+        }
+        throw new Error('Unexpected fetch URL: ' + url);
+      });
+      Object.defineProperty(window, 'fetch', {
+        configurable: true,
+        value: fetchMock,
+      });
+      Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        value: fetchMock,
+      });
+
+      runControllerScript(controllerPage);
+
+      const runIdInput = document.querySelector('#run-id') as any;
+      expect(runIdInput).toBeTruthy();
+      runIdInput!.value = 'kaseki-1';
+
+      (document.querySelector('#status-check') as any).click();
+
+      const copyButton = await waitForElement('[aria-label="Copy result.json"]');
+      copyButton.click();
+
+      await waitFor(() => expect(execCommandMock).toHaveBeenCalledWith('copy'));
+      expect(document.querySelector('.toast.success')?.textContent).toBe('Copied!');
     });
   });
 });
+
+async function getControllerPage(): Promise<string> {
+  const router = createWebRouter();
+  return await new Promise((resolve, reject) => {
+    const req = {
+      method: 'GET',
+      url: '/ui',
+      originalUrl: '/ui',
+      path: '/ui',
+      headers: {},
+    };
+    const res = {
+      set: jest.fn().mockReturnThis(),
+      type: jest.fn().mockReturnThis(),
+      send: jest.fn((body: string) => {
+        resolve(body);
+        return res;
+      }),
+    };
+    (router as any).handle(req as any, res as any, (error: unknown) => {
+      if (error) reject(error);
+    });
+  });
+}
+
+function runControllerScript(controllerPage: string): void {
+  const scriptMatch = controllerPage.match(/<script>([\s\S]*?)<\/script>/);
+  if (!scriptMatch) {
+    throw new Error('Controller page script not found');
+  }
+  const scriptFunction = new Function(scriptMatch[1]);
+  scriptFunction.call(window);
+}
+
+function jsonResponse(payload: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null,
+    },
+    json: jest.fn().mockResolvedValue(payload),
+    text: jest.fn().mockResolvedValue(typeof payload === 'string' ? payload : JSON.stringify(payload)),
+  } as unknown as Response;
+}
+
+async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+  throw lastError;
+}
+
+async function waitForElement(selector: string): Promise<Element> {
+  let element: Element | null = null;
+  await waitFor(() => {
+    element = document.querySelector(selector);
+    expect(element).toBeTruthy();
+  });
+  return element!;
+}
