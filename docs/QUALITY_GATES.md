@@ -374,3 +374,137 @@ TASK_PROMPT="Refactor the auth module: extract utils to separate files and updat
 ```
 
 **Expected:** Multiple files across multiple directories change.
+
+## Compilation Gate (Earlier Build Validation)
+
+Kaseki's **compilation gate** validates that code compiles **before the main agent runs**, catching build errors early rather than waiting until validation phase.
+
+### What is the Compilation Gate?
+
+For **typed languages** (TypeScript, Go, Rust, Java, Python), kaseki:
+
+1. **Scouting phase** → Detects build system (e.g., `npm run build`)
+2. **Pre-main phase** → Runs build command; if it fails, exits with code 10 (quality gate)
+3. **Main agent** → Runs aware that compilation is critical
+4. **Validation phase** → Runs build again; reports improvement/regression
+
+### Supported Languages
+
+| Language | Config | Build Command | Exit Code 10 |
+|----------|--------|---|---|
+| TypeScript | `tsconfig.json` | `npm run build` | ✅ Pre-main build failure blocks agent |
+| Go | `go.mod` | `go build ./...` | ✅ Pre-main build failure blocks agent |
+| Rust | `Cargo.toml` | `cargo build` | ✅ Pre-main build failure blocks agent |
+| Java | `pom.xml` / `build.gradle` | `mvn clean install` / `gradle build` | ✅ Pre-main build failure blocks agent |
+| Python | `setup.py` / `pyproject.toml` | `python -m build` | ✅ Pre-main build failure blocks agent |
+
+### Exit Code 10: Pre-Main Compilation Failure
+
+| Condition | Exit Code | Meaning |
+|-----------|-----------|---------|
+| Pre-main compilation succeeds | — | Agent runs normally |
+| Pre-main compilation fails | 10 | **QUALITY GATE** — Agent blocked; repo has build errors |
+| Repo already broken, allow agent anyway | — | Set `KASEKI_ALLOW_BROKEN_BUILD=true` to skip pre-main check |
+
+### Configuration
+
+```bash
+# Basic: Just run kaseki (detects build automatically)
+export OPENROUTER_API_KEY="sk-or-..."
+export TASK_PROMPT="Fix TypeScript compilation errors"
+./run-kaseki.sh
+
+# With timeouts
+export KASEKI_COMPILATION_TIMEOUT_SECONDS=600  # 10 minutes for slow builds
+./run-kaseki.sh
+
+# Override build command
+export KASEKI_BUILD_COMMAND="make build"
+export KASEKI_BUILD_LANGUAGE="make"
+./run-kaseki.sh
+
+# Skip pre-main check (repo already broken)
+export KASEKI_ALLOW_BROKEN_BUILD=true
+./run-kaseki.sh
+```
+
+### Examples
+
+#### TypeScript Project: Fix Compilation
+
+```bash
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
+export TASK_PROMPT="Fix all TypeScript strict mode errors in the data layer"
+./run-kaseki.sh
+```
+
+**Result:**
+
+```
+Pre-main build: ✅ PASSED (or ❌ FAILED → exit 10)
+Agent runs if pre-main passed
+Post-main build: ✅ PASSED (agent fixed errors) or ❌ FAILED (agent broke compilation)
+```
+
+#### Go Project: Ensure Compilation
+
+```bash
+export KASEKI_CHANGED_FILES_ALLOWLIST="cmd/** pkg/**"
+export TASK_PROMPT="Refactor the HTTP server to use context.Context"
+./run-kaseki.sh
+```
+
+**Result:**
+
+- Pre-main: `go build ./...` checks current state
+- If success: Agent runs with confidence build will be tested
+- Post-main: Build again, report if compilation improved/regressed
+
+### Result Artifacts
+
+All compilation results in `/agents/kaseki-results/kaseki-N/`:
+
+- `metadata.json` → `"pre-main-compilation"`: {success, exitCode, duration}
+- `pre-main-build.log` → Output from initial compilation
+- `result-summary.md` → "Compilation Status: ✅ PASSED" or "❌ FAILED"
+- `validation.log` → Post-main build output (as part of validation commands)
+
+### Troubleshooting
+
+**Issue: Pre-main build fails immediately (exit code 10)**
+
+```bash
+# The repo already has build errors. Either:
+
+# Option 1: Let the agent fix them
+export KASEKI_ALLOW_BROKEN_BUILD=true
+export TASK_PROMPT="Fix the compilation errors preventing build"
+./run-kaseki.sh
+
+# Option 2: Check build locally first
+cd /repo/root
+npm run build  # Debug locally
+
+# Option 3: Set a longer timeout if build is slow
+export KASEKI_COMPILATION_TIMEOUT_SECONDS=600
+./run-kaseki.sh
+```
+
+**Issue: Agent breaks compilation (post-main fails)**
+
+Check the `validation.log` for errors:
+
+```bash
+cat /agents/kaseki-results/kaseki-N/validation.log | grep -A 20 "npm run build"
+```
+
+See [COMPILATION_VALIDATION.md](COMPILATION_VALIDATION.md) for comprehensive compilation guide.
+
+## Related
+
+- [docs/COMPILATION_VALIDATION.md](./COMPILATION_VALIDATION.md) — Full compilation validation guide
+- [docs/ASYNC_AWARENESS.md](./ASYNC_AWARENESS.md) — Async-aware code changes and mock file handling
+- [CLAUDE.md](../CLAUDE.md) — Overall kaseki-agent documentation
+- [docs/TASK_PROMPT_TEMPLATES.md](./TASK_PROMPT_TEMPLATES.md) — How to write prompts that minimize scope creep
+- [scripts/suggest-allowlist.sh](../scripts/suggest-allowlist.sh) — Auto-generate allowlist from completed run
+- `templates/allowlist-*.txt` — Pre-built templates for common task types

@@ -118,7 +118,7 @@ export function formatCompilationResult(result: CompilationResult): string {
   ];
 
   if (result.output) {
-    lines.push(`\nOutput (last 500 chars):`);
+    lines.push('\nOutput (last 500 chars):');
     lines.push(result.output.substring(-500));
   }
 
