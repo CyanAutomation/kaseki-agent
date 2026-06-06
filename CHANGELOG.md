@@ -4,6 +4,24 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.67.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.66.0...v1.67.0) (2026-06-06)
+
+
+### Bug Fixes
+
+* correct formatting in async impact analysis and language detection functions ([36c2e33](https://github.com/CyanAutomation/kaseki-agent/commit/36c2e333fc4e46f7809cef67cadad3ee42cfb284))
+
+
+### Features
+
+* add compilation validation documentation and async awareness guide ([2d44d8a](https://github.com/CyanAutomation/kaseki-agent/commit/2d44d8a96631de55be577bbc71e1379064c141da))
+* add compilation validator with tests for build command execution and logging ([8f6efb9](https://github.com/CyanAutomation/kaseki-agent/commit/8f6efb9985840c8b2884acefb67b86593e2690d8))
+* add goal-setting criteria builder and enhance async impact analysis ([82350d9](https://github.com/CyanAutomation/kaseki-agent/commit/82350d9f3423943f446373bad7d410f2b144975a))
+* add logging for unmatched prompts and create full test output script ([62bd501](https://github.com/CyanAutomation/kaseki-agent/commit/62bd501f3ddd14825f2ad9b2292e4f6140c1f42c))
+* enhance type definitions and improve test assertions for async impact analysis ([29faffc](https://github.com/CyanAutomation/kaseki-agent/commit/29faffc0051df3960c57279d651ded3b39f48ad3))
+* implement scouting context builder for TASK_PROMPT and enhance goal validation criteria ([1c505e2](https://github.com/CyanAutomation/kaseki-agent/commit/1c505e2335b4b63be7b65808f7c407ba5f3a1566))
+* refactor async impact analysis import and enhance build context tests ([bd56e83](https://github.com/CyanAutomation/kaseki-agent/commit/bd56e83740d54691734e441d3d945ccaf9eee63d))
+
 # [1.66.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.65.3...v1.66.0) (2026-06-06)
 
 
