@@ -32,6 +32,7 @@ describe('Goal-Setting Artifacts Registry', () => {
       expect(artifact).toBeDefined();
       expect(artifact.availability).toBe(ArtifactAvailability.CONDITIONAL);
       expect(artifact.contentType).toBe('application/json');
+      expect(artifact.sizeHint).toBe('small');
     });
 
     it('should register goal-setting-events.jsonl', () => {
@@ -47,6 +48,7 @@ describe('Goal-Setting Artifacts Registry', () => {
       expect(artifact).toBeDefined();
       expect(artifact.availability).toBe(ArtifactAvailability.CONDITIONAL);
       expect(artifact.contentType).toBe('text/plain');
+      expect(artifact.sizeHint).toBe('medium');
     });
 
     it('should register goal-setting-validation-errors.jsonl', () => {
@@ -54,6 +56,7 @@ describe('Goal-Setting Artifacts Registry', () => {
       expect(artifact).toBeDefined();
       expect(artifact.availability).toBe(ArtifactAvailability.CONDITIONAL);
       expect(artifact.contentType).toBe('application/x-jsonl');
+      expect(artifact.sizeHint).toBe('small');
     });
   });
 
@@ -119,13 +122,6 @@ describe('Goal-Setting Artifacts Registry', () => {
         expect(artifact.description).toBeTruthy();
         expect(artifact.description.length).toBeGreaterThan(10);
         expect(Object.values(ArtifactAvailability)).toContain(artifact.availability);
-      });
-
-      it(`${artifactName} should have appropriate sizeHint if defined`, () => {
-        const artifact = ARTIFACT_METADATA_REGISTRY[artifactName];
-        if (artifact.sizeHint) {
-          expect(['small', 'medium', 'large']).toContain(artifact.sizeHint);
-        }
       });
     });
   });
