@@ -1,7 +1,10 @@
 import * as fs from 'fs';
+import express from 'express';
+import { Server } from 'http';
 import { JobScheduler } from '../job-scheduler';
 import { ResultCache } from '../result-cache';
 import { KasekiApiConfig } from '../kaseki-api-config';
+import { Job } from '../kaseki-api-types';
 import { readArtifactContent, createArtifactRoutes } from './artifact-routes';
 
 // Mock dependencies
@@ -9,13 +12,32 @@ jest.mock('fs');
 jest.mock('../job-scheduler');
 jest.mock('../result-cache');
 
+async function listen(app: express.Express): Promise<{ server: Server; url: string }> {
+  const server = await new Promise<Server>((resolve) => {
+    const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Expected test server to bind to a TCP port');
+  }
+  return { server, url: `http://127.0.0.1:${address.port}` };
+}
+
+async function close(server: Server): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
+
 describe('artifact-routes', () => {
   let mockScheduler: jest.Mocked<JobScheduler>;
   let mockCache: jest.Mocked<ResultCache>;
   let mockConfig: KasekiApiConfig;
 
   beforeEach(() => {
-    mockScheduler = {} as jest.Mocked<JobScheduler>;
+    mockScheduler = {
+      getJob: jest.fn(),
+    } as unknown as jest.Mocked<JobScheduler>;
     mockCache = {
       getOrLoad: jest.fn(),
       getStats: jest.fn(),
@@ -104,10 +126,102 @@ describe('artifact-routes', () => {
   });
 
   describe('createArtifactRoutes', () => {
-    it('should return a router', () => {
-      const router = createArtifactRoutes(mockScheduler, mockConfig, mockCache);
-      expect(router).toBeDefined();
-      expect(typeof router.get).toBe('function');
+    function createMountedArtifactApp(): express.Express {
+      const app = express();
+      app.use('/api', createArtifactRoutes(mockScheduler, mockConfig, mockCache));
+      return app;
+    }
+
+    function mockCompletedJob(id = 'kaseki-1'): Job {
+      const job: Job = {
+        id,
+        status: 'completed',
+        request: {
+          repoUrl: 'https://github.com/example/repo.git',
+          ref: 'main',
+          taskPrompt: 'Test artifact route',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      mockScheduler.getJob.mockReturnValue(job);
+      return job;
+    }
+
+    it('serves a registered artifact for a known job', async () => {
+      const job = mockCompletedJob();
+      const content = '# Result Summary\n\nThe run completed successfully.\n';
+      (fs.statSync as jest.Mock).mockReturnValue({
+        isFile: () => true,
+        size: Buffer.byteLength(content),
+      });
+      mockCache.getOrLoad.mockReturnValue(content);
+
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/result-summary.md`);
+        const body = JSON.parse(await response.text());
+
+        expect(response.status).toBe(200);
+        expect(mockScheduler.getJob).toHaveBeenCalledWith(job.id);
+        expect(fs.statSync).toHaveBeenCalledWith('/results/kaseki-1/result-summary.md');
+        expect(mockCache.getOrLoad).toHaveBeenCalledWith('/results/kaseki-1/result-summary.md');
+        expect(body).toEqual({
+          file: 'result-summary.md',
+          contentType: 'text/markdown',
+          size: Buffer.byteLength(content),
+          content,
+        });
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('returns a contract error for an artifact name outside the registry', async () => {
+      const job = mockCompletedJob();
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/not-a-kaseki-artifact.txt`);
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(fs.statSync).not.toHaveBeenCalled();
+        expect(mockCache.getOrLoad).not.toHaveBeenCalled();
+        expect(body).toEqual(expect.objectContaining({
+          type: 'https://api.kaseki.local/errors#bad-request',
+          title: 'Bad Request',
+          status: 400,
+          detail: expect.stringContaining('Artifact not found in registry: not-a-kaseki-artifact.txt'),
+        }));
+      } finally {
+        await close(server);
+      }
+    });
+
+    it('returns a contract error for a registered artifact that is missing on disk', async () => {
+      const job = mockCompletedJob();
+      (fs.statSync as jest.Mock).mockImplementation(() => {
+        throw new Error('missing artifact');
+      });
+
+      const { server, url } = await listen(createMountedArtifactApp());
+
+      try {
+        const response = await fetch(`${url}/api/results/${job.id}/result-summary.md`);
+        const body = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(mockCache.getOrLoad).not.toHaveBeenCalled();
+        expect(body).toEqual({
+          type: 'https://api.kaseki.local/errors#bad-request',
+          title: 'Bad Request',
+          status: 400,
+          detail: 'Artifact not found: result-summary.md',
+        });
+      } finally {
+        await close(server);
+      }
     });
   });
 });
