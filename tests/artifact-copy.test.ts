@@ -468,7 +468,7 @@ async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
       return;
     } catch (error) {
       lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setImmediate(resolve));
     }
   }
   throw lastError;
