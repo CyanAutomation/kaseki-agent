@@ -9,7 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # dependencies only.
 TMPDIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-pack.XXXXXX")"
 INSTALL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kaseki-install.XXXXXX")"
-trap 'rm -rf "$TMPDIR"' EXIT
+trap 'rm -rf "$TMPDIR" "$INSTALL_DIR"' EXIT
 
 cd "$ROOT_DIR"
 
