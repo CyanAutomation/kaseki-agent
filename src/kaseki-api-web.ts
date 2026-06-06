@@ -1176,6 +1176,71 @@ const controllerPage = String.raw`<!doctype html>
         font-size: var(--font-size-xs);
         margin-top: var(--space-1);
       }
+      .artifact-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+      .artifact-content-title {
+        font-weight: 600;
+        color: var(--color-text);
+        font-family: var(--font-mono);
+        padding: var(--space-2);
+        background: var(--color-surface-low);
+        border-radius: var(--radius-sm);
+      }
+      .artifact-content-pre {
+        background: var(--color-surface-low);
+        padding: var(--space-3);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        overflow: auto;
+        font-family: var(--font-mono);
+        font-size: var(--font-size-sm);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-height: 600px;
+        color: var(--color-text);
+      }
+      .artifact-content-markdown {
+        background: var(--color-surface-low);
+        padding: var(--space-3);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .artifact-back-btn {
+        align-self: flex-start;
+        padding: var(--space-1) var(--space-2);
+        background: var(--color-surface-low);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text);
+        cursor: pointer;
+        font-size: var(--font-size-sm);
+        transition: all var(--transition-fast) var(--transition-easing);
+      }
+      .artifact-back-btn:hover {
+        background: var(--color-surface-high);
+        border-color: var(--color-border-strong);
+      }
+      .artifact-loading {
+        padding: var(--space-3);
+        text-align: center;
+        color: var(--color-text-muted);
+      }
+      .artifact-error {
+        padding: var(--space-2);
+        background: var(--color-alert-bg);
+        border: 1px solid var(--color-alert);
+        border-radius: var(--radius-sm);
+        color: var(--color-alert);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
       @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
@@ -1718,6 +1783,11 @@ const controllerPage = String.raw`<!doctype html>
           return;
         }
         recommended.forEach((fileName) => {
+          // Only show text artifacts in recommended section
+          if (!isTextContentType(artifactsResponse.artifactTypes?.[fileName])) {
+            return; // Skip binary artifacts
+          }
+          
           const button = document.createElement('button');
           button.className = 'secondary toolbar-button-no-wrap';
           button.type = 'button';
@@ -2193,6 +2263,140 @@ const controllerPage = String.raw`<!doctype html>
         tabOutputEl.textContent = content || '';
       }
 
+      /**
+       * Determines whether an artifact should be displayed inline based on content type.
+       * Binary artifacts (zip, gzip, SBOM, etc.) are excluded from the UI.
+       */
+      function isTextContentType(contentType) {
+        if (!contentType) return true; // Default to true if unknown
+        const type = contentType.toLowerCase();
+        
+        // Binary types to exclude
+        const binaryTypes = [
+          'application/zip',
+          'application/gzip',
+          'application/x-gzip',
+          'application/x-tar',
+          'application/vnd.cyclonedx+json',
+          'application/octet-stream',
+        ];
+        
+        if (binaryTypes.includes(type)) return false;
+        
+        // Text types
+        if (type.startsWith('application/json')) return true;
+        if (type.startsWith('application/x-jsonl')) return true;
+        if (type.startsWith('text/')) return true;
+        
+        return true; // Default to text if unsure
+      }
+
+      /**
+       * Fetches an artifact with authentication and displays it inline in the modal.
+       * Handles errors gracefully with user-friendly messages.
+       */
+      async function openArtifact(runId, artifactName) {
+        const artifactsOutputEl = document.querySelector('#artifacts-output');
+        if (!artifactsOutputEl) return;
+        
+        // Show loading state
+        const originalContent = artifactsOutputEl.innerHTML;
+        artifactsOutputEl.innerHTML = '<div class="artifact-loading">Loading ' + artifactName + '...</div>';
+        
+        try {
+          const token = getApiToken();
+          if (!token) {
+            artifactsOutputEl.innerHTML = originalContent;
+            throw new Error('Authentication token required. Enter your API bearer token in the header.');
+          }
+          
+          const response = await fetch(artifactUrl(runId, artifactName), {
+            method: 'GET',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+            },
+          });
+          
+          if (!response.ok) {
+            artifactsOutputEl.innerHTML = originalContent;
+            let errorMsg = 'Error loading artifact';
+            if (response.status === 401) {
+              errorMsg = 'Authentication failed: Invalid or expired token. Please re-enter your API key.';
+            } else if (response.status === 404) {
+              errorMsg = 'Artifact not found.';
+            } else if (response.status === 400) {
+              errorMsg = 'Artifact is not available yet. Please wait for the run to complete.';
+            } else if (response.status >= 500) {
+              errorMsg = 'Server error: Could not read artifact (' + response.status + ').';
+            }
+            throw new Error(errorMsg);
+          }
+          
+          const contentType = response.headers.get('content-type') || '';
+          const isJson = contentType.includes('json');
+          const content = isJson ? await response.json() : await response.text();
+          
+          // Display the artifact content
+          artifactsOutputEl.innerHTML = '';
+          const container = document.createElement('div');
+          container.className = 'artifact-content';
+          
+          // Add artifact name as title
+          const titleEl = document.createElement('div');
+          titleEl.className = 'artifact-content-title';
+          titleEl.textContent = artifactName;
+          container.appendChild(titleEl);
+          
+          // Add back button
+          const backBtn = document.createElement('button');
+          backBtn.className = 'artifact-back-btn';
+          backBtn.type = 'button';
+          backBtn.textContent = '← Back to artifacts';
+          backBtn.addEventListener('click', () => {
+            artifactsOutputEl.innerHTML = originalContent;
+            // Re-attach click handlers to artifact list items
+            artifactsOutputEl.querySelectorAll('.artifact-item').forEach((item) => {
+              item.addEventListener('click', async (event) => {
+                event.preventDefault();
+                const name = item.querySelector('.artifact-item-name').textContent;
+                await openArtifact(runId, name);
+              });
+            });
+          });
+          container.appendChild(backBtn);
+          
+          // Add content in appropriate format
+          if (contentType.includes('json')) {
+            const pre = document.createElement('pre');
+            pre.className = 'artifact-content-pre';
+            pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+            container.appendChild(pre);
+          } else if (contentType.includes('markdown')) {
+            const mdDiv = document.createElement('div');
+            mdDiv.className = 'artifact-content-markdown';
+            mdDiv.textContent = content; // In production, use a markdown renderer
+            container.appendChild(mdDiv);
+          } else {
+            const pre = document.createElement('pre');
+            pre.className = 'artifact-content-pre';
+            pre.textContent = String(content);
+            container.appendChild(pre);
+          }
+          
+          artifactsOutputEl.appendChild(container);
+          
+          // Save token if authentication was successful
+          if (token) sessionStorage.setItem('kasekiApiToken', token);
+        } catch (error) {
+          artifactsOutputEl.innerHTML = originalContent;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorEl = document.createElement('div');
+          errorEl.className = 'artifact-error';
+          errorEl.textContent = 'Error: ' + errorMsg;
+          artifactsOutputEl.appendChild(errorEl);
+        }
+      }
+
       function displayArtifactsTab(runId, artifactsResponse) {
         const artifactsOutputEl = document.querySelector('#artifacts-output');
         if (!artifactsOutputEl) return;
@@ -2203,17 +2407,21 @@ const controllerPage = String.raw`<!doctype html>
           ? artifactsResponse.artifacts
           : [];
         
-        if (artifacts.length === 0) {
-          artifactsOutputEl.textContent = 'No artifacts available.';
+        // Filter to only text artifacts (exclude binary)
+        const textArtifacts = artifacts.filter((artifact) => {
+          if (!artifact.available) return false;
+          return isTextContentType(artifact.contentType);
+        });
+        
+        if (textArtifacts.length === 0) {
+          artifactsOutputEl.textContent = 'No text artifacts available.';
           return;
         }
         
         const listDiv = document.createElement('div');
         listDiv.className = 'artifacts-list';
         
-        artifacts.forEach((artifact) => {
-          if (!artifact.available) return;
-          
+        textArtifacts.forEach((artifact) => {
           const item = document.createElement('button');
           item.className = 'artifact-item';
           item.type = 'button';
@@ -2229,8 +2437,8 @@ const controllerPage = String.raw`<!doctype html>
           item.appendChild(nameSpan);
           if (artifact.size) item.appendChild(sizeSpan);
           
-          item.addEventListener('click', () => {
-            window.location.href = artifactUrl(runId, artifact.name);
+          item.addEventListener('click', async () => {
+            await openArtifact(runId, artifact.name);
           });
           
           listDiv.appendChild(item);
