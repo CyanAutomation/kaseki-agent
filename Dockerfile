@@ -143,6 +143,12 @@ RUN chmod +x \
       /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
       /app/scripts/*.sh
 
+# Pre-configure git safe.directory for /agents checkout directory
+# This is a system-wide configuration visible to all users (including UID 10000 containers)
+# and eliminates runtime configuration overhead. This addresses the "dubious ownership"
+# error that occurs when git works with a checked-out repository owned by a different UID.
+RUN git config --system --add safe.directory /agents/kaseki-agent
+
 WORKDIR /workspace
 USER kaseki
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kaseki-entrypoint"]
@@ -241,6 +247,12 @@ RUN mkdir -p /scripts \
       /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
       /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \
       /app/scripts/*.sh
+
+# Pre-configure git safe.directory for /agents checkout directory
+# This is a system-wide configuration visible to all users (including UID 10000 containers)
+# and eliminates runtime configuration overhead. This addresses the "dubious ownership"
+# error that occurs when git works with a checked-out repository owned by a different UID.
+RUN git config --system --add safe.directory /agents/kaseki-agent
 
 WORKDIR /workspace
 USER kaseki

@@ -522,6 +522,40 @@ Results will be in `./results/` after the run completes.
 
 ---
 
+## Image Configuration: Pre-Configured Git Safe.directory
+
+The kaseki-agent Docker image comes with system-wide git configuration pre-built to avoid runtime setup overhead:
+
+### What's Pre-Configured
+
+```dockerfile
+# Built into image at layer time
+RUN git config --system --add safe.directory /agents/kaseki-agent
+```
+
+This ensures the git repository at `/agents/kaseki-agent` can be read by the container without additional configuration.
+
+### Why This Matters
+
+- **Eliminates "Dubious Ownership" errors** when git operations access the checkout directory
+- **Works for all users** (including UID 10000 containers) because system-wide config is global
+- **Zero runtime overhead** — no need to configure git during container startup
+- **Backwards compatible** — host-side `ensure_git_safe_directory()` also configures system-wide, so all layers agree
+
+### When to Reconfigure
+
+If you're using a **custom checkout directory** (not `/agents/kaseki-agent`), you need to configure git for that path:
+
+```bash
+# On the host, before running containers:
+sudo git config --system --add safe.directory /your/custom/path
+
+# Or inside a container:
+git config --system --add safe.directory /your/custom/path  # Requires root in container
+```
+
+---
+
 ## See Also
 
 - [SETUP_GUIDE.md](SETUP_GUIDE.md) — Traditional host-based setup
