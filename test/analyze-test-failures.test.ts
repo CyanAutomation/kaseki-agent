@@ -1,13 +1,12 @@
-#!/usr/bin/env node
-
 /**
  * Integration tests for analyze-test-failures.ts
  * Tests parsing, classification, and summary generation
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { execSync } from 'child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 interface TestCase {
   name: string;
@@ -17,6 +16,17 @@ interface TestCase {
   expectedPreExisting: number;
   expectedFixed: number;
 }
+
+interface AnalysisResult {
+  summary: {
+    total_newly_introduced: number;
+    total_pre_existing: number;
+    total_fixed: number;
+  };
+}
+
+const repoRoot = path.resolve(__dirname, '..');
+const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
 
 const testCases: TestCase[] = [
   {
@@ -128,108 +138,58 @@ Tests: 1 passed, 2 failed
   },
 ];
 
-async function runAnalyzer(
+let tmpDir = '';
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'analyze-test-failures-integration-'));
+});
+
+afterEach(() => {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+function runAnalyzer(
   baselineLog: string,
   workingLog: string,
   outputFile: string
-): Promise<any> {
-  const baselineFile = outputFile + '.baseline';
-  const workingFile = outputFile + '.working';
+): AnalysisResult {
+  const baselineFile = `${outputFile}.baseline`;
+  const workingFile = `${outputFile}.working`;
 
-  try {
-    fs.writeFileSync(baselineFile, baselineLog);
-    fs.writeFileSync(workingFile, workingLog);
+  fs.writeFileSync(baselineFile, baselineLog);
+  fs.writeFileSync(workingFile, workingLog);
 
-    // Run the analyzer
-    execSync(
-      `node src/analyze-test-failures.ts "${baselineFile}" "${workingFile}" "${outputFile}"`,
-      { cwd: '/workspaces/kaseki-agent' }
-    );
+  execFileSync(
+    tsxBin,
+    [
+      path.join(repoRoot, 'src', 'analyze-test-failures.ts'),
+      baselineFile,
+      workingFile,
+      outputFile,
+    ],
+    { cwd: repoRoot }
+  );
 
-    const result = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-    return result;
-  } finally {
-    // Cleanup
-    try {
-      fs.unlinkSync(baselineFile);
-    } catch {
-      // ignore
-    }
-    try {
-      fs.unlinkSync(workingFile);
-    } catch {
-      // ignore
-    }
-  }
+  return JSON.parse(fs.readFileSync(outputFile, 'utf8')) as AnalysisResult;
 }
 
-async function runTests() {
-  let passed = 0;
-  let failed = 0;
-  const tmpDir = '/tmp/analyze-test-failures-integration';
+describe('analyze-test-failures integration', () => {
+  it.each(testCases)(
+    'classifies test failure changes for $name',
+    ({
+      baselineLog,
+      workingLog,
+      expectedNewlyIntroduced,
+      expectedPreExisting,
+      expectedFixed,
+    }) => {
+      const outputFile = path.join(tmpDir, 'test-baseline-comparison.json');
 
-  // Ensure tmp dir exists
-  if (!fs.existsSync(tmpDir)) {
-    fs.mkdirSync(tmpDir, { recursive: true });
-  }
+      const result = runAnalyzer(baselineLog, workingLog, outputFile);
 
-  console.log('\n=== Integration Tests for analyze-test-failures.ts ===\n');
-
-  for (const testCase of testCases) {
-    try {
-      const outputFile = path.join(tmpDir, `${testCase.name.replace(/\s+/g, '-')}.json`);
-
-      const result = await runAnalyzer(testCase.baselineLog, testCase.workingLog, outputFile);
-
-      const { total_newly_introduced, total_pre_existing, total_fixed } = result.summary;
-
-      const newlyIntroducedMatch = total_newly_introduced === testCase.expectedNewlyIntroduced;
-      const preExistingMatch = total_pre_existing === testCase.expectedPreExisting;
-      const fixedMatch = total_fixed === testCase.expectedFixed;
-
-      if (newlyIntroducedMatch && preExistingMatch && fixedMatch) {
-        console.log(`✓ PASS: ${testCase.name}`);
-        console.log(
-          `  newly_introduced=${total_newly_introduced}, pre_existing=${total_pre_existing}, fixed=${total_fixed}`
-        );
-        passed++;
-      } else {
-        console.log(`✗ FAIL: ${testCase.name}`);
-        console.log(`  Expected: newly_introduced=${testCase.expectedNewlyIntroduced}, pre_existing=${testCase.expectedPreExisting}, fixed=${testCase.expectedFixed}`);
-        console.log(
-          `  Got:      newly_introduced=${total_newly_introduced}, pre_existing=${total_pre_existing}, fixed=${total_fixed}`
-        );
-        failed++;
-      }
-
-      // Cleanup output file
-      try {
-        fs.unlinkSync(outputFile);
-      } catch {
-        // ignore
-      }
-    } catch (error) {
-      console.log(`✗ ERROR: ${testCase.name}`);
-      console.log(`  ${error instanceof Error ? error.message : String(error)}`);
-      failed++;
+      expect(result.summary.total_newly_introduced).toBe(expectedNewlyIntroduced);
+      expect(result.summary.total_pre_existing).toBe(expectedPreExisting);
+      expect(result.summary.total_fixed).toBe(expectedFixed);
     }
-  }
-
-  console.log('\n=== Results ===');
-  console.log(`Passed: ${passed}`);
-  console.log(`Failed: ${failed}`);
-  console.log(`Total: ${passed + failed}`);
-
-  if (failed === 0) {
-    console.log('\n✓ All tests passed!');
-    process.exit(0);
-  } else {
-    console.log('\n✗ Some tests failed');
-    process.exit(1);
-  }
-}
-
-runTests().catch((error) => {
-  console.error('Test runner error:', error);
-  process.exit(1);
+  );
 });
