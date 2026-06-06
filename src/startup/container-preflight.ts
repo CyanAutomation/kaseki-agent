@@ -7,6 +7,8 @@
  *
  * All checks can run as UID 10000 (the container user) without requiring root privileges.
  * This module runs once at container startup and stores results in memory.
+ * Later /api/preflight calls expose this cache as boot history only; they do
+ * not treat it as current readiness.
  */
 
 import * as fs from 'fs';
@@ -20,7 +22,9 @@ const logger = createEventLogger('container-preflight');
 
 /**
  * In-memory cache for container preflight results.
- * These are populated once at startup and accessed by the /api/preflight endpoint.
+ * These are populated once at startup and exposed by /api/preflight as
+ * cached startup history. They are not rerun per request and must not be
+ * interpreted as current readiness.
  */
 let cachedContainerPreflightResults: {
   timestamp: string;
@@ -477,4 +481,12 @@ export function logContainerPreflightResults(checks: PreflightCheck[]): void {
  */
 export function getContainerPreflightResults(): { timestamp: string; checks: PreflightCheck[] } | null {
   return cachedContainerPreflightResults;
+}
+
+/**
+ * Clear cached container preflight results. Intended for tests and controlled
+ * service lifecycle resets.
+ */
+export function clearContainerPreflightResults(): void {
+  cachedContainerPreflightResults = null;
 }
