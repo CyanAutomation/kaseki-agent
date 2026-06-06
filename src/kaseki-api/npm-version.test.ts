@@ -29,11 +29,38 @@ describe('getNpmVersion', () => {
   it('should not throw if npm is not in PATH', async () => {
     await expect(
       getNpmVersion({
-        npmVersion: undefined,
+        npmVersion: '',
         execSync: () => {
           throw new Error('npm is not in PATH');
         },
       })
     ).resolves.toBe('unknown');
+  });
+
+  it('should ignore an undefined injected npm version and use process npm version', async () => {
+    const originalNpmVersion = process.versions.npm;
+
+    try {
+      Object.defineProperty(process.versions, 'npm', {
+        configurable: true,
+        value: '8.8.8',
+      });
+
+      const version = await getNpmVersion({
+        npmVersion: undefined,
+        execSync: () => '999.0.0',
+      });
+
+      expect(version).toBe('8.8.8');
+    } finally {
+      if (originalNpmVersion === undefined) {
+        delete process.versions.npm;
+      } else {
+        Object.defineProperty(process.versions, 'npm', {
+          configurable: true,
+          value: originalNpmVersion,
+        });
+      }
+    }
   });
 });
