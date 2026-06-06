@@ -26,13 +26,15 @@ describe('ContainerPreflightDiagnostics', () => {
 
     // Create a minimal mock config
     mockConfig = {
-      KASEKI_API_PORT: 8080,
-      KASEKI_API_LOG_LEVEL: 'info',
+      port: 8080,
+      logLevel: 'info',
     };
 
     diagnostics = new ContainerPreflightDiagnostics(mockConfig as KasekiApiConfig);
 
     // Reset environment
+    delete process.env.KASEKI_STARTUP_CHECK_AUTO_REMEDIATE;
+    delete process.env.KASEKI_SAFE_DIRECTORY_SCOPE;
     process.env.KASEKI_CHECKOUT_DIR = '/agents/kaseki-agent';
     process.env.KASEKI_ROOT = '/agents';
     process.env.KASEKI_SECRETS_DIR = '/run/secrets/kaseki';
@@ -64,6 +66,7 @@ describe('ContainerPreflightDiagnostics', () => {
     });
 
     it('should return ok=false when git safe.directory is not configured', () => {
+      process.env.KASEKI_STARTUP_CHECK_AUTO_REMEDIATE = '0';
       const checkoutDir = '/agents/kaseki-agent';
 
       (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
@@ -86,6 +89,7 @@ describe('ContainerPreflightDiagnostics', () => {
     });
 
     it('should show currently configured directories in diagnostic message', () => {
+      process.env.KASEKI_STARTUP_CHECK_AUTO_REMEDIATE = '0';
       const checkoutDir = '/agents/kaseki-agent';
 
       (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
@@ -126,10 +130,10 @@ describe('ContainerPreflightDiagnostics', () => {
       });
 
       let callCount = 0;
-      (spawnSync as jest.Mock).mockImplementation((cmd: string, args: string[]) => {
+      (spawnSync as jest.Mock).mockImplementation((_cmd: string, _args: string[]) => {
         callCount++;
         // First call: check if already configured (returns empty)
-        if (callCount === 1 && cmd === 'git' && args[1] === '--get-all') {
+        if (callCount === 1 && _cmd === 'git' && _args[2] === '--get-all') {
           return {
             status: 0,
             stdout: '',
@@ -137,7 +141,7 @@ describe('ContainerPreflightDiagnostics', () => {
           };
         }
         // Second call: attempt to configure (succeeds)
-        if (callCount === 2 && cmd === 'git' && args[1] === '--add') {
+        if (callCount === 2 && _cmd === 'git' && _args[2] === '--add') {
           return {
             status: 0,
             stdout: '',
@@ -151,7 +155,7 @@ describe('ContainerPreflightDiagnostics', () => {
 
       // Should succeed because auto-remediation was performed
       expect(result.ok).toBe(true);
-      expect(result.detail).toContain('Auto-configured');
+      expect(result.detail).toContain('auto-configured');
 
       // Verify git config --add was called
       expect(spawnSync).toHaveBeenCalledWith(
@@ -198,7 +202,7 @@ describe('ContainerPreflightDiagnostics', () => {
       });
 
       let callCount = 0;
-      (spawnSync as jest.Mock).mockImplementation((cmd: string, args: string[]) => {
+      (spawnSync as jest.Mock).mockImplementation((_cmd: string, _args: string[]) => {
         callCount++;
         // First call: check returns empty (not configured)
         if (callCount === 1) {
@@ -241,7 +245,7 @@ describe('ContainerPreflightDiagnostics', () => {
       });
 
       let callCount = 0;
-      (spawnSync as jest.Mock).mockImplementation((cmd: string, args: string[]) => {
+      (spawnSync as jest.Mock).mockImplementation((_cmd: string, _args: string[]) => {
         callCount++;
         if (callCount === 1) {
           // First call: check with --system scope
