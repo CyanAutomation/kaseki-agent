@@ -192,7 +192,7 @@ docker-compose logs kaseki-api | grep "preflight"
 curl -H "Authorization: Bearer $KASEKI_API_KEY" http://localhost:8080/api/preflight | jq '.containerStartup'
 ```
 
-The `containerStartup` section in the response lists all startup diagnostics with detailed status.
+The `containerStartup` section is cached startup history (`scope: "cached-startup"`, `current: false`) and is excluded from the endpoint's current readiness status. Use the top-level `checks` and `timestamp` for current `/api/preflight` readiness.
 
 ### Symptom: "Could not create /agents/kaseki-template"
 

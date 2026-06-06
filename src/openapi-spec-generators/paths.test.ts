@@ -525,6 +525,13 @@ describe('OpenAPI Path Builders', () => {
       >).properties;
       expect(responseProps.isValid.type).toBe('boolean');
       expect(responseProps.checks.type).toBe('array');
+      expect(responseProps.containerStartup.description).toContain('boot history');
+      expect(responseProps.containerStartup.properties.scope.enum).toEqual(['cached-startup']);
+      expect(responseProps.containerStartup.properties.readinessImpact.enum).toEqual([
+        'excluded-from-current-readiness',
+      ]);
+      expect(responseProps.containerStartup.properties.current.enum).toEqual([false]);
+      expect(responseProps.containerStartup.properties.cachedAt.format).toBe('date-time');
     });
 
     it('POST /api/validate should accept RunRequest schema and return validation result', () => {

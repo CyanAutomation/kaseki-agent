@@ -1365,11 +1365,17 @@ export function createApiRouter(
   router.get('/preflight', (_req: Request, res: Response) => {
     const response = buildPreflightResponse(config);
 
-    // Include container startup diagnostics if available
+    // Include cached container startup diagnostics as boot history only.
+    // These observations are not rerun for this request and are excluded from
+    // the top-level current readiness status/checks.
     const containerPreflightResults = getContainerPreflightResults();
     if (containerPreflightResults) {
       response.containerStartup = {
+        scope: 'cached-startup',
+        readinessImpact: 'excluded-from-current-readiness',
+        current: false,
         timestamp: containerPreflightResults.timestamp,
+        cachedAt: containerPreflightResults.timestamp,
         checks: containerPreflightResults.checks,
       };
     }
