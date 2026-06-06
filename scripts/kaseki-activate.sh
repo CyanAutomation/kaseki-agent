@@ -6,6 +6,7 @@ KASEKI_REF="${KASEKI_REF:-main}"
 KASEKI_ROOT="${KASEKI_ROOT:-/agents}"
 KASEKI_CHECKOUT_DIR="${KASEKI_CHECKOUT_DIR:-$KASEKI_ROOT/kaseki-agent}"
 KASEKI_TEMPLATE_DIR="${KASEKI_TEMPLATE_DIR:-$KASEKI_ROOT/kaseki-template}"
+KASEKI_HOST_CACHE_DIR="${KASEKI_HOST_CACHE_DIR:-$KASEKI_ROOT/kaseki-cache}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_OUTPUT_FORMAT="${KASEKI_OUTPUT_FORMAT:-text}"
@@ -251,6 +252,7 @@ run_doctor() {
     output_file="$(mktemp)"
     set +e
     KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" \
+      KASEKI_CACHE_DIR="$KASEKI_HOST_CACHE_DIR" \
       "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor >"$output_file" 2>&1
     code=$?
     set -e
@@ -259,6 +261,7 @@ run_doctor() {
     [ "$code" -eq 0 ] || exit "$code"
   else
     KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" \
+      KASEKI_CACHE_DIR="$KASEKI_HOST_CACHE_DIR" \
       "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" --doctor
   fi
   emit_json_log "doctor" "finished" "$KASEKI_TEMPLATE_DIR"
@@ -275,9 +278,11 @@ run_kaseki() {
   set +e
   if [ "$KASEKI_OUTPUT_FORMAT" = "json" ]; then
     output_file="$(mktemp)"
-    "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" "$@" >"$output_file" 2>&1
+    KASEKI_CACHE_DIR="$KASEKI_HOST_CACHE_DIR" \
+      "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" "$@" >"$output_file" 2>&1
   else
-    "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" "$@"
+    KASEKI_CACHE_DIR="$KASEKI_HOST_CACHE_DIR" \
+      "$KASEKI_TEMPLATE_DIR/run-kaseki.sh" "$@"
   fi
   code=$?
   set -e

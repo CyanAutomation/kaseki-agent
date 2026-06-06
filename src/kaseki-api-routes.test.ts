@@ -645,6 +645,45 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     clearContainerPreflightResults();
   });
 
+  function writePreflightTemplateFixture(
+    root: string,
+    activatorContent = '#!/usr/bin/env bash\n',
+  ): { templateDir: string; checkoutDir: string } {
+    const templateDir = path.join(root, 'template');
+    const checkoutDir = path.join(root, 'checkout');
+    const requiredFiles = [
+      'run-kaseki.sh',
+      'kaseki-agent.sh',
+      'scripts/kaseki-activate.sh',
+      'scripts/kaseki-preflight.sh',
+      'lib/pi-event-filter.js',
+      'lib/pi-progress-stream.js',
+      'lib/kaseki-report.js',
+      'lib/github-app-token.js',
+      'lib/github-app-private-key.js',
+      'lib/github-utils.js',
+      'lib/logger.js',
+      'lib/secrets/host-secrets-reader.js',
+    ];
+
+    for (const dir of [templateDir, checkoutDir]) {
+      fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+      fs.mkdirSync(path.join(dir, 'lib', 'secrets'), { recursive: true });
+    }
+
+    for (const fileName of requiredFiles) {
+      fs.writeFileSync(path.join(templateDir, fileName), 'export {};\n');
+    }
+
+    fs.writeFileSync(
+      path.join(templateDir, 'run-kaseki.sh'),
+      '#!/usr/bin/env bash\nif [[ "$1" == "--doctor" ]]; then exit 0; fi\nexit 0\n',
+    );
+    fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-activate.sh'), activatorContent);
+    fs.writeFileSync(path.join(checkoutDir, 'scripts', 'kaseki-activate.sh'), activatorContent);
+    return { templateDir, checkoutDir };
+  }
+
   test('classifies Docker socket permission failures with actionable remediation', () => {
     const result = classifyDockerFailure(
       'permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock'
@@ -701,6 +740,85 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       })]);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/preflight reports template activator parity when checkout and template match', async () => {
+    const originalTemplateDir = process.env.KASEKI_TEMPLATE_DIR;
+    const originalCheckoutDir = process.env.KASEKI_CHECKOUT_DIR;
+    const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-parity-ok-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-parity-results-'));
+    const { templateDir, checkoutDir } = writePreflightTemplateFixture(root);
+    process.env.KASEKI_TEMPLATE_DIR = templateDir;
+    process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = (await res.json()) as any;
+      const parity = body.checks.find((check: any) => check.name === 'template-activator-parity');
+
+      expect(res.status).toBe(200);
+      expect(parity).toEqual(expect.objectContaining({
+        ok: true,
+        detail: 'Template activator matches checkout activator.',
+      }));
+      expect(parity.checksum).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalTemplateDir === undefined) delete process.env.KASEKI_TEMPLATE_DIR;
+      else process.env.KASEKI_TEMPLATE_DIR = originalTemplateDir;
+      if (originalCheckoutDir === undefined) delete process.env.KASEKI_CHECKOUT_DIR;
+      else process.env.KASEKI_CHECKOUT_DIR = originalCheckoutDir;
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/preflight degrades when deployed template activator drifts from checkout', async () => {
+    const originalTemplateDir = process.env.KASEKI_TEMPLATE_DIR;
+    const originalCheckoutDir = process.env.KASEKI_CHECKOUT_DIR;
+    const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-parity-drift-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-parity-results-'));
+    const { templateDir, checkoutDir } = writePreflightTemplateFixture(root, '#!/usr/bin/env bash\necho checkout\n');
+    fs.writeFileSync(path.join(templateDir, 'scripts', 'kaseki-activate.sh'), '#!/usr/bin/env bash\necho stale-template\n');
+    process.env.KASEKI_TEMPLATE_DIR = templateDir;
+    process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      const body = (await res.json()) as any;
+      const parity = body.checks.find((check: any) => check.name === 'template-activator-parity');
+
+      expect(res.status).toBe(200);
+      expect(body.status).toBe('degraded');
+      expect(parity).toEqual(expect.objectContaining({
+        ok: false,
+        detail: expect.stringContaining('deployed template may be stale'),
+        remediation: 'Run scripts/kaseki-activate.sh --controller bootstrap.',
+      }));
+      expect(parity.checkoutHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(parity.templateHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(parity.checkoutHash).not.toBe(parity.templateHash);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+      if (originalTemplateDir === undefined) delete process.env.KASEKI_TEMPLATE_DIR;
+      else process.env.KASEKI_TEMPLATE_DIR = originalTemplateDir;
+      if (originalCheckoutDir === undefined) delete process.env.KASEKI_CHECKOUT_DIR;
+      else process.env.KASEKI_CHECKOUT_DIR = originalCheckoutDir;
+      fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });
@@ -2033,6 +2151,7 @@ describe('kaseki-api-routes status artifact hints', () => {
         resultSummaryMd: false,
         failureJson: true,
         stderrLog: true,
+        stdoutLog: false,
         availableFiles: ['metadata.json', 'failure.json', 'stderr.log'],
       });
       expect(body.diagnosticEntryPoint).toBe('failure.json');
@@ -2199,9 +2318,44 @@ describe('kaseki-api-routes status artifact hints', () => {
         resultSummaryMd: true,
         failureJson: false,
         stderrLog: false,
+        stdoutLog: false,
         availableFiles: ['result-summary.md'],
       });
       expect(body.diagnosticEntryPoint).toBe('result-summary.md');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('failed run exposes stdout log as fallback diagnostic when richer artifacts are missing', async () => {
+    const jobId = 'kaseki-failed-status-stdout-only';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'controller bootstrap stdout\nmkdir: cannot create directory');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn(),
+    } as any;
+    const config = { port: 0, apiKeys: ['test-key'], resultsDir, maxConcurrentRuns: 1, defaultTaskMode: 'patch' as const, maxDiffBytes: 400000, agentTimeoutSeconds: 10800, logLevel: 'info' as const };
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, { headers: { Authorization: 'Bearer test-key' } });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.artifacts.stdoutLog).toBe(true);
+      expect(body.artifacts.availableFiles).toEqual(['stdout.log']);
+      expect(body.diagnosticEntryPoint).toBe('stdout.log');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
