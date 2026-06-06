@@ -444,7 +444,8 @@ function runControllerScript(controllerPage: string): void {
   if (!scriptMatch) {
     throw new Error('Controller page script not found');
   }
-  window.eval(scriptMatch[1]);
+  const scriptFunction = new Function(scriptMatch[1]);
+  scriptFunction.call(window);
 }
 
 function jsonResponse(payload: unknown): Response {
