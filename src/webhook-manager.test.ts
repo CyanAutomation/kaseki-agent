@@ -60,7 +60,7 @@ describe('WebhookManager delivery log recovery', () => {
     jest.restoreAllMocks();
   });
 
-  test('re-enqueues pending deliveries on restart and retries immediately when retry time is stale', () => {
+  test('re-enqueues pending deliveries on restart and retries immediately when retry time is stale', async () => {
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-recovery-test-');
     const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
 
@@ -90,14 +90,17 @@ describe('WebhookManager delivery log recovery', () => {
     const manager = new WebhookManager(resultsDir);
     manager.stopProcessing();
 
-    expect(manager.getQueueSize()).toBe(1);
-    const queueEntry = (manager as any).deliveryQueue[0];
-    expect(queueEntry.nextRetryTime).toBeGreaterThanOrEqual(Date.now() - 1000);
-
-    fs.rmSync(resultsDir, { recursive: true, force: true });
+    try {
+      expect(manager.getQueueSize()).toBe(1);
+      const queueEntry = (manager as any).deliveryQueue[0];
+      expect(queueEntry.nextRetryTime).toBeGreaterThanOrEqual(Date.now() - 1000);
+    } finally {
+      await manager.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
   });
 
-  test('skips malformed lines and terminal/non-retryable entries while recovering valid pending rows', () => {
+  test('skips malformed lines and terminal/non-retryable entries while recovering valid pending rows', async () => {
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-malformed-test-');
     const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -142,11 +145,14 @@ describe('WebhookManager delivery log recovery', () => {
     const manager = new WebhookManager(resultsDir);
     manager.stopProcessing();
 
-    expect(manager.getQueueSize()).toBe(1);
-    expect((manager as any).deliveryQueue[0].jobId).toBe('job-valid');
-    expect(logSpy).toHaveBeenCalled();
-
-    logSpy.mockRestore();
-    fs.rmSync(resultsDir, { recursive: true, force: true });
+    try {
+      expect(manager.getQueueSize()).toBe(1);
+      expect((manager as any).deliveryQueue[0].jobId).toBe('job-valid');
+      expect(logSpy).toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+      await manager.shutdown();
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
   });
 });
