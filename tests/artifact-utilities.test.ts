@@ -7,7 +7,7 @@
  */
 
 import { ARTIFACT_METADATA_REGISTRY } from '../src/artifact-metadata';
-import { isTextArtifact, filterTextArtifacts } from '../src/lib/artifact-utilities';
+import { isTextArtifact, filterTextArtifacts, shouldDisplayInline } from '../src/lib/artifact-utilities';
 
 describe('Artifact Utilities', () => {
   describe('isTextArtifact', () => {
@@ -165,13 +165,22 @@ describe('Artifact Utilities', () => {
       }
     });
 
-    it('should have all artifact content types be properly defined', () => {
-      const allArtifacts = Object.values(ARTIFACT_METADATA_REGISTRY);
+    it('should classify representative user-facing registry artifacts for preview behavior', () => {
+      const representativeArtifacts = [
+        { name: 'failure.json', contentType: 'application/json', isText: true, previewableInline: true },
+        { name: 'result-summary.md', contentType: 'text/markdown', isText: true, previewableInline: true },
+        { name: 'pi-events.jsonl', contentType: 'application/x-jsonl', isText: true, previewableInline: true },
+        { name: 'stderr.log', contentType: 'text/plain', isText: true, previewableInline: true },
+        { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values', isText: true, previewableInline: true },
+      ];
 
-      allArtifacts.forEach(artifact => {
-        expect(artifact.contentType).toBeDefined();
-        expect(typeof artifact.contentType).toBe('string');
-        expect(artifact.contentType.length).toBeGreaterThan(0);
+      representativeArtifacts.forEach(({ name, contentType, isText, previewableInline }) => {
+        const artifact = ARTIFACT_METADATA_REGISTRY[name];
+
+        expect(artifact).toBeDefined();
+        expect(artifact.contentType).toBe(contentType);
+        expect(isTextArtifact(artifact.contentType)).toBe(isText);
+        expect(shouldDisplayInline(artifact.contentType)).toBe(previewableInline);
       });
     });
   });
