@@ -346,14 +346,52 @@ describe('OpenAPI Component Builders', () => {
   });
 
   describe('Info Object Structure', () => {
-    it('should have all required OpenAPI info properties', () => {
+    it('OpenAPI 3.1 Info Object contract: exposes semantic package identity, version, contact, and license metadata', () => {
+      // Contract source: generateOpenAPISpec() emits buildInfo() as the root OpenAPI `info` object.
+      // OpenAPI 3.1 requires `title` and `version`; this generator also requires real contact/license metadata.
       const info = buildInfo();
+      const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf-8')) as {
+        author: string;
+        license: string;
+        name: string;
+        repository: { url: string };
+        version: string;
+      };
+      const expectedTitle = packageJson.name
+        .replace(/^@[^/]+\//, '')
+        .split('-')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ') + ' API';
+      const contact = info.contact as Record<string, unknown>;
+      const license = info.license as Record<string, unknown>;
+      const repositoryUrl = packageJson.repository.url;
+      const nonPlaceholderPattern = /^(?!.*(?:example|placeholder|todo|changeme|unknown|localhost)).+$/i;
 
-      expect(info).toHaveProperty('title');
-      expect(info).toHaveProperty('version');
-      expect(info).toHaveProperty('description');
-      expect(info).toHaveProperty('contact');
-      expect(info).toHaveProperty('license');
+      expect(info.title).toBe(expectedTitle);
+      expect(info.version).toBe(packageJson.version);
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const fallbackInfo = buildInfo({
+        packageJsonReader: jest.fn(() => {
+          throw new Error('package.json unavailable');
+        }),
+      });
+      expect(fallbackInfo.version).toBe('0.0.0');
+      warnSpy.mockRestore();
+
+      expect(contact.name).toBe(packageJson.author);
+      expect(contact.name).toEqual(expect.stringMatching(nonPlaceholderPattern));
+      expect(contact.url).toBe(repositoryUrl);
+      expect(contact.url).toEqual(expect.stringMatching(nonPlaceholderPattern));
+      expect(new URL(contact.url as string).protocol).toBe('https:');
+
+      expect(license.name).toBe(packageJson.license);
+      expect(license.name).toEqual(expect.stringMatching(nonPlaceholderPattern));
+      expect(license.url).toEqual(expect.stringMatching(nonPlaceholderPattern));
+      const licenseUrl = new URL(license.url as string);
+      expect(licenseUrl.protocol).toBe('https:');
+      expect(licenseUrl.hostname).toBe(new URL(repositoryUrl).hostname);
+      expect(licenseUrl.pathname).toContain('/LICENSE');
     });
 
     it('license object should be complete', () => {
