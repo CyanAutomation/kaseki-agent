@@ -21,7 +21,7 @@ async function listen(app: express.Express): Promise<{ server: Server; url: stri
   if (!address || typeof address === 'string') {
     throw new Error('Expected test server to bind to a TCP port');
   }
-  return { server, url: ` };
+  return { server, url: `http://127.0.0.1:${address.port}` };
 }
 
 async function close(server: Server): Promise<void> {

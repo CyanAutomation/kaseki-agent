@@ -118,7 +118,12 @@ export default [
       globals: {
         ...nodeGlobals,
         ...jestGlobals,
-        NodeJS: 'readonly'
+        NodeJS: 'readonly',
+        // Browser globals for jsdom environment
+        document: 'readonly',
+        window: 'readonly',
+        navigator: 'readonly',
+        MouseEvent: 'readonly'
       }
     },
     plugins: {
