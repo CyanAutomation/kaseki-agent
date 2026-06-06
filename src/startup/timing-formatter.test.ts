@@ -85,10 +85,12 @@ describe('Timing Formatter', () => {
       };
 
       const table = formatTimingTable(components);
+      const rows = table.split('\n');
 
-      // Should have total or summary
-      expect(table).toBeDefined();
-      expect(table.length).toBeGreaterThan(0);
+      expect(rows).toHaveLength(6);
+      expect(rows[4]).toMatch(/^-+$/);
+      expect(rows[5]).toContain('TOTAL');
+      expect(rows[5]).toContain('30.0ms');
     });
   });
 });
