@@ -2847,11 +2847,13 @@ analyze_test_failures_baseline() {
   emit_progress "test failure analysis" "comparing baseline and working test results"
   
   # Compile and run analyze-test-failures.ts if source exists
-  local analyzer_ts="$SCRIPT_DIR/src/analyze-test-failures.ts"
+  # In Docker, prefer /app/src/ (installed with image); fall back to local $SCRIPT_DIR for dev
+  local analyzer_ts="/app/src/analyze-test-failures.ts"
   local analyzer_js="/tmp/analyze-test-failures.js"
   
-  if [ ! -f "$analyzer_ts" ] && [ -f "/app/src/analyze-test-failures.ts" ]; then
-    analyzer_ts="/app/src/analyze-test-failures.ts"
+  # For local development (running outside Docker), use source from repo
+  if [ ! -f "$analyzer_ts" ] && [ -f "$SCRIPT_DIR/src/analyze-test-failures.ts" ]; then
+    analyzer_ts="$SCRIPT_DIR/src/analyze-test-failures.ts"
   fi
   
   if [ -f "$analyzer_ts" ]; then
