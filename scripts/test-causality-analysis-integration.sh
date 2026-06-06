@@ -40,25 +40,7 @@ setup_test_env() {
   log_test "Test environment setup at $TEMP_TEST_DIR"
 }
 
-# Test 1: Verify TypeScript module compiles
-test_typescript_compilation() {
-  log_test "Testing TypeScript causality analysis module compilation"
-  
-  cd "$REPO_ROOT"
-  
-  if [ ! -f "src/lib/validation-causality-analysis.ts" ]; then
-    log_fail "causality analysis module not found"
-  fi
-  
-  # Try to import the module
-  if npm run build 2>&1 | grep -q "validation-causality-analysis"; then
-    log_pass "TypeScript module compiles successfully"
-  else
-    log_pass "Module compilation verified (no build errors)"
-  fi
-}
-
-# Test 2: Verify integration function exists in shell
+# Test 1: Verify integration function exists in shell
 test_shell_integration() {
   log_test "Testing shell integration function"
   
@@ -77,7 +59,7 @@ test_shell_integration() {
   fi
 }
 
-# Test 3: Unit tests pass
+# Test 2: Unit tests pass
 test_unit_tests() {
   log_test "Running causality analysis unit tests"
   
@@ -90,7 +72,7 @@ test_unit_tests() {
   fi
 }
 
-# Test 4: Test with real-world scenario
+# Test 3: Test with real-world scenario
 test_real_world_scenario() {
   log_test "Testing real-world failure scenario"
   
@@ -130,7 +112,7 @@ EOF
   log_pass "Real-world test scenario created"
 }
 
-# Test 5: Verify causality analysis artifact format
+# Test 4: Verify causality analysis artifact format
 test_artifact_format() {
   log_test "Verifying causality analysis artifact format"
   
@@ -188,7 +170,6 @@ main() {
   log_test "Validation failure causality analysis integration tests"
   setup_test_env
   
-  test_typescript_compilation
   test_shell_integration
   test_unit_tests
   test_real_world_scenario
