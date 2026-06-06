@@ -56,7 +56,7 @@ test_script_syntax() {
 # Test 5: Verify validation commands run through non-login bash in the repo cwd.
 test_validation_command_non_login_shell_and_cwd() {
   local tmpdir fake_repo fake_bin results_dir home_dir marker login_marker run_log run_exit
-  tmpdir=$(mktemp -d)
+  tmpdir=$(mktemp -d) || fail "Failed to create temporary directory"
   trap 'rm -rf "${tmpdir:-}"' EXIT
 
   fake_repo="$tmpdir/fake-repo"
