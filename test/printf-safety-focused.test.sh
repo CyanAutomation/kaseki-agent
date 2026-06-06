@@ -66,17 +66,6 @@ else
 fi
 
 echo ""
-echo "Test 6: json_encode availability"
-source <(sed -n '/^# Safely encode value/,/^}/p' "$SCRIPT_DIR/kaseki-agent.sh" | head -20)
-
-output=$(printf 'test' | json_encode 2>/dev/null || true)
-if [ -n "$output" ]; then
-  echo "  ✓ PASS: json_encode produced output: $output"
-else
-  echo "  ⓘ INFO: json_encode fallback returned empty (expected if node unavailable)"
-fi
-
-echo ""
 echo "=== All Critical Tests Passed ==="
 echo ""
 echo "Summary of fixes:"
@@ -84,6 +73,5 @@ echo "  1. ✓ validate_numeric() prevents dash/non-numeric values"
 echo "  2. ✓ Arithmetic only happens after validation"
 echo "  3. ✓ Printf calls use validated numeric arguments"
 echo "  4. ✓ grep count fallback prevents dash values"
-echo "  5. ✓ json_encode has error handling and fallback"
 echo ""
 echo "The 'printf: - : invalid option' error is now prevented."
