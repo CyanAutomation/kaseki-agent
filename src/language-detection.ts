@@ -139,33 +139,33 @@ export function getBuildCommand(
   javaSystem?: JavaBuildSystem,
 ): string | null {
   switch (language) {
-    case 'typescript':
-      // Prefer explicit npm run build script; fallback to npm run build
-      return 'npm run build';
+  case 'typescript':
+    // Prefer explicit npm run build script; fallback to npm run build
+    return 'npm run build';
 
-    case 'go':
-      return 'go build';
+  case 'go':
+    return 'go build';
 
-    case 'rust':
-      return 'cargo build';
+  case 'rust':
+    return 'cargo build';
 
-    case 'java': {
-      const system = javaSystem || detectJavaBuildSystem(workspaceRoot);
-      if (system === 'gradle') {
-        return 'gradle build';
-      }
-      if (system === 'maven') {
-        return 'mvn clean install';
-      }
-      return null;
+  case 'java': {
+    const system = javaSystem || detectJavaBuildSystem(workspaceRoot);
+    if (system === 'gradle') {
+      return 'gradle build';
     }
+    if (system === 'maven') {
+      return 'mvn clean install';
+    }
+    return null;
+  }
 
-    case 'python':
-      return 'python -m build';
+  case 'python':
+    return 'python -m build';
 
-    default:
-      // Handle unknown languages gracefully
-      return null;
+  default:
+    // Handle unknown languages gracefully
+    return null;
   }
 }
 

@@ -123,8 +123,8 @@ function detectAsyncKeywords(taskPrompt: string): string[] {
   for (const keyword of ASYNC_KEYWORDS) {
     // Create regex that matches the keyword (case-insensitive, word boundaries)
     // Allow optional 's' for plurals
-    const pattern = keyword.endsWith('s') 
-      ? keyword 
+    const pattern = keyword.endsWith('s')
+      ? keyword
       : `${keyword}s?`; // Allow singular or plural
     const regex = new RegExp(`\\b${pattern}\\b`, 'gi');
     if (regex.test(lowerPrompt)) {
