@@ -364,7 +364,7 @@ describe('OpenAPI Component Builders', () => {
         .join(' ') + ' API';
       const contact = info.contact as Record<string, unknown>;
       const license = info.license as Record<string, unknown>;
-      const repositoryUrl = packageJson.repository.url;
+      const repositoryUrl = packageJson.repository?.url ?? '';
       const nonPlaceholderPattern = /^(?!.*(?:example|placeholder|todo|changeme|unknown|localhost)).+$/i;
 
       expect(info.title).toBe(expectedTitle);
