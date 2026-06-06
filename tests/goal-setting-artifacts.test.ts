@@ -64,6 +64,7 @@ describe('Goal-Setting Artifacts Registry', () => {
     'registers exact metadata for $name',
     ({ name, contentType, availability, sizeHint, triageOrder }) => {
       const artifact = ARTIFACT_METADATA_REGISTRY[name];
+      expect(artifact).toBeDefined();
 
       expect(artifact).toEqual(
         expect.objectContaining({
