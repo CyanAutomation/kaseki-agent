@@ -59,7 +59,7 @@ export function enhanceGoalWithBuildAndAsyncCriteria(
     // Criterion for interface compatibility
     if (asyncImpact.interfaceFiles.length > 0) {
       newCriteria.push({
-        criterion: `All interface/type definitions correctly reflect async method signatures and return types`,
+        criterion: 'All interface/type definitions correctly reflect async method signatures and return types',
         smart_score: 'high',
         reasoning: `Interface files affected: ${asyncImpact.interfaceFiles.slice(0, 3).join(', ')}${asyncImpact.interfaceFiles.length > 3 ? `, +${asyncImpact.interfaceFiles.length - 3} more` : ''}`,
       });
