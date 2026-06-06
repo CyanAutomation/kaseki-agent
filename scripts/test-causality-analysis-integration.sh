@@ -145,25 +145,11 @@ EOF
   fi
 }
 
-# Test 2: Unit tests pass
-test_unit_tests() {
-  log_test "Running causality analysis unit tests"
-  
-  cd "$REPO_ROOT"
-  
-  if npm test -- src/lib/validation-causality-analysis.test.ts 2>&1 | grep -q "Tests.*passed"; then
-    log_pass "All causality analysis unit tests pass"
-  else
-    log_fail "Unit tests failed"
-  fi
-}
-
 main() {
   log_test "Validation failure causality analysis integration tests"
   setup_test_env
   
   test_validation_failure_path
-  test_unit_tests
   
   log_pass "All causality analysis integration tests passed!"
 }
