@@ -211,7 +211,7 @@ EOF_FILTER
     fail "Validation marker was not written by the fake package script"
   fi
 
-  if ! grep -qx "cwd=$tmpdir/workspace/repo" "$marker"; then
+  if ! grep -qx "cwd=${tmpdir}/workspace/repo" "$marker"; then
     fail "Validation command did not run in the cloned repository cwd"
   fi
 
