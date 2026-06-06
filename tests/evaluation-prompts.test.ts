@@ -899,6 +899,35 @@ console.log(output);
       fs.rmSync(run.tmpDir, { recursive: true, force: true });
     };
 
+    const readDiagnosticFileIfExists = (filePath: string) => (
+      fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null
+    );
+
+    const buildRunEvaluationDiagnostic = (run: ReturnType<typeof runRunEvaluationOrchestration>) => ({
+      status: run.result.status,
+      events: run.events,
+      orchestratorEventsPath: run.orchestratorEventsPath,
+      runLogPath: run.runLogPath,
+      stageTimings: readDiagnosticFileIfExists(path.join(run.resultsDir, 'stage-timings.tsv')),
+      runEvaluationStderr: readDiagnosticFileIfExists(path.join(run.resultsDir, 'run-evaluation-stderr.log')),
+      progressLog: readDiagnosticFileIfExists(path.join(run.resultsDir, 'progress.log')),
+    });
+
+    const expectWithRunEvaluationDiagnostic = (
+      description: string,
+      diagnostic: ReturnType<typeof buildRunEvaluationDiagnostic>,
+      assertion: () => void
+    ) => {
+      try {
+        assertion();
+      } catch (error) {
+        if (error instanceof Error) {
+          error.message = `${error.message}\n\nRun-evaluation diagnostic for ${description}:\n${JSON.stringify(diagnostic, null, 2)}`;
+        }
+        throw error;
+      }
+    };
+
     it('should collect run-evaluation feedback after artifact-contract invocation with the expected paths and fields', () => {
       const run = runRunEvaluationOrchestration('success');
 
@@ -906,8 +935,14 @@ console.log(output);
         expect(run.result.status).toBe(0);
         const runEvaluationIndex = run.events.findIndex(event => event.event === 'pi' && event.stage === 'run-evaluation');
         const feedbackEvents = run.events.filter(event => event.event === 'collect-feedback' && event.phase === 'run-evaluation');
-        expect(runEvaluationIndex).toBeGreaterThanOrEqual(0);
-        expect(feedbackEvents).toHaveLength(1);
+        const diagnostic = buildRunEvaluationDiagnostic(run);
+
+        expectWithRunEvaluationDiagnostic('missing fake pi run-evaluation event', diagnostic, () => {
+          expect(runEvaluationIndex).toBeGreaterThanOrEqual(0);
+        });
+        expectWithRunEvaluationDiagnostic('missing run-evaluation feedback event', diagnostic, () => {
+          expect(feedbackEvents).toHaveLength(1);
+        });
 
         const feedbackIndex = run.events.findIndex(event => event === feedbackEvents[0]);
         expect(feedbackIndex).toBeGreaterThan(runEvaluationIndex);
