@@ -491,6 +491,7 @@ console.log(JSON.stringify(payload));
             KASEKI_INSTANCE: 'orchestration-instance',
             KASEKI_WORKSPACE_DIR: tmpDir,
             KASEKI_GIT_CACHE_MODE: 'off',
+            KASEKI_GOAL_CHECK: '1',
             KASEKI_GOAL_CHECK_MAX_RETRIES: '0',
             KASEKI_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'dependency-cache'),
             KASEKI_IMAGE_DEPENDENCY_CACHE_DIR: path.join(tmpDir, 'image-cache'),
@@ -500,6 +501,7 @@ console.log(JSON.stringify(payload));
             KASEKI_RUN_EVALUATION: '0',
             KASEKI_RESULTS_DIR: resultsDir,
             ORCHESTRATOR_EVENTS: orchestratorEventsPath,
+            scenario,
           },
         });
         fs.writeFileSync(runLogPath, `${result.stdout}\n${result.stderr}`);
@@ -863,6 +865,7 @@ console.log(output);
             KASEKI_RUN_EVALUATION: '1',
             KASEKI_RESULTS_DIR: resultsDir,
             ORCHESTRATOR_EVENTS: orchestratorEventsPath,
+            scenario,
           },
         });
         fs.writeFileSync(runLogPath, `${result.stdout}\n${result.stderr}`);
