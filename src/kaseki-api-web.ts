@@ -1782,9 +1782,19 @@ const controllerPage = String.raw`<!doctype html>
           recommendedArtifacts.hidden = true;
           return;
         }
+        
+        // Build a map of artifact names to content types for quick lookup
+        const artifactContentTypes = {};
+        if (artifactsResponse && Array.isArray(artifactsResponse.artifacts)) {
+          artifactsResponse.artifacts.forEach((artifact) => {
+            artifactContentTypes[artifact.name] = artifact.contentType;
+          });
+        }
+        
         recommended.forEach((fileName) => {
           // Only show text artifacts in recommended section
-          if (!isTextContentType(artifactsResponse.artifactTypes?.[fileName])) {
+          const contentType = artifactContentTypes[fileName];
+          if (!isTextContentType(contentType)) {
             return; // Skip binary artifacts
           }
           
