@@ -2330,12 +2330,14 @@ const controllerPage = String.raw`<!doctype html>
        * Display a toast notification to the user.
        * Auto-dismisses after the specified duration.
        */
-      function showToast(message: string, type: 'success' | 'error' | 'info' = 'success', durationMs: number = 2000) {
+      function showToast(message, type, durationMs) {
+        type = type || 'success';
+        durationMs = durationMs || 2000;
         const container = document.querySelector('#toast-container');
         if (!container) return;
 
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
+        toast.className = 'toast ' + type;
         toast.textContent = message;
         container.appendChild(toast);
 
@@ -2348,7 +2350,7 @@ const controllerPage = String.raw`<!doctype html>
       /**
        * Copy text to clipboard using modern Clipboard API or fallback.
        */
-      async function copyToClipboard(text: string): Promise<void> {
+      async function copyToClipboard(text) {
         try {
           // Try modern Clipboard API
           if (navigator.clipboard && window.isSecureContext) {
@@ -2372,14 +2374,14 @@ const controllerPage = String.raw`<!doctype html>
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Copy failed';
-          showToast(`Copy failed: ${message}`, 'error', 2000);
+          showToast('Copy failed: ' + message, 'error', 2000);
         }
       }
 
       /**
        * Extract text content from artifact display element.
        */
-      function extractArtifactContent(): string | null {
+      function extractArtifactContent() {
         const preEl = document.querySelector('.artifact-content .artifact-content-pre');
         if (preEl) {
           return preEl.textContent;
@@ -2391,7 +2393,11 @@ const controllerPage = String.raw`<!doctype html>
         return null;
       }
 
-      
+      /**
+       * Determines whether an artifact should be displayed inline based on content type.
+       * Binary artifacts (zip, gzip, SBOM, etc.) are excluded from the UI.
+       */
+      function isTextContentType(contentType) {
         if (!contentType) return true; // Default to true if unknown
         const type = contentType.toLowerCase();
         
