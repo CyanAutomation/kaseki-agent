@@ -82,7 +82,27 @@ if (process.env.KASEKI_RESTORE_LOGS === '1') {
  * Mock process.exit to prevent Jest process from terminating during tests
  * By default, spy on process.exit to prevent actual exit
  */
-jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+const processExitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
   const error = new Error(`process.exit(${code ?? 0}) called`);
   throw error;
 }) as never);
+
+/**
+ * Global afterEach hook to ensure proper cleanup between tests
+ * This prevents handle leaks from process.exit spy and other resources
+ */
+afterEach(() => {
+  // Reset the process.exit spy mock to clear call history
+  // but keep the mock implementation active
+  processExitSpy.mockClear();
+
+  // Restore all mocked timers to real timers if any test left them in fake state
+  try {
+    jest.useRealTimers();
+  } catch {
+    // Already using real timers, ignore
+  }
+
+  // Clear any remaining console overrides from suppression system
+  (global as any).__kasekiCapturedLogs = [];
+});
