@@ -263,6 +263,7 @@ test_directory_checkpoint() {
   create_controlled_repo "$fake_repo"
 
   mkdir -p "$tmpdir/bin"
+  mkdir -p "$tmpdir/bin"
   cat > "$tmpdir/bin/date" <<'EOF_DATE'
 #!/usr/bin/env bash
 if [ -n "${KASEKI_WORKSPACE_DIR:-}" ] && \
@@ -272,10 +273,10 @@ if [ -n "${KASEKI_WORKSPACE_DIR:-}" ] && \
   touch "$KASEKI_WORKSPACE_DIR/.repo-renamed-before-validation"
   mv "$KASEKI_WORKSPACE_DIR/repo" "$KASEKI_WORKSPACE_DIR/repo.missing-before-validation"
 fi
-exec REAL_DATE_PATH "$@"
 EOF_DATE
-
+  printf 'exec "%s" "$@"\n' "$real_date" >> "$tmpdir/bin/date"
   chmod +x "$tmpdir/bin/date"
+
 
   if run_kaseki_agent_for_validation \
     "$tmpdir" \
