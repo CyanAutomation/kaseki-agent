@@ -423,7 +423,7 @@ append_event() {
   node - "$ORCHESTRATOR_EVENTS" "$1" "${scenario}" <<'NODE'
 const fs = require('node:fs');
 const [file, stage, scenario] = process.argv.slice(2);
-fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.now() }) + '\\n');
+fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.now() }) + '\n');
 NODE
 }
 if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
@@ -757,7 +757,7 @@ append_event() {
   node - "$ORCHESTRATOR_EVENTS" "$1" "${scenario}" <<'NODE'
 const fs = require('node:fs');
 const [file, stage, scenario] = process.argv.slice(2);
-fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.now() }) + '\\n');
+fs.appendFileSync(file, JSON.stringify({ event: 'pi', stage, scenario, at: Date.now() }) + '\n');
 NODE
 }
 if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
