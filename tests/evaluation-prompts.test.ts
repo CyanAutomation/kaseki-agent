@@ -773,7 +773,11 @@ elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   append_event goal-check
   printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only run-evaluation Pi agent'; then
+# Classify run-evaluation by its required artifact contract instead of prompt wording.
+elif printf '%s' "$prompt" | grep -Eq 'RUN_EVALUATION_CANDIDATE_ARTIFACT|run-evaluation-candidate\.json' \
+  && printf '%s' "$prompt" | grep -q '"overall_assessment"' \
+  && printf '%s' "$prompt" | grep -q '"reviewer_confidence"' \
+  && printf '%s' "$prompt" | grep -q '"task_completion_score"'; then
   append_event run-evaluation
   if [ "${scenario}" = "malformed-artifact" ]; then
     printf '{"overall_assessment":"good"' > "$KASEKI_RESULTS_DIR/run-evaluation-candidate.json"
@@ -895,7 +899,7 @@ console.log(output);
       fs.rmSync(run.tmpDir, { recursive: true, force: true });
     };
 
-    it('should collect run-evaluation feedback after orchestration completes evaluation with the expected paths and artifact fields', () => {
+    it('should collect run-evaluation feedback after artifact-contract invocation with the expected paths and fields', () => {
       const run = runRunEvaluationOrchestration('success');
 
       try {
@@ -958,7 +962,7 @@ console.log(output);
     it.each([
       'malformed-artifact' as const,
       'missing-artifact' as const,
-    ])('should not collect run-evaluation feedback when run-evaluation output is %s', (scenario) => {
+    ])('should not collect run-evaluation feedback when artifact-contract run-evaluation output is %s', (scenario) => {
       const run = runRunEvaluationOrchestration(scenario);
 
       try {
