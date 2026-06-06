@@ -18,6 +18,7 @@ run_case() {
   mkdir -p "$fake_repo/deps/fake-dep" "$fake_bin" "$results_dir" "$workspace_repo" "$app_lib" "$case_dir/scripts"
   : > "$pi_calls"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
+  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 
   sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
