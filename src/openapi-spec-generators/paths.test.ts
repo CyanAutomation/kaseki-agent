@@ -779,11 +779,36 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('successful GET requests should return 200', () => {
-      const healthPath = (paths['/health'] as Record<string, any>).get;
-      const listRunsPath = (paths['/api/runs'] as Record<string, any>).get;
-      expect(healthPath.responses['200']).toBeDefined();
-      expect(listRunsPath.responses['200']).toBeDefined();
+    it('each GET operation should document its expected success status', () => {
+      const expectedGetSuccessStatusByRoute: Record<string, string> = {
+        '/api/improvements': '200',
+        '/api/metrics': '200',
+        '/api/preflight': '200',
+        '/api/results/{id}/{file}': '200',
+        '/api/runs': '200',
+        '/api/runs/{id}/analysis': '200',
+        '/api/runs/{id}/artifacts': '200',
+        '/api/runs/{id}/logs/{logtype}': '200',
+        '/api/runs/{id}/progress': '200',
+        '/api/runs/{id}/status': '200',
+        '/health': '200',
+        '/ready': '200',
+      };
+      const getOperations = Object.entries(paths)
+        .filter(([, pathDef]) => Boolean((pathDef as Record<string, any>).get))
+        .map(([route, pathDef]) => ({
+          route,
+          operation: (pathDef as Record<string, any>).get,
+        }));
+
+      expect(getOperations.map(({ route }) => route).sort()).toEqual(
+        Object.keys(expectedGetSuccessStatusByRoute).sort()
+      );
+      getOperations.forEach(({ route, operation }) => {
+        const expectedStatus = expectedGetSuccessStatusByRoute[route];
+
+        expect(operation.responses[expectedStatus]).toBeDefined();
+      });
     });
 
     it('POST requests that queue jobs should return 202 Accepted', () => {
