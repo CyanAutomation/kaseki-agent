@@ -426,3 +426,53 @@ export function analyzeValidationFailureCausality(
     return null;
   }
 }
+
+function isDirectCliInvocation(): boolean {
+  const invokedPath = process.argv[1];
+
+  return Boolean(
+    invokedPath && path.basename(invokedPath) === 'validation-causality-analysis.ts'
+  );
+}
+
+function runCli(): void {
+  const [, , baselineLogPath, postChangeLogPath, gitDiffPath, changedFilesPath, outputPath] =
+    process.argv;
+
+  if (!baselineLogPath || !postChangeLogPath || !gitDiffPath || !changedFilesPath || !outputPath) {
+    console.error(
+      'Usage: validation-causality-analysis.ts <baseline-log> <post-change-log> <git-diff> <changed-files> <output-json>'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const assessment = analyzeValidationFailureCausality(
+    baselineLogPath,
+    postChangeLogPath,
+    gitDiffPath,
+    changedFilesPath
+  );
+
+  if (!assessment) {
+    console.error('Failed to assess validation failure causality.');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!generateCausalityAnalysisArtifact(assessment, outputPath)) {
+    console.error(`Failed to write validation failure causality artifact to ${outputPath}.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(
+    `Causality analysis written to ${outputPath}: ${assessment.failureType} (${(
+      assessment.confidence * 100
+    ).toFixed(1)}% confidence)`
+  );
+}
+
+if (isDirectCliInvocation()) {
+  runCli();
+}
