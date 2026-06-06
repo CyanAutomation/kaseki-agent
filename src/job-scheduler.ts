@@ -1375,19 +1375,19 @@ export class JobScheduler {
 
     this.queue = [];
     this.liveProgressCache.clear();
-    
+
     // Clear any pending shutdown kill timers
     for (const timer of this.shutdownKillTimers.values()) {
       clearTimeout(timer);
     }
     this.shutdownKillTimers.clear();
-    
+
     // Clear any pending timeout kill timers
     for (const timer of this.timeoutKillTimers.values()) {
       clearTimeout(timer);
     }
     this.timeoutKillTimers.clear();
-    
+
     void this.persistJobs();
   }
 }
