@@ -5,6 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execSync } from 'node:child_process';
 import { analyzeAsyncImpact } from './async-impact-analyzer';
 
 describe('async-impact-analyzer', () => {
@@ -15,7 +16,6 @@ describe('async-impact-analyzer', () => {
 
     // Initialize a git repo (required by analyzer)
     try {
-      const { execSync } = require('node:child_process');
       execSync('cd "$TEMP_DIR" && git init -q', { env: { TEMP_DIR: tempDir } });
       execSync('cd "$TEMP_DIR" && git config user.email "test@test.com" && git config user.name "Test"', {
         env: { TEMP_DIR: tempDir },

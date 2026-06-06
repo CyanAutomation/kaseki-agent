@@ -616,25 +616,6 @@ interface Summary {
   model_token_stats?: ModelTokenStats;
 }
 
-interface Summary {
-  selected_model: string;
-  selected_api: string;
-  event_counts: EventCountMap;
-  assistant_event_counts: EventCountMap;
-  tool_start_count: number;
-  tool_end_count: number;
-  invalid_json_lines: number;
-  first_event_at: string | null;
-  last_event_at: string | null;
-  tool_reliability?: ToolReliabilitySummary;
-  tool_stats?: ToolStats;
-  execution_time?: ExecutionTimeSummary;
-  execution_api_stats?: ExecutionStats;
-  execution_tool_stats?: ExecutionStats;
-  token_usage?: TokenUsageSummary;
-  model_token_stats?: ModelTokenStats;
-}
-
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
 const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
 const summaryPath = process.argv[4] ?? '/results/pi-summary.json';

@@ -325,8 +325,8 @@ describe('scouting-prompt-context', () => {
       const buildContext = buildBuildContext(mockBuildCapability);
       const asyncContext = buildAsyncContext(mockAsyncImpact);
 
-      expect(buildContext).toMatch(/[🔧]/);
-      expect(asyncContext).toMatch(/[⚠️-]/);
+      expect(buildContext).toMatch(/[🔧]/u);
+      expect(asyncContext).toMatch(/⚠️/);
     });
 
     it('should separate sections clearly', () => {
