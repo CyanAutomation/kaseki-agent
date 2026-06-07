@@ -126,16 +126,19 @@ All 58 tests passing across 5 test suites:
 ## Next Steps
 
 ### Phase 1: Direct Integration (Low Risk)
+
 - Update existing file-reading code in kaseki-agent to use ReadWrapper
 - Export metrics to results artifacts
 - Test with real codebases
 
 ### Phase 2: TASK_PROMPT Integration (Medium Risk)
+
 - Annotate summarized sections in TASK_PROMPT
 - Train Pi on "summarized" markers
 - Monitor quality impact
 
 ### Phase 3: Advanced Features (Future)
+
 - Fallback LLM summarization for unsupported languages
 - Per-section granularity (class vs function-level summaries)
 - Interactive summarization (vary summary level based on Pi requests)
