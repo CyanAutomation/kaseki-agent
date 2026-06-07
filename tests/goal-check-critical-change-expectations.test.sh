@@ -110,7 +110,7 @@ EOF_VALIDATION_FILTER
   set -e
 
   [ "$run_exit" -eq "$EXPECTED_EXIT" ] || fail "$CASE_NAME expected exit $EXPECTED_EXIT, got $run_exit"
-  [ "$(cat "$PI_CALLS")" = "$EXPECTED_CALLS" ] || fail "$CASE_NAME unexpected Pi calls: $(cat "$PI_CALLS" | tr '\n' ',')"
+  [ "$(< "$PI_CALLS")" = "$EXPECTED_CALLS" ] || fail "$CASE_NAME unexpected Pi calls: $(tr '\n' ',' < "$PI_CALLS")"
   [ -s "$RESULTS_DIR/critical-change-expectations.json" ] || fail "$CASE_NAME missing expectation artifact"
   [ -s "$RESULTS_DIR/metadata.json" ] || fail "$CASE_NAME missing metadata artifact"
   node - "$RESULTS_DIR/metadata.json" "$EXPECTED_GOAL_CHECK_MET" "$EXPECTED_GOAL_CHECK_ATTEMPTS" "$EXPECTED_FAILED_COMMAND" <<'NODE' || fail "$CASE_NAME metadata goal-check state was incorrect"

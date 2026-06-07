@@ -101,7 +101,9 @@ cat > package.json <<'JSON'
 JSON
 assert_equals "default validation stays non-empty when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
 
+# shellcheck disable=SC2034
 KASEKI_VALIDATION_COMMANDS_EXPLICIT=x
+# shellcheck disable=SC2034
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT=""
 KASEKI_VALIDATION_COMMANDS="npm run custom"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run custom"

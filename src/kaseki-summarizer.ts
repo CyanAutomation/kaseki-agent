@@ -1,14 +1,14 @@
 /**
  * kaseki-summarizer: Pre-processing utility for Feature 3 integration
- * 
+ *
  * This CLI tool runs before Pi invocation to:
  * 1. Generate summaries for repository files
  * 2. Export summarization metadata for TASK_PROMPT annotation
  * 3. Collect metrics for post-run analysis
- * 
+ *
  * Usage:
  *   node dist/kaseki-summarizer.js --repo-dir <dir> --results-dir <dir> [options]
- * 
+ *
  * Output:
  *   - {results-dir}/summarization-metadata.json - Metrics and summary stats
  *   - {results-dir}/summarization-annotation.txt - Text for TASK_PROMPT
@@ -171,20 +171,20 @@ async function main() {
   // Parse arguments
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
-      case '--repo-dir':
-        options.repoDir = args[++i];
-        break;
-      case '--results-dir':
-        options.resultsDir = args[++i];
-        break;
-      case '--verbose':
-        options.verbose = true;
-        break;
-      case '--max-files':
-        options.maxFiles = parseInt(args[++i], 10);
-        break;
-      case '--help':
-        console.log(`
+    case '--repo-dir':
+      options.repoDir = args[++i];
+      break;
+    case '--results-dir':
+      options.resultsDir = args[++i];
+      break;
+    case '--verbose':
+      options.verbose = true;
+      break;
+    case '--max-files':
+      options.maxFiles = parseInt(args[++i], 10);
+      break;
+    case '--help':
+      console.log(`
 Usage: kaseki-summarizer [options]
 
 Options:
@@ -194,7 +194,7 @@ Options:
   --max-files <n>      Process only first n files (for testing)
   --help               Show this help message
 `);
-        process.exit(0);
+      process.exit(0);
     }
   }
 
