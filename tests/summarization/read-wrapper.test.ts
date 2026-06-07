@@ -177,7 +177,7 @@ describe('ReadWrapper', () => {
         fs.symlinkSync(targetFile, linkFile);
         const result = await readFileWithSummary(linkFile);
         expect(result).toBeDefined();
-      } catch (e) {
+      } catch {
         // Symlinks might not work on all systems
       }
     });
