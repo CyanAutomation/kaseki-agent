@@ -1465,9 +1465,28 @@ describe('StatusResponseBuilder', () => {
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
 
-      expect(() => {
-        builder.buildStatus(job as Job);
-      }).not.toThrow();
+      const response = builder.buildStatus(job as Job);
+
+      expect(response).toMatchObject({
+        id: 'job-1',
+        status: 'completed',
+        resultDir: '/nonexistent/path',
+      });
+      expect(response.progress).toBeUndefined();
+      expect(response.taskProgressPercent).toBe(0);
+      expect(response.artifacts).toEqual({
+        metadataJson: false,
+        analysisMd: false,
+        resultSummaryMd: false,
+        failureJson: false,
+        stderrLog: false,
+        stdoutLog: false,
+        availableFiles: [],
+      });
+      expect(response.resultSummaryContent).toBeUndefined();
+      expect(response.failureJsonContent).toBeUndefined();
+
+      expect(() => builder.buildStatus(job as Job)).not.toThrow();
     });
 
     it('should handle missing metadata.json gracefully', () => {
