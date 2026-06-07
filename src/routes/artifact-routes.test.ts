@@ -9,13 +9,6 @@ import { readArtifactContent, createArtifactRoutes } from './artifact-routes';
 
 // Mock dependencies
 jest.mock('fs');
-jest.mock('tree-sitter');
-jest.mock('tree-sitter-typescript', () => ({
-  typescript: {}
-}));
-jest.mock('tree-sitter-go', () => ({
-  language: {}
-}));
 jest.mock('../job-scheduler');
 jest.mock('../result-cache');
 

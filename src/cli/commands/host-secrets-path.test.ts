@@ -3,13 +3,6 @@ import * as fs from 'fs';
 
 // Mock fs module
 jest.mock('fs');
-jest.mock('tree-sitter');
-jest.mock('tree-sitter-typescript', () => ({
-  typescript: {}
-}));
-jest.mock('tree-sitter-go', () => ({
-  language: {}
-}));
 
 describe('configureHostSecretsDirForPreflight', () => {
   beforeEach(() => {

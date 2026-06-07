@@ -789,11 +789,7 @@ elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
 elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   append_event goal-check
   printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
-# Classify run-evaluation by its required artifact contract instead of prompt wording.
-elif printf '%s' "$prompt" | grep -Eq 'RUN_EVALUATION_CANDIDATE_ARTIFACT|run-evaluation-candidate[.]json' \
-  && printf '%s' "$prompt" | grep -q '"overall_assessment"' \
-  && printf '%s' "$prompt" | grep -q '"reviewer_confidence"' \
-  && printf '%s' "$prompt" | grep -q '"task_completion_score"'; then
+elif printf '%s' "$prompt" | grep -q 'run-evaluation Pi agent'; then
   append_event run-evaluation
   if [ "${scenario}" = "malformed-artifact" ]; then
     printf '{"overall_assessment":"good"' > "$KASEKI_RESULTS_DIR/run-evaluation-candidate.json"

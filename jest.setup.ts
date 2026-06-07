@@ -122,3 +122,23 @@ afterAll(() => {
   (global as any).__kasekiCapturedLogs = [];
   delete (global as any).__kasekiCapturedLogs;
 });
+
+/**
+ * Global mocks for tree-sitter to avoid native module loading issues
+ * during tests that mock the 'fs' module.
+ * Tests that need real tree-sitter should jest.unmock() these.
+ */
+jest.mock('tree-sitter', () => {
+  return jest.fn().mockImplementation(() => ({
+    parse: jest.fn().mockReturnValue({
+      rootNode: { type: 'program', children: [], startIndex: 0, endIndex: 0 }
+    }),
+    setLanguage: jest.fn()
+  }));
+});
+jest.mock('tree-sitter-typescript', () => ({
+  typescript: {}
+}));
+jest.mock('tree-sitter-go', () => ({
+  language: {}
+}));
