@@ -1,4 +1,0 @@
-
-> @cyanautomation/kaseki-agent@1.29.1 lint:js
-> eslint . src/ --ignore-pattern dist/ . src/ --ignore-pattern dist/
-
