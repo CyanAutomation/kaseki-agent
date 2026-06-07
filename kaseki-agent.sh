@@ -68,7 +68,8 @@ KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
-KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test}"
+KASEKI_VALIDATION_COMMANDS_EXPLICIT="${KASEKI_VALIDATION_COMMANDS+x}"
+KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run build;npm run type-check;npm run test}"
 KASEKI_AUTO_LINT_CLEANUP_EXPLICIT="${KASEKI_AUTO_LINT_CLEANUP+x}"
 KASEKI_AUTO_LINT_CLEANUP="${KASEKI_AUTO_LINT_CLEANUP:-1}"
 KASEKI_AUTO_LINT_CLEANUP_COMMANDS="${KASEKI_AUTO_LINT_CLEANUP_COMMANDS-npm run lint:fix;__kaseki_trailing_whitespace_cleanup__}"
@@ -87,6 +88,7 @@ KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
 export KASEKI_CACHE_DIR
 KASEKI_VALIDATE_AFTER_AGENT_FAILURE="${KASEKI_VALIDATE_AFTER_AGENT_FAILURE:-0}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
+KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS+x}"
 KASEKI_PRE_AGENT_VALIDATION_COMMANDS="${KASEKI_PRE_AGENT_VALIDATION_COMMANDS-$KASEKI_VALIDATION_COMMANDS}"
 KASEKI_BASELINE_VALIDATION_ENABLED="${KASEKI_BASELINE_VALIDATION_ENABLED:-1}"
 KASEKI_BASELINE_CACHE_ROOT="${KASEKI_BASELINE_CACHE_ROOT:-${KASEKI_CACHE_DIR}/kaseki-baseline}"
@@ -2320,6 +2322,57 @@ missing_npm_script_for_validation_command() {
   package_json_has_npm_script "$script_name" && return 1
   printf '%s' "$script_name"
   return 0
+}
+
+append_default_validation_command() {
+  local current="$1"
+  local next_command="$2"
+  if [ -z "$current" ]; then
+    printf '%s' "$next_command"
+  else
+    printf '%s;%s' "$current" "$next_command"
+  fi
+}
+
+construct_default_validation_commands() {
+  local commands=""
+
+  if package_json_has_npm_script "build"; then
+    commands="$(append_default_validation_command "$commands" "npm run build")"
+  elif package_json_has_npm_script "type-check"; then
+    commands="$(append_default_validation_command "$commands" "npm run type-check")"
+  elif has_typescript_project; then
+    commands="$(append_default_validation_command "$commands" "tsc --noEmit")"
+  elif package_json_has_npm_script "check"; then
+    commands="$(append_default_validation_command "$commands" "npm run check")"
+  fi
+
+  if package_json_has_npm_script "test"; then
+    commands="$(append_default_validation_command "$commands" "npm run test")"
+  fi
+
+  if [ -n "$commands" ]; then
+    printf '%s' "$commands"
+    return 0
+  fi
+
+  # Keep validation non-empty even when the repository does not define common
+  # scripts. The validation runner will report each missing npm script clearly.
+  printf '%s' "npm run build;npm run type-check;npm run test"
+}
+
+apply_default_validation_commands() {
+  local detected_commands
+
+  if [ -n "${KASEKI_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    return 0
+  fi
+
+  detected_commands="$(construct_default_validation_commands)"
+  KASEKI_VALIDATION_COMMANDS="$detected_commands"
+  if [ -z "${KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT:-}" ]; then
+    KASEKI_PRE_AGENT_VALIDATION_COMMANDS="$detected_commands"
+  fi
 }
 
 record_skipped_npm_script_command() {
@@ -7108,6 +7161,7 @@ if ! run_clone_repository; then
   exit 0
 fi
 cd "${KASEKI_WORKSPACE_DIR}"/repo || { STATUS=1; FAILED_COMMAND="enter repository"; exit "$STATUS"; }
+apply_default_validation_commands
 
 prepare_dependencies() {
   if [ ! -f package.json ]; then
