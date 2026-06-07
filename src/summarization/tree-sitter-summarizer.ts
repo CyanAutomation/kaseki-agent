@@ -53,13 +53,14 @@ export class TreeSitterSummarizer {
       break;
     }
     case 'javascript': {
+      // JavaScript uses the same grammar as TypeScript in tree-sitter
       const TypeScript = require('tree-sitter-typescript');
-      lang = TypeScript.javascript;
+      lang = TypeScript.typescript;
       break;
     }
     case 'go': {
       const Go = require('tree-sitter-go');
-      lang = Go.default;
+      lang = Go.language;
       break;
     }
     default:
