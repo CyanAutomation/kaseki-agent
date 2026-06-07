@@ -109,5 +109,9 @@ export function getConfigFromEnv(): Partial<SummarizerConfig> {
  */
 export function getConfig(): SummarizerConfig {
   const envOverrides = getConfigFromEnv();
-  return { ...DEFAULT_CONFIG, ...envOverrides };
+  // Filter out undefined values so they don't override defaults
+  const definedOverrides = Object.fromEntries(
+    Object.entries(envOverrides).filter(([, v]) => v !== undefined)
+  ) as Partial<SummarizerConfig>;
+  return { ...DEFAULT_CONFIG, ...definedOverrides };
 }

@@ -51,6 +51,7 @@
     "check": "npm run type-check && npm run lint",
     "test": "npm run test:unit",
     "test:unit": "jest --passWithNoTests",
+    "test:feature3": "npm run build && node dist/feature3-integration-test.js",
     "test:cli": "npm run build && npm run test:cli:install && npm run test:cli:verify",
     "test:publish-smoke": "npm run test:pack-artifact && npm pack --dry-run && node dist/cli.js --version && node dist/cli.js --help && node dist/cli.js doctor --help && node dist/cli.js run --help && node dist/cli.js list --help && node dist/cli.js report --help && node dist/cli.js status --help && node dist/cli.js cancel --help && npm run check:dist-dynamic-imports",
     "test:cli:install": "npm run test:cli:install-local && npm run test:cli:install-npx",
