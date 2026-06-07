@@ -9,6 +9,7 @@
  * - Error handling and user feedback
  */
 
+import { LocalKasekiApiClient } from '../src/cli/api/LocalKasekiApiClient';
 import { getArtifactTypeCategory, normalizeArtifactFetchError, shouldDisplayInline } from '../src/lib/artifact-utilities';
 
 describe('Artifact Client Utilities', () => {
@@ -208,12 +209,76 @@ describe('Artifact Client Utilities', () => {
     });
   });
 
-  describe('Authorization header construction', () => {
-    it('should format Bearer token correctly', () => {
-      const token = 'sk-test-1234567890';
-      const header = `Bearer ${token}`;
-      expect(header).toBe('Bearer sk-test-1234567890');
-      expect(header.startsWith('Bearer ')).toBe(true);
+  describe('Artifact request authentication', () => {
+    const successfulArtifactsResponse = {
+      id: 'kaseki-run-20260607-abc123',
+      runStatus: 'completed' as const,
+      artifacts: [
+        {
+          name: 'metadata.json',
+          size: 1024,
+          contentType: 'application/json',
+          available: true,
+        },
+      ],
+      recommended: ['metadata.json'],
+      artifactCount: 1,
+      downloadBaseUrl: '/api/results/kaseki-run-20260607-abc123/',
+    };
+
+    function mockArtifactFetch() {
+      return jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: jest.fn().mockResolvedValue(successfulArtifactsResponse),
+      } as unknown as Response);
+    }
+
+    it('should send the configured API key as a Bearer token on artifact list requests', async () => {
+      const originalFetch = global.fetch;
+      const fetchMock = mockArtifactFetch();
+      global.fetch = fetchMock;
+
+      try {
+        const token = 'sk-test-1234567890';
+        const client = new LocalKasekiApiClient({
+          baseUrl: 'http://127.0.0.1:8080/api',
+          apiKey: token,
+        });
+
+        await expect(client.getRunArtifacts('kaseki-run-20260607-abc123')).resolves.toEqual(successfulArtifactsResponse);
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledWith(
+          'http://127.0.0.1:8080/api/runs/kaseki-run-20260607-abc123/artifacts',
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should omit the Authorization header when no API key is configured', async () => {
+      const originalFetch = global.fetch;
+      const fetchMock = mockArtifactFetch();
+      global.fetch = fetchMock;
+
+      try {
+        const client = new LocalKasekiApiClient({
+          baseUrl: 'http://127.0.0.1:8080/api',
+        });
+
+        await expect(client.getRunArtifacts('kaseki-run-20260607-abc123')).resolves.toEqual(successfulArtifactsResponse);
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(fetchMock).toHaveBeenCalledWith(
+          'http://127.0.0.1:8080/api/runs/kaseki-run-20260607-abc123/artifacts',
+          { headers: {} }
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
   });
 });
