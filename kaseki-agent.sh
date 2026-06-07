@@ -2545,6 +2545,43 @@ auto_lint_cleanup_enabled_for_mode() {
   return 0
 }
 
+skip_auto_lint_cleanup_before_core_change_verified() {
+  local reason="${1:-core_change_absent}"
+  local detail="${2:-}"
+
+  AUTO_LINT_CLEANUP_EXIT=0
+  AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED=0
+  AUTO_LINT_CLEANUP_COMMANDS_SKIPPED=0
+  AUTO_LINT_CLEANUP_RESULT="skipped"
+  AUTO_LINT_CLEANUP_CLASSIFICATION="skipped_before_core_change_verified"
+  AUTO_LINT_CLEANUP_FAILURE_CLASSIFICATION=""
+
+  if [ -n "$detail" ]; then
+    printf 'Auto lint cleanup skipped_before_core_change_verified: reason=%s detail=%s\n' "$reason" "$detail" >> "$AUTO_LINT_CLEANUP_LOG"
+  else
+    printf 'Auto lint cleanup skipped_before_core_change_verified: reason=%s\n' "$reason" >> "$AUTO_LINT_CLEANUP_LOG"
+  fi
+  record_stage_timing "auto lint cleanup" 0 0 "skipped_before_core_change_verified reason=$reason"
+  emit_event "auto_lint_cleanup_finished" \
+    "exit_code=0" \
+    "result=$AUTO_LINT_CLEANUP_RESULT" \
+    "classification=$AUTO_LINT_CLEANUP_CLASSIFICATION" \
+    "reason=$reason" \
+    "attempted_commands=0" \
+    "skipped_commands=0"
+  emit_progress "auto lint cleanup" "skipped_before_core_change_verified"
+  return 0
+}
+
+run_auto_lint_cleanup_after_core_change_verified() {
+  if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
+    skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before cleanup"
+        git add -- "$file_path" || {
+  fi
+
+  run_auto_lint_cleanup
+}
+
 run_trailing_whitespace_cleanup_for_changed_tracked_text_files() {
   local helper_script app_root
   # Use KASEKI_APP_ROOT if set (container context), otherwise try to resolve from script location
@@ -7864,8 +7901,12 @@ run_expectation_mismatch_detector
 
 pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
+  if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
+    skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before critical-change verification"
+  fi
   if ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
     critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
+    skip_auto_lint_cleanup_before_core_change_verified "critical_change_verification_failed" "$critical_change_failure_summary"
     GOAL_CHECK_MET=false
     GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
     GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
@@ -7885,7 +7926,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   emit_progress "critical change verification" "passed on attempt $coding_attempt"
 
   if [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
-    run_auto_lint_cleanup
+    run_auto_lint_cleanup_after_core_change_verified
     collect_git_artifacts
     restore_disallowed_changes
     collect_git_artifacts
