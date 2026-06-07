@@ -6,6 +6,11 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+jest.unmock('tree-sitter');
+jest.unmock('tree-sitter-typescript');
+jest.unmock('tree-sitter-go');
+
 import { readFileWithSummary, readFileWithSummaryAndMetrics } from '../../src/summarization/read-wrapper';
 
 describe('ReadWrapper', () => {
