@@ -88,18 +88,52 @@ describe('Artifact Client Utilities', () => {
   });
 
   describe('Artifact response handling', () => {
-    it('should parse artifact response with required fields', () => {
-      const response = {
+    it('should parse artifact response with required fields', async () => {
+      const originalFetch = global.fetch;
+      const content = JSON.stringify({ key: 'value' });
+      const artifactResponse = {
         file: 'metadata.json',
         contentType: 'application/json',
-        size: 1024,
-        content: JSON.stringify({ key: 'value' }),
+        size: Buffer.byteLength(content),
+        content,
       };
+      const client = new LocalKasekiApiClient({ baseUrl: 'http://127.0.0.1:8080/api' });
 
-      expect(response.file).toBe('metadata.json');
-      expect(response.contentType).toBe('application/json');
-      expect(typeof response.size).toBe('number');
-      expect(typeof response.content).toBe('string');
+      try {
+        global.fetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: jest.fn().mockResolvedValue(artifactResponse),
+        } as unknown as Response);
+
+        await expect(client.getRunArtifact('kaseki-run-20260607-abc123', 'metadata.json')).resolves.toEqual({
+          file: 'metadata.json',
+          contentType: 'application/json',
+          size: Buffer.byteLength(content),
+          content,
+        });
+
+        expect(global.fetch).toHaveBeenCalledWith(
+          'http://127.0.0.1:8080/api/results/kaseki-run-20260607-abc123/metadata.json',
+          { headers: {} }
+        );
+
+        global.fetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: jest.fn().mockResolvedValue({
+            file: 'metadata.json',
+            contentType: 'application/json',
+            content,
+          }),
+        } as unknown as Response);
+
+        await expect(client.getRunArtifact('kaseki-run-20260607-abc123', 'metadata.json')).rejects.toThrow(/Required/);
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
     it('should handle different content types in response', () => {
