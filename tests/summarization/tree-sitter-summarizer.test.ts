@@ -5,6 +5,11 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
+
+jest.unmock('tree-sitter');
+jest.unmock('tree-sitter-typescript');
+jest.unmock('tree-sitter-go');
+
 import { TreeSitterSummarizer } from '../../src/summarization/tree-sitter-summarizer';
 
 describe('TreeSitterSummarizer', () => {
