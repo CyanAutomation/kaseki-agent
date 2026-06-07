@@ -122,22 +122,37 @@ describe('Artifact Client Utilities', () => {
   });
 
   describe('Error handling', () => {
-    const errorScenarios = [
-      { status: 401, message: 'Token invalid or expired', code: 'UNAUTHORIZED' },
-      { status: 400, message: 'Artifact not available yet', code: 'BAD_REQUEST' },
-      { status: 404, message: 'Artifact not found', code: 'NOT_FOUND' },
-      { status: 500, message: 'Error reading artifact', code: 'SERVER_ERROR' },
+    const clientVisibleErrorScenarios = [
+      {
+        status: 401,
+        category: 'auth',
+        message: 'Authentication failed: Invalid or expired token. Please re-enter your API key.',
+      },
+      {
+        status: 400,
+        category: 'bad-request',
+        message: 'Invalid artifact request.',
+      },
+      {
+        status: 404,
+        category: 'not-found',
+        message: 'Artifact not found.',
+      },
+      {
+        status: 500,
+        category: 'server',
+        message: 'Server error: Could not read artifact (500).',
+      },
     ];
 
     it('should map HTTP status codes to user messages', () => {
-      errorScenarios.forEach(({ status, code }) => {
-        const isAuthError = status === 401;
-        const isNotFoundError = status === 404;
-        const isServerError = status >= 500;
+      clientVisibleErrorScenarios.forEach(({ status, category, message }) => {
+        const normalizedError = normalizeArtifactFetchError(status);
 
-        expect(isAuthError).toBe(code === 'UNAUTHORIZED');
-        expect(isNotFoundError).toBe(code === 'NOT_FOUND');
-        expect(isServerError).toBe(code === 'SERVER_ERROR');
+        expect(normalizedError).toEqual(expect.objectContaining({
+          category,
+          message,
+        }));
       });
     });
 
