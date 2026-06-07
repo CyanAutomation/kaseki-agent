@@ -621,17 +621,36 @@ describe('StatusResponseBuilder', () => {
         status: 'running',
         resultDir: '/results/job-1',
       };
+      const progressPath = '/results/job-1/progress.jsonl';
+      const metadataPath = '/results/job-1/metadata.json';
 
-      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath === progressPath) {
+          return false;
+        }
+        return filePath === metadataPath;
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath === metadataPath) {
+          return JSON.stringify({ stages: ['stage1', 'stage2', 'stage3'] });
+        }
+        throw new Error(`Unexpected read for ${filePath}`);
+      });
+      mockScheduler.getLiveProgressEvents.mockReturnValue([]);
 
       const response: StatusResponse = {
         id: 'job-1',
         status: 'running',
       };
 
-      // Should not throw
-      expect(() => builder['addTaskProgressInfo'](response, job as Job)).not.toThrow();
-      expect(response.taskProgressPercent).toBeDefined();
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      expect(fs.existsSync).toHaveBeenCalledWith(progressPath);
+      expect(fs.readFileSync).not.toHaveBeenCalledWith(progressPath, expect.anything());
+      expect(mockScheduler.getLiveProgressEvents).toHaveBeenCalledWith('job-1', 1);
+      expect(response.taskProgressPercent).toBe(0);
+      expect(response.progress).toBeUndefined();
+      expect(response.status).toBe('running');
     });
 
     it('should use live progress events if progress.jsonl not available', () => {
