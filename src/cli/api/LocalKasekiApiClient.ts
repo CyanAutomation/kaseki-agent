@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConfigManager } from '../../config/ConfigManager';
-import { ArtifactAvailability, type AnalysisResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type StatusResponse } from '../../kaseki-api-types';
+import { ArtifactAvailability, type AnalysisResponse, type ArtifactResponse, type LogResponse, type RunArtifactsResponse, type RunRequest, type RunResponse, type RunsListResponse, type StatusResponse } from '../../kaseki-api-types';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://localhost:8080/api';
 
@@ -120,6 +120,14 @@ const LogResponseSchema = z.object({
   size: z.number(),
 });
 
+const ArtifactResponseSchema = z.object({
+  file: z.string(),
+  contentType: z.string(),
+  size: z.number(),
+  content: z.string().optional(),
+  url: z.string().optional(),
+});
+
 const RunResponseSchema = z.object({
   id: z.string(),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
@@ -209,6 +217,11 @@ export class LocalKasekiApiClient {
   async getRunLog(runId: string, logType: LogResponse['logType']): Promise<LogResponse> {
     const data = await this.requestJson(`/runs/${encodeURIComponent(runId)}/logs/${encodeURIComponent(logType)}`, 'Failed to fetch run log from local Kaseki API');
     return LogResponseSchema.parse(data);
+  }
+
+  async getRunArtifact(runId: string, fileName: string): Promise<ArtifactResponse> {
+    const data = await this.requestJson(`/results/${encodeURIComponent(runId)}/${encodeURIComponent(fileName)}`, 'Failed to fetch artifact from local Kaseki API');
+    return ArtifactResponseSchema.parse(data);
   }
 
   async cancelRun(runId: string): Promise<StatusResponse> {
