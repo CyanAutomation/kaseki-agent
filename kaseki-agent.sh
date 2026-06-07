@@ -237,6 +237,7 @@ RUN_EVALUATION_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation.json"
 RUN_EVALUATION_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/run-evaluation-candidate.json"
 TEST_IMPACT_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/test-impact-warnings.log"
 EXPECTATION_MISMATCH_WARNINGS_ARTIFACT="${KASEKI_RESULTS_DIR}/expectation-mismatch-warnings.jsonl"
+CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT="${KASEKI_RESULTS_DIR}/critical-change-expectations.json"
 KASEKI_DEPENDENCY_CACHE_DIR="${KASEKI_DEPENDENCY_CACHE_DIR:-${KASEKI_WORKSPACE_DIR}/.kaseki-cache}"
 KASEKI_DEPENDENCY_RESTORE_MODE="${KASEKI_DEPENDENCY_RESTORE_MODE:-auto}"
 KASEKI_DEPENDENCY_CACHE_MAX_BYTES="${KASEKI_DEPENDENCY_CACHE_MAX_BYTES:-5368709120}"
@@ -722,7 +723,7 @@ validate_goal_check_artifact() {
     reason_code="missing_file"
     reason_details="1 critical goal-check validation error: goal-check-candidate.json"
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:"file at "${KASEKI_RESULTS_DIR}"/goal-check-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:"ensure the goal-check Pi writes exactly one valid JSON object to ${KASEKI_RESULTS_DIR}/goal-check-candidate.json before exiting successfully"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+    node -e 'const fs=require("node:fs"); const path=require("node:path"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const resultsDir=process.env.KASEKI_RESULTS_DIR || "/results"; const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:`file at ${path.join(resultsDir, "goal-check-candidate.json")}`,actual:`missing: ${candidate}`,severity:"critical",suggestion:`ensure the goal-check Pi writes exactly one valid JSON object to ${path.join(resultsDir, "goal-check-candidate.json")} before exiting successfully`}; fs.appendFileSync(path.join(resultsDir, "goal-check-validation-errors.jsonl"), JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
   elif ! validate_goal_check_artifact_with_node "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); const hint=String(v.reason_hint||""); process.stdout.write(hint === "malformed_json" ? "malformed_json" : "schema_mismatch");}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"goal-check artifact validation failed"));}catch{process.stdout.write("goal-check artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'goal-check artifact validation failed')"
@@ -1179,6 +1180,129 @@ run_static_test_impact_check() {
     "detail=$warning_detail"
   printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
   return 0
+}
+
+
+derive_critical_change_expectations() {
+  local output_file="${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT:-${KASEKI_RESULTS_DIR}/critical-change-expectations.json}"
+  node - "$GOAL_SETTING_ARTIFACT" "$SCOUTING_ARTIFACT" "$output_file" "$KASEKI_ALLOW_EMPTY_DIFF" <<'NODE' 2>> "${KASEKI_RESULTS_DIR}/critical-change-expectations.log" || {
+const fs = require('node:fs');
+const path = require('node:path');
+const [goalPath, scoutingPath, outputPath, allowEmptyDiff] = process.argv.slice(2);
+function readJson(file) {
+  if (!file) return null;
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+function strings(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean);
+}
+function normalizeBool(value) {
+  if (value === true || value === false) return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes'].includes(normalized)) return true;
+    if (['false', '0', 'no'].includes(normalized)) return false;
+  }
+  return undefined;
+}
+function firstContract(...artifacts) {
+  for (const artifact of artifacts) {
+    if (!artifact || typeof artifact !== 'object') continue;
+    for (const key of ['critical_change_expectations', 'criticalChangeExpectations']) {
+      const contract = artifact[key];
+      if (contract && typeof contract === 'object' && !Array.isArray(contract)) return contract;
+    }
+  }
+  return {};
+}
+const goal = readJson(goalPath);
+const scouting = readJson(scoutingPath);
+const explicit = firstContract(scouting, goal);
+const requiredFiles = [...new Set(strings(explicit.required_files || explicit.requiredFiles))];
+const requiredSearchStrings = [...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))];
+const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
+const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
+const artifact = {
+  version: 1,
+  source_artifacts: {
+    goal_setting: goal && fs.existsSync(goalPath) ? path.basename(goalPath) : null,
+    scouting: scouting && fs.existsSync(scoutingPath) ? path.basename(scoutingPath) : null,
+  },
+  required_files: requiredFiles,
+  required_search_strings: requiredSearchStrings,
+  forbidden_empty_diff: forbiddenEmptyDiff,
+};
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+fs.writeFileSync(outputPath, JSON.stringify(artifact, null, 2) + '\n');
+NODE
+    printf '{"version":1,"source_artifacts":{"goal_setting":null,"scouting":null},"required_files":[],"required_search_strings":[],"forbidden_empty_diff":%s}\n' "$([ "$KASEKI_ALLOW_EMPTY_DIFF" = "1" ] && printf false || printf true)" > "$output_file"
+  }
+}
+
+verify_critical_change_expectations() {
+  local expectation_file="${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT:-${KASEKI_RESULTS_DIR}/critical-change-expectations.json}"
+  local changed_files_file="${KASEKI_RESULTS_DIR}/changed-files.txt"
+  local diff_file="${KASEKI_RESULTS_DIR}/git.diff"
+  local report_file="${KASEKI_RESULTS_DIR}/critical-change-verification.log"
+
+  : > "$report_file"
+  if [ ! -s "$expectation_file" ]; then
+    printf '[critical-change] skipped: expectation artifact missing or empty: %s\n' "$expectation_file" >> "$report_file"
+    return 0
+  fi
+
+  node - "$expectation_file" "$changed_files_file" "$diff_file" "$report_file" <<'NODE'
+const fs = require('node:fs');
+const [expectationPath, changedFilesPath, diffPath, reportPath] = process.argv.slice(2);
+function read(file) {
+  try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
+}
+function loadJson(file) {
+  try { return JSON.parse(read(file)); } catch (error) { return { __invalid: String(error && error.message || error) }; }
+}
+function asStrings(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean) : [];
+}
+function asBoolean(value) {
+  if (value === true || value === false) return value;
+  if (typeof value === 'string') return ['true', '1', 'yes'].includes(value.trim().toLowerCase());
+  return false;
+}
+const expectations = loadJson(expectationPath);
+const failures = [];
+const notes = [];
+if (expectations.__invalid) {
+  failures.push(`expectation artifact is not valid JSON: ${expectations.__invalid}`);
+} else {
+  const changedFiles = new Set(read(changedFilesPath).split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const diff = read(diffPath);
+  if (asBoolean(expectations.forbidden_empty_diff) && diff.trim().length === 0) {
+    failures.push('git.diff is empty but forbidden_empty_diff is true');
+  }
+  for (const file of asStrings(expectations.required_files)) {
+    if (!changedFiles.has(file)) failures.push(`required file missing from changed-files.txt: ${file}`);
+  }
+  for (const needle of asStrings(expectations.required_search_strings)) {
+    if (!diff.includes(needle)) failures.push(`required search string missing from git.diff: ${needle}`);
+  }
+  notes.push(`required_files=${asStrings(expectations.required_files).length}`);
+  notes.push(`required_search_strings=${asStrings(expectations.required_search_strings).length}`);
+  notes.push(`forbidden_empty_diff=${asBoolean(expectations.forbidden_empty_diff)}`);
+}
+const lines = [];
+lines.push(`[critical-change] artifact=${expectationPath}`);
+for (const note of notes) lines.push(`[critical-change] ${note}`);
+if (failures.length) {
+  lines.push('[critical-change] verification failed:');
+  for (const failure of failures) lines.push(`- ${failure}`);
+  fs.writeFileSync(reportPath, lines.join('\n') + '\n');
+  process.stdout.write(failures.join('\n'));
+  process.exit(1);
+}
+lines.push('[critical-change] verification passed');
+fs.writeFileSync(reportPath, lines.join('\n') + '\n');
+NODE
 }
 
 
@@ -4171,6 +4295,11 @@ The JSON object must be concise and useful to the coding agent. Use this shape:
   "validation": ["focused commands or checks to run"],
   "risks": ["uncertainties, edge cases, or assumptions"],
   "test_impact": [{"path": "src/job-scheduler.test.ts", "reason": "progress stage expectations"}],
+  "critical_change_expectations": {
+    "required_files": ["repo-relative files that must be changed to satisfy the goal; use only when certain"],
+    "required_search_strings": ["literal strings or diff hunk markers that must appear in git.diff; use only when certain"],
+    "forbidden_empty_diff": true
+  },
   "suggested_allowlist": {
     "agent_patterns": ["glob patterns for files the coding agent should modify"],
     "validation_patterns": ["glob patterns for files validation commands may touch"]
@@ -4220,6 +4349,13 @@ Enhanced Guidelines by Change Type:
    - Typical test_impact: String literal assertions, constant references, API contract changes
    - Example test_examples: Field name assertions, constant value matches, deprecation handling
    - Files to check: tests/**/*.test.ts (search for exact string matches and constants)
+
+Guidelines for critical_change_expectations:
+- Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
+- required_files must be repo-relative paths and should only list files that must appear in changed-files.txt, not files that are merely relevant for reading.
+- required_search_strings must be literal strings expected to appear in git.diff, such as a new function name, config key, assertion text, or diff hunk marker.
+- Set forbidden_empty_diff to true when the task is a patch/change request rather than read-only inspection.
+- Omit uncertain expectations rather than guessing; this contract is enforced before the LLM goal-check evaluator runs.
 
 Guidelines for suggested_allowlist:
 - agent_patterns: Glob patterns narrowing which files the coding agent can modify. Use specific files (e.g., "src/parser.ts") or directories (e.g., "src/**", "tests/**"). If many related files, use broad patterns like "src/**.ts".
@@ -4364,7 +4500,8 @@ snapshot_attempt_artifacts() {
   mkdir -p "$attempt_dir" 2>/dev/null || return 0
   for artifact in \
     pi-events.jsonl pi-summary.json pi-stderr.log git.diff git.status changed-files.txt \
-    quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json; do
+    quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json \
+    critical-change-expectations.json critical-change-verification.log; do
     if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
       cp "${KASEKI_RESULTS_DIR}/$artifact" "$attempt_dir/$artifact" 2>/dev/null || true
     fi
@@ -7333,6 +7470,8 @@ if ! run_scouting_agent_with_retry; then
   exit 0
 fi
 
+derive_critical_change_expectations
+
 # After scouting succeeds, derive and merge allowlists before main agent runs
 if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
   printf '\n==> derive allowlist from scouting\n'
@@ -7653,6 +7792,25 @@ run_expectation_mismatch_detector
 
 pre_validation_goal_check_diff_hash=""
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; then
+  if ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
+    critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
+    GOAL_CHECK_MET=false
+    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
+    GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
+    printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    emit_progress "critical change verification" "failed on attempt $coding_attempt"
+    snapshot_attempt_artifacts "$coding_attempt"
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "critical change verification" "retrying coding agent before goal check (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
+    STATUS=8
+    FAILED_COMMAND="critical change verification"
+    emit_error_event "critical_change_expectations_failed" "Pre-goal-check verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+    break
+  fi
+  emit_progress "critical change verification" "passed on attempt $coding_attempt"
   pre_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
