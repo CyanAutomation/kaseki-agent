@@ -104,7 +104,7 @@ export class SummaryCache {
       // For performance, we could sample first+last 5KB, but for now use full file
       const content = fs.readFileSync(filePath);
       return crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);
-    } catch (error) {
+    } catch {
       // If file can't be read, use modification time as hash
       try {
         const stats = fs.statSync(filePath);
