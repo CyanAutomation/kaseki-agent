@@ -135,8 +135,14 @@ describe('build-capability-detector', () => {
     });
 
     it('should handle clearing non-existent cache gracefully', () => {
-      // Should not throw
-      clearBuildCapabilityCache(cacheDir);
+      const cachePath = path.join(cacheDir, '.build-capability-cache.json');
+      expect(fs.existsSync(cachePath)).toBe(false);
+
+      expect(() => clearBuildCapabilityCache(cacheDir)).not.toThrow();
+
+      expect(fs.existsSync(cachePath)).toBe(false);
+      expect(fs.existsSync(cacheDir)).toBe(true);
+      expect(fs.readdirSync(cacheDir)).toEqual([]);
     });
 
     it('should allow fresh detection after cache clear', () => {
