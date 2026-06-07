@@ -385,3 +385,10 @@ export function logWriteError(operation: string, filePath: string, error: unknow
     details: `${operation}${errnoInfo}`,
   });
 }
+
+/**
+ * Re-export summarization features from read-wrapper
+ * Provides smart file reading with optional tree-sitter summarization
+ */
+export { readFileWithSummary, readFileWithSummaryAndMetrics, flushSummaryCache, getSummaryCacheStats, clearSummaryCache } from '../summarization/read-wrapper';
+export type { ReadOptions, ReadResult, ReadMetrics } from '../summarization/read-wrapper';
