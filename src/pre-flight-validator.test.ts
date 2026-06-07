@@ -200,9 +200,16 @@ describe('PreFlightValidator validation logic', () => {
 
       const response = await validator.validate(request);
 
-      if (response.errors.length > 0) {
-        expect(response.isValid).toBe(false);
-      }
+      expect(response.errors.length).toBeGreaterThan(0);
+      expect(response.isValid).toBe(false);
+
+      const cmdCheck = response.checks.find((c) => c.name === 'commands-syntax');
+      expect(cmdCheck).toEqual({
+        name: 'commands-syntax',
+        status: 'fail',
+        message: 'Invalid validation commands: Empty command; Dangerous command: rm -rf /...',
+      });
+      expect(response.errors).toContain(cmdCheck?.message);
     });
   });
 
