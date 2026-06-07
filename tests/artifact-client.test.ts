@@ -162,15 +162,5 @@ describe('Artifact Client Utilities', () => {
       expect(header).toBe('Bearer sk-test-1234567890');
       expect(header.startsWith('Bearer ')).toBe(true);
     });
-
-    it('should validate token presence', () => {
-      const validToken = 'sk-test-token';
-      const emptyToken = '';
-      const nullToken = null;
-
-      expect(!!validToken).toBe(true);
-      expect(!!emptyToken).toBe(false);
-      expect(!!nullToken).toBe(false);
-    });
   });
 });
