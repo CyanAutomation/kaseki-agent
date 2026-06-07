@@ -21,7 +21,10 @@ setup_case() {
   CODING_ACTION="$3"
   EXPECTED_EXIT="$4"
   EXPECTED_CALLS="$5"
-  KASEKI_ALLOW_EMPTY_DIFF_CASE="$6"
+  EXPECTED_GOAL_CHECK_MET="$6"
+  EXPECTED_GOAL_CHECK_ATTEMPTS="$7"
+  EXPECTED_FAILED_COMMAND="$8"
+  KASEKI_ALLOW_EMPTY_DIFF_CASE="$9"
 
   CASE_DIR="$TMP_ROOT/$CASE_NAME"
   FAKE_REPO="$CASE_DIR/fake-repo"
@@ -107,20 +110,37 @@ EOF_VALIDATION_FILTER
   [ "$run_exit" -eq "$EXPECTED_EXIT" ] || fail "$CASE_NAME expected exit $EXPECTED_EXIT, got $run_exit"
   [ "$(cat "$PI_CALLS")" = "$EXPECTED_CALLS" ] || fail "$CASE_NAME unexpected Pi calls: $(cat "$PI_CALLS" | tr '\n' ',')"
   [ -s "$RESULTS_DIR/critical-change-expectations.json" ] || fail "$CASE_NAME missing expectation artifact"
+  [ -s "$RESULTS_DIR/metadata.json" ] || fail "$CASE_NAME missing metadata artifact"
+  node - "$RESULTS_DIR/metadata.json" "$EXPECTED_GOAL_CHECK_MET" "$EXPECTED_GOAL_CHECK_ATTEMPTS" "$EXPECTED_FAILED_COMMAND" <<'NODE' || fail "$CASE_NAME metadata goal-check state was incorrect"
+const fs = require('node:fs');
+const [metadataPath, expectedMetRaw, expectedAttemptsRaw, expectedFailedCommand] = process.argv.slice(2);
+const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+const expectedMet = expectedMetRaw === 'true';
+const expectedAttempts = Number(expectedAttemptsRaw);
+if (metadata.goal_check_met !== expectedMet) {
+  throw new Error(`expected goal_check_met=${expectedMet}, got ${metadata.goal_check_met}`);
+}
+if (metadata.goal_check_attempts !== expectedAttempts) {
+  throw new Error(`expected goal_check_attempts=${expectedAttempts}, got ${metadata.goal_check_attempts}`);
+}
+if ((metadata.failed_command || '') !== expectedFailedCommand) {
+  throw new Error(`expected failed_command=${JSON.stringify(expectedFailedCommand)}, got ${JSON.stringify(metadata.failed_command || '')}`);
+}
+NODE
 }
 
 empty_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":[],"required_search_strings":[],"forbidden_empty_diff":true}}'
-setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' 0
+setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
 grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/critical-change-verification.log" || fail "empty-diff did not fail on empty diff"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "empty-diff invoked goal-check"
 
 missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":[],"forbidden_empty_diff":false}}'
-setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding' 1
+setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 1
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "missing-file did not fail on required file"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "missing-file invoked goal-check"
 
 present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
-setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' 0
+setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
 grep -q 'verification passed' "$RESULTS_DIR/critical-change-verification.log" || fail "present case did not pass verification"
 grep -q '^goal-check$' "$PI_CALLS" || fail "present case did not invoke goal-check"
 
