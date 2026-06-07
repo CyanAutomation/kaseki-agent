@@ -1506,19 +1506,45 @@ describe('StatusResponseBuilder', () => {
 
     it('should handle corrupted metadata.json', () => {
       const job: Partial<Job> = {
-        id: 'job-1',
+        id: 'job-corrupted-metadata',
         status: 'completed',
-        resultDir: '/results/job-1',
+        resultDir: '/results/job-corrupted-metadata',
       };
 
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      (fs.readFileSync as jest.Mock).mockImplementation(() => {
-        throw new Error('Read failed');
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({});
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath === '/results/job-corrupted-metadata' || filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          throw new Error('metadata.json is corrupted');
+        }
+        return '';
       });
 
-      expect(() => {
-        builder.buildStatus(job as Job);
-      }).not.toThrow();
+      const response = builder.buildStatus(job as Job);
+
+      expect(response).toMatchObject({
+        id: 'job-corrupted-metadata',
+        status: 'completed',
+        resultDir: '/results/job-corrupted-metadata',
+        artifacts: {
+          metadataJson: false,
+          analysisMd: false,
+          resultSummaryMd: false,
+          failureJson: false,
+          stderrLog: false,
+          stdoutLog: false,
+          availableFiles: [],
+        },
+      });
+      expect(response.exitCode).toBeUndefined();
+      expect(response.validationFailureReason).toBeUndefined();
+      expect(response.validationAllowlistFailureReason).toBeUndefined();
+      expect(response.qualityFailureReason).toBeUndefined();
+      expect(response.goalCheckFailureReason).toBeUndefined();
+      expect(response.failureClass).toBeUndefined();
+      expect(response.error).toBeUndefined();
     });
   });
 });
