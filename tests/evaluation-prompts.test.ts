@@ -786,10 +786,10 @@ if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
 elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
   append_event scouting
   printf '%s\\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$KASEKI_RESULTS_DIR/scouting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+elif printf '%s' "$prompt" | grep -q 'goal-check'; then
   append_event goal-check
   printf '%s\\n' '{"met":true,"confidence":"high","summary":"Goal met by orchestration stub.","retry_prompt":"","evidence":["diff inspected"],"missing":[],"validation_notes":["validation was available"]}' > "$KASEKI_RESULTS_DIR/goal-check-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'run-evaluation Pi agent'; then
+elif printf '%s' "$prompt" | grep -Eq 'run-evaluation|RUN_EVALUATION'; then
   append_event run-evaluation
   if [ "${scenario}" = "malformed-artifact" ]; then
     printf '{"overall_assessment":"good"' > "$KASEKI_RESULTS_DIR/run-evaluation-candidate.json"
