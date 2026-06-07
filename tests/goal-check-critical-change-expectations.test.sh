@@ -53,8 +53,10 @@ setup_case() {
 JSON
   printf 'initial target\n' > "$FAKE_REPO/target.txt" || fail "failed target"
   printf 'initial other\n' > "$FAKE_REPO/other.txt" || fail "failed other"
+  mkdir -p "$FAKE_REPO/tests" || fail "failed tests dir"
+  printf 'initial test\n' > "$FAKE_REPO/tests/target.test.js" || fail "failed test file"
   git -C "$FAKE_REPO" init -q -b main || fail "git init failed"
-  git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json target.txt other.txt || fail "git add failed"
+  git -C "$FAKE_REPO" add package.json package-lock.json deps/fake-dep/package.json target.txt other.txt tests/target.test.js || fail "git add failed"
   git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial || fail "git commit failed"
 
   cat > "$FAKE_BIN/pi" <<EOF_PI || fail "failed fake pi"
@@ -138,6 +140,12 @@ missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[
 setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 1
 grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "missing-file did not fail on required file"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "missing-file invoked goal-check"
+
+tests_only_expectation='{"task":"implement target behavior","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
+setup_case "tests-only-missing-core-change" "$tests_only_expectation" "printf 'MAGIC_EXPECTED_STRING test only\n' > '__WORKSPACE_REPO__/tests/target.test.js'" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
+grep -q 'required file missing from changed-files.txt: target.txt' "$RESULTS_DIR/critical-change-verification.log" || fail "tests-only case did not fail on missing core file"
+grep -q 'required search string' "$RESULTS_DIR/critical-change-verification.log" && fail "tests-only case should fail on missing core file, not diff marker copied into tests"
+! grep -q '^goal-check$' "$PI_CALLS" || fail "tests-only case invoked goal-check"
 
 present_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":["MAGIC_EXPECTED_STRING"],"forbidden_empty_diff":true}}'
 setup_case "present" "$present_expectation" "printf 'MAGIC_EXPECTED_STRING\n' > '__WORKSPACE_REPO__/target.txt'" 0 $'goal-setting\nscouting\ncoding\ngoal-check' true 1 "" 0
