@@ -143,13 +143,18 @@ describe('Artifact Client Utilities', () => {
 
     it('should normalize representative artifact fetch errors', () => {
       expect(normalizeArtifactFetchError(400)).toEqual({
-        category: 'availability',
-        message: 'Artifact is not available yet. Please wait for the run to complete.',
-        retryable: true,
+        category: 'bad-request',
+        message: 'Invalid artifact request.',
+        retryable: false,
       });
       expect(normalizeArtifactFetchError(401)).toEqual({
         category: 'auth',
         message: 'Authentication failed: Invalid or expired token. Please re-enter your API key.',
+        retryable: false,
+      });
+      expect(normalizeArtifactFetchError(403)).toEqual({
+        category: 'forbidden',
+        message: 'Access denied: You do not have permission to view this artifact.',
         retryable: false,
       });
       expect(normalizeArtifactFetchError(404)).toEqual({
@@ -157,10 +162,33 @@ describe('Artifact Client Utilities', () => {
         message: 'Artifact not found.',
         retryable: false,
       });
+      expect(normalizeArtifactFetchError(409)).toEqual({
+        category: 'conflict',
+        message: 'Artifact request conflicted with the current run state. Please refresh and try again.',
+        retryable: false,
+      });
+      expect(normalizeArtifactFetchError(422)).toEqual({
+        category: 'validation',
+        message: 'Artifact request could not be processed. Please check the requested artifact path.',
+        retryable: false,
+      });
+      expect(normalizeArtifactFetchError(429)).toEqual({
+        category: 'rate-limit',
+        message: 'Rate limit exceeded. Please retry later.',
+        retryable: true,
+      });
       expect(normalizeArtifactFetchError(503)).toEqual({
         category: 'server',
         message: 'Server error: Could not read artifact (503).',
         retryable: true,
+      });
+    });
+
+    it('should leave unhandled 4xx statuses non-retryable', () => {
+      expect(normalizeArtifactFetchError(418)).toEqual({
+        category: 'unknown',
+        message: 'Error loading artifact',
+        retryable: false,
       });
     });
   });
