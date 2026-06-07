@@ -9,7 +9,7 @@
  * - Error handling and user feedback
  */
 
-import { getArtifactTypeCategory, shouldDisplayInline } from '../src/lib/artifact-utilities';
+import { getArtifactTypeCategory, normalizeArtifactFetchError, shouldDisplayInline } from '../src/lib/artifact-utilities';
 
 describe('Artifact Client Utilities', () => {
   describe('getArtifactTypeCategory', () => {
@@ -141,16 +141,26 @@ describe('Artifact Client Utilities', () => {
       });
     });
 
-    it('should distinguish between user errors and server errors', () => {
-      const userErrorStatuses = [400, 401, 404];
-      const serverErrorStatuses = [500, 502, 503];
-
-      userErrorStatuses.forEach(status => {
-        expect(status < 500).toBe(true);
+    it('should normalize representative artifact fetch errors', () => {
+      expect(normalizeArtifactFetchError(400)).toEqual({
+        category: 'availability',
+        message: 'Artifact is not available yet. Please wait for the run to complete.',
+        retryable: true,
       });
-
-      serverErrorStatuses.forEach(status => {
-        expect(status >= 500).toBe(true);
+      expect(normalizeArtifactFetchError(401)).toEqual({
+        category: 'auth',
+        message: 'Authentication failed: Invalid or expired token. Please re-enter your API key.',
+        retryable: false,
+      });
+      expect(normalizeArtifactFetchError(404)).toEqual({
+        category: 'not-found',
+        message: 'Artifact not found.',
+        retryable: false,
+      });
+      expect(normalizeArtifactFetchError(503)).toEqual({
+        category: 'server',
+        message: 'Server error: Could not read artifact (503).',
+        retryable: true,
       });
     });
   });

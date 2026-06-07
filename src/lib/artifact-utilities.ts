@@ -138,3 +138,65 @@ export function getArtifactTypeCategory(
 export function shouldDisplayInline(contentType: string): boolean {
   return isTextArtifact(contentType);
 }
+
+export type ArtifactFetchErrorCategory = 'auth' | 'availability' | 'not-found' | 'server' | 'unknown';
+
+export interface ArtifactFetchErrorDetails {
+  category: ArtifactFetchErrorCategory;
+  message: string;
+  retryable: boolean;
+}
+
+/**
+ * Normalizes failed artifact fetch HTTP responses into user-facing error details.
+ *
+ * @param status - HTTP status code from the artifact fetch response
+ * @returns A stable category, user-facing message, and retry recommendation
+ */
+export function normalizeArtifactFetchError(status: number): ArtifactFetchErrorDetails {
+  if (status === 401) {
+    return {
+      category: 'auth',
+      message: 'Authentication failed: Invalid or expired token. Please re-enter your API key.',
+      retryable: false,
+    };
+  }
+
+  if (status === 400) {
+    return {
+      category: 'availability',
+      message: 'Artifact is not available yet. Please wait for the run to complete.',
+      retryable: true,
+    };
+  }
+
+  if (status === 404) {
+    return {
+      category: 'not-found',
+      message: 'Artifact not found.',
+      retryable: false,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      category: 'server',
+      message: `Server error: Could not read artifact (${status}).`,
+      retryable: true,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      category: 'server',
+      message: 'Rate limit exceeded. Please retry later.',
+      retryable: true,
+    };
+  }
+
+  return {
+    category: 'unknown',
+    message: 'Error loading artifact',
+    retryable: false,
+  };
+}
