@@ -261,6 +261,22 @@ build_goal_check_prompt
       expect(runEvalSection).toContain('SMART');
     });
 
+    it('should include required evidence cross-check contradiction handling rules', () => {
+      const runEvalSection = cachedRunEvaluationSection;
+      expect(runEvalSection).toContain('### 2. Evidence Cross-Check (REQUIRED)');
+      expect(runEvalSection).toContain('goal-check.json.met');
+      expect(runEvalSection).toContain('changed-files.txt');
+      expect(runEvalSection).toContain('git.diff');
+      expect(runEvalSection).toContain('validation command outcomes');
+      expect(runEvalSection).toContain('goal-check.met=true but git.diff is empty in patch mode');
+      expect(runEvalSection).toContain('task_completion_score must be 1');
+      expect(runEvalSection).toContain('warnings must mention contradictory evidence');
+      expect(runEvalSection).toContain('required files from goal-setting/scouting are absent from changed-files.txt');
+      expect(runEvalSection).toContain('task_completion_score cannot exceed 2');
+      expect(runEvalSection).toContain('validation logs are empty and no commands were attempted');
+      expect(runEvalSection).toContain('reviewer_confidence should be low unless task mode is inspect or dry-run');
+    });
+
     it('should maintain required JSON schema fields', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(

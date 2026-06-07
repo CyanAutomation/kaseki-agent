@@ -5072,7 +5072,23 @@ Reviewer confidence should account for goal quality. Poor goals = harder to asse
 
 Always account for goal quality. A low-quality goal makes success harder to assess.
 
-### 2. Task Completion Score (1-5)
+### 2. Evidence Cross-Check (REQUIRED)
+
+Before assigning reviewer_confidence or task_completion_score, compare all available evidence sources and explicitly handle contradictions:
+
+- Read goal-check.json.met (the met field in "${KASEKI_RESULTS_DIR}"/goal-check.json) as one signal, not as authoritative proof.
+- Compare goal-check.json.met against "${KASEKI_RESULTS_DIR}"/changed-files.txt, "${KASEKI_RESULTS_DIR}"/git.diff, git.status, and validation command outcomes from validation.log and validation-timings.tsv.
+- Cross-check required files from goal-setting and scouting (success criteria, relevant_files, plan, test_impact, and validation expectations) against changed-files.txt and git.diff.
+- Cross-check validation command outcomes: note which commands were attempted, passed, failed, skipped, or produced empty logs.
+- Treat contradictory evidence as a warning and explain the contradiction in warnings and summary/reasoning fields.
+
+Explicit contradiction-handling scoring rules:
+
+- If goal-check.met=true but git.diff is empty in patch mode, task_completion_score must be 1 and warnings must mention contradictory evidence between the passing goal-check verdict and the empty diff.
+- If required files from goal-setting/scouting are absent from changed-files.txt, task_completion_score cannot exceed 2, even when goal-check.met=true.
+- If validation logs are empty and no commands were attempted, reviewer_confidence should be low unless task mode is inspect or dry-run.
+
+### 3. Task Completion Score (1-5)
 
 Use SMART framework from goal-setting:
 
@@ -5084,7 +5100,7 @@ Use SMART framework from goal-setting:
 
 Reference specific goal-setting quality metrics (clarity, measurability, specificity) in your reasoning.
 
-### 3. Stage Value Assessment (NOT effort, but VALUE)
+### 4. Stage Value Assessment (NOT effort, but VALUE)
 
 For each stage, assess whether it contributed signal to the outcome:
 
@@ -5107,7 +5123,7 @@ Stages (assess value, not effort):
 - validation: Did validation catch issues? Or all pass as expected?
 - goal-check: Did verdict provide clear signal? Or was it uncertain?
 
-### 4. Kaseki Improvement Opportunities
+### 5. Kaseki Improvement Opportunities
 
 Suggestions should be SPECIFIC and ACTIONABLE:
 
@@ -5139,7 +5155,7 @@ Priorities:
 - MEDIUM: Improves efficiency/UX; 5-10% estimated gain
 - LOW: Nice-to-have; <5% impact
 
-### 5. Human Review Focus (2-4 items max)
+### 6. Human Review Focus (2-4 items max)
 
 What should humans manually review?
 
@@ -5153,7 +5169,7 @@ What should humans manually review?
 
 Focus on things Kaseki didn't already verify (goal-check, validation).
 
-### 6. PR Summary (1-2 sentences, human-ready)
+### 7. PR Summary (1-2 sentences, human-ready)
 
 Summarize the actual changes and their impact, NOT the original task.
 
