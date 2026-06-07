@@ -15,6 +15,13 @@ jest.mock('child_process');
 
 // Mock fs for filesystem operations
 jest.mock('fs');
+jest.mock('tree-sitter');
+jest.mock('tree-sitter-typescript', () => ({
+  typescript: {}
+}));
+jest.mock('tree-sitter-go', () => ({
+  language: {}
+}));
 
 describe('ContainerPreflightDiagnostics', () => {
   let diagnostics: ContainerPreflightDiagnostics;
