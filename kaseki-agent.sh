@@ -2576,7 +2576,7 @@ skip_auto_lint_cleanup_before_core_change_verified() {
 run_auto_lint_cleanup_after_core_change_verified() {
   if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
     skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before cleanup"
-    return 0
+        git add -- "$file_path" || {
   fi
 
   run_auto_lint_cleanup
