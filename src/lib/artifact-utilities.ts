@@ -186,6 +186,14 @@ export function normalizeArtifactFetchError(status: number): ArtifactFetchErrorD
     };
   }
 
+  if (status === 429) {
+    return {
+      category: 'server',
+      message: 'Rate limit exceeded. Please retry later.',
+      retryable: true,
+    };
+  }
+
   return {
     category: 'unknown',
     message: 'Error loading artifact',
