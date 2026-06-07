@@ -3569,11 +3569,12 @@ NODE
 }
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section
   memory_section="$(read_repo_memory_section)"
   scouting_section=""
   retry_section=""
   hashline_edits_section=""
+  summarization_section=""
   if [ -s "$SCOUTING_ARTIFACT" ]; then
     scouting_section="
 Scouting artifact:
@@ -3582,6 +3583,12 @@ Scouting artifact:
 - The scouting artifact may include 'test_examples' with before/after code snippets. Use these as patterns when updating related tests.
 - If you change parser logic, output format, naming conventions, serializers, or progress/event fields, read the scouting test_impact files and update the related tests and expectation strings so parser/output/naming behavior changes remain covered.
 - When test_impact includes test_examples, follow those patterns to guide your assertion updates."
+  fi
+  # Read summarization annotation if available
+  if [ -f "${KASEKI_RESULTS_DIR}"/summarization-annotation.txt ]; then
+    summarization_section="
+Summarization Analysis:
+$(cat "${KASEKI_RESULTS_DIR}"/summarization-annotation.txt)"
   fi
   if [ -n "$GOAL_CHECK_RETRY_PROMPT" ]; then
     retry_section="
@@ -3632,6 +3639,7 @@ Fallback behavior:
     printf '%s' "$scouting_section"
     printf '%s' "$retry_section"
     printf '%s' "$hashline_edits_section"
+    printf '%s' "$summarization_section"
     return 0
   fi
 
@@ -3654,6 +3662,7 @@ $memory_section
 $scouting_section
 $retry_section
 $hashline_edits_section
+$summarization_section
 EOF
 }
 
@@ -7684,6 +7693,16 @@ else
   set +e
   printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
   export KASEKI_STREAM_PROGRESS
+  
+  # Run kaseki-summarizer to pre-process files
+  if command -v kaseki-summarizer >/dev/null 2>&1; then
+    printf 'Running summarization analysis...\n'
+    kaseki-summarizer --repo-dir "$WORKSPACE_DIR" --results-dir "$KASEKI_RESULTS_DIR" --verbose >"${KASEKI_RESULTS_DIR}"/summarizer-stdout.log 2>"${KASEKI_RESULTS_DIR}"/summarizer-stderr.log || true
+    if [ -f "${KASEKI_RESULTS_DIR}"/summarization-metadata.json ]; then
+      printf '✓ Summarization analysis complete\n'
+    fi
+  fi
+  
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
   OPENROUTER_API_KEY="$openrouter_api_key" \
