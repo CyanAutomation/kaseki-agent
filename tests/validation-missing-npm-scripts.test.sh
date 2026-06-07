@@ -79,15 +79,45 @@ assert_equals "extracts npm run script with trailing args" "test" "$(npm_run_scr
 assert_missing_script "always skips missing check script" "npm run check" "check"
 assert_not_missing_script "does not skip defined test script" "npm run test"
 assert_not_missing_script "does not skip defined build script" "npm run build"
+assert_equals "default validation uses build when present" "npm run build;npm run test" "$(construct_default_validation_commands)"
 
-record_skipped_validation_command "npm run check" "check" "0"
+cat > package.json <<'JSON'
+{
+  "scripts": {
+    "type-check": "node -e 'process.exit(0)'",
+    "test": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+assert_equals "default validation falls back to type-check without build" "npm run type-check;npm run test" "$(construct_default_validation_commands)"
+assert_not_missing_script "does not skip defined type-check script" "npm run type-check"
 
-if ! grep -Fq 'skipped: package.json does not define npm script "check"' "$tmp_dir/results/validation.log"; then
+cat > package.json <<'JSON'
+{
+  "scripts": {
+    "lint": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+assert_equals "default validation stays non-empty when common scripts are missing" "npm run build;npm run type-check;npm run test" "$(construct_default_validation_commands)"
+
+KASEKI_VALIDATION_COMMANDS_EXPLICIT=x
+KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT=""
+KASEKI_VALIDATION_COMMANDS="npm run custom"
+KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run custom"
+apply_default_validation_commands
+assert_equals "explicit validation commands take precedence" "npm run custom" "$KASEKI_VALIDATION_COMMANDS"
+assert_equals "pre-agent commands keep explicit validation default" "npm run custom" "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS"
+unset KASEKI_VALIDATION_COMMANDS_EXPLICIT KASEKI_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS KASEKI_PRE_AGENT_VALIDATION_COMMANDS_EXPLICIT
+
+record_skipped_validation_command "npm run build" "build" "0"
+
+if ! grep -Fq 'skipped: package.json does not define npm script "build"' "$tmp_dir/results/validation.log"; then
   fail "validation.log should include a clear missing-script skip reason"
 fi
 pass "validation.log records missing-script skip reason"
 
-assert_equals "validation timing records skipped row" $'npm run check\tskipped\t0\tmissing_npm_script=check' "$(cat "$VALIDATION_TIMINGS_FILE")"
+assert_equals "validation timing records skipped row" $'npm run build	skipped	0	missing_npm_script=build' "$(cat "$VALIDATION_TIMINGS_FILE")"
 
 echo ""
 echo "✅ Missing npm script validation tests passed!"
