@@ -139,7 +139,16 @@ export function shouldDisplayInline(contentType: string): boolean {
   return isTextArtifact(contentType);
 }
 
-export type ArtifactFetchErrorCategory = 'auth' | 'availability' | 'not-found' | 'server' | 'unknown';
+export type ArtifactFetchErrorCategory =
+  | 'auth'
+  | 'bad-request'
+  | 'forbidden'
+  | 'not-found'
+  | 'conflict'
+  | 'validation'
+  | 'rate-limit'
+  | 'server'
+  | 'unknown';
 
 export interface ArtifactFetchErrorDetails {
   category: ArtifactFetchErrorCategory;
@@ -164,9 +173,17 @@ export function normalizeArtifactFetchError(status: number): ArtifactFetchErrorD
 
   if (status === 400) {
     return {
-      category: 'availability',
-      message: 'Artifact is not available yet. Please wait for the run to complete.',
-      retryable: true,
+      category: 'bad-request',
+      message: 'Invalid artifact request.',
+      retryable: false,
+    };
+  }
+
+  if (status === 403) {
+    return {
+      category: 'forbidden',
+      message: 'Access denied: You do not have permission to view this artifact.',
+      retryable: false,
     };
   }
 
@@ -178,18 +195,34 @@ export function normalizeArtifactFetchError(status: number): ArtifactFetchErrorD
     };
   }
 
-  if (status >= 500) {
+  if (status === 409) {
     return {
-      category: 'server',
-      message: `Server error: Could not read artifact (${status}).`,
-      retryable: true,
+      category: 'conflict',
+      message: 'Artifact request conflicted with the current run state. Please refresh and try again.',
+      retryable: false,
+    };
+  }
+
+  if (status === 422) {
+    return {
+      category: 'validation',
+      message: 'Artifact request could not be processed. Please check the requested artifact path.',
+      retryable: false,
     };
   }
 
   if (status === 429) {
     return {
-      category: 'server',
+      category: 'rate-limit',
       message: 'Rate limit exceeded. Please retry later.',
+      retryable: true,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      category: 'server',
+      message: `Server error: Could not read artifact (${status}).`,
       retryable: true,
     };
   }
