@@ -3497,6 +3497,7 @@ Scouting artifact:
     retry_section="
 Goal-check retry guidance:
 - A post-validation goal-check Pi evaluator found the previous coding attempt did not fully realize the scouting objective.
+- Implement the missing core code change before adding or adjusting tests, refactoring, cleanup, or other secondary work.
 - Address this feedback while preserving valid existing work:
 $GOAL_CHECK_RETRY_PROMPT"
   fi
@@ -3550,6 +3551,9 @@ You are editing inside a Kaseki-managed ephemeral workspace.
 Operational guardrails:
 - Do not run git add, git commit, git push, gh, hub, or create pull requests. Kaseki owns commit, push, and PR creation after validation passes.
 - Do not run npm install, npm ci, yarn install, pnpm install, or package-manager commands that modify lockfiles. Kaseki owns dependency setup and validation.
+- Critical change first: identify the primary required code change from the task prompt, scouting artifact, and goal-setting artifact before editing.
+- Apply that primary required code change before adding tests, refactoring, cleanup, formatting-only edits, or other secondary work.
+- Do not report success or finish until the required repository diff is present and contains the primary code change, not just tests or scaffolding.
 - Keep edits limited to the requested source and test files. If a tool or command changes unrelated files, restore those unrelated files before finishing.
 - Before finishing, fix minor formatting issues in files you edited, such as trailing whitespace and obvious lint/format inconsistencies, without broad unrelated rewrites.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
@@ -7728,14 +7732,12 @@ if [ "$KASEKI_DRY_RUN" != "1" ]; then
   fi
 fi
 
-if [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
-  run_auto_lint_cleanup
+if [ "$PI_EXIT" -ne 0 ]; then
+  printf 'Auto lint cleanup deferred/skipped because pi coding agent failed with exit %s.\n' "$PI_EXIT" >> "$AUTO_LINT_CLEANUP_LOG"
+elif [ "$STATUS" -ne 0 ]; then
+  printf 'Auto lint cleanup deferred/skipped because status is already %s.\n' "$STATUS" >> "$AUTO_LINT_CLEANUP_LOG"
 else
-  if [ "$PI_EXIT" -ne 0 ]; then
-    printf 'Auto lint cleanup skipped because pi coding agent failed with exit %s.\n' "$PI_EXIT" >> "$AUTO_LINT_CLEANUP_LOG"
-  elif [ "$STATUS" -ne 0 ]; then
-    printf 'Auto lint cleanup skipped because status is already %s.\n' "$STATUS" >> "$AUTO_LINT_CLEANUP_LOG"
-  fi
+  printf 'Auto lint cleanup deferred until after the first critical-change verification.\n' >> "$AUTO_LINT_CLEANUP_LOG"
 fi
 
 printf '\n==> collect agent diff\n'
@@ -7811,6 +7813,33 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     break
   fi
   emit_progress "critical change verification" "passed on attempt $coding_attempt"
+
+  if [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
+    run_auto_lint_cleanup
+    collect_git_artifacts
+    restore_disallowed_changes
+    collect_git_artifacts
+    if ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
+      critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
+      GOAL_CHECK_MET=false
+      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
+      GOAL_CHECK_RETRY_PROMPT="Post-cleanup critical-change verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then restore or implement the required repository changes before secondary work. Failures: $critical_change_failure_summary"
+      printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+      emit_progress "critical change verification" "failed after cleanup on attempt $coding_attempt"
+      snapshot_attempt_artifacts "$coding_attempt"
+      if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+        emit_progress "critical change verification" "retrying coding agent after cleanup invalidated the required diff (attempt $coding_attempt of $max_coding_attempts)"
+        coding_attempt=$((coding_attempt + 1))
+        continue
+      fi
+      STATUS=8
+      FAILED_COMMAND="critical change verification"
+      emit_error_event "critical_change_expectations_failed" "Post-cleanup critical-change verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
+      break
+    fi
+    emit_progress "critical change verification" "passed after cleanup on attempt $coding_attempt"
+  fi
+
   pre_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
   run_goal_check "$coding_attempt"
   collect_goal_check_feedback "$INSTANCE_NAME"
