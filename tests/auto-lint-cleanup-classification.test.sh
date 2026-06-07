@@ -113,7 +113,7 @@ cat > package.json <<'JSON'
 }
 JSON
 : > "$TMP_DIR/results/git.diff"
-KASEKI_TASK_MODE=patch
+KASEKI_TASK_MODE="patch"
 KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
 KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
 run_auto_lint_cleanup_after_core_change_verified

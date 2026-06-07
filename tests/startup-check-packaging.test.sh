@@ -14,6 +14,7 @@ if ! docker_available; then
   printf 'Docker is not available; falling back to static startup-check packaging assertions.\n'
   grep -Fq 'ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh' Dockerfile
   grep -Fq 'ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh' Dockerfile
+  # shellcheck disable=SC2016
   grep -Fq '/scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}"' scripts/docker-entrypoint.sh
   printf '✓ Static startup-check packaging assertions passed.\n'
   exit 0

@@ -3,8 +3,10 @@
  * Extracts code structure (classes, functions, types, imports) without implementations
  */
 import Parser from 'tree-sitter';
-import Language from 'tree-sitter';
 import { SupportedLanguage } from './summarizer-config';
+
+import TypeScript from 'tree-sitter-typescript';
+import Go from 'tree-sitter-go';
 
 export interface CodeElement {
   name: string;
@@ -45,22 +47,19 @@ export class TreeSitterSummarizer {
   }
 
   private initializeLanguage(language: SupportedLanguage): void {
-    let lang: Language;
+    let lang: any;
     switch (language) {
     case 'typescript': {
-      const TypeScript = require('tree-sitter-typescript');
-      lang = TypeScript.typescript;
+      lang = (TypeScript as any).typescript;
       break;
     }
     case 'javascript': {
       // JavaScript uses the same grammar as TypeScript in tree-sitter
-      const TypeScript = require('tree-sitter-typescript');
-      lang = TypeScript.typescript;
+      lang = (TypeScript as any).typescript;
       break;
     }
     case 'go': {
-      const Go = require('tree-sitter-go');
-      lang = Go.language;
+      lang = (Go as any).language;
       break;
     }
     default:
