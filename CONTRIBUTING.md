@@ -144,7 +144,7 @@ Specific linting commands:
 
 ### Style expectations
 
-See [STYLE.md](STYLE.md) for detailed code style guidelines. In summary:
+See [STYLE.md](docs/STYLE.md) for detailed code style guidelines. In summary:
 
 - **Indentation:** 2 spaces (enforced)
 - **Line endings:** Unix (LF) only

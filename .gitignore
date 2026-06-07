@@ -9,3 +9,24 @@ coverage/
 *.tmp
 .DS_Store
 .fallow/
+
+# Test output captures
+test_output*.txt
+test_ci_output.txt
+full_test_output.txt
+test-results.txt
+
+# Lint/ShellCheck output
+lint_output*.txt
+lint_run.txt
+eslint-report.json
+shellcheck_*
+
+# Fallow analysis reports
+fallow_*.json
+
+# Backup files
+*.bak
+
+# Generated API spec
+kaseki-openapi.json

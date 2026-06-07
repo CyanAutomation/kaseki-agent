@@ -129,7 +129,7 @@ evaluate_governance() {
   [ -d "$REPO_PATH/.github/PULL_REQUEST_TEMPLATE" ] && [ "$(find "$REPO_PATH/.github/PULL_REQUEST_TEMPLATE" -type f | wc -l)" -gt 0 ] && score=$((score + 1))
   
   # Check for STYLE.md or style guide (0.5 points, counted as 1 if present)
-  [ -f "$REPO_PATH/STYLE.md" ] && score=$((score + 1))
+  [ -f "$REPO_PATH/STYLE.md" ] || [ -f "$REPO_PATH/docs/STYLE.md" ] && score=$((score + 1))
   
   GOVERNANCE_SCORE="$score"
 }
