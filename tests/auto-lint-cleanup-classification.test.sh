@@ -30,6 +30,18 @@ assert_file_contains() {
     fail "$label: expected to find '$needle'"
   fi
 }
+assert_file_not_contains() {
+  local label="$1"
+  local needle="$2"
+  local file="$3"
+  if grep -Fq -- "$needle" "$file"; then
+    printf '%s\n' "--- $file ---" >&2
+    cat "$file" >&2 || true
+    fail "$label: did not expect to find '$needle'"
+  else
+    pass "$label"
+  fi
+}
 assert_equals() {
   local label="$1"
   local expected="$2"
@@ -44,6 +56,9 @@ eval "$(awk '
   /^npm_run_script_name\(\)/ { emit=1 }
   /^has_typescript_project\(\)/ { emit=0 }
   emit { print }
+  /^skip_auto_lint_cleanup_before_core_change_verified\(\)/ { core_gate=1 }
+  /^run_trailing_whitespace_cleanup_for_changed_tracked_text_files\(\)/ { core_gate=0 }
+  core_gate { print }
   /^run_auto_lint_cleanup\(\)/ { cleanup=1 }
   /^run_validation_commands\(\)/ { cleanup=0 }
   cleanup { print }
@@ -87,6 +102,32 @@ reset_workspace() {
   KASEKI_DRY_RUN=0
   KASEKI_TASK_MODE=implement
 }
+
+
+reset_workspace
+cat > package.json <<'JSON'
+{
+  "scripts": {
+    "test": "node -e 'process.exit(0)'"
+  }
+}
+JSON
+: > "$TMP_DIR/results/git.diff"
+KASEKI_TASK_MODE=patch
+KASEKI_SKIP_MISSING_NPM_SCRIPTS=1
+KASEKI_AUTO_LINT_CLEANUP_COMMANDS='npm run lint:fix'
+run_auto_lint_cleanup_after_core_change_verified
+
+assert_equals 'empty patch diff cleanup skip exits successfully' '0' "$AUTO_LINT_CLEANUP_EXIT"
+assert_equals 'empty patch diff cleanup skip result' 'skipped' "$AUTO_LINT_CLEANUP_RESULT"
+assert_equals 'empty patch diff cleanup skip classification' 'skipped_before_core_change_verified' "$AUTO_LINT_CLEANUP_CLASSIFICATION"
+assert_equals 'empty patch diff cleanup skip attempted no cleanup commands' '0' "$AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED"
+assert_equals 'empty patch diff cleanup skip records no skipped npm scripts' '0' "$AUTO_LINT_CLEANUP_COMMANDS_SKIPPED"
+assert_file_contains 'cleanup log records core-change gate skip' 'skipped_before_core_change_verified' "$AUTO_LINT_CLEANUP_LOG"
+assert_file_contains 'cleanup log records empty patch reason' 'reason=patch_diff_empty' "$AUTO_LINT_CLEANUP_LOG"
+assert_file_not_contains 'empty patch diff does not classify missing cleanup script' 'classification=missing_cleanup_command' "$AUTO_LINT_CLEANUP_LOG"
+assert_file_not_contains 'empty patch diff does not report skipped lint:fix' 'skipped cleanup: package.json does not define npm script "lint:fix"' "$AUTO_LINT_CLEANUP_LOG"
+assert_file_contains 'events classify cleanup skip before core change' 'auto_lint_cleanup_finished exit_code=0 result=skipped classification=skipped_before_core_change_verified reason=patch_diff_empty attempted_commands=0 skipped_commands=0' "$TMP_DIR/results/events.log"
 
 reset_workspace
 cat > package.json <<'JSON'
