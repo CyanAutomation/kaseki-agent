@@ -4,6 +4,26 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.68.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.67.0...v1.68.0) (2026-06-07)
+
+
+### Bug Fixes
+
+* simplify error handling in SummaryCache and ReadWrapper tests ([6d665e6](https://github.com/CyanAutomation/kaseki-agent/commit/6d665e644b250dac801fb469308b3ab81b739c77))
+* update paths for style guide in maturity score evaluation ([5f36fbd](https://github.com/CyanAutomation/kaseki-agent/commit/5f36fbdd3f58d630a084dde89fbf3c82f8d2a594))
+
+
+### Features
+
+* add debug script for testing Feature 3 summarization and metrics ([cb0806d](https://github.com/CyanAutomation/kaseki-agent/commit/cb0806d72098de4d633741b261ff78e31d4e1957))
+* add global mocks for tree-sitter to improve test reliability ([9a1b836](https://github.com/CyanAutomation/kaseki-agent/commit/9a1b836a68d1e5491d2aa812b0fce2a00f8ab582))
+* add global mocks for tree-sitter to improve test reliability ([679940c](https://github.com/CyanAutomation/kaseki-agent/commit/679940c1e95796f3f10707ceb8ac611a6536fdee))
+* add integration guide and completion summary for Feature 3 code summarization ([8d095a5](https://github.com/CyanAutomation/kaseki-agent/commit/8d095a5b31f5a9d76c704d72809ac36659a62b2a))
+* add integration tests and CLI utility for Feature 3 summarization ([5463164](https://github.com/CyanAutomation/kaseki-agent/commit/546316416fe9fc542fc0245df7e89b3da065be4b))
+* add kaseki-summarizer CLI tool for repository summarization and metadata generation ([e42b692](https://github.com/CyanAutomation/kaseki-agent/commit/e42b692a02765bc27557f30e4feafe82dcb7bf2a))
+* add tree-sitter mocks to test files for improved testing coverage ([1af9d4a](https://github.com/CyanAutomation/kaseki-agent/commit/1af9d4a035fe1cd7655877dd43ea6eefdd2eb3a5))
+* enhance tree-sitter integration with error handling and functional tests ([cac2a9d](https://github.com/CyanAutomation/kaseki-agent/commit/cac2a9d6e74f15ae60e6ba595a63a799a8257bf6))
+
 # [1.67.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.66.0...v1.67.0) (2026-06-06)
 
 
