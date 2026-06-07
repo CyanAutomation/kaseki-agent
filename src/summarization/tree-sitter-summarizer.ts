@@ -41,7 +41,9 @@ export class TreeSitterSummarizer {
 
     try {
       this.initializeLanguage(language);
+      console.log(`Initialized tree-sitter for ${language}`);
     } catch (error) {
+      console.error(`Failed to initialize tree-sitter for ${language}:`, error);
       throw new Error(`Failed to initialize tree-sitter for ${language}: ${error}`);
     }
   }
@@ -50,20 +52,23 @@ export class TreeSitterSummarizer {
     let lang: any;
     switch (language) {
     case 'typescript': {
-      lang = (TypeScript as any).typescript;
+      lang = (TypeScript as any).typescript || (TypeScript as any).default?.typescript;
       break;
     }
     case 'javascript': {
       // JavaScript uses the same grammar as TypeScript in tree-sitter
-      lang = (TypeScript as any).typescript;
+      lang = (TypeScript as any).typescript || (TypeScript as any).default?.typescript;
       break;
     }
     case 'go': {
-      lang = (Go as any).language;
+      lang = (Go as any).language || (Go as any).default?.language;
       break;
     }
     default:
       throw new Error(`Unsupported language: ${language}`);
+    }
+    if (!lang) {
+      console.error(`Could not find language binding for ${language}. TypeScript keys:`, Object.keys(TypeScript as any));
     }
     this.parser.setLanguage(lang);
   }
@@ -82,6 +87,7 @@ export class TreeSitterSummarizer {
 
       try {
         tree = this.parser.parse(content);
+        console.log(`Parsed content (${content.length} chars). Root type: ${tree?.rootNode.type}, childCount: ${tree?.rootNode.childCount}`);
       } catch (parseError) {
         const parseTime = performance.now() - parseStart;
         if (parseTime > timeoutMs) {

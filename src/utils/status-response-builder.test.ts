@@ -8,6 +8,13 @@ import * as artifactMetadataCache from '../run-artifact-metadata-cache';
 import * as fileHelpers from './file-helpers';
 
 jest.mock('fs');
+jest.mock('tree-sitter');
+jest.mock('tree-sitter-typescript', () => ({
+  typescript: {}
+}));
+jest.mock('tree-sitter-go', () => ({
+  language: {}
+}));
 jest.mock('../job-scheduler');
 jest.mock('../result-cache');
 jest.mock('../run-artifact-metadata-cache');
