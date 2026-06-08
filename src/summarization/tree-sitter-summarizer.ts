@@ -41,7 +41,6 @@ export class TreeSitterSummarizer {
 
     try {
       this.initializeLanguage(language);
-      console.log(`Initialized tree-sitter for ${language}`);
     } catch (error) {
       console.error(`Failed to initialize tree-sitter for ${language}:`, error);
       throw new Error(`Failed to initialize tree-sitter for ${language}: ${error}`);
@@ -67,9 +66,11 @@ export class TreeSitterSummarizer {
     default:
       throw new Error(`Unsupported language: ${language}`);
     }
+
     if (!lang) {
-      console.error(`Could not find language binding for ${language}. TypeScript keys:`, Object.keys(TypeScript as any));
+      throw new Error(`Could not find language binding for ${language}`);
     }
+
     this.parser.setLanguage(lang);
   }
 
@@ -87,7 +88,6 @@ export class TreeSitterSummarizer {
 
       try {
         tree = this.parser.parse(content);
-        console.log(`Parsed content (${content.length} chars). Root type: ${tree?.rootNode.type}, childCount: ${tree?.rootNode.childCount}`);
       } catch (parseError) {
         const parseTime = performance.now() - parseStart;
         if (parseTime > timeoutMs) {
@@ -107,7 +107,7 @@ export class TreeSitterSummarizer {
         throw parseError;
       }
 
-      if (!tree) {
+      if (!tree || !tree.rootNode) {
         throw new Error('Failed to parse content');
       }
 
@@ -149,7 +149,9 @@ export class TreeSitterSummarizer {
       interfaces: [],
     };
 
-    this.traverse(tree.rootNode, source, summary);
+    if (tree.rootNode) {
+      this.traverse(tree.rootNode, source, summary);
+    }
     return summary;
   }
 
@@ -170,11 +172,10 @@ export class TreeSitterSummarizer {
     // Recursively traverse children
     // Skip children of export statements since we handle them in extractTSExport
     if (node.type !== 'export_statement') {
-      if (node.children && Array.isArray(node.children)) {
-        for (const child of node.children) {
-          if (child) {
-            this.traverse(child, source, summary);
-          }
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child) {
+          this.traverse(child, source, summary);
         }
       }
     }
@@ -265,39 +266,39 @@ export class TreeSitterSummarizer {
 
   private extractTSExport(node: Parser.SyntaxNode, source: string, summary: any): void {
     // Extract export class, function, const, etc.
-    const child = node.child(1); // Skip 'export' keyword
-    if (!child) return;
+    // Usually the declaration is a child of the export statement
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (!child) continue;
 
-    let name = '';
-    let kind = 'unknown';
+      let name = '';
+      let kind = 'unknown';
 
-    if (child.type === 'class_declaration') {
-      name = this.extractName(child, source);
-      kind = 'class';
-      // Also extract class details
-      this.extractTSClass(child, source, summary);
-    } else if (child.type === 'function_declaration') {
-      name = this.extractName(child, source);
-      kind = 'function';
-      // Also extract function details
-      this.extractTSFunction(child, source, summary);
-    } else if (child.type === 'interface_declaration') {
-      name = this.extractName(child, source);
-      kind = 'interface';
-      // Also extract interface details
-      this.extractTSInterface(child, source, summary);
-    } else if (child.type === 'type_alias_declaration') {
-      name = this.extractName(child, source);
-      kind = 'type';
-      // Also extract type details
-      this.extractTSType(child, source, summary);
-    } else if (child.type === 'const_statement' || child.type === 'variable_declaration') {
-      name = this.extractName(child, source);
-      kind = 'const';
-    }
+      if (child.type === 'class_declaration') {
+        name = this.extractName(child, source);
+        kind = 'class';
+        this.extractTSClass(child, source, summary);
+      } else if (child.type === 'function_declaration') {
+        name = this.extractName(child, source);
+        kind = 'function';
+        this.extractTSFunction(child, source, summary);
+      } else if (child.type === 'interface_declaration') {
+        name = this.extractName(child, source);
+        kind = 'interface';
+        this.extractTSInterface(child, source, summary);
+      } else if (child.type === 'type_alias_declaration') {
+        name = this.extractName(child, source);
+        kind = 'type';
+        this.extractTSType(child, source, summary);
+      } else if (child.type === 'lexical_declaration' || child.type === 'variable_declaration') {
+        name = this.extractName(child, source);
+        kind = 'const';
+      }
 
-    if (name) {
-      summary.exports.push({ name, kind });
+      if (name) {
+        summary.exports.push({ name, kind });
+        return; // Found the declaration
+      }
     }
   }
 
@@ -305,11 +306,16 @@ export class TreeSitterSummarizer {
     const name = this.extractName(node, source);
     if (!name) return;
 
+    // Check if we already extracted this class (e.g. from export)
+    if (summary.classes.find((c: any) => c.name === name)) return;
+
     const methods: CodeElement[] = [];
 
-    // Extract methods
-    if (node.children && Array.isArray(node.children)) {
-      for (const child of node.children) {
+    // Extract methods from class body
+    const body = node.childForFieldName('body');
+    if (body) {
+      for (let i = 0; i < body.childCount; i++) {
+        const child = body.child(i);
         if (child && child.type === 'method_definition') {
           const methodName = this.extractName(child, source);
           if (methodName) {
@@ -327,6 +333,9 @@ export class TreeSitterSummarizer {
     const name = this.extractName(node, source);
     if (!name) return;
 
+    // Avoid duplicates
+    if (summary.functions.find((f: any) => f.name === name)) return;
+
     const signature = this.getNodeText(node, source).split('\n')[0];
     summary.functions.push({ name, signature, kind: 'function' });
   }
@@ -335,6 +344,8 @@ export class TreeSitterSummarizer {
     const name = this.extractName(node, source);
     if (!name) return;
 
+    if (summary.types.find((t: any) => t.name === name)) return;
+
     const signature = this.getNodeText(node, source).split('\n')[0];
     summary.types.push({ name, signature, kind: 'type' });
   }
@@ -342,6 +353,8 @@ export class TreeSitterSummarizer {
   private extractTSInterface(node: Parser.SyntaxNode, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
+
+    if (summary.interfaces.find((i: any) => i.name === name)) return;
 
     const signature = this.getNodeText(node, source).split('\n')[0];
     summary.interfaces.push({ name, signature, kind: 'interface' });
@@ -358,15 +371,13 @@ export class TreeSitterSummarizer {
   }
 
   private extractGoType(node: Parser.SyntaxNode, source: string, summary: any): void {
-    // Extract type definitions
-    if (node.children && Array.isArray(node.children)) {
-      for (const child of node.children) {
-        if (child && child.type === 'type_spec') {
-          const name = this.extractName(child, source);
-          if (name) {
-            const signature = this.getNodeText(child, source).split('\n')[0];
-            summary.types.push({ name, signature, kind: 'type' });
-          }
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && child.type === 'type_spec') {
+        const name = this.extractName(child, source);
+        if (name) {
+          const signature = this.getNodeText(child, source).split('\n')[0];
+          summary.types.push({ name, signature, kind: 'type' });
         }
       }
     }
@@ -381,13 +392,11 @@ export class TreeSitterSummarizer {
   }
 
   private extractGoMethod(node: Parser.SyntaxNode, source: string, summary: any): void {
-    // Go methods are receiver functions - extract receiver type
     const name = this.extractName(node, source);
     if (!name) return;
 
     const signature = this.getNodeText(node, source).split('\n')[0];
 
-    // Find or create class for receiver type
     const receiverMatch = signature.match(/func\s+\(\s*\w+\s+\*?(\w+)\s*\)/);
     if (receiverMatch) {
       const className = receiverMatch[1];
@@ -405,14 +414,20 @@ export class TreeSitterSummarizer {
   private extractName(node: Parser.SyntaxNode, source: string): string {
     if (!node) return '';
 
-    // Find identifier node
-    if (node.children && Array.isArray(node.children)) {
-      for (const child of node.children) {
-        if (child && (child.type === 'identifier' || child.type === 'type_identifier')) {
-          return this.getNodeText(child, source);
-        }
+    // Try field 'name' first
+    const nameNode = node.childForFieldName('name');
+    if (nameNode) {
+      return this.getNodeText(nameNode, source);
+    }
+
+    // Fallback to identifier search
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && (child.type === 'identifier' || child.type === 'type_identifier' || child.type === 'property_identifier')) {
+        return this.getNodeText(child, source);
       }
     }
+
     return '';
   }
 
