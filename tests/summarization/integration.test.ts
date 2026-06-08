@@ -6,7 +6,84 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { readFileWithSummaryAndMetrics } from '../../src/summarization/read-wrapper';
+import { clearSummaryCache, readFileWithSummary, readFileWithSummaryAndMetrics } from '../../src/summarization/read-wrapper';
+import type { ReadResult } from '../../src/summarization/read-wrapper';
+
+type ReadErrorResult = {
+  error?: string;
+  content: string | null;
+  metrics?: ReadResult['metrics'];
+};
+
+function expectSuccessfulRead(result: ReadResult | null): asserts result is ReadResult {
+  expect(result).not.toBeNull();
+  const maybeError = result as ReadErrorResult | null;
+  expect(maybeError?.error).toBeUndefined();
+  expect(result?.content).not.toBeNull();
+  expect(result?.content).toEqual(expect.any(String));
+  expect(result?.metrics).toBeDefined();
+}
+
+function writeGeneratedServiceFile(filePath: string): string {
+  const content = `
+import { Repository } from './repository';
+import { Logger } from './logger';
+
+/**
+ * User service handles all user-related operations
+ */
+export interface UserRequest {
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+}
+
+export class UserService {
+  constructor(
+    private repository: Repository,
+    private logger: Logger
+  ) {}
+
+  async getUser(id: number): Promise<UserRequest | null> {
+    this.logger.debug(\`Fetching user \${id}\`);
+    const user = await this.repository.findById(id);
+    if (!user) {
+      this.logger.warn(\`User \${id} not found\`);
+      return null;
+    }
+    return user;
+  }
+
+  async createUser(data: Partial<UserRequest>): Promise<UserRequest> {
+    this.logger.info(\`Creating user: \${data.name}\`);
+    const user = await this.repository.create(data);
+    this.logger.info(\`User created with ID \${user.id}\`);
+    return user;
+  }
+
+  async updateUser(id: number, data: Partial<UserRequest>): Promise<UserRequest> {
+    this.logger.info(\`Updating user \${id}\`);
+    const user = await this.repository.update(id, data);
+    this.logger.info(\`User \${id} updated\`);
+    return user;
+  }
+
+  async deleteUser(id: number): Promise<boolean> {
+    this.logger.warn(\`Deleting user \${id}\`);
+    const result = await this.repository.delete(id);
+    this.logger.info(\`User \${id} deleted: \${result}\`);
+    return result;
+  }
+}
+
+export function createUserService(repo: Repository, logger: Logger): UserService {
+  return new UserService(repo, logger);
+}
+`;
+  fs.writeFileSync(filePath, content);
+  return content;
+}
 
 describe('Summarization Integration', () => {
   let testDir: string;
@@ -19,6 +96,7 @@ describe('Summarization Integration', () => {
   });
 
   afterEach(() => {
+    clearSummaryCache();
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
@@ -108,29 +186,44 @@ describe('Summarization Integration', () => {
       expect(result).toBeDefined();
     });
 
-    it('should process real-world scenario: service class', async () => {
-      const filePath = path.join(testDir, 'service.ts');
-      const content = `
-        import { Database } from './db';
-        import { Logger } from './logger';
-        
-        export interface ServiceConfig { debug: boolean; }
-        
-        export class UserService {
-          constructor(private db: Database, private logger: Logger) {}
-          
-          async getUser(id: number) { return this.db.query('SELECT * FROM users WHERE id = ?', [id]); }
-          async createUser(name: string) { return this.db.query('INSERT INTO users (name) VALUES (?)', [name]); }
-        }
-      `;
-      fs.writeFileSync(filePath, content);
+    it('should return concrete metrics for the generated TypeScript service file', async () => {
+      const filePath = path.join(testDir, 'example-service.ts');
+      const content = writeGeneratedServiceFile(filePath);
+
+      const contentOnly = await readFileWithSummary(filePath);
+      expect(contentOnly).not.toBeNull();
+      expect(contentOnly).toEqual(expect.any(String));
+      expect(contentOnly).toContain('UserService');
 
       const result = await readFileWithSummaryAndMetrics(filePath);
-      expect(result).toBeDefined();
-      expect(result?.content).toBeDefined();
-      if (result?.metrics) {
-        expect(result.metrics).toBeDefined();
-      }
+      expectSuccessfulRead(result);
+      expect(result.content).toContain('UserService');
+      expect(result.metrics?.language).toBe('typescript');
+      expect(result.metrics?.fullSizeBytes).toBe(Buffer.byteLength(content, 'utf-8'));
+      expect(result.metrics?.returnedSizeBytes).toBe(Buffer.byteLength(result.content, 'utf-8'));
+    });
+
+    it('should force a full read for the generated TypeScript service file', async () => {
+      const filePath = path.join(testDir, 'example-service-full.ts');
+      const content = writeGeneratedServiceFile(filePath);
+
+      const result = await readFileWithSummaryAndMetrics(filePath, { full: true });
+      expectSuccessfulRead(result);
+      expect(result.content).toBe(content);
+      expect(result.metrics?.strategy).toBe('full');
+      expect(result.metrics?.strategyReason).toBe('Pi explicit request (full=true)');
+      expect(result.metrics?.decisionPath).toBe('full_read');
+      expect(result.metrics?.language).toBe('typescript');
+    });
+
+    it('should return the documented null/error result for missing files', async () => {
+      const missingFile = path.join(testDir, 'missing.ts');
+
+      await expect(readFileWithSummary(missingFile)).resolves.toBeNull();
+      await expect(readFileWithSummaryAndMetrics(missingFile)).resolves.toEqual({
+        error: 'File not found',
+        content: null,
+      });
     });
   });
 
