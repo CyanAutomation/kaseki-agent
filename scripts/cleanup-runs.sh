@@ -104,10 +104,10 @@ echo ""
 
 # List runs sorted by modification time (newest first)
 echo -e "${BLUE}Runs (newest first):${NC}"
-ls -dt "$RESULTS_DIR"/kaseki-* 2>/dev/null | head -n "$RUN_COUNT" | nl | while read -r LINE; do
+find "$RESULTS_DIR" -maxdepth 1 -type d -name 'kaseki-*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n "$RUN_COUNT" | cut -d' ' -f2- | nl | while read -r LINE; do
   RUN_PATH="$LINE"
   RUN_NAME=$(basename "$RUN_PATH")
-  RUN_NUM=$(echo "$RUN_NAME" | sed 's/kaseki-//')
+  RUN_NUM="${RUN_NAME#kaseki-}"
   MOD_TIME=$(stat -c '%y' "$RUN_PATH" 2>/dev/null | cut -d. -f1 || date -r "$RUN_PATH" '+%Y-%m-%d %H:%M:%S')
   
   if (( RUN_NUM <= RUNS_TO_DELETE )); then
