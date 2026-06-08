@@ -121,7 +121,7 @@ describe('TreeSitterSummarizer', () => {
       expect(summary).toBeDefined();
       expect(summary?.parseError).toBe('Syntax error');
       expect(summary?.classes).toEqual([
-        { name: 'RecoveredClass', methods: [] },
+        { name: 'RecoveredClass', methods: [{ name: 'method', signature: 'method(): void {}', kind: 'method' }] },
       ]);
       expect(summary?.functions).toEqual([
         { name: 'recoveredFunction', signature: 'function recoveredFunction(): number {', kind: 'function' },
