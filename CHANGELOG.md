@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.69.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.68.1...v1.69.0) (2026-06-08)
+
+
+### Bug Fixes
+
+* enhance node traversal and extraction in TreeSitterSummarizer ([faac545](https://github.com/CyanAutomation/kaseki-agent/commit/faac545032b6ea94b0e054dae2c156d016fcf942))
+* enhance run counting and listing in cleanup scripts ([869e38c](https://github.com/CyanAutomation/kaseki-agent/commit/869e38c1418bb57b42480b306563aa3e0f28651b))
+* improve debug logging for cache directory scanning errors ([9edd68b](https://github.com/CyanAutomation/kaseki-agent/commit/9edd68b6f8588aa788f81cc5eed56474a5915635))
+* remove unnecessary whitespace in extractName method ([db5c13b](https://github.com/CyanAutomation/kaseki-agent/commit/db5c13beba1fbafc5ef2671832370b6193e415fd))
+
+
+### Features
+
+* add cleanup command for managing kaseki run artifacts ([ef818bb](https://github.com/CyanAutomation/kaseki-agent/commit/ef818bb3c25abf8bbea2e828a1f838c67235b249))
+
 ## [1.68.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.68.0...v1.68.1) (2026-06-08)
 
 
