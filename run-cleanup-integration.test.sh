@@ -19,6 +19,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# shellcheck disable=SC2317
 cleanup_test_dirs() {
   if [ -n "$TEST_TMPDIR" ] && [ -d "$TEST_TMPDIR" ]; then
     rm -rf "$TEST_TMPDIR"
@@ -28,7 +29,7 @@ cleanup_test_dirs() {
 count_runs() {
   local dir="$1"
   [ -d "$dir" ] || { echo 0; return; }
-  ls -d "$dir"/kaseki-* 2>/dev/null | wc -l | tr -d ' '
+  find "$dir" -maxdepth 1 -type d -name 'kaseki-*' -print0 | wc -l | tr -d ' '
 }
 
 trap cleanup_test_dirs EXIT
@@ -85,7 +86,8 @@ test_cleanup_dryrun() {
     " 2>/dev/null || true
     
     # Verify nothing was deleted
-    local remaining=$(count_runs "$RESULTS_DIR")
+    local remaining
+    remaining=$(count_runs "$RESULTS_DIR")
     if [ "$remaining" -eq 5 ]; then
       echo -e "${GREEN}✓ Dry-run kept all 5 runs${NC}"
       return 0
@@ -121,7 +123,8 @@ test_cleanup_delete() {
   " 2>/dev/null || true
   
   # Verify correct number of runs remain
-  local remaining=$(count_runs "$RESULTS_DIR")
+  local remaining
+  remaining=$(count_runs "$RESULTS_DIR")
   if [ "$remaining" -eq 2 ]; then
     echo -e "${GREEN}✓ Cleanup kept 2 most recent runs${NC}"
     
@@ -131,7 +134,7 @@ test_cleanup_delete() {
       return 0
     else
       echo -e "${RED}✗ Wrong runs kept${NC}"
-      find "$RESULTS_DIR" -maxdepth 1 -type d -name 'kaseki-*' 2>/dev/null | xargs -I {} basename {}
+      find "$RESULTS_DIR" -maxdepth 1 -type d -name 'kaseki-*' -print0 2>/dev/null | xargs -0 basename
       FAILURES=$((FAILURES + 1))
       return 1
     fi
@@ -163,7 +166,8 @@ test_cleanup_delete_all() {
   " 2>/dev/null || true
   
   # Verify all runs deleted
-  local remaining=$(count_runs "$RESULTS_DIR")
+  local remaining
+  remaining=$(count_runs "$RESULTS_DIR")
   if [ "$remaining" -eq 0 ]; then
     echo -e "${GREEN}✓ Cleanup deleted all runs${NC}"
     return 0
@@ -195,7 +199,8 @@ test_cleanup_env_var() {
   " 2>/dev/null || true
   
   # Verify only 1 run remains
-  local remaining=$(count_runs "$RESULTS_DIR")
+  local remaining
+  remaining=$(count_runs "$RESULTS_DIR")
   if [ "$remaining" -eq 1 ]; then
     echo -e "${GREEN}✓ Cleanup respected retention=1${NC}"
     return 0
@@ -227,7 +232,8 @@ test_cleanup_no_action() {
   " 2>/dev/null || true
   
   # Verify all runs still exist
-  local remaining=$(count_runs "$RESULTS_DIR")
+  local remaining
+  remaining=$(count_runs "$RESULTS_DIR")
   if [ "$remaining" -eq 3 ]; then
     echo -e "${GREEN}✓ Cleanup skipped (runs <= retention count)${NC}"
     return 0
@@ -262,7 +268,8 @@ test_node_cleanup_integration() {
     echo -e "${GREEN}✓ Node.js cleanup-manager deleted 3 runs${NC}"
     
     # Verify runs were actually deleted
-    local remaining=$(count_runs "$RESULTS_DIR")
+    local remaining
+    remaining=$(count_runs "$RESULTS_DIR")
     if [ "$remaining" -eq 2 ]; then
       echo -e "${GREEN}✓ Correct number of runs remaining (2)${NC}"
       return 0
