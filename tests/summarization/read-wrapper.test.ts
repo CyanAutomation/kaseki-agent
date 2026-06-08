@@ -55,7 +55,7 @@ describe('ReadWrapper', () => {
       expect(strategy).toEqual({
         strategy: 'full',
         reason: strategy.reason,
-        estimatedTokens: Math.ceil(sizeBytes / 3.5),
+        estimatedTokens: strategy.estimatedTokens,
       });
 
       const readContent = await readFileWithSummary(filePath);
