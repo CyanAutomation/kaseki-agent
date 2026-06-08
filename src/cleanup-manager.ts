@@ -199,7 +199,7 @@ export async function cleanupOldRuns(
         }
       }
     } catch (error) {
-      console.debug(`Error scanning cache directory:`, error);
+      console.debug('Error scanning cache directory:', error);
     }
   }
 
