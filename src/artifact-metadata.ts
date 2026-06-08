@@ -21,23 +21,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Diagnostic summaries (always available)
-  'result-summary.md': {
-    name: 'result-summary.md',
-    contentType: 'text/markdown',
-    description: 'Human-readable status summary with context and recommendations',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 2,
-    sizeHint: 'small',
-  },
-
-  'analysis.md': {
-    name: 'analysis.md',
-    contentType: 'text/markdown',
-    description: 'Comprehensive failure analysis with recommendations',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 3,
-    sizeHint: 'medium',
-  },
 
   'inspect-report.md': {
     name: 'inspect-report.md',
@@ -179,13 +162,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'scouting-validation-summary.txt': {
-    name: 'scouting-validation-summary.txt',
-    contentType: 'text/plain',
-    description: 'Concise summary of the latest scouting artifact validation result',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
+
 
   'goal-check.json': {
     name: 'goal-check.json',
@@ -229,14 +206,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
-  'goal-check-validation-errors.jsonl': {
-    name: 'goal-check-validation-errors.jsonl',
-    contentType: 'application/x-jsonl',
-    description: 'Structured goal-check artifact validation failures with field-level expected/actual details and suggestions',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 8,
-    sizeHint: 'small',
-  },
+
 
   'run-evaluation.json': {
     name: 'run-evaluation.json',
@@ -272,14 +242,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Progress & stage tracking
-  'progress.log': {
-    name: 'progress.log',
-    contentType: 'text/plain',
-    description: 'Text progress log: stage transitions, errors, quality gate events',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 6,
-    sizeHint: 'medium',
-  },
 
   'progress.jsonl': {
     name: 'progress.jsonl',
@@ -310,14 +272,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Validation & quality
-  'pre-validation.log': {
-    name: 'pre-validation.log',
-    contentType: 'text/plain',
-    description: 'Pre-agent validation command output and baseline failure diagnostics',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 10,
-    sizeHint: 'medium',
-  },
 
   'pre-validation-timings.tsv': {
     name: 'pre-validation-timings.tsv',
@@ -374,14 +328,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'large',
   },
 
-  'git.status': {
-    name: 'git.status',
-    contentType: 'text/plain',
-    description: 'Git status output: modified, added, deleted files (short format)',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 13,
-    sizeHint: 'small',
-  },
+
 
   'changed-files.txt': {
     name: 'changed-files.txt',
@@ -393,14 +340,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Publishing & GitHub
-  'git-push.log': {
-    name: 'git-push.log',
-    contentType: 'text/plain',
-    description: 'GitHub push/PR creation log (if GitHub App integration enabled)',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 22,
-    sizeHint: 'small',
-  },
 
   // Allowlist & restoration
   'restoration.jsonl': {
@@ -412,14 +351,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'restoration-report.md': {
-    name: 'restoration-report.md',
-    contentType: 'text/markdown',
-    description: 'Markdown summary of allowlist restoration events and impact',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 16,
-    sizeHint: 'small',
-  },
+
 
   // Security & compliance
   'secret-scan.log': {
@@ -432,14 +364,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Dependency caching
-  'dependency-cache.log': {
-    name: 'dependency-cache.log',
-    contentType: 'text/plain',
-    description: 'npm dependency cache strategy and hit/miss info',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 24,
-    sizeHint: 'small',
-  },
 
   // Exit code (machine-readable)
   'exit_code': {
@@ -452,12 +376,4 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   },
 
   // Format check (development)
-  'format-check-command.txt': {
-    name: 'format-check-command.txt',
-    contentType: 'text/plain',
-    description: 'Format/lint check command if defined (development only)',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 27,
-    sizeHint: 'small',
-  },
 };

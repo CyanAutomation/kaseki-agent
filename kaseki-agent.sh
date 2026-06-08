@@ -210,8 +210,6 @@ PRE_VALIDATION_RAW_LOG="${KASEKI_RESULTS_DIR}/pre-validation-raw.log"
 AUTO_LINT_CLEANUP_LOG="${KASEKI_RESULTS_DIR}/auto-lint-cleanup.log"
 AUTO_LINT_CLEANUP_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-timings.tsv"
 FILTER_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/filter-diagnostics.log"
-VALIDATION_ENV_LOG="${KASEKI_RESULTS_DIR}/validation-env.log"
-PRE_VALIDATION_ENV_LOG="${KASEKI_RESULTS_DIR}/pre-validation-env.log"
 DIFF_NONEMPTY=false
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
@@ -278,7 +276,7 @@ LAST_COMMAND_LOG="${KASEKI_RESULTS_DIR}/last-command.log"
 # Signal handler for graceful termination
 handle_termination() {
   local signal="$1"
-  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+  printf '\nReceived %s; terminating kaseki-agent...\n' "$signal"
   # Exit with standard code for signal (128 + signal_number)
   # SIGINT = 130, SIGTERM = 143
   if [ "$signal" = "SIGINT" ]; then
@@ -352,7 +350,6 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl
 : > "${KASEKI_RESULTS_DIR}"/scouting-summary.json
 : > "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl
-: > "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt
 : > "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
 : > "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
@@ -367,23 +364,13 @@ fi
 : > "$TEST_IMPACT_WARNINGS_ARTIFACT"
 : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
 : > "${KASEKI_RESULTS_DIR}"/validation.log
-: > "${KASEKI_RESULTS_DIR}"/pre-validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
-: > "$PRE_VALIDATION_ENV_LOG"
-: > "$AUTO_LINT_CLEANUP_LOG"
 : > "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
 : > "${KASEKI_RESULTS_DIR}"/quality.log
 : > "${KASEKI_RESULTS_DIR}"/secret-scan.log
-: > "${KASEKI_RESULTS_DIR}"/git-push.log
-: > "${KASEKI_RESULTS_DIR}"/progress.log
 : > "${KASEKI_RESULTS_DIR}"/progress.jsonl
-: > "${KASEKI_RESULTS_DIR}"/format-check-command.txt
 : > "${KASEKI_RESULTS_DIR}"/failure.json
-: > "${KASEKI_RESULTS_DIR}"/result-summary.md
 : > "$VALIDATION_TIMINGS_FILE"
-: > "$PRE_VALIDATION_TIMINGS_FILE"
-: >> "$STAGE_TIMINGS_FILE"
-: > "$DEPENDENCY_CACHE_LOG"
 setup_host_logging_mirror "$INSTANCE_NAME"
 require_or_warn_binary jq required 'Install jq (for Debian/Ubuntu: apt-get install -y jq). Metadata/report generation depends on it.'
 case "$KASEKI_GIT_CACHE_MODE" in
@@ -577,7 +564,7 @@ validate_scouting_artifact() {
   fi
 
   printf '%s\n' "$reason_code" > "$reason_file"
-  printf '%s\n' "$reason_details" > "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt
+  # scouting-validation-summary.txt artifact removed (Phase 1: low-value artifacts deletion)
   printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
@@ -753,7 +740,7 @@ emit_progress() {
     "status=$status" \
     "instance=$INSTANCE_NAME" \
     "detail=$detail"
-  printf '[progress] %s %s: %s\n' "$stage" "$status" "$detail" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+  :
 }
 
 emit_event() {
@@ -772,7 +759,6 @@ emit_error_event() {
   local detail="$2"
   local recovery="${3:-continue}"
   emit_event "error" "error_type=$error_type" "detail=$detail" "recovery_action=$recovery"
-  printf '[error] %s: %s (recovery: %s)\n' "$error_type" "$detail" "$recovery" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
 }
 
 write_metadata() {
@@ -802,8 +788,7 @@ write_metadata() {
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "scouting_validation": {
-    "validation_errors_log": "scouting-validation-errors.jsonl",
-    "summary_file": "scouting-validation-summary.txt"
+    "validation_errors_log": "scouting-validation-errors.jsonl"
   },
   "goal_check_validation": {
     "attempt_count": $GOAL_CHECK_ATTEMPTS,
@@ -1019,68 +1004,6 @@ write_result_summary() {
     goal_check_status="not reached"
   fi
 
-  cat > "${KASEKI_RESULTS_DIR}"/result-summary.md <<SUMMARY
-# Kaseki Result: $INSTANCE_NAME
-
-- Status: $(if [ "$STATUS" -eq 0 ]; then printf 'passed'; else printf 'failed'; fi)
-- Failed command: ${FAILED_COMMAND:-none}
-- Requested model: $KASEKI_MODEL
-- Actual model: ${ACTUAL_MODEL:-unknown}
-- Pi exit code: $PI_EXIT
-- Goal check: $goal_check_status ($GOAL_CHECK_EXIT)
-- Goal check attempts: $GOAL_CHECK_ATTEMPTS (max retries: $KASEKI_GOAL_CHECK_MAX_RETRIES)
-$(if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$GOAL_CHECK_FAILURE_REASON"; fi)
-- Pre-agent validation: $([ "$PRE_VALIDATION_EXIT" -eq 0 ] && printf 'passed' || printf 'failed') ($PRE_VALIDATION_EXIT)
-$(if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$PRE_VALIDATION_FAILURE_REASON"; fi)
-- Pre-agent validation failure detail: ${PRE_VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$(if [ "$PRE_VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Pre-agent validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$PRE_VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
-- Auto lint cleanup: ${AUTO_LINT_CLEANUP_RESULT:-$([ "$AUTO_LINT_CLEANUP_EXIT" -eq 0 ] && printf 'passed/skipped' || printf 'failed')} ($AUTO_LINT_CLEANUP_EXIT)
-  - Classification: ${AUTO_LINT_CLEANUP_CLASSIFICATION:-unknown}
-  - Commands attempted/skipped: ${AUTO_LINT_CLEANUP_COMMANDS_ATTEMPTED:-0}/${AUTO_LINT_CLEANUP_COMMANDS_SKIPPED:-0}
-- Validation: $validation_status ($VALIDATION_EXIT)
-$(if [ -n "$VALIDATION_FAILURE_REASON" ]; then printf '  - Reason: %s\n' "$VALIDATION_FAILURE_REASON"; fi)
-$(if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then printf '  - Allowlist reason: %s\n' "$VALIDATION_ALLOWLIST_FAILURE_REASON"; fi)
-- Validation failure detail: ${VALIDATION_FAILED_COMMAND_DETAIL:-none}
-$(if [ "$KASEKI_VALIDATION_RUN_ALL_COMMANDS" -eq 1 ]; then printf -- '- **ℹ️ Validation mode: Comprehensive** (KASEKI_VALIDATION_RUN_ALL_COMMANDS=1) - all %d commands executed\n' "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; elif [ "$VALIDATION_STOPPED_EARLY" = "true" ]; then printf -- '- **⚠️ Validation stopped early** (fail-fast mode): %s of %s commands ran\n' "$VALIDATION_COMMANDS_ATTEMPTED" "$(echo "$KASEKI_VALIDATION_COMMANDS" | tr ';' '\n' | grep -c .)"; fi)
-- Test failure analysis: $TEST_FAILURE_CLASSIFICATION_STATUS
-$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ "$NEWLY_INTRODUCED_FAILURES_COUNT" -gt 0 ]; then printf '  - ⚠️ **Newly introduced failures: %d**\n' "$NEWLY_INTRODUCED_FAILURES_COUNT"; fi)
-$(if [ "$TEST_FAILURE_CLASSIFICATION_STATUS" = "completed" ] && [ -f "${KASEKI_RESULTS_DIR}"/test-baseline-comparison.json ]; then printf '  - See test-baseline-comparison.json for full breakdown\n'; fi)
-- Quality checks: $QUALITY_EXIT
-- Secret scan: $SECRET_SCAN_EXIT
-- GitHub PR: $pr_status
-- GitHub skip reasons: $github_skip_reasons_summary
-- Diff non-empty: $DIFF_NONEMPTY
-- Changed files:
-$changed_files_markdown
-
-Artifacts:
-- metadata.json
-- pi-summary.json
-- pi-events.jsonl
-- scouting-validation-errors.jsonl
-- goal-check.json
-- goal-check-attempts.jsonl
-- goal-check-validation-errors.jsonl
-- run-evaluation.json
-- test-impact-warnings.log (non-blocking static test-impact warnings)
-- pre-validation.log
-- pre-validation-timings.tsv
-- validation.log
-- validation-timings.tsv
-- validation-baseline.log (baseline validation on main branch)
-- validation-baseline-timings.tsv
-- test-baseline-comparison.json (test failure classification)
-- auto-lint-cleanup.log
-- auto-lint-cleanup-timings.tsv
-- stage-timings.tsv
-- dependency-cache.log
-- git.diff
-- git.status
-- git-push.log (if GitHub App enabled)
-- progress.log
-- progress.jsonl
-- cleanup.log (host artifact)
-SUMMARY
 }
 
 write_failure_json() {
@@ -1126,14 +1049,12 @@ collect_git_artifacts() {
       [ -z "$untracked_file" ] && continue
       git -C "${KASEKI_WORKSPACE_DIR}"/repo add -N -- "$untracked_file" 2>/dev/null || true
     done < <(git -C "${KASEKI_WORKSPACE_DIR}"/repo ls-files --others --exclude-standard 2>/dev/null || true)
-    git -C "${KASEKI_WORKSPACE_DIR}"/repo status --short > "${KASEKI_RESULTS_DIR}"/git.status 2>/dev/null || true
     git -C "${KASEKI_WORKSPACE_DIR}"/repo diff -- . > "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null || true
     git -C "${KASEKI_WORKSPACE_DIR}"/repo diff --name-only -- . > "${KASEKI_RESULTS_DIR}"/changed-files.txt 2>/dev/null || true
     if [ -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
       DIFF_NONEMPTY=true
     fi
   else
-    : > "${KASEKI_RESULTS_DIR}"/git.status
     : > "${KASEKI_RESULTS_DIR}"/git.diff
     : > "${KASEKI_RESULTS_DIR}"/changed-files.txt
   fi
@@ -1184,7 +1105,6 @@ run_static_test_impact_check() {
     "warning_type=test_impact_without_tests" \
     "artifact=$artifact" \
     "detail=$warning_detail"
-  printf '[warning] test-impact: %s (artifact: %s)\n' "$warning_detail" "$artifact" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
   return 0
 }
 
@@ -1326,7 +1246,7 @@ run_expectation_mismatch_detector() {
     return 0
   fi
   if [ ! -f "$detector_script" ]; then
-    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+    printf '[expectation-mismatch] skipped: detector script not found (%s)\n' "$detector_script" >/dev/null
     return 0
   fi
 
@@ -1335,7 +1255,7 @@ run_expectation_mismatch_detector() {
     --diff "${KASEKI_RESULTS_DIR}"/git.diff \
     --output "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT" \
     --progress "${KASEKI_RESULTS_DIR}"/progress.log; then
-    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' | tee -a "${KASEKI_RESULTS_DIR}"/progress.log
+    printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' >/dev/null
   fi
 }
 
@@ -1574,99 +1494,6 @@ restore_disallowed_changes() {
   fi
 }
 
-generate_restoration_report() {
-  if [ ! -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
-    printf '[debug] restoration report: skipping - restoration.jsonl not found\n' >&2
-    return 0
-  fi
-
-  local restored_count kept_count total_count coverage_pct
-  
-  # Safely extract counts from restoration.jsonl with validation
-  printf '[debug] restoration report: extracting counts from restoration.jsonl\n' >&2
-  restored_count=$(grep -c '"status":"restored"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)
-  restored_count=${restored_count:-0}
-  printf '[debug] restoration report: restored_count="%s"\n' "$restored_count" >&2
-  if ! validate_numeric "restored_count" "$restored_count"; then
-    printf 'warning: restoration report generation failed - restored_count validation failed\n' >&2
-    return 1
-  fi
-  
-  kept_count=$(grep -c '"status":"kept"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)
-  kept_count=${kept_count:-0}
-  printf '[debug] restoration report: kept_count="%s"\n' "$kept_count" >&2
-  if ! validate_numeric "kept_count" "$kept_count"; then
-    printf 'warning: restoration report generation failed - kept_count validation failed\n' >&2
-    return 1
-  fi
-  
-  # Arithmetic operation - now guaranteed to have valid numeric values
-  printf '[debug] restoration report: computing total_count from restored=%s and kept=%s\n' "$restored_count" "$kept_count" >&2
-  total_count=$((restored_count + kept_count))
-  printf '[debug] restoration report: total_count="%s"\n' "$total_count" >&2
-
-  if [ "$total_count" -eq 0 ]; then
-    printf '[debug] restoration report: no changes recorded, skipping report\n' >&2
-    return 0
-  fi
-
-  printf '[debug] restoration report: generating report with %d total changes\n' "$total_count" >&2
-  
-  {
-    printf '# Allowlist Restoration Report\n\n'
-    printf 'Generated: %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf '## Summary\n\n'
-    # All variables are now validated as numeric by validate_numeric() above
-    printf -- '- **Total Files Changed:** %d\n' "$total_count" || { printf 'error: failed to write total count\n' >&2; return 1; }
-    printf -- '- **Files Kept (in allowlist):** %d\n' "$kept_count" || { printf 'error: failed to write kept count\n' >&2; return 1; }
-    printf -- '- **Files Restored (outside allowlist):** %d\n' "$restored_count" || { printf 'error: failed to write restored count\n' >&2; return 1; }
-    if [ "$total_count" -gt 0 ]; then
-      # Calculate coverage percentage - safe because total_count is validated as > 0
-      coverage_pct=$((kept_count * 100 / total_count))
-      printf '[debug] restoration report: coverage_pct=%d (kept=%s / total=%s)\n' "$coverage_pct" "$kept_count" "$total_count" >&2
-      printf -- '- **Allowlist Coverage:** %d%%\n\n' "$coverage_pct" || { printf 'error: failed to write coverage pct\n' >&2; return 1; }
-    fi
-
-    if [ "$restored_count" -gt 0 ]; then
-      printf '## Restored Files\n\n'
-      printf 'These files were modified by the agent but restored because they fall outside the allowlist:\n\n'
-      grep '"status":"restored"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl | \
-        sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
-        sort | uniq >> "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp 2>/dev/null || true
-      if [ -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp ]; then
-        cat "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
-        rm -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
-      fi
-      printf '\n'
-    fi
-
-    if [ "$kept_count" -gt 0 ]; then
-      printf '## Kept Files (Allowlist Matches)\n\n'
-      printf 'These files were in the allowlist and were kept:\n\n'
-      grep '"status":"kept"' "${KASEKI_RESULTS_DIR}"/restoration.jsonl | \
-        sed "s/.*\"file\":\"\([^\"]*\)\".*/- \`\1\`/" | \
-        sort | uniq >> "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp 2>/dev/null || true
-      if [ -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp ]; then
-        cat "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
-        rm -f "${KASEKI_RESULTS_DIR}"/restoration-report.md.tmp
-      fi
-      printf '\n'
-    fi
-
-    printf '## Recommendations\n\n'
-    if [ "$restored_count" -gt 0 ] && [ -n "$coverage_pct" ] && [ "$coverage_pct" -lt 50 ]; then
-      printf '**⚠️ Low Allowlist Coverage** — Only %d%% of changes were kept.\n' "$coverage_pct"
-      printf 'Consider:\n'
-      printf '1. Reviewing the TASK_PROMPT to be more specific about scope\n'
-      printf '2. Widening the allowlist to include related files\n'
-      printf "3. Running \`scripts/suggest-allowlist.sh\` to auto-generate a better allowlist\n\n"
-    fi
-    printf 'Run subsequent operations with an updated allowlist:\n'
-    printf '```bash\n'
-    printf 'KASEKI_CHANGED_FILES_ALLOWLIST="<your-pattern>" ./run-kaseki.sh\n'
-    printf '```\n\n'
-    printf "For help on allowlist patterns, see \`docs/QUALITY_GATES.md\`.\n"
-  } > "${KASEKI_RESULTS_DIR}"/restoration-report.md
 }
 
 check_validation_allowlist() {
@@ -1823,7 +1650,7 @@ finish() {
   maybe_call_finish_helper collect_git_artifacts
   
   # Analyze test failures and compare baseline vs. working results
-  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ] && [ -f ${KASEKI_RESULTS_DIR}/pre-validation.log ]; then
+  if [ "$KASEKI_BASELINE_VALIDATION_ENABLED" = "1" ] && [ -f "${KASEKI_RESULTS_DIR}"/validation-baseline.log ]; then
     set_current_stage "test failure analysis"
     if analyze_test_failures_baseline; then
       TEST_FAILURE_CLASSIFICATION_STATUS="completed"
@@ -1852,17 +1679,8 @@ finish() {
     printf '[debug] restoration.jsonl does not exist\n' >&2
   fi
   
-  if declare -F generate_restoration_report >/dev/null; then
-    if ! generate_restoration_report; then
-      printf 'warning: restoration report generation failed, but continuing with cleanup\n' >&2
-    fi
-  else
-    printf '[finish] helper_missing name=generate_restoration_report status=%s stage=%s\n' "$STATUS" "$CURRENT_STAGE" >&2
-    if declare -F emit_event >/dev/null; then
-      emit_event "finish_helper_missing" "helper=generate_restoration_report" "status=$STATUS" "stage=$CURRENT_STAGE"
-    fi
-  fi
-  
+  # restoration-report.md artifact removed (Phase 1: low-value artifacts deletion)
+
   # Calculate and record maturity score
   if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
     /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json 2>/dev/null || true
@@ -4510,8 +4328,8 @@ run_scouting_agent() {
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
-    scouting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-summary.txt 2>/dev/null || printf 'scouting artifact validation failed')"
-    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_summary (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
+    scouting_validation_error="$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | tail -1 | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
   fi
   scout_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
@@ -4606,7 +4424,7 @@ snapshot_attempt_artifacts() {
   attempt_dir="${KASEKI_RESULTS_DIR}/attempt-$1"
   mkdir -p "$attempt_dir" 2>/dev/null || return 0
   for artifact in \
-    pi-events.jsonl pi-summary.json pi-stderr.log git.diff git.status changed-files.txt \
+    pi-events.jsonl pi-summary.json pi-stderr.log git.diff changed-files.txt \
     quality.log validation.log validation-raw.log validation-timings.tsv goal-check.json \
     critical-change-expectations.json critical-change-verification.log; do
     if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
@@ -5087,7 +4905,7 @@ This is NOT another goal-check. The goal-check evaluator already determined if t
 - Goal-check verdict: "${KASEKI_RESULTS_DIR}"/goal-check.json
 - Scouting report: "${KASEKI_RESULTS_DIR}"/scouting.json
 - Changed files: "${KASEKI_RESULTS_DIR}"/changed-files.txt
-- Git diff and status: "${KASEKI_RESULTS_DIR}"/git.diff, ${KASEKI_RESULTS_DIR}/git.status
+- Git diff: "${KASEKI_RESULTS_DIR}"/git.diff
 - Validation timings/logs: "${KASEKI_RESULTS_DIR}"/pre-validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation.log
 - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
 - Stage timings: "${KASEKI_RESULTS_DIR}"/stage-timings.tsv
@@ -5127,7 +4945,7 @@ Always account for goal quality. A low-quality goal makes success harder to asse
 Before assigning reviewer_confidence or task_completion_score, compare all available evidence sources and explicitly handle contradictions:
 
 - Read goal-check.json.met (the met field in "${KASEKI_RESULTS_DIR}"/goal-check.json) as one signal, not as authoritative proof.
-- Compare goal-check.json.met against "${KASEKI_RESULTS_DIR}"/changed-files.txt, "${KASEKI_RESULTS_DIR}"/git.diff, git.status, and validation command outcomes from validation.log and validation-timings.tsv.
+- Compare goal-check.json.met against "${KASEKI_RESULTS_DIR}"/changed-files.txt, "${KASEKI_RESULTS_DIR}"/git.diff, and validation command outcomes from validation.log and validation-timings.tsv.
 - Cross-check required files from goal-setting and scouting (success criteria, relevant_files, plan, test_impact, and validation expectations) against changed-files.txt and git.diff.
 - Cross-check validation command outcomes: note which commands were attempted, passed, failed, skipped, or produced empty logs.
 - Treat contradictory evidence as a warning and explain the contradiction in warnings and summary/reasoning fields.
@@ -5509,7 +5327,7 @@ github_askpass_runtime_dir() {
 
 create_github_askpass_helper() {
   local log_file log_prefix askpass_dir askpass_file username_smoke_output password_smoke_output
-  log_file="${1:-${KASEKI_RESULTS_DIR}/git-push.log}"
+  log_file="${1:-/dev/null}"
   log_prefix="${2:-[github-askpass]}"
   GITHUB_ASKPASS_FILE=""
 
@@ -5841,7 +5659,7 @@ validate_github_api_response() {
   local http_status response log_file error_type error_message json_valid
   http_status="$1"
   response="$2"
-  log_file="${3:-${KASEKI_RESULTS_DIR}/git-push.log}"
+  log_file="${3:-/dev/null}"
   
   # Try to parse error info from response
   error_type="unknown"
@@ -5949,7 +5767,7 @@ apply_github_pr_labels() {
   repo="$2"
   issue_number="$3"
   token="$4"
-  log_file="${5:-${KASEKI_RESULTS_DIR}/git-push.log}"
+  log_file="${5:-/dev/null}"
 
   if [ -z "$owner" ] || [ -z "$repo" ] || [ -z "$issue_number" ] || [ -z "$token" ]; then
     printf 'Warning: skipping PR label application because owner, repo, issue number, or token is missing\n' | tee -a "$log_file" >&2
@@ -6003,7 +5821,7 @@ request_owner_review() {
   local pr_response token log_file owner_login owner_type pr_number repo owner
   pr_response="$1"
   token="$2"
-  log_file="${3:-${KASEKI_RESULTS_DIR}/git-push.log}"
+  log_file="${3:-/dev/null}"
   
   if [ -z "$pr_response" ] || [ -z "$token" ]; then
     printf 'Warning: skipping owner review request because PR response or token is missing\n' | tee -a "$log_file" >&2
@@ -7474,16 +7292,15 @@ if [ "$KASEKI_PRE_AGENT_VALIDATION" = "0" ]; then
   printf '\n==> pre-agent validation\n'
   set_current_stage "pre-agent validation"
   emit_progress "pre-agent validation" "skipped by KASEKI_PRE_AGENT_VALIDATION=0"
-  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation.log
+  printf 'Pre-agent validation skipped because KASEKI_PRE_AGENT_VALIDATION=0.\n' >/dev/null
   record_stage_timing "pre-agent validation" 0 0 "skipped_by_config"
 else
   run_validation_commands \
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
-    "${KASEKI_RESULTS_DIR}"/pre-validation.log \
+    /dev/null \
     "$PRE_VALIDATION_RAW_LOG" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
-    "$PRE_VALIDATION_ENV_LOG" \
     "pre_agent_validation_failed" \
     PRE_VALIDATION_EXIT \
     PRE_VALIDATION_FAILED_COMMAND_DETAIL \
@@ -7914,8 +7731,7 @@ if [ -n "$allowlist_regex" ]; then
 fi
 
 if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['format:check'] ? 0 : 1)" 2>/dev/null; then
-  format_command="npm run format:check"
-  printf '%s\n' "$format_command" >> "${KASEKI_RESULTS_DIR}"/format-check-command.txt
+  : # format-check-command.txt artifact removed (Phase 1: low-value artifacts deletion)
 fi
 record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
 
@@ -8008,7 +7824,7 @@ log_validation_environment() {
     printf '[validation environment] NODE_PATH=%s\n' "${NODE_PATH:-<not set>}"
     printf '[validation environment] disk_space_available=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1 | awk '{print $4}' || echo '<df failed>')"
     printf '[validation environment] disk_space_used=%s\n' "$(du -sh "${KASEKI_RESULTS_DIR}" 2>/dev/null | cut -f1 || echo '<du failed>')"
-  } | tee -a "${KASEKI_RESULTS_DIR}"/validation.log "$VALIDATION_ENV_LOG"
+  } | tee -a "${KASEKI_RESULTS_DIR}"/validation.log >/dev/null
 }
 log_validation_environment
 collect_changed_file_state "${KASEKI_RESULTS_DIR}"/validation-before-state.txt
@@ -8020,7 +7836,6 @@ if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KA
     "${KASEKI_RESULTS_DIR}"/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
-    "$VALIDATION_ENV_LOG" \
     "validation_command_failed"
 elif [ "$QUALITY_EXIT" -ne 0 ]; then
   printf '\n==> validation\n'
@@ -8047,7 +7862,6 @@ else
     "${KASEKI_RESULTS_DIR}"/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
-    "$VALIDATION_ENV_LOG" \
     "validation_command_failed"
   
   # Analyze validation failure causality if validation failed

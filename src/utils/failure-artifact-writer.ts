@@ -11,7 +11,7 @@ export type CleanupResult = {
 };
 
 /**
- * Handles writing failure artifacts (failure.json, analysis.md, result-summary.md, etc.)
+ * Handles writing failure artifacts (failure.json, metadata.json, stderr.log, etc.)
  * when a job fails before complete diagnostics are available.
  */
 export class FailureArtifactWriter {
@@ -35,8 +35,6 @@ export class FailureArtifactWriter {
       fs.mkdirSync(resultDir, { recursive: true });
 
       this.writeFailureJson(resultDir, job, now, cleanup);
-      this.writeResultSummary(resultDir, job, now);
-      this.writeAnalysis(resultDir, job, now, cleanup, options?.lastStage);
       this.writeMetadata(resultDir, job, now);
       this.writeStderrLog(resultDir, job, options?.stdoutTail, options?.stderrTail);
     } catch (error) {
@@ -70,72 +68,6 @@ export class FailureArtifactWriter {
       }
     } catch (error) {
       logWriteError('write failure.json', failurePath, error, job.id);
-    }
-  }
-
-  private writeResultSummary(resultDir: string, job: Job, now: string): void {
-    const summaryPath = path.join(resultDir, 'result-summary.md');
-    const content = [
-      `# ${job.id} failed`,
-      '',
-      `Failure class: ${job.failureClass || 'unknown'}`,
-      `Exit code: ${job.exitCode ?? 'unknown'}`,
-      `Error: ${job.error || 'unknown'}`,
-      `Completed at: ${now}`,
-      '',
-    ].join('\n');
-
-    try {
-      const written = writeIfEmptyAtomic(summaryPath, content, {}, { jobId: job.id });
-      if (!written) {
-        logWriteError(
-          'write result-summary.md',
-          summaryPath,
-          'File already exists, is non-empty, or another writer won the artifact race',
-          job.id
-        );
-      }
-    } catch (error) {
-      logWriteError('write result-summary.md', summaryPath, error, job.id);
-    }
-  }
-
-  private writeAnalysis(resultDir: string, job: Job, now: string, cleanup: CleanupResult, lastStage?: string): void {
-    const analysisPath = path.join(resultDir, 'analysis.md');
-    const content = [
-      `# Failure analysis for ${job.id}`,
-      '',
-      '## Completed work',
-      `- Job lifecycle entered: ${job.startedAt ? 'running' : 'queued'}`,
-      '- API finalization fallback written: yes',
-      '',
-      '## Failure classification',
-      `- Failure class: ${job.failureClass || 'unknown'}`,
-      `- Exit code: ${job.exitCode ?? 'unknown'}`,
-      `- Error: ${job.error || 'unknown'}`,
-      `- Last stage: ${lastStage || 'unknown'}`,
-      '',
-      '## Known warnings',
-      `- Container cleanup attempted: ${cleanup.attempted ? 'yes' : 'no'}`,
-      `- Container cleanup ok: ${cleanup.ok ? 'yes' : 'no'}`,
-      `- Cleanup detail: ${cleanup.detail || 'none'}`,
-      '',
-      `Completed at: ${now}`,
-      '',
-    ].join('\n');
-
-    try {
-      const written = writeIfEmptyAtomic(analysisPath, content, {}, { jobId: job.id });
-      if (!written) {
-        logWriteError(
-          'write analysis.md',
-          analysisPath,
-          'File already exists, is non-empty, or another writer won the artifact race',
-          job.id
-        );
-      }
-    } catch (error) {
-      logWriteError('write analysis.md', analysisPath, error, job.id);
     }
   }
 
