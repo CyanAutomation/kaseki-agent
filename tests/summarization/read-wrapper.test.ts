@@ -12,6 +12,8 @@ jest.unmock('tree-sitter-typescript');
 jest.unmock('tree-sitter-go');
 
 import { readFileWithSummary, readFileWithSummaryAndMetrics } from '../../src/summarization/read-wrapper';
+import { detectLanguage, getReadStrategy } from '../../src/summarization/read-strategy';
+import { getConfig } from '../../src/summarization/summarizer-config';
 
 describe('ReadWrapper', () => {
   let testDir: string;
@@ -27,6 +29,56 @@ describe('ReadWrapper', () => {
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
+  });
+
+  describe('debug scenario coverage', () => {
+    it('asserts the former debug TypeScript scenario through Jest', async () => {
+      const filePath = path.join(testDir, 'test.ts');
+      const content = `export class User {
+  id: string;
+  name: string;
+}
+`;
+      fs.writeFileSync(filePath, content);
+
+      const sizeBytes = fs.statSync(filePath).size;
+      const language = detectLanguage(filePath);
+      expect(language).toBe('typescript');
+
+      const config = getConfig();
+      const strategy = getReadStrategy({
+        filePath,
+        sizeBytes,
+        language,
+        config,
+      });
+      expect(strategy).toEqual({
+        strategy: 'full',
+        reason: `File too small (${sizeBytes} < ${config.minSizeBytes} bytes)`,
+        estimatedTokens: Math.ceil(sizeBytes / 3.5),
+      });
+
+      const readContent = await readFileWithSummary(filePath);
+      expect(readContent).toBe(content);
+
+      const result = await readFileWithSummaryAndMetrics(filePath);
+      expect(result).not.toBeNull();
+      expect(result?.content).toBe(content);
+      expect(result?.metrics).toMatchObject({
+        strategy: 'full',
+        strategyReason: strategy.reason,
+        language: 'typescript',
+        fullSizeBytes: sizeBytes,
+        returnedSizeBytes: sizeBytes,
+        compressionRatio: 1,
+        cacheHit: false,
+        decisionPath: 'full_read',
+        estimatedTokensFull: Math.ceil(sizeBytes / 3.5),
+        estimatedTokensReturned: Math.ceil(sizeBytes / 3.5),
+        estimatedTokensSaved: 0,
+      });
+      expect(result?.metrics?.parseTimeMs).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('readFileWithSummary', () => {
