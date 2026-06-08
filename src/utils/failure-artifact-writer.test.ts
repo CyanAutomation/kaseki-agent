@@ -239,8 +239,8 @@ describe('FailureArtifactWriter', () => {
         lastStage: 'scouting',
       });
 
-      const analysisPath = path.join(resultsDir, job.id, 'analysis.md');
-      expect(fs.existsSync(analysisPath)).toBe(true);
+      const failurePath = path.join(resultsDir, job.id, 'failure.json');
+      expect(fs.existsSync(failurePath)).toBe(true);
     });
 
     test('creates result directory if it does not exist', () => {
@@ -264,10 +264,11 @@ describe('FailureArtifactWriter', () => {
 
       const resultDir = path.join(resultsDir, job.id);
       expect(fs.existsSync(path.join(resultDir, 'failure.json'))).toBe(true);
-      expect(fs.existsSync(path.join(resultDir, 'result-summary.md'))).toBe(true);
-      expect(fs.existsSync(path.join(resultDir, 'analysis.md'))).toBe(true);
       expect(fs.existsSync(path.join(resultDir, 'metadata.json'))).toBe(true);
       expect(fs.existsSync(path.join(resultDir, 'stderr.log'))).toBe(true);
+      // result-summary.md and analysis.md removed in Phase 1 artifact cleanup
+      expect(fs.existsSync(path.join(resultDir, 'result-summary.md'))).toBe(false);
+      expect(fs.existsSync(path.join(resultDir, 'analysis.md'))).toBe(false);
     });
 
     test('emits structured atomic write stage logs for successful writes', () => {
