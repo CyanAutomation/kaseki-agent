@@ -1393,11 +1393,10 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
       expect(stdoutBody.file).toBe('stdout.log');
       expect(stdoutBody.content).toBe('stdout output');
 
-      const preValidationRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/pre-validation.log`, { headers });
-      expect(preValidationRes.status).toBe(200);
-      const preValidationBody = (await preValidationRes.json()) as any;
-      expect(preValidationBody.file).toBe('pre-validation.log');
-      expect(preValidationBody.content).toBe('pre-validation output');
+      const validationRes = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/validation.log`, { headers });
+      expect(validationRes.status).toBe(200);
+      const validationBody = (await validationRes.json()) as any;
+      expect(validationBody.file).toBe('validation.log');
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -1638,9 +1637,9 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       // Running jobs have no recommended artifacts (non-terminal)
       expect(body.recommended.length).toBe(0);
       const stderrFile = body.artifacts.find((artifact: any) => artifact.name === 'stderr.log');
-      const summaryFile = body.artifacts.find((artifact: any) => artifact.name === 'result-summary.md');
+      const goalCheckFile = body.artifacts.find((artifact: any) => artifact.name === 'goal-check.json');
       expect(stderrFile.available).toBe(false);
-      expect(summaryFile.available).toBe(false);
+      expect(goalCheckFile.available).toBe(false);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
@@ -1653,21 +1652,17 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
     fs.mkdirSync(jobDir, { recursive: true });
     // Create a mix of artifacts to test availability filtering
     fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{}');
-    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# Summary');
     fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"exit_code": 1}');
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'errors');
     fs.writeFileSync(path.join(jobDir, 'pi-events.jsonl'), '');
     fs.writeFileSync(path.join(jobDir, 'pi-summary.json'), '{}');
     fs.writeFileSync(path.join(jobDir, 'changed-files.txt'), 'src/file.ts');
     fs.writeFileSync(path.join(jobDir, 'git.diff'), 'diff content');
-    fs.writeFileSync(path.join(jobDir, 'pre-validation.log'), 'pre-validation results');
     fs.writeFileSync(path.join(jobDir, 'pre-validation-timings.tsv'), 'command\tstart\tend');
     fs.writeFileSync(path.join(jobDir, 'validation.log'), 'validation results');
     fs.writeFileSync(path.join(jobDir, 'quality.log'), 'quality results');
-    fs.writeFileSync(path.join(jobDir, 'progress.log'), 'progress');
     fs.writeFileSync(path.join(jobDir, 'progress.jsonl'), '{"stage":"done"}');
     fs.writeFileSync(path.join(jobDir, 'exit_code'), '1');
-    fs.writeFileSync(path.join(jobDir, 'restoration-report.md'), '# Restoration');
     fs.writeFileSync(path.join(jobDir, 'validation-timings.tsv'), 'command\tstart\tend');
     fs.writeFileSync(path.join(jobDir, 'stage-timings.tsv'), 'stage\tstart\tend');
 
@@ -1712,12 +1707,12 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       expect(body.downloadBaseUrl).toBe(`/api/results/${jobId}/`);
 
       // Verify metadata inclusion
-      const resultSummary = body.artifacts.find((a: any) => a.name === 'result-summary.md');
-      expect(resultSummary).toMatchObject({
-        name: 'result-summary.md',
+      const piSummary = body.artifacts.find((a: any) => a.name === 'pi-summary.json');
+      expect(piSummary).toMatchObject({
+        name: 'pi-summary.json',
         available: true,
-        contentType: 'text/markdown',
-        description: expect.stringContaining('summary'),
+        contentType: 'application/json',
+        description: expect.any(String),
         availability: 'always',
       });
 
@@ -1730,11 +1725,11 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
         availability: 'conditional',
       });
 
-      const preValidationLog = body.artifacts.find((a: any) => a.name === 'pre-validation.log');
+      const preValidationLog = body.artifacts.find((a: any) => a.name === 'validation.log');
       expect(preValidationLog).toMatchObject({
         available: true,
         contentType: 'text/plain',
-        description: expect.stringContaining('Pre-agent validation'),
+        description: expect.stringContaining('Validation'),
         availability: 'conditional',
       });
 
@@ -3733,7 +3728,7 @@ describe('artifact content cache configuration in routes', () => {
     const jobId = 'kaseki-artifact-cache-stats';
     const jobDir = path.join(resultsDir, jobId);
     fs.mkdirSync(jobDir, { recursive: true });
-    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), 'cached summary');
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"id":"kaseki-artifact-cache-stats"}');
 
     const scheduler = createMockScheduler({
       [jobId]: {
@@ -3763,9 +3758,9 @@ describe('artifact content cache configuration in routes', () => {
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
-      const first = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      const first = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(first.status).toBe(200);
-      const second = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      const second = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(second.status).toBe(200);
 
       const metrics = await fetch(`http://127.0.0.1:${port}/api/metrics`, { headers });
@@ -3786,7 +3781,7 @@ describe('artifact content cache configuration in routes', () => {
     const jobId = 'kaseki-artifact-cache-size-limit';
     const jobDir = path.join(resultsDir, jobId);
     fs.mkdirSync(jobDir, { recursive: true });
-    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), 'too large for cache');
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), '{"id":"too-large"}');
 
     const scheduler = createMockScheduler({
       [jobId]: {
@@ -3816,7 +3811,7 @@ describe('artifact content cache configuration in routes', () => {
     const headers = { Authorization: 'Bearer test-key' };
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/result-summary.md`, { headers });
+      const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(response.status).toBe(200);
       expect(artifactCache.getStats()).toMatchObject({ entries: 0, misses: 1, maxFileBytes: 4 });
     } finally {

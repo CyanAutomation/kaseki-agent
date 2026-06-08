@@ -162,8 +162,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-
-
   'goal-check.json': {
     name: 'goal-check.json',
     contentType: 'application/json',
@@ -205,8 +203,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'medium',
   },
-
-
 
   'run-evaluation.json': {
     name: 'run-evaluation.json',
@@ -328,8 +324,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'large',
   },
 
-
-
   'changed-files.txt': {
     name: 'changed-files.txt',
     contentType: 'text/plain',
@@ -350,8 +344,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     triageOrder: 15,
     sizeHint: 'small',
   },
-
-
 
   // Security & compliance
   'secret-scan.log': {

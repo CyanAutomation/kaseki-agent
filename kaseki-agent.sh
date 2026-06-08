@@ -6675,11 +6675,11 @@ run_github_operations() {
     owner="$GITHUB_REPO_OWNER"
     repo="$GITHUB_REPO_NAME"
   else
-    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL"  >>&2
     return 7
   fi
   
-  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf -- 'GitHub operations: owner=%s, repo=%s\n' "$owner" "$repo" | tee -a /dev/null
   GITHUB_OPERATION_PHASE="setup"
   
   # Set git user for commits
@@ -6688,7 +6688,7 @@ run_github_operations() {
   
   # Generate GitHub App installation token
   GITHUB_OPERATION_PHASE="token_generation"
-  printf 'Generating GitHub App installation token...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf 'Generating GitHub App installation token...\n' | tee -a /dev/null
   local github_app_token_helper="${KASEKI_GITHUB_APP_TOKEN_HELPER:-/usr/local/bin/github-app-token}"
   local token_stdout_tmp token_stderr_tmp token_exit_code token_stderr token_parse_result token_error token_http_status
   token_stdout_tmp="$(mktemp /tmp/github-app-token-stdout.XXXXXX)" || { printf 'Failed to create token stdout temp file\n' >&2; return 7; }
@@ -6709,7 +6709,7 @@ run_github_operations() {
     if [ "$token_parse_result" != "$token_error" ]; then
       token_http_status="${token_parse_result#*$'\t'}"
     fi
-    printf 'Failed to generate token: %s\n' "$token_error" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'Failed to generate token: %s\n' "$token_error"  >>&2
     GITHUB_API_ERROR_TYPE="github_app_token_error"
     GITHUB_API_ERROR_MESSAGE="$token_error"
     GITHUB_API_HTTP_STATUS="$token_http_status"
@@ -6719,83 +6719,83 @@ run_github_operations() {
   fi
   
   # Use helper to extract token from JSON response
-  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" "${KASEKI_RESULTS_DIR}"/git-push.log; then
-    printf -- 'Failed to extract token from response: %s\n' "$token_data" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+  if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /dev/null; then
+    printf -- 'Failed to extract token from response: %s\n' "$token_data"  >>&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
   if [ -z "$token" ]; then
-    printf -- 'Failed to extract token from response (empty result)\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf -- 'Failed to extract token from response (empty result)\n'  >>&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
-  printf 'Token generated successfully\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf 'Token generated successfully\n' | tee -a /dev/null
   
   # Create and push feature branch
   GITHUB_OPERATION_PHASE="branch_creation"
   feature_branch="kaseki/$INSTANCE_NAME"
-  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a /dev/null
   git checkout -b "$feature_branch" || {
-    printf 'Failed to create branch\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'Failed to create branch\n'  >>&2
     GITHUB_PUSH_EXIT=7
     return 7
   }
   
   # Commit changes (git should already have changes from pi agent)
   GITHUB_OPERATION_PHASE="commit"
-  printf 'Committing changes...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf 'Committing changes...\n' | tee -a /dev/null
   if [ ! -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
-    printf 'No changed files to stage\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'No changed files to stage\n'  >>&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     git add -- "$changed_file" || {
-      printf -- 'Failed to stage changed file: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file"  >>&2
       GITHUB_PUSH_EXIT=7
       return 7
     }
   done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
   if ! git commit -m "Kaseki: $INSTANCE_NAME"; then
-    printf 'No changes to commit or commit failed\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'No changes to commit or commit failed\n'  >>&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
   # Push branch
   GITHUB_OPERATION_PHASE="push"
-  printf 'Pushing branch to GitHub...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf 'Pushing branch to GitHub...\n' | tee -a /dev/null
   local askpass_file
-  if ! create_github_askpass_helper "${KASEKI_RESULTS_DIR}"/git-push.log 'GitHub credential helper'; then
+  if ! create_github_askpass_helper /dev/null 'GitHub credential helper'; then
     return 8
   fi
   askpass_file="$GITHUB_ASKPASS_FILE"
 
   KASEKI_GITHUB_TOKEN="$token" GIT_ASKPASS="$askpass_file" GIT_TERMINAL_PROMPT=0 \
-    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+    git push "https://github.com/$owner/$repo.git" "$feature_branch" --force-with-lease 2>&1 | tee -a /dev/null
   git_push_exit="${PIPESTATUS[0]:-1}"
   if [ "$git_push_exit" -eq 0 ]; then
-    printf 'Branch pushed successfully\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+    printf 'Branch pushed successfully\n' | tee -a /dev/null
   else
     rm -f "$askpass_file"
-    printf 'Failed to push branch (exit %s)\n' "$git_push_exit" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit"  >>&2
     GITHUB_PUSH_EXIT="$git_push_exit"
     return "$git_push_exit"
   fi
   rm -f "$askpass_file"
 
   if [ "$KASEKI_PUBLISH_MODE" = "branch" ]; then
-    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+    printf 'Publish mode branch: skipping pull request creation.\n' | tee -a /dev/null
     GITHUB_PR_EXIT=0
     GITHUB_OPERATION_PHASE="completed"
     unset token
     return 0
   fi
   if ! is_pr_creation_mode; then
-    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+    printf 'Publish mode %s: skipping pull request creation.\n' "$KASEKI_PUBLISH_MODE" | tee -a /dev/null
     GITHUB_PR_EXIT=0
     GITHUB_OPERATION_PHASE="completed"
     unset token
@@ -6805,7 +6805,7 @@ run_github_operations() {
   # Create pull request. Both pr and draft_pr push a branch and create a PR;
   # only draft_pr marks the GitHub Pulls API request as draft.
   GITHUB_OPERATION_PHASE="pr_creation"
-  printf 'Creating pull request...\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+  printf 'Creating pull request...\n' | tee -a /dev/null
   emit_progress "github operations" "pr_creation_starting"
   local pr_title pr_body pr_response pr_url pr_number pr_http_status pr_draft_json
   pr_title="$(derive_pr_title)"
@@ -6829,7 +6829,7 @@ run_github_operations() {
 - Generated at (UTC): $fallback_timestamp
 EOF
 )
-    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n'  >>&2
   fi
   if is_pr_draft_mode; then
     pr_draft_json=true
@@ -6843,7 +6843,7 @@ EOF
   
   while [ $retry_count -le "$max_retries" ]; do
     if [ $retry_count -gt 0 ]; then
-      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+      printf 'Retrying PR creation (attempt %d of %d) after %ds delay...\n' $((retry_count + 1)) "$max_retries" "$backoff_delay" | tee -a /dev/null
       emit_progress "github operations" "pr_creation_attempt $((retry_count + 1))/$max_retries"
       sleep "$backoff_delay"
       # Exponential backoff: 2s, 4s, 8s
@@ -6853,31 +6853,31 @@ EOF
     
     # Capture both response and HTTP status code
     local pr_response_file temp_status_file
-    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
-    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2; GITHUB_PR_EXIT=8; return 8; }
+    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n'  >>&2; GITHUB_PR_EXIT=8; return 8; }
+    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n'  >>&2; GITHUB_PR_EXIT=8; return 8; }
     
     if [ $retry_count -eq 0 ] && [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+      printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a /dev/null
     fi
     
     # Encode PR title and body as JSON strings
     local pr_title_json pr_body_json
     pr_title_json='""'
     pr_body_json='""'
-    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" "${KASEKI_RESULTS_DIR}"/git-push.log; then
-      printf 'ERROR: Failed to JSON encode PR title\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" /dev/null; then
+      printf 'ERROR: Failed to JSON encode PR title\n'  >>&2
       GITHUB_PR_EXIT=8
       return 8
     fi
-    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" "${KASEKI_RESULTS_DIR}"/git-push.log; then
-      printf 'ERROR: Failed to JSON encode PR body\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" /dev/null; then
+      printf 'ERROR: Failed to JSON encode PR body\n'  >>&2
       GITHUB_PR_EXIT=8
       return 8
     fi
     
     # Validate both variables are non-empty before using in curl
     if [ -z "$pr_title_json" ] || [ -z "$pr_body_json" ]; then
-      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json"  >>&2
       GITHUB_PR_EXIT=8
       return 8
     fi
@@ -6902,7 +6902,7 @@ EOF
     
     if [ $curl_exit -ne 0 ]; then
       # curl command itself failed (network error, timeout, etc.)
-      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1)) | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1))  >>&2
       GITHUB_API_HTTP_STATUS="0"
       if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
         retry_count=$((retry_count + 1))
@@ -6920,43 +6920,43 @@ EOF
     fi
     
     if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+      printf 'Debug: PR API response HTTP status: %s (attempt %d)\n' "$pr_http_status" $((retry_count + 1)) | tee -a /dev/null
     fi
     
     # Validate the API response
-    if validate_github_api_response "$pr_http_status" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
+    if validate_github_api_response "$pr_http_status" "$pr_response" /dev/null; then
       # API returned success (201); now extract the URL and issue number using helper
-      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
-        printf 'ERROR: Failed to extract PR URL from API response\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+      if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" /dev/null; then
+        printf 'ERROR: Failed to extract PR URL from API response\n'  >>&2
         emit_error_event "github_pr_response_malformed" "Failed to parse PR API response to extract html_url" "exit"
         GITHUB_PR_EXIT=9
         pr_url=""
       fi
-      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" "${KASEKI_RESULTS_DIR}"/git-push.log; then
-        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+      if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" /dev/null; then
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n'  >>&2
         pr_number=""
       fi
       
       if [ -n "$pr_url" ]; then
         GITHUB_PR_URL="$pr_url"
         GITHUB_PR_EXIT=0
-        printf 'Pull request created: %s\n' "$pr_url" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+        printf 'Pull request created: %s\n' "$pr_url" | tee -a /dev/null
         if [ -n "$pr_number" ]; then
-          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" "${KASEKI_RESULTS_DIR}"/git-push.log || true
+          apply_github_pr_labels "$owner" "$repo" "$pr_number" "$token" /dev/null || true
           # Request repository owner as reviewer for personal repos
-          request_owner_review "$pr_response" "$token" "${KASEKI_RESULTS_DIR}"/git-push.log || true
+          request_owner_review "$pr_response" "$token" /dev/null || true
         else
-          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n'  >>&2
         fi
         pr_created=1
         rm -f "$pr_response_file"
         break
       else
         # HTTP 201 but no html_url in response - malformed response
-        printf 'Pull request API returned success (201) but response missing html_url field\n' | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+        printf 'Pull request API returned success (201) but response missing html_url field\n'  >>&2
         emit_error_event "github_pr_response_malformed" "GitHub PR API returned 201 but response missing html_url field" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+          printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a /dev/null
         fi
         GITHUB_PR_EXIT=9
         pr_created=0
@@ -6966,17 +6966,17 @@ EOF
     else
       # API returned an error
       if is_github_pr_error_retryable "$pr_http_status" "$GITHUB_API_ERROR_TYPE" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
-        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+        printf 'GitHub API returned retryable error (attempt %d): %s (HTTP %s)\n' $((retry_count + 1)) "$GITHUB_API_ERROR_TYPE" "$pr_http_status" | tee -a /dev/null
         retry_count=$((retry_count + 1))
         rm -f "$pr_response_file"
         continue
       else
         # Permanent error, give up
-        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE"  >>&2
         emit_error_event "github_pr_api_failed" "GitHub API error ($GITHUB_API_ERROR_TYPE): $GITHUB_API_ERROR_MESSAGE (HTTP $GITHUB_API_HTTP_STATUS)" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
-          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
-          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+          printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a /dev/null
+          printf 'Debug: Full response:\n%s\n' "$pr_response" | tee -a /dev/null
         fi
         GITHUB_PR_EXIT=9
         pr_created=0
@@ -7976,7 +7976,7 @@ printf '\n==> github operations\n'
 set_current_stage "github operations"
 emit_progress "github operations" "started"
 stage_start="$(date +%s)"
-: > "${KASEKI_RESULTS_DIR}"/git-push.log
+: > /dev/null
 build_github_skip_reasons
 if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   github_app_id_file="$(resolve_github_secret_file "GITHUB_APP_ID_FILE" "github_app_id")"
@@ -7995,7 +7995,7 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
     GITHUB_OPERATION_PHASE="secrets"
-    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log >&2
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"  >>&2
     emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
   fi
@@ -8007,7 +8007,7 @@ else
     "$([ "$QUALITY_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$([ "$SECRET_SCAN_EXIT" -eq 0 ] && printf 'passed' || printf 'failed')" \
     "$DIFF_NONEMPTY" \
-    "$GITHUB_APP_ENABLED" | tee -a "${KASEKI_RESULTS_DIR}"/git-push.log
+    "$GITHUB_APP_ENABLED" | tee -a /dev/null
   emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
 fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
