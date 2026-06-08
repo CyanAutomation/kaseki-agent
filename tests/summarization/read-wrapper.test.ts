@@ -171,15 +171,21 @@ describe('ReadWrapper', () => {
     it('should handle symlinks', async () => {
       const targetFile = path.join(testDir, 'target.ts');
       const linkFile = path.join(testDir, 'link.ts');
-      fs.writeFileSync(targetFile, 'export class A {}');
+      const content = 'export class A {}';
+      fs.writeFileSync(targetFile, content);
 
       try {
         fs.symlinkSync(targetFile, linkFile);
-        const result = await readFileWithSummary(linkFile);
-        expect(result).toBeDefined();
-      } catch {
-        // Symlinks might not work on all systems
+      } catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+        if (['EACCES', 'EINVAL', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM'].includes(String(code))) {
+          return;
+        }
+        throw error;
       }
+
+      const result = await readFileWithSummary(linkFile);
+      expect(result).toBe(content);
     });
   });
 });
