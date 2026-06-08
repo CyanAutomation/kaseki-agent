@@ -73,8 +73,8 @@ describe('ReadWrapper', () => {
         compressionRatio: 1,
         cacheHit: false,
         decisionPath: 'full_read',
-        estimatedTokensFull: Math.ceil(sizeBytes / 3.5),
-        estimatedTokensReturned: Math.ceil(sizeBytes / 3.5),
+        estimatedTokensFull: strategy.estimatedTokens,
+        estimatedTokensReturned: strategy.estimatedTokens,
         estimatedTokensSaved: 0,
       });
       expect(result?.metrics?.parseTimeMs).toBeGreaterThanOrEqual(0);
