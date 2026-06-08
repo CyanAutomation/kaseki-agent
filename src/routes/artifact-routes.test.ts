@@ -150,7 +150,7 @@ describe('artifact-routes', () => {
 
     it('serves a registered artifact for a known job', async () => {
       const job = mockCompletedJob();
-      const content = '# Result Summary\n\nThe run completed successfully.\n';
+      const content = '{"id":"kaseki-1","status":"completed"}';
       (fs.statSync as jest.Mock).mockReturnValue({
         isFile: () => true,
         size: Buffer.byteLength(content),
@@ -160,16 +160,16 @@ describe('artifact-routes', () => {
       const { server, url } = await listen(createMountedArtifactApp());
 
       try {
-        const response = await fetch(`${url}/api/results/${job.id}/result-summary.md`);
+        const response = await fetch(`${url}/api/results/${job.id}/metadata.json`);
         const body = JSON.parse(await response.text());
 
         expect(response.status).toBe(200);
         expect(mockScheduler.getJob).toHaveBeenCalledWith(job.id);
-        expect(fs.statSync).toHaveBeenCalledWith('/results/kaseki-1/result-summary.md');
-        expect(mockCache.getOrLoad).toHaveBeenCalledWith('/results/kaseki-1/result-summary.md');
+        expect(fs.statSync).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
+        expect(mockCache.getOrLoad).toHaveBeenCalledWith('/results/kaseki-1/metadata.json');
         expect(body).toEqual({
-          file: 'result-summary.md',
-          contentType: 'text/markdown',
+          file: 'metadata.json',
+          contentType: 'application/json',
           size: Buffer.byteLength(content),
           content,
         });
@@ -209,7 +209,7 @@ describe('artifact-routes', () => {
       const { server, url } = await listen(createMountedArtifactApp());
 
       try {
-        const response = await fetch(`${url}/api/results/${job.id}/result-summary.md`);
+        const response = await fetch(`${url}/api/results/${job.id}/metadata.json`);
         const body = await response.json();
 
         expect(response.status).toBe(400);
@@ -218,7 +218,7 @@ describe('artifact-routes', () => {
           type: 'https://api.kaseki.local/errors#bad-request',
           title: 'Bad Request',
           status: 400,
-          detail: 'Artifact not found: result-summary.md',
+          detail: 'Artifact not found: metadata.json',
         });
       } finally {
         await close(server);

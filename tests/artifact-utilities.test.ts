@@ -143,8 +143,6 @@ describe('Artifact Utilities', () => {
     it('should define the text preview and download-only artifact contract', () => {
       const previewableArtifacts = [
         { name: 'metadata.json', contentType: 'application/json' },
-        { name: 'result-summary.md', contentType: 'text/markdown' },
-        { name: 'analysis.md', contentType: 'text/markdown' },
         { name: 'inspect-report.md', contentType: 'text/markdown' },
         { name: 'failure.json', contentType: 'application/json' },
         { name: 'pi-events.jsonl', contentType: 'application/x-jsonl' },
@@ -161,7 +159,6 @@ describe('Artifact Utilities', () => {
         { name: 'scouting-events.raw.jsonl', contentType: 'application/x-jsonl' },
         { name: 'scouting-stderr.log', contentType: 'text/plain' },
         { name: 'scouting-validation-errors.jsonl', contentType: 'application/x-jsonl' },
-        { name: 'scouting-validation-summary.txt', contentType: 'text/plain' },
         { name: 'goal-check.json', contentType: 'application/json' },
         { name: 'goal-check-attempts.jsonl', contentType: 'application/x-jsonl' },
         { name: 'goal-check-events.jsonl', contentType: 'application/x-jsonl' },
@@ -172,26 +169,19 @@ describe('Artifact Utilities', () => {
         { name: 'run-evaluation-events.jsonl', contentType: 'application/x-jsonl' },
         { name: 'run-evaluation-summary.json', contentType: 'application/json' },
         { name: 'run-evaluation-stderr.log', contentType: 'text/plain' },
-        { name: 'progress.log', contentType: 'text/plain' },
         { name: 'progress.jsonl', contentType: 'application/x-jsonl' },
         { name: 'stdout.log', contentType: 'text/plain' },
         { name: 'stderr.log', contentType: 'text/plain' },
-        { name: 'pre-validation.log', contentType: 'text/plain' },
         { name: 'pre-validation-timings.tsv', contentType: 'text/tab-separated-values' },
         { name: 'validation.log', contentType: 'text/plain' },
         { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values' },
         { name: 'quality.log', contentType: 'text/plain' },
         { name: 'stage-timings.tsv', contentType: 'text/tab-separated-values' },
         { name: 'git.diff', contentType: 'text/plain' },
-        { name: 'git.status', contentType: 'text/plain' },
         { name: 'changed-files.txt', contentType: 'text/plain' },
-        { name: 'git-push.log', contentType: 'text/plain' },
         { name: 'restoration.jsonl', contentType: 'application/x-jsonl' },
-        { name: 'restoration-report.md', contentType: 'text/markdown' },
         { name: 'secret-scan.log', contentType: 'text/plain' },
-        { name: 'dependency-cache.log', contentType: 'text/plain' },
         { name: 'exit_code', contentType: 'text/plain' },
-        { name: 'format-check-command.txt', contentType: 'text/plain' },
       ];
       const downloadOnlyArtifacts = [
         { name: 'archive.zip', contentType: 'application/zip' },
@@ -223,30 +213,30 @@ describe('Artifact Utilities', () => {
       const mixedRegistryFixture = [
         previewableArtifact('metadata.json'),
         downloadOnlyArtifacts[0],
-        previewableArtifact('result-summary.md'),
-        downloadOnlyArtifacts[1],
         previewableArtifact('pi-events.jsonl'),
+        downloadOnlyArtifacts[1],
+        previewableArtifact('pi-summary.json'),
         downloadOnlyArtifacts[2],
-        previewableArtifact('pre-validation-timings.tsv'),
+        previewableArtifact('validation-timings.tsv'),
         downloadOnlyArtifacts[3],
-        previewableArtifact('format-check-command.txt'),
+        previewableArtifact('goal-check.json'),
         downloadOnlyArtifacts[4],
       ];
 
       expect(filterTextArtifacts(mixedRegistryFixture)).toEqual([
         previewableArtifact('metadata.json'),
-        previewableArtifact('result-summary.md'),
         previewableArtifact('pi-events.jsonl'),
-        previewableArtifact('pre-validation-timings.tsv'),
-        previewableArtifact('format-check-command.txt'),
+        previewableArtifact('pi-summary.json'),
+        previewableArtifact('validation-timings.tsv'),
+        previewableArtifact('goal-check.json'),
       ]);
     });
 
     it('should classify representative user-facing registry artifacts for preview behavior', () => {
       const representativeArtifacts = [
         { name: 'failure.json', contentType: 'application/json', isText: true, previewableInline: true },
-        { name: 'result-summary.md', contentType: 'text/markdown', isText: true, previewableInline: true },
         { name: 'pi-events.jsonl', contentType: 'application/x-jsonl', isText: true, previewableInline: true },
+        { name: 'pi-summary.json', contentType: 'application/json', isText: true, previewableInline: true },
         { name: 'stderr.log', contentType: 'text/plain', isText: true, previewableInline: true },
         { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values', isText: true, previewableInline: true },
       ];
