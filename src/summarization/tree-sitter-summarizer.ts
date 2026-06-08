@@ -154,6 +154,8 @@ export class TreeSitterSummarizer {
   }
 
   private traverse(node: Parser.SyntaxNode, source: string, summary: any): void {
+    if (!node) return;
+
     // Extract based on node type
     switch (this.language) {
     case 'typescript':
@@ -166,8 +168,15 @@ export class TreeSitterSummarizer {
     }
 
     // Recursively traverse children
-    for (const child of node.children) {
-      this.traverse(child, source, summary);
+    // Skip children of export statements since we handle them in extractTSExport
+    if (node.type !== 'export_statement') {
+      if (node.children && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          if (child) {
+            this.traverse(child, source, summary);
+          }
+        }
+      }
     }
   }
 
@@ -265,9 +274,23 @@ export class TreeSitterSummarizer {
     if (child.type === 'class_declaration') {
       name = this.extractName(child, source);
       kind = 'class';
+      // Also extract class details
+      this.extractTSClass(child, source, summary);
     } else if (child.type === 'function_declaration') {
       name = this.extractName(child, source);
       kind = 'function';
+      // Also extract function details
+      this.extractTSFunction(child, source, summary);
+    } else if (child.type === 'interface_declaration') {
+      name = this.extractName(child, source);
+      kind = 'interface';
+      // Also extract interface details
+      this.extractTSInterface(child, source, summary);
+    } else if (child.type === 'type_alias_declaration') {
+      name = this.extractName(child, source);
+      kind = 'type';
+      // Also extract type details
+      this.extractTSType(child, source, summary);
     } else if (child.type === 'const_statement' || child.type === 'variable_declaration') {
       name = this.extractName(child, source);
       kind = 'const';
@@ -285,12 +308,14 @@ export class TreeSitterSummarizer {
     const methods: CodeElement[] = [];
 
     // Extract methods
-    for (const child of node.children) {
-      if (child.type === 'method_definition') {
-        const methodName = this.extractName(child, source);
-        if (methodName) {
-          const signature = this.getNodeText(child, source).split('\n')[0];
-          methods.push({ name: methodName, signature, kind: 'method' });
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (child && child.type === 'method_definition') {
+          const methodName = this.extractName(child, source);
+          if (methodName) {
+            const signature = this.getNodeText(child, source).split('\n')[0];
+            methods.push({ name: methodName, signature, kind: 'method' });
+          }
         }
       }
     }
@@ -334,12 +359,14 @@ export class TreeSitterSummarizer {
 
   private extractGoType(node: Parser.SyntaxNode, source: string, summary: any): void {
     // Extract type definitions
-    for (const child of node.children) {
-      if (child.type === 'type_spec') {
-        const name = this.extractName(child, source);
-        if (name) {
-          const signature = this.getNodeText(child, source).split('\n')[0];
-          summary.types.push({ name, signature, kind: 'type' });
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (child && child.type === 'type_spec') {
+          const name = this.extractName(child, source);
+          if (name) {
+            const signature = this.getNodeText(child, source).split('\n')[0];
+            summary.types.push({ name, signature, kind: 'type' });
+          }
         }
       }
     }
@@ -376,13 +403,14 @@ export class TreeSitterSummarizer {
   // Utility methods
 
   private extractName(node: Parser.SyntaxNode, source: string): string {
+    if (!node) return '';
+    
     // Find identifier node
-    for (const child of node.children) {
-      if (child.type === 'identifier') {
-        return this.getNodeText(child, source);
-      }
-      if (child.type === 'type_identifier') {
-        return this.getNodeText(child, source);
+    if (node.children && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (child && (child.type === 'identifier' || child.type === 'type_identifier')) {
+          return this.getNodeText(child, source);
+        }
       }
     }
     return '';
