@@ -72,7 +72,7 @@ RUN test -f /app/dist/kaseki-api-service.js
 COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./
 COPY docs ./docs
-COPY ops ./ops
+COPY docker/ops ./ops
 COPY docker ./docker
 COPY test ./test
 
