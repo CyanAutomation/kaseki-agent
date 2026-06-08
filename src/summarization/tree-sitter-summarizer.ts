@@ -2,11 +2,15 @@
  * Tree-sitter based code summarizer
  * Extracts code structure (classes, functions, types, imports) without implementations
  */
-import Parser from 'tree-sitter';
 import { SupportedLanguage } from './summarizer-config';
-
+import Parser from 'tree-sitter';
 import TypeScript from 'tree-sitter-typescript';
 import Go from 'tree-sitter-go';
+
+// Type definitions for tree-sitter - using any to handle native bindings
+type ParserType = any;
+type TreeType = any;
+type SyntaxNodeType = any;
 
 export interface CodeElement {
   name: string;
@@ -32,7 +36,7 @@ export interface CodeSummary {
  * Tree-sitter summarizer for code structure extraction
  */
 export class TreeSitterSummarizer {
-  private parser: Parser;
+  private parser: ParserType;
   private language: SupportedLanguage;
 
   constructor(language: SupportedLanguage = 'typescript') {
@@ -42,33 +46,32 @@ export class TreeSitterSummarizer {
     try {
       this.initializeLanguage(language);
     } catch (error) {
+      // In some environments, tree-sitter initialization might fail
+      // We log but don't throw to allow the summarizer to exist in a failed state
+      // that returns empty results with an error message.
       console.error(`Failed to initialize tree-sitter for ${language}:`, error);
-      throw new Error(`Failed to initialize tree-sitter for ${language}: ${error}`);
     }
   }
 
   private initializeLanguage(language: SupportedLanguage): void {
     let lang: any;
+
     switch (language) {
-    case 'typescript': {
-      lang = (TypeScript as any).typescript || (TypeScript as any).default?.typescript;
-      break;
-    }
+    case 'typescript':
     case 'javascript': {
-      // JavaScript uses the same grammar as TypeScript in tree-sitter
-      lang = (TypeScript as any).typescript || (TypeScript as any).default?.typescript;
+      lang = (TypeScript as any).typescript;
       break;
     }
     case 'go': {
-      lang = (Go as any).language || (Go as any).default?.language;
+      lang = Go;
       break;
     }
     default:
       throw new Error(`Unsupported language: ${language}`);
     }
 
-    if (!lang) {
-      throw new Error(`Could not find language binding for ${language}`);
+    if (!lang || typeof (lang as any).nodeTypeInfo !== 'object') {
+      throw new Error(`Could not find valid language binding for ${language}`);
     }
 
     this.parser.setLanguage(lang);
@@ -77,38 +80,70 @@ export class TreeSitterSummarizer {
   /**
    * Summarize file content into code structure
    */
-  summarize(content: string, timeoutMs: number = 100): CodeSummary {
+  summarize(content: string, timeoutMs: number = 200): CodeSummary {
     const startTime = performance.now();
     const originalSize = Buffer.byteLength(content, 'utf-8');
 
-    try {
-      // Parse with timeout protection
-      let tree: Parser.Tree | null = null;
-      const parseStart = performance.now();
+    // Ensure parser is initialized
+    if (!(this.parser as any).language) {
+      try {
+        this.initializeLanguage(this.language);
+      } catch (e) {
+        return {
+          language: this.language,
+          imports: [],
+          exports: [],
+          classes: [],
+          functions: [],
+          types: [],
+          interfaces: [],
+          parseError: `Summarizer not initialized: ${e instanceof Error ? e.message : String(e)}`,
+          originalSizeBytes: originalSize,
+          summaryTimeMs: performance.now() - startTime,
+        };
+      }
+    }
 
+    try {
+      // Set timeout in micros (1ms = 1000 micros)
+      this.parser.setTimeoutMicros(timeoutMs * 1000);
+
+      let tree: TreeType | null = null;
       try {
         tree = this.parser.parse(content);
       } catch (parseError) {
-        const parseTime = performance.now() - parseStart;
-        if (parseTime > timeoutMs) {
-          return {
-            language: this.language,
-            imports: [],
-            exports: [],
-            classes: [],
-            functions: [],
-            types: [],
-            interfaces: [],
-            parseError: `Parse timeout after ${parseTime.toFixed(0)}ms`,
-            originalSizeBytes: originalSize,
-            summaryTimeMs: parseTime,
-          };
-        }
-        throw parseError;
+        // Handle crashes in native code
+        return {
+          language: this.language,
+          imports: [],
+          exports: [],
+          classes: [],
+          functions: [],
+          types: [],
+          interfaces: [],
+          parseError: `Parser crash: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          originalSizeBytes: originalSize,
+          summaryTimeMs: performance.now() - startTime,
+        };
       }
 
-      if (!tree || !tree.rootNode) {
-        throw new Error('Failed to parse content');
+      if (!tree) {
+        return {
+          language: this.language,
+          imports: [],
+          exports: [],
+          classes: [],
+          functions: [],
+          types: [],
+          interfaces: [],
+          parseError: `Parse timeout after ${timeoutMs}ms`,
+          originalSizeBytes: originalSize,
+          summaryTimeMs: performance.now() - startTime,
+        };
+      }
+
+      if (!tree.rootNode) {
+        throw new Error('Failed to parse content: No root node');
       }
 
       // Extract structure
@@ -138,7 +173,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private extractStructure(tree: Parser.Tree, source: string): Omit<CodeSummary, 'originalSizeBytes' | 'summaryTimeMs'> {
+  private extractStructure(tree: TreeType, source: string): Omit<CodeSummary, 'originalSizeBytes' | 'summaryTimeMs'> {
     const summary: Omit<CodeSummary, 'originalSizeBytes' | 'summaryTimeMs'> = {
       language: this.language,
       imports: [],
@@ -155,7 +190,7 @@ export class TreeSitterSummarizer {
     return summary;
   }
 
-  private traverse(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private traverse(node: SyntaxNodeType, source: string, summary: any): void {
     if (!node) return;
 
     // Extract based on node type
@@ -181,7 +216,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private traverseTypeScript(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private traverseTypeScript(node: SyntaxNodeType, source: string, summary: any): void {
     const type = node.type;
 
     // Extract imports
@@ -215,7 +250,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private traverseGo(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private traverseGo(node: SyntaxNodeType, source: string, summary: any): void {
     const type = node.type;
 
     // Extract imports
@@ -241,7 +276,7 @@ export class TreeSitterSummarizer {
 
   // TypeScript extraction methods
 
-  private extractTSImport(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSImport(node: SyntaxNodeType, source: string, summary: any): void {
     // Extract import { a, b } from 'module'
     const text = this.getNodeText(node, source);
     const match = text.match(/from\s+['"]([^'"]+)['"]/);
@@ -264,7 +299,7 @@ export class TreeSitterSummarizer {
       .filter((item) => item);
   }
 
-  private extractTSExport(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSExport(node: SyntaxNodeType, source: string, summary: any): void {
     // Extract export class, function, const, etc.
     // Usually the declaration is a child of the export statement
     for (let i = 0; i < node.childCount; i++) {
@@ -302,7 +337,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private extractTSClass(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSClass(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -329,7 +364,7 @@ export class TreeSitterSummarizer {
     summary.classes.push({ name, methods });
   }
 
-  private extractTSFunction(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSFunction(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -340,7 +375,7 @@ export class TreeSitterSummarizer {
     summary.functions.push({ name, signature, kind: 'function' });
   }
 
-  private extractTSType(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSType(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -350,7 +385,7 @@ export class TreeSitterSummarizer {
     summary.types.push({ name, signature, kind: 'type' });
   }
 
-  private extractTSInterface(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractTSInterface(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -362,7 +397,7 @@ export class TreeSitterSummarizer {
 
   // Go extraction methods
 
-  private extractGoImport(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractGoImport(node: SyntaxNodeType, source: string, summary: any): void {
     const text = this.getNodeText(node, source);
     const match = text.match(/['"]([^'"]+)['"]/);
     if (match) {
@@ -370,7 +405,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private extractGoType(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractGoType(node: SyntaxNodeType, source: string, summary: any): void {
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
       if (child && child.type === 'type_spec') {
@@ -383,7 +418,7 @@ export class TreeSitterSummarizer {
     }
   }
 
-  private extractGoFunction(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractGoFunction(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -391,7 +426,7 @@ export class TreeSitterSummarizer {
     summary.functions.push({ name, signature, kind: 'function' });
   }
 
-  private extractGoMethod(node: Parser.SyntaxNode, source: string, summary: any): void {
+  private extractGoMethod(node: SyntaxNodeType, source: string, summary: any): void {
     const name = this.extractName(node, source);
     if (!name) return;
 
@@ -411,7 +446,7 @@ export class TreeSitterSummarizer {
 
   // Utility methods
 
-  private extractName(node: Parser.SyntaxNode, source: string): string {
+  private extractName(node: SyntaxNodeType, source: string): string {
     if (!node) return '';
 
     // Try field 'name' first
@@ -431,7 +466,7 @@ export class TreeSitterSummarizer {
     return '';
   }
 
-  private getNodeText(node: Parser.SyntaxNode, source: string): string {
+  private getNodeText(node: SyntaxNodeType, source: string): string {
     return source.substring(node.startIndex, node.endIndex);
   }
 

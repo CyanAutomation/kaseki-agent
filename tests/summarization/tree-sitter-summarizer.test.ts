@@ -2,19 +2,30 @@
  * Tests for TreeSitterSummarizer
  * Real implementation tests with active assertions
  */
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, beforeAll } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 
-jest.unmock('tree-sitter');
-jest.unmock('tree-sitter-typescript');
-jest.unmock('tree-sitter-go');
+jest.mock('tree-sitter', () => jest.requireActual('tree-sitter'));
+jest.mock('tree-sitter-typescript', () => jest.requireActual('tree-sitter-typescript'));
+jest.mock('tree-sitter-go', () => jest.requireActual('tree-sitter-go'));
+
+import Parser from 'tree-sitter';
+import TypeScript from 'tree-sitter-typescript';
+import Go from 'tree-sitter-go';
 
 import { TreeSitterSummarizer } from '../../src/summarization/tree-sitter-summarizer';
 
 describe('TreeSitterSummarizer', () => {
   let summarizer: TreeSitterSummarizer;
   let fixturesDir: string;
+
+  beforeAll(() => {
+    // These references are needed to force unmocking and avoid unused-import lint errors
+    expect(Parser).toBeDefined();
+    expect(TypeScript).toBeDefined();
+    expect(Go).toBeDefined();
+  });
 
   beforeEach(() => {
     fixturesDir = path.join(__dirname, '../fixtures/summarization');
@@ -178,6 +189,7 @@ describe('TreeSitterSummarizer', () => {
       const go = new TreeSitterSummarizer('go');
       const summary = go.summarize(content);
       expect(summary).toBeDefined();
+      expect(summary.functions.length).toBeGreaterThan(0);
     });
   });
 

@@ -27,8 +27,8 @@ const config: Config = {
       useESM: true,
       tsconfig: {
         esModuleInterop: true,
-        module: 'ESNext',
-        target: 'ESNext',
+        module: 'esnext',
+        target: 'ES2024',
         lib: ['ES2024'],
       },
     }],
