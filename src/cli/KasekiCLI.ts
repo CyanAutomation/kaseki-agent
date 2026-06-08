@@ -175,6 +175,16 @@ export class KasekiCLI {
         return cmd.execute(args);
       },
     });
+
+    this.commands.set('cleanup', {
+      name: 'cleanup',
+      description: 'Manage retention of kaseki run artifacts (keep last N runs)',
+      execute: async (args) => {
+        const { CleanupCommand } = await import('./commands/CleanupCommand.js');
+        const cmd = new CleanupCommand(this.configManager);
+        return cmd.execute(args);
+      },
+    });
   }
 
   /**
@@ -301,6 +311,24 @@ USAGE
 
 REQUIRES
   A local API service at http://localhost:8080/api or KASEKI_API_URL pointing to a controller API.`,
+      cleanup: `cleanup - manage retention of kaseki run artifacts
+
+USAGE
+  kaseki-agent cleanup [--dry-run] [--force] [--count N]
+
+OPTIONS
+  --dry-run     Show what would be deleted without actually deleting
+  --force       Skip confirmation prompt (for automation)
+  --count N     Override KASEKI_RETENTION_RUNS (e.g., --count 5)
+
+ENVIRONMENT VARIABLES
+  KASEKI_RETENTION_RUNS  Number of recent runs to keep (default: 5)
+  KASEKI_RESULTS_DIR     Path to results directory (default: /agents/kaseki-results)
+  KASEKI_CACHE_DIR       Path to cache directory (default: /agents/kaseki-cache)
+
+EXAMPLES
+  kaseki-agent cleanup --dry-run          # Preview what would be deleted
+  kaseki-agent cleanup --force --count 3  # Keep only 3 recent runs`,
       stop: `stop - alias for cancel
 
 USAGE

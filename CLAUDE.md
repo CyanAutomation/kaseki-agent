@@ -171,6 +171,23 @@ docker run --rm --entrypoint kaseki-report \
   kaseki-template:latest /results
 ```
 
+### Run Retention & Cleanup
+
+```bash
+# Preview what would be deleted (dry-run)
+kaseki-agent cleanup --dry-run
+
+# Delete old runs (keep last 5, default behavior)
+kaseki-agent cleanup --force
+
+# Delete old runs (keep only last 3)
+kaseki-agent cleanup --force --count 3
+
+# Cleanup is automatic: happens before each new run starts
+# Default retention: 5 runs (configurable via KASEKI_RETENTION_RUNS env var)
+# Set KASEKI_RETENTION_RUNS=0 to delete all runs between each execution
+```
+
 ### Deprecated Commands (No Longer Supported)
 
 The following commands have been **removed**:
