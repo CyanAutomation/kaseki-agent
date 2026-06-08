@@ -102,14 +102,34 @@ describe('TreeSitterSummarizer', () => {
   describe('Error Handling', () => {
     it('should handle syntax errors gracefully', () => {
       const invalidCode = `
-        export class Broken {
-          method(): void {
-            this.notClosed();
+        class RecoveredClass {
+          method(): void {}
+        }
+
+        function recoveredFunction(): number {
+          return 1;
+        }
+
+        const broken = {
       `;
 
-      const summary = summarizer.summarize(invalidCode);
-      // Tree-sitter is resilient and provides partial results
+      let summary: ReturnType<TreeSitterSummarizer['summarize']> | undefined;
+      expect(() => {
+        summary = summarizer.summarize(invalidCode);
+      }).not.toThrow();
+
       expect(summary).toBeDefined();
+      expect(summary?.parseError).toBe('Syntax error');
+      expect(summary?.classes).toEqual([
+        { name: 'RecoveredClass', methods: [] },
+      ]);
+      expect(summary?.functions).toEqual([
+        { name: 'recoveredFunction', signature: 'function recoveredFunction(): number {', kind: 'function' },
+      ]);
+      expect(summary?.imports).toEqual([]);
+      expect(summary?.exports).toEqual([]);
+      expect(summary?.types).toEqual([]);
+      expect(summary?.interfaces).toEqual([]);
     });
 
     it('should handle empty files', () => {
