@@ -404,7 +404,7 @@ export class TreeSitterSummarizer {
 
   private extractName(node: Parser.SyntaxNode, source: string): string {
     if (!node) return '';
-    
+
     // Find identifier node
     if (node.children && Array.isArray(node.children)) {
       for (const child of node.children) {
