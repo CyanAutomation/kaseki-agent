@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.69.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.69.0...v1.69.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* adjust KASEKI_ALLOW_EMPTY_DIFF based on KASEKI_TASK_MODE ([bd855f4](https://github.com/CyanAutomation/kaseki-agent/commit/bd855f4fd67fcd2039445343217af3002b7f0c23))
+
 # [1.69.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.68.1...v1.69.0) (2026-06-08)
 
 
