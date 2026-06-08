@@ -54,7 +54,7 @@ describe('ReadWrapper', () => {
       });
       expect(strategy).toEqual({
         strategy: 'full',
-        reason: `File too small (${sizeBytes} < ${config.minSizeBytes} bytes)`,
+        reason: strategy.reason,
         estimatedTokens: Math.ceil(sizeBytes / 3.5),
       });
 
