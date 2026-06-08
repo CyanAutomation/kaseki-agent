@@ -117,6 +117,7 @@ export class TreeSitterSummarizer {
 
       return {
         ...summary,
+        parseError: tree.rootNode.hasError ? 'Syntax error' : summary.parseError,
         originalSizeBytes: originalSize,
         summaryTimeMs: summaryTime,
       };
