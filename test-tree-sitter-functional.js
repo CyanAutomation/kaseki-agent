@@ -6,13 +6,13 @@ const parser = new Parser();
 parser.setLanguage(TypeScript.typescript);
 
 const source = `
-  import { readFile } from 'node:fs/promises';
-
-  export class FixtureParser {
+  class FixtureParser {
     async load(path: string): Promise<string> {
       return readFile(path, 'utf-8');
     }
   }
+
+  import { readFile } from 'node:fs/promises';
 `;
 
 const tree = parser.parse(source);
@@ -38,7 +38,12 @@ function findNode(node, type, predicate = () => true) {
 }
 
 assert.equal(tree.rootNode.type, 'program');
-assert.equal(tree.rootNode.hasError(), false);
+assert.equal(tree.rootNode.hasError, false);
+
+const firstChild = tree.rootNode.namedChild(0);
+assert.ok(firstChild, 'expected parser to expose a first named child');
+assert.equal(firstChild.type, 'class_declaration');
+assert.equal(firstChild.childForFieldName('name')?.text, 'FixtureParser');
 
 const importNode = findNode(tree.rootNode, 'import_statement');
 assert.ok(importNode, 'expected parser to identify the import statement');
