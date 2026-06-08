@@ -670,6 +670,57 @@ case "$INSTANCE" in
   *) echo "Instance must look like kaseki-N, got: $INSTANCE" >&2; exit 2 ;;
 esac
 
+# Clean up old runs to maintain retention policy
+# This happens automatically before each new run starts
+# Retention count is configurable via KASEKI_RETENTION_RUNS (default: 5)
+cleanup_old_runs() {
+  local retention_count="${KASEKI_RETENTION_RUNS:-5}"
+  local results_dir="$RESULTS"
+  local cache_dir="$CACHE"
+  
+  # Check if results directory exists and has runs
+  if [ ! -d "$results_dir" ]; then
+    return 0
+  fi
+  
+  local run_count
+  run_count=$(find "$results_dir" -maxdepth 1 -type d -name 'kaseki-*' 2>/dev/null | wc -l)
+  
+  if (( run_count <= retention_count )); then
+    return 0  # No cleanup needed
+  fi
+  
+  # Log cleanup attempt
+  local cleanup_log="$results_dir/.cleanup.log"
+  {
+    printf '[%s] Cleaning up old runs (keeping %d, found %d)\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$retention_count" "$run_count"
+    printf 'Details: /agents/kaseki-results/.cleanup.log\n'
+  } 2>&1 | tee -a "$cleanup_log"
+  
+  # Use Node.js cleanup manager if available
+  if command -v node &>/dev/null && [ -f "$SCRIPT_DIR/dist/cleanup-manager.js" ]; then
+    {
+      node -e "
+        const { cleanupOldRuns } = require('$SCRIPT_DIR/dist/cleanup-manager.js');
+        (async () => {
+          try {
+            const result = await cleanupOldRuns('$results_dir', '$cache_dir', $retention_count, false);
+            if (result.deletedCount > 0) {
+              console.log('✓ Cleanup: deleted ' + result.deletedCount + ' old run(s), freed ' + (result.freedBytes / 1024 / 1024).toFixed(2) + ' MB');
+            }
+          } catch (error) {
+            console.error('⚠ Cleanup failed (non-blocking):', error.message);
+          }
+        })();
+      " 2>&1 | tee -a "$cleanup_log"
+    } || true  # Non-blocking; failures don't stop the run
+  fi
+}
+
+# Run cleanup before starting the new instance
+cleanup_old_runs
+
 FINAL_RUN_DIR="$RUNS/$INSTANCE"
 FINAL_RESULT_DIR="$RESULTS/$INSTANCE"
 RUN_STAGE_DIR="$(mktemp -d "$RUNS/.staging-run-${INSTANCE}-XXXXXX")"
