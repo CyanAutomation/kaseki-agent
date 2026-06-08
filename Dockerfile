@@ -69,7 +69,7 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build
 RUN test -f /app/dist/kaseki-api-service.js
 
 # Copy all application files (after build, so layer invalidation is minimal)
-COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md STYLE.md ./
+COPY Dockerfile .dockerignore README.md CLAUDE.md CONTRIBUTING.md ./
 COPY kaseki run-kaseki.sh kaseki-agent.sh ./
 COPY docs ./docs
 COPY docker/ops ./ops
