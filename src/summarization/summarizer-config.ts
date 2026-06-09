@@ -92,7 +92,7 @@ export const DEFAULT_CONFIG: SummarizerConfig = {
   supportedLanguages: ['typescript', 'javascript', 'go'],
   minSizeBytes: 2048, // 2KB
   maxSizeBytes: 1048576, // 1MB
-  parseTimeoutMs: 500,
+  parseTimeoutMs: 2000,
   llmFallbackTimeoutMs: 5000,
   enableLLMFallback: true,
   cacheDir: '.kaseki-summary-cache',
