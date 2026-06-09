@@ -30,7 +30,7 @@ describe('GoCliSummarizer', () => {
     // Note: These tests require tree-sitter-cli with Go grammar properly configured
     // In CI/Docker with proper setup, these will extract structures
     // In dev environments without grammar setup, we test graceful degradation
-    
+
     it('should extract function declarations or gracefully degrade', () => {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main

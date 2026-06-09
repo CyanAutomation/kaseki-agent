@@ -40,7 +40,7 @@ try {
     const cliVersion = execSync('tree-sitter --version', { encoding: 'utf-8', stdio: 'pipe' });
     log(`tree-sitter-cli version: ${cliVersion.trim()}`);
     pass('tree-sitter-cli is available');
-  } catch (e) {
+  } catch {
     fail('tree-sitter-cli availability', 'tree-sitter-cli not found in PATH');
     log('Install with: npm install -g tree-sitter-cli', 'yellow');
     process.exit(1);
@@ -213,7 +213,6 @@ func CreateHandler(name string) *Handler {
 
   // Phase 5: Summary
   log('\nPhase 5: Summary', 'yellow');
-  const testsRun = process.stderr ? process.stderr.toString().split('\n').length : 10;
   if (process.exitCode === undefined || process.exitCode === 0) {
     log('\n✓ All functional tests passed!', 'green');
     log('Hybrid code summarization is working correctly:', 'green');
