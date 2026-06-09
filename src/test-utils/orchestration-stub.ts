@@ -161,8 +161,9 @@ export function createMinimalOrchestrationEnv(
     JSON.stringify({
       task_mode: 'patch',
       instance: 'orchestration-instance',
-      validation_passed: true,
+      validation_passed: phase === 'run-evaluation' ? false : true,
       coding_attempts: 1,
+      goal_check_met: false,
       total_duration_seconds: 30,
     })
   );
@@ -237,13 +238,8 @@ export function createMinimalOrchestrationEnv(
         })
       );
       fs.writeFileSync(stageTimingsPath, 'run evaluation\t0\t30\n');
-    } else if (scenario === 'malformed-artifact') {
-      // Write malformed JSON
-      fs.writeFileSync(runEvaluationPath, '{"overall_assessment":"unknown"');
-      fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
-    } else if (scenario === 'missing-artifact') {
-      // Missing artifact scenario still writes error artifact but with exit code 86
-      // This prevents feedback collection but leaves the error artifact in place
+    } else if (scenario === 'malformed-artifact' || scenario === 'missing-artifact') {
+      // Both malformed and missing scenarios write error artifact with exit code 86
       fs.writeFileSync(
         runEvaluationPath,
         JSON.stringify({
