@@ -14,12 +14,6 @@ let cachedScriptContent: string | null = null;
 // Cache for extracted bash functions
 const functionCache = new Map<string, string>();
 
-// Pre-compiled regex patterns for bash function extraction
-const BASH_PATTERNS = {
-  functionStart: (funcName: string) => new RegExp(`^${escapeRegExp(funcName)}\\(\\) \\{$`, 'm'),
-  functionEnd: (funcName: string) => new RegExp(`^${escapeRegExp(funcName)}\\(\\) \\{$`, 'm'),
-};
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
