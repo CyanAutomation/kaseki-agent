@@ -183,6 +183,52 @@ run_validation_helper() {
   set -e
 }
 
+
+test_pre_agent_validation_env_log_argument_via_production_helper() {
+  local fixture="$TEST_ROOT/fixture-pre-agent"
+  local pre_raw_log="$TEST_RESULTS_DIR/pre-validation-raw.log"
+  local pre_timings_file="$TEST_RESULTS_DIR/pre-validation-timings.tsv"
+  local pre_env_log="$TEST_RESULTS_DIR/pre-agent-validation-env.log"
+  local pre_helper_exit
+
+  setup_fixture_repo "$fixture"
+  with_workspace_repo_fixture "$fixture"
+  cd "$fixture"
+  reset_validation_state
+
+  : > "$pre_raw_log"
+  : > "$pre_timings_file"
+  rm -f "$pre_env_log"
+  : > "$FILTER_DIAGNOSTICS_LOG"
+  : > "$FILTER_STDERR_FILE"
+
+  PRE_VALIDATION_EXIT="not-numeric-before-call"
+
+  set +e
+  run_validation_commands \
+    "pre-agent validation" \
+    "npm run check" \
+    /dev/null \
+    "$pre_raw_log" \
+    "$pre_timings_file" \
+    "$pre_env_log" \
+    "pre_agent_validation_failed" \
+    PRE_VALIDATION_EXIT \
+    PRE_VALIDATION_FAILED_COMMAND_DETAIL \
+    PRE_VALIDATION_FAILURE_REASON \
+    PRE_VALIDATION_STOPPED_EARLY \
+    PRE_VALIDATION_COMMANDS_ATTEMPTED
+  pre_helper_exit=$?
+  set -e
+
+  [ "$pre_helper_exit" -eq 0 ] || fail "pre-agent validation helper should pass, got $pre_helper_exit"
+  [[ "$PRE_VALIDATION_EXIT" =~ ^[0-9]+$ ]] || fail "PRE_VALIDATION_EXIT should remain numeric, got $PRE_VALIDATION_EXIT"
+  [ "$PRE_VALIDATION_EXIT" -eq 0 ] || fail "PRE_VALIDATION_EXIT should be 0 for successful commands, got $PRE_VALIDATION_EXIT"
+  assert_file_contains "$pre_env_log" "[validation command] stage=pre-agent validation" "pre-agent env log should include stage metadata"
+  assert_file_contains "$pre_env_log" "[validation command] command=npm run check" "pre-agent env log should include command metadata"
+  pass "Pre-agent validation helper writes env metadata to explicit env-log path"
+}
+
 test_non_login_validation_via_production_helper() {
   local fixture="$TEST_ROOT/fixture-success"
   setup_fixture_repo "$fixture"
@@ -235,6 +281,9 @@ printf '==> Validation Integration Tests\n'
 TEST_ROOT="$(mktemp -d)"
 TEST_RESULTS_DIR="$TEST_ROOT/results"
 TEST_BIN_DIR="$TEST_ROOT/bin"
+KASEKI_RESULTS_DIR="/results"
+KASEKI_WORKSPACE_DIR="/workspace"
+export KASEKI_RESULTS_DIR KASEKI_WORKSPACE_DIR
 mkdir -p "$TEST_RESULTS_DIR"
 WORKSPACE_REPO_STATE="absent"
 WORKSPACE_REPO_BACKUP=""
@@ -251,6 +300,9 @@ test_directory_checkpoint_via_production_helper
 cleanup_workspace_repo
 WORKSPACE_REPO_STATE="absent"
 test_non_login_validation_via_production_helper
+cleanup_workspace_repo
+WORKSPACE_REPO_STATE="absent"
+test_pre_agent_validation_env_log_argument_via_production_helper
 cleanup_workspace_repo
 WORKSPACE_REPO_STATE="absent"
 test_directory_diagnostics_via_production_helper
