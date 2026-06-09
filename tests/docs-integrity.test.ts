@@ -2,72 +2,69 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Tests for documentation link integrity and explicit cross-reference checklists.
+ * Tests for documentation integrity.
  *
- * This avoids broad keyword-presence assertions. It validates the documentation
- * graph instead: required docs are present, required cross-reference links and
- * headings exist, and internal markdown links resolve to real files and anchors.
+ * The general check validates that evaluation markdown docs do not contain
+ * broken internal links or anchors. Evaluation-guide content checks are intentionally
+ * limited to documented navigation contracts: stable cross-document links and a
+ * small set of anchors that other docs or readers can reasonably depend on.
  */
-describe('Documentation link integrity', () => {
+describe('Documentation integrity', () => {
   const projectRoot = process.cwd();
   const docsDir = path.join(projectRoot, 'docs');
-  const evaluationDocs = [
-    'GOAL_SETTING_GUIDE.md',
-    'EVALUATION_BEST_PRACTICES.md',
-    'FEEDBACK_LOOP_INTEGRATION.md',
+
+  type MarkdownLink = {
+    text: string;
+    link: string;
+    sourceFile: string;
+  };
+
+  type EvaluationDocContract = {
+    fileName: string;
+    requiredLinks?: string[];
+    stableAnchors?: string[];
+  };
+
+  const evaluationDocContracts: EvaluationDocContract[] = [
+    {
+      fileName: 'GOAL_SETTING_GUIDE.md',
+      requiredLinks: ['./EVALUATION_BEST_PRACTICES.md', './FEEDBACK_LOOP_INTEGRATION.md'],
+      stableAnchors: [
+        'goal-setting-agent-guide',
+        'configuration',
+        'test-updates-in-goals',
+        'troubleshooting',
+        'see-also',
+      ],
+    },
+    {
+      fileName: 'EVALUATION_BEST_PRACTICES.md',
+      requiredLinks: ['GOAL_SETTING_GUIDE.md', 'FEEDBACK_LOOP_INTEGRATION.md'],
+      stableAnchors: [
+        'evaluation-best-practices-for-kaseki-agent',
+        'part-1-goal-check-evaluation-best-practices',
+        'part-2-run-evaluation-best-practices',
+        'part-4-feedback-loop-integration',
+        'references',
+      ],
+    },
+    {
+      fileName: 'FEEDBACK_LOOP_INTEGRATION.md',
+      requiredLinks: ['../src/lib/goal-setting-feedback.ts', '../scripts/analyze-goal-feedback.js'],
+      stableAnchors: [
+        'feedback-loop-integration-for-kaseki-agent-evaluations',
+        'feedback-path-1-goal-quality-scoring',
+        'feedback-path-2-kaseki-improvement-opportunities',
+        'integration-points',
+        'data-schema',
+      ],
+    },
   ];
 
-  const requiredDocLinks = new Map<string, string[]>([
-    ['GOAL_SETTING_GUIDE.md', ['./EVALUATION_BEST_PRACTICES.md', './FEEDBACK_LOOP_INTEGRATION.md']],
-    ['EVALUATION_BEST_PRACTICES.md', ['GOAL_SETTING_GUIDE.md', 'FEEDBACK_LOOP_INTEGRATION.md']],
-  ]);
-
-  const requiredEvaluationDocSections = new Map<string, string[]>([
-    [
-      'GOAL_SETTING_GUIDE.md',
-      [
-        '## Overview',
-        '## Why Goal-Setting?',
-        '## What Makes a Good Goal?',
-        '## Configuration',
-        '## How Goal-Setting Works',
-        '## Failure Modes',
-        '## Best Practices',
-        '## Test Updates in Goals',
-        '## Troubleshooting',
-        '## See Also',
-      ],
-    ],
-    [
-      'EVALUATION_BEST_PRACTICES.md',
-      [
-        '## Why Evaluation Matters',
-        '## Part 1: Goal-Check Evaluation Best Practices',
-        '## Part 2: Run-Evaluation Best Practices',
-        '## Part 3: Integrating Goal-Setting Context into Evaluations',
-        '## Part 4: Feedback Loop Integration',
-        '## Part 5: Evaluation Confidence Calibration Worksheet',
-        '## Part 6: Review Checklist for Evaluators',
-        '## References',
-      ],
-    ],
-    [
-      'FEEDBACK_LOOP_INTEGRATION.md',
-      [
-        '## Overview',
-        '## Feedback Path 1: Goal Quality Scoring',
-        '## Feedback Path 2: Kaseki Improvement Opportunities',
-        '## Integration Points',
-        '## Concrete Examples',
-        '## Data Schema',
-        '## Feedback Loop Best Practices',
-        '## Monitoring & Dashboards (Future Capability)',
-        '## Summary',
-      ],
-    ],
-  ]);
-
   const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const fencedCodeBlockRegex = /^```[\s\S]*?^```$/gm;
+
+  const stripFencedCodeBlocks = (content: string): string => content.replace(fencedCodeBlockRegex, '');
 
   const slugifyHeading = (heading: string): string => heading
     .trim()
@@ -76,135 +73,92 @@ describe('Documentation link integrity', () => {
     .replace(/&/g, '')
     .replace(/[^\p{Letter}\p{Number}\s-]/gu, '')
     .trim()
-    .replace(/\s+/g, '-');
+    .replace(/\s/g, '-');
 
   const collectAnchors = (content: string): Set<string> => {
     const anchors = new Set<string>();
     const headingRegex = /^#{1,6}\s+(.+)$/gm;
     let headingMatch: RegExpExecArray | null;
+    const markdownWithoutCode = stripFencedCodeBlocks(content);
 
-    while ((headingMatch = headingRegex.exec(content)) !== null) {
+    while ((headingMatch = headingRegex.exec(markdownWithoutCode)) !== null) {
       anchors.add(slugifyHeading(headingMatch[1]));
     }
 
     return anchors;
   };
 
-  const collectHeadingTexts = (content: string): Set<string> => {
-    const headings = new Set<string>();
-    const headingRegex = /^(#{1,6}\s+.+)$/gm;
-    let headingMatch: RegExpExecArray | null;
-
-    while ((headingMatch = headingRegex.exec(content)) !== null) {
-      headings.add(headingMatch[1]);
-    }
-
-    return headings;
-  };
-
-  const extractMarkdownLinks = (content: string): Array<{ text: string; link: string }> => {
-    const links: Array<{ text: string; link: string }> = [];
+  const extractMarkdownLinks = (content: string, sourceFile: string): MarkdownLink[] => {
+    const links: MarkdownLink[] = [];
     let match: RegExpExecArray | null;
+    const markdownWithoutCode = stripFencedCodeBlocks(content);
 
     markdownLinkRegex.lastIndex = 0;
-    while ((match = markdownLinkRegex.exec(content)) !== null) {
-      links.push({ text: match[1], link: match[2] });
+    while ((match = markdownLinkRegex.exec(markdownWithoutCode)) !== null) {
+      links.push({ text: match[1], link: match[2], sourceFile });
     }
 
     return links;
   };
 
-  const normalizeDocLink = (link: string): string => {
-    const [filePart] = link.split('#');
-    if (!filePart) {
-      return '';
-    }
-    return filePart.startsWith('./') ? filePart.substring(2) : filePart;
+  const isExternalLink = (link: string): boolean => /^[a-z][a-z0-9+.-]*:/i.test(link);
+
+  const splitLink = (link: string): { filePart: string; anchor?: string } => {
+    const [rawFilePart, rawAnchor] = link.split('#');
+    const [filePart] = rawFilePart.split(/[?;]/).map(s => s.trim());
+
+    return {
+      filePart: filePart ? decodeURIComponent(filePart) : '',
+      anchor: rawAnchor ? decodeURIComponent(rawAnchor) : undefined,
+    };
   };
 
-  it('GOAL_SETTING_GUIDE.md should cross-reference evaluation docs with existing headed targets', () => {
-    const goalGuidePath = path.join(docsDir, 'GOAL_SETTING_GUIDE.md');
-    expect(fs.existsSync(goalGuidePath)).toBe(true);
-
-    const goalGuideContent = fs.readFileSync(goalGuidePath, 'utf8');
-    const linksByTarget = new Map(
-      extractMarkdownLinks(goalGuideContent).map(({ text, link }) => [link, { text, link }])
-    );
-
-    const expectedEvaluationReferences = [
-      {
-        fileName: 'EVALUATION_BEST_PRACTICES.md',
-        link: './EVALUATION_BEST_PRACTICES.md',
-        text: 'Evaluation Best Practices',
-        headings: ['# Evaluation Best Practices for Kaseki-Agent', '## Part 4: Feedback Loop Integration'],
-      },
-      {
-        fileName: 'FEEDBACK_LOOP_INTEGRATION.md',
-        link: './FEEDBACK_LOOP_INTEGRATION.md',
-        text: 'Feedback Loop Integration',
-        headings: [
-          '# Feedback Loop Integration for Kaseki-Agent Evaluations',
-          '## Feedback Path 1: Goal Quality Scoring',
-          '## Feedback Path 2: Kaseki Improvement Opportunities',
-        ],
-      },
-    ];
-
-    expectedEvaluationReferences.forEach(({ fileName, link, text, headings }) => {
-      const parsedLink = linksByTarget.get(link);
-      expect(parsedLink).toEqual({ text, link });
-
-      const targetPath = path.join(docsDir, fileName);
-      expect(fs.existsSync(targetPath)).toBe(true);
-
-      const targetHeadings = collectHeadingTexts(fs.readFileSync(targetPath, 'utf8'));
-      headings.forEach((heading) => {
-        expect(targetHeadings).toContain(heading);
-      });
-    });
-  });
-
-  it('checks exact cross-document links, required contractual sections, and markdown link targets for evaluation docs', () => {
-    evaluationDocs.forEach((fileName) => {
+  it('resolves internal markdown links and anchors in evaluation docs', () => {
+    evaluationDocContracts.forEach(({ fileName }) => {
       const sourcePath = path.join(docsDir, fileName);
-      expect(fs.existsSync(sourcePath)).toBe(true);
+      const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+      const sourceDir = path.dirname(sourcePath);
+      const sourceFile = path.relative(projectRoot, sourcePath);
+      const sourceAnchors = collectAnchors(sourceContent);
 
-      const content = fs.readFileSync(sourcePath, 'utf8');
-      const links = extractMarkdownLinks(content);
-      const linkTargets = links.map(({ link }) => link);
-
-      requiredDocLinks.get(fileName)?.forEach((requiredLink) => {
-        expect(linkTargets).toContain(requiredLink);
-      });
-
-      const headings = collectHeadingTexts(content);
-      requiredEvaluationDocSections.get(fileName)?.forEach((requiredSection) => {
-        expect(headings).toContain(requiredSection);
-      });
-
-      links.forEach(({ link }) => {
-        if (link.startsWith('http') || link.startsWith('mailto:')) {
+      extractMarkdownLinks(sourceContent, sourceFile).forEach(({ link }) => {
+        if (isExternalLink(link)) {
           return;
         }
 
-        if (link.startsWith('#')) {
-          const anchor = link.substring(1);
-          const anchors = collectAnchors(content);
-          expect(anchors).toContain(anchor);
-          return;
-        }
-
-        const [rawFilePart, anchor] = link.split('#');
-        const filePart = normalizeDocLink(rawFilePart);
-        const targetPath = filePart ? path.join(docsDir, filePart) : sourcePath;
+        const { filePart, anchor } = splitLink(link);
+        const targetPath = filePart ? path.resolve(sourceDir, filePart) : sourcePath;
 
         expect(fs.existsSync(targetPath)).toBe(true);
 
         if (anchor) {
-          const targetContent = fs.readFileSync(targetPath, 'utf8');
-          const anchors = collectAnchors(targetContent);
-          expect(anchors).toContain(anchor);
+          const targetContent = targetPath === sourcePath
+            ? sourceContent
+            : fs.readFileSync(targetPath, 'utf8');
+          const targetAnchors = targetPath === sourcePath ? sourceAnchors : collectAnchors(targetContent);
+
+          expect(targetAnchors).toContain(anchor);
         }
+      });
+    });
+  });
+
+  it('preserves documented evaluation-guide navigation contracts', () => {
+    evaluationDocContracts.forEach(({ fileName, requiredLinks, stableAnchors }) => {
+      const sourcePath = path.join(docsDir, fileName);
+
+      expect(fs.existsSync(sourcePath)).toBe(true);
+
+      const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+      const linkTargets = extractMarkdownLinks(sourceContent, fileName).map(({ link }) => link);
+      const anchors = collectAnchors(sourceContent);
+
+      requiredLinks?.forEach((requiredLink) => {
+        expect(linkTargets).toContain(requiredLink);
+      });
+
+      stableAnchors?.forEach((stableAnchor) => {
+        expect(anchors).toContain(stableAnchor);
       });
     });
   });
