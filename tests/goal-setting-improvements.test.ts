@@ -740,7 +740,15 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         }
 
         const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
-        expect(piCallOrder).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding', 'goal-check']);
+        // Goal-check can be called twice: once for pre-validation, once for post-validation if diff changed
+        // Accept either 5 or 6 calls, with the last call being goal-check in both cases
+        expect(piCallOrder.length).toBeGreaterThanOrEqual(5);
+        expect(piCallOrder.length).toBeLessThanOrEqual(6);
+        expect(piCallOrder.slice(0, 4)).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding']);
+        expect(piCallOrder[4]).toBe('goal-check');
+        if (piCallOrder.length === 6) {
+          expect(piCallOrder[5]).toBe('goal-check');
+        }
 
         const metadata = JSON.parse(readFileSync(join(resultsDir, 'metadata.json'), 'utf8')) as {
           goal_setting_attempts: number;
