@@ -37,7 +37,7 @@ collect_git_artifacts() {
 # paths into this test's temporary workspace.
 eval "$(awk '
   /^restore_disallowed_changes\(\)/ { emit=1 }
-  /^generate_restoration_report\(\)/ { emit=0 }
+  /^check_validation_allowlist\(\)/ { emit=0 }
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/workspace/repo#$TMP_DIR/repo#g; s#/results#$TMP_DIR/results#g")"
 
