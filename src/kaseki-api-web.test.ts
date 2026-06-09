@@ -117,7 +117,9 @@ function click(element: Element | null): void {
 
 function change(input: HTMLInputElement, value: string): void {
   input.value = value;
-  input.dispatchEvent(new input.ownerDocument.defaultView!.Event('change', { bubbles: true }));
+  const view = input.ownerDocument.defaultView;
+  if (!view) throw new Error('Input has no defaultView');
+  input.dispatchEvent(new view.Event('change', { bubbles: true }));
 }
 
 describe('kaseki API web console routes', () => {
