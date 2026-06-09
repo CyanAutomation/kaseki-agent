@@ -288,7 +288,9 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#state')?.textContent).toBe('Run status needs a run ID.');
     expect(document.querySelector('#output')?.textContent).toBe('Submit a run or enter a run ID first.');
 
-    document.querySelector<HTMLInputElement>('#run-id')!.value = 'kaseki-401';
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-401';
     click(document.querySelector('#status-check'));
     await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Run status updated.'));
     expect(document.querySelector('#output-meta')?.textContent).toBe('Status: running | Run ID: kaseki-401');
