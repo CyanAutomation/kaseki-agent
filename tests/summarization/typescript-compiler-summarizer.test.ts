@@ -4,7 +4,6 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { TypeScriptCompilerSummarizer } from '../../src/summarization/typescript-compiler-summarizer';
-import type { CodeSummary } from '../../src/summarization/tree-sitter-summarizer';
 
 describe('TypeScriptCompilerSummarizer', () => {
   let summarizer: TypeScriptCompilerSummarizer;
@@ -147,14 +146,14 @@ describe('TypeScriptCompilerSummarizer', () => {
   describe('Language Support', () => {
     it('should support typescript language', () => {
       const summarizer = new TypeScriptCompilerSummarizer('typescript');
-      const code = `type MyType = string;`;
+      const code = 'type MyType = string;';
       const summary = summarizer.summarize(code);
       expect(summary.language).toBe('typescript');
     });
 
     it('should support javascript language', () => {
       const summarizer = new TypeScriptCompilerSummarizer('javascript');
-      const code = `function test() {}`;
+      const code = 'function test() {}';
       const summary = summarizer.summarize(code);
       expect(summary.language).toBe('javascript');
     });
@@ -162,7 +161,7 @@ describe('TypeScriptCompilerSummarizer', () => {
 
   describe('Error Handling', () => {
     it('should handle parse errors gracefully', () => {
-      const code = `function broken(( { // malformed code`;
+      const code = 'function broken(( { // malformed code';
       const summary = summarizer.summarize(code);
 
       expect(summary).toBeDefined();
@@ -171,7 +170,7 @@ describe('TypeScriptCompilerSummarizer', () => {
     });
 
     it('should return metadata', () => {
-      const code = `class Test {}`;
+      const code = 'class Test {}';
       const summary = summarizer.summarize(code);
 
       expect(summary.originalSizeBytes).toBeGreaterThan(0);

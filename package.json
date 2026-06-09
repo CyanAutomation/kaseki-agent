@@ -85,9 +85,6 @@
     "enquirer": "^2.4.1",
     "express": "^4.18.2",
     "swagger-ui-express": "^5.0.1",
-    "tree-sitter": "^0.21.1",
-    "tree-sitter-go": "^0.21.0",
-    "tree-sitter-typescript": "^0.21.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {
