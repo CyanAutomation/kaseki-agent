@@ -75,7 +75,7 @@ export class SummaryCache {
   }
 
   private isExpired(entry: CachedSummary, now = Date.now()): boolean {
-    return this.ttlMs === 0 || now - entry.timestamp > this.ttlMs;
+    return this.ttlMs > 0 && now - entry.timestamp > this.ttlMs;
   }
 
   private getTotalSizeBytes(): number {
