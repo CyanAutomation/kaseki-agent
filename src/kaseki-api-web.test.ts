@@ -319,7 +319,9 @@ describe('kaseki API web console behavior', () => {
       }),
     });
 
-    document.querySelector<HTMLInputElement>('#run-id')!.value = 'kaseki-501';
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-501';
     click(document.querySelector('#status-check'));
 
     await waitFor(() => expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(false));
