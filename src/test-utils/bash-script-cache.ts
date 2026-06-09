@@ -1,6 +1,6 @@
 /**
  * Bash script caching and extraction utilities
- * 
+ *
  * Provides module-level caching for kaseki-agent.sh and optimized
  * bash function extraction to avoid repeated file I/O and regex compilation.
  */
@@ -34,7 +34,7 @@ export function getCachedScriptContent(): string {
 
 /**
  * Extract a bash function block from the cached script content
- * 
+ *
  * @param startFunction Function name marking the start (e.g., 'build_goal_check_prompt')
  * @param endFunction Function name marking the end (e.g., 'run_goal_check')
  * @returns The extracted function block including the function definition
@@ -42,17 +42,17 @@ export function getCachedScriptContent(): string {
  */
 export function extractBashFunctionWithCache(startFunction: string, endFunction: string): string {
   const cacheKey = `${startFunction}..${endFunction}`;
-  
+
   if (functionCache.has(cacheKey)) {
     return functionCache.get(cacheKey)!;
   }
 
   const scriptContent = getCachedScriptContent();
   const lines = scriptContent.split('\n');
-  
+
   const startPattern = new RegExp(`^${escapeRegExp(startFunction)}\\(\\) \\{$`);
   const endPattern = new RegExp(`^${escapeRegExp(endFunction)}\\(\\) \\{$`);
-  
+
   const startLineIndexes = lines.flatMap((line, index) => (startPattern.test(line) ? [index] : []));
 
   if (startLineIndexes.length !== 1) {

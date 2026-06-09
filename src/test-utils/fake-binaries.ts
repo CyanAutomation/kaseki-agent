@@ -1,6 +1,6 @@
 /**
  * Fake binary stubs for testing
- * 
+ *
  * Factory function to create reusable fake binary stubs (pi, npm, timeout, etc.)
  * that can be shared across multiple test scenarios.
  */
@@ -17,7 +17,7 @@ export interface FakeBinariesConfig {
 
 /**
  * Create a directory with fake binary stubs (pi, npm, timeout, etc.)
- * 
+ *
  * @param binDir Directory to create binaries in
  * @param config Configuration for fake binaries behavior
  * @returns Path to the bin directory
@@ -68,7 +68,7 @@ else
   printf 'coding\\n' >> "${piCalls}"
   printf '%s' "$prompt" > "${resultsDir}/coding-prompt.txt"
 fi`
-    : `# pi stub (no logging)`
+    : '# pi stub (no logging)'
 }
 
 printf '{"type":"message","model":"test-model"}\\n'

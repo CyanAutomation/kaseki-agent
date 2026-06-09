@@ -1,6 +1,6 @@
 /**
  * Fake git repository utilities for testing
- * 
+ *
  * Helpers to create and initialize fake git repositories with minimal overhead.
  */
 
@@ -16,7 +16,7 @@ export interface FakeRepoConfig {
 
 /**
  * Create a minimal fake git repository
- * 
+ *
  * @param repoDir Directory to create the repository in
  * @param config Configuration for the repository
  * @returns Path to the created repository
@@ -78,7 +78,7 @@ export function createFakeGitRepo(repoDir: string, config: FakeRepoConfig = {}):
 /**
  * Create a fake git repository and commit initial files
  * (slower than createFakeGitRepo but needed if code reads git history)
- * 
+ *
  * @param repoDir Directory to create the repository in
  * @param config Configuration for the repository
  * @returns Path to the created repository
