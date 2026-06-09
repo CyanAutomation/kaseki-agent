@@ -4,6 +4,29 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.70.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.69.3...v1.70.0) (2026-06-09)
+
+
+### Bug Fixes
+
+* correct output redirection in error messages for clarity ([0338ec2](https://github.com/CyanAutomation/kaseki-agent/commit/0338ec210283206bac2a34515f2af159c11f9c5a))
+* enable downlevel iteration in TypeScript configuration and update related files ([5c7e880](https://github.com/CyanAutomation/kaseki-agent/commit/5c7e880f23b4a5969fea03824b3e6f6da216733e))
+* enhance feedback collection script error handling and improve optional file parsing ([6d2b54c](https://github.com/CyanAutomation/kaseki-agent/commit/6d2b54c19ab8b8550ed453ccc6175e7d18091335))
+* enhance language initialization handling and improve bash function extraction validation ([36de2d3](https://github.com/CyanAutomation/kaseki-agent/commit/36de2d3118ca0f526cdc6253c691cda6740cb1f9))
+* enhance orchestration environment setup for goal-check and run-evaluation phases ([d978608](https://github.com/CyanAutomation/kaseki-agent/commit/d97860817a09f11e73237ec052ee1d15d2ecd42e))
+* improve feedback collection script with enhanced error handling and payload structure ([2027e48](https://github.com/CyanAutomation/kaseki-agent/commit/2027e48e7282efa392af8519f00e73f7068cb3fc))
+* improve language binding initialization for TypeScript and Go in TreeSitterSummarizer ([2ba2793](https://github.com/CyanAutomation/kaseki-agent/commit/2ba2793e36f0d704147c805b8a0bf1be31adafa3))
+* improve orchestration environment handling for goal-check and run-evaluation phases ([d0c7b13](https://github.com/CyanAutomation/kaseki-agent/commit/d0c7b13ca37e53e069d8a7f4e31a06abeb7453bb))
+* refactor artifact metadata and update validation logging in tests ([ab38821](https://github.com/CyanAutomation/kaseki-agent/commit/ab388216e1a2a9e98634476c4c76637f247c7d48))
+* streamline feedback payload structure in run-evaluation phase ([fa79930](https://github.com/CyanAutomation/kaseki-agent/commit/fa799304aa14b519969162dd412ef6e2806db4e2))
+* update goal-check validation logic to allow for multiple calls ([185cc24](https://github.com/CyanAutomation/kaseki-agent/commit/185cc24bcac90f233ac893b0258f48ce7af99870))
+
+
+### Features
+
+* add lightweight orchestration stubs for feedback collection tests ([657767c](https://github.com/CyanAutomation/kaseki-agent/commit/657767cb286bb4f87219294d48d239a0d5f74131))
+* add test utilities for bash script caching, fake binaries, and git repositories ([7a72cae](https://github.com/CyanAutomation/kaseki-agent/commit/7a72cae9de5315b8df3cfd7c3188799232581e5e))
+
 ## [1.69.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.69.2...v1.69.3) (2026-06-08)
 
 
