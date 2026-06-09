@@ -28,7 +28,7 @@ export interface SummarizerConfig {
   /**
    * Timeout (ms) for tree-sitter parsing
    * If parsing exceeds this, fallback to full read
-   * Default: 100ms
+   * Default: 500ms
    */
   parseTimeoutMs: number;
 
@@ -92,7 +92,7 @@ export const DEFAULT_CONFIG: SummarizerConfig = {
   supportedLanguages: ['typescript', 'javascript', 'go'],
   minSizeBytes: 2048, // 2KB
   maxSizeBytes: 1048576, // 1MB
-  parseTimeoutMs: 100,
+  parseTimeoutMs: 500,
   llmFallbackTimeoutMs: 5000,
   enableLLMFallback: true,
   cacheDir: '.kaseki-summary-cache',
