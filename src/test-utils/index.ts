@@ -6,9 +6,11 @@
  * - Creating fake binary stubs for testing
  * - Creating and initializing fake git repositories
  * - Managing temporary directories with lifecycle support
+ * - Creating lightweight orchestration stubs for feedback collection tests
  */
 
 export * from './bash-script-cache';
 export * from './fake-binaries';
 export * from './fake-git-repo';
 export * from './temp-dir-manager';
+export * from './orchestration-stub';
