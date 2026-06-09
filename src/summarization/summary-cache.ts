@@ -164,7 +164,6 @@ export class SummaryCache {
     if (this.cache.has(normalized)) {
       this.cache.delete(normalized);
     }
-    this.enforceLimits();
 
     this.cache.set(normalized, {
       content: summary,
