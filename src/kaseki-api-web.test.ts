@@ -110,7 +110,9 @@ async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
 
 function click(element: Element | null): void {
   expect(element).not.toBeNull();
-  element?.dispatchEvent(new element.ownerDocument.defaultView!.MouseEvent('click', { bubbles: true }));
+  const view = element.ownerDocument.defaultView;
+  if (!view) throw new Error('Element has no defaultView');
+  element.dispatchEvent(new view.MouseEvent('click', { bubbles: true }));
 }
 
 function change(input: HTMLInputElement, value: string): void {
