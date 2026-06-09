@@ -58,6 +58,7 @@ ENV HOME=/tmp/kaseki-home \
 
 # Copy Pi CLI and workspace cache seed from deps stage
 COPY --from=deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=deps /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
