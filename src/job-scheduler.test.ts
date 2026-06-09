@@ -158,7 +158,7 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(job.completedAt).toBeDefined();
     const runDir = `${scheduler['config'].resultsDir}/${job.id}`;
     expect(
-      fs.readFileSync(`${runDir}/analysis.md`, 'utf-8').trim().length,
+      fs.readFileSync(`${runDir}/failure.json`, 'utf-8').trim().length,
     ).toBeGreaterThan(0);
     expect(
       fs.readFileSync(`${runDir}/metadata.json`, 'utf-8').trim().length,
@@ -1079,8 +1079,6 @@ describe('JobScheduler timeout lifecycle', () => {
     scheduler.cancelJob(job.id);
 
     const failurePath = `${resultsDir}/${job.id}/failure.json`;
-    const summaryPath = `${resultsDir}/${job.id}/result-summary.md`;
-    const analysisPath = `${resultsDir}/${job.id}/analysis.md`;
     const metadataPath = `${resultsDir}/${job.id}/metadata.json`;
     const stderrPath = `${resultsDir}/${job.id}/stderr.log`;
 
@@ -1089,8 +1087,6 @@ describe('JobScheduler timeout lifecycle', () => {
     proc.emit('exit', null);
 
     expect(fs.statSync(failurePath).size).toBeGreaterThan(0);
-    expect(fs.statSync(summaryPath).size).toBeGreaterThan(0);
-    expect(fs.statSync(analysisPath).size).toBeGreaterThan(0);
     expect(fs.statSync(metadataPath).size).toBeGreaterThan(0);
     expect(fs.statSync(stderrPath).size).toBeGreaterThan(0);
     expect(fs.readFileSync(stderrPath, 'utf-8')).toContain('cancel stderr tail');

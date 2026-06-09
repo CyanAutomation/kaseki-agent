@@ -1494,8 +1494,6 @@ restore_disallowed_changes() {
   fi
 }
 
-}
-
 check_validation_allowlist() {
   if [ -z "$KASEKI_VALIDATION_ALLOWLIST" ]; then
     return 0

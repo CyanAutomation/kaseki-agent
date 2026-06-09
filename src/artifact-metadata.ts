@@ -204,6 +204,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'goal-check-validation-errors.jsonl': {
+    name: 'goal-check-validation-errors.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Structured goal-check artifact validation failures with field-level expected/actual details and suggestions',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 8,
+    sizeHint: 'small',
+  },
+
   'run-evaluation.json': {
     name: 'run-evaluation.json',
     contentType: 'application/json',
@@ -282,7 +291,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     name: 'validation.log',
     contentType: 'text/plain',
     description: 'Validation command output and results',
-    availability: ArtifactAvailability.ON_FAILURE,
+    availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 11,
     sizeHint: 'medium',
   },

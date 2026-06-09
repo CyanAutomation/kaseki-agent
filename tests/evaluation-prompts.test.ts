@@ -401,7 +401,7 @@ build_scouting_prompt
       'Enhanced Guidelines by Change Type:',
       'Guidelines for critical_change_expectations:'
     );
-    const topLevelFields = [...schemaSection.matchAll(/^  "([^"]+)":/gm)].map(match => match[1]);
+    const topLevelFields = [...schemaSection.matchAll(/^ {2}"([^"]+)":/gm)].map(match => match[1]);
     const testImpactShape = schemaSection.match(/"test_impact": \[\{([^\n]+)\}\]/)?.[1] ?? '';
     const testImpactFields = [...testImpactShape.matchAll(/"([^"]+)":/g)].map(match => match[1]);
     const testExampleFields = [...testImpactGuidanceSection.matchAll(/- \*\*([^*]+)\*\*:/g)].map(match => match[1]);
