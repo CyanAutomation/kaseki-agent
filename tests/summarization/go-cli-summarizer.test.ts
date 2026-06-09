@@ -4,7 +4,6 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import { GoCliSummarizer } from '../../src/summarization/go-cli-summarizer';
-import type { CodeSummary } from '../../src/summarization/tree-sitter-summarizer';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
