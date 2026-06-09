@@ -1365,6 +1365,7 @@ describe('kaseki-api-routes results artifacts endpoint', () => {
     fs.writeFileSync(path.join(jobDir, 'stderr.log'), 'stderr output');
     fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout output');
     fs.writeFileSync(path.join(jobDir, 'pre-validation.log'), 'pre-validation output');
+    fs.writeFileSync(path.join(jobDir, 'validation.log'), 'validation output');
 
     const scheduler = createMockScheduler({
       [jobId]: { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir },
