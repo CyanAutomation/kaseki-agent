@@ -398,74 +398,64 @@ describe('Copy-to-Clipboard Functionality', () => {
   });
 
   describe('Cross-browser Compatibility', () => {
-    it('should detect secure context', () => {
-      const isSecureContext = (window as any).isSecureContext !== undefined ? (window as any).isSecureContext : true;
-      expect(typeof isSecureContext).toBe('boolean');
-    });
-
-    it('should use document.execCommand fallback through the artifact UI copy action', async () => {
-      const controllerPage = await getControllerPage();
-      document.open();
-      document.write(controllerPage.replace(/<script>[\s\S]*?<\/script>/, ''));
-      document.close();
-
-      window.sessionStorage.setItem('kasekiApiToken', 'kaseki-test-token');
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: undefined,
+    it.each([
+      {
+        name: 'uses Clipboard API when navigator.clipboard is available in a secure context',
+        clipboardAvailable: true,
+        isSecureContext: true,
+        expectedPath: 'clipboard',
+      },
+      {
+        name: 'uses document.execCommand fallback when navigator.clipboard is available outside a secure context',
+        clipboardAvailable: true,
+        isSecureContext: false,
+        expectedPath: 'execCommand',
+      },
+      {
+        name: 'uses document.execCommand fallback when navigator.clipboard is unavailable in a secure context',
+        clipboardAvailable: false,
+        isSecureContext: true,
+        expectedPath: 'execCommand',
+      },
+      {
+        name: 'uses document.execCommand fallback when navigator.clipboard is unavailable outside a secure context',
+        clipboardAvailable: false,
+        isSecureContext: false,
+        expectedPath: 'execCommand',
+      },
+    ])('should $name through the artifact UI copy action', async ({ clipboardAvailable, isSecureContext, expectedPath }) => {
+      const { writeTextMock, execCommandMock } = await setupRecommendedArtifactCopy({
+        clipboardAvailable,
+        isSecureContext,
+        execCommandResult: true,
       });
-      Object.defineProperty(window, 'isSecureContext', {
-        configurable: true,
-        value: true,
-      });
-
-      const execCommandMock = jest.fn().mockReturnValue(true);
-      Object.defineProperty(document, 'execCommand', {
-        configurable: true,
-        value: execCommandMock,
-      });
-
-      const fetchMock = jest.fn(async (input: any) => {
-        const url = String(input);
-        if (url === '/api/runs') {
-          return jsonResponse({ runs: [] });
-        }
-        if (url === '/api/runs/kaseki-1/status') {
-          return jsonResponse({ id: 'kaseki-1', status: 'completed' });
-        }
-        if (url === '/api/runs/kaseki-1/artifacts') {
-          return jsonResponse({
-            recommended: ['result.json'],
-            artifacts: [{ name: 'result.json', contentType: 'application/json' }],
-          });
-        }
-        if (url === '/api/results/kaseki-1/result.json') {
-          return jsonResponse({ copied: true, source: 'artifact' });
-        }
-        throw new Error('Unexpected fetch URL: ' + url);
-      });
-      Object.defineProperty(window, 'fetch', {
-        configurable: true,
-        value: fetchMock,
-      });
-      Object.defineProperty(globalThis, 'fetch', {
-        configurable: true,
-        value: fetchMock,
-      });
-
-      runControllerScript(controllerPage);
-
-      const runIdInput = document.querySelector('#run-id') as any;
-      expect(runIdInput).toBeTruthy();
-      runIdInput!.value = 'kaseki-1';
-
-      (document.querySelector('#status-check') as any).click();
 
       const copyButton = await waitForElement('[aria-label="Copy result.json"]');
       (copyButton as HTMLButtonElement).click();
 
-      await waitFor(() => expect(execCommandMock).toHaveBeenCalledWith('copy'));
-      expect(document.querySelector('.toast.success')?.textContent).toBe('Copied!');
+      await waitFor(() => expect(document.querySelector('.toast.success')?.textContent).toBe('Copied!'));
+      if (expectedPath === 'clipboard') {
+        expect(writeTextMock).toHaveBeenCalledWith(JSON.stringify({ copied: true, source: 'artifact' }, null, 2));
+        expect(execCommandMock).not.toHaveBeenCalled();
+      } else {
+        expect(writeTextMock).not.toHaveBeenCalled();
+        expect(execCommandMock).toHaveBeenCalledWith('copy');
+      }
+    });
+
+    it('should show a failure toast when the artifact UI copy action fallback fails', async () => {
+      const { writeTextMock, execCommandMock } = await setupRecommendedArtifactCopy({
+        clipboardAvailable: false,
+        isSecureContext: false,
+        execCommandResult: false,
+      });
+
+      const copyButton = await waitForElement('[aria-label="Copy result.json"]');
+      (copyButton as HTMLButtonElement).click();
+
+      await waitFor(() => expect(document.querySelector('.toast.error')?.textContent).toBe('Copy failed - please try again'));
+      expect(writeTextMock).not.toHaveBeenCalled();
+      expect(execCommandMock).toHaveBeenCalledWith('copy');
     });
   });
 });
@@ -501,6 +491,78 @@ function runControllerScript(controllerPage: string): void {
   }
   const scriptFunction = new Function(scriptMatch[1]);
   scriptFunction.call(window);
+}
+
+async function setupRecommendedArtifactCopy({
+  clipboardAvailable,
+  isSecureContext,
+  execCommandResult,
+}: {
+  clipboardAvailable: boolean;
+  isSecureContext: boolean;
+  execCommandResult: boolean;
+}): Promise<{ writeTextMock: jest.Mock; execCommandMock: jest.Mock }> {
+  const controllerPage = await getControllerPage();
+  document.open();
+  document.write(controllerPage.replace(/<script>[\s\S]*?<\/script>/, ''));
+  document.close();
+
+  window.sessionStorage.setItem('kasekiApiToken', 'kaseki-test-token');
+
+  const writeTextMock = jest.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: clipboardAvailable ? { writeText: writeTextMock } : undefined,
+  });
+  Object.defineProperty(window, 'isSecureContext', {
+    configurable: true,
+    value: isSecureContext,
+  });
+
+  const execCommandMock = jest.fn().mockReturnValue(execCommandResult);
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: execCommandMock,
+  });
+
+  const fetchMock = jest.fn(async (input: any) => {
+    const url = String(input);
+    if (url === '/api/runs') {
+      return jsonResponse({ runs: [] });
+    }
+    if (url === '/api/runs/kaseki-1/status') {
+      return jsonResponse({ id: 'kaseki-1', status: 'completed' });
+    }
+    if (url === '/api/runs/kaseki-1/artifacts') {
+      return jsonResponse({
+        recommended: ['result.json'],
+        artifacts: [{ name: 'result.json', contentType: 'application/json' }],
+      });
+    }
+    if (url === '/api/results/kaseki-1/result.json') {
+      return jsonResponse({ copied: true, source: 'artifact' });
+    }
+    throw new Error('Unexpected fetch URL: ' + url);
+  });
+  Object.defineProperty(window, 'fetch', {
+    configurable: true,
+    value: fetchMock,
+  });
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    value: fetchMock,
+  });
+
+  runControllerScript(controllerPage);
+
+  const runIdInput = document.querySelector('#run-id') as HTMLInputElement | null;
+  expect(runIdInput).toBeTruthy();
+  runIdInput!.value = 'kaseki-1';
+
+  (document.querySelector('#status-check') as HTMLButtonElement).click();
+  await waitForElement('[aria-label="Copy result.json"]');
+
+  return { writeTextMock, execCommandMock };
 }
 
 function jsonResponse(payload: unknown): Response {
