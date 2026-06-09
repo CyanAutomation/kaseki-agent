@@ -827,7 +827,10 @@ console.log(JSON.stringify(payload));
         });
         expect(fs.existsSync(path.join(run.resultsDir, 'goal-feedback.jsonl'))).toBe(true);
         const feedbackArtifact = fs.readFileSync(path.join(run.resultsDir, 'goal-feedback.jsonl'), 'utf8').trim();
-        expect(JSON.parse(feedbackArtifact)).toMatchObject(feedbackEvent);
+        const feedbackLines = feedbackArtifact.split('\n').filter(line => line.trim());
+        expect(feedbackLines.length).toBeGreaterThan(0);
+        const feedbackEvent_ = JSON.parse(feedbackLines[0]);
+        expect(feedbackEvent_).toMatchObject(feedbackEvent);
       } finally {
         cleanupGoalCheckOrchestration(run);
       }

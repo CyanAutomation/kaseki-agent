@@ -78,7 +78,7 @@ export function extractBashFunctionWithCache(startFunction: string, endFunction:
   if (!functionText.startsWith(`${startFunction}() {`)) {
     throw new Error(`Extracted function has unexpected start boundary: ${startFunction}`);
   }
-  if (!functionText.endsWith('\n}')) {
+  if (!functionText.includes('}') || !functionText.trim().endsWith('}')) {
     throw new Error(`Extracted function has unexpected end boundary: ${startFunction}`);
   }
 

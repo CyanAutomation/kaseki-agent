@@ -60,11 +60,11 @@ export class TreeSitterSummarizer {
     case 'typescript':
     case 'javascript': {
       // tree-sitter-typescript exports the binding directly or via .default
-      lang = TypeScript?.typescript || (TypeScript as any).default?.typescript || TypeScript;
+      lang = (TypeScript as any).typescript || (TypeScript as any).default?.typescript || TypeScript;
       break;
     }
     case 'go': {
-      lang = Go?.go || (Go as any).default?.go || Go;
+      lang = Go;
       break;
     }
     default:
