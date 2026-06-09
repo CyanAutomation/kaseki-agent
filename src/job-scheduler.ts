@@ -9,7 +9,10 @@ import {
   WebhookEventType,
   WebhookPayload,
 } from './kaseki-api-types';
-import { KasekiApiConfig } from './kaseki-api-config';
+import {
+  DEFAULT_JOB_INDEX_MAX_ENTRIES,
+  KasekiApiConfig,
+} from './kaseki-api-config';
 import { createEventLogger, EventLogger } from './logger';
 import { WebhookManager } from './webhook-manager';
 import { metricsRegistry } from './metrics';
@@ -1043,6 +1046,62 @@ export class JobScheduler {
     this.artifactCache?.clearForJob(jobId);
   }
 
+  private clearJobCaches(job: Job): void {
+    clearRunArtifactMetadataCache(job.id, job.resultDir);
+    this.clearArtifactContentCache(job.id);
+    this.clearLiveProgressCache(job.id);
+  }
+
+  private isTerminalJob(job: Job): boolean {
+    return job.status === 'completed' || job.status === 'failed';
+  }
+
+  private getTerminalJobRecency(job: Job): number {
+    return (
+      job.completedAt ??
+      job.startedAt ??
+      job.createdAt
+    ).getTime();
+  }
+
+  private getJobIndexMaxEntries(): number {
+    return this.config.jobIndexMaxEntries ?? DEFAULT_JOB_INDEX_MAX_ENTRIES;
+  }
+
+  private compareTerminalJobsByRecency(a: Job, b: Job): number {
+    const recencyDiff =
+      this.getTerminalJobRecency(b) - this.getTerminalJobRecency(a);
+    if (recencyDiff !== 0) {
+      return recencyDiff;
+    }
+    return b.createdAt.getTime() - a.createdAt.getTime();
+  }
+
+  private pruneTerminalJobsIndex(): void {
+    const terminalJobs = Array.from(this.jobs.values()).filter((job) =>
+      this.isTerminalJob(job),
+    );
+    const maxTerminalJobs = this.getJobIndexMaxEntries();
+    if (terminalJobs.length <= maxTerminalJobs) {
+      return;
+    }
+
+    const retainedTerminalJobIds = new Set(
+      terminalJobs
+        .sort((a, b) => this.compareTerminalJobsByRecency(a, b))
+        .slice(0, maxTerminalJobs)
+        .map((job) => job.id),
+    );
+
+    for (const job of terminalJobs) {
+      if (retainedTerminalJobIds.has(job.id)) {
+        continue;
+      }
+      this.jobs.delete(job.id);
+      this.clearJobCaches(job);
+    }
+  }
+
   /**
    * Clean up after job completion.
    */
@@ -1078,9 +1137,8 @@ export class JobScheduler {
       this.timeoutKillTimers.delete(job.id);
     }
     this.processExited.delete(job.id);
-    clearRunArtifactMetadataCache(job.id, job.resultDir);
-    this.clearArtifactContentCache(job.id);
-    this.clearLiveProgressCache(job.id);
+    this.clearJobCaches(job);
+    this.pruneTerminalJobsIndex();
     void this.persistJobs();
     this.processQueue();
     metricsRegistry.setQueuePending(this.queue.length);
@@ -1259,6 +1317,7 @@ export class JobScheduler {
     for (const job of queuedJobs) {
       this.queue.push(job);
     }
+    this.pruneTerminalJobsIndex();
 
     if (status === 'lock_contention') {
       this.logger.event('persisted_jobs_load_skipped_lock_contention', {
