@@ -32,7 +32,7 @@ export class GoCliSummarizer {
    * Summarize Go code using tree-sitter CLI
    * Accepts content string, creates temp file, and parses via CLI
    */
-  summarize(contentOrPath: string, timeoutMs: number = 200): CodeSummary {
+  summarize(contentOrPath: string, timeoutMs: number = 1000): CodeSummary {
     const startTime = performance.now();
 
     try {
