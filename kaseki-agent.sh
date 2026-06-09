@@ -2808,6 +2808,14 @@ save_baseline_validation_to_cache() {
 
 checkout_baseline_repo() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
+  local baseline_checkout_log="${KASEKI_RESULTS_DIR}/baseline-checkout.log"
+  local baseline_npm_ci_log="${KASEKI_RESULTS_DIR}/baseline-npm-ci.log"
+
+  # Ensure primary baseline log paths are writable before any redirection.
+  if ! mkdir -p "$(dirname "$baseline_checkout_log")" "$(dirname "$baseline_npm_ci_log")"; then
+    emit_error_event "baseline_log_dir_failed" "Failed to create baseline log directory under ${KASEKI_RESULTS_DIR}" "continue"
+    return 1
+  fi
   
   # Clean up any existing baseline
   rm -rf "$baseline_dir" 2>/dev/null || true
@@ -2816,7 +2824,7 @@ checkout_baseline_repo() {
   emit_progress "baseline preparation" "checking out main branch"
   
   # Clone main branch into baseline directory
-  if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$KASEKI_LOG_DIR/baseline-checkout.log"; then
+  if ! git clone --depth 1 --branch main "$REPO_URL" "$baseline_dir" 2>>"$baseline_checkout_log"; then
     emit_error_event "baseline_checkout_failed" "Failed to checkout main branch for baseline comparison" "continue"
     return 1
   fi
@@ -2824,7 +2832,7 @@ checkout_baseline_repo() {
   # Install dependencies in baseline
   if [ -f "$baseline_dir/package.json" ]; then
     emit_progress "baseline preparation" "installing baseline dependencies"
-    if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$KASEKI_LOG_DIR/baseline-npm-ci.log"; then
+    if ! cd "$baseline_dir" && npm ci --prefer-offline 2>>"$baseline_npm_ci_log"; then
       emit_error_event "baseline_deps_failed" "Failed to install baseline dependencies" "continue"
       cd "${KASEKI_WORKSPACE_DIR}"/repo
       return 1
