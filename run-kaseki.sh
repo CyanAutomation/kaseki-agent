@@ -1163,6 +1163,9 @@ docker_args=(
 )
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(
+    -e GITHUB_APP_ID_FILE="/run/secrets/github_app_id"
+    -e GITHUB_APP_CLIENT_ID_FILE="/run/secrets/github_app_client_id"
+    -e GITHUB_APP_PRIVATE_KEY_FILE="/run/secrets/github_app_private_key"
     -v "$GITHUB_APP_ID_FILE:/run/secrets/github_app_id:ro"
     -v "$GITHUB_APP_CLIENT_ID_FILE:/run/secrets/github_app_client_id:ro"
     -v "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE:/run/secrets/github_app_private_key:ro"
