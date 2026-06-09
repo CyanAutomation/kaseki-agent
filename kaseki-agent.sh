@@ -3039,6 +3039,7 @@ run_validation_commands() {
   local stopped_var="${11:-VALIDATION_STOPPED_EARLY}"
   local attempted_var="${12:-VALIDATION_COMMANDS_ATTEMPTED}"
   local -n validation_exit_ref="$exit_var"
+  validation_exit_ref=0
   local -n validation_detail_ref="$detail_var"
   # shellcheck disable=SC2034 # These are reference variables assigned indirectly via function parameters
   local -n validation_reason_ref="$reason_var"
@@ -3074,12 +3075,12 @@ run_validation_commands() {
   else
     # Checkpoint: Verify working directory exists before validation.
     if ! [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
-      printf 'ERROR: Working directory "${KASEKI_WORKSPACE_DIR}"/repo does not exist before %s\n' "$stage_label" | tee -a "$log_file"
+      printf 'ERROR: Working directory %s/repo does not exist before %s\n' "$KASEKI_WORKSPACE_DIR" "$stage_label" | tee -a "$log_file"
       printf 'Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')" | tee -a "$log_file"
       printf 'Filesystem state:\n' | tee -a "$log_file"
       find /workspace -maxdepth 3 -type f 2>&1 | head -100 | tee -a "$log_file"
       validation_exit_ref=1
-      validation_detail_ref="Working directory "${KASEKI_WORKSPACE_DIR}"/repo missing before $stage_label"
+      validation_detail_ref="Working directory ${KASEKI_WORKSPACE_DIR}/repo missing before $stage_label"
       validation_reason_ref="$failure_reason_prefix: workspace_missing"
       record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" "directory_missing"
     else
@@ -3219,7 +3220,7 @@ run_validation_commands() {
               printf '\n[DIAGNOSTICS] Validation command failed with directory access error:\n'
               printf 'Working directory status:\n'
               printf '  Current pwd: %s\n' "$(pwd 2>&1 || echo '<pwd failed>')"
-              printf '  "${KASEKI_WORKSPACE_DIR}"/repo exists: %s\n' "$([ -d ${KASEKI_WORKSPACE_DIR}/repo ] && echo 'yes' || echo 'no')"
+              printf '  %s/repo exists: %s\n' "$KASEKI_WORKSPACE_DIR" "$([ -d "${KASEKI_WORKSPACE_DIR}/repo" ] && echo 'yes' || echo 'no')"
               if [ -L "${KASEKI_WORKSPACE_DIR}"/repo/node_modules ]; then
                 printf '  node_modules is symlink → %s\n' "$(readlink "${KASEKI_WORKSPACE_DIR}"/repo/node_modules 2>&1 || echo '<readlink failed>')"
               fi
@@ -3242,6 +3243,10 @@ run_validation_commands() {
       set +e
     fi
     record_stage_timing "$stage_label" "$validation_exit_ref" "$(($(date +%s) - stage_start))" ""
+  fi
+  if [[ ! "$validation_exit_ref" =~ ^[0-9]+$ ]]; then
+    printf 'ERROR: Validation exit target %s contained non-integer value: %s\n' "$exit_var" "$validation_exit_ref" | tee -a "$log_file"
+    validation_exit_ref=1
   fi
   emit_progress "$stage_label" "finished with exit $validation_exit_ref"
   return "$validation_exit_ref"
@@ -7311,6 +7316,7 @@ else
     /dev/null \
     "$PRE_VALIDATION_RAW_LOG" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
+    "${KASEKI_RESULTS_DIR}/pre-agent-validation-env.log" \
     "pre_agent_validation_failed" \
     PRE_VALIDATION_EXIT \
     PRE_VALIDATION_FAILED_COMMAND_DETAIL \
@@ -7846,6 +7852,7 @@ if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KA
     "${KASEKI_RESULTS_DIR}"/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
+    "${KASEKI_RESULTS_DIR}/validation-env.log" \
     "validation_command_failed"
 elif [ "$QUALITY_EXIT" -ne 0 ]; then
   printf '\n==> validation\n'
@@ -7872,6 +7879,7 @@ else
     "${KASEKI_RESULTS_DIR}"/validation.log \
     "$VALIDATION_RAW_LOG" \
     "$VALIDATION_TIMINGS_FILE" \
+    "${KASEKI_RESULTS_DIR}/validation-env.log" \
     "validation_command_failed"
   
   # Analyze validation failure causality if validation failed
