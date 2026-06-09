@@ -224,7 +224,9 @@ describe('kaseki API web console behavior', () => {
       },
     });
 
-    document.querySelector<HTMLInputElement>('#run-id')!.value = 'kaseki-201';
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-201';
     click(document.querySelector('#status-check'));
 
     await waitFor(() => expect(document.querySelectorAll('#recommended-artifact-links button[data-artifact-file]')).toHaveLength(1));
