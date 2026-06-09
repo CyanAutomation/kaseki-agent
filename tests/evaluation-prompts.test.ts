@@ -18,7 +18,6 @@ describe('Evaluation Prompt Enhancements', () => {
   let cachedScriptContent: string;
   let cachedGoalCheckSection: string;
   let cachedRunEvaluationSection: string;
-  let cachedScoutingSection: string;
   let cachedAgentSection: string;
   const projectRoot = process.cwd();
 
@@ -39,10 +38,6 @@ describe('Evaluation Prompt Enhancements', () => {
     cachedRunEvaluationSection = cachedScriptContent.substring(
       cachedScriptContent.indexOf('build_run_evaluation_prompt()'),
       cachedScriptContent.indexOf('build_run_evaluation_prompt()') + 20000
-    );
-    cachedScoutingSection = cachedScriptContent.substring(
-      cachedScriptContent.indexOf('build_scouting_prompt()'),
-      cachedScriptContent.indexOf('run_scouting_agent()')
     );
     cachedAgentSection = cachedScriptContent.substring(
       cachedScriptContent.indexOf('build_agent_prompt()'),
@@ -280,6 +275,161 @@ build_run_evaluation_prompt
     }
   };
 
+  const extractScoutingPromptFunction = () => {
+    const startMarker = 'build_scouting_prompt() {';
+    const endMarker = '\n}\n\nrun_scouting_agent() {';
+    const startIndex = cachedScriptContent.indexOf(startMarker);
+    if (startIndex === -1) {
+      throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
+    }
+
+    const endIndex = cachedScriptContent.indexOf(endMarker, startIndex);
+    if (endIndex === -1) {
+      throw new Error('Unable to find expected build_scouting_prompt boundary before run_scouting_agent');
+    }
+
+    const functionText = cachedScriptContent.slice(startIndex, endIndex + '\n}'.length);
+    const nestedFunctionDefinitions = functionText.match(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{/gm) ?? [];
+    const expectedMarkers = [
+      'build_scouting_prompt() {',
+      'The JSON object must be concise and useful to the coding agent. Use this shape:',
+      'Guidelines for test_impact:',
+      'Enhanced Guidelines by Change Type:',
+      'Guidelines for critical_change_expectations:',
+      '$TASK_PROMPT',
+      'EOF',
+    ];
+
+    if (!functionText.startsWith(startMarker)) {
+      throw new Error('Extracted scouting prompt function has an unexpected start boundary');
+    }
+    if (!functionText.endsWith('\n}')) {
+      throw new Error('Extracted scouting prompt function has an unexpected end boundary');
+    }
+    if (functionText.includes('\nrun_scouting_agent() {')) {
+      throw new Error('Extracted scouting prompt function includes run_scouting_agent');
+    }
+    if (nestedFunctionDefinitions.length !== 1 || nestedFunctionDefinitions[0] !== startMarker) {
+      throw new Error('Extracted scouting prompt function includes unexpected function definitions');
+    }
+
+    const missingMarkers = expectedMarkers.filter(marker => !functionText.includes(marker));
+    if (missingMarkers.length > 0) {
+      throw new Error(
+        `Extracted scouting prompt function is missing expected markers: ${missingMarkers.join(', ')}`
+      );
+    }
+
+    return functionText;
+  };
+
+  const renderScoutingPrompt = () => {
+    let tmpDir: string | undefined;
+
+    try {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scouting-renderer-'));
+      const functionPath = path.join(tmpDir, 'scouting-function.sh');
+      const rendererPath = path.join(tmpDir, 'render-scouting-prompt.sh');
+
+      fs.writeFileSync(functionPath, `${extractScoutingPromptFunction()}\n`, { mode: 0o600 });
+      execFileSync('bash', ['-n', functionPath]);
+
+      fs.writeFileSync(
+        rendererPath,
+        `#!/usr/bin/env bash
+set -euo pipefail
+
+FUNCTION_SOURCE="$1"
+SCOUTING_CANDIDATE_ARTIFACT="$2/scouting-candidate.json"
+TASK_PROMPT="Refactor parser output naming and progress event fields while keeping tests aligned."
+
+# shellcheck source=/dev/null
+source "$FUNCTION_SOURCE"
+
+if ! declare -f build_scouting_prompt > /dev/null; then
+  echo "Error: build_scouting_prompt function not found or has no body" >&2
+  exit 1
+fi
+
+build_scouting_prompt
+`,
+        { mode: 0o700 }
+      );
+
+      return execFileSync('bash', [rendererPath, functionPath, tmpDir], { encoding: 'utf8' });
+    } finally {
+      if (tmpDir) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }
+  };
+
+  const extractSection = (text: string, startMarker: string, endMarker: string) => {
+    const start = text.indexOf(startMarker);
+    const end = text.indexOf(endMarker, start);
+    if (start === -1 || end === -1) {
+      throw new Error(`Unable to extract section from ${startMarker} to ${endMarker}`);
+    }
+
+    return text.slice(start, end);
+  };
+
+  const extractNumberedSection = (text: string, heading: string) => {
+    const start = text.indexOf(heading);
+    if (start === -1) {
+      throw new Error(`Unable to extract numbered scouting guidance section ${heading}`);
+    }
+
+    const nextHeading = text.slice(start + heading.length).match(/\n\d+\. \*\*/);
+    const end = nextHeading ? start + heading.length + nextHeading.index! : text.length;
+    return text.slice(start, end);
+  };
+
+  const extractScoutingTestImpactContract = (prompt: string) => {
+    const schemaSection = extractSection(
+      prompt,
+      'The JSON object must be concise and useful to the coding agent. Use this shape:',
+      'Guidelines for test_impact:'
+    );
+    const testImpactGuidanceSection = extractSection(
+      prompt,
+      'Guidelines for test_impact:',
+      'Examples of strong test_impact entries with test_examples:'
+    );
+    const changeTypeGuidanceSection = extractSection(
+      prompt,
+      'Enhanced Guidelines by Change Type:',
+      'Guidelines for critical_change_expectations:'
+    );
+    const topLevelFields = [...schemaSection.matchAll(/^  "([^"]+)":/gm)].map(match => match[1]);
+    const testImpactShape = schemaSection.match(/"test_impact": \[\{([^\n]+)\}\]/)?.[1] ?? '';
+    const testImpactFields = [...testImpactShape.matchAll(/"([^"]+)":/g)].map(match => match[1]);
+    const testExampleFields = [...testImpactGuidanceSection.matchAll(/- \*\*([^*]+)\*\*:/g)].map(match => match[1]);
+    const requiresImpactedTests = (section: string) => /Typical test_impact:/i.test(section)
+      && /Tests?|assertions?|expectations?|Files to check:/i.test(section);
+
+    return {
+      schema: {
+        topLevelFields,
+        testImpactFields,
+      },
+      testImpactGuidance: {
+        requiresAlwaysIncludedField: /Always include test_impact/i.test(testImpactGuidanceSection),
+        allowsEmptyOnlyWhenNoAffectedTests: /empty array only when no likely affected tests/i.test(testImpactGuidanceSection),
+        mapsExpectationStringsToImpactedTests: /identify likely affected test files/i.test(testImpactGuidanceSection)
+          && /expectation strings or snapshots\/assertions/i.test(testImpactGuidanceSection)
+          && /trigger related test updates/i.test(testImpactGuidanceSection),
+        testExampleFields,
+      },
+      changeMappings: {
+        parserLogic: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '1. **Parser & Regex Changes**')),
+        progressEventFields: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '2. **Event Handling & Progress Changes**')),
+        outputFormat: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '3. **Response Construction & Serialization**')),
+        namingConventions: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '4. **Naming Conventions & Constants**')),
+      },
+    };
+  };
+
   const extractRunEvaluationJsonContract = (prompt: string) => {
     const contractHeader = '## Required JSON Output';
     const rulesHeader = '## Rules';
@@ -448,13 +598,24 @@ build_run_evaluation_prompt
   });
 
   describe('Scouting and Coding Prompt Test Impact Guidance', () => {
-    it('should require scouting JSON test impact for parser and output contract changes', () => {
-      expect(cachedScoutingSection).toContain('"test_impact"');
-      expect(cachedScoutingSection).toContain('parsing logic');
-      expect(cachedScoutingSection).toContain('output format');
-      expect(cachedScoutingSection).toContain('naming conventions');
-      expect(cachedScoutingSection).toContain('expectation strings');
-      expect(cachedScoutingSection).toContain('progress/event fields');
+    it('should define a structured scouting test impact contract for parser and output contract changes', () => {
+      const prompt = renderScoutingPrompt();
+      const contract = extractScoutingTestImpactContract(prompt);
+
+      expect(contract.schema.topLevelFields).toContain('test_impact');
+      expect(contract.schema.testImpactFields).toEqual(['path', 'reason']);
+      expect(contract.testImpactGuidance).toEqual({
+        requiresAlwaysIncludedField: true,
+        allowsEmptyOnlyWhenNoAffectedTests: true,
+        mapsExpectationStringsToImpactedTests: true,
+        testExampleFields: ['type', 'before', 'after', 'pattern', 'description'],
+      });
+      expect(contract.changeMappings).toEqual({
+        parserLogic: true,
+        progressEventFields: true,
+        outputFormat: true,
+        namingConventions: true,
+      });
     });
 
     it('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
