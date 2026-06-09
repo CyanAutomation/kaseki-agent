@@ -1,6 +1,6 @@
 /**
  * Temporary directory lifecycle management
- * 
+ *
  * Utilities for managing temporary directories with proper cleanup
  * and optional reuse across test scenarios.
  */
@@ -16,7 +16,7 @@ export interface TempDirPoolConfig {
 
 /**
  * Create a temporary directory with cleanup tracking
- * 
+ *
  * @param prefix Prefix for the temp directory name
  * @returns Object with tmpDir path and cleanup function
  */
@@ -35,7 +35,7 @@ export function createTempDir(prefix = 'kaseki-test-'): { tmpDir: string; cleanu
 
 /**
  * Create multiple subdirectories in a temp dir efficiently
- * 
+ *
  * @param tmpDir Base temporary directory
  * @param subdirs Array of subdirectory names to create
  * @returns Object mapping names to full paths
@@ -57,7 +57,7 @@ export function createSubdirs(
 
 /**
  * Initialize common test directories for orchestration scenarios
- * 
+ *
  * @param tmpDir Base temporary directory
  * @returns Object with paths to common test directories
  */
@@ -161,7 +161,7 @@ export function clearGlobalTempDirPool(): void {
 
 /**
  * Ensure temp directory exists with subdirectories
- * 
+ *
  * @param tmpDir Path to temp directory
  * @param subdirs Array of subdirectories to ensure exist
  */

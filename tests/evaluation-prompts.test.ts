@@ -64,7 +64,7 @@ describe('Evaluation Prompt Enhancements', () => {
   const extractGoalCheckPromptFunction = () => {
     // Use cached extraction from utility (avoids re-reading and re-parsing file)
     const functionText = extractBashFunctionWithCache('build_goal_check_prompt', 'run_goal_check');
-    
+
     const expectedMarkers = [
       'build_goal_check_prompt() {',
       'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
@@ -146,7 +146,7 @@ build_goal_check_prompt
   const extractRunEvaluationPromptFunction = () => {
     // Use cached extraction from utility (avoids re-reading and re-parsing file)
     const functionText = extractBashFunctionWithCache('build_run_evaluation_prompt', 'write_run_evaluation_fallback');
-    
+
     const expectedMarkers = [
       'build_run_evaluation_prompt() {',
       'draft_pr_body="$(build_pr_body)"',
@@ -240,7 +240,7 @@ build_run_evaluation_prompt
   const extractScoutingPromptFunction = () => {
     // Use cached extraction from utility (avoids re-reading and re-parsing file)
     const functionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
-    
+
     const expectedMarkers = [
       'build_scouting_prompt() {',
       'The JSON object must be concise and useful to the coding agent. Use this shape:',
