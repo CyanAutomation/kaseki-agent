@@ -2,7 +2,7 @@
  * Tests for SummaryCache
  * Real tests for cache invalidation and no stale summaries
  */
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -23,6 +23,8 @@ describe('SummaryCache', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
+
     // Cleanup
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true });
@@ -93,6 +95,99 @@ describe('SummaryCache', () => {
       // Change beginning
       fs.writeFileSync(testFile, 'export class B {}');
       expect(cache.get(testFile)).toBeNull();
+    });
+  });
+
+  describe('Bounded Cache Eviction', () => {
+    function writeTestFile(name: string, content = 'export class Example {}'): string {
+      const filePath = path.join(cacheDir, name);
+      fs.writeFileSync(filePath, content);
+      return filePath;
+    }
+
+    it('should evict least-recently-used entries when maxEntries is exceeded', () => {
+      cache = new SummaryCache(cacheDir, { maxEntries: 2 });
+      const file1 = writeTestFile('lru-1.ts', 'export class A {}');
+      const file2 = writeTestFile('lru-2.ts', 'export class B {}');
+      const file3 = writeTestFile('lru-3.ts', 'export class C {}');
+
+      cache.set(file1, 'summary-1', 'typescript');
+      cache.set(file2, 'summary-2', 'typescript');
+
+      // Refresh file1 recency, making file2 the least-recently-used entry.
+      expect(cache.get(file1)?.content).toEqual('summary-1');
+      cache.set(file3, 'summary-3', 'typescript');
+
+      expect(cache.get(file1)?.content).toEqual('summary-1');
+      expect(cache.get(file2)).toBeNull();
+      expect(cache.get(file3)?.content).toEqual('summary-3');
+
+      const stats = cache.getStats();
+      expect(stats.entries).toEqual(2);
+      expect(stats.evictions).toBeGreaterThanOrEqual(1);
+      expect(stats.maxEntries).toEqual(2);
+    });
+
+    it('should evict least-recently-used entries when maxSizeBytes is exceeded', () => {
+      cache = new SummaryCache(cacheDir, { maxSizeBytes: 10 });
+      const file1 = writeTestFile('size-1.ts', 'export class A {}');
+      const file2 = writeTestFile('size-2.ts', 'export class B {}');
+      const file3 = writeTestFile('size-3.ts', 'export class C {}');
+
+      cache.set(file1, '1234', 'typescript');
+      cache.set(file2, '5678', 'typescript');
+      cache.set(file3, 'abcd', 'typescript');
+
+      expect(cache.get(file1)).toBeNull();
+      expect(cache.get(file2)?.content).toEqual('5678');
+      expect(cache.get(file3)?.content).toEqual('abcd');
+
+      const stats = cache.getStats();
+      expect(stats.entries).toEqual(2);
+      expect(stats.sizeBytes).toBeLessThanOrEqual(10);
+      expect(stats.maxSizeBytes).toEqual(10);
+      expect(stats.evictions).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should expire entries on get without explicit external cleanup', () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+      cache = new SummaryCache(cacheDir, { ttlMs: 1000 });
+      const file1 = writeTestFile('ttl-1.ts', 'export class A {}');
+
+      cache.set(file1, 'ttl-summary', 'typescript');
+      expect(cache.get(file1)?.content).toEqual('ttl-summary');
+
+      jest.setSystemTime(new Date('2026-01-01T00:00:02Z'));
+
+      expect(cache.get(file1)).toBeNull();
+      const stats = cache.getStats();
+      expect(stats.entries).toEqual(0);
+      expect(stats.misses).toBeGreaterThanOrEqual(1);
+      expect(stats.evictions).toBeGreaterThanOrEqual(1);
+      expect(stats.ttlMs).toEqual(1000);
+    });
+
+    it('should persist retained entries after evictions', () => {
+      cache = new SummaryCache(cacheDir, { maxEntries: 2 });
+      const file1 = writeTestFile('persist-1.ts', 'export class A {}');
+      const file2 = writeTestFile('persist-2.ts', 'export class B {}');
+      const file3 = writeTestFile('persist-3.ts', 'export class C {}');
+
+      cache.set(file1, 'persist-summary-1', 'typescript');
+      cache.set(file2, 'persist-summary-2', 'typescript');
+      expect(cache.get(file1)?.content).toEqual('persist-summary-1');
+      cache.set(file3, 'persist-summary-3', 'typescript');
+      cache.flush();
+
+      const restored = new SummaryCache(cacheDir, { maxEntries: 2 });
+      restored.load();
+
+      expect(restored.get(file1)?.content).toEqual('persist-summary-1');
+      expect(restored.get(file2)).toBeNull();
+      expect(restored.get(file3)?.content).toEqual('persist-summary-3');
+      expect(restored.getStats().entries).toEqual(2);
     });
   });
 
