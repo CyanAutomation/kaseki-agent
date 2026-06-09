@@ -105,10 +105,10 @@ describe('Documentation integrity', () => {
 
   const splitLink = (link: string): { filePart: string; anchor?: string } => {
     const [rawFilePart, rawAnchor] = link.split('#');
-    const [filePart] = rawFilePart.split(/[?;]/);
+    const [filePart] = rawFilePart.split(/[?;]/).map(s => s.trim());
 
     return {
-      filePart: decodeURIComponent(filePart),
+      filePart: filePart ? decodeURIComponent(filePart) : '',
       anchor: rawAnchor ? decodeURIComponent(rawAnchor) : undefined,
     };
   };
