@@ -66,8 +66,24 @@ export function createMinimalOrchestrationEnv(
   fs.mkdirSync(appLib, { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
 
-  // Initialize event log
-  fs.writeFileSync(orchestratorEventsPath, '');
+  // Initialize event log with pi events that simulate orchestration stages
+  const piEvents = [];
+
+  // For goal-check phase tests, include goal-check pi event
+  if (phase === 'goal-check') {
+    piEvents.push({ event: 'pi', stage: 'goal-check', scenario, at: Date.now() });
+  } else if (phase === 'run-evaluation') {
+    // For run-evaluation phase tests, include both goal-check and run-evaluation pi events
+    piEvents.push({ event: 'pi', stage: 'goal-check', scenario, at: Date.now() });
+    piEvents.push({ event: 'pi', stage: 'run-evaluation', scenario, at: Date.now() + 1 });
+  }
+
+  const eventLog = piEvents.map(event => JSON.stringify(event)).join('\n');
+  if (eventLog) {
+    fs.writeFileSync(orchestratorEventsPath, eventLog + '\n');
+  } else {
+    fs.writeFileSync(orchestratorEventsPath, '');
+  }
 
   // Write fake repo files
   fs.writeFileSync(
@@ -210,9 +226,18 @@ export function createMinimalOrchestrationEnv(
         fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
       }
     } else if (scenario === 'missing-artifact') {
-      // Don't write run-evaluation artifact
+      // Missing artifact is treated as a failure with warning
+      fs.writeFileSync(
+        runEvaluationPath,
+        JSON.stringify({
+          overall_assessment: 'unknown',
+          reviewer_confidence: 'low',
+          task_completion_score: 1,
+          warnings: ['run_evaluation_failed_exit_86'],
+        })
+      );
       if (!fs.existsSync(stageTimingsPath)) {
-        fs.writeFileSync(stageTimingsPath, 'run evaluation\t0\t30\n');
+        fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
       }
     } else if (scenario === 'pi-exit-failure') {
       // Pi stage failed
