@@ -2,6 +2,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync, spawnSync } from 'child_process';
+import {
+  getCachedScriptContent,
+  extractBashFunctionWithCache,
+  clearCaches,
+} from '../src/test-utils/bash-script-cache';
+import {
+  createFakeBinariesDir,
+  createPiWithOrchestrationLogging,
+} from '../src/test-utils/fake-binaries';
+import { createFakeGitRepoWithCommit } from '../src/test-utils/fake-git-repo';
+import {
+  createTempDir,
+  initializeTestDirs,
+  getGlobalTempDirPool,
+  clearGlobalTempDirPool,
+} from '../src/test-utils/temp-dir-manager';
 
 /**
  * Tests for evaluation prompt enhancements
@@ -27,8 +43,8 @@ describe('Evaluation Prompt Enhancements', () => {
       throw new Error(`kaseki-agent.sh not found at ${kasekiAgentPath}`);
     }
 
-    // Cache the entire script content once to avoid repeated file reads
-    cachedScriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
+    // Use cached script content (reads file only once per test suite)
+    cachedScriptContent = getCachedScriptContent();
 
     // Pre-extract commonly used sections
     cachedGoalCheckSection = cachedScriptContent.substring(
@@ -45,27 +61,18 @@ describe('Evaluation Prompt Enhancements', () => {
     );
   });
 
+  afterAll(() => {
+    clearGlobalTempDirPool();
+  });
+
   const writeJson = (filePath: string, value: unknown) => {
     fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
   };
 
   const extractGoalCheckPromptFunction = () => {
-    // Use cached script content instead of reading file
-    const scriptContent = cachedScriptContent;
-    const startMarker = 'build_goal_check_prompt() {';
-    const endMarker = '\n}\n\nrun_goal_check() {';
-    const startIndex = scriptContent.indexOf(startMarker);
-    if (startIndex === -1) {
-      throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
-    }
-
-    const endIndex = scriptContent.indexOf(endMarker, startIndex);
-    if (endIndex === -1) {
-      throw new Error('Unable to find expected build_goal_check_prompt boundary before run_goal_check');
-    }
-
-    const functionText = scriptContent.slice(startIndex, endIndex + '\n}'.length);
-    const nestedFunctionDefinitions = functionText.match(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{/gm) ?? [];
+    // Use cached extraction from utility (avoids re-reading and re-parsing file)
+    const functionText = extractBashFunctionWithCache('build_goal_check_prompt', 'run_goal_check');
+    
     const expectedMarkers = [
       'build_goal_check_prompt() {',
       'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
@@ -83,19 +90,6 @@ describe('Evaluation Prompt Enhancements', () => {
       '$progress_tail',
       'EOF',
     ];
-
-    if (!functionText.startsWith(startMarker)) {
-      throw new Error('Extracted goal-check prompt function has an unexpected start boundary');
-    }
-    if (!functionText.endsWith('\n}')) {
-      throw new Error('Extracted goal-check prompt function has an unexpected end boundary');
-    }
-    if (functionText.includes('\nrun_goal_check() {')) {
-      throw new Error('Extracted goal-check prompt function includes run_goal_check');
-    }
-    if (nestedFunctionDefinitions.length !== 1 || nestedFunctionDefinitions[0] !== startMarker) {
-      throw new Error('Extracted goal-check prompt function includes unexpected function definitions');
-    }
 
     const missingMarkers = expectedMarkers.filter(marker => !functionText.includes(marker));
     if (missingMarkers.length > 0) {
@@ -158,20 +152,9 @@ build_goal_check_prompt
   };
 
   const extractRunEvaluationPromptFunction = () => {
-    const startMarker = 'build_run_evaluation_prompt() {';
-    const endMarker = '\n}\n\nwrite_run_evaluation_fallback() {';
-    const startIndex = cachedScriptContent.indexOf(startMarker);
-    if (startIndex === -1) {
-      throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
-    }
-
-    const endIndex = cachedScriptContent.indexOf(endMarker, startIndex);
-    if (endIndex === -1) {
-      throw new Error('Unable to find expected build_run_evaluation_prompt boundary before write_run_evaluation_fallback');
-    }
-
-    const functionText = cachedScriptContent.slice(startIndex, endIndex + '\n}'.length);
-    const nestedFunctionDefinitions = functionText.match(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{/gm) ?? [];
+    // Use cached extraction from utility (avoids re-reading and re-parsing file)
+    const functionText = extractBashFunctionWithCache('build_run_evaluation_prompt', 'write_run_evaluation_fallback');
+    
     const expectedMarkers = [
       'build_run_evaluation_prompt() {',
       'draft_pr_body="$(build_pr_body)"',
@@ -184,19 +167,6 @@ build_goal_check_prompt
       '## Rules',
       'EOF',
     ];
-
-    if (!functionText.startsWith(startMarker)) {
-      throw new Error('Extracted run-evaluation prompt function has an unexpected start boundary');
-    }
-    if (!functionText.endsWith('\n}')) {
-      throw new Error('Extracted run-evaluation prompt function has an unexpected end boundary');
-    }
-    if (functionText.includes('\nwrite_run_evaluation_fallback() {')) {
-      throw new Error('Extracted run-evaluation prompt function includes write_run_evaluation_fallback');
-    }
-    if (nestedFunctionDefinitions.length !== 1 || nestedFunctionDefinitions[0] !== startMarker) {
-      throw new Error('Extracted run-evaluation prompt function includes unexpected function definitions');
-    }
 
     const missingMarkers = expectedMarkers.filter(marker => !functionText.includes(marker));
     if (missingMarkers.length > 0) {
@@ -276,20 +246,9 @@ build_run_evaluation_prompt
   };
 
   const extractScoutingPromptFunction = () => {
-    const startMarker = 'build_scouting_prompt() {';
-    const endMarker = '\n}\n\nrun_scouting_agent() {';
-    const startIndex = cachedScriptContent.indexOf(startMarker);
-    if (startIndex === -1) {
-      throw new Error(`Unable to find expected ${startMarker} signature in kaseki-agent.sh`);
-    }
-
-    const endIndex = cachedScriptContent.indexOf(endMarker, startIndex);
-    if (endIndex === -1) {
-      throw new Error('Unable to find expected build_scouting_prompt boundary before run_scouting_agent');
-    }
-
-    const functionText = cachedScriptContent.slice(startIndex, endIndex + '\n}'.length);
-    const nestedFunctionDefinitions = functionText.match(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{/gm) ?? [];
+    // Use cached extraction from utility (avoids re-reading and re-parsing file)
+    const functionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
+    
     const expectedMarkers = [
       'build_scouting_prompt() {',
       'The JSON object must be concise and useful to the coding agent. Use this shape:',
@@ -299,19 +258,6 @@ build_run_evaluation_prompt
       '$TASK_PROMPT',
       'EOF',
     ];
-
-    if (!functionText.startsWith(startMarker)) {
-      throw new Error('Extracted scouting prompt function has an unexpected start boundary');
-    }
-    if (!functionText.endsWith('\n}')) {
-      throw new Error('Extracted scouting prompt function has an unexpected end boundary');
-    }
-    if (functionText.includes('\nrun_scouting_agent() {')) {
-      throw new Error('Extracted scouting prompt function includes run_scouting_agent');
-    }
-    if (nestedFunctionDefinitions.length !== 1 || nestedFunctionDefinitions[0] !== startMarker) {
-      throw new Error('Extracted scouting prompt function includes unexpected function definitions');
-    }
 
     const missingMarkers = expectedMarkers.filter(marker => !functionText.includes(marker));
     if (missingMarkers.length > 0) {
