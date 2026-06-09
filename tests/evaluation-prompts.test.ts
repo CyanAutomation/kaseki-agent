@@ -617,68 +617,90 @@ build_scouting_prompt
         // Create feedback collection script that will be invoked
         fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
         fs.writeFileSync(path.join(tmpDir, 'scripts', 'collect-feedback.js'), `#!/usr/bin/env node
-const fs = require('node:fs');
-const [phase, instanceName, goalSettingPath, goalCheckPath, metadataPath] = process.argv.slice(2);
-const resultsDir = process.env.KASEKI_RESULTS_DIR;
-const stageTimingsPath = resultsDir + '/stage-timings.tsv';
-const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
-
-// Check if goal-check stage had non-zero exit code (pi-exit-failure scenario)
-const stageLines = stageTimings.split('\n');
-const goalCheckLine = stageLines.find(line => line.startsWith('goal check'));
-const stageExitCode = goalCheckLine ? parseInt(goalCheckLine.split('\t')[1], 10) : 0;
-
-// Check if goal-check artifact exists and is valid
-let goalCheck = null;
 try {
-  const content = fs.readFileSync(goalCheckPath, 'utf8');
-  goalCheck = JSON.parse(content);
-} catch (e) {
-  // If we can't parse the artifact, it's a malformed-artifact scenario
-  // Exit with code 8 to indicate failure
-  process.exit(8);
+  const fs = require('node:fs');
+  const [phase, instanceName, goalSettingPath, goalCheckPath, metadataPath] = process.argv.slice(2);
+  const resultsDir = process.env.KASEKI_RESULTS_DIR;
+  const stageTimingsPath = resultsDir + '/stage-timings.tsv';
+  const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
+
+  // Check if goal-check stage had non-zero exit code (pi-exit-failure scenario)
+  const stageLines = stageTimings.split('\n');
+  const goalCheckLine = stageLines.find(line => line.startsWith('goal check'));
+  const stageExitCode = goalCheckLine ? parseInt(goalCheckLine.split('\t')[1], 10) : 0;
+
+  // Check if goal-check artifact exists and is valid
+  let goalCheck = null;
+  try {
+    const content = fs.readFileSync(goalCheckPath, 'utf8');
+    goalCheck = JSON.parse(content);
+  } catch (e) {
+    // If we can't parse the artifact, it's a malformed-artifact scenario
+    // Exit with code 8 to indicate failure
+    process.exit(8);
+  }
+
+  // If stage had non-zero exit code (pi-exit-failure), exit without feedback
+  if (stageExitCode !== 0) {
+    process.exit(8);
+  }
+
+  let goalSetting = {};
+  let metadata = {};
+  
+  try {
+    if (fs.existsSync(goalSettingPath)) {
+      goalSetting = JSON.parse(fs.readFileSync(goalSettingPath, 'utf8'));
+    }
+  } catch (e) {
+    // Ignore parse errors for optional files
+  }
+  
+  try {
+    if (fs.existsSync(metadataPath)) {
+      metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    }
+  } catch (e) {
+    // Ignore parse errors for optional files
+  }
+
+  const payload = {
+    event: 'collect-feedback',
+    phase,
+    instanceName,
+    paths: { goalSettingPath, goalCheckPath, metadataPath },
+    goalCheckMet: goalCheck.met,
+    sawCompletedGoalCheck: goalCheckLine && goalCheckLine.split('\t')[1] === '0',
+    at: Date.now(),
+  };
+
+  // Create goal-feedback.jsonl artifact file
+  const goalFeedbackLine = JSON.stringify({
+    phase: 'goal-check',
+    instance_name: instanceName,
+    assessment: {
+      original_prompt: goalSetting.original_prompt || 'test',
+      upgraded_goal: goalSetting.upgraded_goal || 'test goal',
+      goal_met: goalCheck.met,
+      confidence: goalCheck.confidence,
+    },
+    outcomes: {
+      validation_passed: metadata.validation_passed !== false,
+      coding_attempts: metadata.coding_attempts || 1,
+      goal_check_met: goalCheck.met,
+    },
+    validation_results: { passed: true },
+    timestamp: new Date().toISOString(),
+  });
+  fs.writeFileSync(resultsDir + '/goal-feedback.jsonl', goalFeedbackLine + '\\n');
+
+  fs.appendFileSync(process.env.ORCHESTRATOR_EVENTS, JSON.stringify(payload) + '\\n');
+  console.log(JSON.stringify(payload));
+  process.exit(0);
+} catch (err) {
+  console.error('Goal-check feedback collection error:', err.message);
+  process.exit(1);
 }
-
-// If stage had non-zero exit code (pi-exit-failure), exit without feedback
-if (stageExitCode !== 0) {
-  process.exit(8);
-}
-
-const goalSetting = fs.existsSync(goalSettingPath) ? JSON.parse(fs.readFileSync(goalSettingPath, 'utf8')) : {};
-const metadata = fs.existsSync(metadataPath) ? JSON.parse(fs.readFileSync(metadataPath, 'utf8')) : {};
-
-const payload = {
-  event: 'collect-feedback',
-  phase,
-  instanceName,
-  paths: { goalSettingPath, goalCheckPath, metadataPath },
-  goalCheckMet: goalCheck.met,
-  sawCompletedGoalCheck: goalCheckLine && goalCheckLine.split('\t')[1] === '0',
-  at: Date.now(),
-};
-
-// Create goal-feedback.jsonl artifact file
-const goalFeedbackLine = JSON.stringify({
-  phase: 'goal-check',
-  instance_name: instanceName,
-  assessment: {
-    original_prompt: goalSetting.original_prompt || 'test',
-    upgraded_goal: goalSetting.upgraded_goal || 'test goal',
-    goal_met: goalCheck.met,
-    confidence: goalCheck.confidence,
-  },
-  outcomes: {
-    validation_passed: metadata.validation_passed !== false,
-    coding_attempts: metadata.coding_attempts || 1,
-    goal_check_met: goalCheck.met,
-  },
-  validation_results: { passed: true },
-  timestamp: new Date().toISOString(),
-});
-fs.writeFileSync(resultsDir + '/goal-feedback.jsonl', goalFeedbackLine + '\\n');
-
-fs.appendFileSync(process.env.ORCHESTRATOR_EVENTS, JSON.stringify(payload) + '\\n');
-console.log(JSON.stringify(payload));
 `, { mode: 0o700 });
 
         // Invoke feedback collection directly
