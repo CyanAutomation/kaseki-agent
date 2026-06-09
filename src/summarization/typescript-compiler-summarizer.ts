@@ -76,8 +76,9 @@ export class TypeScriptCompilerSummarizer {
       this.extractImport(node, summary);
     }
 
-    // Extract exports
-    if (node.kind === ts.SyntaxKind.ExportDeclaration || node.kind === ts.SyntaxKind.ExportAssignment) {
+    // Extract exports (check for export modifier on declarations)
+    if (ts.isClassDeclaration(node) || ts.isFunctionDeclaration(node) || 
+        ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) {
       this.extractExport(node, summary);
     }
 
@@ -135,30 +136,32 @@ export class TypeScriptCompilerSummarizer {
   }
 
   private extractExport(node: ts.Node, summary: any): void {
+    // Check if node has export modifier
+    const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
+    const isExported = modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
+
+    if (!isExported) return; // Not an exported declaration
+
     let name = '';
     let kind = 'unknown';
 
     // Check for exported declarations
-    if (ts.isClassDeclaration(node) || (node.parent && ts.isClassDeclaration(node.parent))) {
-      const classNode = ts.isClassDeclaration(node) ? node : (node.parent as ts.ClassDeclaration);
-      name = classNode.name?.text || '';
+    if (ts.isClassDeclaration(node)) {
+      name = node.name?.text || '';
       kind = 'class';
-      this.extractClass(classNode, summary); // Also extract as class
-    } else if (ts.isFunctionDeclaration(node) || (node.parent && ts.isFunctionDeclaration(node.parent))) {
-      const funcNode = ts.isFunctionDeclaration(node) ? node : (node.parent as ts.FunctionDeclaration);
-      name = funcNode.name?.text || '';
+      this.extractClass(node, summary); // Also extract as class
+    } else if (ts.isFunctionDeclaration(node)) {
+      name = node.name?.text || '';
       kind = 'function';
-      this.extractFunction(funcNode, summary); // Also extract as function
-    } else if (ts.isInterfaceDeclaration(node) || (node.parent && ts.isInterfaceDeclaration(node.parent))) {
-      const ifaceNode = ts.isInterfaceDeclaration(node) ? node : (node.parent as ts.InterfaceDeclaration);
-      name = ifaceNode.name.text;
+      this.extractFunction(node, summary); // Also extract as function
+    } else if (ts.isInterfaceDeclaration(node)) {
+      name = node.name.text;
       kind = 'interface';
-      this.extractInterface(ifaceNode, summary);
-    } else if (ts.isTypeAliasDeclaration(node) || (node.parent && ts.isTypeAliasDeclaration(node.parent))) {
-      const typeNode = ts.isTypeAliasDeclaration(node) ? node : (node.parent as ts.TypeAliasDeclaration);
-      name = typeNode.name.text;
+      this.extractInterface(node, summary);
+    } else if (ts.isTypeAliasDeclaration(node)) {
+      name = node.name.text;
       kind = 'type';
-      this.extractType(typeNode, summary);
+      this.extractType(node, summary);
     }
 
     if (name) {
@@ -178,10 +181,10 @@ export class TypeScriptCompilerSummarizer {
 
     const methods: CodeElement[] = [];
 
-    // Extract methods
+    // Extract methods (but not constructors)
     for (const member of node.members) {
-      if (ts.isMethodDeclaration(member) || ts.isConstructorDeclaration(member)) {
-        const methodName = ts.isConstructorDeclaration(member) ? 'constructor' : (member.name as ts.Identifier)?.text;
+      if (ts.isMethodDeclaration(member)) {
+        const methodName = (member.name as ts.Identifier)?.text;
         if (methodName) {
           const signature = this.getSignature(member);
           methods.push({
@@ -191,6 +194,7 @@ export class TypeScriptCompilerSummarizer {
           });
         }
       }
+      // Skip constructors and other members
     }
 
     summary.classes.push({ name, methods });

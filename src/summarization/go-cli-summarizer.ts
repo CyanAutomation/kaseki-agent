@@ -5,6 +5,8 @@
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { SupportedLanguage } from './summarizer-config';
 import type { CodeElement, CodeSummary } from './tree-sitter-summarizer';
 
@@ -28,33 +30,34 @@ export class GoCliSummarizer {
 
   /**
    * Summarize Go code using tree-sitter CLI
+   * Accepts content string, creates temp file, and parses via CLI
    */
-  summarize(filePath: string, timeoutMs: number = 200): CodeSummary {
+  summarize(contentOrPath: string, timeoutMs: number = 200): CodeSummary {
     const startTime = performance.now();
 
     try {
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        return {
-          language: this.language,
-          imports: [],
-          exports: [],
-          classes: [],
-          functions: [],
-          types: [],
-          interfaces: [],
-          parseError: `File not found: ${filePath}`,
-          originalSizeBytes: 0,
-          summaryTimeMs: performance.now() - startTime,
-        };
+      let filePath: string;
+      let isTemp = false;
+      let originalSize = 0;
+
+      // Check if contentOrPath is a file path or content string
+      if (fs.existsSync(contentOrPath) && fs.statSync(contentOrPath).isFile()) {
+        // It's a file path
+        filePath = contentOrPath;
+        const content = fs.readFileSync(filePath, 'utf-8');
+        originalSize = Buffer.byteLength(content, 'utf-8');
+      } else {
+        // It's content - create a temp file
+        isTemp = true;
+        originalSize = Buffer.byteLength(contentOrPath, 'utf-8');
+        const tmpDir = os.tmpdir();
+        const tmpFile = path.join(tmpDir, `go-parse-${Date.now()}-${Math.random().toString(36).slice(2)}.go`);
+        fs.writeFileSync(tmpFile, contentOrPath, 'utf-8');
+        filePath = tmpFile;
       }
 
-      // Read file to get original size
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const originalSize = Buffer.byteLength(content, 'utf-8');
-
-      // Call tree-sitter CLI to parse file
       try {
+        // Call tree-sitter CLI to parse file
         const jsonOutput = execFileSync('tree-sitter', ['parse', filePath, '--json'], {
           encoding: 'utf-8',
           timeout: timeoutMs,
@@ -64,7 +67,8 @@ export class GoCliSummarizer {
         // Parse JSON output
         const tree = JSON.parse(jsonOutput);
 
-        // Extract structure from tree
+        // Extract structure from tree using file content
+        const content = fs.readFileSync(filePath, 'utf-8');
         const summary = this.extractStructure(tree, content);
 
         return {
@@ -90,6 +94,15 @@ export class GoCliSummarizer {
           };
         }
         throw error;
+      } finally {
+        // Clean up temp file if we created one
+        if (isTemp) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
       }
     } catch (error) {
       const elapsed = performance.now() - startTime;

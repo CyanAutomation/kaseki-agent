@@ -187,13 +187,19 @@ describe('ReadWrapper', () => {
 
     it('should handle very large files gracefully', async () => {
       const filePath = path.join(testDir, 'large.ts');
-      // Create a large file (1MB+)
-      const largeContent = 'export class A {}\n' + 'export function b' + Date.now() + '() {}\n'.repeat(50000);
+      // Create a very large file (2MB+) to exceed the 1MB threshold
+      // Each export function declaration is about 50 bytes, so we need ~40,000 of them
+      let largeContent = 'export class A {}\n';
+      // Add 40,000 function declarations (each ~50 bytes) = ~2MB total
+      for (let i = 0; i < 40000; i++) {
+        largeContent += `export function func${i}(param: string): string { return param; }\n`;
+      }
       fs.writeFileSync(filePath, largeContent);
 
       const result = await readFileWithSummaryAndMetrics(filePath);
       expect(result).toBeDefined();
       if (result?.metrics) {
+        // Files larger than 1MB threshold should use 'full' strategy
         expect(result.metrics.strategy).toBe('full'); // Should choose full for very large
       }
     });
