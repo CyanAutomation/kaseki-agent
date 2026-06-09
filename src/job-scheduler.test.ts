@@ -2021,6 +2021,7 @@ describe('JobScheduler persistence merge safety', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     cleanupResultsDirs();
   });
 
@@ -2144,6 +2145,145 @@ describe('JobScheduler persistence merge safety', () => {
     expect(mergedFirst?.exitCode).toBe(0);
     expect(mergedFirst?.completedAt).toBe('2026-05-04T00:00:01.000Z');
   });
+  test('completeJob prunes old terminal jobs from listJobs while retaining active jobs', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-01T00:00:00.000Z'));
+    const resultsDir = createResultsDir();
+    const artifactCache = { clearForJob: jest.fn() };
+    const firstProc = new MockProcess();
+    const secondProc = new MockProcess();
+    const thirdProc = new MockProcess();
+    const runningProc = new MockProcess();
+    const procs = [firstProc, secondProc, thirdProc, runningProc];
+    mockSpawn.mockImplementation(() => {
+      const proc = procs.shift();
+      if (!proc) {
+        throw new Error('Unexpected process spawn');
+      }
+      return proc;
+    });
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+        jobIndexMaxEntries: 2,
+      },
+      createMockWebhookManager(),
+      artifactCache,
+    );
+
+    const first = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    jest.setSystemTime(new Date('2026-05-01T00:00:01.000Z'));
+    firstProc.emit('exit', 0);
+
+    const second = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    jest.setSystemTime(new Date('2026-05-01T00:00:02.000Z'));
+    secondProc.emit('exit', 0);
+
+    const third = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    jest.setSystemTime(new Date('2026-05-01T00:00:03.000Z'));
+    thirdProc.emit('exit', 0);
+
+    const running = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+    });
+    const queued = await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'feature/queued',
+    });
+
+    expect(running.status).toBe('running');
+    expect(queued.status).toBe('queued');
+    expect(scheduler.getJob(first.id)).toBeUndefined();
+    expect(scheduler.listJobs().map((job) => job.id).sort()).toEqual(
+      [queued.id, running.id, second.id, third.id].sort(),
+    );
+    expect(artifactCache.clearForJob).toHaveBeenCalledWith(first.id);
+  });
+
+  test('loadPersistedJobs prunes old terminal jobs from listJobs while retaining queued jobs', async () => {
+    const resultsDir = createResultsDir();
+    const artifactCache = { clearForJob: jest.fn() };
+    fs.writeFileSync(
+      `${resultsDir}/.kaseki-api-jobs.json`,
+      JSON.stringify({
+        version: 1,
+        updatedAt: '2026-05-04T00:00:00.000Z',
+        jobs: [
+          persistedRuntimeJob(
+            resultsDir,
+            'kaseki-1',
+            'completed',
+            '2026-05-01T00:00:00.000Z',
+          ),
+          persistedRuntimeJob(
+            resultsDir,
+            'kaseki-2',
+            'failed',
+            '2026-05-02T00:00:00.000Z',
+          ),
+          persistedRuntimeJob(
+            resultsDir,
+            'kaseki-3',
+            'completed',
+            '2026-05-03T00:00:00.000Z',
+          ),
+          persistedRuntimeJob(
+            resultsDir,
+            'kaseki-4',
+            'queued',
+            '2026-05-04T00:00:00.000Z',
+          ),
+        ],
+      }),
+      'utf-8',
+    );
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 0,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+        jobIndexMaxEntries: 2,
+      },
+      createMockWebhookManager(),
+      artifactCache,
+    );
+    await scheduler.ready();
+
+    expect(scheduler.getJob('kaseki-1')).toBeUndefined();
+    expect(scheduler.listJobs().map((job) => job.id).sort()).toEqual([
+      'kaseki-2',
+      'kaseki-3',
+      'kaseki-4',
+    ]);
+    expect(scheduler.getJob('kaseki-4')?.status).toBe('queued');
+    expect(artifactCache.clearForJob).toHaveBeenCalledWith('kaseki-1');
+  });
+
   test('persistJobs truncates old terminal jobs and writes compact JSON at the retention limit', async () => {
     const resultsDir = createResultsDir();
     const scheduler = new JobScheduler(
