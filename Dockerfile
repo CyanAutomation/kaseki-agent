@@ -32,6 +32,9 @@ RUN npm ci --no-audit --prefer-offline --ignore-scripts \
 # Install pi-coding-agent globally with undici explicitly to resolve module dependencies
 RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.77.0 undici
 
+# Phase 3b: Install tree-sitter-cli for Go code summarization (no native compilation)
+RUN npm install -g --no-audit tree-sitter-cli
+
 
 FROM ${NODE_IMAGE} AS runtime
 
