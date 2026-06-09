@@ -196,7 +196,7 @@ COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki
 # Copy application files (excluding build artifacts)
 WORKDIR /app
 COPY --from=runtime /app/package.json /app/package-lock.json /app/
-COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md /app/STYLE.md ./
+COPY --from=runtime /app/Dockerfile /app/.dockerignore /app/README.md /app/CLAUDE.md /app/CONTRIBUTING.md ./
 COPY --from=runtime /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh ./
 COPY --from=runtime /app/ops ./ops
 COPY --from=runtime /app/scripts ./scripts
