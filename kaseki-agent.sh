@@ -167,7 +167,6 @@ GOAL_CHECK_EXIT=0
 GOAL_CHECK_DURATION_SECONDS=0
 GOAL_CHECK_ATTEMPTS=0
 GOAL_CHECK_MET=false
-GOAL_CHECK_REACHED=false
 GOAL_CHECK_FAILURE_REASON=""
 GOAL_CHECK_RETRY_PROMPT=""
 GOAL_CHECK_ACTUAL_MODEL="unknown"
@@ -950,60 +949,9 @@ build_stages_array() {
 }
 
 write_result_summary() {
-  local changed_files changed_files_markdown validation_status pr_status github_skip_reasons_summary goal_check_status
-  changed_files="$(cat "${KASEKI_RESULTS_DIR}"/changed-files.txt 2>/dev/null || true)"
-  if [ -n "$changed_files" ]; then
-    changed_files_markdown="$(printf '%s\n' "$changed_files" | sed 's/^/  - /')"
-  else
-    changed_files_markdown="  - none"
-  fi
-  validation_status="passed"
-  [ "$VALIDATION_EXIT" -ne 0 ] && validation_status="failed"
-  if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then
-    validation_status="failed (allowlist gate; validation commands exited $VALIDATION_EXIT)"
-  fi
-  if grep -q 'skipped_after_agent_failure' "$STAGE_TIMINGS_FILE" 2>/dev/null; then
-    validation_status="skipped"
-  fi
-  github_skip_reasons_summary="none"
-  if [ "${#GITHUB_SKIP_REASONS[@]}" -gt 0 ]; then
-    github_skip_reasons_summary="$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
-  fi
-
-  pr_status="not attempted"
-  if [ "${#GITHUB_SKIP_REASONS[@]}" -gt 0 ]; then
-    pr_status="not attempted (reasons: $github_skip_reasons_summary)"
-  fi
-  if [ "$GITHUB_APP_ENABLED" = "1" ] && [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
-    if [ "$GITHUB_PUSH_EXIT" -ne 0 ]; then
-      if [ "$GITHUB_OPERATION_PHASE" = "token_generation" ]; then
-        pr_status="token generation failed"
-      else
-        pr_status="push failed"
-      fi
-    elif [ "$GITHUB_PR_EXIT" -eq 0 ] && [ -n "$GITHUB_PR_URL" ]; then
-      pr_status="created ($GITHUB_PR_URL)"
-    elif [ "$GITHUB_PR_EXIT" -ne 0 ]; then
-      pr_status="pr creation failed"
-    else
-      pr_status="push succeeded, pr not created"
-    fi
-  fi
-
-  if [ "$KASEKI_GOAL_CHECK" != "1" ] || [ ! -s "$SCOUTING_ARTIFACT" ]; then
-    goal_check_status="disabled"
-  elif [ "$GOAL_CHECK_REACHED" = "true" ] || [ "$GOAL_CHECK_ATTEMPTS" -gt 0 ]; then
-    if [ "$GOAL_CHECK_MET" = "true" ]; then
-      goal_check_status="met"
-    else
-      goal_check_status="unmet"
-    fi
-  elif [ "$VALIDATION_EXIT" -ne 0 ]; then
-    goal_check_status="not reached due to validation failure"
-  else
-    goal_check_status="not reached"
-  fi
-
+  # This function is a placeholder for generating result summary metadata.
+  # Future enhancement: output formatted summary to result-summary.md
+  :
 }
 
 write_failure_json() {
@@ -4326,7 +4274,7 @@ run_scouting_agent() {
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
-    scouting_validation_error="$(cat "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | tail -1 | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+    scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
     emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
   fi
   scout_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
@@ -4667,7 +4615,6 @@ run_goal_check() {
   GOAL_CHECK_ATTEMPTS="$attempt"
   GOAL_CHECK_EXIT=0
   GOAL_CHECK_MET=false
-  GOAL_CHECK_REACHED=true
   GOAL_CHECK_FAILURE_REASON=""
 
   printf '\n==> goal check\n'
@@ -7879,6 +7826,7 @@ fi
 
 post_validation_goal_check_diff_hash="$(sha256sum "${KASEKI_RESULTS_DIR}"/git.diff 2>/dev/null | awk '{print $1}')"
 if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ] && [ "$VALIDATION_EXIT" -eq 0 ] && \
+  [ "$KASEKI_GOAL_CHECK" = "1" ] && [ -s "$SCOUTING_ARTIFACT" ] && \
   [ -n "$pre_validation_goal_check_diff_hash" ] && [ -n "$post_validation_goal_check_diff_hash" ] && \
   [ "$post_validation_goal_check_diff_hash" != "$pre_validation_goal_check_diff_hash" ]; then
   printf 'Validation commands changed the final git diff; re-running goal check against post-validation artifacts.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
