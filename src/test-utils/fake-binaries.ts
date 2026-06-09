@@ -134,8 +134,6 @@ cat
  */
 export function createPiWithOrchestrationLogging(
   binDir: string,
-  resultsDir: string,
-  orchestratorEventsPath: string,
   scenario: 'success' | 'pi-exit-failure' | 'malformed-artifact' = 'success'
 ): void {
   fs.mkdirSync(binDir, { recursive: true });
