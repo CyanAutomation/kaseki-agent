@@ -940,33 +940,35 @@ try {
     // Ignore parse errors for optional files
   }
 
+  const feedback = {
+    instance_name: instanceName,
+    phase: 'run_evaluation',
+    assessment: {
+      overall_assessment: runEvaluation.overall_assessment,
+      reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
+      task_completion_score: runEvaluation.task_completion_score || 0,
+    },
+    outcomes: {
+      validation_passed: metadata.validation_passed === true,
+      coding_attempts: metadata.coding_attempts || 1,
+      goal_check_met: metadata.goal_check_met === true,
+      total_duration_seconds: metadata.total_duration_seconds || 0,
+    },
+    timestamp: new Date().toISOString(),
+  };
+
   const payload = {
     event: 'collect-feedback',
     phase: 'run-evaluation',
     instanceName: instanceName,
     paths: { runEvaluationPath, metadataPath },
-    feedback: {
-      instance_name: instanceName,
-      phase: 'run_evaluation',
-      assessment: {
-        overall_assessment: runEvaluation.overall_assessment,
-        reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
-        task_completion_score: runEvaluation.task_completion_score || 0,
-      },
-      outcomes: {
-        validation_passed: metadata.validation_passed === true,
-        coding_attempts: metadata.coding_attempts || 1,
-        goal_check_met: metadata.goal_check_met === true,
-        total_duration_seconds: metadata.total_duration_seconds || 0,
-      },
-      timestamp: new Date().toISOString(),
-    },
+    feedback: feedback,
     sawCompletedRunEvaluation: runEvalLine && runEvalLine.split('\\t')[1] === '0',
     at: Date.now(),
   };
 
-  // Create kaseki-improvements.jsonl artifact file with same payload
-  fs.writeFileSync(resultsDir + '/kaseki-improvements.jsonl', JSON.stringify(payload) + '\\n');
+  // Create kaseki-improvements.jsonl artifact file with only the feedback object
+  fs.writeFileSync(resultsDir + '/kaseki-improvements.jsonl', JSON.stringify(feedback) + '\\n');
 
   fs.appendFileSync(orchestratorEventsPath, JSON.stringify(payload) + '\\n');
   console.log(JSON.stringify(payload));
