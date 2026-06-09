@@ -191,6 +191,43 @@ describe('TreeSitterSummarizer', () => {
       expect(summary).toBeDefined();
       expect(summary.functions.length).toBeGreaterThan(0);
     });
+
+    it('should extract Go function, type, and method metadata', () => {
+      const content = `
+        package widgets
+
+        type Widget struct {
+          name string
+        }
+
+        func NewWidget(name string) Widget {
+          return Widget{name: name}
+        }
+
+        func (w *Widget) Name() string {
+          return w.name
+        }
+      `;
+
+      const go = new TreeSitterSummarizer('go');
+      const summary = go.summarize(content);
+
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.types).toEqual([
+        { name: 'Widget', signature: 'Widget struct {', kind: 'type' },
+      ]);
+      expect(summary.functions).toEqual([
+        { name: 'NewWidget', signature: 'func NewWidget(name string) Widget {', kind: 'function' },
+      ]);
+      expect(summary.classes).toEqual([
+        {
+          name: 'Widget',
+          methods: [
+            { name: 'Name', signature: 'func (w *Widget) Name() string {', kind: 'method' },
+          ],
+        },
+      ]);
+    });
   });
 
   describe('Summary Metadata', () => {
