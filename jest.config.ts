@@ -11,7 +11,7 @@ const config: Config = {
     '<rootDir>/tests/**/*.test.ts',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  maxWorkers: process.env.CI ? '50%' : 4,
+  maxWorkers: process.env.CI ? '50%' : '50%',
   collectCoverageFrom: [
     'src/**/*.ts',
     'scripts/**/*.ts',
@@ -26,6 +26,7 @@ const config: Config = {
     '^.+\\.ts$': ['ts-jest', {
       useESM: true,
       tsconfig: {
+        isolatedModules: true,
         esModuleInterop: true,
         module: 'esnext',
         target: 'ES2024',
