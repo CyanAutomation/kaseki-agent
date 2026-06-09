@@ -62,7 +62,7 @@ describe('Documentation integrity', () => {
   ];
 
   const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  const fencedCodeBlockRegex = /^```[\s\S]*?^```/gm;
+  const fencedCodeBlockRegex = /^```[\s\S]*?^```$/gm;
 
   const stripFencedCodeBlocks = (content: string): string => content.replace(fencedCodeBlockRegex, '');
 
