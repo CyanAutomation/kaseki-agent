@@ -1003,6 +1003,23 @@ function resolveDockerBindSource(containerPath: string): string | null {
   return null;
 }
 
+function extractOpenRouterPathFromStartupDetail(detail: string): string | undefined {
+  const patterns = [
+    /OPENROUTER_API_KEY_FILE:\s*([^\s]+)/i,
+    /OPENROUTER_API_KEY_FILE\s+(?:at|to)\s+([^\s.]+)/i,
+    /Create:\s*([^\s]+openrouter_api_key)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = detail.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
 function workerSmokeStartupSecretsRemediation(
   detail: string | undefined,
 ): string | undefined {
@@ -1014,14 +1031,19 @@ function workerSmokeStartupSecretsRemediation(
   const includesStartupSecretsWarning = [
     'no openrouter api key configured',
     'github app credentials are incomplete',
-    'create: /run/secrets/kaseki/openrouter_api_key',
+    'openrouter_api_key_file',
+    'openrouter_api_key',
   ].some((warning) => normalized.includes(warning));
 
   if (!includesStartupSecretsWarning) {
     return undefined;
   }
 
-  return 'The API can read host secrets, but the nested worker smoke test did not receive the same files. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.';
+  const effectivePath =
+    extractOpenRouterPathFromStartupDetail(detail) ||
+    '/run/secrets/kaseki/openrouter_api_key';
+
+  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective OpenRouter path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/openrouter_api_key is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/openrouter_api_key is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
 }
 
 function workerSmokeStartupResultsRemediation(

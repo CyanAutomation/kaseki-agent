@@ -7056,7 +7056,15 @@ unset OPENROUTER_API_KEY secret_content
 if [ -z "$openrouter_api_key" ]; then
   set_current_stage "agent setup"
   openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s.\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  upstream_openrouter_api_key_file=""
+  if [ -n "${KASEKI_SECRETS_DIR:-}" ]; then
+    upstream_openrouter_api_key_file="$KASEKI_SECRETS_DIR/openrouter_api_key"
+  fi
+  if [ -n "$upstream_openrouter_api_key_file" ] && [ "$upstream_openrouter_api_key_file" != "$openrouter_api_key_file" ]; then
+    printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s (current worker path). Upstream host/API secret convention: %s.\n' "$openrouter_api_key_file" "$upstream_openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  else
+    printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s (current worker path).\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  fi
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
