@@ -5,17 +5,9 @@ import { execFileSync, spawnSync } from 'child_process';
 import {
   getCachedScriptContent,
   extractBashFunctionWithCache,
-  clearCaches,
 } from '../src/test-utils/bash-script-cache';
+
 import {
-  createFakeBinariesDir,
-  createPiWithOrchestrationLogging,
-} from '../src/test-utils/fake-binaries';
-import { createFakeGitRepoWithCommit } from '../src/test-utils/fake-git-repo';
-import {
-  createTempDir,
-  initializeTestDirs,
-  getGlobalTempDirPool,
   clearGlobalTempDirPool,
 } from '../src/test-utils/temp-dir-manager';
 
