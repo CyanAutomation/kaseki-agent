@@ -303,9 +303,38 @@ describe('Copy-to-Clipboard Functionality', () => {
       expect(errorMessage).toContain('Copy failed');
     });
 
-    it('should not crash if toast container is missing', () => {
-      const missingContainer = document.querySelector('#nonexistent-container');
-      expect(missingContainer).toBeNull();
+    it.each([
+      {
+        execCommandResult: true,
+        expectedStatus: 'success',
+        expectedMessage: 'Copied!',
+      },
+      {
+        execCommandResult: false,
+        expectedStatus: 'error',
+        expectedMessage: 'Copy failed - please try again',
+      },
+    ])('should not crash if toast container is missing and copy reports $expectedStatus', async ({
+      execCommandResult,
+      expectedStatus,
+      expectedMessage,
+    }) => {
+      const { execCommandMock } = await setupRecommendedArtifactCopy({
+        clipboardAvailable: false,
+        isSecureContext: false,
+        execCommandResult,
+      });
+      document.querySelector('#toast-container')?.remove();
+
+      const copyButton = await waitForElement('[aria-label="Copy result.json"]') as HTMLButtonElement;
+      expect(document.querySelector('#toast-container')).toBeNull();
+      expect(() => copyButton.click()).not.toThrow();
+
+      await waitFor(() => expect(copyButton.dataset.copyStatus).toBe(expectedStatus));
+      expect(copyButton.dataset.copyMessage).toBe(expectedMessage);
+      expect(copyButton.getAttribute('title')).toBe(expectedMessage);
+      expect(execCommandMock).toHaveBeenCalledWith('copy');
+      expect(document.querySelector('#toast-container')).toBeNull();
     });
   });
 
