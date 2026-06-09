@@ -7,8 +7,8 @@
  * - Issue fetching with filtering
  */
 
-import crypto from 'crypto';
-import https from 'https';
+import { KeyObject, createPrivateKey, createSign } from 'crypto';
+import { request } from 'https';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { readHostSecret } from './secrets/host-secrets-reader';
 import { createLogger } from './logger';
@@ -142,7 +142,7 @@ export function parseGitHubUrl(urlOrShorthand: string): ParsedGitHubUrl {
 /**
  * Load and validate a GitHub App private key from disk
  */
-function loadAndValidatePrivateKey(privateKeyContent: string): crypto.KeyObject {
+function loadAndValidatePrivateKey(privateKeyContent: string): KeyObject {
   const validation = validateGitHubAppPrivateKey(privateKeyContent);
 
   if (!validation.ok || !validation.normalized) {
@@ -152,13 +152,13 @@ function loadAndValidatePrivateKey(privateKeyContent: string): crypto.KeyObject 
     throw new Error(message || 'GitHub App private key is not valid.');
   }
 
-  return crypto.createPrivateKey(validation.normalized);
+  return createPrivateKey(validation.normalized);
 }
 
 /**
  * Generate a JWT for GitHub App authentication
  */
-async function generateJWT(appId: string, privateKey: crypto.KeyObject): Promise<string> {
+async function generateJWT(appId: string, privateKey: KeyObject): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const iat = now - 60; // account for clock skew
   const exp = now + 10 * 60; // 10 minutes
@@ -179,7 +179,7 @@ async function generateJWT(appId: string, privateKey: crypto.KeyObject): Promise
   const message = `${headerBase64}.${payloadBase64}`;
 
   // Sign with RSA-SHA256
-  const signer = crypto.createSign('RSA-SHA256');
+  const signer = createSign('RSA-SHA256');
   signer.update(message);
   signer.end();
 
@@ -187,9 +187,6 @@ async function generateJWT(appId: string, privateKey: crypto.KeyObject): Promise
   return `${message}.${signature}`;
 }
 
-/**
- * Get the GitHub App installation ID for a repository
- */
 async function getInstallationId(jwt: string, owner: string, repo: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const options = {
@@ -203,7 +200,7 @@ async function getInstallationId(jwt: string, owner: string, repo: string): Prom
       },
     };
 
-    const req = https.request(options, (res) => {
+    const req = request(options, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;
@@ -257,7 +254,7 @@ async function getAccessToken(
       },
     };
 
-    const req = https.request(options, (res) => {
+    const req = request(options, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;
@@ -389,7 +386,7 @@ export async function fetchGitHubIssues(
       },
     };
 
-    const req = https.request(options_https, (res) => {
+    const req = request(options_https, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;

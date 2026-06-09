@@ -6,8 +6,8 @@
  * from metadata and instance artifacts.
  */
 
-import fs from 'fs';
-import path from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import { Metadata } from './instance-metadata-reader';
 
 export type InstanceLifecycleStatus = 'running' | 'completed' | 'failed' | 'pending';
@@ -48,13 +48,13 @@ export function resolveInstanceExitCode(
   metadata: Metadata = {}
 ): number | null {
   const metadataExitCode = normalizeExitCodeCandidate(metadata.exit_code);
-  const exitCodePath = path.join(resultDir, 'exit_code');
-  if (!fs.existsSync(exitCodePath)) {
+  const exitCodePath = join(resultDir, 'exit_code');
+  if (!existsSync(exitCodePath)) {
     return metadataExitCode;
   }
 
   try {
-    const fileExitCode = normalizeExitCodeCandidate(fs.readFileSync(exitCodePath, 'utf8'));
+    const fileExitCode = normalizeExitCodeCandidate(readFileSync(exitCodePath, 'utf8'));
     return fileExitCode !== null ? fileExitCode : metadataExitCode;
   } catch {
     return metadataExitCode;
@@ -66,13 +66,13 @@ export function resolveInstanceExitCode(
  * Parses stdout.log for "==> stage_name" markers.
  */
 function getCurrentStage(resultsDir: string, instanceName: string): string {
-  const stdoutPath = path.join(resultsDir, instanceName, 'stdout.log');
-  if (!fs.existsSync(stdoutPath)) {
+  const stdoutPath = join(resultsDir, instanceName, 'stdout.log');
+  if (!existsSync(stdoutPath)) {
     return 'unknown';
   }
 
   try {
-    const stdout = fs.readFileSync(stdoutPath, 'utf8');
+    const stdout = readFileSync(stdoutPath, 'utf8');
     const matches = stdout.match(/^==> (.+?)$/gm);
     if (!matches || matches.length === 0) return 'unknown';
 

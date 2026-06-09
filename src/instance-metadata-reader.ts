@@ -6,8 +6,8 @@
  * with graceful error handling for transient I/O errors.
  */
 
-import fs from 'fs';
-import path from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 export interface Metadata {
   current_stage?: string;
@@ -52,13 +52,13 @@ function readElapsedSeconds(resultDir: string, metadata: Metadata): number | nul
     return metadata.duration_seconds;
   }
 
-  const resourceTimePath = path.join(resultDir, 'resource.time');
-  if (!fs.existsSync(resourceTimePath)) {
+  const resourceTimePath = join(resultDir, 'resource.time');
+  if (!existsSync(resourceTimePath)) {
     return null;
   }
 
   try {
-    const content = fs.readFileSync(resourceTimePath, 'utf8');
+    const content = readFileSync(resourceTimePath, 'utf8');
     const match = content.match(/elapsed_seconds=([0-9]+(?:\.[0-9]+)?)/);
     if (match) {
       return parseFloat(match[1]);
@@ -86,16 +86,16 @@ function readElapsedSeconds(resultDir: string, metadata: Metadata): number | nul
  * @throws Error if I/O error is transient (ENOENT, ESTALE); caller should skip this instance
  */
 export function readInstanceMetadata(resultDir: string): InstanceMetadataInfo {
-  const metadataPath = path.join(resultDir, 'metadata.json');
-  const hostStartPath = path.join(resultDir, 'host-start.json');
+  const metadataPath = join(resultDir, 'metadata.json');
+  const hostStartPath = join(resultDir, 'host-start.json');
 
   let metadata: Metadata = {};
   let hostStart: HostStart = {};
 
   // Read metadata
-  if (fs.existsSync(metadataPath)) {
+  if (existsSync(metadataPath)) {
     try {
-      const content = fs.readFileSync(metadataPath, 'utf8');
+      const content = readFileSync(metadataPath, 'utf8');
       metadata = JSON.parse(content);
     } catch (e) {
       if (isSkippableInstanceIoError(e)) {
@@ -106,9 +106,9 @@ export function readInstanceMetadata(resultDir: string): InstanceMetadataInfo {
   }
 
   // Read host start config
-  if (fs.existsSync(hostStartPath)) {
+  if (existsSync(hostStartPath)) {
     try {
-      const content = fs.readFileSync(hostStartPath, 'utf8');
+      const content = readFileSync(hostStartPath, 'utf8');
       hostStart = JSON.parse(content);
     } catch (e) {
       if (isSkippableInstanceIoError(e)) {
