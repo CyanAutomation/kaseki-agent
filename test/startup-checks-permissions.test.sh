@@ -121,6 +121,28 @@ test_readable_secret_file() {
   trap - RETURN
 }
 
+
+# Test: a missing explicit secret file reports the effective configured path before defaults.
+test_missing_explicit_secret_file_reports_configured_path() {
+  echo ""
+  echo "Testing missing explicit secret file diagnostics..."
+  setup_tmp_root
+  trap cleanup_tmp_root RETURN
+
+  local secret_file="$TMP_ROOT/custom/missing-openrouter-key"
+
+  LAST_STATUS=0
+  run_startup_checks all OPENROUTER_API_KEY_FILE="$secret_file"
+
+  assert_status 3 "missing explicit secret file degrades startup"
+  assert_output_contains "No OpenRouter API key configured" "reports missing OpenRouter API key"
+  assert_output_contains "Checked configured OPENROUTER_API_KEY_FILE: $secret_file" "reports effective configured secret path"
+  assert_output_contains "Create: $TMP_ROOT/secrets/openrouter_api_key" "still reports KASEKI_SECRETS_DIR default creation path"
+
+  cleanup_tmp_root
+  trap - RETURN
+}
+
 # Test: an existing but unreadable secret file blocks startup with an actionable diagnostic.
 test_unreadable_secret_file() {
   echo ""
@@ -222,6 +244,7 @@ main() {
   fi
 
   test_readable_secret_file
+  test_missing_explicit_secret_file_reports_configured_path
   test_unreadable_secret_file
   test_non_traversable_parent_directory
   test_read_only_mount_handling
