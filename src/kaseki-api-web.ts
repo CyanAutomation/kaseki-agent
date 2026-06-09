@@ -1896,6 +1896,7 @@ const controllerPage = String.raw`<!doctype html>
                 } else if (response.status === 404) {
                   errorMsg = 'Artifact not found';
                 }
+                setCopyButtonStatus(copyBtn, { ok: false, message: errorMsg });
                 showToast(errorMsg, 'error', 2000);
                 return;
               }
@@ -1913,13 +1914,16 @@ const controllerPage = String.raw`<!doctype html>
               }
               
               if (textToCopy) {
-                await copyToClipboard(textToCopy);
+                setCopyButtonStatus(copyBtn, await copyToClipboard(textToCopy));
               } else {
+                setCopyButtonStatus(copyBtn, { ok: false, message: 'No content to copy' });
                 showToast('No content to copy', 'error', 2000);
               }
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Copy failed';
-              showToast('Copy failed: ' + message, 'error', 2000);
+              const copyMessage = 'Copy failed: ' + message;
+              setCopyButtonStatus(copyBtn, { ok: false, message: copyMessage });
+              showToast(copyMessage, 'error', 2000);
             }
           });
           wrapper.appendChild(copyBtn);
@@ -2412,6 +2416,14 @@ const controllerPage = String.raw`<!doctype html>
         }, durationMs + 300); // Add 300ms for fade-out animation
       }
 
+      function setCopyButtonStatus(button, result) {
+        if (!button || !result) return;
+        const status = result.ok ? 'success' : 'error';
+        button.dataset.copyStatus = status;
+        button.dataset.copyMessage = result.message;
+        button.setAttribute('title', result.message);
+      }
+
       /**
        * Copy text to clipboard using modern Clipboard API or fallback.
        */
@@ -2421,6 +2433,7 @@ const controllerPage = String.raw`<!doctype html>
           if (navigator.clipboard && window.isSecureContext) {
             await navigator.clipboard.writeText(text);
             showToast('Copied!', 'success', 2000);
+            return { ok: true, message: 'Copied!' };
           } else {
             // Fallback for older browsers
             const textarea = document.createElement('textarea');
@@ -2433,13 +2446,17 @@ const controllerPage = String.raw`<!doctype html>
             document.body.removeChild(textarea);
             if (success) {
               showToast('Copied!', 'success', 2000);
+              return { ok: true, message: 'Copied!' };
             } else {
               showToast('Copy failed - please try again', 'error', 2000);
+              return { ok: false, message: 'Copy failed - please try again' };
             }
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Copy failed';
-          showToast('Copy failed: ' + message, 'error', 2000);
+          const copyMessage = 'Copy failed: ' + message;
+          showToast(copyMessage, 'error', 2000);
+          return { ok: false, message: copyMessage };
         }
       }
 
@@ -2557,8 +2574,9 @@ const controllerPage = String.raw`<!doctype html>
           copyBtn.addEventListener('click', async () => {
             const content = extractArtifactContent();
             if (content) {
-              await copyToClipboard(content);
+              setCopyButtonStatus(copyBtn, await copyToClipboard(content));
             } else {
+              setCopyButtonStatus(copyBtn, { ok: false, message: 'No content to copy' });
               showToast('No content to copy', 'error', 2000);
             }
           });
