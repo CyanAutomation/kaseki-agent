@@ -175,32 +175,52 @@ export function createMinimalOrchestrationEnv(
     'No files restored during orchestration.\n'
   );
 
-  // Write goal-check artifacts (for both phases when needed)
-  if (scenario === 'success') {
-    fs.writeFileSync(
-      goalCheckPath,
-      JSON.stringify({
-        met: true,
-        confidence: 'high',
-        summary: 'Goal met by orchestration stub.',
-        retry_prompt: '',
-        evidence: ['diff inspected'],
-        missing: [],
-        validation_notes: ['validation was available'],
-      })
-    );
-    fs.writeFileSync(stageTimingsPath, 'goal check\t0\t30\n');
-  } else if (scenario === 'pi-exit-failure') {
-    fs.writeFileSync(goalCheckPath, JSON.stringify({ met: false, confidence: 'low' }));
-    fs.writeFileSync(stageTimingsPath, 'goal check\t42\t0\n'); // Exit code 42
-  } else if (scenario === 'malformed-artifact') {
-    // Write malformed JSON to trigger validation error
-    fs.writeFileSync(goalCheckPath, '{"met":true,"confidence":"high"');
-    fs.writeFileSync(stageTimingsPath, 'goal check\t86\t0\n'); // Exit code 86
-    fs.writeFileSync(path.join(resultsDir, 'goal-check-validation-reason.txt'), 'malformed_json');
-  } else if (scenario === 'missing-artifact') {
-    // Don't write goal-check artifact at all
-    fs.writeFileSync(stageTimingsPath, 'goal check\t0\t30\n');
+  // Write stage-timings based on phase and scenario
+  if (phase === 'goal-check') {
+    // Goal-check phase only writes goal-check stage-timings
+    if (scenario === 'success') {
+      fs.writeFileSync(
+        goalCheckPath,
+        JSON.stringify({
+          met: true,
+          confidence: 'high',
+          summary: 'Goal met by orchestration stub.',
+          retry_prompt: '',
+          evidence: ['diff inspected'],
+          missing: [],
+          validation_notes: ['validation was available'],
+        })
+      );
+      fs.writeFileSync(stageTimingsPath, 'goal check\t0\t30\n');
+    } else if (scenario === 'pi-exit-failure') {
+      fs.writeFileSync(goalCheckPath, JSON.stringify({ met: false, confidence: 'low' }));
+      fs.writeFileSync(stageTimingsPath, 'goal check\t42\t0\n'); // Exit code 42
+    } else if (scenario === 'malformed-artifact') {
+      // Write malformed JSON to trigger validation error
+      fs.writeFileSync(goalCheckPath, '{"met":true,"confidence":"high"');
+      fs.writeFileSync(stageTimingsPath, 'goal check\t86\t0\n'); // Exit code 86
+      fs.writeFileSync(path.join(resultsDir, 'goal-check-validation-reason.txt'), 'malformed_json');
+    } else if (scenario === 'missing-artifact') {
+      // Don't write goal-check artifact at all
+      fs.writeFileSync(stageTimingsPath, 'goal check\t0\t30\n');
+    }
+  } else {
+    // For run-evaluation phase, write goal-check artifacts but don't write stage-timings yet
+    // (stage-timings will be written in run-evaluation section)
+    if (scenario !== 'missing-artifact') {
+      fs.writeFileSync(
+        goalCheckPath,
+        JSON.stringify({
+          met: true,
+          confidence: 'high',
+          summary: 'Goal met by orchestration stub.',
+          retry_prompt: '',
+          evidence: ['diff inspected'],
+          missing: [],
+          validation_notes: ['validation was available'],
+        })
+      );
+    }
   }
 
   // Write run-evaluation artifacts (for run-evaluation phase)
@@ -216,17 +236,14 @@ export function createMinimalOrchestrationEnv(
           kaseki_improvement_opportunities: ['add_guardrails'],
         })
       );
-      if (!fs.existsSync(stageTimingsPath)) {
-        fs.writeFileSync(stageTimingsPath, 'run evaluation\t0\t30\n');
-      }
+      fs.writeFileSync(stageTimingsPath, 'run evaluation\t0\t30\n');
     } else if (scenario === 'malformed-artifact') {
       // Write malformed JSON
       fs.writeFileSync(runEvaluationPath, '{"overall_assessment":"unknown"');
-      if (!fs.existsSync(stageTimingsPath)) {
-        fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
-      }
+      fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
     } else if (scenario === 'missing-artifact') {
-      // Missing artifact is treated as a failure with warning
+      // Missing artifact scenario still writes error artifact but with exit code 86
+      // This prevents feedback collection but leaves the error artifact in place
       fs.writeFileSync(
         runEvaluationPath,
         JSON.stringify({
@@ -236,15 +253,19 @@ export function createMinimalOrchestrationEnv(
           warnings: ['run_evaluation_failed_exit_86'],
         })
       );
-      if (!fs.existsSync(stageTimingsPath)) {
-        fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
-      }
+      fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
     } else if (scenario === 'pi-exit-failure') {
-      // Pi stage failed
-      fs.writeFileSync(runEvaluationPath, JSON.stringify({ overall_assessment: 'unknown', reviewer_confidence: 'low' }));
-      if (!fs.existsSync(stageTimingsPath)) {
-        fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
-      }
+      // Pi stage failed - write artifact showing failure
+      fs.writeFileSync(
+        runEvaluationPath,
+        JSON.stringify({
+          overall_assessment: 'unknown',
+          reviewer_confidence: 'low',
+          task_completion_score: 1,
+          warnings: ['run_evaluation_failed_exit_86'],
+        })
+      );
+      fs.writeFileSync(stageTimingsPath, 'run evaluation\t86\t0\n');
     }
   }
 

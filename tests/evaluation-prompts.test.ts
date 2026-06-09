@@ -624,8 +624,9 @@ const stageTimingsPath = resultsDir + '/stage-timings.tsv';
 const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
 
 // Check if goal-check stage had non-zero exit code (pi-exit-failure scenario)
-const stageExitCodeMatch = stageTimings.match(/^goal check\t(\\d+)\t/m);
-const stageExitCode = stageExitCodeMatch ? parseInt(stageExitCodeMatch[1], 10) : 0;
+const stageLines = stageTimings.split('\n');
+const goalCheckLine = stageLines.find(line => line.startsWith('goal check'));
+const stageExitCode = goalCheckLine ? parseInt(goalCheckLine.split('\t')[1], 10) : 0;
 
 // Check if goal-check artifact exists and is valid
 let goalCheck = null;
@@ -643,15 +644,39 @@ if (stageExitCode !== 0) {
   process.exit(8);
 }
 
+const goalSetting = fs.existsSync(goalSettingPath) ? JSON.parse(fs.readFileSync(goalSettingPath, 'utf8')) : {};
+const metadata = fs.existsSync(metadataPath) ? JSON.parse(fs.readFileSync(metadataPath, 'utf8')) : {};
+
 const payload = {
   event: 'collect-feedback',
   phase,
   instanceName,
   paths: { goalSettingPath, goalCheckPath, metadataPath },
   goalCheckMet: goalCheck.met,
-  sawCompletedGoalCheck: /^goal check\t0\t/m.test(stageTimings),
+  sawCompletedGoalCheck: goalCheckLine && goalCheckLine.split('\t')[1] === '0',
   at: Date.now(),
 };
+
+// Create goal-feedback.jsonl artifact file
+const goalFeedbackLine = JSON.stringify({
+  phase: 'goal-check',
+  instance_name: instanceName,
+  assessment: {
+    original_prompt: goalSetting.original_prompt || 'test',
+    upgraded_goal: goalSetting.upgraded_goal || 'test goal',
+    goal_met: goalCheck.met,
+    confidence: goalCheck.confidence,
+  },
+  outcomes: {
+    validation_passed: metadata.validation_passed !== false,
+    coding_attempts: metadata.coding_attempts || 1,
+    goal_check_met: goalCheck.met,
+  },
+  validation_results: { passed: true },
+  timestamp: new Date().toISOString(),
+});
+fs.writeFileSync(resultsDir + '/goal-feedback.jsonl', goalFeedbackLine + '\\n');
+
 fs.appendFileSync(process.env.ORCHESTRATOR_EVENTS, JSON.stringify(payload) + '\\n');
 console.log(JSON.stringify(payload));
 `, { mode: 0o700 });
@@ -855,8 +880,9 @@ const stageTimingsPath = resultsDir + '/stage-timings.tsv';
 const stageTimings = fs.existsSync(stageTimingsPath) ? fs.readFileSync(stageTimingsPath, 'utf8') : '';
 
 // Check if run-evaluation stage had non-zero exit code (pi-exit-failure scenario)
-const stageExitCodeMatch = stageTimings.match(/^run evaluation\t(\\d+)\t/m);
-const stageExitCode = stageExitCodeMatch ? parseInt(stageExitCodeMatch[1], 10) : 0;
+const stageLines = stageTimings.split('\n');
+const runEvalLine = stageLines.find(line => line.startsWith('run evaluation'));
+const stageExitCode = runEvalLine ? parseInt(runEvalLine.split('\t')[1], 10) : 0;
 
 // Check if run-evaluation artifact exists and is valid
 let runEvaluation = null;
@@ -875,20 +901,48 @@ if (stageExitCode !== 0) {
   process.exit(0);
 }
 
+const metadata = fs.existsSync(metadataPath) ? JSON.parse(fs.readFileSync(metadataPath, 'utf8')) : {};
+
 const payload = {
   event: 'collect-feedback',
-  phase,
-  instanceName,
+  phase: 'run-evaluation',
+  instanceName: instanceName,
   paths: { runEvaluationPath, metadataPath },
   feedback: {
+    assessment: {
+      overall_assessment: runEvaluation.overall_assessment,
+      reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
+      task_completion_score: runEvaluation.task_completion_score || 0,
+    },
+    outcomes: {
+      validation_passed: metadata.validation_passed === true,
+      coding_attempts: metadata.coding_attempts || 1,
+      goal_check_met: metadata.goal_check_met === true,
+    },
+  },
+  sawCompletedRunEvaluation: runEvalLine && runEvalLine.split('\t')[1] === '0',
+  at: Date.now(),
+};
+
+// Create kaseki-improvements.jsonl artifact file
+const improvementsLine = JSON.stringify({
+  phase: 'run_evaluation',
+  instance_name: instanceName,
+  assessment: {
     overall_assessment: runEvaluation.overall_assessment,
     reviewer_confidence: runEvaluation.reviewer_confidence || 'unknown',
     task_completion_score: runEvaluation.task_completion_score || 0,
-    kaseki_improvement_opportunities: runEvaluation.kaseki_improvement_opportunities || [],
   },
-  sawCompletedRunEvaluation: /^run evaluation\t0\t/m.test(stageTimings),
-  at: Date.now(),
-};
+  outcomes: {
+    validation_passed: metadata.validation_passed === true,
+    coding_attempts: metadata.coding_attempts || 1,
+    goal_check_met: metadata.goal_check_met === true,
+  },
+  kaseki_improvement_opportunities: runEvaluation.kaseki_improvement_opportunities || [],
+  timestamp: new Date().toISOString(),
+});
+fs.writeFileSync(resultsDir + '/kaseki-improvements.jsonl', improvementsLine + '\\n');
+
 fs.appendFileSync(process.env.ORCHESTRATOR_EVENTS, JSON.stringify(payload) + '\\n');
 console.log(JSON.stringify(payload));
 `, { mode: 0o700 });
