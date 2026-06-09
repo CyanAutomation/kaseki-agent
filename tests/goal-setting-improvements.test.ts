@@ -30,8 +30,13 @@ import {
   parseGoalSettingOutput,
 } from '../src/types/goal-setting';
 import { collectGoalFeedback, analyzeGoalFeedback } from '../src/lib/goal-setting-feedback';
+import { createFakeBinariesDir } from '../src/test-utils/fake-binaries';
+import { createFakeGitRepoWithCommit } from '../src/test-utils/fake-git-repo';
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Helper to escape special regex characters
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const extractShellFunctionBlock = (scriptSource: string, startFunction: string, endFunction: string) => {
   const lines = scriptSource.split('\n');
@@ -659,8 +664,12 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         const piState = join(tempDir, 'pi-goal-setting-attempt');
         const modifiedScript = join(tempDir, 'kaseki-agent-modified.sh');
 
-        mkdirSync(join(fakeRepo, 'deps', 'fake-dep'), { recursive: true });
-        mkdirSync(fakeBin, { recursive: true });
+        // Use utility to create fake git repo with commit (replaces multiple mkdirSync + git commands)
+        createFakeGitRepoWithCommit(fakeRepo, {
+          packageJson: { name: 'fake-goal-retry-repo', scripts: { check: 'exit 0' } },
+        });
+
+        // Create remaining directories and files
         mkdirSync(resultsDir, { recursive: true });
         mkdirSync(workspaceRepo, { recursive: true });
         mkdirSync(appLib, { recursive: true });
@@ -688,68 +697,12 @@ validate_goal_setting_artifact "$1" "$2" "$3"
           .replaceAll('/cache', cacheDir);
         writeFileSync(modifiedScript, scriptSource, { mode: 0o755 });
 
-        writeFileSync(
-          join(fakeRepo, 'package.json'),
-          JSON.stringify({
-            name: 'fake-goal-retry-repo',
-            version: '1.0.0',
-            private: true,
-            scripts: { check: 'exit 0' },
-            dependencies: { 'fake-dep': 'file:deps/fake-dep' },
-          }),
-        );
-        writeFileSync(join(fakeRepo, 'deps', 'fake-dep', 'package.json'), JSON.stringify({ name: 'fake-dep', version: '1.0.0', private: true }));
-        writeFileSync(
-          join(fakeRepo, 'package-lock.json'),
-          JSON.stringify({
-            name: 'fake-goal-retry-repo',
-            version: '1.0.0',
-            lockfileVersion: 3,
-            requires: true,
-            packages: {
-              '': { name: 'fake-goal-retry-repo', version: '1.0.0', dependencies: { 'fake-dep': 'file:deps/fake-dep' } },
-              'deps/fake-dep': { version: '1.0.0' },
-              'node_modules/fake-dep': { resolved: 'deps/fake-dep', link: true },
-            },
-          }),
-        );
-        execFileSync('git', ['-C', fakeRepo, 'init', '-q', '-b', 'main']);
-        execFileSync('git', ['-C', fakeRepo, 'add', 'package.json', 'package-lock.json', 'deps/fake-dep/package.json']);
-        execFileSync('git', ['-C', fakeRepo, '-c', 'user.email=kaseki-test@example.invalid', '-c', 'user.name=Kaseki Test', 'commit', '-q', '-m', 'initial']);
-
-        writeFileSync(join(fakeBin, 'pi'), `#!/usr/bin/env bash
-set -euo pipefail
-if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
-prompt="\${*: -1}"
-if printf '%s' "$prompt" | grep -q 'goal-setting Pi agent'; then
-  printf 'goal-setting\n' >> "${piCalls}"
-  attempt=1
-  if [ -f "${piState}" ]; then attempt=$(( $(cat "${piState}") + 1 )); fi
-  printf '%s\n' "$attempt" > "${piState}"
-  if [ "$attempt" -eq 1 ]; then
-    echo 'api error: upstream timeout' >&2
-    exit 1
-  fi
-  cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
-{"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}
-JSON
-elif printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
-  printf 'scouting\n' >> "${piCalls}"
-  printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "${resultsDir}/scouting-candidate.json"
-elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
-  printf 'goal-check\n' >> "${piCalls}"
-  printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "${resultsDir}/goal-check-candidate.json"
-else
-  printf 'coding\n' >> "${piCalls}"
-  printf '%s' "$prompt" > "${resultsDir}/coding-prompt.txt"
-fi
-printf '{"type":"message","model":"test-model"}\n'
-`, { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'kaseki-pi-progress-stream'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'kaseki-pi-event-filter'), '#!/usr/bin/env bash\ncat "$1" > "$2"\nprintf \'{"selected_model":"test-model"}\\n\' > "$3"\n', { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'timeout'), '#!/usr/bin/env bash\nshift 2\n"$@"\n', { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'validation-output-filter'), '#!/usr/bin/env bash\ncat\n', { mode: 0o755 });
-        writeFileSync(join(fakeBin, 'npm'), '#!/usr/bin/env bash\necho "fake npm $*" >&2\nmkdir -p node_modules\nexit 0\n', { mode: 0o755 });
+        // Use utility to create fake binaries with retry logging (replaces multiple writeFileSync calls)
+        createFakeBinariesDir(fakeBin, {
+          resultsDir,
+          piCalls,
+          piState,
+        });
 
         try {
           execFileSync('bash', [modifiedScript], {
