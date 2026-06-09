@@ -949,9 +949,69 @@ build_stages_array() {
 }
 
 write_result_summary() {
-  # This function is a placeholder for generating result summary metadata.
-  # Future enhancement: output formatted summary to result-summary.md
-  :
+  # Generate a human-readable markdown summary of the run
+  local metadata_file="${KASEKI_RESULTS_DIR}/metadata.json"
+  local failure_file="${KASEKI_RESULTS_DIR}/failure.json"
+  local summary_file="${KASEKI_RESULTS_DIR}/result-summary.md"
+  
+  # Extract key information from metadata.json if it exists
+  local exit_code=0
+  local failed_command=""
+  local instance_name=""
+  
+  if [ -f "$metadata_file" ]; then
+    exit_code="$(jq -r '.exit_code // 0' "$metadata_file" 2>/dev/null || printf '0')"
+    failed_command="$(jq -r '.failed_command // ""' "$metadata_file" 2>/dev/null || printf '')"
+    instance_name="$(jq -r '.instance // "unknown"' "$metadata_file" 2>/dev/null || printf 'unknown')"
+  fi
+  
+  # Determine status line
+  local status_line
+  if [ "$exit_code" -eq 0 ]; then
+    status_line="✅ Success"
+  else
+    status_line="❌ Failed (exit code $exit_code)"
+  fi
+  
+  # Generate markdown summary
+  cat > "$summary_file" <<SUMMARY
+# Kaseki Agent Run Summary
+
+- Status: $status_line
+- Instance: $instance_name
+- Exit Code: $exit_code
+SUMMARY
+  
+  if [ -n "$failed_command" ]; then
+    printf -- "- Failed Command: %s\n" "$failed_command" >> "$summary_file"
+  fi
+  
+  # Add git diff info if available
+  if [ -f "${KASEKI_RESULTS_DIR}/git.diff" ]; then
+    local diff_lines
+    diff_lines="$(wc -l < "${KASEKI_RESULTS_DIR}/git.diff" 2>/dev/null || printf '0')"
+    printf -- "- Diff Lines: %s\n" "$diff_lines" >> "$summary_file"
+  fi
+  
+  # Add changed files count if available
+  if [ -f "${KASEKI_RESULTS_DIR}/changed-files.txt" ]; then
+    local changed_count
+    changed_count="$(wc -l < "${KASEKI_RESULTS_DIR}/changed-files.txt" 2>/dev/null || printf '0')"
+    printf -- "- Changed Files: %s\n" "$changed_count" >> "$summary_file"
+  fi
+  
+  # Add validation status if available
+  if [ -f "$failure_file" ]; then
+    local validation_exit
+    validation_exit="$(jq -r '.validation_exit_code // -1' "$failure_file" 2>/dev/null || printf '-1')"
+    if [ "$validation_exit" -ge 0 ]; then
+      if [ "$validation_exit" -eq 0 ]; then
+        printf -- "- Validation: Passed\n" >> "$summary_file"
+      else
+        printf -- "- Validation: Failed (exit code %s)\n" "$validation_exit" >> "$summary_file"
+      fi
+    fi
+  fi
 }
 
 write_failure_json() {
@@ -6983,7 +7043,12 @@ if [ -z "$openrouter_api_key" ]; then
   PI_EXIT=2
   STATUS=2
   FAILED_COMMAND="missing OPENROUTER_API_KEY"
-  exit 0
+  
+  # Create required artifacts for early exit
+  printf 'Skipped: OpenRouter API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+  printf 'Skipped: OpenRouter API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  
+  # Proceed to finalization (don't exit 0; let trap handler call final exit with STATUS)
 fi
 
 if ! run_clone_repository; then
