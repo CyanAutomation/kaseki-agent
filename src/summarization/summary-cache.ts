@@ -14,31 +14,106 @@ export interface CachedSummary {
   sizeBytes: number;
 }
 
+export interface SummaryCacheOptions {
+  /** Maximum number of summaries to retain. */
+  maxEntries?: number;
+
+  /** Maximum total cached summary content size in bytes. */
+  maxSizeBytes?: number;
+
+  /** Time-to-live for cache entries in milliseconds. */
+  ttlMs?: number;
+}
+
 export interface CacheStats {
   hits: number;
   misses: number;
   hitRate: number;
   entries: number;
   sizeBytes: number;
+  evictions: number;
+  maxEntries: number;
+  maxSizeBytes: number;
+  ttlMs: number;
 }
+
+const DEFAULT_MAX_ENTRIES = 1000;
+const DEFAULT_MAX_SIZE_BYTES = 50 * 1024 * 1024;
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Summary cache with file hash-based invalidation
  */
 export class SummaryCache {
   private cache: Map<string, CachedSummary> = new Map();
-  private stats = { hits: 0, misses: 0 };
+  private stats = { hits: 0, misses: 0, evictions: 0 };
   private cacheDir: string;
   private dirty = false;
+  private maxEntries: number;
+  private maxSizeBytes: number;
+  private ttlMs: number;
 
-  constructor(cacheDir: string) {
+  constructor(cacheDir: string, options: SummaryCacheOptions = {}) {
     this.cacheDir = cacheDir;
+    this.maxEntries = this.normalizeLimit(options.maxEntries, DEFAULT_MAX_ENTRIES);
+    this.maxSizeBytes = this.normalizeLimit(options.maxSizeBytes, DEFAULT_MAX_SIZE_BYTES);
+    this.ttlMs = this.normalizeLimit(options.ttlMs, DEFAULT_TTL_MS);
     this.ensureCacheDir();
   }
 
   private ensureCacheDir(): void {
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+  }
+
+  private normalizeLimit(value: number | undefined, defaultValue: number): number {
+    if (value === undefined || !Number.isFinite(value) || value < 0) {
+      return defaultValue;
+    }
+    return Math.floor(value);
+  }
+
+  private isExpired(entry: CachedSummary, now = Date.now()): boolean {
+    return this.ttlMs > 0 && now - entry.timestamp > this.ttlMs;
+  }
+
+  private getTotalSizeBytes(): number {
+    let sizeBytes = 0;
+
+    for (const entry of this.cache.values()) {
+      sizeBytes += entry.sizeBytes;
+    }
+
+    return sizeBytes;
+  }
+
+  private evictEntry(key: string): void {
+    if (this.cache.delete(key)) {
+      this.stats.evictions++;
+      this.dirty = true;
+    }
+  }
+
+  private evictExpired(now = Date.now()): void {
+    for (const [key, entry] of this.cache.entries()) {
+      if (this.isExpired(entry, now)) {
+        this.evictEntry(key);
+      }
+    }
+  }
+
+  private enforceLimits(): void {
+    while (this.cache.size > this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value as string | undefined;
+      if (oldestKey === undefined) return;
+      this.evictEntry(oldestKey);
+    }
+
+    while (this.getTotalSizeBytes() > this.maxSizeBytes) {
+      const oldestKey = this.cache.keys().next().value as string | undefined;
+      if (oldestKey === undefined) return;
+      this.evictEntry(oldestKey);
     }
   }
 
@@ -55,15 +130,24 @@ export class SummaryCache {
       return null;
     }
 
-    // Validate file hash (no stale summaries)
-    const currentHash = this.getFileHash(filePath);
-    if (currentHash !== cached.fileHash) {
-      // File changed - invalidate
-      this.cache.delete(normalized);
+    if (this.isExpired(cached)) {
+      this.evictEntry(normalized);
       this.stats.misses++;
       return null;
     }
 
+    // Validate file hash (no stale summaries)
+    const currentHash = this.getFileHash(filePath);
+    if (currentHash !== cached.fileHash) {
+      // File changed - invalidate
+      this.evictEntry(normalized);
+      this.stats.misses++;
+      return null;
+    }
+
+    this.cache.delete(normalized);
+    this.cache.set(normalized, cached);
+    this.dirty = true;
     this.stats.hits++;
     return cached;
   }
@@ -76,6 +160,11 @@ export class SummaryCache {
     const fileHash = this.getFileHash(filePath);
     const sizeBytes = Buffer.byteLength(summary, 'utf-8');
 
+    this.evictExpired();
+    if (this.cache.has(normalized)) {
+      this.cache.delete(normalized);
+    }
+
     this.cache.set(normalized, {
       content: summary,
       fileHash,
@@ -85,6 +174,7 @@ export class SummaryCache {
     });
 
     this.dirty = true;
+    this.enforceLimits();
   }
 
   /**
@@ -132,7 +222,7 @@ export class SummaryCache {
 
     for (const [key, entry] of this.cache.entries()) {
       if (now - entry.timestamp > ttlMs) {
-        this.cache.delete(key);
+        this.evictEntry(key);
       }
     }
 
@@ -149,7 +239,7 @@ export class SummaryCache {
    */
   clear(): void {
     this.cache.clear();
-    this.stats = { hits: 0, misses: 0 };
+    this.stats = { hits: 0, misses: 0, evictions: 0 };
     this.dirty = true;
   }
 
@@ -158,11 +248,7 @@ export class SummaryCache {
    */
   getStats(): CacheStats {
     const entries = this.cache.size;
-    let sizeBytes = 0;
-
-    for (const entry of this.cache.values()) {
-      sizeBytes += entry.sizeBytes;
-    }
+    const sizeBytes = this.getTotalSizeBytes();
 
     const totalRequests = this.stats.hits + this.stats.misses;
     const hitRate = totalRequests > 0 ? this.stats.hits / totalRequests : 0;
@@ -173,6 +259,10 @@ export class SummaryCache {
       hitRate,
       entries,
       sizeBytes,
+      evictions: this.stats.evictions,
+      maxEntries: this.maxEntries,
+      maxSizeBytes: this.maxSizeBytes,
+      ttlMs: this.ttlMs,
     };
   }
 
@@ -205,11 +295,14 @@ export class SummaryCache {
       if (!fs.existsSync(cacheFile)) return;
 
       const data = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+      this.cache.clear();
       for (const entry of data) {
         const { file, ...cached } = entry;
         this.cache.set(file, cached as CachedSummary);
       }
 
+      this.evictExpired();
+      this.enforceLimits();
       this.dirty = false;
     } catch (error) {
       console.error('Failed to load cache:', error);

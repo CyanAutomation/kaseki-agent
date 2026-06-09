@@ -66,6 +66,18 @@ export interface SummarizerConfig {
   cacheTTLMs: number;
 
   /**
+   * Maximum number of entries kept in the summary cache.
+   * Default: 1000
+   */
+  cacheMaxEntries: number;
+
+  /**
+   * Maximum total summary cache content size in bytes.
+   * Default: 50MB
+   */
+  cacheMaxSizeBytes: number;
+
+  /**
    * Maximum lines to extract per section (classes, functions, etc.)
    * Prevents summaries from becoming too large
    * Default: 100
@@ -86,6 +98,8 @@ export const DEFAULT_CONFIG: SummarizerConfig = {
   cacheDir: '.kaseki-summary-cache',
   enableCache: true,
   cacheTTLMs: 24 * 60 * 60 * 1000, // 24 hours
+  cacheMaxEntries: 1000,
+  cacheMaxSizeBytes: 50 * 1024 * 1024, // 50MB
   maxLinesPerSection: 100,
 };
 
@@ -101,6 +115,9 @@ export function getConfigFromEnv(): Partial<SummarizerConfig> {
     enableLLMFallback: process.env.KASEKI_SUMMARY_LLM_FALLBACK !== 'false',
     enableCache: process.env.KASEKI_SUMMARY_CACHE !== 'false',
     cacheDir: process.env.KASEKI_SUMMARY_CACHE_DIR || undefined,
+    cacheTTLMs: process.env.KASEKI_SUMMARY_CACHE_TTL_MS ? parseInt(process.env.KASEKI_SUMMARY_CACHE_TTL_MS, 10) : undefined,
+    cacheMaxEntries: process.env.KASEKI_SUMMARY_CACHE_MAX_ENTRIES ? parseInt(process.env.KASEKI_SUMMARY_CACHE_MAX_ENTRIES, 10) : undefined,
+    cacheMaxSizeBytes: process.env.KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES ? parseInt(process.env.KASEKI_SUMMARY_CACHE_MAX_SIZE_BYTES, 10) : undefined,
   };
 }
 

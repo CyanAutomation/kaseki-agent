@@ -61,7 +61,11 @@ function getCache(): SummaryCache {
   if (!cache) {
     const cfg = getConfig();
     const cacheDir = path.join(process.cwd(), cfg.cacheDir);
-    cache = new SummaryCache(cacheDir);
+    cache = new SummaryCache(cacheDir, {
+      maxEntries: cfg.cacheMaxEntries,
+      maxSizeBytes: cfg.cacheMaxSizeBytes,
+      ttlMs: cfg.cacheTTLMs,
+    });
   }
   return cache;
 }
