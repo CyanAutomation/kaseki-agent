@@ -6673,7 +6673,7 @@ run_github_operations() {
     owner="$GITHUB_REPO_OWNER"
     repo="$GITHUB_REPO_NAME"
   else
-    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL"  >>&2
+    printf -- 'Cannot parse GitHub repo URL: %s\n' "$REPO_URL"  >&2
     return 7
   fi
   
@@ -6707,7 +6707,7 @@ run_github_operations() {
     if [ "$token_parse_result" != "$token_error" ]; then
       token_http_status="${token_parse_result#*$'\t'}"
     fi
-    printf 'Failed to generate token: %s\n' "$token_error"  >>&2
+    printf 'Failed to generate token: %s\n' "$token_error"  >&2
     GITHUB_API_ERROR_TYPE="github_app_token_error"
     GITHUB_API_ERROR_MESSAGE="$token_error"
     GITHUB_API_HTTP_STATUS="$token_http_status"
@@ -6718,13 +6718,13 @@ run_github_operations() {
   
   # Use helper to extract token from JSON response
   if ! run_node_subprocess token "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.token || '')" "$token_data" /dev/null; then
-    printf -- 'Failed to extract token from response: %s\n' "$token_data"  >>&2
+    printf -- 'Failed to extract token from response: %s\n' "$token_data"  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   
   if [ -z "$token" ]; then
-    printf -- 'Failed to extract token from response (empty result)\n'  >>&2
+    printf -- 'Failed to extract token from response (empty result)\n'  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
@@ -6736,7 +6736,7 @@ run_github_operations() {
   feature_branch="kaseki/$INSTANCE_NAME"
   printf -- 'Creating feature branch: %s\n' "$feature_branch" | tee -a /dev/null
   git checkout -b "$feature_branch" || {
-    printf 'Failed to create branch\n'  >>&2
+    printf 'Failed to create branch\n'  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   }
@@ -6745,20 +6745,20 @@ run_github_operations() {
   GITHUB_OPERATION_PHASE="commit"
   printf 'Committing changes...\n' | tee -a /dev/null
   if [ ! -s "${KASEKI_RESULTS_DIR}"/changed-files.txt ]; then
-    printf 'No changed files to stage\n'  >>&2
+    printf 'No changed files to stage\n'  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     git add -- "$changed_file" || {
-      printf -- 'Failed to stage changed file: %s\n' "$changed_file"  >>&2
+      printf -- 'Failed to stage changed file: %s\n' "$changed_file"  >&2
       GITHUB_PUSH_EXIT=7
       return 7
     }
   done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
   if ! git commit -m "Kaseki: $INSTANCE_NAME"; then
-    printf 'No changes to commit or commit failed\n'  >>&2
+    printf 'No changes to commit or commit failed\n'  >&2
     GITHUB_PUSH_EXIT=7
     return 7
   fi
@@ -6779,7 +6779,7 @@ run_github_operations() {
     printf 'Branch pushed successfully\n' | tee -a /dev/null
   else
     rm -f "$askpass_file"
-    printf 'Failed to push branch (exit %s)\n' "$git_push_exit"  >>&2
+    printf 'Failed to push branch (exit %s)\n' "$git_push_exit"  >&2
     GITHUB_PUSH_EXIT="$git_push_exit"
     return "$git_push_exit"
   fi
@@ -6827,7 +6827,7 @@ run_github_operations() {
 - Generated at (UTC): $fallback_timestamp
 EOF
 )
-    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n'  >>&2
+    printf 'WARN: build_pr_body returned empty content after sanitization; using fallback PR body.\n'  >&2
   fi
   if is_pr_draft_mode; then
     pr_draft_json=true
@@ -6851,8 +6851,8 @@ EOF
     
     # Capture both response and HTTP status code
     local pr_response_file temp_status_file
-    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n'  >>&2; GITHUB_PR_EXIT=8; return 8; }
-    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n'  >>&2; GITHUB_PR_EXIT=8; return 8; }
+    pr_response_file="$(mktemp /tmp/kaseki-pr-response.XXXXXX)" || { printf 'Failed to create temp file for PR response\n'  >&2; GITHUB_PR_EXIT=8; return 8; }
+    temp_status_file="$(mktemp /tmp/kaseki-pr-status.XXXXXX)" || { printf 'Failed to create temp file for PR status\n'  >&2; GITHUB_PR_EXIT=8; return 8; }
     
     if [ $retry_count -eq 0 ] && [ "${KASEKI_DEBUG:-0}" = "1" ]; then
       printf 'Debug: Creating PR with head=%s, base=%s, draft=%s\n' "$feature_branch" "$GIT_REF" "$pr_draft_json" | tee -a /dev/null
@@ -6863,19 +6863,19 @@ EOF
     pr_title_json='""'
     pr_body_json='""'
     if ! run_node_subprocess pr_title_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_title" /dev/null; then
-      printf 'ERROR: Failed to JSON encode PR title\n'  >>&2
+      printf 'ERROR: Failed to JSON encode PR title\n'  >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
     if ! run_node_subprocess pr_body_json "console.log(JSON.stringify(require('fs').readFileSync(0, 'utf8')))" "$pr_body" /dev/null; then
-      printf 'ERROR: Failed to JSON encode PR body\n'  >>&2
+      printf 'ERROR: Failed to JSON encode PR body\n'  >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
     
     # Validate both variables are non-empty before using in curl
     if [ -z "$pr_title_json" ] || [ -z "$pr_body_json" ]; then
-      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json"  >>&2
+      printf 'ERROR: JSON encoding produced empty values (title=%s, body=%s)\n' "$pr_title_json" "$pr_body_json"  >&2
       GITHUB_PR_EXIT=8
       return 8
     fi
@@ -6900,7 +6900,7 @@ EOF
     
     if [ $curl_exit -ne 0 ]; then
       # curl command itself failed (network error, timeout, etc.)
-      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1))  >>&2
+      printf 'GitHub PR API curl command failed with exit code %d (attempt %d)\n' "$curl_exit" $((retry_count + 1))  >&2
       GITHUB_API_HTTP_STATUS="0"
       if is_github_pr_error_retryable "0" "curl_error" && [ "$retry_count" -lt "$((max_retries - 1))" ]; then
         retry_count=$((retry_count + 1))
@@ -6925,13 +6925,13 @@ EOF
     if validate_github_api_response "$pr_http_status" "$pr_response" /dev/null; then
       # API returned success (201); now extract the URL and issue number using helper
       if ! run_node_subprocess pr_url "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); process.stdout.write(d.html_url || '')" "$pr_response" /dev/null; then
-        printf 'ERROR: Failed to extract PR URL from API response\n'  >>&2
+        printf 'ERROR: Failed to extract PR URL from API response\n'  >&2
         emit_error_event "github_pr_response_malformed" "Failed to parse PR API response to extract html_url" "exit"
         GITHUB_PR_EXIT=9
         pr_url=""
       fi
       if ! run_node_subprocess pr_number "const d = JSON.parse(require('fs').readFileSync(0, 'utf8')); if (Number.isInteger(d.number)) process.stdout.write(String(d.number));" "$pr_response" /dev/null; then
-        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n'  >>&2
+        printf 'Warning: failed to extract PR number from API response; leaving PR unlabeled\n'  >&2
         pr_number=""
       fi
       
@@ -6944,14 +6944,14 @@ EOF
           # Request repository owner as reviewer for personal repos
           request_owner_review "$pr_response" "$token" /dev/null || true
         else
-          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n'  >>&2
+          printf 'Warning: PR API response missing number field; leaving PR unlabeled\n'  >&2
         fi
         pr_created=1
         rm -f "$pr_response_file"
         break
       else
         # HTTP 201 but no html_url in response - malformed response
-        printf 'Pull request API returned success (201) but response missing html_url field\n'  >>&2
+        printf 'Pull request API returned success (201) but response missing html_url field\n'  >&2
         emit_error_event "github_pr_response_malformed" "GitHub PR API returned 201 but response missing html_url field" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
           printf 'Debug: Full API response:\n%s\n' "$pr_response" | tee -a /dev/null
@@ -6970,7 +6970,7 @@ EOF
         continue
       else
         # Permanent error, give up
-        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE"  >>&2
+        printf 'Failed to create PR. API error: %s\n' "$GITHUB_API_ERROR_MESSAGE"  >&2
         emit_error_event "github_pr_api_failed" "GitHub API error ($GITHUB_API_ERROR_TYPE): $GITHUB_API_ERROR_MESSAGE (HTTP $GITHUB_API_HTTP_STATUS)" "exit"
         if [ "${KASEKI_DEBUG:-0}" = "1" ]; then
           printf 'Debug: API error type: %s, HTTP status: %s\n' "$GITHUB_API_ERROR_TYPE" "$GITHUB_API_HTTP_STATUS" | tee -a /dev/null
@@ -7993,7 +7993,7 @@ if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
   else
     GITHUB_SKIP_REASONS+=("github_app_secrets_missing")
     GITHUB_OPERATION_PHASE="secrets"
-    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"  >>&2
+    printf -- 'GitHub operations: skipped (reasons: %s)\n' "$(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"  >&2
     emit_progress "github operations" "skipped: $(IFS=,; printf '%s' "${GITHUB_SKIP_REASONS[*]}")"
     GITHUB_PUSH_EXIT=7
   fi
