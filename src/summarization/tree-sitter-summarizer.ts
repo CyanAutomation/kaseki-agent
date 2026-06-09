@@ -51,20 +51,20 @@ export class TreeSitterSummarizer {
 
   /**
    * Summarize code content into code structure
-   * For TS/JS: content is the file content
-   * For Go: content is the file path (tree-sitter CLI needs file path)
+   * For TS/JS: content is the file content string
+   * For Go: content is the file content string (internally creates temp file if needed)
    */
-  summarize(contentOrPath: string, timeoutMs: number = 200): CodeSummary {
+  summarize(content: string, timeoutMs: number = 200): CodeSummary {
     try {
       if (this.language === 'go' && this.goCliSummarizer) {
-        // For Go, the parameter is a file path
-        return this.goCliSummarizer.summarize(contentOrPath, timeoutMs);
+        // For Go, pass content directly - GoCliSummarizer handles temp file creation
+        return this.goCliSummarizer.summarize(content, timeoutMs);
       } else if ((this.language === 'typescript' || this.language === 'javascript') && this.tsCompilerSummarizer) {
         // For TS/JS, the parameter is file content
-        return this.tsCompilerSummarizer.summarize(contentOrPath, timeoutMs);
+        return this.tsCompilerSummarizer.summarize(content, timeoutMs);
       } else {
         // Unsupported language
-        const originalSize = Buffer.byteLength(contentOrPath, 'utf-8');
+        const originalSize = Buffer.byteLength(content, 'utf-8');
         return {
           language: this.language,
           imports: [],
@@ -79,7 +79,7 @@ export class TreeSitterSummarizer {
         };
       }
     } catch (error) {
-      const originalSize = Buffer.byteLength(contentOrPath, 'utf-8');
+      const originalSize = Buffer.byteLength(content, 'utf-8');
       return {
         language: this.language,
         imports: [],
