@@ -78,7 +78,7 @@
     "validate-module-imports": "node scripts/validate-module-imports.js",
     "test:pack-artifact": "npm run build && bash scripts/check-packed-artifact.sh",
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json",
-    "test:tree-sitter:functional": "node test-tree-sitter-functional.js"
+    "test:tree-sitter:functional": "node test-tree-sitter-functional.cjs"
   },
   "dependencies": {
     "@sentry/node": "^10.54.0",

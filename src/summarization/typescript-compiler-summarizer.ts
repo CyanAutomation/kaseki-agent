@@ -77,7 +77,7 @@ export class TypeScriptCompilerSummarizer {
     }
 
     // Extract exports (check for export modifier on declarations)
-    if (ts.isClassDeclaration(node) || ts.isFunctionDeclaration(node) || 
+    if (ts.isClassDeclaration(node) || ts.isFunctionDeclaration(node) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) {
       this.extractExport(node, summary);
     }
