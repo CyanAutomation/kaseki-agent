@@ -953,6 +953,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           detail: [
             'No OpenRouter API key configured',
             'GitHub App credentials are incomplete',
+            'Checked configured OPENROUTER_API_KEY_FILE: /run/secrets/kaseki/custom_openrouter_key',
             'Create: /run/secrets/kaseki/openrouter_api_key',
           ].join('\n'),
         };
@@ -982,6 +983,9 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         detail: expect.stringContaining('No OpenRouter API key configured'),
         remediation: expect.stringMatching(/KASEKI_HOST_SECRETS_DIR|host secrets (directory|mount)/),
       }));
+      expect(workerSmokeCheck.remediation).toContain('/run/secrets/kaseki/custom_openrouter_key');
+      expect(workerSmokeCheck.remediation).toContain('/run/secrets/kaseki/openrouter_api_key is the API container/host secret mount');
+      expect(workerSmokeCheck.remediation).toContain('/agents/secrets/openrouter_api_key is the nested worker mount used by run-kaseki.sh');
       expect(workerSmokeCheck.remediation).not.toMatch(/Docker daemon|Docker socket|docker\.sock/i);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
