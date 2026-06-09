@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import { createPrivateKey } from 'crypto';
 
 export interface GitHubAppPrivateKeyValidationResult {
   ok: boolean;
@@ -118,7 +118,7 @@ export function validateGitHubAppPrivateKey(value: string): GitHubAppPrivateKeyV
   }
 
   try {
-    crypto.createPrivateKey(normalized);
+    createPrivateKey(normalized);
   } catch (error) {
     return {
       ok: false,
