@@ -297,6 +297,9 @@ check_api_key() {
   fi
 
   log_warn "No OpenRouter API key configured"
+  if [ -n "${OPENROUTER_API_KEY_FILE:-}" ]; then
+    log_info "  Checked configured OPENROUTER_API_KEY_FILE: $OPENROUTER_API_KEY_FILE"
+  fi
   log_info "  Create: $KASEKI_SECRETS_DIR/openrouter_api_key or run: kaseki-agent init"
   return 3
 }
