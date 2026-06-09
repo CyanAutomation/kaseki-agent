@@ -254,7 +254,9 @@ describe('kaseki API web console behavior', () => {
       },
     });
 
-    document.querySelector<HTMLInputElement>('#run-id')!.value = 'kaseki-301';
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-301';
     click(document.querySelector('#full-results-btn'));
     await waitFor(() => expect(calls.map((call) => call.path)).toContain('/api/runs/kaseki-301/status'));
 
