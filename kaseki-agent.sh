@@ -954,16 +954,20 @@ write_result_summary() {
   local failure_file="${KASEKI_RESULTS_DIR}/failure.json"
   local summary_file="${KASEKI_RESULTS_DIR}/result-summary.md"
   
-  # Extract key information from metadata.json if it exists
-  local exit_code=0
-  local failed_command=""
-  local instance_name=""
+  # Extract key information from metadata.json if it exists; during EXIT finalization,
+  # metadata may not have been written yet, so fall back to the in-memory final status.
+  local exit_code="$STATUS"
+  local failed_command="$FAILED_COMMAND"
+  local instance_name="$INSTANCE_NAME"
   
   if [ -f "$metadata_file" ]; then
-    exit_code="$(jq -r '.exit_code // 0' "$metadata_file" 2>/dev/null || printf '0')"
-    failed_command="$(jq -r '.failed_command // ""' "$metadata_file" 2>/dev/null || printf '')"
-    instance_name="$(jq -r '.instance // "unknown"' "$metadata_file" 2>/dev/null || printf 'unknown')"
+    exit_code="$(jq -r '.exit_code // empty' "$metadata_file" 2>/dev/null || true)"
+    failed_command="$(jq -r '.failed_command // empty' "$metadata_file" 2>/dev/null || true)"
+    instance_name="$(jq -r '.instance // empty' "$metadata_file" 2>/dev/null || true)"
   fi
+  [ -n "$exit_code" ] || exit_code="$STATUS"
+  [ -n "$failed_command" ] || failed_command="$FAILED_COMMAND"
+  [ -n "$instance_name" ] || instance_name="$INSTANCE_NAME"
   
   # Determine status line
   local status_line
@@ -1003,7 +1007,8 @@ SUMMARY
   # Add validation status if available
   if [ -f "$failure_file" ]; then
     local validation_exit
-    validation_exit="$(jq -r '.validation_exit_code // -1' "$failure_file" 2>/dev/null || printf '-1')"
+    validation_exit="$(jq -r '.validation_exit_code // empty' "$failure_file" 2>/dev/null || true)"
+    [ -n "$validation_exit" ] || validation_exit="-1"
     if [ "$validation_exit" -ge 0 ]; then
       if [ "$validation_exit" -eq 0 ]; then
         printf -- "- Validation: Passed\n" >> "$summary_file"
@@ -7043,17 +7048,19 @@ unset OPENROUTER_API_KEY secret_content
 if [ -z "$openrouter_api_key" ]; then
   set_current_stage "agent setup"
   openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide %s.\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s.\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
   FAILED_COMMAND="missing OPENROUTER_API_KEY"
+  emit_error_event "openrouter_auth_config_missing" "Missing OpenRouter API key; checked OPENROUTER_API_KEY and OPENROUTER_API_KEY_FILE=$openrouter_api_key_file" "exit"
   
   # Create required artifacts for early exit
   printf 'Skipped: OpenRouter API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
   printf 'Skipped: OpenRouter API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
   
-  # Proceed to finalization (don't exit 0; let trap handler call final exit with STATUS)
+  # Finalize deterministically before any Pi-dependent agent phase can run with an empty key.
+  exit 0
 fi
 
 if ! run_clone_repository; then
