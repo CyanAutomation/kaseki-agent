@@ -175,12 +175,16 @@ describe('Artifact Utilities', () => {
         { name: 'pre-validation-timings.tsv', contentType: 'text/tab-separated-values' },
         { name: 'validation.log', contentType: 'text/plain' },
         { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values' },
+        { name: 'validation-results.json', contentType: 'application/json' },
         { name: 'quality.log', contentType: 'text/plain' },
+        { name: 'quality-gates.json', contentType: 'application/json' },
         { name: 'stage-timings.tsv', contentType: 'text/tab-separated-values' },
         { name: 'git.diff', contentType: 'text/plain' },
         { name: 'changed-files.txt', contentType: 'text/plain' },
         { name: 'restoration.jsonl', contentType: 'application/x-jsonl' },
         { name: 'secret-scan.log', contentType: 'text/plain' },
+        { name: 'secret-scan.json', contentType: 'application/json' },
+        { name: 'cache-metrics.json', contentType: 'application/json' },
         { name: 'exit_code', contentType: 'text/plain' },
       ];
       const downloadOnlyArtifacts = [

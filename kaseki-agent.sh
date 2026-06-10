@@ -371,6 +371,12 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/progress.jsonl
 : > "${KASEKI_RESULTS_DIR}"/failure.json
 : > "$VALIDATION_TIMINGS_FILE"
+
+# Phase 2: Initialize JSON array artifacts
+init_json_array "${KASEKI_RESULTS_DIR}"/validation-results.json
+init_json_array "${KASEKI_RESULTS_DIR}"/quality-gates.json
+init_json_array "${KASEKI_RESULTS_DIR}"/cache-metrics.json
+
 setup_host_logging_mirror "$INSTANCE_NAME"
 require_or_warn_binary jq required 'Install jq (for Debian/Ubuntu: apt-get install -y jq). Metadata/report generation depends on it.'
 case "$KASEKI_GIT_CACHE_MODE" in
@@ -503,6 +509,77 @@ append_jsonl_object() {
   local output_file="$1"
   shift
   json_object_from_pairs "$@" >> "$output_file"
+}
+
+# Phase 2: JSON Artifact Output Helpers
+
+# Initialize a JSON array file (starts empty array, to be populated with append_* functions)
+init_json_array() {
+  local output_file="$1"
+  printf '[]' > "$output_file"
+}
+
+# Append a validation result object to validation-results.json
+append_validation_result() {
+  local output_file="$1"
+  local command="$2"
+  local exit_code="$3"
+  local duration_seconds="$4"
+  local status="${5:-unknown}"  # passed, failed, skipped
+  
+  # Read current array, append object, write back
+  jq \
+    --arg cmd "$command" \
+    --arg code "$exit_code" \
+    --arg duration "$duration_seconds" \
+    --arg stat "$status" \
+    '. += [{"command": $cmd, "exit_code": ($code | tonumber), "duration_seconds": ($duration | tonumber), "status": $stat}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a quality gate violation to quality-gates.json
+append_quality_violation() {
+  local output_file="$1"
+  local violation_type="$2"  # changed_file_outside_allowlist, validation_allowlist_violation, infrastructure_error, etc.
+  local detail="$3"
+  local severity="${4:-warning}"  # error, warning, info
+  
+  jq \
+    --arg type "$violation_type" \
+    --arg detail "$detail" \
+    --arg severity "$severity" \
+    '. += [{"type": $type, "detail": $detail, "severity": $severity, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a cache metrics entry to cache-metrics.json
+append_cache_metric() {
+  local output_file="$1"
+  local metric_name="$2"
+  local value="$3"
+  local unit="${4:-bytes}"
+  
+  jq \
+    --arg name "$metric_name" \
+    --arg val "$value" \
+    --arg unit "$unit" \
+    '. += [{"name": $name, "value": ($val | tonumber), "unit": $unit, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a secret scan result to secret-scan.json
+append_secret_scan_result() {
+  local output_file="$1"
+  local file_path="$2"
+  local pattern="$3"
+  local status="${4:-real_leak}"  # allowlisted or real_leak
+  
+  jq \
+    --arg file "$file_path" \
+    --arg pat "$pattern" \
+    --arg stat "$status" \
+    '. += [{"file": $file, "pattern": $pat, "status": $stat, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
 # Validate that a variable contains only numeric digits (for use before arithmetic)
@@ -1573,11 +1650,14 @@ check_secret_scan_allowlist() {
   
   # Read the secret-scan.log and check each match against the allowlist
   local secret_matches=() unallowlisted_count=0 allowlisted_count=0
-  local match_line
+  local match_line allowlisted_matches=()
   
   # Read the log into a temp variable to avoid SC2094 (read-write in same pipeline)
   local temp_log
   temp_log=$(cat "${KASEKI_RESULTS_DIR}"/secret-scan.log)
+  
+  # Initialize secret-scan.json array
+  init_json_array "${KASEKI_RESULTS_DIR}"/secret-scan.json
   
   while IFS= read -r match_line || [ -n "$match_line" ]; do
     [ -z "$match_line" ] && continue
@@ -1600,11 +1680,16 @@ check_secret_scan_allowlist() {
     if grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
       printf '[secret-scan] ALLOWLISTED: %s\n' "$match_line"
       allowlisted_count=$((allowlisted_count + 1))
+      allowlisted_matches+=("$match_line")
       emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
+      # Write to JSON
+      append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "allowlisted"
     else
       secret_matches+=("$match_line")
       unallowlisted_count=$((unallowlisted_count + 1))
       emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
+      # Write to JSON
+      append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
     fi
   done <<< "$temp_log"
   
@@ -7961,6 +8046,7 @@ set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 stage_start="$(date +%s)"
 : > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+init_json_array "${KASEKI_RESULTS_DIR}"/secret-scan.json
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
   printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a "${KASEKI_RESULTS_DIR}"/secret-scan.log
   SECRET_SCAN_EXIT=0
@@ -7980,6 +8066,23 @@ else
     # No matches found
     SECRET_SCAN_EXIT=0
   fi
+  
+  # Populate secret-scan.json for matches when no allowlist or for unmatched patterns
+  if [ ! -f "${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist" ] && [ -s "${KASEKI_RESULTS_DIR}"/secret-scan.log ]; then
+    # No allowlist exists - populate JSON with all matches as real_leak
+    while IFS= read -r match_line || [ -n "$match_line" ]; do
+      [ -z "$match_line" ] && continue
+      local file_path pattern
+      file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
+      pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
+      [ -z "$pattern" ] && continue
+      file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
+      file_path="${file_path#repo/}"
+      file_path="${file_path#./}"
+      append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
+    done < "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  fi
+  
   record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
 fi
 emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
