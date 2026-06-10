@@ -1625,6 +1625,8 @@ check_validation_allowlist() {
       printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
       validation_violation_count=$((validation_violation_count + 1))
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
+      # Phase 2C: Emit quality violation to JSON
+      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "validation_phase_file_outside_allowlist" "File $changed_file changed during validation outside KASEKI_VALIDATION_ALLOWLIST" "error"
     else
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=true" "file=$changed_file"
     fi
@@ -2333,6 +2335,8 @@ classify_auto_lint_cleanup_command_exit() {
 
 record_skipped_validation_command() {
   record_skipped_npm_script_command "$1" "$2" "$3" "${4:-${KASEKI_RESULTS_DIR}/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
+  # Phase 2C: Emit skipped validation result to JSON
+  append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$1" "127" "$3" "skipped"
 }
 
 has_typescript_project() {
@@ -2987,7 +2991,19 @@ analyze_test_failures_baseline() {
   
   emit_progress "test failure analysis" "comparing baseline and working test results"
   
-  # Compile and run analyze-test-failures.ts if source exists
+  # 1. Prefer pre-compiled global binary or library JS (fastest in Docker)
+  if command -v analyze-test-failures >/dev/null 2>&1; then
+    analyze-test-failures "$baseline_log" "$working_log" "$output_file" "$results_dir"
+    return $?
+  fi
+
+  local lib_analyzer_js="/app/lib/analyze-test-failures.js"
+  if [ -f "$lib_analyzer_js" ]; then
+    node "$lib_analyzer_js" "$baseline_log" "$working_log" "$output_file" "$results_dir"
+    return $?
+  fi
+
+  # 2. Fall back to on-the-fly transpilation of .ts source (local development)
   # In Docker, prefer /app/src/ (installed with image); fall back to local $SCRIPT_DIR for dev
   local analyzer_ts="/app/src/analyze-test-failures.ts"
   local analyzer_js="/tmp/analyze-test-failures.js"
@@ -3015,7 +3031,7 @@ analyze_test_failures_baseline() {
       return $?
     fi
   else
-    emit_error_event "test_failure_analyzer_missing" "Test failure analyzer script not found at $analyzer_ts" "continue"
+    emit_error_event "test_failure_analyzer_missing" "Test failure analyzer script not found at $analyzer_ts (no global binary or library JS found either)" "continue"
     return 1
   fi
 }
@@ -3041,69 +3057,42 @@ analyze_validation_failure_causality() {
 
   emit_progress "validation causality analysis" "analyzing failure causality (3 signals)"
 
+  # 1. Prefer pre-compiled global binary or library JS (fastest in Docker)
+  if command -v validation-causality-analysis >/dev/null 2>&1; then
+    validation-causality-analysis "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file"
+    return $?
+  fi
+
+  local lib_analyzer_js="/app/lib/lib/validation-causality-analysis.js"
+  if [ -f "$lib_analyzer_js" ]; then
+    node "$lib_analyzer_js" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file"
+    return $?
+  fi
+
+  # 2. Fall back to on-the-fly execution of .ts source (local development)
   # Use TypeScript utilities to analyze causality
   local analyzer_module="src/lib/validation-causality-analysis.ts"
   if [ ! -f "$analyzer_module" ] && [ -f "/app/$analyzer_module" ]; then
     analyzer_module="/app/$analyzer_module"
   fi
 
-  # Create a small Node.js script to run the analysis
-  local analysis_script="/tmp/causality-analysis.js"
-  cat > "$analysis_script" << 'EOF'
-const fs = require('fs');
-const path = require('path');
-
-// For now, we'll invoke the TypeScript module via tsx or ts-node
-const { analyzeValidationFailureCausality, generateCausalityAnalysisArtifact } = 
-  require(process.argv[1]);
-
-const baselineLog = process.argv[2];
-const postChangeLog = process.argv[3];
-const gitDiff = process.argv[4];
-const changedFiles = process.argv[5];
-const outputPath = process.argv[6];
-
-try {
-  const assessment = analyzeValidationFailureCausality(
-    baselineLog,
-    postChangeLog,
-    gitDiff,
-    changedFiles
-  );
-  
-  if (assessment) {
-    if (generateCausalityAnalysisArtifact(assessment, outputPath)) {
-      console.log(`Causality analysis written to ${outputPath}`);
-      console.log(`Verdict: ${assessment.failureType} (confidence: ${(assessment.confidence * 100).toFixed(1)}%)`);
-      process.exit(0);
-    } else {
-      console.error('Failed to write causality analysis artifact');
-      process.exit(1);
-    }
-  } else {
-    console.error('Failed to assess causality');
-    process.exit(1);
-  }
-} catch (err) {
-  console.error('Causality analysis error:', err.message);
-  process.exit(1);
-}
-EOF
-
-  # Try to run the analysis through the TypeScript CLI.
-  if command -v npx >/dev/null 2>&1; then
-    npx -y tsx "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || \
-      npx -y ts-node --esm "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
-        # If TypeScript execution fails, just note that analysis was attempted.
-        emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
-        return 0
-      }
+  if [ -f "$analyzer_module" ]; then
+    # Try to run the analysis through the TypeScript CLI.
+    if command -v npx >/dev/null 2>&1; then
+      npx -y tsx "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || \
+        npx -y ts-node --esm "$analyzer_module" "$baseline_log" "$post_change_log" "$git_diff" "$changed_files" "$output_file" 2>/dev/null || {
+          # If TypeScript execution fails, just note that analysis was attempted.
+          emit_progress "validation causality analysis" "TypeScript analysis unavailable; skipping detailed causality breakdown"
+          return 0
+        }
+    else
+      emit_progress "validation causality analysis" "npx not available; skipping detailed causality breakdown"
+      return 0
+    fi
   else
-    emit_progress "validation causality analysis" "npx not available; skipping detailed causality breakdown"
+    emit_progress "validation causality analysis" "Causality analyzer script not found; skipping"
     return 0
   fi
-
-  rm -f "$analysis_script"
 
   # Check if artifact was created
   if [ -f "$output_file" ]; then
@@ -3249,6 +3238,11 @@ run_validation_commands() {
         duration=$((validation_end - validation_start))
         printf '%s\t%s\t%s\ttee_exit=%s\tfilter_exit=%s\n' "$trimmed" "$command_exit" "$duration" "$tee_exit" "$filter_exit" >> "$timings_file"
         emit_event "validation_command_finished" "stage=$stage_label" "command=$trimmed" "exit_code=$command_exit" "tee_exit_code=$tee_exit" "filter_exit_code=$filter_exit" "duration_seconds=$duration"
+        
+        # Phase 2C: Emit validation result to JSON
+        local cmd_status="passed"
+        [ "$command_exit" -ne 0 ] && cmd_status="failed"
+        append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$trimmed" "$command_exit" "$duration" "$cmd_status"
 
         FILTER_STDERR_TAIL=""
         {
@@ -7834,6 +7828,8 @@ if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
   QUALITY_FAILURE_REASON="max_diff_bytes: $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes"
   printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
   emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
+  # Phase 2C: Emit quality violation to JSON
+  append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "max_diff_bytes_exceeded" "Diff size $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes" "error"
 else
   emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=true" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
 fi

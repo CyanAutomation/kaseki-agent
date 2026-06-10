@@ -430,9 +430,10 @@ export function analyzeValidationFailureCausality(
 function isDirectCliInvocation(): boolean {
   const invokedPath = process.argv[1];
 
-  return Boolean(
-    invokedPath && path.basename(invokedPath) === 'validation-causality-analysis.ts'
-  );
+  if (!invokedPath) return false;
+
+  const fileName = path.basename(invokedPath);
+  return fileName === 'validation-causality-analysis.ts' || fileName === 'validation-causality-analysis.js';
 }
 
 function runCli(): void {
