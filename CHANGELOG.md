@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.73.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.72.0...v1.73.0) (2026-06-10)
+
+
+### Features
+
+* add tests for goal-setting improvements including context preservation and SMART criteria validation ([f933cae](https://github.com/CyanAutomation/kaseki-agent/commit/f933caee7396739784829c85f85f281a4ebfdbf6))
+* refactor tests for goal-setting artifacts and inspect report; add anti-patterns extraction tests ([8e735e3](https://github.com/CyanAutomation/kaseki-agent/commit/8e735e3cef8b2400e3cdaab5a3cda2f13deffe88))
+
 # [1.72.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.71.0...v1.72.0) (2026-06-10)
 
 
