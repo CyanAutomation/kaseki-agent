@@ -379,6 +379,7 @@ init_json_array "${KASEKI_RESULTS_DIR}"/cache-metrics.json
 
 # Phase 3: Initialize consolidation artifacts
 printf '{"phases": []}\n' > "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json
+printf '{"validation_timings": [], "pre_validation_timings": [], "stage_timings": []}\n' > "${KASEKI_RESULTS_DIR}"/timings-manifest.json
 
 setup_host_logging_mirror "$INSTANCE_NAME"
 require_or_warn_binary jq required 'Install jq (for Debian/Ubuntu: apt-get install -y jq). Metadata/report generation depends on it.'
@@ -600,6 +601,66 @@ append_phase_summary() {
     --arg phase "$phase_name" \
     '.phases += [($phase_data[0] + {"phase": $phase})]' \
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Phase 3B: Consolidate timing TSV files into timings-manifest.json
+consolidate_timings_to_json() {
+  local output_file="$1"
+  local validation_timings="${2:-${KASEKI_RESULTS_DIR}/validation-timings.tsv}"
+  local pre_validation_timings="${3:-${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv}"
+  local stage_timings="${4:-${KASEKI_RESULTS_DIR}/stage-timings.tsv}"
+  
+  if [ ! -f "$output_file" ]; then
+    printf '{"validation_timings": [], "pre_validation_timings": [], "stage_timings": []}\n' > "$output_file"
+  fi
+  
+  # Convert TSV files to JSON arrays and merge into manifest
+  if [ -f "$validation_timings" ] && [ -s "$validation_timings" ]; then
+    local validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    [ -n "$validation_json" ] && jq --argjson data "$validation_json" '.validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  fi
+  
+  if [ -f "$stage_timings" ] && [ -s "$stage_timings" ]; then
+    local stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | {stage: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    [ -n "$stage_json" ] && jq --argjson data "$stage_json" '.stage_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  fi
+}
+
+# Phase 3C: Consolidate stderr files into phase-errors.jsonl
+consolidate_phase_errors() {
+  local output_file="$1"
+  shift
+  local -a stderr_files=("$@")
+  
+  > "$output_file"  # Initialize empty JSONL
+  
+  for stderr_file in "${stderr_files[@]}"; do
+    if [ -f "$stderr_file" ] && [ -s "$stderr_file" ]; then
+      local phase_name=$(basename "$stderr_file" -stderr.log)
+      while IFS= read -r line || [ -n "$line" ]; do
+        jq -n --arg phase "$phase_name" --arg msg "$line" '{phase: $phase, message: $msg, timestamp: (now | todate)}' >> "$output_file"
+      done < "$stderr_file"
+    fi
+  done
+}
+
+# Phase 3D: Consolidate validation error files into artifact-validation-errors.jsonl
+consolidate_validation_errors() {
+  local output_file="$1"
+  shift
+  local -a error_files=("$@")
+  
+  > "$output_file"  # Initialize empty JSONL
+  
+  for error_file in "${error_files[@]}"; do
+    if [ -f "$error_file" ] && [ -s "$error_file" ]; then
+      local phase_name=$(basename "$error_file" -validation-errors.jsonl)
+      while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        jq --arg phase "$phase_name" '. + {phase: $phase}' <<< "$line" >> "$output_file" 2>/dev/null || true
+      done < "$error_file"
+    fi
+  done
 }
 
 # Validate that a variable contains only numeric digits (for use before arithmetic)
@@ -1822,6 +1883,11 @@ finish() {
       node /app/scripts/generate-inspect-report.js ${KASEKI_RESULTS_DIR} 2>/dev/null || true
     fi
   fi
+  
+  # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
+  consolidate_timings_to_json "${KASEKI_RESULTS_DIR}"/timings-manifest.json "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
+  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-stderr.log "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+  consolidate_validation_errors "${KASEKI_RESULTS_DIR}"/artifact-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
   
   maybe_call_finish_helper write_failure_json "$STATUS"
   maybe_call_finish_helper write_repo_memory_summary
