@@ -1553,6 +1553,8 @@ restore_disallowed_changes() {
     restored_count=$((restored_count + 1))
     printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
     emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
+    # Phase 2C: Emit quality event to JSON
+    append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "file_outside_allowlist_restored" "File $changed_file was outside allowlist but was restored" "info"
     {
       printf '{"timestamp":"%s","event":"file_restored","file":"%s","status":"restored","reason":"not_in_allowlist"}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$changed_file" | sed 's/"/\\"/g')"
@@ -1625,6 +1627,8 @@ check_validation_allowlist() {
       printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
       validation_violation_count=$((validation_violation_count + 1))
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
+      # Phase 2C: Emit quality violation to JSON
+      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "validation_phase_file_outside_allowlist" "File $changed_file changed during validation outside KASEKI_VALIDATION_ALLOWLIST" "error"
       # Phase 2C: Emit quality violation to JSON
       append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "validation_phase_file_outside_allowlist" "File $changed_file changed during validation outside KASEKI_VALIDATION_ALLOWLIST" "error"
     else
@@ -2618,6 +2622,8 @@ check_auto_lint_cleanup_allowlist() {
       printf 'Auto lint cleanup created changed file outside allowlist: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
       printf '%s\n' "$changed_file" >> "$disallowed_file"
       emit_event "quality_gate_rule_evaluated" "rule=auto_lint_cleanup_allowlist" "passed=false" "file=$changed_file"
+      # Phase 2C: Emit quality violation to JSON
+      append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "auto_lint_cleanup_file_outside_allowlist" "File $changed_file created by auto lint cleanup outside allowlist" "error"
     fi
   done < "$cleanup_created_file"
 
