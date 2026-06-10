@@ -364,6 +364,7 @@ fi
 : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
 : > "${KASEKI_RESULTS_DIR}"/validation.log
 : > "$PRE_VALIDATION_RAW_LOG"
+: > "${KASEKI_RESULTS_DIR}/pre-validation.log"
 : > "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
 : > "${KASEKI_RESULTS_DIR}"/quality.log
 : > "${KASEKI_RESULTS_DIR}"/secret-scan.log
@@ -7336,7 +7337,7 @@ else
   run_validation_commands \
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
-    /dev/null \
+    "${KASEKI_RESULTS_DIR}/pre-validation.log" \
     "$PRE_VALIDATION_RAW_LOG" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/pre-agent-validation-env.log" \

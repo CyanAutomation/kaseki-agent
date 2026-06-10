@@ -88,7 +88,7 @@ export function decode(jwt: string): Token {
       const resultsDir = path.join(os.tmpdir(), `results-${Date.now()}`);
       fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
       fs.mkdirSync(resultsDir, { recursive: true });
-      
+
       const tsFileInRepo = path.join(repoDir, 'src', 'test.ts');
       fs.writeFileSync(tsFileInRepo, tsTestCode);
 
@@ -96,39 +96,38 @@ export function decode(jwt: string): Token {
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-      
+
       const metadataPath = path.join(resultsDir, 'summarization-metadata.json');
       if (!fs.existsSync(metadataPath)) {
         fail('kaseki-summarizer: Metadata output', 'summarization-metadata.json not found');
-        return;
-      }
-      
-      const stats = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-
-      if (stats.files_processed > 0) {
-        pass('kaseki-summarizer: Processed files');
       } else {
-        fail('kaseki-summarizer: Processed files', 'files_processed is 0');
+        const stats = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+
+        if (stats.files_processed > 0) {
+          pass('kaseki-summarizer: Processed files');
+        } else {
+          fail('kaseki-summarizer: Processed files', 'files_processed is 0');
+        }
+
+        if (stats.files_by_language['typescript'] > 0) {
+          pass('TypeScript Compiler API: Language detection');
+        } else {
+          fail('TypeScript Compiler API: Language detection', `Got ${JSON.stringify(stats.files_by_language)}`);
+        }
+
+        if (stats.files_by_strategy['tree-sitter'] > 0 || stats.files_by_strategy['full'] > 0) {
+          // The new summarizer might decide to do full read if file is small
+          pass('kaseki-summarizer: Strategy assignment');
+        }
+
+        const annotationPath = path.join(resultsDir, 'summarization-annotation.txt');
+        if (fs.existsSync(annotationPath)) {
+          pass('kaseki-summarizer: Annotation output');
+        } else {
+          fail('kaseki-summarizer: Annotation output', 'summarization-annotation.txt not found');
+        }
       }
 
-      if (stats.files_by_language['typescript'] > 0) {
-        pass('TypeScript Compiler API: Language detection');
-      } else {
-        fail('TypeScript Compiler API: Language detection', `Got ${JSON.stringify(stats.files_by_language)}`);
-      }
-
-      if (stats.files_by_strategy['tree-sitter'] > 0 || stats.files_by_strategy['full'] > 0) {
-         // The new summarizer might decide to do full read if file is small
-         pass('kaseki-summarizer: Strategy assignment');
-      }
-
-      const annotationPath = path.join(resultsDir, 'summarization-annotation.txt');
-      if (fs.existsSync(annotationPath)) {
-        pass('kaseki-summarizer: Annotation output');
-      } else {
-        fail('kaseki-summarizer: Annotation output', 'summarization-annotation.txt not found');
-      }
-      
       // Clean up
       fs.rmSync(repoDir, { recursive: true, force: true });
       fs.rmSync(resultsDir, { recursive: true, force: true });
@@ -174,7 +173,7 @@ func CreateHandler(name string) *Handler {
     });
 
     const tree = JSON.parse(jsonOutput);
-    
+
     // Support both old and new tree-sitter JSON formats
     const isNewFormat = tree.parse_summaries && tree.parse_summaries[0] && tree.parse_summaries[0].successful;
     const isOldFormat = tree && tree.type;
