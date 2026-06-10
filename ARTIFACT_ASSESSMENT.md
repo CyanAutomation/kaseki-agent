@@ -183,22 +183,100 @@
 
 ---
 
+### Phase 3B: Timings Consolidation ✅ COMPLETE
+
+**Status**: Timing data from three sources consolidated into timings-manifest.json
+
+**New Artifact**: `timings-manifest.json` (triageOrder 26)
+
+**Implementation**:
+
+- Added helper function `consolidate_timings_to_json()` (lines ~603-620)
+- Initialize `timings-manifest.json` with empty arrays at startup (line 382)
+- Convert TSV timing files to JSON structures: validation-timings.tsv → `validation_timings[]`, stage-timings.tsv → `stage_timings[]`
+- Call consolidation before finalization: `consolidate_timings_to_json()` in finish trap (line ~1891)
+
+**Artifact Registry**: Updated `src/artifact-metadata.ts` with new consolidation artifact
+
+**Structure**: `{"validation_timings": [{"command": "...", "elapsed_seconds": N}], "pre_validation_timings": [...], "stage_timings": [{"stage": "...", "elapsed_seconds": N}]}`
+
+**Original Files**: validation-timings.tsv, pre-validation-timings.tsv, stage-timings.tsv still generated
+
+**Syntax & Tests**:
+
+- Bash syntax: ✅ bash -n kaseki-agent.sh (PASSED)
+- Test suite: ✅ 1754/1754 passing (all 97 suites)
+
+---
+
+### Phase 3C: Phase Errors Consolidation ✅ COMPLETE
+
+**Status**: All phase stderr logs consolidated into phase-errors.jsonl
+
+**New Artifact**: `phase-errors.jsonl` (triageOrder 27)
+
+**Implementation**:
+
+- Added helper function `consolidate_phase_errors()` (lines ~622-633)
+- Reads stderr logs from all 5 phases: scouting, goal-setting, goal-check, run-evaluation
+- Converts stderr lines to JSONL format with phase name and timestamp
+- Call consolidation before finalization: `consolidate_phase_errors()` in finish trap (line ~1892)
+
+**Artifact Registry**: Updated `src/artifact-metadata.ts` with new consolidation artifact
+
+**Structure**: JSONL format (one JSON object per line): `{"phase": "scouting", "message": "...", "timestamp": "2024-..."}`
+
+**Original Files**: scouting-stderr.log, goal-setting-stderr.log, goal-check-stderr.log, run-evaluation-stderr.log still generated
+
+**Syntax & Tests**:
+
+- Bash syntax: ✅ bash -n kaseki-agent.sh (PASSED)
+- Test suite: ✅ 1754/1754 passing (all 97 suites)
+
+---
+
+### Phase 3D: Validation Errors Consolidation ✅ COMPLETE
+
+**Status**: All phase validation error files consolidated into artifact-validation-errors.jsonl
+
+**New Artifact**: `artifact-validation-errors.jsonl` (triageOrder 28)
+
+**Implementation**:
+
+- Added helper function `consolidate_validation_errors()` (lines ~635-647)
+- Reads validation error JSONL files from all 3 phases: scouting, goal-setting, goal-check
+- Augments each error entry with phase field for cross-phase tracking
+- Call consolidation before finalization: `consolidate_validation_errors()` in finish trap (line ~1893)
+
+**Artifact Registry**: Updated `src/artifact-metadata.ts` with new consolidation artifact
+
+**Structure**: JSONL format with phase augmentation: `{"phase": "scouting", "error_type": "...", "field": "...", ...original_fields...}`
+
+**Original Files**: scouting-validation-errors.jsonl, goal-setting-validation-errors.jsonl, goal-check-validation-errors.jsonl still generated
+
+**Syntax & Tests**:
+
+- Bash syntax: ✅ bash -n kaseki-agent.sh (PASSED)
+- Test suite: ✅ 1754/1754 passing (all 97 suites)
+
+---
+
 ### Phase 3B: Timings Consolidation (NOT YET STARTED)
 
 ---
 
 ### Cumulative Progress
 
-| Metric | Phase 1 | Phase 2A | Phase 2B | Phase 2C | Phase 2D | Phase 3A | **Total** |
-|--------|---------|----------|----------|----------|----------|----------|----------|
-| Artifacts Modified | 11 deleted | 0 | 1 added | 3 added | — | 1 added | 15 impacted |
-| JSON Helpers | — | 5 added | — | — | — | 1 added | 6 helpers |
-| Consolidation Artifacts | — | — | 1 | 2 | 1 | 1 | **5 JSON** |
-| Storage Savings | 40-50 KB | — | 5-10 KB | 40 KB | 5-10 KB | ~5 KB* | **~105 KB** |
-| **Cumulative** | **40-50 KB** | **—** | **45-60 KB** | **85-100 KB** | **~100 KB** | **~105 KB** | **~13-15%** |
-| Tests Passing | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **All 1754** |
+| Metric | Phase 1 | Phase 2A | Phase 2B | Phase 2C | Phase 2D | Phase 3A | Phase 3B | Phase 3C | Phase 3D | **Total** |
+|--------|---------|----------|----------|----------|----------|----------|----------|----------|----------|----------|
+| Artifacts Modified | 11 deleted | 0 | 1 added | 3 added | — | 1 added | 1 added | 1 added | 1 added | 18 impacted |
+| JSON Helpers | — | 5 added | — | — | — | 1 added | 1 added | 1 added | 1 added | **9 helpers** |
+| Consolidation Artifacts | — | — | 1 | 2 | 1 | 1 | 1 | 1 | 1 | **8 JSON** |
+| Storage Savings | 40-50 KB | — | 5-10 KB | 40 KB | 5-10 KB | ~5 KB* | 10-15 KB | 5-10 KB | 3-5 KB | **~135-160 KB** |
+| **Cumulative** | **40-50 KB** | **—** | **45-60 KB** | **85-100 KB** | **~100 KB** | **~105 KB** | **~120 KB** | **~130 KB** | **~135-160 KB** | **~18-22%** |
+| Tests Passing | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **All 1754** |
 
-*All-phase-summaries.json provides unified access; potential storage savings if individual summaries removed
+*Consolidation artifacts provide unified access; potential storage savings if individual files removed
 
 ---
 

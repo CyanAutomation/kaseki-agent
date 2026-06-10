@@ -402,6 +402,33 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'timings-manifest.json': {
+    name: 'timings-manifest.json',
+    contentType: 'application/json',
+    description: 'Consolidation: timing data aggregated from validation-timings.tsv, pre-validation-timings.tsv, stage-timings.tsv',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 26,
+    sizeHint: 'small',
+  },
+
+  'phase-errors.jsonl': {
+    name: 'phase-errors.jsonl',
+    contentType: 'application/jsonl',
+    description: 'Consolidation: all phase stderr logs aggregated into JSONL format for error analysis',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 27,
+    sizeHint: 'small',
+  },
+
+  'artifact-validation-errors.jsonl': {
+    name: 'artifact-validation-errors.jsonl',
+    contentType: 'application/jsonl',
+    description: 'Consolidation: all phase validation errors aggregated (scouting, goal-setting, goal-check)',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 28,
+    sizeHint: 'small',
+  },
+
   'secret-scan.json': {
     name: 'secret-scan.json',
     contentType: 'application/json',
