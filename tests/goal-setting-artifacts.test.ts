@@ -66,14 +66,11 @@ describe('Goal-Setting Artifacts Registry', () => {
       const artifact = ARTIFACT_METADATA_REGISTRY[name];
       expect(artifact).toBeDefined();
 
-      expect(artifact).toEqual(
-        expect.objectContaining({
-          name,
-          contentType,
-          availability,
-          sizeHint,
-        }),
-      );
+      // Validate each field explicitly (not using objectContaining for precision)
+      expect(artifact.name).toBe(name);
+      expect(artifact.contentType).toBe(contentType);
+      expect(artifact.availability).toBe(availability);
+      expect(artifact.sizeHint).toBe(sizeHint);
 
       if (triageOrder) {
         expect(artifact.triageOrder).toBeDefined();
@@ -84,6 +81,11 @@ describe('Goal-Setting Artifacts Registry', () => {
 
         if (triageOrder.greaterThan !== undefined) {
           expect(artifact.triageOrder).toBeGreaterThan(triageOrder.greaterThan);
+        }
+      } else {
+        // If no triageOrder expected, ensure it's either undefined or a valid number
+        if (artifact.triageOrder !== undefined) {
+          expect(typeof artifact.triageOrder).toBe('number');
         }
       }
     },

@@ -40,9 +40,8 @@ describe('ReadStrategy', () => {
   });
 
   describe('File Size Thresholds', () => {
-    it('should prefer full read for very small files', () => {
-      // Note: The exact threshold depends on config.minSizeBytes
-      // Just verify that a strategy is returned
+    it('should prefer full read for very small files (< minSizeBytes)', () => {
+      // Files smaller than config.minSizeBytes should use full read
       const context = {
         filePath: '/test/file.ts',
         sizeBytes: 512,
@@ -50,12 +49,12 @@ describe('ReadStrategy', () => {
         config,
       };
       const strategy = getReadStrategy(context);
-      expect(strategy.strategy).toMatch(/full|summary/);
+      expect(strategy.strategy).toBe('full');
+      expect(strategy.reason).toContain('too small');
     });
 
-    it('should prefer full read for very large files', () => {
-      // Note: The exact threshold depends on config.maxSizeBytes
-      // Just verify that a strategy is returned
+    it('should prefer full read for very large files (> maxSizeBytes)', () => {
+      // Files larger than config.maxSizeBytes should use full read
       const context = {
         filePath: '/test/file.ts',
         sizeBytes: 2000000,
@@ -63,7 +62,32 @@ describe('ReadStrategy', () => {
         config,
       };
       const strategy = getReadStrategy(context);
-      expect(strategy.strategy).toMatch(/full|summary/);
+      expect(strategy.strategy).toBe('full');
+      expect(strategy.reason).toContain('too large');
+    });
+
+    it('should handle boundary case at minSizeBytes exactly', () => {
+      // Test at exact boundary
+      const context = {
+        filePath: '/test/file.ts',
+        sizeBytes: config.minSizeBytes,
+        language: 'typescript' as const,
+        config,
+      };
+      const strategy = getReadStrategy(context);
+      expect(['full', 'summary']).toContain(strategy.strategy);
+    });
+
+    it('should handle boundary case at maxSizeBytes exactly', () => {
+      // Test at exact boundary
+      const context = {
+        filePath: '/test/file.ts',
+        sizeBytes: config.maxSizeBytes,
+        language: 'typescript' as const,
+        config,
+      };
+      const strategy = getReadStrategy(context);
+      expect(['full', 'summary']).toContain(strategy.strategy);
     });
 
     it('should prefer summary for optimal file size', () => {
