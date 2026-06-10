@@ -107,6 +107,7 @@ RUN chmod +x \
     && cp dist/hashline-event-handler-cli.js /app/lib/hashline-event-handler-cli.js \
     && cp dist/progress-stream-utils.js /app/lib/progress-stream-utils.js \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
+    && cp dist/analyze-test-failures.js /app/lib/analyze-test-failures.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
     && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \
     && cp dist/validation-output-filter.js /app/lib/validation-output-filter.js \
@@ -117,6 +118,7 @@ RUN chmod +x \
     && cp dist/github-utils.js /app/lib/github-utils.js \
     && cp dist/logger.js /app/lib/logger.js \
     && cp dist/secrets/host-secrets-reader.js /app/lib/secrets/host-secrets-reader.js \
+    && cp dist/lib/validation-causality-analysis.js /app/lib/lib/validation-causality-analysis.js \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
@@ -135,6 +137,8 @@ RUN chmod +x \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
+    && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
+    && install -m 0755 /app/lib/lib/validation-causality-analysis.js /usr/local/bin/validation-causality-analysis \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && chmod 0755 \
@@ -142,6 +146,8 @@ RUN chmod +x \
       /usr/local/bin/kaseki-pi-event-filter \
       /usr/local/bin/kaseki-pi-progress-stream \
       /usr/local/bin/kaseki-report \
+      /usr/local/bin/analyze-test-failures \
+      /usr/local/bin/validation-causality-analysis \
       /usr/local/bin/github-app-token \
       /usr/local/bin/github-app-token.js \
       /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js \
