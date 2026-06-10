@@ -4,6 +4,22 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.74.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.73.0...v1.74.0) (2026-06-10)
+
+
+### Bug Fixes
+
+* include pre-compiled analyzer scripts in production Docker image and prefer them in agent script ([89231c1](https://github.com/CyanAutomation/kaseki-agent/commit/89231c1aeecc308c38677efc087038e292642767))
+
+
+### Features
+
+* add structured JSON artifact outputs for validation results, quality gates, cache metrics, and secret scans ([464a7e1](https://github.com/CyanAutomation/kaseki-agent/commit/464a7e10d480ab9d7b729d47442cfbeae9705af0))
+* consolidate phase summaries into all-phase-summaries.json and update artifact metadata ([cdc99c3](https://github.com/CyanAutomation/kaseki-agent/commit/cdc99c31352e2749e01950078ccd9f1aee1f15cf))
+* consolidate timing and error data into new JSON and JSONL artifacts ([d20e72c](https://github.com/CyanAutomation/kaseki-agent/commit/d20e72c5da1a60f3730baac8b22ef6cdbf4dfc2f))
+* emit quality violation events to JSON for restored files and auto lint cleanup ([2f42727](https://github.com/CyanAutomation/kaseki-agent/commit/2f427278bc20390a0c5ed58a5e4f5fa4b6d96f87))
+* implement JSON output for quality violations and cache metrics during dependency management ([2c518b2](https://github.com/CyanAutomation/kaseki-agent/commit/2c518b238b7141962e94bdda86ddcf935195f16d))
+
 # [1.73.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.72.0...v1.73.0) (2026-06-10)
 
 
