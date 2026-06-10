@@ -2640,6 +2640,8 @@ check_auto_lint_cleanup_allowlist() {
       if grep -Fxq -- "$changed_file" "$post_restore_file"; then
         printf 'ERROR: Cleanup-created disallowed change could not be restored: %s\n' "$changed_file" | tee -a "$AUTO_LINT_CLEANUP_LOG" "${KASEKI_RESULTS_DIR}"/quality.log
         unrestored_count=$((unrestored_count + 1))
+        # Phase 2C: Emit quality violation to JSON
+        append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "cleanup_restoration_failure" "File $changed_file from auto lint cleanup could not be restored" "error"
       fi
     done < "$disallowed_file"
     if [ "$unrestored_count" -eq 0 ]; then
@@ -7243,6 +7245,8 @@ prepare_dependencies() {
       printf 'Dependency cache status: using existing repo node_modules for lock hash %s (repo_ref_key=%s).\n' "$lock_hash" "$repo_ref_key"
       set_dependency_cache_status "existing-node-modules" "$cache_detail restore_method=none"
       emit_event "dependency_cache_decision" "strategy=existing_node_modules" "restore_mode=$restore_mode" "restore_method=none" "reason=lock_hash_match" "location=repo" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      # Phase 2D: Emit cache metric to JSON
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "existing_node_modules" "true" "repo" "0" "lock_hash_match"
       emit_progress "dependency install" "cache hit source=repo restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=repo install_mode=skipped restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       exec {cache_lock_fd}>&-
@@ -7261,12 +7265,16 @@ prepare_dependencies() {
     restore_method="$DEPENDENCY_RESTORE_METHOD"
     set_dependency_cache_status "workspace-cache-restored" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=workspace_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    # Phase 2D: Emit cache metric to JSON
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_restored" "true" "workspace" "0" "restore_completed"
     cache_reused="true"
     cache_source="workspace"
     if ! npm ls --depth=0 >/dev/null 2>&1; then
       printf 'Dependency cache status: workspace cache failed npm ls validation; reinstalling.\n'
       set_dependency_cache_status "workspace-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      # Phase 2D: Emit cache metric to JSON (validation failure)
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "false" "workspace" "0" "npm_ls_failed"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -7282,12 +7290,16 @@ prepare_dependencies() {
     restore_method="$DEPENDENCY_RESTORE_METHOD"
     set_dependency_cache_status "image-cache-restored" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=image_cache_restored" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=restore_completed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    # Phase 2D: Emit cache metric to JSON
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_restored" "true" "image" "0" "restore_completed"
     cache_reused="true"
     cache_source="image"
     if ! npm ls --depth=0 >/dev/null 2>&1; then
       printf 'Dependency cache status: image cache failed npm ls validation; reinstalling.\n'
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+      # Phase 2D: Emit cache metric to JSON (validation failure)
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "false" "image" "0" "npm_ls_failed"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -7298,6 +7310,8 @@ prepare_dependencies() {
     printf 'Dependency cache status: cache miss for lock hash %s (repo_ref_key=%s), running install.\n' "$lock_hash" "$repo_ref_key"
     set_dependency_cache_status "cache-miss" "$cache_detail"
     emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=no_cache_available" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    # Phase 2D: Emit cache metric to JSON (cache miss)
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "false" "none" "0" "no_cache_available"
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then
@@ -7312,6 +7326,8 @@ prepare_dependencies() {
     printf 'Dependency cache status: install skipped due to cache hit.\n'
     set_dependency_cache_status "install-skipped" "$cache_detail restore_method=$restore_method"
     emit_event "dependency_cache_decision" "strategy=skip_install" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=cache_hit" "location=local" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    # Phase 2D: Emit cache metric to JSON (skip install)
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "skip_install" "true" "$cache_source" "0" "cache_hit"
     if [ "$cache_reused" = "true" ]; then
       emit_progress "dependency install" "cache hit source=$cache_source restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
       record_stage_timing "dependency install" "0" "0" "cache_hit=true cache_source=$cache_source install_mode=skipped restore_mode=$restore_mode restore_method=$restore_method lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
