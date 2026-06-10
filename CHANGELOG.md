@@ -4,6 +4,24 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.72.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.71.0...v1.72.0) (2026-06-10)
+
+
+### Bug Fixes
+
+* add pre-validation log output and clean up whitespace in functional test ([d838d88](https://github.com/CyanAutomation/kaseki-agent/commit/d838d88d6592e77d987cd1056eaed028db150179))
+* ensure tree-sitter binary is copied from deps stage in Dockerfile ([3e09e8d](https://github.com/CyanAutomation/kaseki-agent/commit/3e09e8d8100153156c2113b82151abda2db41a91))
+* update default parseTimeoutMs to 2000ms and summarize timeout to 1000ms in GoCliSummarizer ([faeac11](https://github.com/CyanAutomation/kaseki-agent/commit/faeac11c7d4357820749b7f3770e7b8f049808d3))
+* update parseTimeoutMs default value to 500ms in summarizer config; adjust maxWorkers setting in jest config ([c83b030](https://github.com/CyanAutomation/kaseki-agent/commit/c83b030d37b1e290c8c8bb89284fd68fa8054284))
+* update restore_disallowed_changes test to emit correct function for workspace paths ([b1ed27a](https://github.com/CyanAutomation/kaseki-agent/commit/b1ed27ab62f62d38f201e236e1deeae09a754a00))
+* update test command for tree-sitter functional tests and clean up whitespace in Go CLI summarizer tests ([cf43db2](https://github.com/CyanAutomation/kaseki-agent/commit/cf43db232048747f86a944fb028524c052d81d5a))
+
+
+### Features
+
+* add Go CLI summarizer and TypeScript Compiler API summarizer ([b52a28f](https://github.com/CyanAutomation/kaseki-agent/commit/b52a28f4ebeaaaa931ad6878c53711c48b4b3452))
+* enhance GoCliSummarizer to accept content strings and manage temp files; update tests for graceful degradation ([1968c1e](https://github.com/CyanAutomation/kaseki-agent/commit/1968c1e690ff24789f1ac540c358b97cc7d876ec))
+
 # [1.71.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.70.1...v1.71.0) (2026-06-09)
 
 
