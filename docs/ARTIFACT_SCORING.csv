@@ -1,0 +1,49 @@
+artifact_name,d1_agent_decision_value,d2_machine_readability,d3_uniqueness,d4_recovery_usefulness,d5_cost_risk,total_score,availability,size_hint,segment,action,merge_target,rationale
+metadata.json,2,2,2,2,1,9,ALWAYS,small,KEEP,KEEP_CORE,—,Essential run record; all stages; timestamps; exit codes; non-negotiable
+pi-events.jsonl,2,2,2,2,1,9,ALWAYS,large,KEEP,KEEP_CORE,—,Full agent reasoning; foundational for external agents; directly helps AI decide
+failure.json,2,2,2,2,1,9,ON_FAILURE,small,KEEP,KEEP_CORE,—,Structured failure classification; critical for retry logic; enables recovery
+git.diff,2,1,2,2,2,9,CONDITIONAL,large,KEEP,KEEP_CORE,—,Unified diff essential for agent impact analysis; mostly plain-text but well-structured
+result-summary.md,2,1,2,2,2,9,CONDITIONAL,small,KEEP,KEEP_CORE,—,Human/AI-readable summary; agents use for quick triage [MISSING from registry]
+changed-files.txt,2,2,2,1,2,9,CONDITIONAL,small,KEEP,KEEP_CORE,—,File list essential; structured; unique; cheap; easy to parse
+exit_code,2,2,2,1,2,9,ALWAYS,small,KEEP,KEEP_CORE,—,Machine-readable final status; required by all consumers
+goal-check.json,2,2,1,2,2,9,CONDITIONAL,small,KEEP,KEEP_CORE,—,Post-validation verdict (met: true/false); agent decision point
+run-evaluation.json,2,2,1,2,2,9,CONDITIONAL,small,KEEP,KEEP_CORE,—,Final task-agnostic assessment; reviewer confidence; improvement recs
+restoration.jsonl,2,2,2,1,2,9,CONDITIONAL,small,KEEP,KEEP_CORE,—,Allowlist restoration events; structured; decisive for allowlist debugging
+validation.log,2,1,2,2,1,8,CONDITIONAL,medium,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Command output essential for diagnosing validation failures; unstructured but reliable
+pi-summary.json,2,2,1,1,2,8,ALWAYS,small,KEEP,KEEP_CORE,—,Token counts; model info; agents use for cost analysis and model selection
+quality.log,2,1,2,2,1,8,ON_FAILURE,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Quality gate decisions; helps agents understand why run failed
+progress.jsonl,2,2,1,1,2,8,ALWAYS,medium,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Stage progress; agents use to detect timeout risk and completion
+secret-scan.log,2,1,2,1,2,8,ALWAYS,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Credential detection; must retain for security audit; unstructured OK
+secret-scan.json,2,2,1,1,2,8,ALWAYS,small,KEEP,KEEP_CORE,—,Structured secret scan results; complements .log version
+goal-setting.json,2,2,1,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Pre-coding goal refinement; helps agents understand task evolution
+scouting.json,2,2,1,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Read-only reconnaissance; agents use for task planning
+goal-check-attempts.jsonl,1,2,2,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Retry history; helps agents understand coding attempt progression
+cache-metrics.json,1,2,2,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Dependency cache stats; helps optimize future runs
+quality-gates.json,2,2,1,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Structured quality gate violations; complements quality.log
+all-phase-summaries.json,1,2,2,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Consolidation artifact; avoids parsing multiple *-summary.json files
+timings-manifest.json,1,2,2,1,2,8,CONDITIONAL,small,KEEP,KEEP_FOR_AGENT_CONTEXT,—,Consolidation artifact; unifies all timing data
+inspect-report.md,1,1,2,1,2,7,CONDITIONAL,medium,KEEP,KEEP_ON_FAILURE,—,Inspect mode only; niche use case; moderate value when enabled
+validation-results.json,1,2,1,1,2,7,CONDITIONAL,small,MERGE,MERGE_INTO_VALIDATION_MANIFEST,—,Structured validation results; duplicate of validation.log in JSON form
+goal-check-events.jsonl,1,2,1,1,1,6,CONDITIONAL,large,MERGE,MERGE_INTO_PI_EVENTS_MANIFEST,—,Phase-specific events; limited unique value over pi-events.jsonl
+run-evaluation-events.jsonl,1,2,1,1,1,6,CONDITIONAL,large,MERGE,MERGE_INTO_PI_EVENTS_MANIFEST,—,Phase-specific events; duplicates pi-events.jsonl structure
+scouting-events.jsonl,1,2,1,1,1,6,CONDITIONAL,large,MERGE,MERGE_INTO_PI_EVENTS_MANIFEST,—,Phase-specific events; limited unique value
+goal-setting-events.jsonl,1,2,1,1,1,6,CONDITIONAL,large,MERGE,MERGE_INTO_PI_EVENTS_MANIFEST,—,Phase-specific events; redundant to pi-events.jsonl
+artifact-validation-errors.jsonl,1,2,1,0,2,6,CONDITIONAL,small,MERGE,MERGE_INTO_QUALITY_GATES.JSON,—,Validation errors; low decision value; consolidate into quality gates
+goal-setting-metrics.json,0,2,2,0,2,6,ALWAYS,small,MERGE,MERGE_INTO_TIMINGS_MANIFEST.JSON,—,Phase timing metrics; consolidate into unified timing manifest
+goal-check-summary.json,1,2,0,0,2,5,CONDITIONAL,small,MERGE,MERGE_INTO_ALL_PHASE_SUMMARIES.JSON,—,Identical structure to pi-summary.json; no unique fields
+run-evaluation-summary.json,1,2,0,0,2,5,CONDITIONAL,small,MERGE,MERGE_INTO_ALL_PHASE_SUMMARIES.JSON,—,Identical structure to pi-summary.json; no unique fields
+scouting-summary.json,1,2,0,0,2,5,CONDITIONAL,small,MERGE,MERGE_INTO_ALL_PHASE_SUMMARIES.JSON,—,Identical structure to pi-summary.json; no unique fields
+goal-setting-summary.json,1,2,0,0,2,5,CONDITIONAL,small,MERGE,MERGE_INTO_ALL_PHASE_SUMMARIES.JSON,—,Identical structure to pi-summary.json; no unique fields
+validation-timings.tsv,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_TIMINGS_MANIFEST.JSON,—,Redundant to timings-manifest.json; TSV format less machine-friendly
+pre-validation-timings.tsv,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_TIMINGS_MANIFEST.JSON,—,Redundant to timings-manifest.json; TSV format less machine-friendly
+stage-timings.tsv,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_TIMINGS_MANIFEST.JSON,—,Redundant to timings-manifest.json; TSV format less machine-friendly
+goal-check-validation-errors.jsonl,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_ARTIFACT_VALIDATION_ERRORS.JSONL,—,Phase-specific validation errors; redundant to artifact-validation-errors.jsonl
+goal-setting-validation-errors.jsonl,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_ARTIFACT_VALIDATION_ERRORS.JSONL,—,Phase-specific validation errors; redundant to artifact-validation-errors.jsonl
+scouting-validation-errors.jsonl,1,2,1,0,1,5,CONDITIONAL,small,MERGE,MERGE_INTO_ARTIFACT_VALIDATION_ERRORS.JSONL,—,Phase-specific validation errors; redundant to artifact-validation-errors.jsonl
+phase-errors.jsonl,0,2,1,0,1,4,CONDITIONAL,small,REMOVE,REMOVE,—,Placeholder for consolidation; not yet generated; no real demand
+goal-check-stderr.log,1,0,1,0,1,3,CONDITIONAL,medium,REMOVE,REMOVE_OR_CONSOLIDATE,—,Unstructured stderr; phase-specific; low recovery value
+goal-setting-stderr.log,1,0,1,0,1,3,CONDITIONAL,medium,REMOVE,REMOVE_OR_CONSOLIDATE,—,Unstructured stderr; phase-specific; low recovery value
+run-evaluation-stderr.log,1,0,1,0,1,3,CONDITIONAL,medium,REMOVE,REMOVE_OR_CONSOLIDATE,—,Unstructured stderr; phase-specific; low recovery value
+scouting-stderr.log,1,0,1,0,1,3,CONDITIONAL,medium,REMOVE,REMOVE_OR_CONSOLIDATE,—,Unstructured stderr; phase-specific; low recovery value
+stdout.log,1,0,1,1,0,3,ON_FAILURE,large,KEEP_ON_FAILURE,KEEP_ON_FAILURE,—,Large unstructured container output; essential for debugging on failures only
+stderr.log,1,0,1,1,0,3,ON_FAILURE,medium,KEEP_ON_FAILURE,KEEP_ON_FAILURE,—,Large unstructured container output; essential for debugging on failures only

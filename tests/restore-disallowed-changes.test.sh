@@ -33,6 +33,8 @@ collect_git_artifacts() {
   return 1
 }
 
+append_quality_violation() { :; }
+
 # Load restore_disallowed_changes() while redirecting its container-only absolute
 # paths into this test's temporary workspace.
 eval "$(awk '
