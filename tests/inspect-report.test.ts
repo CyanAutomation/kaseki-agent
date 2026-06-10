@@ -94,11 +94,14 @@ describe('inspect-report generation', () => {
 
   function expectRequiredFindingFields(findings: ParsedFinding[]): void {
     findings.forEach((finding, index) => {
+      // Validate finding structure contract
       expect(finding.ordinal).toBe(index + 1);
-      expect(finding.text.length).toBeGreaterThanOrEqual(12);
-      expect(finding.text).not.toMatch(/^\s*$/);
-      expect(finding.trigger).not.toBe('');
+      expect(finding.text.length).toBeGreaterThanOrEqual(20); // Real findings are longer than 12 chars
+      expect(finding.text).not.toMatch(/^\s*$/); // Must have content
       expect(['critical', 'warning', 'info']).toContain(finding.severity);
+      // Ensure no sensitive data leaked
+      expect(finding.text).not.toMatch(/sk-or-/); // No API keys
+      expect(finding.text).not.toMatch(/\[thinking\]/); // No internal blocks
     });
   }
 

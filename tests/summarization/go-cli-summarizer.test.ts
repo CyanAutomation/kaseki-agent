@@ -26,12 +26,11 @@ describe('GoCliSummarizer', () => {
     }
   });
 
-  describe('Basic Extraction', () => {
-    // Note: These tests require tree-sitter-cli with Go grammar properly configured
-    // In CI/Docker with proper setup, these will extract structures
-    // In dev environments without grammar setup, we test graceful degradation
+  describe('Successful Extraction', () => {
+    // These tests assume Go grammar is available (CI/Docker with proper setup)
+    // If grammar is missing, tests skip gracefully
 
-    it('should extract function declarations or gracefully degrade', () => {
+    it('should extract function declarations when grammar available', () => {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main
 
@@ -53,7 +52,7 @@ func greet(name string) string {
       }
     });
 
-    it('should extract struct declarations or gracefully degrade', () => {
+    it('should extract struct declarations when grammar available', () => {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main
 
@@ -78,7 +77,7 @@ func (u User) GetName() string {
       }
     });
 
-    it('should extract methods on receivers or gracefully degrade', () => {
+    it('should extract methods on receivers when grammar available', () => {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main
 
