@@ -357,6 +357,115 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/goal-check-attempts.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check.json
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl
+# Safely encode values as JSON using jq, which is required for this script.
+json_encode() {
+  jq -Rs .
+}
+
+json_array() {
+  jq -cn --args '$ARGS.positional' "$@"
+}
+
+json_object_from_pairs() {
+  jq -cn '$ARGS.positional
+    | map(capture("^(?<key>[^=]*)=(?<value>(.|\n)*)$"))
+    | reduce .[] as $item ({}; if $item.key == "" then . else .[$item.key] = $item.value end)' --args "$@"
+}
+
+append_jsonl_object() {
+  local output_file="$1"
+  shift
+  json_object_from_pairs "$@" >> "$output_file"
+}
+
+# Phase 2: JSON Artifact Output Helpers
+
+# Initialize a JSON array file (starts empty array, to be populated with append_* functions)
+init_json_array() {
+  local output_file="$1"
+  printf '[]' > "$output_file"
+}
+
+# Append a validation result object to validation-results.json
+append_validation_result() {
+  local output_file="$1"
+  local command="$2"
+  local exit_code="$3"
+  local duration_seconds="$4"
+  local status="${5:-unknown}"  # passed, failed, skipped
+  
+  # Read current array, append object, write back
+  jq \
+    --arg cmd "$command" \
+    --arg code "$exit_code" \
+    --arg duration "$duration_seconds" \
+    --arg stat "$status" \
+    '. += [{"command": $cmd, "exit_code": ($code | tonumber), "duration_seconds": ($duration | tonumber), "status": $stat}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a quality gate violation to quality-gates.json
+append_quality_violation() {
+  local output_file="$1"
+  local violation_type="$2"  # changed_file_outside_allowlist, validation_allowlist_violation, infrastructure_error, etc.
+  local detail="$3"
+  local severity="${4:-warning}"  # error, warning, info
+  
+  jq \
+    --arg type "$violation_type" \
+    --arg detail "$detail" \
+    --arg severity "$severity" \
+    '. += [{"type": $type, "detail": $detail, "severity": $severity, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a cache metrics entry to cache-metrics.json
+append_cache_metric() {
+  local output_file="$1"
+  local metric_name="$2"
+  local value="$3"
+  local unit="${4:-bytes}"
+  
+  jq \
+    --arg name "$metric_name" \
+    --arg val "$value" \
+    --arg unit "$unit" \
+    '. += [{"name": $name, "value": ($val | tonumber), "unit": $unit, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a secret scan result to secret-scan.json
+append_secret_scan_result() {
+  local output_file="$1"
+  local file_path="$2"
+  local pattern="$3"
+  local status="${4:-real_leak}"  # allowlisted or real_leak
+  
+  jq \
+    --arg file "$file_path" \
+    --arg pat "$pattern" \
+    --arg stat "$status" \
+    '. += [{"file": $file, "pattern": $pat, "status": $stat, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a phase summary to all-phase-summaries.json consolidation artifact
+append_phase_summary() {
+  local output_file="$1"
+  local phase_name="$2"
+  local summary_file="$3"
+  
+  if [ ! -f "$summary_file" ]; then
+    return 0
+  fi
+  
+  jq \
+    --slurpfile phase_data "$summary_file" \
+    --arg phase "$phase_name" \
+    '.phases += [($phase_data[0] + {"phase": $phase})]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation.json
@@ -494,115 +603,6 @@ run_node_subprocess() {
   return 0
 }
 
-# Safely encode values as JSON using jq, which is required for this script.
-json_encode() {
-  jq -Rs .
-}
-
-json_array() {
-  jq -cn --args '$ARGS.positional' "$@"
-}
-
-json_object_from_pairs() {
-  jq -cn '$ARGS.positional
-    | map(capture("^(?<key>[^=]*)=(?<value>(.|\n)*)$"))
-    | reduce .[] as $item ({}; if $item.key == "" then . else .[$item.key] = $item.value end)' --args "$@"
-}
-
-append_jsonl_object() {
-  local output_file="$1"
-  shift
-  json_object_from_pairs "$@" >> "$output_file"
-}
-
-# Phase 2: JSON Artifact Output Helpers
-
-# Initialize a JSON array file (starts empty array, to be populated with append_* functions)
-init_json_array() {
-  local output_file="$1"
-  printf '[]' > "$output_file"
-}
-
-# Append a validation result object to validation-results.json
-append_validation_result() {
-  local output_file="$1"
-  local command="$2"
-  local exit_code="$3"
-  local duration_seconds="$4"
-  local status="${5:-unknown}"  # passed, failed, skipped
-  
-  # Read current array, append object, write back
-  jq \
-    --arg cmd "$command" \
-    --arg code "$exit_code" \
-    --arg duration "$duration_seconds" \
-    --arg stat "$status" \
-    '. += [{"command": $cmd, "exit_code": ($code | tonumber), "duration_seconds": ($duration | tonumber), "status": $stat}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-}
-
-# Append a quality gate violation to quality-gates.json
-append_quality_violation() {
-  local output_file="$1"
-  local violation_type="$2"  # changed_file_outside_allowlist, validation_allowlist_violation, infrastructure_error, etc.
-  local detail="$3"
-  local severity="${4:-warning}"  # error, warning, info
-  
-  jq \
-    --arg type "$violation_type" \
-    --arg detail "$detail" \
-    --arg severity "$severity" \
-    '. += [{"type": $type, "detail": $detail, "severity": $severity, "timestamp": (now | todate)}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-}
-
-# Append a cache metrics entry to cache-metrics.json
-append_cache_metric() {
-  local output_file="$1"
-  local metric_name="$2"
-  local value="$3"
-  local unit="${4:-bytes}"
-  
-  jq \
-    --arg name "$metric_name" \
-    --arg val "$value" \
-    --arg unit "$unit" \
-    '. += [{"name": $name, "value": ($val | tonumber), "unit": $unit, "timestamp": (now | todate)}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-}
-
-# Append a secret scan result to secret-scan.json
-append_secret_scan_result() {
-  local output_file="$1"
-  local file_path="$2"
-  local pattern="$3"
-  local status="${4:-real_leak}"  # allowlisted or real_leak
-  
-  jq \
-    --arg file "$file_path" \
-    --arg pat "$pattern" \
-    --arg stat "$status" \
-    '. += [{"file": $file, "pattern": $pat, "status": $stat, "timestamp": (now | todate)}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-}
-
-# Append a phase summary to all-phase-summaries.json consolidation artifact
-append_phase_summary() {
-  local output_file="$1"
-  local phase_name="$2"
-  local summary_file="$3"
-  
-  if [ ! -f "$summary_file" ]; then
-    return 0
-  fi
-  
-  jq \
-    --slurpfile phase_data "$summary_file" \
-    --arg phase "$phase_name" \
-    '.phases += [($phase_data[0] + {"phase": $phase})]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
-}
-
 # Phase 3B: Consolidate timing TSV files into timings-manifest.json
 consolidate_timings_to_json() {
   local output_file="$1"
@@ -615,13 +615,19 @@ consolidate_timings_to_json() {
   fi
   
   # Convert TSV files to JSON arrays and merge into manifest
+  local validation_json pre_validation_json stage_json
   if [ -f "$validation_timings" ] && [ -s "$validation_timings" ]; then
-    local validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    validation_json=$(tail -n +2 "$validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
     [ -n "$validation_json" ] && jq --argjson data "$validation_json" '.validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  fi
+
+  if [ -f "$pre_validation_timings" ] && [ -s "$pre_validation_timings" ]; then
+    pre_validation_json=$(tail -n +2 "$pre_validation_timings" | jq -R 'split("\t") | {command: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    [ -n "$pre_validation_json" ] && jq --argjson data "$pre_validation_json" '.pre_validation_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
   
   if [ -f "$stage_timings" ] && [ -s "$stage_timings" ]; then
-    local stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | {stage: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
+    stage_json=$(tail -n +2 "$stage_timings" | jq -R 'split("\t") | {stage: .[0], elapsed_seconds: (.[1] | tonumber)}' | jq -s '.' 2>/dev/null)
     [ -n "$stage_json" ] && jq --argjson data "$stage_json" '.stage_timings = $data' "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
   fi
 }
@@ -632,11 +638,12 @@ consolidate_phase_errors() {
   shift
   local -a stderr_files=("$@")
   
-  > "$output_file"  # Initialize empty JSONL
+  : > "$output_file"  # Initialize empty JSONL
   
+  local stderr_file phase_name
   for stderr_file in "${stderr_files[@]}"; do
     if [ -f "$stderr_file" ] && [ -s "$stderr_file" ]; then
-      local phase_name=$(basename "$stderr_file" -stderr.log)
+      phase_name=$(basename "$stderr_file" -stderr.log)
       while IFS= read -r line || [ -n "$line" ]; do
         jq -n --arg phase "$phase_name" --arg msg "$line" '{phase: $phase, message: $msg, timestamp: (now | todate)}' >> "$output_file"
       done < "$stderr_file"
@@ -650,11 +657,12 @@ consolidate_validation_errors() {
   shift
   local -a error_files=("$@")
   
-  > "$output_file"  # Initialize empty JSONL
+  : > "$output_file"  # Initialize empty JSONL
   
+  local error_file phase_name
   for error_file in "${error_files[@]}"; do
     if [ -f "$error_file" ] && [ -s "$error_file" ]; then
-      local phase_name=$(basename "$error_file" -validation-errors.jsonl)
+      phase_name=$(basename "$error_file" -validation-errors.jsonl)
       while IFS= read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         jq --arg phase "$phase_name" '. + {phase: $phase}' <<< "$line" >> "$output_file" 2>/dev/null || true
@@ -8186,7 +8194,6 @@ else
     # No allowlist exists - populate JSON with all matches as real_leak
     while IFS= read -r match_line || [ -n "$match_line" ]; do
       [ -z "$match_line" ] && continue
-      local file_path pattern
       file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
       pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
       [ -z "$pattern" ] && continue

@@ -29,6 +29,8 @@ emit_event() {
   printf '\n' >> "$TMP_DIR/results/events.log"
 }
 
+append_quality_violation() { :; }
+
 # Load only the helpers under test, while redirecting their container-only
 # absolute paths into this test's temporary workspace.
 eval "$(awk '

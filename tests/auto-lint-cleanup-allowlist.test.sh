@@ -42,6 +42,7 @@ emit_event() {
 
 emit_error_event() { emit_event "$@"; }
 collect_git_artifacts() { printf 'collect_git_artifacts\n' >> "$TMP_DIR/results/events.log"; }
+append_quality_violation() { :; }
 
 # Load only the helpers under test, while redirecting their container-only
 # absolute paths into this test's temporary workspace.
