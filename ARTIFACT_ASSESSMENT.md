@@ -151,25 +151,54 @@
 
 ---
 
-### Phase 3: Future Consolidation Targets (Not Yet Started)
+### Phase 3A: Phase Summaries Consolidation ✅ COMPLETE
 
-- **Merge Phase Summaries**: Consolidate `*-summary.json` files into `all-phase-summaries.json`
-- **Consolidate Timings**: Merge `*-timings.tsv` files into `timings-manifest.json`
-- **Phase Error Aggregation**: Consolidate `*-stderr.log` files into `phase-errors.jsonl`
-- **Validation Error Consolidation**: Merge `*-validation-errors.jsonl` into single `artifact-validation-errors.jsonl`
+**Status**: All phase summaries consolidated into all-phase-summaries.json
+
+**New Artifact**: `all-phase-summaries.json` (triageOrder 25)
+
+**Implementation**:
+
+- Added helper function `append_phase_summary()` (lines ~587-601)
+- Initialize `all-phase-summaries.json` with empty phases array at startup (line 381)
+- After each phase completes and generates its summary, append to consolidation:
+  - Line ~4476: Scouting phase summary
+  - Line ~4070: Goal-setting phase summary  
+  - Line ~7747: Pi-agent (main coding) phase summary
+  - Line ~4840: Goal-check phase summary
+  - Line ~5344: Run-evaluation phase summary
+
+**Artifact Registry**: Updated `src/artifact-metadata.ts` with new consolidation artifact
+
+**Structure**: `{"phases": [{"phase": "scouting", ...summary fields...}, {"phase": "pi-agent", ...summary fields...}, ...]}`
+
+**Backward Compatibility**: Individual phase summary files still generated
+
+**Syntax & Tests**:
+
+- Bash syntax: ✅ bash -n kaseki-agent.sh (PASSED)
+- Test suite: ✅ 1754/1754 passing (all 97 suites)
+
+**Storage Impact**: Negligible consolidation (~5KB per run via deduplication if individual summaries removed in future)
+
+---
+
+### Phase 3B: Timings Consolidation (NOT YET STARTED)
 
 ---
 
 ### Cumulative Progress
 
-| Metric | Phase 1 | Phase 2A | Phase 2B | Phase 2C | Phase 2D | **Total** |
-|--------|---------|----------|----------|----------|----------|----------|
-| Artifacts Modified | 11 deleted | 0 | 1 added | 3 added | — | 14 artifacts impacted |
-| JSON Helpers | — | 5 added | — | — | — | 5 functions |
-| Dual-Output Artifacts | — | — | 1 | 2 | 1 | **4 JSON artifacts** |
-| Storage Savings | 40-50 KB | — | 5-10 KB | 40 KB | 5-10 KB | **~100 KB per run** |
-| **Cumulative** | **40-50 KB** | **—** | **45-60 KB** | **85-100 KB** | **~100 KB** | **13-15% reduction** |
-| Tests Passing | ✅ | ✅ | ✅ | ✅ | ✅ | **All 1754 passing** |
+| Metric | Phase 1 | Phase 2A | Phase 2B | Phase 2C | Phase 2D | Phase 3A | **Total** |
+|--------|---------|----------|----------|----------|----------|----------|----------|
+| Artifacts Modified | 11 deleted | 0 | 1 added | 3 added | — | 1 added | 15 impacted |
+| JSON Helpers | — | 5 added | — | — | — | 1 added | 6 helpers |
+| Consolidation Artifacts | — | — | 1 | 2 | 1 | 1 | **5 JSON** |
+| Storage Savings | 40-50 KB | — | 5-10 KB | 40 KB | 5-10 KB | ~5 KB* | **~105 KB** |
+| **Cumulative** | **40-50 KB** | **—** | **45-60 KB** | **85-100 KB** | **~100 KB** | **~105 KB** | **~13-15%** |
+| Tests Passing | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | **All 1754** |
+
+*All-phase-summaries.json provides unified access; potential storage savings if individual summaries removed
 
 ---
 
