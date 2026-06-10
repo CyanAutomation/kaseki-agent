@@ -377,6 +377,9 @@ init_json_array "${KASEKI_RESULTS_DIR}"/validation-results.json
 init_json_array "${KASEKI_RESULTS_DIR}"/quality-gates.json
 init_json_array "${KASEKI_RESULTS_DIR}"/cache-metrics.json
 
+# Phase 3: Initialize consolidation artifacts
+printf '{"phases": []}\n' > "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json
+
 setup_host_logging_mirror "$INSTANCE_NAME"
 require_or_warn_binary jq required 'Install jq (for Debian/Ubuntu: apt-get install -y jq). Metadata/report generation depends on it.'
 case "$KASEKI_GIT_CACHE_MODE" in
@@ -579,6 +582,23 @@ append_secret_scan_result() {
     --arg pat "$pattern" \
     --arg stat "$status" \
     '. += [{"file": $file, "pattern": $pat, "status": $stat, "timestamp": (now | todate)}]' \
+    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+}
+
+# Append a phase summary to all-phase-summaries.json consolidation artifact
+append_phase_summary() {
+  local output_file="$1"
+  local phase_name="$2"
+  local summary_file="$3"
+  
+  if [ ! -f "$summary_file" ]; then
+    return 0
+  fi
+  
+  jq \
+    --slurpfile phase_data "$summary_file" \
+    --arg phase "$phase_name" \
+    '.phases += [($phase_data[0] + {"phase": $phase})]' \
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
@@ -4045,6 +4065,8 @@ run_goal_setting_agent() {
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
+  # Phase 3A: Consolidate goal-setting summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   
   record_stage_timing "pi goal-setting agent" "$GOAL_SETTING_EXIT" "$GOAL_SETTING_DURATION_SECONDS" "artifact=$GOAL_SETTING_ARTIFACT timeout_seconds=$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
@@ -4452,6 +4474,8 @@ run_scouting_agent() {
   git reset --hard -q HEAD 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
   git clean -fd -q 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
+  # Phase 3A: Consolidate scouting summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
   SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   record_stage_timing "pi scouting agent" "$SCOUTING_EXIT" "$SCOUTING_DURATION_SECONDS" "artifact=$SCOUTING_ARTIFACT timeout_seconds=$KASEKI_SCOUTING_TIMEOUT_SECONDS"
   if [ "$SCOUTING_EXIT" -ne 0 ]; then
@@ -4811,6 +4835,8 @@ run_goal_check() {
   set +e
 
   kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl ${KASEKI_RESULTS_DIR}/goal-check-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+  # Phase 3A: Consolidate goal-check summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && [ ! -f "$GOAL_CHECK_CANDIDATE_ARTIFACT" ]; then
     # Recover from goal-check agents that printed the verdict in assistant text instead of writing the artifact.
@@ -5313,6 +5339,8 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
   fi
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+  # Phase 3A: Consolidate run-evaluation summary to all-phase-summaries.json
+  append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "run-evaluation" "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
   RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   if [ -s "$RUN_EVALUATION_ARTIFACT" ]; then
     node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
@@ -7718,6 +7746,8 @@ else
   if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
     set +e
     kaseki-pi-event-filter "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
+    # Phase 3A: Consolidate pi-agent summary to all-phase-summaries.json
+    append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "pi-agent" "${KASEKI_RESULTS_DIR}"/pi-summary.json
     FILTER_EXIT=$?
     set +e
   fi

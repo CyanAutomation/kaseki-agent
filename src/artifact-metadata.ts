@@ -393,6 +393,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'all-phase-summaries.json': {
+    name: 'all-phase-summaries.json',
+    contentType: 'application/json',
+    description: 'Consolidation: all phase summaries aggregated (scouting, goal-setting, pi-agent, goal-check, run-evaluation)',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 25,
+    sizeHint: 'small',
+  },
+
   'secret-scan.json': {
     name: 'secret-scan.json',
     contentType: 'application/json',
