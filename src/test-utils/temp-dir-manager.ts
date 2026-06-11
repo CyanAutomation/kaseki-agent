@@ -159,15 +159,4 @@ export function clearGlobalTempDirPool(): void {
   }
 }
 
-/**
- * Ensure temp directory exists with subdirectories
- *
- * @param tmpDir Path to temp directory
- * @param subdirs Array of subdirectories to ensure exist
- */
-export function ensureTempDirStructure(tmpDir: string, subdirs: string[]): void {
-  fs.mkdirSync(tmpDir, { recursive: true });
-  for (const subdir of subdirs) {
-    fs.mkdirSync(path.join(tmpDir, subdir), { recursive: true });
-  }
-}
+// ensureTempDirStructure() removed — use createSubdirs() instead, or fs.mkdirSync(..., { recursive: true })
