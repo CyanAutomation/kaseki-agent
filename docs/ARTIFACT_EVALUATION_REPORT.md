@@ -19,7 +19,7 @@
 ### Key Insights
 
 1. **Core artifacts (metadata, pi-events, failure, git) are highly valuable** — decisive for agents, structured, unique, low-cost
-2. **Phase-specific diagnostics show redundancy** — Multiple *-stderr.log, *-events.jsonl, *-summary.json files have overlapping purposes
+2. **Phase-specific diagnostics show redundancy** — Multiple *-stderr.log,*-events.jsonl, *-summary.json files have overlapping purposes
 3. **Timing/validation logs could consolidate** — 4 separate TSV timing files, multiple validation log variants (raw, baseline, etc.)
 4. **Intermediate/diagnostic artifacts are low-value** — raw event files, candidate.json files, format-check-command.txt, last-command.log
 5. **Validation baseline artifacts are conditionally valuable** — Only useful when enabled; consider SHORT-RETAIN or consolidate into one artifact
@@ -30,6 +30,7 @@
 ## Detailed Artifact Scores
 
 ### Legend
+
 | Column | Meaning |
 |--------|---------|
 | D1 | Agent decision value (0–2) |
@@ -222,10 +223,10 @@ The following artifacts are mentioned in the inventory but missing from src/arti
 
 #### Unstructured Phase Diagnostics (Deprecate in favor of phase-errors.jsonl or remove)
 
-2. **goal-check-stderr.log** (3/10) — REMOVE
-3. **goal-setting-stderr.log** (3/10) — REMOVE
-4. **run-evaluation-stderr.log** (3/10) — REMOVE
-5. **scouting-stderr.log** (3/10) — REMOVE
+1. **goal-check-stderr.log** (3/10) — REMOVE
+2. **goal-setting-stderr.log** (3/10) — REMOVE
+3. **run-evaluation-stderr.log** (3/10) — REMOVE
+4. **scouting-stderr.log** (3/10) — REMOVE
 
 **Reason**: Unstructured text; low recovery value; duplicate of main pi stderr. Could consolidate into phase-errors.jsonl, but rarely used.
 
@@ -233,8 +234,8 @@ The following artifacts are mentioned in the inventory but missing from src/arti
 
 #### Container Logs (Retain ON_FAILURE only)
 
-6. **stdout.log** (3/10) — KEEP_ON_FAILURE
-7. **stderr.log** (3/10) — KEEP_ON_FAILURE
+1. **stdout.log** (3/10) — KEEP_ON_FAILURE
+2. **stderr.log** (3/10) — KEEP_ON_FAILURE
 
 **Reason**: Large, unstructured, noisy. But essential for post-mortem debugging. Keep generation only when run fails.
 
@@ -280,6 +281,7 @@ Scored from lowest to highest within the bottom 10:
 ## Implementation Roadmap
 
 ### Phase 1: Update Registry (artifact-metadata.ts)
+
 - [x] Add missing high-value artifacts: result-summary.md, test-baseline-comparison.json, git.status, validation-before-state.txt
 - [ ] Mark phase-specific stderr.log files as ON_FAILURE (don't generate on success)
 - [ ] Mark stdout.log, stderr.log as ON_FAILURE only
@@ -288,26 +290,32 @@ Scored from lowest to highest within the bottom 10:
 - [ ] Deprecate individual phase-specific *-events.jsonl files (or mark as LOW_PRIORITY_OPTIONAL)
 
 ### Phase 2: Remove Placeholder / Rarely-Used Artifacts
+
 - [ ] Remove phase-errors.jsonl from registry (not generated; placeholder)
 - [ ] Remove last-command.log (if it exists; rarely used)
 - [ ] Remove format-check-command.txt (if it exists; development-only)
 - [ ] Mark scouting-events.raw.jsonl as SHORT_RETAIN_ON_FAILURE
 
 ### Phase 3: Consolidation (Artifact Generation)
+
 Update kaseki-agent.sh to:
+
 - [ ] Generate all-phase-summaries.json instead of individual *-summary.json files
 - [ ] Generate timings-manifest.json instead of individual *-timings.tsv files
 - [ ] Consolidate phase-specific stderr into phase-errors.jsonl (or remove)
 - [ ] Stop generating phase-specific *-events.jsonl files (or keep as optional, conditionally)
 
 ### Phase 4: API/CLI Updates
+
 Update artifact routes and CLI to:
+
 - [ ] Recommend KEEP_CORE artifacts first (metadata, pi-events, failure, exit_code, etc.)
 - [ ] Show KEEP_FOR_AGENT_CONTEXT as secondary tier
 - [ ] Mark REMOVE/SHORT_RETAIN artifacts with "deprecated" or "debug-only" labels
 - [ ] Add backward-compatibility aliases (e.g., scouting-summary.json → all-phase-summaries.json#scouting)
 
 ### Phase 5: Testing & Validation
+
 - [ ] Update artifact-utilities tests
 - [ ] Update artifact-metadata tests
 - [ ] Integration test: verify no breaking changes for external agents
@@ -323,6 +331,7 @@ Update artifact routes and CLI to:
 **Target**: Single `all-phase-summaries.json` with phase keys
 
 **Schema**:
+
 ```json
 {
   "goal_setting": {
@@ -350,6 +359,7 @@ Update artifact routes and CLI to:
 **Target**: Unified JSON manifest
 
 **Schema**:
+
 ```json
 {
   "validation_pre": [
@@ -376,6 +386,7 @@ Update artifact routes and CLI to:
 **Target**: Merge into artifact-validation-errors.jsonl
 
 **Schema**:
+
 ```jsonl
 { "phase": "scouting", "field": "observations", "expected": "array", "actual": "string", "severity": "critical" }
 { "phase": "goal-check", "field": "met", "expected": "boolean", "actual": "string", "severity": "critical" }
@@ -395,6 +406,7 @@ Update artifact routes and CLI to:
 ### Consolidation 5: Missing High-Value Artifacts
 
 **Add to registry**:
+
 - `result-summary.md` — Already generated; should be in registry (KEEP_CORE, 9/10)
 - `test-baseline-comparison.json` — Generated when baseline available (KEEP_FOR_AGENT_CONTEXT, 8/10)
 - `git.status` — Git status output before/after (KEEP_FOR_AGENT_CONTEXT, 7/10)
@@ -446,23 +458,23 @@ Update artifact routes and CLI to:
 
 ### Medium Confidence Actions
 
-5. **Remove phase-specific stderr files**
+1. **Remove phase-specific stderr files**
    - goal-check-stderr.log, goal-setting-stderr.log, run-evaluation-stderr.log, scouting-stderr.log
    - Rarely consumed; stderr data in stdout.log or pi-events.jsonl
    - Save 4 files per run
 
-6. **Consolidate phase-specific *-events.jsonl (CONDITIONAL)**
+2. **Consolidate phase-specific *-events.jsonl (CONDITIONAL)**
    - Mark as LOW_PRIORITY_OPTIONAL; keep pi-events.jsonl only or with phase metadata
    - OR keep for now; mark for future consolidation
    - Decision: Require feedback from external agent teams
 
 ### Lower Confidence / Future Actions
 
-7. **Remove artifact-validation-errors.jsonl** (merge into quality-gates.json)
+1. **Remove artifact-validation-errors.jsonl** (merge into quality-gates.json)
    - Low decision value; complex refactoring
    - Decision: Defer; gather more usage data first
 
-8. **Remove rarely-used artifacts**
+2. **Remove rarely-used artifacts**
    - phase-errors.jsonl (placeholder; not used)
    - last-command.log (emergency debugging only)
    - format-check-command.txt (development)
@@ -498,6 +510,7 @@ After implementation:
 **Current state**: 48 artifacts with significant redundancy and missing high-value items.
 
 **Key findings**:
+
 - 18 artifacts (37.5%) are high-value (≥8/10) — keep and prioritize in API
 - 15 artifacts (31.3%) are medium-value (5–7/10) — consolidate into 6–8 unified artifacts
 - 15 artifacts (31.3%) are low-value (≤4/10) — remove or short-retain
