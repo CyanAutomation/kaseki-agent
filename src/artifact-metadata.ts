@@ -14,7 +14,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'metadata.json': {
     name: 'metadata.json',
     contentType: 'application/json',
-    description: 'Timestamps, instance info, environment, durations, failure classification',
+    description: 'Timestamps, instance info, environment, durations, failure classification, and consolidated phase data (validation, quality gates, secret scan) in metadata.json.phases structure',
     availability: ArtifactAvailability.ALWAYS,
     triageOrder: 25,
     sizeHint: 'small',
@@ -331,35 +331,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  // Security & compliance
-  'secret-scan.log': {
-    name: 'secret-scan.log',
-    contentType: 'text/plain',
-    description: 'Secret/credential scanning results (empty if no secrets found)',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 23,
-    sizeHint: 'small',
-  },
-
   // Phase 2: Structured JSON Artifacts (consolidated free-form logs)
-
-  'validation-results.json': {
-    name: 'validation-results.json',
-    contentType: 'application/json',
-    description: 'Structured validation results: array of command execution objects with exit codes, durations, and status',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 11,
-    sizeHint: 'small',
-  },
-
-  'quality-gates.json': {
-    name: 'quality-gates.json',
-    contentType: 'application/json',
-    description: 'Structured quality gate violations: array of violations with type, detail, and severity',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 12,
-    sizeHint: 'small',
-  },
 
   'cache-metrics.json': {
     name: 'cache-metrics.json',
@@ -403,15 +375,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     description: 'Consolidation: all phase validation errors aggregated (scouting, goal-setting, goal-check)',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 28,
-    sizeHint: 'small',
-  },
-
-  'secret-scan.json': {
-    name: 'secret-scan.json',
-    contentType: 'application/json',
-    description: 'Structured secret scan results: array of detected patterns with file, pattern, and allowlist status',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 23,
     sizeHint: 'small',
   },
 

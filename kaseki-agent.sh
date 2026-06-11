@@ -376,7 +376,7 @@ init_json_array() {
   printf '[]' > "$output_file"
 }
 
-# Append a validation result object to validation-results.json
+# Append a validation result object to validation-results.json (merged into metadata.json.phases at finalization)
 append_validation_result() {
   local output_file="$1"
   local command="$2"
@@ -384,29 +384,29 @@ append_validation_result() {
   local duration_seconds="$4"
   local status="${5:-unknown}"  # passed, failed, skipped
   
-  # Read current array, append object, write back
-  jq \
-    --arg cmd "$command" \
-    --arg code "$exit_code" \
-    --arg duration "$duration_seconds" \
-    --arg stat "$status" \
-    '. += [{"command": $cmd, "exit_code": ($code | tonumber), "duration_seconds": ($duration | tonumber), "status": $stat}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  # Write to temporary phase file for consolidation at finalization
+  local temp_validation_file="${KASEKI_RESULTS_DIR}/.validation-results-temp.jsonl"
+  printf '{"command": %s, "exit_code": %d, "duration_seconds": %d, "status": %s}\n' \
+    "$(printf '%s' "$command" | jq -Rs .)" \
+    "$exit_code" \
+    "$duration_seconds" \
+    "$(printf '%s' "$status" | jq -Rs .)" >> "$temp_validation_file"
 }
 
-# Append a quality gate violation to quality-gates.json
+# Append a quality gate violation to quality-gates.json (merged into metadata.json.phases at finalization)
 append_quality_violation() {
   local output_file="$1"
   local violation_type="$2"  # changed_file_outside_allowlist, validation_allowlist_violation, infrastructure_error, etc.
   local detail="$3"
   local severity="${4:-warning}"  # error, warning, info
   
-  jq \
-    --arg type "$violation_type" \
-    --arg detail "$detail" \
-    --arg severity "$severity" \
-    '. += [{"type": $type, "detail": $detail, "severity": $severity, "timestamp": (now | todate)}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  # Write to temporary phase file for consolidation at finalization
+  local temp_quality_file="${KASEKI_RESULTS_DIR}/.quality-gates-temp.jsonl"
+  printf '{"type": %s, "detail": %s, "severity": %s, "timestamp": %s}\n' \
+    "$(printf '%s' "$violation_type" | jq -Rs .)" \
+    "$(printf '%s' "$detail" | jq -Rs .)" \
+    "$(printf '%s' "$severity" | jq -Rs .)" \
+    "$(printf '%s' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | jq -Rs .)" >> "$temp_quality_file"
 }
 
 # Append a cache metrics entry to cache-metrics.json
@@ -424,19 +424,20 @@ append_cache_metric() {
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
-# Append a secret scan result to secret-scan.json
+# Append a secret scan result to secret-scan.json (merged into metadata.json.phases at finalization)
 append_secret_scan_result() {
   local output_file="$1"
   local file_path="$2"
   local pattern="$3"
   local status="${4:-real_leak}"  # allowlisted or real_leak
   
-  jq \
-    --arg file "$file_path" \
-    --arg pat "$pattern" \
-    --arg stat "$status" \
-    '. += [{"file": $file, "pattern": $pat, "status": $stat, "timestamp": (now | todate)}]' \
-    "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
+  # Write to temporary phase file for consolidation at finalization
+  local temp_secret_scan_file="${KASEKI_RESULTS_DIR}/.secret-scan-temp.jsonl"
+  printf '{"file": %s, "pattern": %s, "status": %s, "timestamp": %s}\n' \
+    "$(printf '%s' "$file_path" | jq -Rs .)" \
+    "$(printf '%s' "$pattern" | jq -Rs .)" \
+    "$(printf '%s' "$status" | jq -Rs .)" \
+    "$(printf '%s' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | jq -Rs .)" >> "$temp_secret_scan_file"
 }
 
 # Append a phase summary to all-phase-summaries.json consolidation artifact
@@ -469,9 +470,13 @@ append_phase_summary() {
 : > "$VALIDATION_TIMINGS_FILE"
 
 # Phase 2: Initialize JSON array artifacts
-init_json_array "${KASEKI_RESULTS_DIR}"/validation-results.json
-init_json_array "${KASEKI_RESULTS_DIR}"/quality-gates.json
+# (validation-results.json and quality-gates.json are now consolidated into metadata.json.phases)
 init_json_array "${KASEKI_RESULTS_DIR}"/cache-metrics.json
+
+# Initialize temporary phase files for later consolidation
+: > "${KASEKI_RESULTS_DIR}"/.validation-results-temp.jsonl
+: > "${KASEKI_RESULTS_DIR}"/.quality-gates-temp.jsonl
+: > "${KASEKI_RESULTS_DIR}"/.secret-scan-temp.jsonl
 
 # Phase 3: Initialize consolidation artifacts
 printf '{"phases": []}\n' > "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json
@@ -914,6 +919,17 @@ emit_error_event() {
   emit_event "error" "error_type=$error_type" "detail=$detail" "recovery_action=$recovery"
 }
 
+consolidate_phase_file() {
+  local phase_file="$1"
+  if [ -f "$phase_file" ] && [ -s "$phase_file" ]; then
+    # Convert JSONL to JSON array
+    jq -s '.' "$phase_file"
+  else
+    # Return empty array if file doesn't exist or is empty
+    printf '[]'
+  fi
+}
+
 write_metadata() {
   local end_epoch end_iso duration exit_code stages_json
   end_epoch="$(date +%s)"
@@ -931,6 +947,7 @@ write_metadata() {
   
   cat > "${KASEKI_RESULTS_DIR}"/metadata.json <<META
 {
+  "schema_version": "2.0",
   "instance": $(printf '%s' "$INSTANCE_NAME" | json_encode),
   "repo_url": $(printf '%s' "$REPO_URL" | json_encode),
   "git_ref": $(printf '%s' "$GIT_REF" | json_encode),
@@ -1046,7 +1063,23 @@ write_metadata() {
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode),
-  "stages": $stages_json
+  "stages": $stages_json,
+  "phases": {
+    "validation": {
+      "exit_code": $VALIDATION_EXIT,
+      "commands_attempted": $VALIDATION_COMMANDS_ATTEMPTED,
+      "stopped_early": $([[ "$VALIDATION_STOPPED_EARLY" == "true" ]] && printf 'true' || printf 'false'),
+      "results": $(consolidate_phase_file "${KASEKI_RESULTS_DIR}"/.validation-results-temp.jsonl)
+    },
+    "quality_gates": {
+      "exit_code": $QUALITY_EXIT,
+      "violations": $(consolidate_phase_file "${KASEKI_RESULTS_DIR}"/.quality-gates-temp.jsonl)
+    },
+    "secret_scan": {
+      "exit_code": $SECRET_SCAN_EXIT,
+      "matches": $(consolidate_phase_file "${KASEKI_RESULTS_DIR}"/.secret-scan-temp.jsonl)
+    }
+  }
 }
 META
   printf '%s\n' "$exit_code" > "${KASEKI_RESULTS_DIR}"/exit_code
@@ -1594,7 +1627,7 @@ run_scouting_allowlist_coverage() {
       if [ -n "$validation_warnings" ]; then
         printf '  ⚠ validation_phase warning: %s\n' "$validation_warnings"
       fi
-    } | tee -a "${KASEKI_RESULTS_DIR}"/scouting-report.md >> "${KASEKI_RESULTS_DIR}"/quality.log
+    } >> "${KASEKI_RESULTS_DIR}"/scouting-report.md
   fi
 }
 
@@ -1627,7 +1660,6 @@ restore_disallowed_changes() {
     fi
     # File did not match allowlist - restore it
     restored_count=$((restored_count + 1))
-    printf -- 'Restoring changed file outside allowlist before validation: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
     emit_event "quality_gate_rule_evaluated" "rule=allowlist_restore" "passed=true" "file=$changed_file"
     # Phase 2C: Emit quality event to JSON
     append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "file_outside_allowlist_restored" "File $changed_file was outside allowlist but was restored" "info"
@@ -1645,16 +1677,6 @@ restore_disallowed_changes() {
     coverage=$((kept_count * 100 / (restored_count + kept_count)))
   fi
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
-    {
-      printf '\n[allowlist summary] Restored: %d files; Kept: %d files (coverage: %d%%)\n' "$restored_count" "$kept_count" "$coverage"
-      if [ "$restored_count" -gt 0 ] && [ "$coverage" -lt 50 ]; then
-        printf '[allowlist note] Low coverage detected. To improve:\n'
-        printf '  1. Run: ./scripts/suggest-allowlist.sh ${KASEKI_RESULTS_DIR} (or /agents/kaseki-results/<instance>)\n'
-        printf '  2. Review suggested patterns in allowlist-suggestions.md\n'
-        printf '  3. Update KASEKI_CHANGED_FILES_ALLOWLIST and re-run\n'
-        printf 'See docs/QUALITY_GATES.md for more guidance.\n'
-      fi
-    } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
     emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count" "coverage=$coverage"
   fi
 
@@ -1700,7 +1722,7 @@ check_validation_allowlist() {
   while IFS= read -r changed_file || [ -n "$changed_file" ]; do
     [ -z "$changed_file" ] && continue
     if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
-      printf 'Validation-phase file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+      emit_event "quality_gate_violation" "rule=validation_allowlist" "file=$changed_file"
       validation_violation_count=$((validation_violation_count + 1))
       emit_event "quality_gate_rule_evaluated" "rule=validation_allowlist" "passed=false" "file=$changed_file"
       # Phase 2C: Emit quality violation to JSON
@@ -1716,7 +1738,7 @@ check_validation_allowlist() {
     QUALITY_EXIT=7
     VALIDATION_ALLOWLIST_FAILURE_REASON="validation_allowlist_check: $validation_violation_count file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
     QUALITY_FAILURE_REASON="$VALIDATION_ALLOWLIST_FAILURE_REASON"
-    printf '\n[validation-allowlist] %d file(s) modified during validation outside allowlist\n' "$validation_violation_count" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+    emit_event "validation_allowlist_check_failed" "files_outside_allowlist=$validation_violation_count"
     return 1
   fi
   return 0
@@ -1774,17 +1796,6 @@ check_secret_scan_allowlist() {
       append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
     fi
   done <<< "$temp_log"
-  
-  # Clear the log and rewrite with only real leaks
-  {
-    if [ "$allowlisted_count" -gt 0 ]; then
-      printf '[secret-scan] Found %d allowlisted pattern(s) and %d real leak(s)\n' "$allowlisted_count" "$unallowlisted_count"
-    fi
-    
-    for match in "${secret_matches[@]}"; do
-      printf '%s\n' "$match"
-    done
-  } > "${KASEKI_RESULTS_DIR}"/secret-scan.log
   
   # Exit code 6 only if there are unallowlisted matches
   if [ "$unallowlisted_count" -gt 0 ]; then
@@ -3025,7 +3036,6 @@ checkout_baseline_repo() {
 run_baseline_validation() {
   local baseline_dir="${KASEKI_WORKSPACE_BASELINE_DIR}"
   local baseline_log="${KASEKI_RESULTS_DIR}/validation-baseline.log"
-  local baseline_raw_log="${KASEKI_RESULTS_DIR}/validation-baseline-raw.log"
   local baseline_timings="${KASEKI_RESULTS_DIR}/validation-baseline-timings.tsv"
   local baseline_exit_var="BASELINE_VALIDATION_EXIT"
   local baseline_detail_var="BASELINE_VALIDATION_FAILED_COMMAND_DETAIL"
@@ -8347,41 +8357,50 @@ printf '\n==> secret scan\n'
 set_current_stage "secret scan"
 emit_progress "secret scan" "started"
 stage_start="$(date +%s)"
-: > "${KASEKI_RESULTS_DIR}"/secret-scan.log
-init_json_array "${KASEKI_RESULTS_DIR}"/secret-scan.json
+# secret-scan.json consolidated into metadata.json.phases.secret_scan
 if [ "$KASEKI_DRY_RUN" = "1" ]; then
-  printf '🔄 DRY-RUN MODE: Skipping secret scan (no artifacts to scan)\n' | tee -a "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  emit_progress "secret scan" "skipped_dry_run"
   SECRET_SCAN_EXIT=0
   record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
 else
-  # Run the initial scan
-  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.log:' > "${KASEKI_RESULTS_DIR}"/secret-scan.log; then
-    # Matches found - check against allowlist
-    if check_secret_scan_allowlist; then
-      # All matches are allowlisted
-      SECRET_SCAN_EXIT=0
-    else
-      # Real leaks detected
-      SECRET_SCAN_EXIT=6
-    fi
-  else
-    # No matches found
-    SECRET_SCAN_EXIT=0
-  fi
+  # Run secret scan inline with JSON-only output (no .log file)
+  allowlist_file="${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist"
+  unallowlisted_count=0
+  allowlisted_count=0
   
-  # Populate secret-scan.json for matches when no allowlist or for unmatched patterns
-  if [ ! -f "${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist" ] && [ -s "${KASEKI_RESULTS_DIR}"/secret-scan.log ]; then
-    # No allowlist exists - populate JSON with all matches as real_leak
+  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
+    # Matches found - process against allowlist
     while IFS= read -r match_line || [ -n "$match_line" ]; do
       [ -z "$match_line" ] && continue
+      file_path=""
+      pattern=""
       file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
       pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
       [ -z "$pattern" ] && continue
       file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
       file_path="${file_path#repo/}"
       file_path="${file_path#./}"
-      append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
-    done < "${KASEKI_RESULTS_DIR}"/secret-scan.log
+      
+      if [ -f "$allowlist_file" ] && grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
+        allowlisted_count=$((allowlisted_count + 1))
+        append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "allowlisted"
+        emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
+      else
+        unallowlisted_count=$((unallowlisted_count + 1))
+        append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
+        emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
+      fi
+    done < /tmp/secret-scan-matches.tmp
+    rm -f /tmp/secret-scan-matches.tmp
+    
+    if [ "$unallowlisted_count" -gt 0 ]; then
+      SECRET_SCAN_EXIT=6
+    else
+      SECRET_SCAN_EXIT=0
+    fi
+  else
+    # No matches found
+    SECRET_SCAN_EXIT=0
   fi
   
   record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""

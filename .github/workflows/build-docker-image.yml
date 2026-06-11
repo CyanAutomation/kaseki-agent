@@ -390,7 +390,6 @@ jobs:
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
           test -f "$RESULTS/quality.log"
-          test -f "$RESULTS/secret-scan.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \
@@ -448,7 +447,6 @@ jobs:
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
           test -f "$RESULTS/quality.log"
-          test -f "$RESULTS/secret-scan.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \

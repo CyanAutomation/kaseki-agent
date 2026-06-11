@@ -448,15 +448,13 @@ When a run fails, inspect artifacts in this order:
 
 1. `kaseki-report /agents/kaseki-results/kaseki-N` for a compact status, failed command, exit-code, model, timing, changed-file, and next-diagnostic summary.
 2. `result-summary.md` for top-level status, failed command, and changed files.
-3. `metadata.json` for exit codes (`pi`, validation, quality, secret scan), model details, and timing.
-4. `stdout.log` / `stderr.log` for execution flow and shell-level failures.
-5. `pi-summary.json` and `pi-events.jsonl` for agent/model behavior.
-6. `validation.log` and `validation-timings.tsv` for command failures and duration outliers.
-7. `quality.log`, `changed-files.txt`, and `git.diff` for allowlist/diff-limit failures.
-8. `secret-scan.log` for credential-detection issues.
-9. `host-start.json`, `host_docker_exit_code`, and `resource.time` for host/container startup context.
+3. `metadata.json` for exit codes (`pi`, validation, quality, secret scan), model details, timing, and consolidated phase data (validation results, quality violations, secret scan matches).
+4. `pi-summary.json` and `pi-events.jsonl` for agent/model behavior.
+5. `validation.log` and `validation-timings.tsv` for command failures and duration outliers.
+6. `quality.log`, `changed-files.txt`, and `git.diff` for allowlist/diff-limit failures.
+7. `host-start.json`, `host_docker_exit_code`, and `resource.time` for host/container startup context.
 
-Tip: If quality or validation failures are ambiguous, compare `git.status` + `git.diff` with `TASK_PROMPT` constraints first.
+Tip: If quality or validation failures are ambiguous, compare `git.status` + `git.diff` with `TASK_PROMPT` constraints first. Phase data is consolidated in `metadata.json.phases`.
 
 ## 11) Refactoring, Deprecation, and Code Health
 
