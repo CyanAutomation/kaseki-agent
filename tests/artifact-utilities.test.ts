@@ -213,7 +213,7 @@ describe('Artifact Utilities', () => {
         downloadOnlyArtifacts[1],
         previewableArtifact('pi-summary.json'),
         downloadOnlyArtifacts[2],
-        previewableArtifact('validation-timings.tsv'),
+        previewableArtifact('validation.log'),
         downloadOnlyArtifacts[3],
         previewableArtifact('goal-check.json'),
         downloadOnlyArtifacts[4],
@@ -223,7 +223,7 @@ describe('Artifact Utilities', () => {
         previewableArtifact('metadata.json'),
         previewableArtifact('pi-events.jsonl'),
         previewableArtifact('pi-summary.json'),
-        previewableArtifact('validation-timings.tsv'),
+        previewableArtifact('validation.log'),
         previewableArtifact('goal-check.json'),
       ]);
     });
@@ -234,7 +234,7 @@ describe('Artifact Utilities', () => {
         { name: 'pi-events.jsonl', contentType: 'application/x-jsonl', isText: true, previewableInline: true },
         { name: 'pi-summary.json', contentType: 'application/json', isText: true, previewableInline: true },
         { name: 'stderr.log', contentType: 'text/plain', isText: true, previewableInline: true },
-        { name: 'validation-timings.tsv', contentType: 'text/tab-separated-values', isText: true, previewableInline: true },
+        { name: 'validation-results.json', contentType: 'application/json', isText: true, previewableInline: true },
       ];
 
       representativeArtifacts.forEach(({ name, contentType, isText, previewableInline }) => {
