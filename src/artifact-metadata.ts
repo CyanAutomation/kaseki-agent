@@ -88,8 +88,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-
-
   'goal-setting-events.jsonl': {
     name: 'goal-setting-events.jsonl',
     contentType: 'application/x-jsonl',
@@ -115,8 +113,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-
-
   'scouting.json': {
     name: 'scouting.json',
     contentType: 'application/json',
@@ -125,8 +121,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     triageOrder: 7,
     sizeHint: 'small',
   },
-
-
 
   'scouting-events.jsonl': {
     name: 'scouting-events.jsonl',
@@ -187,8 +181,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'large',
   },
 
-
-
   'goal-check-stderr.log': {
     name: 'goal-check-stderr.log',
     contentType: 'text/plain',
@@ -222,8 +214,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'large',
   },
-
-
 
   'run-evaluation-stderr.log': {
     name: 'run-evaluation-stderr.log',
@@ -274,8 +264,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
-
-
   'validation.log': {
     name: 'validation.log',
     contentType: 'text/plain',
@@ -294,8 +282,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-
-
   'quality.log': {
     name: 'quality.log',
     contentType: 'text/plain',
@@ -304,8 +290,6 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     triageOrder: 12,
     sizeHint: 'small',
   },
-
-
 
   // Repository changes
   'git.diff': {

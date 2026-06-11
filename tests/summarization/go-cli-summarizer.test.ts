@@ -45,7 +45,7 @@ func greet(name string) string {
       expect(summary.language).toBe('go');
       // Either extracts functions OR has a parseError (graceful degradation)
       if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') || 
+        const isExpectedError = summary.parseError.includes('language') ||
                                summary.parseError.includes('not available') ||
                                summary.parseError.includes('failed') ||
                                summary.parseError.includes('error');
@@ -74,7 +74,7 @@ func (u User) GetName() string {
 
       // Either extracts types OR has a parseError
       if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') || 
+        const isExpectedError = summary.parseError.includes('language') ||
                                summary.parseError.includes('not available') ||
                                summary.parseError.includes('failed') ||
                                summary.parseError.includes('error');
@@ -106,7 +106,7 @@ func (h *Handler) Update(name string) {
 
       // Either extracts classes/methods OR has a parseError
       if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') || 
+        const isExpectedError = summary.parseError.includes('language') ||
                                summary.parseError.includes('not available') ||
                                summary.parseError.includes('failed') ||
                                summary.parseError.includes('error');
@@ -137,7 +137,7 @@ func main() {
 
       // Either extracts imports OR has a parseError
       if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') || 
+        const isExpectedError = summary.parseError.includes('language') ||
                                summary.parseError.includes('not available') ||
                                summary.parseError.includes('failed') ||
                                summary.parseError.includes('error');
@@ -260,7 +260,7 @@ func (cl ConsoleLogger) Error(err error) {}
       expect(summary).toBeDefined();
       // Either extracts multiple classes OR has a parseError
       if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') || 
+        const isExpectedError = summary.parseError.includes('language') ||
                                summary.parseError.includes('not available') ||
                                summary.parseError.includes('failed') ||
                                summary.parseError.includes('error');
