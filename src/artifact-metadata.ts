@@ -22,6 +22,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
 
   // Diagnostic summaries (always available)
 
+  'result-summary.md': {
+    name: 'result-summary.md',
+    contentType: 'text/markdown',
+    description: 'Human-readable run summary: status, failed commands, validation results, goal-check verdict',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 3,
+    sizeHint: 'small',
+  },
+
   'inspect-report.md': {
     name: 'inspect-report.md',
     contentType: 'text/markdown',
@@ -70,10 +79,19 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'critical-change-expectations.json': {
+    name: 'critical-change-expectations.json',
+    contentType: 'application/json',
+    description: 'Critical change expectations from goal-setting: files expected to change, patterns, verification hints',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 9,
+    sizeHint: 'small',
+  },
+
   'goal-setting-summary.json': {
     name: 'goal-setting-summary.json',
     contentType: 'application/json',
-    description: 'Pi goal-setting event statistics including model and token metadata when available',
+    description: '[DEPRECATED: Use all-phase-summaries.json] Pi goal-setting event statistics including model and token metadata when available',
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'small',
   },
@@ -106,7 +124,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'goal-setting-metrics.json': {
     name: 'goal-setting-metrics.json',
     contentType: 'application/json',
-    description: 'Goal-setting phase metrics: invoked timestamp, completion timestamp, duration, retry count, success status, and failure reason if applicable',
+    description: '[DEPRECATED: Use timings-manifest.json] Goal-setting phase metrics: invoked timestamp, completion timestamp, duration, retry count, success status, and failure reason if applicable',
     availability: ArtifactAvailability.ALWAYS,
     triageOrder: 26,
     sizeHint: 'small',
@@ -124,7 +142,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'scouting-summary.json': {
     name: 'scouting-summary.json',
     contentType: 'application/json',
-    description: 'Pi scouting event statistics including model and token metadata when available',
+    description: '[DEPRECATED: Use all-phase-summaries.json] Pi scouting event statistics including model and token metadata when available',
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'small',
   },
@@ -191,7 +209,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'goal-check-summary.json': {
     name: 'goal-check-summary.json',
     contentType: 'application/json',
-    description: 'Pi goal-check event statistics including model metadata when available',
+    description: '[DEPRECATED: Use all-phase-summaries.json] Pi goal-check event statistics including model metadata when available',
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'small',
   },
@@ -233,7 +251,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'run-evaluation-summary.json': {
     name: 'run-evaluation-summary.json',
     contentType: 'application/json',
-    description: 'Pi run evaluation event statistics including model metadata when available',
+    description: '[DEPRECATED: Use all-phase-summaries.json] Pi run evaluation event statistics including model metadata when available',
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'small',
   },
@@ -278,10 +296,19 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
 
   // Validation & quality
 
+  'pre-validation.log': {
+    name: 'pre-validation.log',
+    contentType: 'text/plain',
+    description: 'Pre-agent validation baseline output (baseline on main branch)',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 10,
+    sizeHint: 'medium',
+  },
+
   'pre-validation-timings.tsv': {
     name: 'pre-validation-timings.tsv',
     contentType: 'text/tab-separated-values',
-    description: 'Per-command pre-agent validation timing: command, start, end, elapsed seconds',
+    description: '[DEPRECATED: Use timings-manifest.json] Per-command pre-agent validation timing: command, start, end, elapsed seconds',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 20,
     sizeHint: 'small',
@@ -296,10 +323,19 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'test-baseline-comparison.json': {
+    name: 'test-baseline-comparison.json',
+    contentType: 'application/json',
+    description: 'Test failure classification: newly-introduced failures, pre-existing failures, fixed tests',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 13,
+    sizeHint: 'small',
+  },
+
   'validation-timings.tsv': {
     name: 'validation-timings.tsv',
     contentType: 'text/tab-separated-values',
-    description: 'Per-command timing: command, start, end, elapsed seconds',
+    description: '[DEPRECATED: Use timings-manifest.json] Per-command timing: command, start, end, elapsed seconds',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 21,
     sizeHint: 'small',
@@ -317,7 +353,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
   'stage-timings.tsv': {
     name: 'stage-timings.tsv',
     contentType: 'text/tab-separated-values',
-    description: 'Per-stage timing: stage name, start, end, elapsed seconds',
+    description: '[DEPRECATED: Use timings-manifest.json] Per-stage timing: stage name, start, end, elapsed seconds',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 22,
     sizeHint: 'small',
@@ -339,6 +375,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     description: 'One filename per line: files modified by the agent',
     availability: ArtifactAvailability.CONDITIONAL,
     triageOrder: 14,
+    sizeHint: 'small',
+  },
+
+  'git.status': {
+    name: 'git.status',
+    contentType: 'text/plain',
+    description: 'Git status output: files changed, staged, untracked before/after agent changes',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 15,
     sizeHint: 'small',
   },
 
