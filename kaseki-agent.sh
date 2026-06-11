@@ -1199,7 +1199,7 @@ build_stages_array() {
   
   stages+=("complete")
   
-  printf '%s\n' "${stages[@]}"
+  if [[ "$retry_count" -ge "$SCOUTING_MAX_RETRIES" ]]; then
 }
 
 extract_failure_diagnostic_reason() {
