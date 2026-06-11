@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.75.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.74.0...v1.75.0) (2026-06-11)
+
+
+### Features
+
+* add artifact consolidation tests for various JSON and JSONL outputs ([3f19140](https://github.com/CyanAutomation/kaseki-agent/commit/3f191404927c40e5afdc5c76740dbc5a649e992f))
+* enhance artifact routes to support deprecation handling and consolidation targets ([baec461](https://github.com/CyanAutomation/kaseki-agent/commit/baec4616e25252281c98343c5eb040eb2045fbe4))
+* enhance GoCliSummarizer error handling and improve test coverage for parsing errors ([b2ac123](https://github.com/CyanAutomation/kaseki-agent/commit/b2ac123f5167041ed2b6efa2a6757c925dd3dfd1))
+* Implement comprehensive artifact evaluation and consolidation strategy ([d69f5d6](https://github.com/CyanAutomation/kaseki-agent/commit/d69f5d69239992329028dac7d87f83462efce263))
+
 # [1.74.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.73.0...v1.74.0) (2026-06-10)
 
 
