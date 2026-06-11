@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.78.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.77.0...v1.78.0) (2026-06-11)
+
+
+### Features
+
+* Add extraction functions for assessment, problems, solutions, and human review recommendations in artifact content helpers ([342162b](https://github.com/CyanAutomation/kaseki-agent/commit/342162bc69240b8c37d2f90760979904bd079092))
+* Implement filesystem diagnostics and recovery for scouting artifacts, including validation checks and error handling ([32ed71e](https://github.com/CyanAutomation/kaseki-agent/commit/32ed71e70891a24559e2031fa78abf976acc9f29))
+
 # [1.77.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.76.0...v1.77.0) (2026-06-11)
 
 
