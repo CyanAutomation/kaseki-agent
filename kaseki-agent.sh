@@ -1205,7 +1205,13 @@ build_stages_array() {
 extract_failure_diagnostic_reason() {
   local diagnostic
 
-  diagnostic="$(node - "${KASEKI_RESULTS_DIR}" <<'NODE' 2>/dev/null || true
+    if [[ "$retry_wait" =~ ^[0-9]+$ ]] && [[ "$retry_wait" -gt 0 ]]; then
+      log_info "Waiting ${retry_wait}s before retry ${retry_count}/${SCOUTING_MAX_RETRIES}..."
+      sleep "$retry_wait"
+    else
+      log_error "Invalid retry_wait value: $retry_wait"
+      return 1
+    fi
 const fs = require('node:fs');
 const path = require('node:path');
 const resultsDir = process.argv[2];
