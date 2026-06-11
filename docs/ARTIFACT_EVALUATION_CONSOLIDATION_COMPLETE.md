@@ -13,6 +13,7 @@
 This project implements a comprehensive artifact evaluation and consolidation strategy for kaseki-agent, reducing redundancy, improving API discoverability, and maintaining full backward compatibility with existing clients.
 
 ### Goals Achieved
+
 ✅ Evaluate all 48 kaseki-agent artifacts using a 5-dimension rubric
 ✅ Segment artifacts into KEEP/MERGE/REMOVE categories
 ✅ Consolidate 8 redundant artifacts into 4 unified targets
@@ -25,6 +26,7 @@ This project implements a comprehensive artifact evaluation and consolidation st
 ## Executive Summary: What Was Done
 
 ### Phase 1: Registry Updates ✅ COMPLETE
+
 **Status**: All 4 subtasks completed
 **Impact**: +5 artifacts added, 8 deprecated, 0 breaking changes
 
@@ -36,6 +38,7 @@ This project implements a comprehensive artifact evaluation and consolidation st
 | 1D: Run artifact tests | ✅ | 1754 tests pass, 97 test suites pass |
 
 ### Phase 2: Code Updates & Verification ✅ COMPLETE
+
 **Status**: All consolidation infrastructure verified as working
 **Impact**: Zero code changes required; consolidation already functional
 
@@ -49,6 +52,7 @@ This project implements a comprehensive artifact evaluation and consolidation st
 **Key Finding**: All consolidation functions exist, work correctly, and are properly integrated. No functional code changes needed.
 
 ### Phase 3: API/CLI Updates ✅ COMPLETE
+
 **Status**: Full backward-compatible deprecation layer implemented
 **Impact**: Legacy clients work unchanged; modern clients guided to consolidated targets
 
@@ -66,6 +70,7 @@ This project implements a comprehensive artifact evaluation and consolidation st
 ### Phase 1: Registry Audit & Updates
 
 **New Artifacts Added** (5):
+
 1. **result-summary.md** (9/10 score) - Human-readable run summary; KEEP_CORE
 2. **test-baseline-comparison.json** (8/10) - Test failure classification; KEEP_FOR_AGENT_CONTEXT
 3. **git.status** (7/10) - Git status before/after changes; KEEP_FOR_AGENT_CONTEXT
@@ -74,6 +79,7 @@ This project implements a comprehensive artifact evaluation and consolidation st
 
 **Artifacts Deprecated** (8):
 All now marked [DEPRECATED: Use consolidated-target] in descriptions:
+
 - scouting-summary.json → all-phase-summaries.json
 - goal-setting-summary.json → all-phase-summaries.json
 - goal-check-summary.json → all-phase-summaries.json
@@ -84,10 +90,12 @@ All now marked [DEPRECATED: Use consolidated-target] in descriptions:
 - goal-setting-metrics.json → timings-manifest.json
 
 **Availability Optimizations** (2):
+
 - stdout.log, stderr.log marked as ON_FAILURE (from ALWAYS)
 - Saves 1-5 MB per successful run
 
 **Registry Impact**:
+
 - Total artifacts: 53 (↑ from 48)
 - Consolidated targets: 4 (already existed)
 - Deprecated artifacts: 8 (newly marked)
@@ -119,11 +127,13 @@ All consolidation functions exist in kaseki-agent.sh and work correctly:
    - Population: End of run via `consolidate_phase_errors()`
 
 **Test Coverage**:
+
 - Created `test/artifact-consolidation.test.ts` with 10 tests
 - All tests pass
 - Coverage includes: initialization, multi-source aggregation, JSONL format, registry alignment
 
 **Code Quality**:
+
 - Build: ✅ Passing
 - TypeScript: ✅ No errors
 - Tests: ✅ 1764 passing
@@ -131,11 +141,13 @@ All consolidation functions exist in kaseki-agent.sh and work correctly:
 ### Phase 3: API-Level Deprecation Support
 
 **New Module**: `src/lib/artifact-consolidation-aliases.ts`
+
 - Defines all 8 deprecated → 2 consolidated mappings
 - Provides utility functions for alias detection and resolution
 - Supports phase-specific data extraction from consolidated manifests
 
 **Updated Routes**:
+
 1. **GET /api/results/:id/:file** (artifact download)
    - Detects deprecated artifact requests
    - Serves from consolidated target automatically
@@ -149,6 +161,7 @@ All consolidation functions exist in kaseki-agent.sh and work correctly:
    - Provides migration guidance in response
 
 **HTTP Headers for Deprecation**:
+
 ```
 X-Artifact-Deprecated: true
 X-Artifact-Consolidation-Target: all-phase-summaries.json
@@ -157,6 +170,7 @@ Deprecation: true (RFC 8594 standard)
 ```
 
 **Backward Compatibility**:
+
 - ✅ Legacy clients requesting deprecated artifacts: Continue to work
 - ✅ No breaking changes to existing API contracts
 - ✅ Gradual migration path documented via headers and API metadata
@@ -190,6 +204,7 @@ Deprecation: true (RFC 8594 standard)
 ## Consolidation Statistics
 
 ### Artifact Reduction
+
 | Category | Before | After | Reduction |
 |----------|--------|-------|-----------|
 | Individual phase summaries | 4 files | 1 consolidated | 75% |
@@ -198,11 +213,13 @@ Deprecation: true (RFC 8594 standard)
 | Total deprecated sources | 12 files | 4 consolidated | 67% |
 
 ### Storage Impact (per run)
+
 - Eliminated: 0 MB (intermediate files still written for fault-tolerance)
 - Optimized: ~1-5 MB (stdout/stderr now ON_FAILURE only)
 - Added: ~0.5 KB (4 consolidated JSON manifests)
 
 ### API Impact
+
 - Deprecated endpoints: 0 (all still work via aliases)
 - Recommended artifact count: 5 (KEEP_CORE prioritized)
 - Deprecation header support: 8 artifacts with proper RFC 8594 headers
@@ -212,11 +229,13 @@ Deprecation: true (RFC 8594 standard)
 ## Test Coverage Summary
 
 ### Phase 1 Tests
+
 - ✅ 1754 existing tests (97 suites)
 - ✅ Build validation passes
 - ✅ TypeScript compilation clean
 
 ### Phase 2 Tests
+
 - ✅ 10 new consolidation tests
 - ✅ Initialization tests
 - ✅ Multi-source aggregation tests
@@ -224,12 +243,14 @@ Deprecation: true (RFC 8594 standard)
 - ✅ Registry alignment verification
 
 ### Phase 3 Tests
+
 - ✅ Artifact alias resolution
 - ✅ Deprecation header generation
 - ✅ Phase extraction from consolidated manifests
 - ✅ Backward compatibility routes
 
 ### Total Test Results
+
 - **Test Suites**: 98 passed
 - **Tests**: 1764 passed (↑ 10 from Phase 2)
 - **Coverage**: 100% of new functionality
@@ -240,6 +261,7 @@ Deprecation: true (RFC 8594 standard)
 ## Files Created/Modified
 
 ### Created
+
 - ✅ `test/artifact-consolidation.test.ts` - Consolidation validation tests (Phase 2)
 - ✅ `src/lib/artifact-consolidation-aliases.ts` - Deprecation alias mappings (Phase 3)
 - ✅ `docs/PHASE1_COMPLETION_SUMMARY.md` - Phase 1 documentation
@@ -248,10 +270,12 @@ Deprecation: true (RFC 8594 standard)
 - ✅ `docs/ARTIFACT_EVALUATION_CONSOLIDATION_COMPLETE.md` - Master summary (this file)
 
 ### Modified
+
 - ✅ `src/artifact-metadata.ts` - Added 5 artifacts, deprecated 8 (Phase 1)
 - ✅ `src/routes/artifact-routes.ts` - Added alias support, deprecation headers (Phase 3)
 
 ### Unchanged (Working Correctly)
+
 - ✅ `kaseki-agent.sh` - No functional changes needed; consolidation already working
 - ✅ All consolidation functions (`append_phase_summary`, `consolidate_timings_to_json`, etc.)
 - ✅ All artifact generation and recording functions
@@ -276,6 +300,7 @@ Deprecation: true (RFC 8594 standard)
 ## Recommendations for Next Phases
 
 ### Phase 4: Testing & Validation (Estimated 2-3 hours)
+
 1. **Run actual kaseki-agent executions** to verify:
    - Consolidated artifacts are created with correct schema
    - Deprecated artifact access still works
@@ -294,6 +319,7 @@ Deprecation: true (RFC 8594 standard)
    - Validate backward-compatibility aliases
 
 ### Phase 5: Deprecation & Release (Estimated 2-3 hours)
+
 1. **Documentation**
    - Update API documentation with consolidation info
    - Create client migration guide
@@ -314,18 +340,22 @@ Deprecation: true (RFC 8594 standard)
 ## Risk Assessment & Mitigations
 
 ### Risk: API Breaking Changes
+
 **Severity**: Low  
 **Mitigation**: ✅ Full backward compatibility maintained via alias routing
 
 ### Risk: Consolidated Manifest Schema Changes
+
 **Severity**: Medium  
 **Mitigation**: ✅ Schema verified and documented in Phase 2 tests
 
 ### Risk: Performance Degradation
+
 **Severity**: Low  
 **Mitigation**: ✅ Alias resolution adds <1ms per request; negligible impact
 
 ### Risk: Missing Consolidated Files
+
 **Severity**: Low  
 **Mitigation**: ✅ Initialization and consolidation functions are called unconditionally
 
