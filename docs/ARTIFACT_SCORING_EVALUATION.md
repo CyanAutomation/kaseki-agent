@@ -473,11 +473,11 @@
 
 | Artifact | Decision | Uniqueness | Readability | Recovery | Cost | Total | Action |
 |----------|----------|-----------|-------------|----------|------|-------|--------|
-| pi-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE (keep only if KASEKI_DEBUG_RAW_EVENTS=1) |
-| scouting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE (keep only if KASEKI_DEBUG_RAW_EVENTS=1) |
-| goal-setting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE (keep only if KASEKI_DEBUG_RAW_EVENTS=1) |
-| goal-check-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE (keep only if KASEKI_DEBUG_RAW_EVENTS=1) |
-| run-evaluation-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE (keep only if KASEKI_DEBUG_RAW_EVENTS=1) |
+| pi-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
+| scouting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
+| goal-setting-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
+| goal-check-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
+| run-evaluation-events.raw.jsonl | 0 | 0 | 2 | 0 | 0 | **2** | REMOVE |
 | validation-raw.log | 0 | 0 | 0 | 0 | 0 | **0** | REMOVE |
 | filter-diagnostics.log | 1 | 1 | 1 | 0 | 0 | **3** | REMOVE (or SHORT-RETAIN 7 days) |
 | last-command.log | 0 | 1 | 1 | 0 | 1 | **3** | REMOVE |
