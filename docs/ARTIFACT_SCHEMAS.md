@@ -113,7 +113,8 @@ This document defines the formal structure of all kaseki-agent artifacts using J
 }
 ```
 
-**Type Values**: 
+**Type Values**:
+
 - `changed_file_outside_allowlist` — Agent changed file outside allowlist
 - `validation_allowlist_violation` — Validation changed file outside allowlist
 - `diff_exceeds_max_bytes` — Diff larger than KASEKI_MAX_DIFF_BYTES
@@ -132,7 +133,8 @@ This document defines the formal structure of all kaseki-agent artifacts using J
 }
 ```
 
-**Status Values**: 
+**Status Values**:
+
 - `allowlisted` — Pattern found in `.kaseki-secret-allowlist`
 - `real_leak` — Unallowlisted credential (causes exit code 6)
 
