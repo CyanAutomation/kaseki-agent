@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.77.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.76.0...v1.77.0) (2026-06-11)
+
+
+### Bug Fixes
+
+* Correct regex replacements for environment variable paths in goal-setting script ([dc4d321](https://github.com/CyanAutomation/kaseki-agent/commit/dc4d321c185111f817736e9a2ab27ff438dc76e8))
+
+
+### Features
+
+* Add revised artifact evaluation and scoring quick reference documentation ([9c67882](https://github.com/CyanAutomation/kaseki-agent/commit/9c6788220bb3189137012c9cdbda1ac078635032))
+* Consolidate phase data into metadata.json and update related documentation ([a994e18](https://github.com/CyanAutomation/kaseki-agent/commit/a994e181dd1d400a5f36a6c677bcfa8cb00ba3b2))
+* Consolidate validation artifacts into metadata.json and update related documentation ([82c3a81](https://github.com/CyanAutomation/kaseki-agent/commit/82c3a81a20ee75c826b3db63baff0354ef6d8016))
+* Enhance artifact consolidation with new metadata structure and cleanup logs ([a48c272](https://github.com/CyanAutomation/kaseki-agent/commit/a48c272c9e402118f88cc6cdf88694baefdb33a2))
+
 # [1.76.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.75.0...v1.76.0) (2026-06-11)
 
 
