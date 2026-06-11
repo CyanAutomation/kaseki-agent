@@ -204,9 +204,6 @@ TS_PRE_CHECK_DURATION_SECONDS=0
 TS_PRE_CHECK_TIMESTAMP=""
 FILTER_STDERR_TAIL=""
 FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
-VALIDATION_RAW_LOG="${KASEKI_RESULTS_DIR}/validation-raw.log"
-PRE_VALIDATION_RAW_LOG="${KASEKI_RESULTS_DIR}/pre-validation-raw.log"
-AUTO_LINT_CLEANUP_LOG="${KASEKI_RESULTS_DIR}/auto-lint-cleanup.log"
 AUTO_LINT_CLEANUP_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-timings.tsv"
 FILTER_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/filter-diagnostics.log"
 DIFF_NONEMPTY=false
@@ -227,10 +224,6 @@ PRE_VALIDATION_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/pre-validation-timings.tsv"
 STAGE_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/stage-timings.tsv"
 DEPENDENCY_CACHE_LOG="${KASEKI_RESULTS_DIR}/dependency-cache.log"
 RAW_EVENTS="/tmp/pi-events.raw.jsonl"
-SCOUTING_RAW_EVENTS="/tmp/pi-scouting-events.raw.jsonl"
-GOAL_SETTING_RAW_EVENTS="/tmp/pi-goal-setting-events.raw.jsonl"
-GOAL_CHECK_RAW_EVENTS="/tmp/pi-goal-check-events.raw.jsonl"
-RUN_EVALUATION_RAW_EVENTS="/tmp/pi-run-evaluation-events.raw.jsonl"
 SCOUTING_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting.json"
 SCOUTING_CANDIDATE_ARTIFACT="${KASEKI_RESULTS_DIR}/scouting-candidate.json"
 GOAL_SETTING_ARTIFACT="${KASEKI_RESULTS_DIR}/goal-setting.json"
@@ -312,8 +305,7 @@ setup_host_logging_mirror() {
   if mkdir -p "$KASEKI_LOG_DIR" 2>/dev/null && [ -w "$KASEKI_LOG_DIR" ]; then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     host_log_file="$KASEKI_LOG_DIR/${base_name}-${stamp}.log"
-    exec > >(tee -a "${KASEKI_RESULTS_DIR}"/stdout.log | tee -a "$host_log_file") \
-      2> >(tee -a "${KASEKI_RESULTS_DIR}"/stderr.log | tee -a "$host_log_file" >&2)
+    exec > >(tee -a "$host_log_file") 2> >(tee -a "$host_log_file" >&2)
     printf 'Host log mirror: %s\n' "$host_log_file"
     return 0
   fi
@@ -321,7 +313,7 @@ setup_host_logging_mirror() {
     printf 'Error: strict host logging enabled, but KASEKI_LOG_DIR is not writable: %s\n' "$KASEKI_LOG_DIR" >&2
     exit 1
   fi
-  exec > >(tee -a "${KASEKI_RESULTS_DIR}"/stdout.log) 2> >(tee -a "${KASEKI_RESULTS_DIR}"/stderr.log >&2)
+  # No host log available; output goes to console only
   printf 'Warning: host log mirror disabled; KASEKI_LOG_DIR is unavailable: %s (set writable KASEKI_LOG_DIR to enable mirror, or set KASEKI_STRICT_HOST_LOGGING=1 to fail fast)\n' "$KASEKI_LOG_DIR" >&2
 }
 
@@ -342,8 +334,6 @@ if ! mkdir -p "${mkdir_paths[@]}"; then
   printf 'Error: Failed to create required runtime directories.\n' >&2
   exit 1
 fi
-: > "${KASEKI_RESULTS_DIR}"/stdout.log
-: > "${KASEKI_RESULTS_DIR}"/stderr.log
 : > "${KASEKI_RESULTS_DIR}"/pi-events.jsonl
 : > "${KASEKI_RESULTS_DIR}"/pi-summary.json
 : > "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl
@@ -351,7 +341,7 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
-: > "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+
 : > "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check-validation-summary.txt
 : > "${KASEKI_RESULTS_DIR}"/goal-check-attempts.jsonl
@@ -467,16 +457,13 @@ append_phase_summary() {
 }
 
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
-: > "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation.json
 : > "$TEST_IMPACT_WARNINGS_ARTIFACT"
 : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
 : > "${KASEKI_RESULTS_DIR}"/validation.log
-: > "$PRE_VALIDATION_RAW_LOG"
 : > "${KASEKI_RESULTS_DIR}/pre-validation.log"
 : > "$AUTO_LINT_CLEANUP_TIMINGS_FILE"
-: > "${KASEKI_RESULTS_DIR}"/quality.log
-: > "${KASEKI_RESULTS_DIR}"/secret-scan.log
 : > "${KASEKI_RESULTS_DIR}"/progress.jsonl
 : > "${KASEKI_RESULTS_DIR}"/failure.json
 : > "$VALIDATION_TIMINGS_FILE"
@@ -701,7 +688,7 @@ validate_scouting_artifact_with_node() {
     "$validation_error_file" \
     "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" \
     >/dev/null \
-    2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+    2>/dev/null
 }
 
 # Validate scouting artifact and emit structured reason code
@@ -723,7 +710,7 @@ validate_scouting_artifact() {
       reason_details="1 critical scouting validation error: scouting-candidate.json"
     fi
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>> "${KASEKI_RESULTS_DIR}/scouting-stderr.log" || true
+    node -e 'const fs=require("node:fs"); const candidate=process.argv[1]; const reason=process.argv[2]; const error={timestamp:new Date().toISOString(),reason_code:reason,field:"scouting-candidate.json",expected:"file at " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json",actual:`missing: ${candidate}`,severity:"critical",suggestion:reason==="readonly_filesystem" ? "remount " + process.env.KASEKI_RESULTS_DIR + " as read-write (docker run -v /path:" + process.env.KASEKI_RESULTS_DIR + ":rw)" : "ensure the scouting Pi writes exactly one valid JSON object to " + process.env.KASEKI_RESULTS_DIR + "/scouting-candidate.json"}; fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-validation-errors.jsonl", JSON.stringify(error)+"\n");' "$candidate_artifact" "$reason_code" 2>/dev/null || true
   elif ! validate_scouting_artifact_with_node "$candidate_artifact" "$final_artifact" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.reason_code||"schema_mismatch"));}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"scouting artifact validation failed"));}catch{process.stdout.write("scouting artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'scouting artifact validation failed')"
@@ -731,7 +718,7 @@ validate_scouting_artifact() {
 
   printf '%s\n' "$reason_code" > "$reason_file"
   # scouting-validation-summary.txt artifact removed (Phase 1: low-value artifacts deletion)
-  printf '[scouting-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+  # [scouting-validation removed - errors go to scouting-validation-errors.jsonl]
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
 }
@@ -864,7 +851,7 @@ try {
 } catch (e) {
   // Non-blocking log failure
 }
-' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>> "${KASEKI_RESULTS_DIR}/goal-check-stderr.log"
+' "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file" 2>/dev/null
 }
 
 validate_goal_check_artifact() {
@@ -882,7 +869,7 @@ validate_goal_check_artifact() {
     reason_code="missing_file"
     reason_details="1 critical goal-check validation error: goal-check-candidate.json"
     # shellcheck disable=SC2016
-    node -e 'const fs=require("node:fs"); const path=require("node:path"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const resultsDir=process.env.KASEKI_RESULTS_DIR || "/results"; const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:`file at ${path.join(resultsDir, "goal-check-candidate.json")}`,actual:`missing: ${candidate}`,severity:"critical",suggestion:`ensure the goal-check Pi writes exactly one valid JSON object to ${path.join(resultsDir, "goal-check-candidate.json")} before exiting successfully`}; fs.appendFileSync(path.join(resultsDir, "goal-check-validation-errors.jsonl"), JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+    node -e 'const fs=require("node:fs"); const path=require("node:path"); const candidate=process.argv[1]; const attempt=Number(process.argv[2]); const resultsDir=process.env.KASEKI_RESULTS_DIR || "/results"; const error={timestamp:new Date().toISOString(),attempt,field:"goal-check-candidate.json",expected:`file at ${path.join(resultsDir, "goal-check-candidate.json")}`,actual:`missing: ${candidate}`,severity:"critical",suggestion:`ensure the goal-check Pi writes exactly one valid JSON object to ${path.join(resultsDir, "goal-check-candidate.json")} before exiting successfully`}; fs.appendFileSync(path.join(resultsDir, "goal-check-validation-errors.jsonl"), JSON.stringify(error)+"\n");' "$candidate_artifact" "$attempt" 2>/dev/null || true
   elif ! validate_goal_check_artifact_with_node "$candidate_artifact" "$final_artifact" "$attempt" "$validation_error_file"; then
     reason_code="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); const hint=String(v.reason_hint||""); process.stdout.write(hint === "malformed_json" ? "malformed_json" : "schema_mismatch");}catch{process.stdout.write("schema_mismatch");}' "$validation_error_file" 2>/dev/null || printf 'schema_mismatch')"
     reason_details="$(node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(v.details||"goal-check artifact validation failed"));}catch{process.stdout.write("goal-check artifact validation failed");}' "$validation_error_file" 2>/dev/null || printf 'goal-check artifact validation failed')"
@@ -890,7 +877,7 @@ validate_goal_check_artifact() {
 
   printf '%s\n' "$reason_code" > "$reason_file"
   printf '%s\n' "$reason_details" > "$summary_file"
-  printf '[goal-check-validation] reason=%s details=%s\n' "$reason_code" "$reason_details" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+  # [goal-check-validation removed - errors go to goal-check-validation-errors.jsonl]
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
 }
@@ -1894,7 +1881,7 @@ finish() {
   
   # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
   consolidate_timings_to_json "${KASEKI_RESULTS_DIR}"/timings-manifest.json "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
-  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-stderr.log "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl
   consolidate_validation_errors "${KASEKI_RESULTS_DIR}"/artifact-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
   
   maybe_call_finish_helper write_failure_json "$STATUS"
@@ -3050,7 +3037,6 @@ run_baseline_validation() {
   
   # Save current working directory
   local saved_pwd="$PWD"
-  
   # Change to baseline directory temporarily
   cd "$baseline_dir" || return 1
   
@@ -3059,7 +3045,7 @@ run_baseline_validation() {
     "baseline validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
     "$baseline_log" \
-    "$baseline_raw_log" \
+    "/dev/null" \
     "$baseline_timings" \
     "${KASEKI_RESULTS_DIR}/validation-baseline-env.log" \
     "baseline_validation_failed" \
@@ -3321,7 +3307,6 @@ run_validation_commands() {
         } 2>&1 |
           tee --output-error=warn-nopipe \
             >(cat >> "$log_file") \
-            >(cat >> "$raw_log") \
             2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") |
           FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
@@ -3350,7 +3335,7 @@ run_validation_commands() {
         {
           printf '\n[validation pipeline] command=%s\n' "$trimmed"
           printf '[validation pipeline] statuses: command=%s tee=%s filter=%s\n' "$command_exit" "$tee_exit" "$filter_exit"
-          printf '[validation pipeline] logs: visible=%s raw=%s diagnostics=%s\n' "$log_file" "$raw_log" "$FILTER_DIAGNOSTICS_LOG"
+          printf '[validation pipeline] logs: visible=%s diagnostics=%s\n' "$log_file" "$FILTER_DIAGNOSTICS_LOG"
         } >> "$log_file"
         {
           printf '\n[validation pipeline] command=%s\n' "$trimmed"
@@ -4105,13 +4090,13 @@ run_goal_setting_agent() {
   set_current_stage "pi goal-setting agent"
   
   if [ "$KASEKI_GOAL_SETTING" = "0" ]; then
-    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log
+    printf 'Pi goal-setting agent skipped because KASEKI_GOAL_SETTING=0.\n'
     record_stage_timing "pi goal-setting agent" 0 0 "skipped_by_config"
     return 0
   fi
   
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log
+    printf 'DRY-RUN: Pi goal-setting agent would upgrade the task prompt into a mature goal.\n'
     record_stage_timing "pi goal-setting agent" 0 0 "dry_run=true"
     return 0
   fi
@@ -4123,7 +4108,6 @@ run_goal_setting_agent() {
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log >&2) \
     | tee "$GOAL_SETTING_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
   GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
@@ -4133,7 +4117,7 @@ run_goal_setting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log || true <<'NODE'
+    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" || true <<'NODE'
 const fs = require("node:fs");
 const candidatePath = process.argv[1];
 const rawPath = process.argv[2];
@@ -4227,8 +4211,6 @@ for (const snippet of snippets) {
 if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-  const note = { timestamp: new Date().toISOString(), event: "goal_setting_artifact_recovered_from_event_stream", artifact: candidatePath, raw_events: rawPath };
-  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-setting-stderr.log", JSON.stringify(note) + "\n");
 }
 NODE
   fi
@@ -4240,7 +4222,7 @@ NODE
   fi
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
-  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
+  kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
   # Phase 3A: Consolidate goal-setting summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
@@ -4393,8 +4375,6 @@ run_goal_setting_agent_with_retry() {
     goal_setting_last_exit=$?
     set -e
 
-    # Append stderr to results for logging
-    cat "$goal_setting_stderr_capture" >> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log 2>/dev/null || true
     goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
     rm -f "$goal_setting_stderr_capture"
 
@@ -4609,36 +4589,35 @@ run_scouting_agent() {
   printf '\n==> pi scouting agent\n'
   set_current_stage "pi scouting agent"
   if [ "$KASEKI_SCOUTING" = "0" ]; then
-    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n' | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+    printf 'Pi scouting agent skipped because KASEKI_SCOUTING=0.\n'
     record_stage_timing "pi scouting agent" 0 0 "skipped_by_config"
     return 0
   fi
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n' | tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log
+    printf 'DRY-RUN: Pi scouting agent would inspect the task before coding.\n'
     record_stage_timing "pi scouting agent" 0 0 "dry_run=true"
     return 0
   fi
 
   scouting_prompt="$(build_scouting_prompt)"
   scouting_start="$(date +%s)"
-  scout_dirty_before="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
-  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+  scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
+  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/scouting-stderr.log >&2) \
     | tee "$SCOUTING_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
   SCOUTING_EXIT="${PIPESTATUS[0]}"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
   unset scouting_prompt
   set +e
-  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true <<'NODE'
+    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" || true <<'NODE'
 const fs = require("node:fs");
 const candidatePath = process.argv[1];
 const rawPath = process.argv[2];
@@ -4741,8 +4720,6 @@ for (const snippet of snippets) {
 if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-  const note = { timestamp: new Date().toISOString(), event: "scouting_artifact_recovered_from_event_stream", artifact: candidatePath, raw_events: rawPath };
-  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-stderr.log", JSON.stringify(note) + "\n");
 }
 NODE
   fi
@@ -4752,15 +4729,15 @@ NODE
     scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
     emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
   fi
-  scout_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true)"
+  scout_dirty_after="$(git status --porcelain 2>/dev/null || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
     SCOUTING_EXIT=86
     emit_error_event "pi_scouting_workspace_modified" "Read-only scouting changed repository state before coding" "exit"
   fi
   rm -f "$SCOUTING_CANDIDATE_ARTIFACT"
-  git reset --hard -q HEAD 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
-  git clean -fd -q 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
-  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
+  git reset --hard -q HEAD 2>/dev/null || true
+  git clean -fd -q 2>/dev/null || true
+  kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
   # Phase 3A: Consolidate scouting summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
   SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
@@ -4800,8 +4777,6 @@ run_scouting_agent_with_retry() {
     scouting_last_exit=$?
     set -e
 
-    # Append stderr to results for logging
-    cat "$scouting_stderr_capture" >> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log 2>/dev/null || true
     scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
     rm -f "$scouting_stderr_capture"
 
@@ -5097,12 +5072,12 @@ run_goal_check() {
   printf '\n==> goal check\n'
   set_current_stage "goal check"
   if [ "$KASEKI_GOAL_CHECK" != "1" ]; then
-    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    printf 'Goal check skipped because KASEKI_GOAL_CHECK=%s.\n' "$KASEKI_GOAL_CHECK"
     record_stage_timing "goal check" 0 0 "skipped_by_config attempt=$attempt"
     return 0
   fi
   if [ ! -s "$SCOUTING_ARTIFACT" ]; then
-    printf 'Goal check skipped because scouting artifact is unavailable.\n' | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    printf 'Goal check skipped because scouting artifact is unavailable.\n'
     record_stage_timing "goal check" 0 0 "skipped_no_scouting attempt=$attempt"
     return 0
   fi
@@ -5113,7 +5088,6 @@ run_goal_check() {
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log >&2) \
     | tee "$GOAL_CHECK_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
   GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
@@ -5121,7 +5095,7 @@ run_goal_check() {
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
-  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl ${KASEKI_RESULTS_DIR}/goal-check-summary.json 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+  kaseki-pi-event-filter "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl ${KASEKI_RESULTS_DIR}/goal-check-summary.json 2>/dev/null || true
   # Phase 3A: Consolidate goal-check summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-check" "${KASEKI_RESULTS_DIR}"/goal-check-summary.json
 
@@ -5220,10 +5194,8 @@ for (const path of [rawPath, filteredPath]) {
 if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
-  const note = { timestamp: new Date().toISOString(), attempt, event: "goal_check_artifact_recovered_from_assistant_text", artifact: candidatePath, raw_events: rawPath, filtered_events: filteredPath };
-  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-check-stderr.log", JSON.stringify(note) + "\n");
 }
-' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>> "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log || true
+' "$GOAL_CHECK_CANDIDATE_ARTIFACT" "$GOAL_CHECK_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-check-events.jsonl "$attempt" 2>/dev/null || true
   fi
 
   if [ "$GOAL_CHECK_EXIT" -eq 0 ] && ! validate_goal_check_artifact "$GOAL_CHECK_CANDIDATE_ARTIFACT" "${KASEKI_RESULTS_DIR}"/goal-check.json "$attempt" ${KASEKI_RESULTS_DIR}/goal-check-validation-reason.txt; then
@@ -5564,12 +5536,12 @@ run_run_evaluation() {
   printf '\n==> run evaluation\n'
   set_current_stage "run evaluation"
   if [ "$KASEKI_RUN_EVALUATION" != "1" ]; then
-    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION" | tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+    printf 'Run evaluation skipped because KASEKI_RUN_EVALUATION=%s.\n' "$KASEKI_RUN_EVALUATION"
     record_stage_timing "run evaluation" 0 0 "skipped_by_config"
     return 0
   fi
   if [ "$KASEKI_DRY_RUN" = "1" ]; then
-    printf 'Run evaluation skipped for dry-run/startup-check mode.\n' | tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log
+    printf 'Run evaluation skipped for dry-run/startup-check mode.\n'
     record_stage_timing "run evaluation" 0 0 "dry_run=true"
     return 0
   fi
@@ -5578,19 +5550,18 @@ run_run_evaluation() {
   write_metadata "$STATUS"
   evaluation_prompt="$(build_run_evaluation_prompt)"
   evaluation_start="$(date +%s)"
-  eval_dirty_before="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true)"
-  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+  eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
+  chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
   OPENROUTER_API_KEY="$openrouter_api_key" \
     timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log >&2) \
     | tee "$RUN_EVALUATION_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
   RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
   unset evaluation_prompt
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
-  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+  chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
 
   if [ "$RUN_EVALUATION_EXIT" -eq 0 ] && ! node -e '
@@ -5620,17 +5591,17 @@ artifact.timestamp = new Date().toISOString();
 artifact.model = model;
 artifact.actual_model = actualModel;
 fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
-' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log; then
+' "$RUN_EVALUATION_CANDIDATE_ARTIFACT" "$RUN_EVALUATION_ARTIFACT" "$KASEKI_RUN_EVALUATION_MODEL" "$RUN_EVALUATION_ACTUAL_MODEL" 2>/dev/null; then
     RUN_EVALUATION_EXIT=86
     emit_error_event "run_evaluation_artifact_invalid" "Run-evaluation Pi did not write a schema-valid JSON artifact" "continue"
   fi
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
-  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+  kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>/dev/null || true
   # Phase 3A: Consolidate run-evaluation summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "run-evaluation" "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
   RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
   if [ -s "$RUN_EVALUATION_ARTIFACT" ]; then
-    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+    node - "$RUN_EVALUATION_ARTIFACT" "$RUN_EVALUATION_ACTUAL_MODEL" <<'NODE' 2>/dev/null || true
 const fs = require('fs');
 const [file, actualModel] = process.argv.slice(2);
 const artifact = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -5639,12 +5610,12 @@ fs.writeFileSync(file, JSON.stringify(artifact, null, 2) + '\n');
 NODE
   fi
 
-  eval_dirty_after="$(git status --porcelain 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true)"
+  eval_dirty_after="$(git status --porcelain 2>/dev/null || true)"
   if [ "$eval_dirty_before" != "$eval_dirty_after" ]; then
     RUN_EVALUATION_EXIT=86
     emit_error_event "run_evaluation_workspace_modified" "Read-only run evaluation changed repository state; restoring workspace" "continue"
-    git reset --hard -q HEAD 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
-    git clean -fd -q 2>> "${KASEKI_RESULTS_DIR}"/run-evaluation-stderr.log || true
+    git reset --hard -q HEAD 2>/dev/null || true
+    git clean -fd -q 2>/dev/null || true
   fi
 
   if [ "$RUN_EVALUATION_EXIT" -ne 0 ] || [ ! -s "$RUN_EVALUATION_ARTIFACT" ]; then
@@ -7754,7 +7725,7 @@ else
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
     "${KASEKI_RESULTS_DIR}/pre-validation.log" \
-    "$PRE_VALIDATION_RAW_LOG" \
+    "/dev/null" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/pre-agent-validation-env.log" \
     "pre_agent_validation_failed" \
@@ -7994,10 +7965,6 @@ else
   unset OPENROUTER_API_KEY
   set +e
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
-
-  if [ "$KASEKI_DEBUG_RAW_EVENTS" = "1" ]; then
-    cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl
-  fi
 
   PI_EXTRACTION_DEPS_OK=1
   missing_executables=()
@@ -8294,7 +8261,7 @@ if [ "$KASEKI_DRY_RUN" = "1" ] || [ -z "$KASEKI_VALIDATION_COMMANDS" ] || [ "$KA
     "validation" \
     "$KASEKI_VALIDATION_COMMANDS" \
     "${KASEKI_RESULTS_DIR}"/validation.log \
-    "$VALIDATION_RAW_LOG" \
+    "/dev/null" \
     "$VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/validation-env.log" \
     "validation_command_failed"
@@ -8321,7 +8288,7 @@ else
     "validation" \
     "$KASEKI_VALIDATION_COMMANDS" \
     "${KASEKI_RESULTS_DIR}"/validation.log \
-    "$VALIDATION_RAW_LOG" \
+    "/dev/null" \
     "$VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/validation-env.log" \
     "validation_command_failed"
