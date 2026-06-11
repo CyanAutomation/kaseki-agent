@@ -333,6 +333,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
 
   // Phase 2: Structured JSON Artifacts (consolidated free-form logs)
 
+  'validation-results.json': {
+    name: 'validation-results.json',
+    contentType: 'application/json',
+    description: 'Validation command results: now consolidated into metadata.json.phases.validation',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 23,
+    sizeHint: 'small',
+  },
+
   'cache-metrics.json': {
     name: 'cache-metrics.json',
     contentType: 'application/json',

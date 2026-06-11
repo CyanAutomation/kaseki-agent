@@ -291,6 +291,9 @@ All written to `/agents/kaseki-results/kaseki-N/`:
 - `cleanup.log` — mandatory post-run cleanup summary
 - `exit_code` — container exit code (0=success, non-zero=failure)
 
+**Phase 3–4 Consolidations (v2.0)**:
+Previously separate artifacts (`validation-results.json`, `quality-gates.json`, `secret-scan.json`, `secret-scan.log`) are now consolidated into `metadata.json.phases.*` to reduce artifact count and improve discoverability. The Web UI and API automatically fetch the consolidated phases structure from `metadata.json`.
+
 ## Dependency Caching
 
 `kaseki-agent.sh` uses a stamp-based, 4-layer cache to avoid redundant `npm ci` runs:

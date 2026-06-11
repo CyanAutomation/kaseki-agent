@@ -690,11 +690,11 @@ validate_goal_setting_artifact "$1" "$2" "$3"
 
         const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8')
           .replaceAll('/workspace-baseline', workspaceBaseline)
-          .replaceAll('/workspace', tempDir)
-          .replaceAll('/results', resultsDir)
-          .replaceAll('/app/lib', appLib)
           .replaceAll('/var/log/kaseki', kasekiLogDir)
-          .replaceAll('/cache', cacheDir);
+          .replaceAll('/app/lib', appLib)
+          .replaceAll('/workspace', tempDir)
+          .replaceAll('/cache', cacheDir)
+          .replaceAll('/results', resultsDir);
         writeFileSync(modifiedScript, scriptSource, { mode: 0o755 });
 
         // Use utility to create fake binaries with retry logging (replaces multiple writeFileSync calls)
