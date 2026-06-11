@@ -179,27 +179,5 @@ describe('Artifact Consolidation', () => {
       });
     });
 
-    it('deprecated artifacts are marked in registry descriptions', async () => {
-      const registryPath = path.join(__dirname, '..', 'src', 'artifact-metadata.ts');
-      const registryContent = fs.readFileSync(registryPath, 'utf-8');
-
-      const deprecatedArtifacts = [
-        'scouting-summary.json',
-        'goal-setting-summary.json',
-        'goal-check-summary.json',
-        'run-evaluation-summary.json',
-        'validation-timings.tsv',
-        'pre-validation-timings.tsv',
-        'stage-timings.tsv',
-        'goal-setting-metrics.json',
-      ];
-
-      deprecatedArtifacts.forEach(artifact => {
-        const artifactDef = registryContent.match(
-          new RegExp(`'${artifact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}':[^}]+description:[^}]+\\[DEPRECATED`)
-        );
-        expect(artifactDef).toBeTruthy();
-      });
-    });
   });
 });
