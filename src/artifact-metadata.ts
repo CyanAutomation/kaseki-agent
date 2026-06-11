@@ -88,13 +88,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'goal-setting-summary.json': {
-    name: 'goal-setting-summary.json',
-    contentType: 'application/json',
-    description: '[DEPRECATED: Use all-phase-summaries.json] Pi goal-setting event statistics including model and token metadata when available',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
+
 
   'goal-setting-events.jsonl': {
     name: 'goal-setting-events.jsonl',
@@ -121,14 +115,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'goal-setting-metrics.json': {
-    name: 'goal-setting-metrics.json',
-    contentType: 'application/json',
-    description: '[DEPRECATED: Use timings-manifest.json] Goal-setting phase metrics: invoked timestamp, completion timestamp, duration, retry count, success status, and failure reason if applicable',
-    availability: ArtifactAvailability.ALWAYS,
-    triageOrder: 26,
-    sizeHint: 'small',
-  },
+
 
   'scouting.json': {
     name: 'scouting.json',
@@ -139,13 +126,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'scouting-summary.json': {
-    name: 'scouting-summary.json',
-    contentType: 'application/json',
-    description: '[DEPRECATED: Use all-phase-summaries.json] Pi scouting event statistics including model and token metadata when available',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
+
 
   'scouting-events.jsonl': {
     name: 'scouting-events.jsonl',
@@ -206,13 +187,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'large',
   },
 
-  'goal-check-summary.json': {
-    name: 'goal-check-summary.json',
-    contentType: 'application/json',
-    description: '[DEPRECATED: Use all-phase-summaries.json] Pi goal-check event statistics including model metadata when available',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
+
 
   'goal-check-stderr.log': {
     name: 'goal-check-stderr.log',
@@ -248,13 +223,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'large',
   },
 
-  'run-evaluation-summary.json': {
-    name: 'run-evaluation-summary.json',
-    contentType: 'application/json',
-    description: '[DEPRECATED: Use all-phase-summaries.json] Pi run evaluation event statistics including model metadata when available',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
+
 
   'run-evaluation-stderr.log': {
     name: 'run-evaluation-stderr.log',
@@ -305,14 +274,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
-  'pre-validation-timings.tsv': {
-    name: 'pre-validation-timings.tsv',
-    contentType: 'text/tab-separated-values',
-    description: '[DEPRECATED: Use timings-manifest.json] Per-command pre-agent validation timing: command, start, end, elapsed seconds',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 20,
-    sizeHint: 'small',
-  },
+
 
   'validation.log': {
     name: 'validation.log',
@@ -332,14 +294,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'validation-timings.tsv': {
-    name: 'validation-timings.tsv',
-    contentType: 'text/tab-separated-values',
-    description: '[DEPRECATED: Use timings-manifest.json] Per-command timing: command, start, end, elapsed seconds',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 21,
-    sizeHint: 'small',
-  },
+
 
   'quality.log': {
     name: 'quality.log',
@@ -350,14 +305,7 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
-  'stage-timings.tsv': {
-    name: 'stage-timings.tsv',
-    contentType: 'text/tab-separated-values',
-    description: '[DEPRECATED: Use timings-manifest.json] Per-stage timing: stage name, start, end, elapsed seconds',
-    availability: ArtifactAvailability.CONDITIONAL,
-    triageOrder: 22,
-    sizeHint: 'small',
-  },
+
 
   // Repository changes
   'git.diff': {
