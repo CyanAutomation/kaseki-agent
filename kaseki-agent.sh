@@ -735,6 +735,60 @@ validate_scouting_artifact() {
   [ "$reason_code" = "valid" ]
 }
 
+write_inspect_scouting_fallback_artifact() {
+  local candidate_artifact="$1"
+
+  if [ "$KASEKI_TASK_MODE" != "inspect" ] || [ -s "$candidate_artifact" ]; then
+    return 0
+  fi
+
+  node - "$candidate_artifact" <<'NODE' 2>/dev/null || return 0
+const fs = require('node:fs');
+const output = process.argv[2];
+const taskPrompt = process.env.TASK_PROMPT || '';
+const fallback = {
+  task: 'Read-only inspect task; scouting agent did not produce a candidate artifact.',
+  requirements: [
+    'Do not modify repository files.',
+    'Do not commit, push, or open a pull request.',
+    taskPrompt ? `Original task prompt: ${taskPrompt}` : 'Use the original task prompt from the run environment.',
+  ],
+  relevant_files: [],
+  observations: [
+    'Kaseki generated this fallback because inspect-mode scouting completed without writing scouting-candidate.json.',
+  ],
+  plan: [
+    'Run the inspect agent using the original task prompt.',
+    'Report findings without requiring a repository diff.',
+  ],
+  validation: [
+    'Inspect mode is read-only; no validation commands are required by the scouting fallback.',
+  ],
+  risks: [
+    'The inspect agent has less pre-analysis context because scouting did not produce structured findings.',
+  ],
+  test_impact: [],
+  critical_change_expectations: {
+    required_files: [],
+    required_search_strings: [],
+    forbidden_empty_diff: false,
+  },
+  suggested_allowlist: {
+    agent_patterns: [],
+    validation_patterns: [],
+  },
+  fallback: true,
+  fallback_reason: 'missing_scouting_candidate_for_inspect_mode',
+};
+fs.writeFileSync(output, JSON.stringify(fallback, null, 2) + '\n');
+NODE
+
+  if [ -s "$candidate_artifact" ]; then
+    emit_event "inspect_scouting_fallback_created" "candidate=$candidate_artifact"
+    printf '%s\n' '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","reason_code":"inspect_fallback","field":"scouting-candidate.json","expected":"file at '"${KASEKI_RESULTS_DIR}"'/scouting-candidate.json","actual":"generated fallback for inspect mode","severity":"warning","suggestion":"inspect mode continued with original task prompt because scouting did not write a candidate artifact"}' >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null || true
+  fi
+}
+
 
 validate_goal_check_artifact_with_node() {
   local candidate_artifact="$1"
@@ -1145,7 +1199,58 @@ build_stages_array() {
   
   stages+=("complete")
   
-  printf '%s\n' "${stages[@]}"
+  if [[ "$retry_count" -ge "$SCOUTING_MAX_RETRIES" ]]; then
+}
+
+extract_failure_diagnostic_reason() {
+  local diagnostic
+
+    if [[ "$retry_wait" =~ ^[0-9]+$ ]] && [[ "$retry_wait" -gt 0 ]]; then
+      log_info "Waiting ${retry_wait}s before retry ${retry_count}/${SCOUTING_MAX_RETRIES}..."
+      sleep "$retry_wait"
+    else
+      log_error "Invalid retry_wait value: $retry_wait"
+      return 1
+    fi
+const fs = require('node:fs');
+const path = require('node:path');
+const resultsDir = process.argv[2];
+const files = [
+  'scouting-validation-errors.jsonl',
+  'goal-setting-validation-errors.jsonl',
+  'goal-check-validation-errors.jsonl',
+  'artifact-validation-errors.jsonl',
+];
+
+function firstJsonLine(file) {
+  const full = path.join(resultsDir, file);
+  if (!fs.existsSync(full) || fs.statSync(full).size === 0) return undefined;
+  const lines = fs.readFileSync(full, 'utf8').split(/\r?\n/).filter(Boolean);
+  for (const line of lines) {
+    try {
+      return { file, data: JSON.parse(line) };
+    } catch {}
+  }
+  return undefined;
+}
+
+for (const file of files) {
+  const entry = firstJsonLine(file);
+  if (!entry) continue;
+  const data = entry.data;
+  const reason = data.reason_code || data.reason || data.status || 'artifact validation error';
+  const field = data.field || data.file || '';
+  const actual = data.actual || data.detail || data.suggestion || '';
+  const parts = [entry.file, reason, field, actual].filter(Boolean);
+  process.stdout.write(parts.join(': '));
+  process.exit(0);
+}
+NODE
+)"
+
+  if [ -n "$diagnostic" ]; then
+    printf '%s' "$diagnostic"
+  fi
 }
 
 write_result_summary() {
@@ -1189,6 +1294,12 @@ SUMMARY
   if [ -n "$failed_command" ]; then
     printf -- "- Failed Command: %s\n" "$failed_command" >> "$summary_file"
   fi
+
+  local diagnostic_reason
+  diagnostic_reason="$(extract_failure_diagnostic_reason)"
+  if [ -n "$diagnostic_reason" ]; then
+    printf -- "- Failure Detail: %s\n" "$diagnostic_reason" >> "$summary_file"
+  fi
   
   # Add git diff info if available
   if [ -f "${KASEKI_RESULTS_DIR}/git.diff" ]; then
@@ -1221,8 +1332,9 @@ SUMMARY
 
 write_failure_json() {
   local exit_code="$1"
-  local stderr_tail
+  local stderr_tail diagnostic_reason
   stderr_tail="$(tail -20 "${KASEKI_RESULTS_DIR}"/stderr.log 2>/dev/null || true)"
+  diagnostic_reason="$(extract_failure_diagnostic_reason)"
   if [ "$exit_code" -eq 0 ]; then
     : > "${KASEKI_RESULTS_DIR}"/failure.json
     return 0
@@ -1244,6 +1356,7 @@ write_failure_json() {
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
+  "diagnostic_reason": $(printf '%s' "$diagnostic_reason" | json_encode),
   "stderr_tail": $(printf '%s' "$stderr_tail" | json_encode),
   "artifacts_dir": "${KASEKI_RESULTS_DIR}",
   "metadata": "metadata.json",
@@ -4140,10 +4253,10 @@ run_goal_setting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" || true <<'NODE'
+    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" <<'NODE' || true
 const fs = require("node:fs");
-const candidatePath = process.argv[1];
-const rawPath = process.argv[2];
+const candidatePath = process.argv[2];
+const rawPath = process.argv[3];
 
 function stableStringify(obj) {
   return JSON.stringify(obj, Object.keys(obj).sort());
@@ -4640,11 +4753,11 @@ run_scouting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" "$KASEKI_RESULTS_DIR" || true <<'NODE'
+    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" "$KASEKI_RESULTS_DIR" <<'NODE' || true
 const fs = require("node:fs");
-const candidatePath = process.argv[1];
-const rawPath = process.argv[2];
-const resultsDir = process.argv[3] || "/results";
+const candidatePath = process.argv[2];
+const rawPath = process.argv[3];
+const resultsDir = process.argv[4] || "/results";
 
 function stableStringify(obj) {
   return JSON.stringify(obj, Object.keys(obj).sort());
@@ -4805,6 +4918,10 @@ if (valid.size === 1) {
 NODE
   fi
 
+  if [ "$SCOUTING_EXIT" -eq 0 ]; then
+    write_inspect_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+  fi
+
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
     scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
@@ -4827,7 +4944,7 @@ NODE
     STATUS="$SCOUTING_EXIT"
     FAILED_COMMAND="pi scouting agent"
     emit_error_event "pi_scouting_failed" "Scouting agent exited before the coding agent: $SCOUTING_EXIT" "exit"
-    return 1
+    return "$SCOUTING_EXIT"
   fi
   emit_progress "pi scouting agent" "wrote scouting artifact"
   # Clean up validation reason file on success
@@ -4866,6 +4983,13 @@ run_scouting_agent_with_retry() {
       export KASEKI_SCOUTING_ATTEMPTS=$attempt
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
       return 0
+    fi
+
+    if [ "${SCOUTING_EXIT:-0}" -eq 86 ] || [ "${STATUS:-0}" -eq 86 ]; then
+      printf '[Scouting Phase] Deterministic validation failure (exit 86), not retrying\n'
+      export KASEKI_SCOUTING_ATTEMPTS=$attempt
+      export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
+      return 86
     fi
 
     # Check if this is a transient failure worth retrying

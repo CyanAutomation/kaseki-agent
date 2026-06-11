@@ -270,6 +270,78 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
   });
 
+  test('renders stdout modal content from structured log responses', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-302/status') return createJsonResponse({ id: 'kaseki-302', status: 'running' });
+        if (path === '/api/runs/kaseki-302/logs/stdout?tail=lines&lines=200') {
+          return createJsonResponse({ logType: 'stdout', content: 'line one\nline two\n', size: 18 });
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-302';
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+
+    click(document.querySelector('.tab-btn[data-tab="stdout"]'));
+    await waitFor(() => expect(document.querySelector('#stdout-output')?.textContent).toBe('line one\nline two\n'));
+    expect(document.querySelector('#stdout-output')?.textContent).not.toBe('[object Object]');
+  });
+
+  test('summarizes noisy preflight and artifact responses in the response panel', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/preflight') {
+          return createJsonResponse({
+            status: 'ok',
+            checks: [
+              { name: 'results-dir', ok: true, detail: 'writable' },
+              { name: 'template', ok: false, detail: 'stale', remediation: 'bootstrap' },
+            ],
+            image: 'docker.io/cyanautomation/kaseki-agent:latest',
+            templateRef: 'abc123',
+            resultsDir: '/agents/kaseki-results',
+            doctorStdoutTail: 'large nested payload should not be displayed',
+          });
+        }
+        if (path === '/api/runs/kaseki-303/artifacts') {
+          return createJsonResponse({
+            id: 'kaseki-303',
+            runStatus: 'failed',
+            artifactCount: 2,
+            recommended: ['failure.json'],
+            artifacts: [
+              { name: 'failure.json', available: true, contentType: 'application/json', size: 100 },
+              { name: 'missing.txt', available: false, contentType: 'text/plain', size: 0 },
+            ],
+          });
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    click(document.querySelector('[data-probe="/api/preflight"]'));
+    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"checkCount": 2'));
+    expect(document.querySelector('#output')?.textContent).toContain('"failedChecks"');
+    expect(document.querySelector('#output')?.textContent).not.toContain('large nested payload');
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-303';
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
+    click(document.querySelector('.tab-btn[data-tab="artifacts"]'));
+    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"availableArtifacts"'));
+    expect(document.querySelector('#output')?.textContent).toContain('"name": "failure.json"');
+    expect(document.querySelector('#output')?.textContent).not.toContain('missing.txt');
+  });
+
   test('handles status and cancel actions through the run controls', async () => {
     const { document, calls } = await renderConsole({
       storedToken: 'token12345',
