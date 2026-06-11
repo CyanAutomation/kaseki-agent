@@ -430,7 +430,7 @@ append_cache_metric() {
     --arg name "$metric_name" \
     --arg val "$value" \
     --arg unit "$unit" \
-    '. += [{"name": $name, "value": ($val | tonumber), "unit": $unit, "timestamp": (now | todate)}]' \
+    '. += [{"name": $name, "value": (if $val == "true" then 1 elif $val == "false" then 0 else ($val | tonumber) end), "unit": $unit, "timestamp": (now | todate)}]' \
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
@@ -4131,6 +4131,108 @@ run_goal_setting_agent() {
   unset goal_setting_prompt
   set +e
 
+  # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ ! -f "$GOAL_SETTING_CANDIDATE_ARTIFACT" ]; then
+    node - "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>> "${KASEKI_RESULTS_DIR}"/goal-setting-stderr.log || true <<'NODE'
+const fs = require("node:fs");
+const candidatePath = process.argv[1];
+const rawPath = process.argv[2];
+
+function stableStringify(obj) {
+  return JSON.stringify(obj, Object.keys(obj).sort());
+}
+
+function collectBalancedJsonObjects(text) {
+  const snippets = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        snippets.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return snippets;
+}
+
+function schemaErrors(artifact) {
+  const errors = [];
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+    errors.push("root must be an object");
+    return errors;
+  }
+  // Check required core fields
+  if (!artifact.original_prompt || typeof artifact.original_prompt !== "string") {
+    errors.push("original_prompt must be non-empty string");
+  }
+  if (!artifact.upgraded_goal || typeof artifact.upgraded_goal !== "string") {
+    errors.push("upgraded_goal must be non-empty string");
+  }
+  if (!artifact.reasoning || typeof artifact.reasoning !== "string") {
+    errors.push("reasoning must be non-empty string");
+  }
+  // Check required arrays
+  if (!Array.isArray(artifact.key_requirements)) {
+    errors.push("key_requirements must be array");
+  }
+  if (!Array.isArray(artifact.success_criteria)) {
+    errors.push("success_criteria must be array");
+  }
+  return errors;
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+  return out;
+}
+
+const valid = new Map();
+let text = "";
+try { text = fs.readFileSync(rawPath, "utf8"); } catch { process.exit(1); }
+const snippets = collectBalancedJsonObjects(text);
+for (const snippet of snippets) {
+  try {
+    const parsed = JSON.parse(snippet);
+    if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+    for (const innerText of collectStrings(parsed)) {
+      for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+        try {
+          const inner = JSON.parse(innerSnippet);
+          if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+        } catch {}
+      }
+    }
+  } catch {}
+}
+
+if (valid.size === 1) {
+  const recovered = [...valid.values()][0];
+  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+  const note = { timestamp: new Date().toISOString(), event: "goal_setting_artifact_recovered_from_event_stream", artifact: candidatePath, raw_events: rawPath };
+  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/goal-setting-stderr.log", JSON.stringify(note) + "\n");
+}
+NODE
+  fi
+
   if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
@@ -4533,6 +4635,117 @@ run_scouting_agent() {
   unset scouting_prompt
   set +e
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true
+
+  # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
+    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" 2>> "${KASEKI_RESULTS_DIR}"/scouting-stderr.log || true <<'NODE'
+const fs = require("node:fs");
+const candidatePath = process.argv[1];
+const rawPath = process.argv[2];
+
+function stableStringify(obj) {
+  return JSON.stringify(obj, Object.keys(obj).sort());
+}
+
+function collectBalancedJsonObjects(text) {
+  const snippets = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === "\"") inString = false;
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        snippets.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return snippets;
+}
+
+function schemaErrors(artifact) {
+  const errors = [];
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
+    errors.push("root must be an object");
+    return errors;
+  }
+  // Check required core fields
+  if (!artifact.file_path || typeof artifact.file_path !== "string") {
+    errors.push("file_path must be non-empty string");
+  }
+  if (!artifact.reasoning || typeof artifact.reasoning !== "string") {
+    errors.push("reasoning must be non-empty string");
+  }
+  // Check required arrays
+  if (!Array.isArray(artifact.key_requirements)) {
+    errors.push("key_requirements must be array");
+  }
+  if (!Array.isArray(artifact.relevant_files)) {
+    errors.push("relevant_files must be array");
+  }
+  if (!Array.isArray(artifact.observations)) {
+    errors.push("observations must be array");
+  }
+  if (!Array.isArray(artifact.plan)) {
+    errors.push("plan must be array");
+  }
+  if (!Array.isArray(artifact.validation)) {
+    errors.push("validation must be array");
+  }
+  if (!Array.isArray(artifact.risks)) {
+    errors.push("risks must be array");
+  }
+  return errors;
+}
+
+function collectStrings(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => collectStrings(item, out));
+  return out;
+}
+
+const valid = new Map();
+let text = "";
+try { text = fs.readFileSync(rawPath, "utf8"); } catch { process.exit(1); }
+const snippets = collectBalancedJsonObjects(text);
+for (const snippet of snippets) {
+  try {
+    const parsed = JSON.parse(snippet);
+    if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+    for (const innerText of collectStrings(parsed)) {
+      for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
+        try {
+          const inner = JSON.parse(innerSnippet);
+          if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+        } catch {}
+      }
+    }
+  } catch {}
+}
+
+if (valid.size === 1) {
+  const recovered = [...valid.values()][0];
+  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+  const note = { timestamp: new Date().toISOString(), event: "scouting_artifact_recovered_from_event_stream", artifact: candidatePath, raw_events: rawPath };
+  fs.appendFileSync(process.env.KASEKI_RESULTS_DIR + "/scouting-stderr.log", JSON.stringify(note) + "\n");
+}
+NODE
+  fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     SCOUTING_EXIT=86
