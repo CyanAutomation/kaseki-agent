@@ -5,7 +5,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
 
 describe('Artifact Consolidation', () => {
   const KASEKI_RESULTS_DIR = process.env.TEST_RESULTS_DIR || '/tmp/kaseki-test-consolidation';

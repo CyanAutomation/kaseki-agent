@@ -81,7 +81,7 @@ export class GoCliSummarizer {
       } catch (error: any) {
         // If tree-sitter CLI is not available or fails, return graceful degradation
         let parseError = 'Unknown parsing error';
-        
+
         if (error.code === 'ENOENT' || (error.message && error.message.includes('ENOENT'))) {
           parseError = 'tree-sitter-cli not available (ENOENT)';
         } else if (error.stderr) {

@@ -11,7 +11,6 @@ import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
 import { isTerminalJobStatus, isArtifactAvailable, getArtifactStatus, getArtifactUnavailableReason, getSafeFileStats } from '../lib/artifact-availability';
 import { renderRunEvaluationPayload, getArtifactContentType } from './artifact-content-helpers';
-import { getDeprecationInfo, extractPhaseFromConsolidated } from '../lib/artifact-consolidation-aliases';
 
 // All artifacts from the metadata registry
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
@@ -39,8 +38,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
 
   /**
    * GET /api/results/:id/:file - Download artifact.
-   * Now supports all artifacts in ARTIFACT_METADATA_REGISTRY.
-   * For deprecated artifacts, serves from consolidated targets with deprecation notice.
+   * Serves all artifacts in ARTIFACT_METADATA_REGISTRY.
    */
   router.get('/results/:id/:file', (req: Request, res: Response) => {
     const job = getJobOrRespond(scheduler, req.params.id, res);
@@ -48,30 +46,9 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       return;
     }
 
-    let fileName = req.params.file;
+    const fileName = req.params.file;
     const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : undefined;
     const includeMarkdown = req.query.markdown === 'true' || req.query.markdown === '1';
-    const deprecationInfo = getDeprecationInfo(fileName);
-
-    // If requesting a deprecated artifact, serve from consolidated target instead
-    if (deprecationInfo) {
-      const consolidatedTarget = deprecationInfo.consolidatedTarget;
-      const phase = deprecationInfo.phase;
-
-      // Add deprecation header
-      res.setHeader('X-Artifact-Deprecated', 'true');
-      res.setHeader('X-Artifact-Consolidation-Target', consolidatedTarget);
-      if (phase) {
-        res.setHeader('X-Artifact-Phase', phase);
-      }
-      res.setHeader(
-        'Deprecation',
-        'true; rel="https://docs.kaseki.dev/artifact-consolidation"'
-      );
-
-      // Serve from consolidated target
-      fileName = consolidatedTarget;
-    }
 
     // Validate that the artifact is in the registry
     if (!ALL_ARTIFACT_NAMES.includes(fileName)) {
@@ -99,23 +76,15 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       const contentType = getArtifactContentType(fileName);
 
       // Read from disk for non-terminal jobs; cache only terminal artifacts.
-      let content = readArtifactContent(filePath, job.status, cache);
+      const content = readArtifactContent(filePath, job.status, cache);
       if (content === null) {
         return sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read artifact: ${fileName}`);
       }
 
-      // If original request was for a deprecated artifact with a phase, extract that phase from consolidated
-      if (deprecationInfo && deprecationInfo.phase) {
-        const extractedContent = extractPhaseFromConsolidated(content, fileName, deprecationInfo.phase);
-        if (extractedContent) {
-          content = extractedContent;
-        }
-      }
-
       const response: ArtifactResponse = {
-        file: req.params.file, // Return original filename requested
+        file: fileName,
         contentType,
-        size: content.length,
+        size: fileStats.size,
         content,
       };
 
@@ -176,9 +145,8 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       const artifactMeta = ARTIFACT_METADATA_REGISTRY[fileName];
       const fileMeta = metadata[fileName] ?? { exists: false, size: 0 };
       const available = isArtifactAvailable(fileName, job.status, fileMeta.exists, fileMeta.size);
-      const deprecationInfo = getDeprecationInfo(fileName);
 
-      const artifact: any = {
+      return {
         name: fileName,
         size: fileMeta.size,
         contentType: artifactMeta?.contentType || 'application/octet-stream',
@@ -187,16 +155,6 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         availability: artifactMeta?.availability,
         triageOrder: artifactMeta?.triageOrder,
       };
-
-      // Add consolidation info for deprecated artifacts
-      if (deprecationInfo) {
-        artifact.deprecated = true;
-        artifact.consolidationTarget = deprecationInfo.consolidatedTarget;
-        artifact.consolidationPhase = deprecationInfo.phase;
-        artifact.migrationPath = deprecationInfo.migrationPath;
-      }
-
-      return artifact;
     });
 
     // Determine recommended triage order (by triageOrder, then by availability)
