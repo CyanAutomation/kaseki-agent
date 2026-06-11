@@ -1796,6 +1796,55 @@ const controllerPage = String.raw`<!doctype html>
         output.classList.toggle('empty', !text);
       }
 
+      function summarizedResponseBody(path, method, status, payload) {
+        const base = { method, path, status };
+        if (path === '/api/preflight' && payload && typeof payload === 'object') {
+          const checks = Array.isArray(payload.checks) ? payload.checks : [];
+          const failed = checks.filter((check) => !check.ok);
+          return JSON.stringify({
+            ...base,
+            response: {
+              status: payload.status,
+              checkCount: checks.length,
+              failedChecks: failed.map((check) => ({
+                name: check.name,
+                detail: check.detail,
+                remediation: check.remediation,
+              })),
+              image: payload.image,
+              templateRef: payload.templateRef,
+              resultsDir: payload.resultsDir,
+            },
+            note: 'Showing a compact summary. Use the API directly for the full JSON payload.',
+          }, null, 2);
+        }
+        if (path.endsWith('/artifacts') && payload && typeof payload === 'object') {
+          const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
+          return JSON.stringify({
+            ...base,
+            response: {
+              id: payload.id,
+              runStatus: payload.runStatus,
+              exitCode: payload.exitCode,
+              artifactCount: payload.artifactCount,
+              recommended: payload.recommended,
+              availableArtifacts: artifacts
+                .filter((artifact) => artifact.available)
+                .map((artifact) => ({
+                  name: artifact.name,
+                  size: artifact.size,
+                  contentType: artifact.contentType,
+                })),
+            },
+            note: 'Showing a compact summary. Open Full Results for artifact links.',
+          }, null, 2);
+        }
+        return JSON.stringify({
+          ...base,
+          response: payload,
+        }, null, 2);
+      }
+
       function setSummary(key, value, kind) {
         const element = document.querySelector('[data-summary="' + key + '"]');
         if (!element) return;
@@ -2058,12 +2107,7 @@ const controllerPage = String.raw`<!doctype html>
         if (!(options && options.preserveOutput)) {
           setOutputMetadata(statusLabel, runId || undefined);
           setResponseSummary(payload);
-          setOutputBody(JSON.stringify({
-            method: options && options.method || 'GET',
-            path,
-            status: response.status,
-            response: payload,
-          }, null, 2));
+          setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload));
           setState(response.ok ? (runId ? 'Run status updated.' : 'Request completed.') : 'Request failed.', response.ok ? 'ok' : 'bad');
         }
         if (response.ok && payload && typeof payload === 'object') {
@@ -2372,7 +2416,9 @@ const controllerPage = String.raw`<!doctype html>
           } else {
             // Format as JSON for status, events, and stdout
             const content = tabName === 'stdout' 
-              ? result.payload 
+              ? (result.payload && typeof result.payload === 'object' && 'content' in result.payload
+                ? result.payload.content
+                : result.payload)
               : JSON.stringify(result.payload, null, 2);
             modalTabCache[tabName] = content;
             displayModalTab(tabName);
