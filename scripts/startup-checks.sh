@@ -233,6 +233,16 @@ check_secret_paths() {
   fi
 
   if [ ! "$secrets_dir_found" = true ]; then
+    if [ -r "${OPENROUTER_API_KEY_FILE:-}" ] ||
+      [ -r "${GITHUB_APP_ID_FILE:-}" ] ||
+      [ -r "${GITHUB_APP_CLIENT_ID_FILE:-}" ] ||
+      [ -r "${GITHUB_APP_PRIVATE_KEY_FILE:-}" ] ||
+      [ -r /run/secrets/github_app_id ] ||
+      [ -r /run/secrets/github_app_client_id ] ||
+      [ -r /run/secrets/github_app_private_key ]; then
+      log_info "Secrets directory not mounted at $primary_secrets_dir or $fallback_secrets_dir; using readable configured or legacy secret files."
+      return 0
+    fi
     log_warn "No secrets directory found ($primary_secrets_dir or $fallback_secrets_dir)"
     log_info "  Mount the host secrets directory to $primary_secrets_dir or run: kaseki-agent init"
     return 3
@@ -363,25 +373,22 @@ check_github_app_secret_paths() {
   if [ -r "$primary_id" ]; then
     log_pass "GitHub App ID mounted in primary secrets directory: $primary_id"
   elif [ -r "$root_level_id" ]; then
-    log_warn "GitHub App ID found at legacy root path: $root_level_id"
+    log_info "GitHub App ID found at legacy root path: $root_level_id"
     log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
-    exit_code=3
   fi
 
   if [ -r "$primary_client_id" ]; then
     log_pass "GitHub App Client ID mounted in primary secrets directory: $primary_client_id"
   elif [ -r "$root_level_client_id" ]; then
-    log_warn "GitHub App Client ID found at legacy root path: $root_level_client_id"
+    log_info "GitHub App Client ID found at legacy root path: $root_level_client_id"
     log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
-    exit_code=3
   fi
 
   if [ -r "$primary_key" ]; then
     log_pass "GitHub App Private Key mounted in primary secrets directory: $primary_key"
   elif [ -r "$root_level_key" ]; then
-    log_warn "GitHub App Private Key found at legacy root path: $root_level_key"
+    log_info "GitHub App Private Key found at legacy root path: $root_level_key"
     log_info "  Prefer one directory mount at $KASEKI_SECRETS_DIR"
-    exit_code=3
   fi
 
   return "$exit_code"

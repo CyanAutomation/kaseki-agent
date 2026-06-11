@@ -65,6 +65,7 @@ EOF_VALIDATION_FILTER
   env KASEKI_WORKSPACE_DIR="$case_dir" PATH="$fake_bin:$PATH" REPO_URL="$fake_repo" GIT_REF=main TASK_PROMPT="inspect then code" OPENROUTER_API_KEY=test \
     GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_DEPENDENCY_CACHE_DIR="$case_dir/dependency-cache" \
     KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$case_dir/image-cache" KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
+    KASEKI_GOAL_SETTING=0 \
     KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 bash "$case_dir/kaseki-agent-modified.sh" > "$run_log" 2>&1
   local run_exit=$?
   set -e
@@ -75,6 +76,15 @@ EOF_VALIDATION_FILTER
   [ "$calls" = $'scouting' ] || fail "$case_name: scouting should run once without retry (calls=$calls)"
   [ "$(cat "$results_dir/scouting-validation-reason.txt")" = "$expected_reason" ] || fail "$case_name: reason mismatch"
   [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
+  grep -q -- "- Failure Detail: scouting-validation-errors.jsonl: $expected_reason" "$results_dir/result-summary.md" || fail "$case_name: result summary missing validation detail"
+  node - "$results_dir/failure.json" "$expected_reason" <<'NODE' || fail "$case_name: failure.json missing diagnostic reason"
+const fs = require('node:fs');
+const failure = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const expectedReason = process.argv[3];
+if (!String(failure.diagnostic_reason || '').includes(`scouting-validation-errors.jsonl: ${expectedReason}`)) {
+  throw new Error(`missing diagnostic reason: ${failure.diagnostic_reason}`);
+}
+NODE
   node - "$results_dir/scouting-validation-errors.jsonl" "$expected_reason" <<'NODE' || fail "$case_name: invalid scouting validation errors jsonl"
 const fs = require('node:fs');
 const logPath = process.argv[2];
