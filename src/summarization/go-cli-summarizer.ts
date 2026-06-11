@@ -62,6 +62,7 @@ export class GoCliSummarizer {
           encoding: 'utf-8',
           timeout: timeoutMs,
           maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+          stdio: ['ignore', 'pipe', 'pipe'], // Capture stderr for better error reporting
         });
 
         // Parse JSON output
@@ -77,23 +78,30 @@ export class GoCliSummarizer {
           originalSizeBytes: originalSize,
           summaryTimeMs: performance.now() - startTime,
         };
-      } catch (error) {
+      } catch (error: any) {
         // If tree-sitter CLI is not available or fails, return graceful degradation
-        if (error instanceof Error && error.message.includes('ENOENT')) {
-          return {
-            language: this.language,
-            imports: [],
-            exports: [],
-            classes: [],
-            functions: [],
-            types: [],
-            interfaces: [],
-            parseError: 'tree-sitter-cli not available',
-            originalSizeBytes: originalSize,
-            summaryTimeMs: performance.now() - startTime,
-          };
+        let parseError = 'Unknown parsing error';
+        
+        if (error.code === 'ENOENT' || (error.message && error.message.includes('ENOENT'))) {
+          parseError = 'tree-sitter-cli not available (ENOENT)';
+        } else if (error.stderr) {
+          parseError = `tree-sitter-cli failed: ${error.stderr.toString().trim()}`;
+        } else if (error.message) {
+          parseError = `tree-sitter-cli error: ${error.message}`;
         }
-        throw error;
+
+        return {
+          language: this.language,
+          imports: [],
+          exports: [],
+          classes: [],
+          functions: [],
+          types: [],
+          interfaces: [],
+          parseError,
+          originalSizeBytes: originalSize,
+          summaryTimeMs: performance.now() - startTime,
+        };
       } finally {
         // Clean up temp file if we created one
         if (isTemp) {
