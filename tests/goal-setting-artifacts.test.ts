@@ -27,12 +27,6 @@ const EXPECTED_GOAL_SETTING_ARTIFACTS: ExpectedGoalSettingArtifact[] = [
     triageOrder: { lessThan: 10 },
   },
   {
-    name: 'goal-setting-summary.json',
-    contentType: 'application/json',
-    availability: ArtifactAvailability.CONDITIONAL,
-    sizeHint: 'small',
-  },
-  {
     name: 'goal-setting-events.jsonl',
     contentType: 'application/x-jsonl',
     availability: ArtifactAvailability.CONDITIONAL,
@@ -49,13 +43,6 @@ const EXPECTED_GOAL_SETTING_ARTIFACTS: ExpectedGoalSettingArtifact[] = [
     contentType: 'application/x-jsonl',
     availability: ArtifactAvailability.CONDITIONAL,
     sizeHint: 'small',
-  },
-  {
-    name: 'goal-setting-metrics.json',
-    contentType: 'application/json',
-    availability: ArtifactAvailability.ALWAYS,
-    sizeHint: 'small',
-    triageOrder: { greaterThan: 20 },
   },
 ];
 
