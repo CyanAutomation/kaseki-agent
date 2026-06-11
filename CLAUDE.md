@@ -147,7 +147,7 @@ kaseki-agent init
 ### Single-Run Execution
 
 ```bash
-# Basic run (auto-generates kaseki-N)
+# Using run-kaseki.sh (recommended - handles all setup automatically)
 OPENROUTER_API_KEY=sk-or-... ./run-kaseki.sh
 
 # Explicit instance name
@@ -170,6 +170,46 @@ docker run --rm --entrypoint kaseki-report \
   -v /agents/kaseki-results/kaseki-4:/results:ro \
   kaseki-template:latest /results
 ```
+
+### Docker Run (Direct Container Invocation)
+
+If you're using `docker run` directly instead of `run-kaseki.sh`, ensure proper volume mounts:
+
+```bash
+# ✅ CORRECT: /results mounted with :rw flag (read-write)
+docker run \
+  -v /path/to/results:/results:rw \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  -e TASK_PROMPT="your task here" \
+  docker.io/cyanautomation/kaseki-agent:latest
+
+# ❌ WRONG: /results mounted with :ro flag (read-only)
+# This will cause exit code 86 (scouting artifact validation failed)
+docker run \
+  -v /path/to/results:/results:ro \
+  ...  # WILL FAIL
+
+# ❌ WRONG: /results not mounted at all
+# Artifacts will be lost or fail to write
+docker run \
+  ...  # NO VOLUME MOUNT FOR /results - WILL FAIL
+
+# ✅ CORRECT: Use tmpfs for /results (temporary in-memory storage)
+docker run \
+  --tmpfs /results:rw \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  ...
+
+# ✅ CORRECT: Container-wide --read-only with explicit /results writable
+docker run \
+  --read-only \
+  -v /path/to/results:/results:rw \
+  --tmpfs /tmp \
+  -e OPENROUTER_API_KEY=sk-or-... \
+  ...
+```
+
+**Key Point**: The `/results` directory MUST be writable (`:rw` flag or tmpfs). Without this, scouting and validation will fail with exit code 86.
 
 ### Run Retention & Cleanup
 

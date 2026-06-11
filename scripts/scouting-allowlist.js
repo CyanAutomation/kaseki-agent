@@ -12,6 +12,41 @@ export function actualType(value) {
   return typeof value;
 }
 
+/**
+ * Validates scouting artifact for artifact recovery scenarios.
+ * More lenient than strict validation - only requires task field.
+ * Used when recovering artifacts from incomplete event streams.
+ */
+export function validateScoutingArtifactForRecovery(artifact) {
+  const errors = [];
+
+  if (!artifact || Array.isArray(artifact) || typeof artifact !== 'object') {
+    errors.push({
+      field: 'root',
+      severity: 'critical',
+      message: 'root must be an object',
+    });
+    return { status: 'rejected', errors, recovery_attempted: true };
+  }
+
+  // Recovery mode: only task field is required
+  if (typeof artifact.task !== 'string' || !artifact.task.trim()) {
+    errors.push({
+      field: 'task',
+      severity: 'critical',
+      message: 'task must be a non-empty string',
+    });
+    return { status: 'rejected', errors, recovery_attempted: true };
+  }
+
+  return {
+    status: 'ok',
+    errors: [],
+    recovery_attempted: true,
+    fields_present: Object.keys(artifact).length,
+  };
+}
+
 function summarize(errors) {
   const critical = errors.filter((error) => error.severity === 'critical').length;
   const warning = errors.filter((error) => error.severity === 'warning').length;

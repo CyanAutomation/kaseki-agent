@@ -172,6 +172,100 @@ test/build commands) are outside the validation allowlist.
 
 ---
 
+### 83 — Scouting Prerequisite Validation Failed
+
+The scouting phase was never invoked because the filesystem prerequisites failed. This is an **early exit** that prevents expensive Pi invocation when the environment is misconfigured.
+
+**Root causes:**
+
+1. **Read-only `/results` volume mount** — The `/results` directory is mounted as read-only (`:ro` flag or `--read-only` container flag without writable volume mount).
+2. **Missing `/results` directory** — The `/results` directory was not mounted or created in the container.
+3. **Permission denied** — The container user cannot write to `/results` due to incorrect file permissions or filesystem restrictions.
+
+**Diagnosis:**
+
+1. Check the early validation error message in container stderr:
+
+   ```bash
+   # Error message will include:
+   # [SCOUTING PREREQUISITE FAILED] /results is not writable
+   # Fix: docker run -v /path/to/results:/results:rw kaseki-agent
+   ```
+
+2. Check filesystem diagnostics:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/metadata.json | jq '.filesystem_diagnostics'
+   ```
+
+3. Verify the `/results` mount:
+
+   ```bash
+   docker inspect <container-id> | jq '.Mounts'
+   ```
+
+**Action:**
+
+1. **For read-only `/results` mount — MOST COMMON:**
+
+   - If using `docker run` directly:
+
+     ```bash
+     # ❌ WRONG: read-only mount
+     docker run -v /path/to/results:/results:ro kaseki-agent
+
+     # ✅ CORRECT: read-write mount with :rw flag
+     docker run -v /path/to/results:/results:rw kaseki-agent
+     ```
+
+   - If using `docker-compose.yml`:
+
+     ```yaml
+     volumes:
+       kaseki-results:
+     
+     services:
+       kaseki:
+         volumes:
+           - kaseki-results:/results:rw  # Must have :rw flag
+     ```
+
+   - If using `--read-only` container flag:
+
+     ```bash
+     docker run --read-only \
+       -v /path/to/results:/results:rw \  # Explicit :rw required
+       -v /tmp:/tmp:rw \                  # Also mount /tmp for temp files
+       kaseki-agent
+     ```
+
+2. **For missing `/results` directory:**
+
+   - Create the directory and mount it:
+
+     ```bash
+     mkdir -p /agents/kaseki-results/kaseki-1
+     docker run -v /agents/kaseki-results/kaseki-1:/results:rw kaseki-agent
+     ```
+
+3. **For permission issues:**
+
+   - Ensure the host directory is writable by the container:
+
+     ```bash
+     chmod 755 /agents/kaseki-results
+     docker run -v /agents/kaseki-results:/results:rw kaseki-agent
+     ```
+
+**Prevention:**
+
+- Use `run-kaseki.sh` (which handles volume mounts automatically) instead of manual `docker run`
+- Use `docker-compose.yml` with explicit `:rw` flags
+- When using `--read-only`, always explicitly mount `/results:rw`
+- Run `./run-kaseki.sh --doctor` to validate your setup before running tasks
+
+---
+
 ### 86 — Scouting Validation Failed
 
 The scouting phase failed because the scouting artifact file (`/results/scouting-candidate.json`) was not created or is invalid.
