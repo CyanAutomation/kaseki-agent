@@ -208,6 +208,8 @@ AUTO_LINT_CLEANUP_LOG="${KASEKI_RESULTS_DIR}/auto-lint-cleanup.log"
 AUTO_LINT_CLEANUP_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-timings.tsv"
 FILTER_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/filter-diagnostics.log"
 DIFF_NONEMPTY=false
+FILESYSTEM_CHECK_STATUS="not_tested"
+FILESYSTEM_READONLY_REASON=""
 QUALITY_EXIT=0
 QUALITY_FAILURE_REASON=""
 SECRET_SCAN_EXIT=0
@@ -964,6 +966,12 @@ write_metadata() {
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "scouting_validation": {
     "validation_errors_log": "scouting-validation-errors.jsonl"
+  },
+  "filesystem_diagnostics": {
+    "check_status": $(printf '%s' "$FILESYSTEM_CHECK_STATUS" | json_encode),
+    "readonly_reason": $(printf '%s' "$FILESYSTEM_READONLY_REASON" | json_encode),
+    "suggests_docker_run_fix": $([ -n "$FILESYSTEM_READONLY_REASON" ] && printf 'true' || printf 'false'),
+    "suggested_fix": "docker run -v /path/to/results:/results:rw kaseki-agent"
   },
   "goal_check_validation": {
     "attempt_count": $GOAL_CHECK_ATTEMPTS,
@@ -4632,10 +4640,11 @@ run_scouting_agent() {
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
-    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" || true <<'NODE'
+    node - "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_RAW_EVENTS" "$KASEKI_RESULTS_DIR" || true <<'NODE'
 const fs = require("node:fs");
 const candidatePath = process.argv[1];
 const rawPath = process.argv[2];
+const resultsDir = process.argv[3] || "/results";
 
 function stableStringify(obj) {
   return JSON.stringify(obj, Object.keys(obj).sort());
@@ -4671,22 +4680,28 @@ function collectBalancedJsonObjects(text) {
   return snippets;
 }
 
-function schemaErrors(artifact) {
+function schemaErrors(artifact, strict = true) {
   const errors = [];
   if (!artifact || Array.isArray(artifact) || typeof artifact !== "object") {
     errors.push("root must be an object");
     return errors;
   }
-  // Check required core fields
-  if (!artifact.file_path || typeof artifact.file_path !== "string") {
-    errors.push("file_path must be non-empty string");
+  
+  // In recovery mode (non-strict), only require task field
+  if (!strict) {
+    if (!artifact.task || typeof artifact.task !== "string") {
+      errors.push("task must be non-empty string");
+    }
+    return errors;
   }
-  if (!artifact.reasoning || typeof artifact.reasoning !== "string") {
-    errors.push("reasoning must be non-empty string");
+  
+  // Strict mode (normal validation): require all core fields
+  if (!artifact.task || typeof artifact.task !== "string") {
+    errors.push("task must be non-empty string");
   }
   // Check required arrays
-  if (!Array.isArray(artifact.key_requirements)) {
-    errors.push("key_requirements must be array");
+  if (!Array.isArray(artifact.requirements)) {
+    errors.push("requirements must be array");
   }
   if (!Array.isArray(artifact.relevant_files)) {
     errors.push("relevant_files must be array");
@@ -4703,6 +4718,9 @@ function schemaErrors(artifact) {
   if (!Array.isArray(artifact.risks)) {
     errors.push("risks must be array");
   }
+  if (!Array.isArray(artifact.test_impact)) {
+    errors.push("test_impact must be array");
+  }
   return errors;
 }
 
@@ -4713,19 +4731,46 @@ function collectStrings(value, out = []) {
   return out;
 }
 
+function logRecoveryDiagnostic(message, recovered) {
+  const timestamp = new Date().toISOString();
+  const entry = {
+    timestamp,
+    event: "artifact_recovery",
+    message,
+    recovery_attempted: true,
+    recovery_success: !!recovered,
+  };
+  try {
+    fs.appendFileSync(`${resultsDir}/scouting-recovery-diagnostics.jsonl`, JSON.stringify(entry) + "\n");
+  } catch {}
+}
+
 const valid = new Map();
+const partial = new Map();  // For recovery fallback
 let text = "";
 try { text = fs.readFileSync(rawPath, "utf8"); } catch { process.exit(1); }
 const snippets = collectBalancedJsonObjects(text);
+
 for (const snippet of snippets) {
   try {
     const parsed = JSON.parse(snippet);
-    if (schemaErrors(parsed).length === 0) valid.set(stableStringify(parsed), parsed);
+    // Try strict validation first
+    if (schemaErrors(parsed, true).length === 0) {
+      valid.set(stableStringify(parsed), parsed);
+    } else if (schemaErrors(parsed, false).length === 0) {
+      // If strict fails but recovery validation passes, save as partial
+      partial.set(stableStringify(parsed), parsed);
+    }
+    // Try to find nested objects
     for (const innerText of collectStrings(parsed)) {
       for (const innerSnippet of collectBalancedJsonObjects(innerText)) {
         try {
           const inner = JSON.parse(innerSnippet);
-          if (schemaErrors(inner).length === 0) valid.set(stableStringify(inner), inner);
+          if (schemaErrors(inner, true).length === 0) {
+            valid.set(stableStringify(inner), inner);
+          } else if (schemaErrors(inner, false).length === 0) {
+            partial.set(stableStringify(inner), inner);
+          }
         } catch {}
       }
     }
@@ -4735,6 +4780,27 @@ for (const snippet of snippets) {
 if (valid.size === 1) {
   const recovered = [...valid.values()][0];
   fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+  logRecoveryDiagnostic("Scouting artifact recovered from event stream (strict validation passed)", true);
+} else if (partial.size === 1) {
+  const recovered = [...partial.values()][0];
+  fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+  logRecoveryDiagnostic("Scouting artifact recovered from event stream (partial recovery - minimal fields only)", true);
+} else if (valid.size > 1 || partial.size > 1) {
+  // Multiple candidates - pick the first complete one, or the largest partial
+  const candidates = [...valid.values(), ...partial.values()];
+  if (candidates.length > 0) {
+    const recovered = candidates.sort((a, b) => {
+      const aScore = Object.keys(a).length;
+      const bScore = Object.keys(b).length;
+      return bScore - aScore;  // Prefer more complete objects
+    })[0];
+    fs.writeFileSync(candidatePath, JSON.stringify(recovered, null, 2) + "\n");
+    logRecoveryDiagnostic(`Scouting artifact recovered from event stream (multiple candidates, selected best: ${Object.keys(recovered).length} fields)`, true);
+  } else {
+    logRecoveryDiagnostic("Scouting artifact recovery failed: no valid JSON objects found in event stream", false);
+  }
+} else {
+  logRecoveryDiagnostic("Scouting artifact recovery failed: no valid JSON objects found in event stream", false);
 }
 NODE
   fi
@@ -7838,8 +7904,97 @@ check_filesystem_capabilities() {
   return 0
 }
 
-# Call diagnostics before scouting
-check_filesystem_capabilities || true  # non-fatal; scouting will fail with actionable exit 86
+# === Phase 1: Early Scouting Prerequisites Validation ===
+# FATAL check before expensive Pi invocation
+validate_scouting_prerequisites() {
+  local results_dir="$KASEKI_RESULTS_DIR"
+  
+  printf '\n==> scouting prerequisites check\n'
+  set_current_stage "scouting prerequisites validation"
+  
+  # Skip if scouting disabled
+  if [ "$KASEKI_SCOUTING" = "0" ]; then
+    emit_progress "scouting prerequisites validation" "skipped (KASEKI_SCOUTING=0)"
+    export FILESYSTEM_CHECK_STATUS="skipped"
+    return 0
+  fi
+  
+  # Skip in dry-run mode
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    emit_progress "scouting prerequisites validation" "skipped (dry-run mode)"
+    export FILESYSTEM_CHECK_STATUS="skipped"
+    return 0
+  fi
+  
+  # Test 1: /results directory exists
+  if [ ! -d "$results_dir" ]; then
+    printf '\n[SCOUTING PREREQUISITE FAILED] /results directory does not exist\n' >&2
+    printf '  Expected: %s\n' "$results_dir" >&2
+    printf '\nFix: Ensure /results is mounted as a volume\n' >&2
+    printf '  docker run -v /path/to/results:/results:rw ...\n' >&2
+    emit_error_event "scouting_prerequisite_failed_missing_results_dir" "/results directory not found at $results_dir" "exit"
+    export FILESYSTEM_CHECK_STATUS="read_only"
+    export FILESYSTEM_READONLY_REASON="missing /results directory"
+    STATUS=83
+    FAILED_COMMAND="scouting prerequisites: missing /results directory"
+    return 1
+  fi
+  
+  # Test 2: /results is writable (access check)
+  if [ ! -w "$results_dir" ]; then
+    printf '\n[SCOUTING PREREQUISITE FAILED] /results is not writable\n' >&2
+    printf '  Directory: %s\n' "$results_dir" >&2
+    printf '  Status: READ-ONLY\n' >&2
+    printf '  Container UID: %d\n' "$(id -u)" >&2
+    printf '\nRoot cause: Docker volume mounted with :ro flag or container --read-only\n' >&2
+    printf '\nImpact:\n' >&2
+    printf '  - Scouting Pi agent will fail to write scouting-candidate.json\n' >&2
+    printf '  - This causes exit code 86 (scouting validation failure)\n' >&2
+    printf '\nFix: Remount /results as read-write\n' >&2
+    printf '  docker run -v /path/to/results:/results:rw kaseki-agent\n' >&2
+    printf '  (note the :rw flag at the end of the volume mount)\n' >&2
+    emit_error_event "scouting_prerequisite_failed_readonly" "/results is read-only (mounted with :ro or --read-only)" "exit"
+    export FILESYSTEM_CHECK_STATUS="read_only"
+    export FILESYSTEM_READONLY_REASON="/results is read-only (mounted with :ro or --read-only)"
+    STATUS=83
+    FAILED_COMMAND="scouting prerequisites: /results is read-only"
+    return 1
+  fi
+  
+  # Test 3: /results is actually writable (touch test)
+  local test_file="$results_dir/.kaseki-prereq-test-$$"
+  if ! touch "$test_file" 2>/dev/null; then
+    printf '\n[SCOUTING PREREQUISITE FAILED] Cannot write to /results\n' >&2
+    printf '  Directory: %s\n' "$results_dir" >&2
+    printf '  Test operation: touch %s\n' "$test_file" >&2
+    printf '  Error: Permission denied or filesystem error\n' >&2
+    printf '\nFix: Check permissions and volume mounts\n' >&2
+    printf '  docker run -v /path/to/results:/results:rw kaseki-agent\n' >&2
+    emit_error_event "scouting_prerequisite_failed_write_test" "Cannot write test file to /results" "exit"
+    export FILESYSTEM_CHECK_STATUS="read_only"
+    export FILESYSTEM_READONLY_REASON="Cannot write to /results - permission denied"
+    STATUS=83
+    FAILED_COMMAND="scouting prerequisites: write permission denied"
+    return 1
+  fi
+  
+  # Clean up test file
+  rm -f "$test_file" 2>/dev/null || true
+  
+  export FILESYSTEM_CHECK_STATUS="writable"
+  emit_progress "scouting prerequisites validation" "✓ All checks passed"
+  return 0
+}
+
+# Early validation BEFORE any expensive operations
+if ! validate_scouting_prerequisites; then
+  printf '\n==> exiting due to scouting prerequisites check\n'
+  emit_error_event "scouting_prerequisites_validation_failed" "Scouting prerequisites validation failed before Pi invocation (exit 83)" "exit"
+  exit 0
+fi
+
+# Call diagnostics before scouting (non-fatal for other checks)
+check_filesystem_capabilities || true  # logs additional diagnostic info
 
 # Goal-setting agent runs first (before scouting) to upgrade the user prompt into a mature goal
 if [ "$KASEKI_GOAL_SETTING" = "1" ]; then
