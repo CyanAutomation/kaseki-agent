@@ -342,6 +342,33 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'quality-gates.json': {
+    name: 'quality-gates.json',
+    contentType: 'application/json',
+    description: 'Quality gate violations: now consolidated into metadata.json.phases.quality_gates',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 23,
+    sizeHint: 'small',
+  },
+
+  'secret-scan.json': {
+    name: 'secret-scan.json',
+    contentType: 'application/json',
+    description: 'Secret scan results: now consolidated into metadata.json.phases.secret_scan',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 23,
+    sizeHint: 'small',
+  },
+
+  'secret-scan.log': {
+    name: 'secret-scan.log',
+    contentType: 'text/plain',
+    description: 'Secret scan logs and diagnostics',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 23,
+    sizeHint: 'small',
+  },
+
   'cache-metrics.json': {
     name: 'cache-metrics.json',
     contentType: 'application/json',

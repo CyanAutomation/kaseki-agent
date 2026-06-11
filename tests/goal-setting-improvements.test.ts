@@ -688,13 +688,28 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(kasekiLogDir, { recursive: true });
         mkdirSync(cacheDir, { recursive: true });
 
-        const scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8')
-          .replaceAll('/workspace-baseline', workspaceBaseline)
-          .replaceAll('/var/log/kaseki', kasekiLogDir)
-          .replaceAll('/app/lib', appLib)
-          .replaceAll('/workspace', tempDir)
-          .replaceAll('/cache', cacheDir)
-          .replaceAll('/results', resultsDir);
+        let scriptSource = readFileSync(join(repoRoot, 'kaseki-agent.sh'), 'utf8');
+
+        // Use targeted regex-based replacements to avoid substring collision issues
+        // Only replace paths in variable assignments (most common pattern)
+        scriptSource = scriptSource
+          .replace(/KASEKI_WORKSPACE_DIR="\$\{KASEKI_WORKSPACE_DIR:-\/workspace\}"/g, `KASEKI_WORKSPACE_DIR="\${KASEKI_WORKSPACE_DIR:-${tempDir}}`)
+          .replace(/KASEKI_RESULTS_DIR="\$\{KASEKI_RESULTS_DIR:-\/results\}"/g, `KASEKI_RESULTS_DIR="\${KASEKI_RESULTS_DIR:-${resultsDir}}`)
+          .replace(/KASEKI_CACHE_DIR="\$\{KASEKI_CACHE_DIR:-\/cache\}"/g, `KASEKI_CACHE_DIR="\${KASEKI_CACHE_DIR:-${cacheDir}}`)
+          .replace(/KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="\$\{KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-\/opt\/kaseki\/workspace-cache\}"/g,
+            `KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="\${KASEKI_IMAGE_DEPENDENCY_CACHE_DIR:-${join(tempDir, 'opt-kaseki-workspace-cache')}}`)
+          .replace(/KASEKI_WORKSPACE_BASELINE_DIR="\$\{KASEKI_WORKSPACE_BASELINE_DIR:-\/workspace-baseline\}"/g,
+            `KASEKI_WORKSPACE_BASELINE_DIR="\${KASEKI_WORKSPACE_BASELINE_DIR:-${workspaceBaseline}}`)
+          .replace(/KASEKI_APP_LIB_DIR="\$\{KASEKI_APP_LIB_DIR:-\/app\/lib\}"/g, `KASEKI_APP_LIB_DIR="\${KASEKI_APP_LIB_DIR:-${appLib}}`)
+          .replace(/KASEKI_LOG_DIR="\$\{KASEKI_LOG_DIR:-\/var\/log\/kaseki\}"/g, `KASEKI_LOG_DIR="\${KASEKI_LOG_DIR:-${kasekiLogDir}}`);
+
+        // Replace other hardcoded paths (not in defaults)
+        scriptSource = scriptSource
+          .replaceAll('find /workspace ', `find ${tempDir} `)
+          .replaceAll(' /workspace ', ` ${tempDir} `)
+          .replaceAll('"/workspace"', `"${tempDir}"`)
+          .replaceAll("'/workspace'", `'${tempDir}'`);
+
         writeFileSync(modifiedScript, scriptSource, { mode: 0o755 });
 
         // Use utility to create fake binaries with retry logging (replaces multiple writeFileSync calls)
