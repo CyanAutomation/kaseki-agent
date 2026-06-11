@@ -41,8 +41,9 @@ function asObjectArray(value: unknown): Array<Record<string, unknown>> {
 /**
  * Extract assessment section from parsed evaluation.
  * Handles multiple field name variants: overall, overall_assessment, overallAssessment.
+ * @internal exported for testing
  */
-function extractOverallAssessment(parsed: Record<string, unknown>): Record<string, unknown> | undefined {
+export function extractOverallAssessment(parsed: Record<string, unknown>): Record<string, unknown> | undefined {
   const assessment = parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment;
   return assessment ? { assessment } : undefined;
 }
@@ -50,24 +51,27 @@ function extractOverallAssessment(parsed: Record<string, unknown>): Record<strin
 /**
  * Extract problem section from parsed evaluation.
  * Handles variants: problem, issues, problems.
+ * @internal exported for testing
  */
-function extractProblems(parsed: Record<string, unknown>): string[] {
+export function extractProblems(parsed: Record<string, unknown>): string[] {
   return asStringArray(parsed.problem ?? parsed.issues ?? parsed.problems);
 }
 
 /**
  * Extract solution section from parsed evaluation.
  * Handles variants: solution, what_was_fixed, whatWasFixed, fixes.
+ * @internal exported for testing
  */
-function extractSolutions(parsed: Record<string, unknown>): string[] {
+export function extractSolutions(parsed: Record<string, unknown>): string[] {
   return asStringArray(parsed.solution ?? parsed.what_was_fixed ?? parsed.whatWasFixed ?? parsed.fixes);
 }
 
 /**
  * Extract human review recommendations from parsed evaluation.
  * Handles variants: human_review_recommendations, humanReviewRecommendations, human_review_focus.
+ * @internal exported for testing
  */
-function extractHumanReviewRecommendations(parsed: Record<string, unknown>): string[] {
+export function extractHumanReviewRecommendations(parsed: Record<string, unknown>): string[] {
   return asStringArray(parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus);
 }
 

@@ -8,7 +8,14 @@
  * - Markdown generation: formatting, empty sections, multi-section output
  */
 
-import { renderRunEvaluationPayload, getArtifactContentType } from './artifact-content-helpers';
+import {
+  renderRunEvaluationPayload,
+  getArtifactContentType,
+  extractOverallAssessment,
+  extractProblems,
+  extractSolutions,
+  extractHumanReviewRecommendations,
+} from './artifact-content-helpers';
 
 describe('artifact-content-helpers', () => {
   // ===== getArtifactContentType Tests =====
@@ -317,6 +324,298 @@ describe('artifact-content-helpers', () => {
       expect(result.markdown).toContain('- Critical bug');
       expect(result.markdown).toContain('- Hotfix applied');
       expect(result.markdown).toContain('- Verify fix');
+    });
+  });
+
+  // ===== extractOverallAssessment Tests =====
+  describe('extractOverallAssessment', () => {
+    test('should extract overall field variant', () => {
+      const parsed = { overall: { summary: 'Great work' } };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: { summary: 'Great work' } });
+    });
+
+    test('should extract overall_assessment field variant (snake_case)', () => {
+      const parsed = { overall_assessment: { score: 85 } };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: { score: 85 } });
+    });
+
+    test('should extract overallAssessment field variant (camelCase)', () => {
+      const parsed = { overallAssessment: { rating: 'excellent' } };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: { rating: 'excellent' } });
+    });
+
+    test('should prefer overall over other variants', () => {
+      const parsed = {
+        overall: { primary: true },
+        overall_assessment: { secondary: true },
+        overallAssessment: { tertiary: true },
+      };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: { primary: true } });
+    });
+
+    test('should prefer overall_assessment over overallAssessment', () => {
+      const parsed = {
+        overall_assessment: { primary: true },
+        overallAssessment: { secondary: true },
+      };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: { primary: true } });
+    });
+
+    test('should return undefined when no assessment field exists', () => {
+      const parsed = { other_field: { data: 'value' } };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toBeUndefined();
+    });
+
+    test('should return undefined for null assessment value', () => {
+      const parsed = { overall: null };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toBeUndefined();
+    });
+
+    test('should return undefined for undefined assessment value', () => {
+      const parsed = { overall: undefined };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toBeUndefined();
+    });
+
+    test('should handle complex nested assessment objects', () => {
+      const parsed = {
+        overall: {
+          quality_score: 92,
+          metrics: { coverage: 85, performance: 95 },
+          notes: ['Well structured', 'Good test coverage'],
+        },
+      };
+      const result = extractOverallAssessment(parsed);
+      expect(result?.assessment).toEqual(parsed.overall);
+    });
+
+    test('should handle assessment as primitive value', () => {
+      const parsed = { overall: 'Excellent' };
+      const result = extractOverallAssessment(parsed);
+      expect(result).toEqual({ assessment: 'Excellent' });
+    });
+  });
+
+  // ===== extractProblems Tests =====
+  describe('extractProblems', () => {
+    test('should extract problem field variant', () => {
+      const parsed = { problem: ['Type safety issue'] };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Type safety issue']);
+    });
+
+    test('should extract issues field variant', () => {
+      const parsed = { issues: ['Memory leak', 'Race condition'] };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Memory leak', 'Race condition']);
+    });
+
+    test('should extract problems field variant', () => {
+      const parsed = { problems: ['Performance degradation'] };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Performance degradation']);
+    });
+
+    test('should prefer problem over issues and problems', () => {
+      const parsed = {
+        problem: ['Primary issue'],
+        issues: ['Secondary issue'],
+        problems: ['Tertiary issue'],
+      };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Primary issue']);
+    });
+
+    test('should prefer issues over problems', () => {
+      const parsed = {
+        issues: ['Primary issue'],
+        problems: ['Secondary issue'],
+      };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Primary issue']);
+    });
+
+    test('should return empty array when no problem field exists', () => {
+      const parsed = { other_field: 'value' };
+      const result = extractProblems(parsed);
+      expect(result).toEqual([]);
+    });
+
+    test('should convert non-array problem to array', () => {
+      const parsed = { problem: 'Single issue' };
+      const result = extractProblems(parsed);
+      expect(result).toEqual(['Single issue']);
+    });
+
+    test('should convert null/undefined to empty array', () => {
+      const parsed1 = { problem: null };
+      const result1 = extractProblems(parsed1);
+      expect(result1).toEqual([]);
+
+      const parsed2 = { problem: undefined };
+      const result2 = extractProblems(parsed2);
+      expect(result2).toEqual([]);
+    });
+
+    test('should convert object values to string representation', () => {
+      const parsed = { problem: [{ error: 'type error' }, { error: 'runtime error' }] };
+      const result = extractProblems(parsed);
+      expect(result).toHaveLength(2);
+      expect(typeof result[0]).toBe('string');
+      expect(typeof result[1]).toBe('string');
+    });
+  });
+
+  // ===== extractSolutions Tests =====
+  describe('extractSolutions', () => {
+    test('should extract solution field variant', () => {
+      const parsed = { solution: ['Refactored code'] };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Refactored code']);
+    });
+
+    test('should extract what_was_fixed field variant (snake_case)', () => {
+      const parsed = { what_was_fixed: ['Memory leak patched'] };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Memory leak patched']);
+    });
+
+    test('should extract whatWasFixed field variant (camelCase)', () => {
+      const parsed = { whatWasFixed: ['Cache optimized'] };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Cache optimized']);
+    });
+
+    test('should extract fixes field variant', () => {
+      const parsed = { fixes: ['Applied hotfix'] };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Applied hotfix']);
+    });
+
+    test('should prefer solution over other variants', () => {
+      const parsed = {
+        solution: ['Primary fix'],
+        what_was_fixed: ['Secondary fix'],
+        whatWasFixed: ['Tertiary fix'],
+        fixes: ['Quaternary fix'],
+      };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Primary fix']);
+    });
+
+    test('should prefer what_was_fixed over whatWasFixed and fixes', () => {
+      const parsed = {
+        what_was_fixed: ['Snake case fix'],
+        whatWasFixed: ['Camel case fix'],
+        fixes: ['Generic fix'],
+      };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Snake case fix']);
+    });
+
+    test('should prefer whatWasFixed over fixes', () => {
+      const parsed = {
+        whatWasFixed: ['Camel case fix'],
+        fixes: ['Generic fix'],
+      };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual(['Camel case fix']);
+    });
+
+    test('should return empty array when no solution field exists', () => {
+      const parsed = { other_field: 'value' };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual([]);
+    });
+
+    test('should handle empty string solution', () => {
+      const parsed = { solution: '' };
+      const result = extractSolutions(parsed);
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ===== extractHumanReviewRecommendations Tests =====
+  describe('extractHumanReviewRecommendations', () => {
+    test('should extract human_review_recommendations field variant (snake_case)', () => {
+      const parsed = { human_review_recommendations: ['Review type definitions'] };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Review type definitions']);
+    });
+
+    test('should extract humanReviewRecommendations field variant (camelCase)', () => {
+      const parsed = { humanReviewRecommendations: ['Check edge cases'] };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Check edge cases']);
+    });
+
+    test('should extract human_review_focus field variant', () => {
+      const parsed = { human_review_focus: ['Performance critical sections'] };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Performance critical sections']);
+    });
+
+    test('should prefer human_review_recommendations over other variants', () => {
+      const parsed = {
+        human_review_recommendations: ['Primary review'],
+        humanReviewRecommendations: ['Secondary review'],
+        human_review_focus: ['Tertiary review'],
+      };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Primary review']);
+    });
+
+    test('should prefer humanReviewRecommendations over human_review_focus', () => {
+      const parsed = {
+        humanReviewRecommendations: ['Primary review'],
+        human_review_focus: ['Secondary review'],
+      };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Primary review']);
+    });
+
+    test('should return empty array when no review field exists', () => {
+      const parsed = { other_field: 'value' };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual([]);
+    });
+
+    test('should handle multiple review recommendations', () => {
+      const parsed = {
+        human_review_recommendations: [
+          'Verify algorithm correctness',
+          'Check for edge cases',
+          'Review error handling',
+        ],
+      };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toHaveLength(3);
+      expect(result).toContain('Verify algorithm correctness');
+      expect(result).toContain('Check for edge cases');
+      expect(result).toContain('Review error handling');
+    });
+
+    test('should convert non-array recommendations to array', () => {
+      const parsed = { human_review_recommendations: 'Single recommendation' };
+      const result = extractHumanReviewRecommendations(parsed);
+      expect(result).toEqual(['Single recommendation']);
+    });
+
+    test('should handle null/undefined recommendations', () => {
+      const parsed1 = { human_review_recommendations: null };
+      const result1 = extractHumanReviewRecommendations(parsed1);
+      expect(result1).toEqual([]);
+
+      const parsed2 = { human_review_recommendations: undefined };
+      const result2 = extractHumanReviewRecommendations(parsed2);
+      expect(result2).toEqual([]);
     });
   });
 });
