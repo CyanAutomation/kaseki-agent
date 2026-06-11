@@ -11,6 +11,7 @@ import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
 import { isTerminalJobStatus, isArtifactAvailable, getArtifactStatus, getArtifactUnavailableReason, getSafeFileStats } from '../lib/artifact-availability';
 import { renderRunEvaluationPayload, getArtifactContentType } from './artifact-content-helpers';
+import { isDeprecatedArtifact, getConsolidatedTarget, getDeprecationInfo, extractPhaseFromConsolidated } from '../lib/artifact-consolidation-aliases';
 
 // All artifacts from the metadata registry
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
