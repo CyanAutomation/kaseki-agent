@@ -132,29 +132,35 @@ Action: Update kaseki-agent.sh to generate timings-manifest.json; deprecate .tsv
 ## By-Phase Artifact Analysis
 
 ### Goal-Setting Phase (6 artifacts)
+
 - **High-value**: goal-setting.json (8/10) — decision context
 - **Low-value**: goal-setting-summary.json (5/10), goal-setting-stderr.log (3/10), goal-setting-validation-errors.jsonl (5/10)
 - **Consolidate**: All phase summaries → all-phase-summaries.json; all phase errors → artifact-validation-errors.jsonl
 
 ### Scouting Phase (6 artifacts)
+
 - **High-value**: scouting.json (8/10) — reconnaissance output
 - **Low-value**: scouting-summary.json (5/10), scouting-stderr.log (3/10), scouting-validation-errors.jsonl (5/10)
 - **Note**: scouting-events.raw.jsonl (debug-only; keep SHORT_RETAIN_ON_FAILURE)
 
 ### Main Pi Coding Phase (2 artifacts)
+
 - **High-value**: pi-events.jsonl (9/10), pi-summary.json (8/10)
 - **Action**: KEEP_CORE; these are foundational
 
 ### Goal-Check Phase (5 artifacts)
+
 - **High-value**: goal-check.json (9/10) — verdict
 - **Low-value**: goal-check-summary.json (5/10), goal-check-stderr.log (3/10), goal-check-events.jsonl (6/10)
 - **Note**: goal-check-attempts.jsonl (8/10) — valuable for retry history
 
 ### Run-Evaluation Phase (4 artifacts)
+
 - **High-value**: run-evaluation.json (9/10) — final assessment
 - **Low-value**: run-evaluation-summary.json (5/10), run-evaluation-stderr.log (3/10), run-evaluation-events.jsonl (6/10)
 
 ### Core Metadata & Status (16 artifacts)
+
 - **High-value**: metadata.json, exit_code, pi-events.jsonl, pi-summary.json, progress.jsonl, failure.json, git.diff, changed-files.txt, secret-scan.log, secret-scan.json, restoration.jsonl, quality.log, quality-gates.json, validation.log
 - **Medium-value**: cache-metrics.json, validation-results.json
 - **Low-value**: stdout.log, stderr.log (but essential on-failure)

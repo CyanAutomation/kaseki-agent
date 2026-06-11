@@ -12,6 +12,7 @@
 **Time**: ~4 hours (research + scoring + analysis + report generation)
 
 **Key Metrics**:
+
 - Average score: 6.2/10
 - KEEP segment: 24 artifacts (50%) — ≥8/10
 - MERGE segment: 15 artifacts (31%) — 5–7/10
@@ -23,9 +24,11 @@
 ## 📁 Deliverables
 
 ### 1. **ARTIFACT_EVALUATION_REPORT.md** (600+ lines)
+
 **Comprehensive detailed scoring and recommendations**
 
 Contents:
+
 - Executive summary with key insights
 - Detailed scoring table (48 artifacts × 5 dimensions)
 - Segmentation summary with rationales
@@ -41,9 +44,11 @@ Contents:
 ---
 
 ### 2. **ARTIFACT_EVALUATION_SUMMARY.md** (200+ lines)
+
 **Quick-reference executive summary**
 
 Contents:
+
 - Segmentation at a glance (table)
 - Top 10 highest-value artifacts
 - Bottom 10 lowest-value artifacts with actions
@@ -59,9 +64,11 @@ Contents:
 ---
 
 ### 3. **ARTIFACT_SCORING.csv** (48 rows)
+
 **Machine-readable scoring data**
 
 Format: CSV with columns
+
 - artifact_name
 - d1_agent_decision_value, d2_machine_readability, d3_uniqueness, d4_recovery_usefulness, d5_cost_risk
 - total_score
@@ -105,7 +112,7 @@ Format: CSV with columns
 
 ### 🟡 Medium Confidence (Next Sprint)
 
-4. **Remove/Consolidate Phase-Specific Stderr Files** (4 artifacts)
+1. **Remove/Consolidate Phase-Specific Stderr Files** (4 artifacts)
    - goal-check-stderr.log (3/10)
    - goal-setting-stderr.log (3/10)
    - run-evaluation-stderr.log (3/10)
@@ -114,7 +121,7 @@ Format: CSV with columns
    - **Effort**: 2–3 hours (code changes to kaseki-agent.sh)
    - **Impact**: Save 4 files per run; cleaner artifact list
 
-5. **Consolidate Validation Error Files** (3 artifacts)
+2. **Consolidate Validation Error Files** (3 artifacts)
    - goal-check-validation-errors.jsonl → artifact-validation-errors.jsonl
    - goal-setting-validation-errors.jsonl → artifact-validation-errors.jsonl
    - scouting-validation-errors.jsonl → artifact-validation-errors.jsonl
@@ -123,7 +130,7 @@ Format: CSV with columns
 
 ### 🔵 Low Confidence / Future (Backlog)
 
-6. **Consolidate Phase-Specific Events** (4 artifacts) — **DECISION NEEDED**
+1. **Consolidate Phase-Specific Events** (4 artifacts) — **DECISION NEEDED**
    - goal-check-events.jsonl (6/10)
    - run-evaluation-events.jsonl (6/10)
    - scouting-events.jsonl (6/10)
@@ -133,7 +140,7 @@ Format: CSV with columns
    - **Effort**: 4–6 hours (significant changes to agent generation logic)
    - **Impact**: Save 4 large files; clarify event stream model
 
-7. **Remove Placeholder Artifacts** (1 artifact)
+2. **Remove Placeholder Artifacts** (1 artifact)
    - phase-errors.jsonl (4/10) — not yet generated; placeholder
    - **Effort**: 5 min (remove from registry)
    - **Impact**: Reduces registry noise
@@ -167,24 +174,28 @@ Format: CSV with columns
 ## 🔄 Consolidation Targets
 
 ### Consolidation 1: Phase Summaries → `all-phase-summaries.json`
+
 - **Before**: 4 separate files (scouting-summary, goal-setting-summary, goal-check-summary, run-evaluation-summary)
 - **After**: 1 unified file with phase keys
 - **Status**: Already consolidated in registry ✅
 - **Action**: Update kaseki-agent.sh to stop generating individual files
 
 ### Consolidation 2: Timing Files → `timings-manifest.json`
+
 - **Before**: 4 separate files (validation-timings.tsv, pre-validation-timings.tsv, stage-timings.tsv, goal-setting-metrics.json)
 - **After**: 1 unified JSON manifest
 - **Status**: Already consolidated in registry ✅
 - **Action**: Update kaseki-agent.sh to generate JSON manifest; deprecate .tsv
 
 ### Consolidation 3: Validation Errors → `artifact-validation-errors.jsonl`
+
 - **Before**: 3 separate phase-specific files
 - **After**: 1 consolidated JSONL stream
 - **Status**: Registry support exists; not yet fully implemented
 - **Action**: Update kaseki-agent.sh to aggregate all phase errors
 
 ### Consolidation 4: Phase-Specific Stderr → `phase-errors.jsonl` (OPTIONAL)
+
 - **Before**: 4 separate .log files
 - **After**: 1 consolidated JSONL (or removed entirely)
 - **Status**: Decision needed; low demand
@@ -207,17 +218,20 @@ Format: CSV with columns
 ## 🚀 Next Steps
 
 ### Before You Start
+
 1. Read [ARTIFACT_EVALUATION_SUMMARY.md](ARTIFACT_EVALUATION_SUMMARY.md) (5 min)
 2. Skim [ARTIFACT_EVALUATION_REPORT.md](ARTIFACT_EVALUATION_REPORT.md) Section "Bottom 10" (5 min)
 3. Decide: Will you consolidate phase-specific *-events.jsonl files? (Requires external agent feedback)
 
 ### Phase 1 (Week 1): Registry Updates
+
 - [ ] Add 5 missing high-value artifacts to [src/artifact-metadata.ts](src/artifact-metadata.ts)
 - [ ] Mark stdout/stderr as ON_FAILURE
 - [ ] Add deprecation notes to consolidation target artifacts
 - [ ] Run tests: `npm run test:artifacts`
 
 ### Phase 2 (Week 1–2): Code Updates
+
 - [ ] Update [kaseki-agent.sh](kaseki-agent.sh) to:
   - Stop generating individual phase summaries (scouting-summary.json, etc.)
   - Generate all-phase-summaries.json instead
@@ -227,17 +241,20 @@ Format: CSV with columns
 - [ ] Run integration tests: `./run-kaseki.sh --doctor`
 
 ### Phase 3 (Week 2): API/CLI Updates
+
 - [ ] Update [src/routes/artifact-routes.ts](src/routes/artifact-routes.ts) to recommend KEEP_CORE first
 - [ ] Update [src/lib/artifact-utilities.ts](src/lib/artifact-utilities.ts) to handle consolidated artifacts
 - [ ] Add backward-compat views (e.g., scouting-summary.json endpoint redirects to all-phase-summaries.json#scouting)
 
 ### Phase 4 (Week 3): Testing & Validation
+
 - [ ] Unit tests for artifact consolidation logic
 - [ ] Integration tests with mock kaseki runs
 - [ ] Test with external agents (if applicable)
 - [ ] Performance test: confirm storage reduction
 
 ### Phase 5 (Week 3–4): Deprecation & Release
+
 - [ ] One-release deprecation window (v2.X.X with deprecation warnings)
 - [ ] Final release (v3.X.X) removes old artifact files
 - [ ] Update documentation: [docs/API.md](docs/API.md), [docs/CLI.md](docs/CLI.md)
@@ -247,22 +264,26 @@ Format: CSV with columns
 ## 📚 Files & References
 
 ### Generated Evaluation Files
+
 - [ARTIFACT_EVALUATION_REPORT.md](ARTIFACT_EVALUATION_REPORT.md) — Full detailed report
 - [ARTIFACT_EVALUATION_SUMMARY.md](ARTIFACT_EVALUATION_SUMMARY.md) — Quick reference
 - [ARTIFACT_SCORING.csv](ARTIFACT_SCORING.csv) — Machine-readable scoring
 
 ### Source Files to Update
+
 - [src/artifact-metadata.ts](src/artifact-metadata.ts) — Registry (add 5 artifacts, mark as deprecated)
 - [kaseki-agent.sh](kaseki-agent.sh) — Generation logic (consolidate artifacts)
 - [src/routes/artifact-routes.ts](src/routes/artifact-routes.ts) — API (recommend KEEP_CORE)
 - [src/lib/artifact-utilities.ts](src/lib/artifact-utilities.ts) — Utilities (handle consolidated)
 
 ### Documentation
+
 - [docs/API.md](docs/API.md) — Update artifact endpoint docs
 - [docs/CLI.md](docs/CLI.md) — Update CLI artifact commands
 - [docs/QUALITY_GATES.md](docs/QUALITY_GATES.md) — Artifact availability/retention
 
 ### Memory/Inventory
+
 - [/memories/repo/all-kaseki-artifacts-comprehensive-inventory.md](/memories/repo/all-kaseki-artifacts-comprehensive-inventory.md) — Previous inventory (baseline)
 - [/memories/repo/kaseki-artifacts-comprehensive-registry.md](/memories/repo/kaseki-artifacts-comprehensive-registry.md) — Previous registry notes
 
@@ -286,6 +307,7 @@ After implementation, verify:
 ## 📞 Questions?
 
 Refer to:
+
 1. **Quick answers**: [ARTIFACT_EVALUATION_SUMMARY.md](ARTIFACT_EVALUATION_SUMMARY.md)
 2. **Detailed analysis**: [ARTIFACT_EVALUATION_REPORT.md](ARTIFACT_EVALUATION_REPORT.md)
 3. **Scoring breakdown**: [ARTIFACT_SCORING.csv](ARTIFACT_SCORING.csv)
