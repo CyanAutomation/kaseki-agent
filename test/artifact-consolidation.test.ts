@@ -115,7 +115,7 @@ describe('Artifact Consolidation', () => {
       const lines = fs.readFileSync(testFile, 'utf-8').trim().split('\n');
       expect(lines).toHaveLength(3);
 
-      lines.forEach((line, i) => {
+      lines.forEach((line, _i) => {
         const obj = JSON.parse(line);
         expect(obj).toHaveProperty('phase');
         expect(obj).toHaveProperty('error');
