@@ -275,17 +275,21 @@ Quality gates run after the agent completes, before reporting success:
 
 All written to `/agents/kaseki-results/kaseki-N/`:
 
-- `metadata.json` — timestamps, exit codes per stage, model, instance name
+- `metadata.json` — core metadata with consolidated phase data (schema_version: 2.0)
+  - timestamps, exit codes per stage, model, instance name
+  - `.phases.validation` — validation results array with commands, exit codes, durations
+  - `.phases.quality_gates` — quality gate violations with types and details
+  - `.phases.secret_scan` — detected credentials with patterns and allowlist status
 - `result-summary.md` — human-readable status + key facts
 - `pi-events.jsonl` / `pi-summary.json` — filtered agent events and stats
 - `git.diff` / `git.status` / `changed-files.txt` — repo changes
 - `validation.log` / `validation-timings.tsv` — command output + timing
-- `quality.log` / `secret-scan.log` — gate failures
+- `quality.log` — gate failures and diagnostics
 - `restoration.jsonl` — structured allowlist restoration events (JSONL format)
 - `restoration-report.md` — human-readable allowlist restoration report
 - `progress.log` / `progress.jsonl` — sanitized stage and Pi event progress
 - `cleanup.log` — mandatory post-run cleanup summary
-- `stdout.log` / `stderr.log` / `exit_code` — raw execution output
+- `exit_code` — container exit code (0=success, non-zero=failure)
 
 ## Dependency Caching
 
