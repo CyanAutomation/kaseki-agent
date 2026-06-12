@@ -96,6 +96,9 @@ KASEKI_BASELINE_CACHE_MAX_AGE_HOURS="${KASEKI_BASELINE_CACHE_MAX_AGE_HOURS:-24}"
 KASEKI_BASELINE_CACHE_DISABLED="${KASEKI_BASELINE_CACHE_DISABLED:-0}"
 KASEKI_TS_PRE_CHECK="${KASEKI_TS_PRE_CHECK:-1}"
 KASEKI_TS_CHECK_COMMAND="${KASEKI_TS_CHECK_COMMAND:-npm run build}"
+KASEKI_SCOUTING_EXPLICIT="${KASEKI_SCOUTING+x}"
+KASEKI_GOAL_SETTING_EXPLICIT="${KASEKI_GOAL_SETTING+x}"
+KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
@@ -108,6 +111,11 @@ KASEKI_GOAL_CHECK_MAX_RETRIES="${KASEKI_GOAL_CHECK_MAX_RETRIES:-1}"
 KASEKI_GOAL_CHECK_MODEL="${KASEKI_GOAL_CHECK_MODEL:-$KASEKI_SCOUTING_MODEL}"
 KASEKI_GOAL_CHECK_TIMEOUT_SECONDS="${KASEKI_GOAL_CHECK_TIMEOUT_SECONDS:-$KASEKI_SCOUTING_TIMEOUT_SECONDS}"
 KASEKI_TASK_MODE="${KASEKI_TASK_MODE:-patch}"
+if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+  [ -z "$KASEKI_GOAL_SETTING_EXPLICIT" ] && KASEKI_GOAL_SETTING="0"
+  [ -z "$KASEKI_SCOUTING_EXPLICIT" ] && KASEKI_SCOUTING="0"
+  [ -z "$KASEKI_GOAL_CHECK_EXPLICIT" ] && KASEKI_GOAL_CHECK="0"
+fi
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
 if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
@@ -3935,7 +3943,7 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
   "success_criteria": [
     {
       "criterion": "specific, measurable criterion",
-      "smart_score": "high|medium|low",
+      "smart_score": "high",
       "reasoning": "brief reason (e.g., clearly measurable, achievable in one run)"
     }
   ],
@@ -3955,15 +3963,18 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
     "after": "expected output/state after changes (if inferrable)"
   },
   "quality_metrics": {
-    "clarity": "high|medium|low (how unambiguous is the goal?)",
-    "measurability": "high|medium|low (can agents tell when done?)",
-    "specificity": "high|medium|low (is scope well-bounded?)",
-    "scope_clarity": "high|medium|low (are boundaries clear?)",
-    "constraint_strength": "high|medium|low (are guardrails testable?)"
+    "clarity": "high",
+    "measurability": "high",
+    "specificity": "medium",
+    "scope_clarity": "medium",
+    "constraint_strength": "high"
   },
   "reasoning": "explanation of upgrades made and key decisions",
-  "confidence": "high|medium|low (overall goal readiness)"
+  "confidence": "high"
 }
+
+Enum fields must contain only one literal value: "high", "medium", or "low".
+Do not copy placeholder strings such as "high|medium|low" into any JSON value.
 
 === TEST UPDATE REQUIREMENTS ===
 
@@ -8128,7 +8139,11 @@ if ! run_scouting_agent_with_retry; then
   exit 0
 fi
 
-derive_critical_change_expectations
+if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+  printf '{"version":1,"source_artifacts":{"goal_setting":null,"scouting":null},"required_files":[],"required_search_strings":[],"forbidden_empty_diff":false}\n' > "$CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT"
+else
+  derive_critical_change_expectations
+fi
 
 # After scouting succeeds, derive and merge allowlists before main agent runs
 if [ "$KASEKI_SCOUTING" = "1" ] && [ -f "$SCOUTING_ARTIFACT" ]; then
@@ -8460,7 +8475,10 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
   if [ "$KASEKI_TASK_MODE" = "patch" ] && [ ! -s "${KASEKI_RESULTS_DIR}/git.diff" ]; then
     skip_auto_lint_cleanup_before_core_change_verified "patch_diff_empty" "collect_git_artifacts produced no patch diff before critical-change verification"
   fi
-  if ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
+  if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+    emit_progress "critical change verification" "skipped (inspect mode)"
+    printf 'critical change verification skipped for inspect mode\n' >> "${KASEKI_RESULTS_DIR}/critical-change-verification.log"
+  elif ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
     critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
     skip_auto_lint_cleanup_before_core_change_verified "critical_change_verification_failed" "$critical_change_failure_summary"
     GOAL_CHECK_MET=false
@@ -8479,9 +8497,11 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     emit_error_event "critical_change_expectations_failed" "Pre-goal-check verification failed after $coding_attempt attempt(s): $GOAL_CHECK_FAILURE_REASON" "exit"
     break
   fi
-  emit_progress "critical change verification" "passed on attempt $coding_attempt"
+  if [ "$KASEKI_TASK_MODE" != "inspect" ]; then
+    emit_progress "critical change verification" "passed on attempt $coding_attempt"
+  fi
 
-  if [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
+  if [ "$KASEKI_TASK_MODE" != "inspect" ] && [ "$PI_EXIT" -eq 0 ] && [ "$STATUS" -eq 0 ]; then
     run_auto_lint_cleanup_after_core_change_verified
     collect_git_artifacts
     restore_disallowed_changes

@@ -122,6 +122,14 @@ function change(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new view.Event('change', { bubbles: true }));
 }
 
+function input(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string): void {
+  element.value = value;
+  const view = element.ownerDocument.defaultView;
+  if (!view) throw new Error('Element has no defaultView');
+  element.dispatchEvent(new view.Event('input', { bubbles: true }));
+  element.dispatchEvent(new view.Event('change', { bubbles: true }));
+}
+
 describe('kaseki API web console routes', () => {
   test.each(['/', '/ui'])('serves the task console app shell from %s', async (path) => {
     const { response, body } = await fetchConsole(path);
@@ -268,6 +276,118 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#artifacts-output .artifact-item-name')?.textContent).toBe('report.json');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('archive.tar');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
+  });
+
+  test('renders artifact file content directly instead of the API wrapper', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/runs/kaseki-304/status') return createJsonResponse({ id: 'kaseki-304', status: 'failed' });
+        if (path === '/api/runs/kaseki-304/artifacts') {
+          return createJsonResponse({
+            recommended: ['failure.json'],
+            artifacts: [
+              { name: 'failure.json', available: true, contentType: 'application/json', size: '1 KB' },
+            ],
+          });
+        }
+        if (path === '/api/results/kaseki-304/failure.json') {
+          return createJsonResponse({
+            file: 'failure.json',
+            contentType: 'application/json',
+            size: 28,
+            content: '{\n  "failed_command": "scouting"\n}\n',
+          });
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-304';
+    click(document.querySelector('#status-check'));
+    await waitFor(() => expect(document.querySelector('[data-artifact-file="failure.json"]')).not.toBeNull());
+
+    click(document.querySelector('[data-artifact-file="failure.json"]'));
+    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"failed_command": "scouting"'));
+    expect(document.querySelector('#output')?.textContent).not.toContain('"file": "failure.json"');
+    expect(document.querySelector('#output')?.textContent).not.toContain('"content":');
+  });
+
+  test('selecting a GitHub issue carries its repository into the submit form', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/github-issues') {
+          return createJsonResponse([
+            {
+              number: 517,
+              title: 'Stage names drift',
+              body: 'Align the setup stage name.',
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        }
+        return createJsonResponse({});
+      },
+    });
+
+    click(document.querySelector('[data-tab="issues"]'));
+    const issuesRepoInput = document.querySelector<HTMLInputElement>('#issues-repo-url');
+    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
+    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
+    if (!issuesRepoInput || !repoInput || !taskPrompt) throw new Error('Expected issue and submit inputs to exist');
+
+    input(issuesRepoInput, 'CyanAutomation/kaseki-agent');
+    click(document.querySelector('#load-issues-btn'));
+    await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Stage names drift'));
+
+    click(document.querySelector('.issues-list-item'));
+    expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('false');
+    expect(repoInput.value).toBe('https://github.com/CyanAutomation/kaseki-agent');
+    expect(taskPrompt.value).toBe('Align the setup stage name.');
+  });
+
+  test('submitting a validated task immediately surfaces the new run id', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/validate') {
+          return createJsonResponse({
+            isValid: true,
+            checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
+            estimatedDurationSeconds: 10,
+          });
+        }
+        if (path === '/api/runs') {
+          return createJsonResponse({
+            id: 'kaseki-777',
+            status: 'queued',
+            createdAt: '2026-06-12T21:30:00.000Z',
+          }, 202);
+        }
+        if (path === '/api/runs/kaseki-777/status') {
+          return createJsonResponse({ id: 'kaseki-777', status: 'running', elapsedSeconds: 1 });
+        }
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
+    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
+    if (!repoInput || !taskPrompt) throw new Error('Expected submit inputs to exist');
+
+    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
+    input(taskPrompt, 'Inspect the repository and report stage naming drift.');
+    click(document.querySelector('#validate'));
+    await waitFor(() => expect(document.querySelector<HTMLButtonElement>('#submit')?.disabled).toBe(false));
+
+    click(document.querySelector('#submit'));
+    await waitFor(() => expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-777'));
+    expect(document.querySelector('#output-meta')?.textContent).toContain('Run ID: kaseki-777');
+    expect(document.querySelector('#state')?.textContent).not.toBe('Contacting the controller...');
+    expect(calls.some((call) => call.path === '/api/runs' && call.init?.method === 'POST')).toBe(true);
   });
 
   test('renders stdout modal content from structured log responses', async () => {

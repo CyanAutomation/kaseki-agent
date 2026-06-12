@@ -1581,6 +1581,15 @@ const controllerPage = String.raw`<!doctype html>
         renderRecentReposDropdown();
       }
 
+      function normalizeRepoUrlForSubmit(value) {
+        const trimmed = String(value || '').trim();
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+        if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) {
+          return 'https://github.com/' + trimmed;
+        }
+        return trimmed;
+      }
+
       function deleteRepoFromRecent(url) {
         const repos = loadRecentRepos().filter(r => r !== url);
         saveRecentRepos(repos);
@@ -1796,6 +1805,26 @@ const controllerPage = String.raw`<!doctype html>
         output.classList.toggle('empty', !text);
       }
 
+      function maybeParseJsonString(value) {
+        if (typeof value !== 'string') return value;
+        const trimmed = value.trim();
+        if (!trimmed || !/^[\\[{]/.test(trimmed)) return value;
+        try {
+          return JSON.parse(trimmed);
+        } catch {
+          return value;
+        }
+      }
+
+      function artifactDisplayText(payload) {
+        if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'content')) {
+          const parsedContent = maybeParseJsonString(payload.content);
+          return typeof parsedContent === 'string' ? parsedContent : JSON.stringify(parsedContent, null, 2);
+        }
+        const parsedPayload = maybeParseJsonString(payload);
+        return typeof parsedPayload === 'string' ? parsedPayload : JSON.stringify(parsedPayload, null, 2);
+      }
+
       function summarizedResponseBody(path, method, status, payload) {
         const base = { method, path, status };
         if (path === '/api/preflight' && payload && typeof payload === 'object') {
@@ -1812,11 +1841,28 @@ const controllerPage = String.raw`<!doctype html>
                 remediation: check.remediation,
               })),
               image: payload.image,
+              imageDigest: payload.imageDigest,
               templateRef: payload.templateRef,
+              templateImageDigest: payload.templateImageDigest,
               resultsDir: payload.resultsDir,
+              runtime: payload.runtime,
+              docker: payload.docker,
+              containerStartup: payload.containerStartup,
+              checks: checks.map((check) => ({
+                name: check.name,
+                ok: check.ok,
+                detail: check.detail,
+                remediation: check.remediation,
+                checkoutRef: check.checkoutRef,
+                localRef: check.localRef,
+                remoteRef: check.remoteRef,
+              })),
             },
-            note: 'Showing a compact summary. Use the API directly for the full JSON payload.',
+            note: 'Showing diagnostics summary with check details. Use the API directly for the exact raw payload.',
           }, null, 2);
+        }
+        if (path.startsWith('/api/results/') && payload && typeof payload === 'object') {
+          return artifactDisplayText(payload);
         }
         if (path.endsWith('/artifacts') && payload && typeof payload === 'object') {
           const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
@@ -1953,14 +1999,7 @@ const controllerPage = String.raw`<!doctype html>
               const contentType = response.headers.get('content-type') || '';
               const isJson = contentType.includes('json');
               const content = isJson ? await response.json() : await response.text();
-              
-              // Extract text content
-              let textToCopy = '';
-              if (contentType.includes('json')) {
-                textToCopy = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
-              } else {
-                textToCopy = String(content);
-              }
+              const textToCopy = artifactDisplayText(content);
               
               if (textToCopy) {
                 setCopyButtonStatus(copyBtn, await copyToClipboard(textToCopy));
@@ -2593,6 +2632,7 @@ const controllerPage = String.raw`<!doctype html>
           const contentType = response.headers.get('content-type') || '';
           const isJson = contentType.includes('json');
           const content = isJson ? await response.json() : await response.text();
+          const displayText = artifactDisplayText(content);
           
           // Display the artifact content
           artifactsOutputEl.innerHTML = '';
@@ -2652,17 +2692,17 @@ const controllerPage = String.raw`<!doctype html>
           if (contentType.includes('json')) {
             const pre = document.createElement('pre');
             pre.className = 'artifact-content-pre';
-            pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+            pre.textContent = displayText;
             container.appendChild(pre);
           } else if (contentType.includes('markdown')) {
             const mdDiv = document.createElement('div');
             mdDiv.className = 'artifact-content-markdown';
-            mdDiv.textContent = content; // In production, use a markdown renderer
+            mdDiv.textContent = displayText; // In production, use a markdown renderer
             container.appendChild(mdDiv);
           } else {
             const pre = document.createElement('pre');
             pre.className = 'artifact-content-pre';
-            pre.textContent = String(content);
+            pre.textContent = displayText;
             container.appendChild(pre);
           }
           
@@ -2818,6 +2858,10 @@ const controllerPage = String.raw`<!doctype html>
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
               runIdInput.value = payload.id;
+              setOutputMetadata(payload.status || 'queued', payload.id);
+              setResponseSummary(payload);
+              setOutputBody(summarizedResponseBody('/api/runs', 'POST', response.status, payload));
+              setState('Run submitted.', 'ok');
               updateCancelRunButtonState();
               showRunLinks(payload.id);
               activeRunView = 'status';
@@ -2913,6 +2957,9 @@ const controllerPage = String.raw`<!doctype html>
               // Populate task prompt with issue body
               const body = issue.body || '(No description)';
               taskPrompt.value = body;
+              repoUrlInput.value = normalizeRepoUrlForSubmit(repoUrl);
+              repoUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
+              addRepoToRecent(repoUrl);
               // Switch to Submit Task tab
               submitTab.click();
               // Scroll to task prompt
