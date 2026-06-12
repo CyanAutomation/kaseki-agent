@@ -77,3 +77,6 @@ jobs:
           name: release-output
           path: release-output.log
           retention-days: 30
+
+      - name: Fallow - Codebase Intelligence
+        uses: fallow-rs/fallow@v2.95.0
