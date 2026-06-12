@@ -1198,20 +1198,16 @@ build_stages_array() {
   fi
   
   stages+=("complete")
-  
-  if [[ "$retry_count" -ge "$SCOUTING_MAX_RETRIES" ]]; then
+
+  local stage
+  for stage in "${stages[@]}"; do
+    printf '%s\n' "$stage"
+  done
 }
 
 extract_failure_diagnostic_reason() {
   local diagnostic
-
-    if [[ "$retry_wait" =~ ^[0-9]+$ ]] && [[ "$retry_wait" -gt 0 ]]; then
-      log_info "Waiting ${retry_wait}s before retry ${retry_count}/${SCOUTING_MAX_RETRIES}..."
-      sleep "$retry_wait"
-    else
-      log_error "Invalid retry_wait value: $retry_wait"
-      return 1
-    fi
+  diagnostic="$(node - "${KASEKI_RESULTS_DIR}" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
 const resultsDir = process.argv[2];
