@@ -2250,6 +2250,60 @@ describe('kaseki-api-routes controller replay and events', () => {
     }
   });
 
+  test('events endpoint derives early progress from live docker log stages', async () => {
+    const jobId = 'kaseki-live-log-events';
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 1, maxConcurrent: 1 }),
+      getJob: (id: string) => (id === jobId ? { id: jobId, status: 'running', createdAt: new Date() } : undefined),
+      getLiveProgressEvents: jest.fn(() => []),
+      getLiveDockerLogTail: jest.fn(() => '==> clone repository\n==> prepare node dependencies\n'),
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn()
+    } as any;
+
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/events`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.sources).toEqual(['docker-logs']);
+      expect(body.events.map((event: any) => event.stage)).toEqual(['clone repository', 'prepare node dependencies']);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('artifact listing exposes live stdout for running jobs before stdout.log is finalized', async () => {
+    const jobId = 'kaseki-live-stdout-artifact';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    const scheduler = createMockScheduler({
+      [jobId]: { id: jobId, status: 'running', createdAt: new Date(), resultDir: jobDir } as any
+    });
+    scheduler.getLiveDockerLogTail = jest.fn(() => 'live stdout content') as any;
+
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      const stdout = body.artifacts.find((artifact: any) => artifact.name === 'stdout.log');
+      expect(stdout.available).toBe(true);
+      expect(stdout.size).toBe(Buffer.byteLength('live stdout content', 'utf-8'));
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('artifact listing treats zero-byte diagnostics as unavailable', async () => {
     const jobId = 'kaseki-zero-artifacts';
     const jobDir = path.join(resultsDir, jobId);
@@ -2483,6 +2537,32 @@ describe('kaseki-api-routes status artifact hints', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
+    }
+  });
+
+  test('runs list honors limit query parameter', async () => {
+    const jobs = Array.from({ length: 4 }, (_, index) => ({
+      id: `kaseki-${index + 1}`,
+      status: 'completed',
+      createdAt: new Date(`2026-05-07T12:0${index}:00Z`),
+      resultDir: path.join(resultsDir, `kaseki-${index + 1}`),
+    }));
+    const scheduler = createMockScheduler(Object.fromEntries(jobs.map((job) => [job.id, job as any])));
+    scheduler.listJobs = jest.fn(() => jobs as any);
+
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs?limit=2`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.total).toBe(4);
+      expect(body.runs.map((run: any) => run.id)).toEqual(['kaseki-1', 'kaseki-2']);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
     }
   });
 
