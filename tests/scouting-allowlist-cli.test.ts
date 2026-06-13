@@ -136,7 +136,7 @@ describe('scouting-allowlist.js CLI', () => {
 
   test('should show usage on invalid command', () => {
     expect(() => {
-      execSync(`node scripts/scouting-allowlist.js invalid-command`, {
+      execSync('node scripts/scouting-allowlist.js invalid-command', {
         encoding: 'utf-8',
         cwd: process.cwd(),
         stdio: 'pipe',
