@@ -55,35 +55,7 @@ export function createSubdirs(
   return result;
 }
 
-/**
- * Initialize common test directories for orchestration scenarios
- *
- * @param tmpDir Base temporary directory
- * @returns Object with paths to common test directories
- */
-export function initializeTestDirs(tmpDir: string): {
-  fakeRepo: string;
-  fakeBin: string;
-  resultsDir: string;
-  appLib: string;
-  scriptsDir: string;
-} {
-  const subdirs = createSubdirs(tmpDir, [
-    'fake-repo/deps/fake-dep',
-    'bin',
-    'results',
-    'app/lib',
-    'scripts',
-  ]);
 
-  return {
-    fakeRepo: subdirs['fake-repo'],
-    fakeBin: subdirs['bin'],
-    resultsDir: subdirs['results'],
-    appLib: subdirs['app/lib'],
-    scriptsDir: subdirs['scripts'],
-  };
-}
 
 /**
  * Pool of temporary directories for test reuse
@@ -136,18 +108,8 @@ class TempDirPool {
   }
 }
 
-// Global pool instance for test suites that want to share temps
+// Global pool instance for test suites that want to share temps (internal use only)
 let globalPool: TempDirPool | null = null;
-
-/**
- * Get the global temp directory pool
- */
-export function getGlobalTempDirPool(): TempDirPool {
-  if (!globalPool) {
-    globalPool = new TempDirPool();
-  }
-  return globalPool;
-}
 
 /**
  * Clear the global temp directory pool (useful in afterAll hooks)
