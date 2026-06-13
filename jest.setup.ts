@@ -82,6 +82,8 @@ if (process.env.KASEKI_RESTORE_LOGS === '1') {
  * Mock process.exit to prevent Jest process from terminating during tests
  * By default, spy on process.exit to prevent actual exit
  */
+// Store reference to the real process.exit before mocking (to use in emergency shutdown)
+const realProcessExit = process.exit.bind(process);
 const processExitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
   const error = new Error(`process.exit(${code ?? 0}) called`);
   throw error;
@@ -108,6 +110,42 @@ afterEach(() => {
 
   // Clear all pending timers to prevent handle leaks
   jest.clearAllTimers();
+
+  // Destroy all HTTP/HTTPS agent sockets to prevent connection pool exhaustion
+  // This is critical because Node.js's fetch() uses global HttpAgent/HttpsAgent
+  // which keep sockets alive for connection reuse. If not drained, these sockets
+  // prevent the process from exiting.
+  try {
+    // @ts-ignore - Accessing Node's internal HTTP agents
+    const http = require('http');
+    const https = require('https');
+    
+    // Destroy all sockets in the global HTTP agent
+    if (http.globalAgent) {
+      const httpSockets = Object.values(http.globalAgent.sockets || {});
+      for (const socketList of httpSockets) {
+        if (Array.isArray(socketList)) {
+          for (const socket of socketList) {
+            socket.destroy();
+          }
+        }
+      }
+    }
+    
+    // Destroy all sockets in the global HTTPS agent
+    if (https.globalAgent) {
+      const httpsSockets = Object.values(https.globalAgent.sockets || {});
+      for (const socketList of httpsSockets) {
+        if (Array.isArray(socketList)) {
+          for (const socket of socketList) {
+            socket.destroy();
+          }
+        }
+      }
+    }
+  } catch {
+    // If agents don't exist or we can't access them, continue
+  }
 });
 
 /**
@@ -134,19 +172,140 @@ afterAll(async () => {
   for (const listener of allListeners) {
     process.removeAllListeners(listener as string);
   }
-  
+
+  // Kill any lingering child processes (critical for spawn() usage in tests)
+  try {
+    const { spawn: _spawn } = require('child_process');
+    // @ts-ignore - Access to private Node API
+    const activeRequests = process._getActiveRequests?.() || [];
+    for (const req of activeRequests) {
+      if (req && typeof req.kill === 'function') {
+        try {
+          req.kill();
+        } catch {
+          // Already dead
+        }
+      }
+    }
+  } catch {
+    // Child process module may not be available
+  }
+
+  // Aggressively clean up HTTP/HTTPS global agents
+  try {
+    // @ts-ignore - Accessing Node's internal HTTP agents
+    const http = require('http');
+    const https = require('https');
+    
+    // Destroy ALL sockets in global HTTP agent
+    if (http.globalAgent) {
+      const httpSockets = http.globalAgent.sockets || {};
+      for (const [key, socketList] of Object.entries(httpSockets)) {
+        if (Array.isArray(socketList)) {
+          while (socketList.length > 0) {
+            const socket = socketList.pop();
+            if (socket) {
+              socket.destroy();
+            }
+          }
+        }
+      }
+      // Also destroy requests pending
+      const httpRequests = http.globalAgent.requests || {};
+      for (const [key, requestList] of Object.entries(httpRequests)) {
+        if (Array.isArray(requestList)) {
+          while (requestList.length > 0) {
+            const req = requestList.pop();
+            if (req) {
+              req.abort?.();
+              req.destroy?.();
+            }
+          }
+        }
+      }
+    }
+    
+    // Destroy ALL sockets in global HTTPS agent
+    if (https.globalAgent) {
+      const httpsSockets = https.globalAgent.sockets || {};
+      for (const [key, socketList] of Object.entries(httpsSockets)) {
+        if (Array.isArray(socketList)) {
+          while (socketList.length > 0) {
+            const socket = socketList.pop();
+            if (socket) {
+              socket.destroy();
+            }
+          }
+        }
+      }
+      // Also destroy requests pending
+      const httpsRequests = https.globalAgent.requests || {};
+      for (const [key, requestList] of Object.entries(httpsRequests)) {
+        if (Array.isArray(requestList)) {
+          while (requestList.length > 0) {
+            const req = requestList.pop();
+            if (req) {
+              req.abort?.();
+              req.destroy?.();
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // If agents don't exist or we can't access them, continue
+  }
+
   // Give Node a moment to complete any pending operations
   await new Promise(resolve => setImmediate(resolve));
-  
-  // As a last resort, if tests are still hanging, we can force a more aggressive exit
-  // but only log it if in CI or JEST_FORCE_EXIT is set
-  if (process.env.JEST_FORCE_EXIT === '1' || isCI) {
-    // Set a timeout to force exit after cleanup hooks complete
-    // This is a safety net for persistent hangs
-    setTimeout(() => {
-      process.exit(0);
-    }, 5000).unref();
+
+  // Check for open handles using private API
+  if (process.env.KASEKI_DEBUG_HANDLES === '1') {
+    try {
+      // @ts-ignore - Accessing private Node API
+      const handles = process._getActiveHandles?.() || [];
+      // @ts-ignore
+      const requests = process._getActiveRequests?.() || [];
+      console.error('Open handles:', handles.length);
+      console.error('Open requests:', requests.length);
+      
+      // Log details about what's keeping the process alive
+      for (let i = 0; i < handles.length && i < 5; i++) {
+        // @ts-ignore
+        const handle = handles[i];
+        const name = handle?.constructor?.name || typeof handle;
+        console.error(`  Handle ${i}: ${name}`);
+        // Log more details for file descriptors
+        if (handle && handle.fd !== undefined) {
+          console.error(`    - FD: ${handle.fd}`);
+        }
+      }
+      for (let i = 0; i < requests.length && i < 5; i++) {
+        // @ts-ignore
+        console.error(`Request ${i}:`, requests[i]?.constructor?.name || typeof requests[i]);
+      }
+    } catch {
+      // Private API not available
+    }
   }
+
+  // Set a timeout to force exit if cleanup takes too long
+  // This is a safety net for persistent hangs - tests should complete in ~60s total
+  const forceExitTimeout = setTimeout(() => {
+    // At this point, afterAll has had 5 seconds to clean up
+    // If we're still here, something is keeping the process alive
+    // Use the real process.exit stored before mocking
+    try {
+      realProcessExit(0);
+    } catch {
+      // If real exit throws (shouldn't happen), try direct exit
+      // @ts-ignore - Using private Node API as last resort
+      process._exit?.(0);
+    }
+  }, 5000);
+  
+  // Allow this timeout to not block process exit (make it a "weak" reference)
+  forceExitTimeout.unref();
 });
 
 /**
