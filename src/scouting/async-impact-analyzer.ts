@@ -144,11 +144,19 @@ function detectAsyncKeywords(taskPrompt: string): string[] {
 function findFilesByPatterns(workspaceRoot: string, patterns: string[]): string[] {
   const files = new Set<string>();
 
+  // Check if workspaceRoot exists before trying to use git
+  if (!fs.existsSync(workspaceRoot)) {
+    return [];
+  }
+
   for (const pattern of patterns) {
     try {
       // Use git ls-files to find tracked files matching pattern
-      const result = execSync(`cd "${workspaceRoot}" && git ls-files "${pattern}" 2>/dev/null`, {
+      // Use cwd option instead of cd command to avoid shell errors
+      const result = execSync(`git ls-files "${pattern}"`, {
+        cwd: workspaceRoot,
         encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
       });
 
       if (result) {
@@ -265,13 +273,22 @@ function findConsumerFiles(workspaceRoot: string, taskPrompt: string): string[] 
     return [];
   }
 
+  // Check if workspaceRoot exists before trying to use git
+  if (!fs.existsSync(workspaceRoot)) {
+    return [];
+  }
+
   try {
     // Search for files that import these modules
     for (const moduleName of new Set(moduleMatches)) {
       try {
         const result = execSync(
-          `cd "${workspaceRoot}" && git grep -l "import.*${moduleName}" -- "*.ts" "*.js" 2>/dev/null`,
-          { encoding: 'utf-8' },
+          `git grep -l "import.*${moduleName}" -- "*.ts" "*.js"`,
+          {
+            cwd: workspaceRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }
         );
 
         if (result) {

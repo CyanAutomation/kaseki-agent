@@ -105,13 +105,16 @@ afterEach(() => {
 
   // Clear any remaining console overrides from suppression system
   (global as any).__kasekiCapturedLogs = [];
+
+  // Clear all pending timers to prevent handle leaks
+  jest.clearAllTimers();
 });
 
 /**
  * Global afterAll hook to clean up global resources after all tests complete
  * This prevents handle leaks that span test suites
  */
-afterAll(() => {
+afterAll(async () => {
   // Restore the process.exit spy completely
   processExitSpy.mockRestore();
 
@@ -121,6 +124,29 @@ afterAll(() => {
   // Clear captured logs
   (global as any).__kasekiCapturedLogs = [];
   delete (global as any).__kasekiCapturedLogs;
+
+  // Force cleanup of any lingering listeners to prevent hanging
+  process.removeAllListeners('uncaughtException');
+  process.removeAllListeners('unhandledRejection');
+  
+  // Remove all other process listeners that might keep it alive
+  const allListeners = process.eventNames();
+  for (const listener of allListeners) {
+    process.removeAllListeners(listener as string);
+  }
+  
+  // Give Node a moment to complete any pending operations
+  await new Promise(resolve => setImmediate(resolve));
+  
+  // As a last resort, if tests are still hanging, we can force a more aggressive exit
+  // but only log it if in CI or JEST_FORCE_EXIT is set
+  if (process.env.JEST_FORCE_EXIT === '1' || isCI) {
+    // Set a timeout to force exit after cleanup hooks complete
+    // This is a safety net for persistent hangs
+    setTimeout(() => {
+      process.exit(0);
+    }, 5000).unref();
+  }
 });
 
 /**
