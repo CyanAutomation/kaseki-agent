@@ -4,6 +4,17 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.78.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.3...v1.78.4) (2026-06-13)
+
+
+### Bug Fixes
+
+* Clean up whitespace in drainResponseBody documentation for clarity ([7e98b26](https://github.com/CyanAutomation/kaseki-agent/commit/7e98b2609d42f9bc965b8a024c53664698982f16))
+* Convert exported functions to internal in collect-feedback and scouting-allowlist scripts ([1944f18](https://github.com/CyanAutomation/kaseki-agent/commit/1944f187ef2221730f6b3ed7f99dec36aeca02ce))
+* Refactor read-wrapper functions for improved clarity and add unit tests for validation and summarization logic ([4ad975a](https://github.com/CyanAutomation/kaseki-agent/commit/4ad975a0a5d38762812e0d369a2c01491644916b))
+* Refactor validation functions in scouting-allowlist.js and add unit tests for improved artifact validation ([1bf3b41](https://github.com/CyanAutomation/kaseki-agent/commit/1bf3b419181b3ae97a16bd4ba44d73df2519be51))
+* Remove unused helper functions and clean up test cases in scouting-allowlist validators ([6ebf184](https://github.com/CyanAutomation/kaseki-agent/commit/6ebf18450c08108df5db44afdec00d8a65615cd4))
+
 ## [1.78.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.2...v1.78.3) (2026-06-13)
 
 
