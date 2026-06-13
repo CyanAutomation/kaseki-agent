@@ -86,3 +86,4 @@ jobs:
           fail-on-issues: false
           hotspots: true
           targets: true
+          save-snapshot: true
