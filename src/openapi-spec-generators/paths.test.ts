@@ -14,99 +14,113 @@ describe('OpenAPI Path Builders', () => {
       method: 'get',
       operationId: 'getMetrics',
       requiresAuth: true,
-      statuses: ['200', '401'],
+      statuses: ['200', '401']
     },
     {
       path: '/api/preflight',
       method: 'get',
       operationId: 'getPreFlight',
       requiresAuth: true,
-      statuses: ['200', '401'],
+      statuses: ['200', '401']
     },
     {
       path: '/api/validate',
       method: 'post',
       operationId: 'validateTask',
       requiresAuth: true,
-      statuses: ['200', '400', '401'],
+      statuses: ['200', '400', '401']
     },
     {
       path: '/api/runs',
       method: 'get',
       operationId: 'listRuns',
       requiresAuth: true,
-      statuses: ['200', '401'],
+      statuses: ['200', '401']
     },
     {
       path: '/api/runs',
       method: 'post',
       operationId: 'triggerRun',
       requiresAuth: true,
-      statuses: ['200', '202', '400', '401'],
+      statuses: ['200', '202', '400', '401']
     },
     {
       path: '/api/runs/{id}/status',
       method: 'get',
       operationId: 'getRunStatus',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/runs/{id}/cancel',
       method: 'post',
       operationId: 'cancelRun',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
+    },
+    {
+      path: '/api/runs/{id}/events',
+      method: 'get',
+      operationId: 'getRunEvents',
+      requiresAuth: true,
+      statuses: ['200', '401', '404']
+    },
+    {
+      path: '/api/runs/{id}/events/stream',
+      method: 'get',
+      operationId: 'streamRunEvents',
+      requiresAuth: true,
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/runs/{id}/progress',
       method: 'get',
       operationId: 'getRunProgress',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/runs/{id}/logs/{logtype}',
       method: 'get',
       operationId: 'getRunLog',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/runs/{id}/artifacts',
       method: 'get',
       operationId: 'getRunArtifacts',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/results/{id}/{file}',
       method: 'get',
       operationId: 'downloadArtifact',
       requiresAuth: true,
-      statuses: ['200', '401', '404', '422'],
+      statuses: ['200', '401', '404', '422']
     },
     {
       path: '/api/runs/{id}/analysis',
       method: 'get',
       operationId: 'getRunAnalysis',
       requiresAuth: true,
-      statuses: ['200', '401', '404'],
+      statuses: ['200', '401', '404']
     },
     {
       path: '/api/improvements',
       method: 'get',
       operationId: 'getRunImprovements',
       requiresAuth: true,
-      statuses: ['200', '401'],
+      statuses: ['200', '401']
     },
     {
       path: '/api/webhooks/test',
       method: 'post',
       operationId: 'testWebhook',
       requiresAuth: true,
-      statuses: ['200', '400', '401'],
-    },
+      statuses: ['200', '400', '401']
+    }
   ];
 
   let errorSchema: Record<string, unknown>;
@@ -143,7 +157,7 @@ describe('OpenAPI Path Builders', () => {
       const requiredContractsByPath = routeContracts.reduce<Record<string, string[]>>(
         (contractsByPath, { path, method }) => ({
           ...contractsByPath,
-          [path]: [...(contractsByPath[path] ?? []), method],
+          [path]: [...(contractsByPath[path] ?? []), method]
         }),
         {}
       );
@@ -216,9 +230,9 @@ describe('OpenAPI Path Builders', () => {
         required: true,
         content: {
           'application/json': {
-            schema: requestSchema,
-          },
-        },
+            schema: requestSchema
+          }
+        }
       };
 
       expect(validatePath.post.operationId).toBe('validateTask');
@@ -235,11 +249,11 @@ describe('OpenAPI Path Builders', () => {
               required: ['url'],
               properties: {
                 url: { type: 'string', format: 'uri' },
-                secret: { type: 'string' },
-              },
-            },
-          },
-        },
+                secret: { type: 'string' }
+              }
+            }
+          }
+        }
       });
     });
 
@@ -254,31 +268,31 @@ describe('OpenAPI Path Builders', () => {
           '202': expect.objectContaining({
             content: {
               'application/json': {
-                schema: responseSchema,
-              },
-            },
+                schema: responseSchema
+              }
+            }
           }),
           '200': expect.objectContaining({
             content: {
               'application/json': {
-                schema: responseSchema,
-              },
-            },
+                schema: responseSchema
+              }
+            }
           }),
           '400': expect.objectContaining({
             content: {
               'application/json': {
-                schema: errorSchema,
-              },
-            },
+                schema: errorSchema
+              }
+            }
           }),
           '401': expect.objectContaining({
             content: {
               'application/json': {
-                schema: errorSchema,
-              },
-            },
-          }),
+                schema: errorSchema
+              }
+            }
+          })
         })
       );
     });
@@ -293,27 +307,27 @@ describe('OpenAPI Path Builders', () => {
           expect.objectContaining({
             name: 'id',
             in: 'path',
-            required: true,
-          }),
+            required: true
+          })
         ])
       );
       expect(runStatusPath.get.responses['200'].content['application/json'].schema).toEqual({
-        $ref: '#/components/schemas/StatusResponse',
+        $ref: '#/components/schemas/StatusResponse'
       });
       expect(runStatusPath.get.responses).toEqual(
         expect.objectContaining({
           '200': expect.objectContaining({
             content: expect.objectContaining({
-              'application/json': expect.any(Object),
-            }),
+              'application/json': expect.any(Object)
+            })
           }),
           '404': expect.objectContaining({
             content: {
               'application/json': {
-                schema: errorSchema,
-              },
-            },
-          }),
+                schema: errorSchema
+              }
+            }
+          })
         })
       );
     });
@@ -329,9 +343,9 @@ describe('OpenAPI Path Builders', () => {
           'application/json': expect.objectContaining({
             schema: expect.objectContaining({
               type: 'object',
-              required: ['url'],
-            }),
-          }),
+              required: ['url']
+            })
+          })
         })
       );
       expect(webhookTestPath.post.responses).toEqual(
@@ -340,10 +354,10 @@ describe('OpenAPI Path Builders', () => {
           '400': expect.objectContaining({
             content: {
               'application/json': {
-                schema: errorSchema,
-              },
-            },
-          }),
+                schema: errorSchema
+              }
+            }
+          })
         })
       );
     });
@@ -363,54 +377,64 @@ describe('OpenAPI Path Builders', () => {
         getRunArtifacts: ['list', 'artifacts'],
         getRunImprovements: ['improvement', 'findings'],
         getRunLog: ['log', 'file'],
-        getRunProgress: ['progress', 'events'],
+        getRunEvents: ['structured', 'event', 'snapshot'],
+        getRunProgress: ['legacy', 'progress', 'event'],
+        streamRunEvents: ['stream', 'run', 'events'],
         getRunStatus: ['run', 'status'],
         listRuns: ['list', 'runs'],
         testWebhook: ['test', 'webhook'],
         triggerRun: ['trigger', 'run'],
-        validateTask: ['validate', 'task'],
+        validateTask: ['validate', 'task']
       };
       const criticalDescriptionExpectations = [
         {
           operationId: 'getReady',
-          terms: ['ready', 'queue', 'scheduler'],
+          terms: ['ready', 'queue', 'scheduler']
         },
         {
           operationId: 'getPreFlight',
-          terms: ['controller', 'docker', 'github app'],
+          terms: ['controller', 'docker', 'github app']
         },
         {
           operationId: 'validateTask',
-          terms: ['task configuration', 'pre-flight', 'prompt', 'constraints'],
+          terms: ['task configuration', 'pre-flight', 'prompt', 'constraints']
         },
         {
           operationId: 'triggerRun',
-          terms: ['queue', '202 accepted', 'id', 'poll status'],
+          terms: ['queue', '202 accepted', 'id', 'poll status']
         },
         {
           operationId: 'getRunStatus',
-          terms: ['current status', 'progress', 'elapsed time', 'timeout risk'],
+          terms: ['current status', 'progress', 'elapsed time', 'timeout risk']
+        },
+        {
+          operationId: 'getRunEvents',
+          terms: ['canonical', 'structured event snapshot', 'progress.jsonl', 'live docker progress']
+        },
+        {
+          operationId: 'streamRunEvents',
+          terms: ['server-sent events', 'sse']
         },
         {
           operationId: 'getRunProgress',
-          terms: ['progress events', 'server-sent events', 'sse', 'stream=sse'],
+          terms: ['deprecated', '/api/runs/{id}/events', 'stream=sse', '/api/runs/{id}/events/stream']
         },
         {
           operationId: 'getRunLog',
-          terms: ['stdout', 'stderr', 'validation', 'large logs', 'truncated'],
+          terms: ['stdout', 'stderr', 'validation', 'large logs', 'truncated']
         },
         {
           operationId: 'downloadArtifact',
-          terms: ['specific artifact file', 'metadata.json', '/api/runs/{id}/artifacts'],
+          terms: ['specific artifact file', 'metadata.json', '/api/runs/{id}/artifacts']
         },
         {
           operationId: 'getRunAnalysis',
-          terms: ['post-run analysis', 'metadata', 'validation results', 'failure details'],
+          terms: ['post-run analysis', 'metadata', 'validation results', 'failure details']
         },
         {
           operationId: 'getRunImprovements',
-          terms: ['run-evaluation artifacts', 'stage timings', 'dashboards'],
-        },
+          terms: ['run-evaluation artifacts', 'stage timings', 'dashboards']
+        }
       ];
       const operations = Object.entries(paths).flatMap(([route, pathDef]) => {
         const def = pathDef as Record<string, any>;
@@ -420,16 +444,12 @@ describe('OpenAPI Path Builders', () => {
           .map((method) => ({
             method,
             route,
-            operation: def[method],
+            operation: def[method]
           }));
       });
-      const operationsById = Object.fromEntries(
-        operations.map(({ operation }) => [operation.operationId, operation])
-      );
+      const operationsById = Object.fromEntries(operations.map(({ operation }) => [operation.operationId, operation]));
 
-      expect(Object.keys(operationsById).sort()).toEqual(
-        Object.keys(expectedSummaryTermsByOperationId).sort()
-      );
+      expect(Object.keys(operationsById).sort()).toEqual(Object.keys(expectedSummaryTermsByOperationId).sort());
 
       operations.forEach(({ operation }) => {
         const summary = operation.summary?.trim();
@@ -464,9 +484,7 @@ describe('OpenAPI Path Builders', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
 
       expect(Object.keys(paths['/api/runs'] as Record<string, unknown>).sort()).toEqual(['get', 'post']);
-      expect(Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual([
-        'get',
-      ]);
+      expect(Object.keys(paths['/api/runs/{id}/status'] as Record<string, unknown>).sort()).toEqual(['get']);
       expect(Object.keys(paths['/api/webhooks/test'] as Record<string, unknown>).sort()).toEqual(['post']);
     });
   });
@@ -489,7 +507,7 @@ describe('OpenAPI Path Builders', () => {
         '/api/results/{id}/{file}': { get: ['401', '404', '422'] },
         '/api/runs/{id}/analysis': { get: ['401', '404'] },
         '/api/improvements': { get: ['401'] },
-        '/api/webhooks/test': { post: ['400', '401'] },
+        '/api/webhooks/test': { post: ['400', '401'] }
       };
 
       Object.entries(expectedErrorResponsesByOperation).forEach(([path, methods]) => {
@@ -509,8 +527,8 @@ describe('OpenAPI Path Builders', () => {
           statuses.forEach((status) => {
             expect(operation.responses[status].content).toEqual({
               'application/json': {
-                schema: emptyErrorSchema,
-              },
+                schema: emptyErrorSchema
+              }
             });
           });
         });
@@ -518,7 +536,7 @@ describe('OpenAPI Path Builders', () => {
 
       const publicRoutes = {
         '/health': { get: ['200'] },
-        '/ready': { get: ['200', '503'] },
+        '/ready': { get: ['200', '503'] }
       };
       Object.entries(publicRoutes).forEach(([path, methods]) => {
         Object.entries(methods).forEach(([method, statuses]) => {
@@ -567,10 +585,8 @@ describe('OpenAPI Path Builders', () => {
 
     it('GET /health response should return ok status', () => {
       const healthPath = (paths['/health'] as Record<string, any>).get;
-      const responseSchema = (healthPath.responses['200'].content['application/json'].schema as Record<
-        string,
-        any
-      >).properties.status;
+      const responseSchema = (healthPath.responses['200'].content['application/json'].schema as Record<string, any>)
+        .properties.status;
       expect(responseSchema.type).toBe('string');
       expect(responseSchema.enum).toEqual(['ok']);
     });
@@ -584,10 +600,8 @@ describe('OpenAPI Path Builders', () => {
 
     it('GET /ready should return boolean ready flag', () => {
       const readyPath = (paths['/ready'] as Record<string, any>).get;
-      const responseSchema = (readyPath.responses['200'].content['application/json'].schema as Record<
-        string,
-        any
-      >).properties;
+      const responseSchema = (readyPath.responses['200'].content['application/json'].schema as Record<string, any>)
+        .properties;
       expect(responseSchema.ready.type).toBe('boolean');
       expect(responseSchema.message.type).toBe('string');
     });
@@ -611,16 +625,14 @@ describe('OpenAPI Path Builders', () => {
       const preflightPath = (paths['/api/preflight'] as Record<string, any>).get;
       expect(preflightPath.operationId).toBe('getPreFlight');
       expect(preflightPath.security).toEqual([{ BearerAuth: [] }]);
-      const responseProps = (preflightPath.responses['200'].content['application/json'].schema as Record<
-        string,
-        any
-      >).properties;
+      const responseProps = (preflightPath.responses['200'].content['application/json'].schema as Record<string, any>)
+        .properties;
       expect(responseProps.isValid.type).toBe('boolean');
       expect(responseProps.checks.type).toBe('array');
       expect(responseProps.containerStartup.description).toContain('boot history');
       expect(responseProps.containerStartup.properties.scope.enum).toEqual(['cached-startup']);
       expect(responseProps.containerStartup.properties.readinessImpact.enum).toEqual([
-        'excluded-from-current-readiness',
+        'excluded-from-current-readiness'
       ]);
       expect(responseProps.containerStartup.properties.current.enum).toEqual([false]);
       expect(responseProps.containerStartup.properties.cachedAt.format).toBe('date-time');
@@ -631,10 +643,8 @@ describe('OpenAPI Path Builders', () => {
       expect(validatePath.operationId).toBe('validateTask');
       expect(validatePath.requestBody.required).toBe(true);
       expect(validatePath.requestBody.content['application/json'].schema).toBe(requestSchema);
-      const responseProps = (validatePath.responses['200'].content['application/json'].schema as Record<
-        string,
-        any
-      >).properties;
+      const responseProps = (validatePath.responses['200'].content['application/json'].schema as Record<string, any>)
+        .properties;
       expect(responseProps.isValid.type).toBe('boolean');
       expect(responseProps.estimatedDurationSeconds.type).toBe('integer');
     });
@@ -692,12 +702,34 @@ describe('OpenAPI Path Builders', () => {
       paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
     });
 
-    it('GET /api/runs/{id}/progress should support SSE streaming', () => {
+    it('GET /api/runs/{id}/events should be the canonical structured event snapshot', () => {
+      const eventsPath = (paths['/api/runs/{id}/events'] as Record<string, any>).get;
+      expect(eventsPath.operationId).toBe('getRunEvents');
+      expect(eventsPath.responses['200'].content['application/json'].schema.required).toEqual([
+        'id',
+        'status',
+        'events',
+        'total',
+        'sources'
+      ]);
+    });
+
+    it('GET /api/runs/{id}/events/stream should support SSE streaming', () => {
+      const streamPath = (paths['/api/runs/{id}/events/stream'] as Record<string, any>).get;
+      expect(streamPath.operationId).toBe('streamRunEvents');
+      expect(streamPath.responses['200'].content['text/event-stream']).toBeDefined();
+    });
+
+    it('GET /api/runs/{id}/progress should be a deprecated alias with the same snapshot schema', () => {
+      const eventsPath = (paths['/api/runs/{id}/events'] as Record<string, any>).get;
       const progressPath = (paths['/api/runs/{id}/progress'] as Record<string, any>).get;
       expect(progressPath.operationId).toBe('getRunProgress');
+      expect(progressPath.deprecated).toBe(true);
+      expect(progressPath.responses['200'].content['application/json'].schema).toEqual(
+        eventsPath.responses['200'].content['application/json'].schema
+      );
       const streamParam = progressPath.parameters.find((p: Record<string, any>) => p.name === 'stream');
       expect(streamParam.schema.enum).toEqual(['sse']);
-      expect(progressPath.responses['200'].content['text/event-stream']).toBeDefined();
     });
 
     it('GET /api/runs/{id}/logs/{logtype} should support multiple log types', () => {
@@ -728,10 +760,8 @@ describe('OpenAPI Path Builders', () => {
     it('GET /api/runs/{id}/artifacts should list all available artifacts', () => {
       const artifactsPath = (paths['/api/runs/{id}/artifacts'] as Record<string, any>).get;
       expect(artifactsPath.operationId).toBe('getRunArtifacts');
-      const responseProps = (artifactsPath.responses['200'].content['application/json'].schema as Record<
-        string,
-        any
-      >).properties;
+      const responseProps = (artifactsPath.responses['200'].content['application/json'].schema as Record<string, any>)
+        .properties;
       expect(responseProps.artifacts.type).toBe('array');
       expect(responseProps.recommended.type).toBe('array');
     });
@@ -830,7 +860,7 @@ describe('OpenAPI Path Builders', () => {
         '/api/runs/{id}/logs/{logtype}',
         '/api/runs/{id}/artifacts',
         '/api/results/{id}/{file}',
-        '/api/runs/{id}/analysis',
+        '/api/runs/{id}/analysis'
       ];
 
       pathsWithIdParam.forEach((pathKey) => {
@@ -880,17 +910,19 @@ describe('OpenAPI Path Builders', () => {
         '/api/runs': '200',
         '/api/runs/{id}/analysis': '200',
         '/api/runs/{id}/artifacts': '200',
+        '/api/runs/{id}/events': '200',
+        '/api/runs/{id}/events/stream': '200',
         '/api/runs/{id}/logs/{logtype}': '200',
         '/api/runs/{id}/progress': '200',
         '/api/runs/{id}/status': '200',
         '/health': '200',
-        '/ready': '200',
+        '/ready': '200'
       };
       const getOperations = Object.entries(paths)
         .filter(([, pathDef]) => Boolean((pathDef as Record<string, any>).get))
         .map(([route, pathDef]) => ({
           route,
-          operation: (pathDef as Record<string, any>).get,
+          operation: (pathDef as Record<string, any>).get
         }));
 
       expect(getOperations.map(({ route }) => route).sort()).toEqual(

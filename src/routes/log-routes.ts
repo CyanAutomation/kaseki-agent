@@ -10,6 +10,132 @@ import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/ut
 import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 
+function readStructuredEventSnapshot(
+  scheduler: JobScheduler,
+  config: KasekiApiConfig,
+  job: { id: string; status: string },
+  tail: number
+): { id: string; status: string; events: Array<Record<string, unknown>>; total: number; sources: string[] } {
+  const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+  const events: Array<Record<string, unknown>> = [];
+  const sources = new Set<string>();
+
+  if (fs.existsSync(progressFile) && isNonEmptyFile(progressFile)) {
+    try {
+      const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
+      for (const line of lines) {
+        try {
+          events.push(normalizeProgressEvent(JSON.parse(line)));
+        } catch {
+          // Skip partial or malformed progress records.
+        }
+      }
+      sources.add('progress.jsonl');
+    } catch {
+      // Live Docker fallback below keeps the endpoint useful while a run is active.
+    }
+  }
+
+  if (job.status === 'running' && typeof scheduler.getLiveProgressEvents === 'function') {
+    const liveEvents = scheduler.getLiveProgressEvents(job.id, tail);
+    for (const event of liveEvents) {
+      events.push(normalizeProgressEvent(event));
+    }
+    if (liveEvents.length > 0) {
+      sources.add('docker-logs');
+    }
+  }
+
+  const selectedEvents = tail > 0 ? events.slice(-tail) : [];
+  return {
+    id: job.id,
+    status: job.status,
+    events: selectedEvents,
+    total: events.length,
+    sources: Array.from(sources)
+  };
+}
+
+function streamProgressEvents(
+  scheduler: JobScheduler,
+  config: KasekiApiConfig,
+  job: { id: string; status: string; startedAt?: Date },
+  req: Request,
+  res: Response
+): void {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  let lastEventCount = 0;
+  let noChangeCount = 0;
+  const maxNoChangeAttempts = 10;
+
+  const sendProgressUpdate = () => {
+    const currentJob = scheduler.getJob(job.id);
+
+    if (currentJob && (currentJob.status === 'completed' || currentJob.status === 'failed')) {
+      res.write(
+        `data: ${JSON.stringify({
+          type: 'status',
+          status: currentJob.status,
+          elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000)
+        })}\n\n`
+      );
+      res.end();
+      return;
+    }
+
+    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
+
+    let hasNewEvents = false;
+    if (fs.existsSync(progressFile)) {
+      try {
+        const content = fs.readFileSync(progressFile, 'utf-8');
+        const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
+
+        if (lines.length > lastEventCount) {
+          const newLines = lines.slice(lastEventCount);
+          for (const line of newLines) {
+            try {
+              const event = normalizeProgressEvent(JSON.parse(line));
+              res.write(`data: ${JSON.stringify(event)}\n\n`);
+            } catch {
+              // Skip invalid JSON lines.
+            }
+          }
+          lastEventCount = lines.length;
+          noChangeCount = 0;
+          hasNewEvents = true;
+        }
+      } catch {
+        // Ignore file read errors.
+      }
+    }
+
+    if (!hasNewEvents) {
+      noChangeCount++;
+    }
+    if (noChangeCount >= maxNoChangeAttempts) {
+      res.end();
+    }
+  };
+
+  res.write(`data: ${JSON.stringify({ type: 'start', jobId: job.id, status: job.status })}\n\n`);
+
+  const interval = setInterval(() => {
+    if (res.destroyed) {
+      clearInterval(interval);
+      return;
+    }
+    sendProgressUpdate();
+  }, 2000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+  });
+}
+
 /**
  * Create log-related routes (progress, events, logs, analysis).
  */
@@ -17,149 +143,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
   const router = Router();
 
   /**
-   * GET /api/runs/:id/progress - Retrieve progress events (supports Server-Sent Events streaming).
-   */
-  router.get('/runs/:id/progress', (req: Request, res: Response) => {
-    const job = getJobOrRespond(scheduler, req.params.id, res);
-    if (!job) {
-      return;
-    }
-
-    // Check if client wants SSE streaming
-    const wantsSSE = req.query.stream === 'sse' || req.get('Accept')?.includes('text/event-stream');
-
-    if (wantsSSE) {
-      // Server-Sent Events streaming
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-
-      let lastEventCount = 0;
-      let noChangeCount = 0;
-      const maxNoChangeAttempts = 10; // Stop after 10 checks with no change
-
-      const sendProgressUpdate = () => {
-        const currentJob = scheduler.getJob(job.id);
-
-        if (currentJob && (currentJob.status === 'completed' || currentJob.status === 'failed')) {
-          res.write(
-            `data: ${JSON.stringify({
-              type: 'status',
-              status: currentJob.status,
-              elapsed: Math.round((new Date().getTime() - (currentJob.startedAt?.getTime() || 0)) / 1000),
-            })}\n\n`
-          );
-          res.end();
-          return;
-        }
-
-        const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
-
-        let hasNewEvents = false;
-        if (fs.existsSync(progressFile)) {
-          try {
-            const content = fs.readFileSync(progressFile, 'utf-8');
-            const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
-
-            if (lines.length > lastEventCount) {
-              // Send new events
-              const newLines = lines.slice(lastEventCount);
-              for (const line of newLines) {
-                try {
-                  const event = normalizeProgressEvent(JSON.parse(line));
-                  res.write(`data: ${JSON.stringify(event)}\n\n`);
-                } catch {
-                  // Skip invalid JSON lines
-                }
-              }
-              lastEventCount = lines.length;
-              noChangeCount = 0;
-              hasNewEvents = true;
-            }
-          } catch {
-            // Ignore file read errors
-          }
-        }
-
-        if (!hasNewEvents) {
-          noChangeCount++;
-        }
-        if (noChangeCount >= maxNoChangeAttempts) {
-          // No new events for a while, close connection
-          res.end();
-        }
-      };
-
-      // Send initial status
-      res.write(`data: ${JSON.stringify({ type: 'start', jobId: job.id, status: job.status })}\n\n`);
-
-      // Send progress updates every 2 seconds
-      const interval = setInterval(() => {
-        if (res.destroyed) {
-          clearInterval(interval);
-          return;
-        }
-        sendProgressUpdate();
-      }, 2000);
-
-      // Clean up on client disconnect
-      req.on('close', () => {
-        clearInterval(interval);
-      });
-
-      return;
-    }
-
-    // Regular JSONL response
-    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
-    if (!fs.existsSync(progressFile)) {
-      const tailParam = Number(req.query.tail ?? 25);
-      const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 25;
-      const events =
-        typeof scheduler.getLiveProgressEvents === 'function'
-          ? scheduler.getLiveProgressEvents(job.id, tail).map((event) => normalizeProgressEvent(event))
-          : [];
-      if (events.length > 0) {
-        return res.json({
-          id: job.id,
-          status: job.status,
-          events,
-          total: events.length,
-          source: 'docker-logs',
-        });
-      }
-      return sendErrorResponse(res, 404, 'Not Found', 'Progress file not found');
-    }
-
-    try {
-      const content = fs.readFileSync(progressFile, 'utf-8');
-      const lines = content.trim().length > 0 ? content.trim().split('\n') : [];
-      const tailParam = Number(req.query.tail ?? lines.length);
-      const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : lines.length;
-      const selectedLines = tail > 0 ? lines.slice(-tail) : [];
-      const events = selectedLines
-        .map((line) => {
-          try {
-            return normalizeProgressEvent(JSON.parse(line));
-          } catch {
-            return null;
-          }
-        })
-        .filter((event): event is Record<string, unknown> => event !== null);
-
-      res.json({
-        id: job.id,
-        status: job.status,
-        events,
-        total: lines.length,
-      });
-    } catch (err) {
-      sendErrorResponse(res, 500, 'Internal Server Error', `Failed to read progress: ${(err as Error).message}`);
-    }
-  });
-
-  /**
-   * GET /api/runs/:id/events - Controller-friendly event stream snapshot.
+   * GET /api/runs/:id/events - Canonical structured event snapshot.
    *
    * This endpoint always prefers promoted progress.jsonl events, then appends
    * live Docker progress while a worker is still running.
@@ -172,44 +156,48 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
 
     const tailParam = Number(req.query.tail ?? 50);
     const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 50;
-    const progressFile = path.join(config.resultsDir, job.id, 'progress.jsonl');
-    const events: Array<Record<string, unknown>> = [];
-    const sources = new Set<string>();
+    res.json(readStructuredEventSnapshot(scheduler, config, job, tail));
+  });
 
-    if (fs.existsSync(progressFile) && isNonEmptyFile(progressFile)) {
-      try {
-        const lines = fs.readFileSync(progressFile, 'utf-8').trim().split('\n');
-        for (const line of lines) {
-          try {
-            events.push(normalizeProgressEvent(JSON.parse(line)));
-          } catch {
-            // Skip partial or malformed progress records.
-          }
-        }
-        sources.add('progress.jsonl');
-      } catch {
-        // Live Docker fallback below keeps the endpoint useful while a run is active.
-      }
+  /**
+   * GET /api/runs/:id/events/stream - Server-Sent Events stream for progress updates.
+   */
+  router.get('/runs/:id/events/stream', (req: Request, res: Response) => {
+    const job = getJobOrRespond(scheduler, req.params.id, res);
+    if (!job) {
+      return;
     }
 
-    if (job.status === 'running' && typeof scheduler.getLiveProgressEvents === 'function') {
-      const liveEvents = scheduler.getLiveProgressEvents(job.id, tail);
-      for (const event of liveEvents) {
-        events.push(normalizeProgressEvent(event));
-      }
-      if (liveEvents.length > 0) {
-        sources.add('docker-logs');
-      }
+    streamProgressEvents(scheduler, config, job, req, res);
+  });
+
+  /**
+   * GET /api/runs/:id/progress - Legacy structured event snapshot endpoint.
+   *
+   * Non-streaming responses intentionally match GET /api/runs/:id/events.
+   * Use GET /api/runs/:id/events/stream for SSE; ?stream=sse remains as a
+   * legacy alias for older clients.
+   */
+  router.get('/runs/:id/progress', (req: Request, res: Response) => {
+    const job = getJobOrRespond(scheduler, req.params.id, res);
+    if (!job) {
+      return;
     }
 
-    const selectedEvents = tail > 0 ? events.slice(-tail) : [];
-    res.json({
-      id: job.id,
-      status: job.status,
-      events: selectedEvents,
-      total: events.length,
-      sources: Array.from(sources),
-    });
+    const wantsSSE = req.query.stream === 'sse' || req.get('Accept')?.includes('text/event-stream');
+
+    if (wantsSSE) {
+      res.setHeader('Deprecation', 'true');
+      res.setHeader('Link', '</api/runs/' + job.id + '/events/stream>; rel="successor-version"');
+      streamProgressEvents(scheduler, config, job, req, res);
+      return;
+    }
+
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Link', '</api/runs/' + job.id + '/events>; rel="successor-version"');
+    const tailParam = Number(req.query.tail ?? 50);
+    const tail = Number.isFinite(tailParam) ? Math.max(0, Math.floor(tailParam)) : 50;
+    res.json(readStructuredEventSnapshot(scheduler, config, job, tail));
   });
 
   /**
@@ -247,7 +235,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
             const response: LogResponse = {
               logType: logType as any,
               content: liveContent,
-              size: Buffer.byteLength(liveContent, 'utf-8'),
+              size: Buffer.byteLength(liveContent, 'utf-8')
             };
             return res.json(response);
           }
@@ -259,13 +247,13 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
             `exit code: ${job.exitCode ?? 'unknown'}`,
             `failure class: ${job.failureClass ?? 'unknown'}`,
             `job.error: ${job.error ?? 'unknown'}`,
-            'canonical stderr.log was not generated for this failed run.',
+            'canonical stderr.log was not generated for this failed run.'
           ].join('\n');
 
           const fallbackResponse: LogResponse = {
             logType: 'stderr',
             content: syntheticStderr,
-            size: Buffer.byteLength(syntheticStderr, 'utf-8'),
+            size: Buffer.byteLength(syntheticStderr, 'utf-8')
           };
 
           return res.status(200).json(fallbackResponse);
@@ -298,7 +286,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       const response: LogResponse = {
         logType: logType as any,
         content,
-        size,
+        size
       };
 
       res.json(response);
@@ -323,7 +311,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
         createdAt: job.createdAt.toISOString(),
         completedAt: job.completedAt?.toISOString(),
         exitCode: job.exitCode,
-        failureClass: job.failureClass,
+        failureClass: job.failureClass
       };
 
       // Add timing
@@ -340,7 +328,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
           model: metadata.model,
           instance: metadata.instance,
           repo: metadata.repo,
-          ref: metadata.ref,
+          ref: metadata.ref
         };
       }
 
@@ -358,7 +346,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
 
         response.changes = {
           changedFiles,
-          diffSize,
+          diffSize
         };
       }
 
@@ -373,13 +361,13 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
             return {
               command,
               exitCode: parseInt(exitCode, 10),
-              elapsed: parseInt(elapsed, 10),
+              elapsed: parseInt(elapsed, 10)
             };
           });
 
         response.validation = {
           passed: commandResults.every((r) => r.exitCode === 0),
-          commandResults,
+          commandResults
         };
       }
 
