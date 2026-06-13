@@ -96,4 +96,3 @@ export function detectLanguage(filePath: string): SupportedLanguage | 'unknown' 
   return languageMap[ext] || 'unknown';
 }
 
-

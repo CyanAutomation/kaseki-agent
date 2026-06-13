@@ -55,8 +55,6 @@ export function createSubdirs(
   return result;
 }
 
-
-
 /**
  * Pool of temporary directories for test reuse
  */

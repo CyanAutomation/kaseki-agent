@@ -110,7 +110,7 @@ describe('collect-feedback.js CLI', () => {
   test('should handle missing files gracefully', () => {
     // Run CLI with non-existent files - should return empty objects for missing files
     const output = execSync(
-      `node scripts/collect-feedback.js goal-check kaseki-1 /nonexistent/1.json /nonexistent/2.json /nonexistent/3.json`,
+      'node scripts/collect-feedback.js goal-check kaseki-1 /nonexistent/1.json /nonexistent/2.json /nonexistent/3.json',
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -122,7 +122,7 @@ describe('collect-feedback.js CLI', () => {
 
   test('should show usage on invalid arguments', () => {
     expect(() => {
-      execSync(`node scripts/collect-feedback.js`, {
+      execSync('node scripts/collect-feedback.js', {
         encoding: 'utf-8',
         cwd: process.cwd(),
         stdio: 'pipe',

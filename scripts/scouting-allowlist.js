@@ -12,40 +12,6 @@ function actualType(value) {
   return typeof value;
 }
 
-/**
- * Validates scouting artifact for artifact recovery scenarios.
- * More lenient than strict validation - only requires task field.
- * Used when recovering artifacts from incomplete event streams.
- */
-function validateScoutingArtifactForRecovery(artifact) {
-  const errors = [];
-
-  if (!artifact || Array.isArray(artifact) || typeof artifact !== 'object') {
-    errors.push({
-      field: 'root',
-      severity: 'critical',
-      message: 'root must be an object',
-    });
-    return { status: 'rejected', errors, recovery_attempted: true };
-  }
-
-  // Recovery mode: only task field is required
-  if (typeof artifact.task !== 'string' || !artifact.task.trim()) {
-    errors.push({
-      field: 'task',
-      severity: 'critical',
-      message: 'task must be a non-empty string',
-    });
-    return { status: 'rejected', errors, recovery_attempted: true };
-  }
-
-  return {
-    status: 'ok',
-    errors: [],
-    recovery_attempted: true,
-    fields_present: Object.keys(artifact).length,
-  };
-}
 
 function summarize(errors) {
   const critical = errors.filter((error) => error.severity === 'critical').length;
@@ -67,72 +33,196 @@ function readArtifact(inputPath) {
   return JSON.parse(fs.readFileSync(inputPath, 'utf8'));
 }
 
+/**
+ * Validates that a field exists and is an array
+ */
+function validateArrayField(artifact, errors, fieldName) {
+  if (!Array.isArray(artifact[fieldName])) {
+    errors.push({
+      field: fieldName,
+      expected: 'array',
+      actual: actualType(artifact[fieldName]),
+      severity: 'critical',
+      suggestion: `${fieldName} must be an array in the scouting handoff`,
+    });
+  }
+}
+
+/**
+ * Validates relevant_files array entries
+ */
+function validateRelevantFilesArray(relevantFiles, errors) {
+  if (!Array.isArray(relevantFiles)) return;
+  relevantFiles.forEach((item, index) => {
+    if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string') {
+      errors.push({
+        field: `relevant_files[${index}]`,
+        expected: 'object with string path and string reason',
+        actual: actualType(item),
+        severity: 'warning',
+        suggestion: 'Each relevant_files entry must include path and reason strings',
+      });
+    }
+  });
+}
+
+/**
+ * Validates individual test examples within test_impact
+ */
+function validateTestExamples(examples, testImpactIndex, errors) {
+  if (!Array.isArray(examples)) return;
+  const validTypes = ['added_assertion', 'modified_assertion', 'added_test_case', 'added_pattern'];
+  examples.forEach((example, exIdx) => {
+    if (!example || typeof example !== 'object' || !validTypes.includes(example.type)) {
+      errors.push({
+        field: `test_impact[${testImpactIndex}].test_examples[${exIdx}].type`,
+        expected: validTypes.join('|'),
+        actual: actualType(example && example.type),
+        severity: 'warning',
+        suggestion: 'Each test_example must have a valid type',
+      });
+    }
+    if (!example || typeof example.pattern !== 'string') {
+      errors.push({
+        field: `test_impact[${testImpactIndex}].test_examples[${exIdx}].pattern`,
+        expected: 'string',
+        actual: actualType(example && example.pattern),
+        severity: 'warning',
+        suggestion: 'Each test_example must have a pattern string',
+      });
+    }
+    if (!example || typeof example.before !== 'string' || typeof example.after !== 'string') {
+      errors.push({
+        field: `test_impact[${testImpactIndex}].test_examples[${exIdx}]`,
+        expected: 'before and after strings',
+        actual: 'missing or invalid',
+        severity: 'warning',
+        suggestion: 'Each test_example must have before and after code snippets',
+      });
+    }
+  });
+}
+
+/**
+ * Validates test_impact array entries and their nested test_examples
+ */
+function validateTestImpactArray(testImpact, errors) {
+  if (!Array.isArray(testImpact)) return;
+  testImpact.forEach((item, index) => {
+    if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+        typeof item.reason !== 'string' || !item.reason.trim()) {
+      errors.push({
+        field: `test_impact[${index}]`,
+        expected: 'object with non-empty string path and non-empty string reason',
+        actual: actualType(item),
+        severity: 'critical',
+        suggestion: 'Each test_impact entry must include the impacted test path and expectation reason strings',
+      });
+    }
+    if (item && typeof item === 'object' && item.test_examples !== undefined) {
+      if (!Array.isArray(item.test_examples)) {
+        errors.push({
+          field: `test_impact[${index}].test_examples`,
+          expected: 'array of example objects or undefined',
+          actual: actualType(item.test_examples),
+          severity: 'warning',
+          suggestion: 'test_examples must be an array of objects with type, pattern, description, before, and after fields',
+        });
+      } else {
+        validateTestExamples(item.test_examples, index, errors);
+      }
+    }
+  });
+}
+
+/**
+ * Validates suggested_allowlist object and its pattern arrays
+ */
+function validateSuggestedAllowlist(suggestedAllowlist, errors) {
+  if (!suggestedAllowlist) return;
+  if (typeof suggestedAllowlist !== 'object' || Array.isArray(suggestedAllowlist)) {
+    errors.push({
+      field: 'suggested_allowlist',
+      expected: 'object',
+      actual: actualType(suggestedAllowlist),
+      severity: 'warning',
+      suggestion: 'suggested_allowlist must be an object with agent_patterns and validation_patterns arrays',
+    });
+    return;
+  }
+  if (!Array.isArray(suggestedAllowlist.agent_patterns)) {
+    errors.push({
+      field: 'suggested_allowlist.agent_patterns',
+      expected: 'array of strings',
+      actual: actualType(suggestedAllowlist.agent_patterns),
+      severity: 'warning',
+      suggestion: 'agent_patterns must be an array of glob pattern strings',
+    });
+  } else if (!suggestedAllowlist.agent_patterns.every((p) => typeof p === 'string')) {
+    errors.push({
+      field: 'suggested_allowlist.agent_patterns',
+      expected: 'array of strings',
+      actual: 'array with non-strings',
+      severity: 'warning',
+      suggestion: 'All agent_patterns entries must be strings',
+    });
+  }
+  if (!Array.isArray(suggestedAllowlist.validation_patterns)) {
+    errors.push({
+      field: 'suggested_allowlist.validation_patterns',
+      expected: 'array of strings',
+      actual: actualType(suggestedAllowlist.validation_patterns),
+      severity: 'warning',
+      suggestion: 'validation_patterns must be an array of glob pattern strings',
+    });
+  } else if (!suggestedAllowlist.validation_patterns.every((p) => typeof p === 'string')) {
+    errors.push({
+      field: 'suggested_allowlist.validation_patterns',
+      expected: 'array of strings',
+      actual: 'array with non-strings',
+      severity: 'warning',
+      suggestion: 'All validation_patterns entries must be strings',
+    });
+  }
+}
+
 function validateScoutingArtifactObject(artifact) {
   const errors = [];
-  const addError = (field, expected, actual, severity, suggestion) => {
-    errors.push({ field, expected, actual, severity, suggestion });
-  };
   const arrayKeys = ['requirements', 'relevant_files', 'observations', 'plan', 'validation', 'risks', 'test_impact'];
 
   if (!artifact || Array.isArray(artifact) || typeof artifact !== 'object') {
-    addError('root', 'object', actualType(artifact), 'critical', 'Scouting artifact must be a JSON object, not an array/null/primitive');
+    errors.push({
+      field: 'root',
+      expected: 'object',
+      actual: actualType(artifact),
+      severity: 'critical',
+      suggestion: 'Scouting artifact must be a JSON object, not an array/null/primitive',
+    });
   } else {
+    // Validate task field
     if (typeof artifact.task !== 'string' || !artifact.task.trim()) {
-      addError('task', 'non-empty string', typeof artifact.task === 'string' ? 'empty string' : actualType(artifact.task), 'critical', 'task must be a non-empty string describing the requested work');
-    }
-    for (const key of arrayKeys) {
-      if (!Array.isArray(artifact[key])) {
-        addError(key, 'array', actualType(artifact[key]), 'critical', `${key} must be an array in the scouting handoff`);
-      }
-    }
-    if (Array.isArray(artifact.relevant_files)) {
-      artifact.relevant_files.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string') {
-          addError(`relevant_files[${index}]`, 'object with string path and string reason', actualType(item), 'warning', 'Each relevant_files entry must include path and reason strings');
-        }
-      });
-    }
-    if (Array.isArray(artifact.test_impact)) {
-      artifact.test_impact.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || !item.path.trim() || typeof item.reason !== 'string' || !item.reason.trim()) {
-          addError(`test_impact[${index}]`, 'object with non-empty string path and non-empty string reason', actualType(item), 'critical', 'Each test_impact entry must include the impacted test path and expectation reason strings');
-        }
-        if (item && typeof item === 'object' && item.test_examples !== undefined) {
-          if (!Array.isArray(item.test_examples)) {
-            addError(`test_impact[${index}].test_examples`, 'array of example objects or undefined', actualType(item.test_examples), 'warning', 'test_examples must be an array of objects with type, pattern, description, before, and after fields');
-          } else {
-            item.test_examples.forEach((example, exIdx) => {
-              if (!example || typeof example !== 'object' || !['added_assertion', 'modified_assertion', 'added_test_case', 'added_pattern'].includes(example.type)) {
-                addError(`test_impact[${index}].test_examples[${exIdx}].type`, 'added_assertion|modified_assertion|added_test_case|added_pattern', actualType(example && example.type), 'warning', 'Each test_example must have a valid type');
-              }
-              if (!example || typeof example.pattern !== 'string') {
-                addError(`test_impact[${index}].test_examples[${exIdx}].pattern`, 'string', actualType(example && example.pattern), 'warning', 'Each test_example must have a pattern string');
-              }
-              if (!example || typeof example.before !== 'string' || typeof example.after !== 'string') {
-                addError(`test_impact[${index}].test_examples[${exIdx}]`, 'before and after strings', 'missing or invalid', 'warning', 'Each test_example must have before and after code snippets');
-              }
-            });
-          }
-        }
+      errors.push({
+        field: 'task',
+        expected: 'non-empty string',
+        actual: typeof artifact.task === 'string' ? 'empty string' : actualType(artifact.task),
+        severity: 'critical',
+        suggestion: 'task must be a non-empty string describing the requested work',
       });
     }
 
-    if (artifact.suggested_allowlist) {
-      if (typeof artifact.suggested_allowlist !== 'object' || Array.isArray(artifact.suggested_allowlist)) {
-        addError('suggested_allowlist', 'object', actualType(artifact.suggested_allowlist), 'warning', 'suggested_allowlist must be an object with agent_patterns and validation_patterns arrays');
-      } else {
-        if (!Array.isArray(artifact.suggested_allowlist.agent_patterns)) {
-          addError('suggested_allowlist.agent_patterns', 'array of strings', actualType(artifact.suggested_allowlist.agent_patterns), 'warning', 'agent_patterns must be an array of glob pattern strings');
-        } else if (!artifact.suggested_allowlist.agent_patterns.every((p) => typeof p === 'string')) {
-          addError('suggested_allowlist.agent_patterns', 'array of strings', 'array with non-strings', 'warning', 'All agent_patterns entries must be strings');
-        }
-        if (!Array.isArray(artifact.suggested_allowlist.validation_patterns)) {
-          addError('suggested_allowlist.validation_patterns', 'array of strings', actualType(artifact.suggested_allowlist.validation_patterns), 'warning', 'validation_patterns must be an array of glob pattern strings');
-        } else if (!artifact.suggested_allowlist.validation_patterns.every((p) => typeof p === 'string')) {
-          addError('suggested_allowlist.validation_patterns', 'array of strings', 'array with non-strings', 'warning', 'All validation_patterns entries must be strings');
-        }
-      }
+    // Validate all required array fields
+    for (const key of arrayKeys) {
+      validateArrayField(artifact, errors, key);
     }
+
+    // Validate relevant_files entries
+    validateRelevantFilesArray(artifact.relevant_files, errors);
+
+    // Validate test_impact entries and test_examples
+    validateTestImpactArray(artifact.test_impact, errors);
+
+    // Validate suggested_allowlist object
+    validateSuggestedAllowlist(artifact.suggested_allowlist, errors);
   }
 
   if (errors.length) {
