@@ -1466,15 +1466,30 @@ export function createApiRouter(
    * GET /api/startup-health — Unified startup health report (Phase 4)
    * Returns consolidated health status with bootstrap timing, preflight checks, and component status
    */
-  router.get('/startup-health', (_req: Request, res: Response): void => {
+  router.get('/startup-health', (req: Request, res: Response): void => {
+    const wantsMarkdown =
+      String(req.query.format || '').toLowerCase() === 'markdown' ||
+      String(req.headers.accept || '').toLowerCase().includes('text/markdown');
+
     try {
       const report = getCachedStartupHealthReport();
 
       if (!report) {
+        if (wantsMarkdown) {
+          res.status(404).type('text/markdown').send('# Startup Health Report\n\nReport not yet available.\n');
+          return;
+        }
+
         res.status(404).json({
           error: 'startup-health-not-available',
           detail: 'Startup health report not yet generated. Check back after service initialization.',
         });
+        return;
+      }
+
+      if (wantsMarkdown) {
+        const markdown = healthReportToMarkdown(report);
+        res.type('text/markdown').status(200).send(markdown);
         return;
       }
 
@@ -1483,33 +1498,16 @@ export function createApiRouter(
       logger.error('Failed to retrieve startup health report', {
         error: err instanceof Error ? err.message : String(err),
       });
+
+      if (wantsMarkdown) {
+        res.status(500).type('text/markdown').send('# Error\n\nFailed to generate health report.\n');
+        return;
+      }
+
       res.status(500).json({
         error: 'health-report-error',
         detail: 'Failed to retrieve startup health report',
       });
-    }
-  });
-
-  /**
-   * GET /api/startup-health/markdown — Startup health report in markdown format
-   * Human-readable summary for logs and documentation
-   */
-  router.get('/startup-health/markdown', (_req: Request, res: Response): void => {
-    try {
-      const report = getCachedStartupHealthReport();
-
-      if (!report) {
-        res.status(404).type('text/markdown').send('# Startup Health Report\n\nReport not yet available.\n');
-        return;
-      }
-
-      const markdown = healthReportToMarkdown(report);
-      res.type('text/markdown').status(200).send(markdown);
-    } catch (err) {
-      logger.error('Failed to generate startup health markdown', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      res.status(500).type('text/markdown').send('# Error\n\nFailed to generate health report.\n');
     }
   });
 
