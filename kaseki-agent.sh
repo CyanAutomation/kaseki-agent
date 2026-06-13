@@ -999,6 +999,56 @@ consolidate_phase_file() {
   fi
 }
 
+metadata_env_fingerprints_json() {
+  node - "${KASEKI_RESULTS_DIR}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const resultsDir = process.argv[2];
+const files = [
+  'validation-baseline-env.log',
+  'pre-agent-validation-env.log',
+  'validation-env.log',
+];
+const out = {};
+for (const file of files) {
+  const full = path.join(resultsDir, file);
+  if (!fs.existsSync(full)) continue;
+  const text = fs.readFileSync(full);
+  const lines = text.toString('utf8').split(/\r?\n/).filter(Boolean);
+  const safe = {};
+  for (const line of lines) {
+    const m = line.match(/^\[validation (?:command|environment)\] ([A-Z0-9_]+)=(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    if (['NODE_OPTIONS', 'NODE_PATH', 'disk_available', 'disk_space_available', 'disk_space_used', 'node_version', 'npm_version', 'stage', 'working_directory'].includes(key)) {
+      safe[key.toLowerCase()] = m[2];
+    }
+  }
+  out[file.replace(/\.log$/, '')] = {
+    source_artifact_removed: file,
+    sha256: crypto.createHash('sha256').update(text).digest('hex'),
+    line_count: lines.length,
+    safe_values: safe,
+  };
+}
+process.stdout.write(JSON.stringify(out));
+NODE
+}
+
+remove_low_value_artifacts() {
+  local artifact
+  for artifact in \
+    stdout.log progress.log baseline-npm-ci.log validation-baseline-raw.log \
+    validation-baseline-env.log pre-agent-validation-env.log validation-env.log \
+    restoration-report.md critical-change-expectations.log summarizer-stdout.log; do
+    if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
+      emit_event "artifact_consolidated" "artifact=$artifact" "action=removed_after_finalization"
+      rm -f "${KASEKI_RESULTS_DIR}/$artifact" 2>/dev/null || true
+    fi
+  done
+}
+
 write_metadata() {
   local end_epoch end_iso duration exit_code stages_json
   end_epoch="$(date +%s)"
@@ -1135,6 +1185,7 @@ write_metadata() {
   "baseline_validation_failed_command": $(printf '%s' "$BASELINE_VALIDATION_FAILED_COMMAND_DETAIL" | json_encode),
   "test_failure_classification_status": $(printf '%s' "$TEST_FAILURE_CLASSIFICATION_STATUS" | json_encode),
   "newly_introduced_failures_count": $NEWLY_INTRODUCED_FAILURES_COUNT,
+  "environment_fingerprints": $(metadata_env_fingerprints_json),
   "node_version": $(node --version 2>/dev/null | json_encode || printf 'null'),
   "npm_version": $(npm --version 2>/dev/null | json_encode || printf 'null'),
   "pi_version": $(printf '%s' "$PI_VERSION" | json_encode),
@@ -1572,7 +1623,7 @@ run_expectation_mismatch_detector() {
   : > "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT"
   if [ ! -s "${KASEKI_RESULTS_DIR}"/git.diff ]; then
     # shellcheck disable=SC2086
-    printf '[expectation-mismatch] skipped: "${KASEKI_RESULTS_DIR}"/git.diff is empty\n' >> ${KASEKI_RESULTS_DIR}/progress.log
+    emit_event "expectation_mismatch_skipped" "reason=empty_diff"
     return 0
   fi
   if [ ! -f "$detector_script" ]; then
@@ -1584,7 +1635,7 @@ run_expectation_mismatch_detector() {
     --repo "${KASEKI_WORKSPACE_DIR}"/repo \
     --diff "${KASEKI_RESULTS_DIR}"/git.diff \
     --output "$EXPECTATION_MISMATCH_WARNINGS_ARTIFACT" \
-    --progress "${KASEKI_RESULTS_DIR}"/progress.log; then
+    --progress /dev/null; then
     printf '[expectation-mismatch] warning: detector failed; continuing to validation\n' >/dev/null
   fi
 }
@@ -1959,9 +2010,9 @@ finish() {
       printf '[unexpected-failure] Exit code: %d\n' "$code"
       printf '[unexpected-failure] Last command: %s\n' "$LAST_COMMAND"
       printf '[unexpected-failure] Current stage: %s\n' "$CURRENT_STAGE"
-      if [ -f "${KASEKI_RESULTS_DIR}"/progress.log ]; then
-        printf '[unexpected-failure] Last 5 progress entries:\n'
-        tail -5 "${KASEKI_RESULTS_DIR}"/progress.log | sed 's/^/  /'
+      if [ -f "${KASEKI_RESULTS_DIR}"/progress.jsonl ]; then
+        printf '[unexpected-failure] Last 5 progress events:\n'
+        tail -5 "${KASEKI_RESULTS_DIR}"/progress.jsonl | sed 's/^/  /'
       fi
     } | tee -a "$LAST_COMMAND_LOG" >&2
     emit_error_event "unexpected_shell_failure" "Uncaught shell error (exit $code) in stage '$CURRENT_STAGE'. Last command: $LAST_COMMAND. See $LAST_COMMAND_LOG for context." "exit"
@@ -2022,12 +2073,13 @@ finish() {
   
   # Phase 3B, 3C, 3D: Consolidate artifacts before finalizing
   consolidate_timings_to_json "${KASEKI_RESULTS_DIR}"/timings-manifest.json "${VALIDATION_TIMINGS_FILE}" "${PRE_VALIDATION_TIMINGS_FILE}"
-  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl
+  consolidate_phase_errors "${KASEKI_RESULTS_DIR}"/phase-errors.jsonl "${KASEKI_RESULTS_DIR}"/critical-change-expectations.log "${KASEKI_RESULTS_DIR}"/summarizer-stderr.log "${KASEKI_RESULTS_DIR}"/baseline-npm-ci.log
   consolidate_validation_errors "${KASEKI_RESULTS_DIR}"/artifact-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl "${KASEKI_RESULTS_DIR}"/goal-check-validation-errors.jsonl
   
   maybe_call_finish_helper write_failure_json "$STATUS"
   maybe_call_finish_helper write_repo_memory_summary
   maybe_call_finish_helper write_metadata "$STATUS"
+  maybe_call_finish_helper remove_low_value_artifacts
   exit "$STATUS"
 }
 trap finish EXIT
@@ -4252,7 +4304,7 @@ run_goal_setting_agent() {
     timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
     | tee "$GOAL_SETTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
   unset goal_setting_prompt
@@ -4751,7 +4803,7 @@ run_scouting_agent() {
     timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
     | tee "$SCOUTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   SCOUTING_EXIT="${PIPESTATUS[0]}"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
   unset scouting_prompt
@@ -5085,7 +5137,7 @@ $validation_tail"
   else
     validation_context="Validation log: "${KASEKI_RESULTS_DIR}"/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
   fi
-  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
     test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
 $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
@@ -5301,7 +5353,7 @@ run_goal_check() {
     timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
     | tee "$GOAL_CHECK_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
   unset goal_prompt
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
@@ -5460,10 +5512,10 @@ if (valid.size === 1) {
 build_run_evaluation_prompt() {
   local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
   validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
-  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.log 2>/dev/null || true)"
+  progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
   stage_timings="$(tail -80 "${KASEKI_RESULTS_DIR}"/stage-timings.tsv 2>/dev/null || true)"
   dependency_cache="$(tail -80 "${KASEKI_RESULTS_DIR}"/dependency-cache.log 2>/dev/null || true)"
-  restoration_report="$(tail -80 "${KASEKI_RESULTS_DIR}"/restoration-report.md 2>/dev/null || true)"
+  restoration_report="$(tail -80 "${KASEKI_RESULTS_DIR}"/restoration.jsonl 2>/dev/null || true)"
   metadata_text="$(cat "${KASEKI_RESULTS_DIR}"/metadata.json 2>/dev/null || true)"
   draft_pr_body="$(build_pr_body)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
@@ -5517,7 +5569,7 @@ This is NOT another goal-check. The goal-check evaluator already determined if t
 - Validation timings/logs: "${KASEKI_RESULTS_DIR}"/pre-validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation-timings.tsv, ${KASEKI_RESULTS_DIR}/validation.log
 - Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
 - Stage timings: "${KASEKI_RESULTS_DIR}"/stage-timings.tsv
-- Progress log: "${KASEKI_RESULTS_DIR}"/progress.log
+- Progress events: "${KASEKI_RESULTS_DIR}"/progress.jsonl
 - Metadata: "${KASEKI_RESULTS_DIR}"/metadata.json
 
 ## Evaluation Framework
@@ -5769,7 +5821,7 @@ run_run_evaluation() {
     timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
     | tee "$RUN_EVALUATION_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
   unset evaluation_prompt
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
@@ -8250,9 +8302,25 @@ else
   # Run kaseki-summarizer to pre-process files
   if command -v kaseki-summarizer >/dev/null 2>&1; then
     printf 'Running summarization analysis...\n'
-    kaseki-summarizer --repo-dir "$WORKSPACE_DIR" --results-dir "$KASEKI_RESULTS_DIR" --verbose >"${KASEKI_RESULTS_DIR}"/summarizer-stdout.log 2>"${KASEKI_RESULTS_DIR}"/summarizer-stderr.log || true
+    summarizer_exit=0
+    kaseki-summarizer --repo-dir "$WORKSPACE_DIR" --results-dir "$KASEKI_RESULTS_DIR" --verbose >"${KASEKI_RESULTS_DIR}"/summarizer-stdout.log 2>"${KASEKI_RESULTS_DIR}"/summarizer-stderr.log || summarizer_exit=$?
     if [ -f "${KASEKI_RESULTS_DIR}"/summarization-metadata.json ]; then
+      node - "${KASEKI_RESULTS_DIR}/summarization-metadata.json" "$summarizer_exit" "${KASEKI_RESULTS_DIR}/summarizer-stdout.log" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [file, exitCode, stdoutFile] = process.argv.slice(2);
+let data = {};
+try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+let stdoutTail = '';
+try { stdoutTail = fs.readFileSync(stdoutFile, 'utf8').split(/\r?\n/).filter(Boolean).slice(-20).join('\n'); } catch {}
+data.status = Number(exitCode) === 0 ? 'completed' : 'failed';
+data.exit_code = Number(exitCode);
+data.stdout_tail = stdoutTail;
+data.stdout_artifact_removed = 'summarizer-stdout.log';
+fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+NODE
       printf '✓ Summarization analysis complete\n'
+    elif [ "$summarizer_exit" -ne 0 ]; then
+      emit_error_event "summarizer_failed" "kaseki-summarizer exited with $summarizer_exit" "continue"
     fi
   fi
   
@@ -8263,7 +8331,7 @@ else
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$agent_prompt" \
     2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2) \
     | tee "$RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl "${KASEKI_RESULTS_DIR}"/progress.log
+    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   PI_EXIT="${PIPESTATUS[0]}"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
