@@ -134,10 +134,10 @@ async function validateFileExists(
  * Handles empty file case
  */
 async function handleEmptyFile(
-  options: ReadOptions & { returnMetrics?: boolean }
+  { returnMetrics }: ReadOptions & { returnMetrics?: boolean }
 ): Promise<string | null> {
   const content = '';
-  if (options.returnMetrics) {
+  if (returnMetrics) {
     return JSON.stringify({
       content,
       metrics: {
@@ -166,7 +166,6 @@ async function handleEmptyFile(
 async function checkCacheForSummary(
   filePath: string,
   cfg: SummarizerConfig,
-  options: ReadOptions & { returnMetrics?: boolean },
   startTime: number,
   fullSizeBytes: number,
   strategy: ReadStrategy,
@@ -287,13 +286,12 @@ async function readFileWithSummaryInternal(filePath: string, options: ReadOption
 
   try {
     // Validate file exists
-    const fileValidation = await validateFileExists(filePath, options);
+    const fileValidation = await validateFileExists(filePath);
     if (fileValidation === null) {
+      if (options.returnMetrics) {
+        return JSON.stringify({ error: 'File not found', content: null });
+      }
       return null;
-    }
-
-    if (fileValidation && 'error' in fileValidation) {
-      return JSON.stringify(fileValidation);
     }
 
     // Handle empty file
@@ -343,7 +341,7 @@ async function readFileWithSummaryInternal(filePath: string, options: ReadOption
     }
 
     // Strategy says summary - check cache first
-    const cacheResult = await checkCacheForSummary(filePath, cfg, options, startTime, fullSizeBytes, strategy, strategyReason, language);
+    const cacheResult = await checkCacheForSummary(filePath, cfg, startTime, fullSizeBytes, strategy, strategyReason, language);
     if (cacheResult) {
       if (options.returnMetrics) {
         return JSON.stringify({
