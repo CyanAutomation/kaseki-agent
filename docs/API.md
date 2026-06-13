@@ -167,6 +167,46 @@ Client ID, and private key are readable and structurally valid. A partial GitHub
 configuration returns `503` so controllers can fail early before starting a run
 that cannot publish its patch.
 
+
+If container boot diagnostics were captured during service startup, the response
+also includes a `containerStartup` object. This object is cached boot history only
+and is intentionally excluded from the current readiness status:
+
+```json
+{
+  "containerStartup": {
+    "scope": "startup",
+    "readinessImpact": "excluded-from-current-readiness",
+    "current": false,
+    "recommendedCurrentEndpoint": "/api/preflight",
+    "timestamp": "2026-05-03T21:29:50.000Z",
+    "cachedAt": "2026-05-03T21:29:50.000Z",
+    "checks": []
+  }
+}
+```
+
+Use the top-level `/api/preflight` `status`, `timestamp`, and `checks` fields for
+current readiness decisions.
+
+### Startup Health Report
+
+**GET `/api/startup-health`**
+
+Requires authentication. Returns the cached boot-time startup health report that
+was generated during API initialization. This endpoint is historical diagnostic
+context, not a live readiness probe, and JSON responses are marked with
+`scope: "startup"`, `current: false`, and
+`recommendedCurrentEndpoint: "/api/preflight"`.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" \
+  http://localhost:8080/api/startup-health
+```
+
+Request Markdown with `Accept: text/markdown` or `?format=markdown` for operator
+runbooks. For current controller readiness, call `GET /api/preflight` instead.
+
 ### Readiness Check
 
 **GET `/ready`** or **GET `/api/ready`**
