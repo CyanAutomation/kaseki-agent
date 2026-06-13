@@ -32,14 +32,14 @@ function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Re
                 schema: {
                   type: 'object',
                   properties: {
-                    status: { type: 'string', enum: ['ok'] },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+                    status: { type: 'string', enum: ['ok'] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
 
     '/ready': {
@@ -58,23 +58,23 @@ function buildHealthCheckPaths(errorResponseSchema: Record<string, unknown>): Re
                   type: 'object',
                   properties: {
                     ready: { type: 'boolean' },
-                    message: { type: 'string' },
-                  },
-                },
-              },
-            },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
           },
           '503': {
             description: 'Service is not ready',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -100,21 +100,21 @@ function buildServiceInfoPaths(
             content: {
               'text/plain': {
                 schema: {
-                  type: 'string',
-                },
-              },
-            },
+                  type: 'string'
+                }
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/preflight': {
@@ -143,9 +143,9 @@ function buildServiceInfoPaths(
                           name: { type: 'string' },
                           ok: { type: 'boolean' },
                           detail: { type: 'string' },
-                          remediation: { type: 'string' },
-                        },
-                      },
+                          remediation: { type: 'string' }
+                        }
+                      }
                     },
                     containerStartup: {
                       type: 'object',
@@ -155,7 +155,7 @@ function buildServiceInfoPaths(
                         scope: { type: 'string', enum: ['cached-startup'] },
                         readinessImpact: {
                           type: 'string',
-                          enum: ['excluded-from-current-readiness'],
+                          enum: ['excluded-from-current-readiness']
                         },
                         current: { type: 'boolean', enum: [false] },
                         timestamp: { type: 'string', format: 'date-time' },
@@ -168,29 +168,29 @@ function buildServiceInfoPaths(
                               name: { type: 'string' },
                               ok: { type: 'boolean' },
                               detail: { type: 'string' },
-                              remediation: { type: 'string' },
-                            },
-                          },
-                        },
-                      },
+                              remediation: { type: 'string' }
+                            }
+                          }
+                        }
+                      }
                     },
                     warnings: { type: 'array', items: { type: 'string' } },
-                    errors: { type: 'array', items: { type: 'string' } },
-                  },
-                },
-              },
-            },
+                    errors: { type: 'array', items: { type: 'string' } }
+                  }
+                }
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/validate': {
@@ -205,9 +205,9 @@ function buildServiceInfoPaths(
           required: true,
           content: {
             'application/json': {
-              schema: runRequestSchema,
-            },
-          },
+              schema: runRequestSchema
+            }
+          }
         },
         responses: {
           '200': {
@@ -221,31 +221,31 @@ function buildServiceInfoPaths(
                     checks: { type: 'array', items: { type: 'object' } },
                     warnings: { type: 'array', items: { type: 'string' } },
                     errors: { type: 'array', items: { type: 'string' } },
-                    estimatedDurationSeconds: { type: 'integer' },
-                  },
-                },
-              },
-            },
+                    estimatedDurationSeconds: { type: 'integer' }
+                  }
+                }
+              }
+            }
           },
           '400': {
             description: 'Invalid request',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -271,51 +271,50 @@ function buildRunManagementPaths(
           required: true,
           content: {
             'application/json': {
-              schema: runRequestSchema,
-            },
-          },
+              schema: runRequestSchema
+            }
+          }
         },
         responses: {
           '202': {
             description: 'Job accepted and queued',
             content: {
               'application/json': {
-                schema: runResponseSchema,
-              },
-            },
+                schema: runResponseSchema
+              }
+            }
           },
           '200': {
             description: 'Idempotency replay: job already exists with same configuration',
             content: {
               'application/json': {
-                schema: runResponseSchema,
-              },
-            },
+                schema: runResponseSchema
+              }
+            }
           },
           '400': {
             description: 'Invalid request',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
       },
 
       get: {
         operationId: 'listRuns',
         summary: 'List all runs',
-        description:
-          'Returns paginated list of all kaseki runs, newest first. Includes basic metadata for each run.',
+        description: 'Returns paginated list of all kaseki runs, newest first. Includes basic metadata for each run.',
         tags: ['Run Management'],
         security: [{ BearerAuth: [] }],
         parameters: [
@@ -323,14 +322,14 @@ function buildRunManagementPaths(
             name: 'limit',
             in: 'query',
             schema: { type: 'integer', default: 50, minimum: 1, maximum: 500 },
-            description: 'Maximum number of runs to return',
+            description: 'Maximum number of runs to return'
           },
           {
             name: 'offset',
             in: 'query',
             schema: { type: 'integer', default: 0, minimum: 0 },
-            description: 'Offset for pagination',
-          },
+            description: 'Offset for pagination'
+          }
         ],
         responses: {
           '200': {
@@ -343,27 +342,27 @@ function buildRunManagementPaths(
                   properties: {
                     runs: {
                       type: 'array',
-                      items: runResponseSchema,
+                      items: runResponseSchema
                     },
                     total: {
                       type: 'integer',
-                      description: 'Total number of runs available',
-                    },
-                  },
-                },
-              },
-            },
+                      description: 'Total number of runs available'
+                    }
+                  }
+                }
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/runs/{id}/status': {
@@ -379,8 +378,8 @@ function buildRunManagementPaths(
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID (e.g., kaseki-42)',
-          },
+            description: 'Kaseki instance ID (e.g., kaseki-42)'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -388,28 +387,28 @@ function buildRunManagementPaths(
             description: 'Current run status',
             content: {
               'application/json': {
-                schema: { $ref: '#/components/schemas/StatusResponse' },
-              },
-            },
+                schema: { $ref: '#/components/schemas/StatusResponse' }
+              }
+            }
           },
           '404': {
             description: 'Run not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/runs/{id}/cancel': {
@@ -425,8 +424,8 @@ function buildRunManagementPaths(
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
-          },
+            description: 'Kaseki instance ID'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -439,31 +438,31 @@ function buildRunManagementPaths(
                   properties: {
                     id: { type: 'string' },
                     status: { type: 'string' },
-                    message: { type: 'string' },
-                  },
-                },
-              },
-            },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
           },
           '404': {
             description: 'Run not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -472,66 +471,114 @@ function buildRunManagementPaths(
  * These endpoints provide access to run progress events and log files.
  */
 function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): Record<string, unknown> {
+  const idParameter = {
+    name: 'id',
+    in: 'path',
+    required: true,
+    schema: { type: 'string', pattern: '^kaseki-\\d+$' },
+    description: 'Kaseki instance ID'
+  };
+  const tailParameter = {
+    name: 'tail',
+    in: 'query',
+    schema: { type: 'integer', minimum: 0, default: 50 },
+    description: 'Maximum number of recent events to return'
+  };
+  const eventSnapshotSchema = {
+    type: 'object',
+    required: ['id', 'status', 'events', 'total', 'sources'],
+    properties: {
+      id: { type: 'string' },
+      status: { type: 'string' },
+      events: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      total: { type: 'integer', description: 'Total number of parseable events before tail filtering' },
+      sources: { type: 'array', items: { type: 'string', enum: ['progress.jsonl', 'docker-logs'] } }
+    }
+  };
+  const snapshotResponses = {
+    '200': {
+      description: 'Structured run event snapshot',
+      content: { 'application/json': { schema: eventSnapshotSchema } }
+    },
+    '404': {
+      description: 'Run not found',
+      content: { 'application/json': { schema: errorResponseSchema } }
+    },
+    '401': {
+      description: 'Unauthorized',
+      content: { 'application/json': { schema: errorResponseSchema } }
+    }
+  };
+
   return {
+    '/api/runs/{id}/events': {
+      get: {
+        operationId: 'getRunEvents',
+        summary: 'Get structured event snapshot',
+        description:
+          'Canonical structured event snapshot for a run. Returns normalized progress.jsonl events plus live Docker progress for active runs.',
+        tags: ['Run Logs & Progress'],
+        parameters: [idParameter, tailParameter],
+        security: [{ BearerAuth: [] }],
+        responses: snapshotResponses
+      }
+    },
+
+    '/api/runs/{id}/events/stream': {
+      get: {
+        operationId: 'streamRunEvents',
+        summary: 'Stream run events',
+        description: 'Streams run progress updates as Server-Sent Events (SSE).',
+        tags: ['Run Logs & Progress'],
+        parameters: [idParameter],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Server-Sent Events stream of progress updates',
+            content: {
+              'text/event-stream': {
+                schema: { type: 'string', description: 'Server-Sent Events formatted progress updates' }
+              }
+            }
+          },
+          '404': snapshotResponses['404'],
+          '401': snapshotResponses['401']
+        }
+      }
+    },
+
     '/api/runs/{id}/progress': {
       get: {
         operationId: 'getRunProgress',
-        summary: 'Get progress events',
+        summary: 'Get legacy progress event snapshot',
         description:
-          'Returns progress events for a run. Supports Server-Sent Events (SSE) streaming via `?stream=sse` query parameter.',
+          'Deprecated legacy alias for GET /api/runs/{id}/events. Non-streaming responses return the same structured event snapshot schema. Legacy clients may still request SSE with ?stream=sse, but new clients should use GET /api/runs/{id}/events/stream.',
+        deprecated: true,
         tags: ['Run Logs & Progress'],
         parameters: [
-          {
-            name: 'id',
-            in: 'path',
-            required: true,
-            schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
-          },
+          idParameter,
+          tailParameter,
           {
             name: 'stream',
             in: 'query',
             schema: { type: 'string', enum: ['sse'] },
-            description: 'Set to "sse" to enable Server-Sent Events streaming',
-          },
+            description: 'Deprecated. Use GET /api/runs/{id}/events/stream for Server-Sent Events.'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
+          ...snapshotResponses,
           '200': {
-            description: 'Progress events (JSONL or SSE format)',
+            description: 'Structured run event snapshot, or SSE when using deprecated stream=sse',
             content: {
-              'application/x-ndjson': {
-                schema: {
-                  type: 'object',
-                  description: 'Each line is a JSON progress event',
-                },
-              },
+              'application/json': { schema: eventSnapshotSchema },
               'text/event-stream': {
-                schema: {
-                  type: 'object',
-                  description: 'Server-Sent Events format (when stream=sse)',
-                },
-              },
-            },
-          },
-          '404': {
-            description: 'Run not found',
-            content: {
-              'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-          '401': {
-            description: 'Unauthorized',
-            content: {
-              'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: { type: 'string', description: 'Deprecated Server-Sent Events format when stream=sse' }
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/runs/{id}/logs/{logtype}': {
@@ -547,7 +594,7 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
+            description: 'Kaseki instance ID'
           },
           {
             name: 'logtype',
@@ -555,16 +602,16 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
             required: true,
             schema: {
               type: 'string',
-              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'],
+              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan']
             },
-            description: 'Log type to retrieve',
+            description: 'Log type to retrieve'
           },
           {
             name: 'tail',
             in: 'query',
             schema: { type: 'integer', minimum: 1, default: 100 },
-            description: 'Number of lines to tail (default: 100)',
-          },
+            description: 'Number of lines to tail (default: 100)'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -572,29 +619,29 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
             description: 'Log content',
             content: {
               'text/plain': {
-                schema: { type: 'string' },
-              },
-            },
+                schema: { type: 'string' }
+              }
+            }
           },
           '404': {
             description: 'Run or log not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -617,8 +664,8 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
-          },
+            description: 'Kaseki instance ID'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -633,7 +680,7 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                     id: { type: 'string' },
                     runStatus: {
                       type: 'string',
-                      enum: ['queued', 'running', 'completed', 'failed'],
+                      enum: ['queued', 'running', 'completed', 'failed']
                     },
                     exitCode: { type: 'integer' },
                     artifacts: {
@@ -645,39 +692,39 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                           size: { type: 'integer' },
                           contentType: { type: 'string' },
                           available: { type: 'boolean' },
-                          description: { type: 'string' },
-                        },
-                      },
+                          description: { type: 'string' }
+                        }
+                      }
                     },
                     recommended: {
                       type: 'array',
                       items: { type: 'string' },
-                      description: 'Recommended artifacts to review first',
+                      description: 'Recommended artifacts to review first'
                     },
-                    artifactCount: { type: 'integer' },
-                  },
-                },
-              },
-            },
+                    artifactCount: { type: 'integer' }
+                  }
+                }
+              }
+            }
           },
           '404': {
             description: 'Run not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
     },
 
     '/api/results/{id}/{file}': {
@@ -693,29 +740,30 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
+            description: 'Kaseki instance ID'
           },
           {
             name: 'file',
             in: 'path',
             required: true,
             schema: { type: 'string' },
-            description: 'Artifact filename (e.g., git.diff, metadata.json)',
+            description: 'Artifact filename (e.g., git.diff, metadata.json)'
           },
           {
             name: 'format',
             in: 'query',
             required: false,
             schema: { type: 'string', enum: ['rendered'] },
-            description: 'Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content.',
+            description:
+              'Optional response mode. `rendered` is only supported for `run-evaluation.json`; default (omitted) returns raw artifact content.'
           },
           {
             name: 'markdown',
             in: 'query',
             required: false,
             schema: { type: 'string', enum: ['true', 'false', '1', '0'] },
-            description: 'When format=rendered for run-evaluation.json, include optional markdown summary.',
-          },
+            description: 'When format=rendered for run-evaluation.json, include optional markdown summary.'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -732,8 +780,8 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                         file: { type: 'string' },
                         contentType: { type: 'string' },
                         size: { type: 'integer' },
-                        content: { type: 'string' },
-                      },
+                        content: { type: 'string' }
+                      }
                     },
                     {
                       type: 'object',
@@ -743,7 +791,17 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                         file: { type: 'string', enum: ['run-evaluation.json'] },
                         sections: {
                           type: 'object',
-                          required: ['summary', 'problem', 'solution', 'humanReview', 'stages', 'efficiency', 'validation', 'opportunities', 'warnings'],
+                          required: [
+                            'summary',
+                            'problem',
+                            'solution',
+                            'humanReview',
+                            'stages',
+                            'efficiency',
+                            'validation',
+                            'opportunities',
+                            'warnings'
+                          ],
                           properties: {
                             overall: { type: 'object', additionalProperties: true },
                             summary: { type: 'array', items: { type: 'string' } },
@@ -755,45 +813,45 @@ function buildArtifactPaths(errorResponseSchema: Record<string, unknown>): Recor
                             validation: { type: 'array', items: { type: 'object', additionalProperties: true } },
                             opportunities: { type: 'array', items: { type: 'object', additionalProperties: true } },
                             warnings: { type: 'array', items: { type: 'object', additionalProperties: true } },
-                            metadata: { type: 'object', additionalProperties: true },
-                          },
+                            metadata: { type: 'object', additionalProperties: true }
+                          }
                         },
                         markdown: { type: 'string' },
-                        raw: { type: 'object', additionalProperties: true },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
+                        raw: { type: 'object', additionalProperties: true }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           },
           '422': {
             description: 'Invalid artifact content for requested format',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '404': {
             description: 'Artifact not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -816,8 +874,8 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
             in: 'path',
             required: true,
             schema: { type: 'string', pattern: '^kaseki-\\d+$' },
-            description: 'Kaseki instance ID',
-          },
+            description: 'Kaseki instance ID'
+          }
         ],
         security: [{ BearerAuth: [] }],
         responses: {
@@ -832,7 +890,7 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
                     id: { type: 'string' },
                     status: {
                       type: 'string',
-                      enum: ['queued', 'running', 'completed', 'failed'],
+                      enum: ['queued', 'running', 'completed', 'failed']
                     },
                     createdAt: { type: 'string', format: 'date-time' },
                     completedAt: { type: 'string', format: 'date-time' },
@@ -844,41 +902,41 @@ function buildRunAnalysisPaths(errorResponseSchema: Record<string, unknown>): Re
                       type: 'object',
                       properties: {
                         changedFiles: { type: 'array', items: { type: 'string' } },
-                        diffSize: { type: 'integer' },
-                      },
+                        diffSize: { type: 'integer' }
+                      }
                     },
                     validation: {
                       type: 'object',
                       properties: {
                         passed: { type: 'boolean' },
-                        commandResults: { type: 'array', items: { type: 'object' } },
-                      },
+                        commandResults: { type: 'array', items: { type: 'object' } }
+                      }
                     },
-                    errors: { type: 'array', items: { type: 'string' } },
-                  },
-                },
-              },
-            },
+                    errors: { type: 'array', items: { type: 'string' } }
+                  }
+                }
+              }
+            }
           },
           '404': {
             description: 'Run not found',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -904,11 +962,11 @@ function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record
                 required: ['url'],
                 properties: {
                   url: { type: 'string', format: 'uri' },
-                  secret: { type: 'string' },
-                },
-              },
-            },
-          },
+                  secret: { type: 'string' }
+                }
+              }
+            }
+          }
         },
         responses: {
           '200': {
@@ -920,31 +978,31 @@ function buildWebhookPaths(errorResponseSchema: Record<string, unknown>): Record
                   properties: {
                     success: { type: 'boolean' },
                     statusCode: { type: 'integer' },
-                    message: { type: 'string' },
-                  },
-                },
-              },
-            },
+                    message: { type: 'string' }
+                  }
+                }
+              }
+            }
           },
           '400': {
             description: 'Invalid webhook configuration',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
+                schema: errorResponseSchema
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -964,8 +1022,8 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
             in: 'query',
             required: false,
             schema: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
-            description: 'Maximum number of recent terminal runs to aggregate',
-          },
+            description: 'Maximum number of recent terminal runs to aggregate'
+          }
         ],
         responses: {
           '200': {
@@ -981,23 +1039,23 @@ function buildImprovementPaths(errorResponseSchema: Record<string, unknown>): Re
                     evaluator: { type: 'object' },
                     topImprovementOpportunities: { type: 'array', items: { type: 'object' } },
                     slowestStages: { type: 'array', items: { type: 'object' } },
-                    runs: { type: 'array', items: { type: 'object' } },
-                  },
-                },
-              },
-            },
+                    runs: { type: 'array', items: { type: 'object' } }
+                  }
+                }
+              }
+            }
           },
           '401': {
             description: 'Unauthorized',
             content: {
               'application/json': {
-                schema: errorResponseSchema,
-              },
-            },
-          },
-        },
-      },
-    },
+                schema: errorResponseSchema
+              }
+            }
+          }
+        }
+      }
+    }
   };
 }
 
@@ -1037,6 +1095,6 @@ export function buildAllPaths(
     ...buildArtifactPaths(errorResponseSchema),
     ...buildRunAnalysisPaths(errorResponseSchema),
     ...buildImprovementPaths(errorResponseSchema),
-    ...buildWebhookPaths(errorResponseSchema),
+    ...buildWebhookPaths(errorResponseSchema)
   };
 }
