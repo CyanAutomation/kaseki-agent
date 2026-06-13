@@ -438,9 +438,10 @@ export interface PreflightResponse {
      * Historical startup-cache record only. These checks are not rerun for the
      * current /api/preflight request and are excluded from current readiness.
      */
-    scope: 'cached-startup';
+    scope: 'startup';
     readinessImpact: 'excluded-from-current-readiness';
     current: false;
+    recommendedCurrentEndpoint: '/api/preflight';
     timestamp: string;
     cachedAt: string;
     checks: PreflightCheck[];
@@ -528,6 +529,10 @@ export interface ComponentTiming {
  * Consolidates bootstrap timing, preflight checks, and environment info
  */
 export interface StartupHealthReport {
+  /** Cached boot-time diagnostics only; use /api/preflight for current readiness. */
+  scope?: 'startup';
+  current?: false;
+  recommendedCurrentEndpoint?: '/api/preflight';
   timestamp: string;
   status: 'ok' | 'degraded' | 'error';
   summary: {

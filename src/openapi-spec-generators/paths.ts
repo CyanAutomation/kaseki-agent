@@ -152,12 +152,16 @@ function buildServiceInfoPaths(
                       description:
                         'Cached startup diagnostics retained as boot history only; excluded from current readiness.',
                       properties: {
-                        scope: { type: 'string', enum: ['cached-startup'] },
+                        scope: { type: 'string', enum: ['startup'] },
                         readinessImpact: {
                           type: 'string',
                           enum: ['excluded-from-current-readiness']
                         },
                         current: { type: 'boolean', enum: [false] },
+                        recommendedCurrentEndpoint: {
+                          type: 'string',
+                          enum: ['/api/preflight']
+                        },
                         timestamp: { type: 'string', format: 'date-time' },
                         cachedAt: { type: 'string', format: 'date-time' },
                         checks: {
@@ -187,6 +191,73 @@ function buildServiceInfoPaths(
               'application/json': {
                 schema: errorResponseSchema
               }
+            }
+          }
+        }
+      }
+    },
+
+    '/api/startup-health': {
+      get: {
+        operationId: 'getStartupHealth',
+        summary: 'Cached startup health report',
+        description:
+          'Returns cached boot-time diagnostics generated during API initialization. This is historical startup scope only (`scope: startup`, `current: false`); call /api/preflight for current readiness diagnostics.',
+        tags: ['Service Info'],
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: 'format',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['markdown'] },
+            description: 'Return the startup report as Markdown instead of JSON.'
+          }
+        ],
+        responses: {
+          '200': {
+            description: 'Cached startup diagnostics',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    scope: { type: 'string', enum: ['startup'] },
+                    current: { type: 'boolean', enum: [false] },
+                    recommendedCurrentEndpoint: { type: 'string', enum: ['/api/preflight'] },
+                    timestamp: { type: 'string', format: 'date-time' },
+                    status: { type: 'string', enum: ['ok', 'degraded', 'error'] },
+                    summary: { type: 'object' },
+                    timing: { type: 'object' },
+                    components: { type: 'object' },
+                    preflight: { type: 'object' },
+                    issues: { type: 'array', items: { type: 'object' } }
+                  }
+                }
+              },
+              'text/markdown': {
+                schema: { type: 'string' }
+              }
+            }
+          },
+          '404': {
+            description: 'Startup report is not available yet',
+            content: {
+              'application/json': { schema: errorResponseSchema },
+              'text/markdown': { schema: { type: 'string' } }
+            }
+          },
+          '500': {
+            description: 'Failed to retrieve startup report',
+            content: {
+              'application/json': { schema: errorResponseSchema },
+              'text/markdown': { schema: { type: 'string' } }
+            }
+          },
+          '401': {
+            description: 'Unauthorized',
+            content: {
+              'application/json': { schema: errorResponseSchema }
             }
           }
         }

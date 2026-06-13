@@ -1450,9 +1450,10 @@ export function createApiRouter(
     const containerPreflightResults = getContainerPreflightResults();
     if (containerPreflightResults) {
       response.containerStartup = {
-        scope: 'cached-startup',
+        scope: 'startup',
         readinessImpact: 'excluded-from-current-readiness',
         current: false,
+        recommendedCurrentEndpoint: '/api/preflight',
         timestamp: containerPreflightResults.timestamp,
         cachedAt: containerPreflightResults.timestamp,
         checks: containerPreflightResults.checks,
@@ -1493,7 +1494,12 @@ export function createApiRouter(
         return;
       }
 
-      res.status(200).json(report);
+      res.status(200).json({
+        scope: 'startup',
+        current: false,
+        recommendedCurrentEndpoint: '/api/preflight',
+        ...report,
+      });
     } catch (err) {
       logger.error('Failed to retrieve startup health report', {
         error: err instanceof Error ? err.message : String(err),
