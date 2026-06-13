@@ -65,6 +65,9 @@ export function createWebhookRoutes(): Router {
         durationMs = Date.now() - startTime;
         statusCode = response.status;
 
+        // Drain the response body to release the HTTP connection
+        await response.text().catch(() => {});
+
         if (!response.ok) {
           error = `HTTP ${response.status} ${response.statusText}`;
         }
