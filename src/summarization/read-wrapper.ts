@@ -107,61 +107,211 @@ export async function readFileWithSummaryAndMetrics(filePath: string, options: R
 }
 
 /**
+ * Validates file exists and is a valid file
+ * Returns file stats or null if invalid
+ */
+async function validateFileExists(
+  filePath: string
+): Promise<{ exists: boolean; isFile: boolean; isEmpty: boolean; sizeBytes: number } | null> {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const stats = fs.statSync(filePath);
+  if (!stats.isFile()) {
+    return null;
+  }
+
+  return {
+    exists: true,
+    isFile: true,
+    isEmpty: stats.size === 0,
+    sizeBytes: stats.size,
+  };
+}
+
+/**
+ * Handles empty file case
+ */
+async function handleEmptyFile(
+  options: ReadOptions & { returnMetrics?: boolean }
+): Promise<string | null> {
+  const content = '';
+  if (options.returnMetrics) {
+    return JSON.stringify({
+      content,
+      metrics: {
+        strategy: 'full',
+        strategyReason: 'Empty file',
+        language: 'unknown',
+        fullSizeBytes: 0,
+        returnedSizeBytes: 0,
+        compressionRatio: 1,
+        parseTimeMs: 0,
+        cacheHit: false,
+        decisionPath: 'full_read' as const,
+        estimatedTokensFull: 0,
+        estimatedTokensReturned: 0,
+        estimatedTokensSaved: 0,
+      },
+    });
+  }
+  return content;
+}
+
+/**
+ * Checks cache for summarization strategy
+ * Returns cached content if hit, null otherwise
+ */
+async function checkCacheForSummary(
+  filePath: string,
+  cfg: SummarizerConfig,
+  options: ReadOptions & { returnMetrics?: boolean },
+  startTime: number,
+  fullSizeBytes: number,
+  strategy: ReadStrategy,
+  strategyReason: string,
+  language: string
+): Promise<{ cacheHit: boolean; content?: string; metrics?: ReadMetrics } | null> {
+  if (!cfg.enableCache || strategy !== 'summary') {
+    return null;
+  }
+
+  const summaryCache = getCache();
+  const cached = summaryCache.get(filePath);
+
+  if (cached) {
+    const returnedSize = Buffer.byteLength(cached.content, 'utf-8');
+    return {
+      cacheHit: true,
+      content: cached.content,
+      metrics: createMetrics(
+        strategy,
+        strategyReason,
+        language,
+        fullSizeBytes,
+        returnedSize,
+        performance.now() - startTime,
+        true,
+        'cache_hit'
+      ),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Attempts summarization with error handling
+ */
+async function attemptSummarization(
+  filePath: string,
+  fullContent: string,
+  language: string,
+  cfg: SummarizerConfig,
+  options: ReadOptions & { returnMetrics?: boolean },
+  startTime: number,
+  fullSizeBytes: number,
+  strategy: ReadStrategy,
+  strategyReason: string
+): Promise<{ content: string; metrics?: ReadMetrics; decisionPath: ReadMetrics['decisionPath'] } | null> {
+  if (language === 'unknown' || !cfg.supportedLanguages.includes(language as any)) {
+    // Unsupported language - fallback to full
+    return {
+      content: fullContent,
+      decisionPath: 'full_read',
+      metrics: createMetrics('full', 'Unsupported language', language, fullSizeBytes, fullSizeBytes, 0, false, 'full_read'),
+    };
+  }
+
+  try {
+    const summarizationStart = performance.now();
+    const sum = getSummarizer(language);
+
+    if (!sum) {
+      throw new Error('Summarizer not available');
+    }
+
+    const summary = sum.summarize(fullContent, options.timeoutMs || cfg.parseTimeoutMs);
+
+    if (summary.parseError) {
+      // Parse failed - return full
+      return {
+        content: fullContent,
+        decisionPath: 'error',
+        metrics: createMetrics(
+          'full',
+          `Parse error: ${summary.parseError}`,
+          language,
+          fullSizeBytes,
+          fullSizeBytes,
+          performance.now() - summarizationStart,
+          false,
+          'error'
+        ),
+      };
+    }
+
+    // Format summary as markdown
+    const markdown = sum.formatAsMarkdown(summary);
+    const returnedSize = Buffer.byteLength(markdown, 'utf-8');
+
+    // Cache it
+    if (cfg.enableCache) {
+      getCache().set(filePath, markdown, language);
+    }
+
+    const parseTime = performance.now() - startTime;
+    return {
+      content: markdown,
+      decisionPath: 'tree_sitter',
+      metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, returnedSize, parseTime, false, 'tree_sitter'),
+    };
+  } catch (error) {
+    // Summarization failed - fallback to full
+    const elapsed = performance.now() - startTime;
+    return {
+      content: fullContent,
+      decisionPath: 'error',
+      metrics: createMetrics('full', `Summarization failed: ${error}`, language, fullSizeBytes, fullSizeBytes, elapsed, false, 'error'),
+    };
+  }
+}
+
+/**
  * Internal implementation
+ * Refactored to use helper functions for clarity and reduced complexity
  */
 async function readFileWithSummaryInternal(filePath: string, options: ReadOptions & { returnMetrics?: boolean }): Promise<string | null> {
   const startTime = performance.now();
-  let strategy: ReadStrategy = 'full';
-  let strategyReason = '';
-  let cacheHit = false;
-  let decisionPath: ReadMetrics['decisionPath'] = 'error';
 
   try {
-    // Check file exists
-    if (!fs.existsSync(filePath)) {
-      return options.returnMetrics ? JSON.stringify({ error: 'File not found', content: null }) : null;
+    // Validate file exists
+    const fileValidation = await validateFileExists(filePath, options);
+    if (fileValidation === null) {
+      return null;
     }
 
-    const stats = fs.statSync(filePath);
-    if (!stats.isFile() || stats.size === 0) {
-      const content = '';
-      if (options.returnMetrics) {
-        return JSON.stringify({
-          content,
-          metrics: {
-            strategy: 'full',
-            strategyReason: 'Empty file',
-            language: 'unknown',
-            fullSizeBytes: 0,
-            returnedSizeBytes: 0,
-            compressionRatio: 1,
-            parseTimeMs: 0,
-            cacheHit: false,
-            decisionPath: 'full_read',
-            estimatedTokensFull: 0,
-            estimatedTokensReturned: 0,
-            estimatedTokensSaved: 0,
-          },
-        });
-      }
-      return content;
+    if (fileValidation && 'error' in fileValidation) {
+      return JSON.stringify(fileValidation);
     }
 
-    const fullSizeBytes = stats.size;
+    // Handle empty file
+    if (fileValidation.isEmpty) {
+      return await handleEmptyFile(options);
+    }
+
+    const fullSizeBytes = fileValidation.sizeBytes;
     const language = detectLanguage(filePath);
     const cfg = getConfigOrDefault();
 
     // Rule: explicit full=true override
     if (options.full === true) {
       const content = fs.readFileSync(filePath, 'utf-8');
-      decisionPath = 'full_read';
-      strategy = 'full';
-      strategyReason = 'Pi explicit request (full=true)';
-
       if (options.returnMetrics) {
         return JSON.stringify({
           content,
-          metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, fullSizeBytes, 0, cacheHit, decisionPath),
+          metrics: createMetrics('full', 'Pi explicit request (full=true)', language, fullSizeBytes, fullSizeBytes, 0, false, 'full_read'),
         });
       }
       return content;
@@ -177,118 +327,58 @@ async function readFileWithSummaryInternal(filePath: string, options: ReadOption
     };
 
     const strategyResult = getReadStrategy(strategyCtx);
-    strategy = strategyResult.strategy;
-    strategyReason = strategyResult.reason;
+    const strategy = strategyResult.strategy;
+    const strategyReason = strategyResult.reason;
 
-    // If strategy says full read, just return full file
+    // If strategy says full read, return full file
     if (strategy === 'full') {
       const content = fs.readFileSync(filePath, 'utf-8');
-      decisionPath = 'full_read';
-
       if (options.returnMetrics) {
         return JSON.stringify({
           content,
-          metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, fullSizeBytes, 0, cacheHit, decisionPath),
+          metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, fullSizeBytes, 0, false, 'full_read'),
         });
       }
       return content;
     }
 
     // Strategy says summary - check cache first
-    if (cfg.enableCache) {
-      const summaryCache = getCache();
-      const cached = summaryCache.get(filePath);
-
-      if (cached) {
-        cacheHit = true;
-        decisionPath = 'cache_hit';
-        const returnedSize = Buffer.byteLength(cached.content, 'utf-8');
-
-        if (options.returnMetrics) {
-          return JSON.stringify({
-            content: cached.content,
-            metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, returnedSize, performance.now() - startTime, cacheHit, decisionPath),
-          });
-        }
-        return cached.content;
-      }
-    }
-
-    // Cache miss - generate summary
-    if (language === 'unknown' || !cfg.supportedLanguages.includes(language as any)) {
-      // Unsupported language - fallback to full
-      const content = fs.readFileSync(filePath, 'utf-8');
-      decisionPath = 'full_read';
-      strategy = 'full';
-
+    const cacheResult = await checkCacheForSummary(filePath, cfg, options, startTime, fullSizeBytes, strategy, strategyReason, language);
+    if (cacheResult) {
       if (options.returnMetrics) {
         return JSON.stringify({
-          content,
-          metrics: createMetrics(strategy, 'Unsupported language', language, fullSizeBytes, fullSizeBytes, 0, cacheHit, decisionPath),
+          content: cacheResult.content,
+          metrics: cacheResult.metrics,
         });
       }
-      return content;
+      return cacheResult.content || null;
     }
 
-    // Try to summarize
+    // Cache miss - attempt summarization
     const fullContent = fs.readFileSync(filePath, 'utf-8');
-    const summarizationStart = performance.now();
+    const summarizationResult = await attemptSummarization(
+      filePath,
+      fullContent,
+      language,
+      cfg,
+      options,
+      startTime,
+      fullSizeBytes,
+      strategy,
+      strategyReason
+    );
 
-    try {
-      const sum = getSummarizer(language);
-      if (!sum) {
-        throw new Error('Summarizer not available');
-      }
-
-      const summary = sum.summarize(fullContent, options.timeoutMs || cfg.parseTimeoutMs);
-
-      if (summary.parseError) {
-        // Parse failed - return full
-        decisionPath = 'error';
-        strategy = 'full';
-
-        if (options.returnMetrics) {
-          return JSON.stringify({
-            content: fullContent,
-            metrics: createMetrics(strategy, `Parse error: ${summary.parseError}`, language, fullSizeBytes, fullSizeBytes, performance.now() - summarizationStart, cacheHit, decisionPath),
-          });
-        }
-        return fullContent;
-      }
-
-      // Format summary as markdown
-      const markdown = sum.formatAsMarkdown(summary);
-      const returnedSize = Buffer.byteLength(markdown, 'utf-8');
-
-      // Cache it
-      if (cfg.enableCache) {
-        getCache().set(filePath, markdown, language);
-      }
-
-      decisionPath = 'tree_sitter';
-      const parseTime = performance.now() - startTime;
-
-      if (options.returnMetrics) {
-        return JSON.stringify({
-          content: markdown,
-          metrics: createMetrics(strategy, strategyReason, language, fullSizeBytes, returnedSize, parseTime, cacheHit, decisionPath),
-        });
-      }
-      return markdown;
-    } catch (error) {
-      // Summarization failed - fallback to full
-      const elapsed = performance.now() - startTime;
-      decisionPath = 'error';
-      strategy = 'full';
-
-      if (options.returnMetrics) {
-        return JSON.stringify({
-          content: fullContent,
-          metrics: createMetrics(strategy, `Summarization failed: ${error}`, language, fullSizeBytes, fullSizeBytes, elapsed, cacheHit, decisionPath),
-        });
-      }
-      return fullContent;
+    if (!summarizationResult) {
+      return null;
     }
+
+    if (options.returnMetrics) {
+      return JSON.stringify({
+        content: summarizationResult.content,
+        metrics: summarizationResult.metrics,
+      });
+    }
+    return summarizationResult.content;
   } catch (error) {
     // Top-level error - return error response
     const errorMsg = error instanceof Error ? error.message : String(error);
