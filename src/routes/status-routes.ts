@@ -24,11 +24,16 @@ export function createStatusRoutes(
   /**
    * GET /api/runs - List all runs.
    */
-  router.get('/runs', (_req: Request, res: Response) => {
+  router.get('/runs', (req: Request, res: Response) => {
     const allJobs = scheduler.listJobs();
+    const limitParam = Number(req.query.limit ?? 50);
+    const limit = Number.isFinite(limitParam)
+      ? Math.min(500, Math.max(1, Math.floor(limitParam)))
+      : 50;
+    const jobs = allJobs.slice(0, limit);
 
     const response: RunsListResponse = {
-      runs: allJobs.map((job) => ({
+      runs: jobs.map((job) => ({
         id: job.id,
         status: job.status,
         createdAt: job.createdAt.toISOString(),

@@ -87,6 +87,20 @@ exit 0
     { mode: 0o700 }
   );
 
+  fs.writeFileSync(
+    path.join(binDir, 'sha256sum'),
+    `#!/usr/bin/env bash
+if [ -x /usr/bin/sha256sum ]; then
+  /usr/bin/sha256sum "$@"
+elif command -v shasum >/dev/null 2>&1; then
+  shasum -a 256 "$@"
+else
+  printf '0000000000000000000000000000000000000000000000000000000000000000  %s\\n' "$1"
+fi
+`,
+    { mode: 0o700 }
+  );
+
   // Create fake 'timeout' command
   fs.writeFileSync(
     path.join(binDir, 'timeout'),
