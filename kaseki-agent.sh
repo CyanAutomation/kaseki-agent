@@ -1859,6 +1859,8 @@ restore_disallowed_changes() {
   fi
   if [ "$restored_count" -gt 0 ] || [ "$kept_count" -gt 0 ]; then
     emit_event "allowlist_restoration_complete" "restored=$restored_count" "kept=$kept_count" "coverage=$coverage"
+    printf '[allowlist summary] Restored: %s files; Kept: %s files (coverage: %s%%)\n' \
+      "$restored_count" "$kept_count" "$coverage" >> "${KASEKI_RESULTS_DIR}"/quality.log
   fi
 
   if [ "$restored_any" -eq 1 ]; then
@@ -3499,6 +3501,7 @@ run_validation_commands() {
         } 2>&1 |
           tee --output-error=warn-nopipe \
             >(cat >> "$log_file") \
+            >(cat >> "$raw_log") \
             2> >(sed 's/^/[validation-tee] /' >> "$FILTER_STDERR_FILE") |
           FILTER_DIAGNOSTICS_LOG="$FILTER_DIAGNOSTICS_LOG" validation-output-filter 2>>"$FILTER_STDERR_FILE"
         pipe_statuses=("${PIPESTATUS[@]}")
@@ -7989,7 +7992,7 @@ else
     "pre-agent validation" \
     "$KASEKI_PRE_AGENT_VALIDATION_COMMANDS" \
     "${KASEKI_RESULTS_DIR}/pre-validation.log" \
-    "/dev/null" \
+    "${KASEKI_RESULTS_DIR}/pre-validation.raw.log" \
     "$PRE_VALIDATION_TIMINGS_FILE" \
     "${KASEKI_RESULTS_DIR}/pre-agent-validation-env.log" \
     "pre_agent_validation_failed" \

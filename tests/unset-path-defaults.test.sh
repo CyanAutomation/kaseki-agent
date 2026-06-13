@@ -69,6 +69,6 @@ fi
 
 assert_file_contains "$RUN_LOG" 'Missing OpenRouter API key'
 assert_file_contains "$RESULTS_DIR/result-summary.md" 'missing OPENROUTER_API_KEY'
-assert_file_contains "$RESULTS_DIR/failure.json" 'Missing OpenRouter API key'
+assert_file_contains "$RESULTS_DIR/failure.json" '"failed_command": "missing OPENROUTER_API_KEY"'
 
 printf '✓ %s\n' "$TEST_NAME"
