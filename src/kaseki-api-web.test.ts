@@ -1,5 +1,6 @@
 import express from 'express';
 import { Server } from 'http';
+/* global HTMLTextAreaElement, HTMLSelectElement */
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { createWebRouter } from './kaseki-api-web';
 
