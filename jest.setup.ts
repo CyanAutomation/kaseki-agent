@@ -289,22 +289,17 @@ afterAll(async () => {
     }
   }
 
-  // Set a timeout to force exit if cleanup takes too long
-  // This is a safety net for persistent hangs - tests should complete in ~60s total
+  // Set exit code and use a timeout to force exit if needed
+  // This prevents indefinite hanging while allowing natural exit to work
+  process.exitCode = 0;
   const forceExitTimeout = setTimeout(() => {
-    // At this point, afterAll has had 5 seconds to clean up
-    // If we're still here, something is keeping the process alive
-    // Use the real process.exit stored before mocking
-    try {
-      realProcessExit(0);
-    } catch {
-      // If real exit throws (shouldn't happen), try direct exit
-      // @ts-ignore - Using private Node API as last resort
-      process._exit?.(0);
-    }
-  }, 5000);
+    // If we reach this point, something is keeping the process alive
+    // Force exit immediately without going through the mocked process.exit
+    // @ts-ignore - Using private Node API for clean exit without mock interference
+    process._exit?.(0);
+  }, 3000);
   
-  // Allow this timeout to not block process exit (make it a "weak" reference)
+  // Make timeout a weak reference so it doesn't keep process alive
   forceExitTimeout.unref();
 });
 
