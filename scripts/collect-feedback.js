@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export function parseJson(filePath) {
+function parseJson(filePath) {
   try {
     if (!filePath || !fs.existsSync(filePath)) {
       return {};
@@ -23,7 +23,7 @@ export function parseJson(filePath) {
   }
 }
 
-export function collectGoalCheckFeedback(instanceName, goalSettingPath, goalCheckPath, metadataPath) {
+function collectGoalCheckFeedback(instanceName, goalSettingPath, goalCheckPath, metadataPath) {
   const goalSetting = parseJson(goalSettingPath);
   const goalCheck = parseJson(goalCheckPath);
   const metadata = parseJson(metadataPath);
@@ -68,7 +68,7 @@ export function collectGoalCheckFeedback(instanceName, goalSettingPath, goalChec
   return feedback;
 }
 
-export function collectRunEvaluationFeedback(instanceName, runEvaluationPath, metadataPath) {
+function collectRunEvaluationFeedback(instanceName, runEvaluationPath, metadataPath) {
   const runEvaluation = parseJson(runEvaluationPath);
   const metadata = parseJson(metadataPath);
 
@@ -89,7 +89,7 @@ export function collectRunEvaluationFeedback(instanceName, runEvaluationPath, me
   return feedback;
 }
 
-export function extractOutcomes(metadata) {
+function extractOutcomes(metadata) {
   return {
     validation_passed: metadata.validation_passed === true,
     coding_attempts: metadata.coding_attempts || 1,
@@ -98,7 +98,7 @@ export function extractOutcomes(metadata) {
   };
 }
 
-export function computeCorrelationNotes(qualityScore, verdict, outcomes) {
+function computeCorrelationNotes(qualityScore, verdict, outcomes) {
   const notes = [];
 
   if (qualityScore >= 85 && !verdict.met) {
@@ -117,14 +117,14 @@ export function computeCorrelationNotes(qualityScore, verdict, outcomes) {
   return notes;
 }
 
-export function parseStageValues(stageValues) {
+function parseStageValues(stageValues) {
   return stageValues.map((s) => ({
     stage: s.stage || 'unknown',
     value: s.value || 'unknown',
   }));
 }
 
-export function parseImprovements(improvements) {
+function parseImprovements(improvements) {
   return improvements.map((imp) => ({
     category: imp.category || 'unknown',
     priority: imp.priority || 'medium',

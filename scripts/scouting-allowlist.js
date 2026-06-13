@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_CHANGED_FILES_ALLOWLIST = 'src/lib/parser.ts tests/parser.validation.ts';
-export const DEFAULT_VALIDATION_ALLOWLIST = '';
+const DEFAULT_CHANGED_FILES_ALLOWLIST = 'src/lib/parser.ts tests/parser.validation.ts';
+const DEFAULT_VALIDATION_ALLOWLIST = '';
 
-export function actualType(value) {
+function actualType(value) {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'array';
   return typeof value;
@@ -17,7 +17,7 @@ export function actualType(value) {
  * More lenient than strict validation - only requires task field.
  * Used when recovering artifacts from incomplete event streams.
  */
-export function validateScoutingArtifactForRecovery(artifact) {
+function validateScoutingArtifactForRecovery(artifact) {
   const errors = [];
 
   if (!artifact || Array.isArray(artifact) || typeof artifact !== 'object') {
@@ -67,7 +67,7 @@ function readArtifact(inputPath) {
   return JSON.parse(fs.readFileSync(inputPath, 'utf8'));
 }
 
-export function validateScoutingArtifactObject(artifact) {
+function validateScoutingArtifactObject(artifact) {
   const errors = [];
   const addError = (field, expected, actual, severity, suggestion) => {
     errors.push({ field, expected, actual, severity, suggestion });
@@ -148,7 +148,7 @@ export function validateScoutingArtifactObject(artifact) {
   return { status: 'ok', reason_code: 'valid', details: 'artifact validation passed', errors: [] };
 }
 
-export function validateScoutingArtifact(inputPath, outputPath, options = {}) {
+function validateScoutingArtifact(inputPath, outputPath, options = {}) {
   let artifact;
   try {
     artifact = readArtifact(inputPath);
@@ -186,7 +186,7 @@ function writeValidationArtifacts(result, options) {
   }
 }
 
-export function deriveAllowlistFromScoutingArtifact(artifact) {
+function deriveAllowlistFromScoutingArtifact(artifact) {
   return {
     agentAllowlist: artifact && artifact.suggested_allowlist && Array.isArray(artifact.suggested_allowlist.agent_patterns)
       ? artifact.suggested_allowlist.agent_patterns.join(' ')
@@ -197,16 +197,16 @@ export function deriveAllowlistFromScoutingArtifact(artifact) {
   };
 }
 
-export function deriveAllowlistFromScouting(inputPath) {
+function deriveAllowlistFromScouting(inputPath) {
   return deriveAllowlistFromScoutingArtifact(readArtifact(inputPath));
 }
 
-export function mergeAllowlists(scoutingPatterns = '', userPatterns = '') {
+function mergeAllowlists(scoutingPatterns = '', userPatterns = '') {
   if (scoutingPatterns && userPatterns) return `${scoutingPatterns} ${userPatterns}`;
   return scoutingPatterns || userPatterns || '';
 }
 
-export function deriveScoutingAllowlistOrDefault(inputPath, options = {}) {
+function deriveScoutingAllowlistOrDefault(inputPath, options = {}) {
   const defaultChangedFilesAllowlist = options.defaultChangedFilesAllowlist ?? DEFAULT_CHANGED_FILES_ALLOWLIST;
   const defaultValidationAllowlist = options.defaultValidationAllowlist ?? DEFAULT_VALIDATION_ALLOWLIST;
   const validation = validateScoutingArtifact(inputPath, undefined, options);

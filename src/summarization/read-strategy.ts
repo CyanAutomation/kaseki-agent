@@ -96,33 +96,4 @@ export function detectLanguage(filePath: string): SupportedLanguage | 'unknown' 
   return languageMap[ext] || 'unknown';
 }
 
-/**
- * Estimate token count from file size
- * Rough heuristic: 1 token ≈ 3.5 bytes for code
- */
-export function estimateTokens(sizeBytes: number): number {
-  return Math.ceil(sizeBytes / 3.5);
-}
 
-/**
- * Estimate summarization benefit
- */
-export function estimateSummaryBenefit(context: StrategyContext): {
-  fullTokens: number;
-  summaryTokens: number;
-  savedTokens: number;
-  savingsPercent: number;
-} {
-  const fullTokens = estimateTokens(context.sizeBytes);
-  // Summaries typically 20-40% of original size; use 30% as average
-  const summaryTokens = Math.ceil(fullTokens * 0.3);
-  const savedTokens = fullTokens - summaryTokens;
-  const savingsPercent = (savedTokens / fullTokens) * 100;
-
-  return {
-    fullTokens,
-    summaryTokens,
-    savedTokens,
-    savingsPercent,
-  };
-}
