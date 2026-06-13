@@ -300,18 +300,9 @@ afterAll(async () => {
     }
   }
 
-  // Set exit code and use a timeout to force exit if needed
-  // This prevents indefinite hanging while allowing natural exit to work
+  // Signal successful exit code; Jest's forceExit (jest.config.ts) handles
+  // forcibly terminating any lingering open handles after all tests complete.
   process.exitCode = 0;
-  const forceExitTimeout = setTimeout(() => {
-    // If we reach this point, something is keeping the process alive
-    // Force exit immediately without going through the mocked process.exit
-    // @ts-ignore - Using private Node API for clean exit without mock interference
-    process._exit?.(0);
-  }, 3000);
-  
-  // Make timeout a weak reference so it doesn't keep process alive
-  forceExitTimeout.unref();
 });
 
 /**
