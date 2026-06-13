@@ -15,6 +15,7 @@ import {
 import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 import type { ResultCache } from '../result-cache';
+import { progressEventsFromDockerLogTail } from './docker-log-progress-events';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
@@ -216,6 +217,17 @@ export class StatusResponseBuilder {
           }
         }
       }
+
+      if (!response.progress && typeof this.scheduler.getLiveDockerLogTail === 'function') {
+        const dockerEvents = progressEventsFromDockerLogTail(this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
+        const lastEvent = dockerEvents[dockerEvents.length - 1];
+        if (lastEvent) {
+          const structuredProgress = toStructuredProgress(lastEvent, 'running');
+          if (structuredProgress) {
+            response.progress = structuredProgress;
+          }
+        }
+      }
     } catch {
       // Ignore progress file errors; status remains resilient
     }
@@ -407,6 +419,17 @@ export class StatusResponseBuilder {
         }
       } catch {
         // Ignore live progress errors; status remains resilient
+      }
+    }
+
+    if (observedStages.size === 0 && typeof this.scheduler.getLiveDockerLogTail === 'function') {
+      try {
+        const dockerEvents = progressEventsFromDockerLogTail(this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
+        for (const event of dockerEvents) {
+          ingestEvent(event);
+        }
+      } catch {
+        // Ignore live Docker log fallback errors; status remains resilient
       }
     }
 

@@ -347,7 +347,12 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('.issues-list-item'));
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('false');
     expect(repoInput.value).toBe('https://github.com/CyanAutomation/kaseki-agent');
-    expect(taskPrompt.value).toBe('Align the setup stage name.');
+    expect(taskPrompt.value).toBe([
+      'GitHub issue #517: Stage names drift',
+      'https://github.com/CyanAutomation/kaseki-agent/issues/517',
+      '',
+      'Align the setup stage name.',
+    ].join('\n'));
   });
 
   test('submitting a validated task immediately surfaces the new run id', async () => {

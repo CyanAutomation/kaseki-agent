@@ -9,6 +9,7 @@ import { isNonEmptyFile } from '../utils/file-helpers';
 import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
 import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
+import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
@@ -42,6 +43,20 @@ function readStructuredEventSnapshot(
       events.push(normalizeProgressEvent(event));
     }
     if (liveEvents.length > 0) {
+      sources.add('docker-logs');
+    }
+  }
+
+  if (
+    job.status === 'running' &&
+    events.length === 0 &&
+    typeof scheduler.getLiveDockerLogTail === 'function'
+  ) {
+    const dockerEvents = progressEventsFromDockerLogTail(scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
+    for (const event of dockerEvents) {
+      events.push(normalizeProgressEvent(event));
+    }
+    if (dockerEvents.length > 0) {
       sources.add('docker-logs');
     }
   }

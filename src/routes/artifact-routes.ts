@@ -68,6 +68,24 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
 
       // Handle non-available artifacts
       if (status !== 'available') {
+        if (
+          job.status === 'running' &&
+          fileName === 'stdout.log' &&
+          typeof scheduler.getLiveDockerLogTail === 'function'
+        ) {
+          const liveContent = scheduler.getLiveDockerLogTail(job.id, 300);
+          if (liveContent) {
+            const contentType = getArtifactContentType(fileName);
+            const response: ArtifactResponse = {
+              file: fileName,
+              contentType,
+              size: Buffer.byteLength(liveContent, 'utf-8'),
+              content: liveContent,
+            };
+            res.setHeader('Content-Type', contentType);
+            return res.json(response);
+          }
+        }
         const reason = getArtifactUnavailableReason(status, fileName);
         const statusCode = status === 'pending' ? 202 : 400;
         return sendErrorResponse(res, statusCode, 'Bad Request', reason);
@@ -144,11 +162,21 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     const artifacts = ALL_ARTIFACT_NAMES.map((fileName) => {
       const artifactMeta = ARTIFACT_METADATA_REGISTRY[fileName];
       const fileMeta = metadata[fileName] ?? { exists: false, size: 0 };
-      const available = isArtifactAvailable(fileName, job.status, fileMeta.exists, fileMeta.size);
+      const liveStdout =
+        job.status === 'running' &&
+        fileName === 'stdout.log' &&
+        !fileMeta.exists &&
+        typeof scheduler.getLiveDockerLogTail === 'function'
+          ? scheduler.getLiveDockerLogTail(job.id, 300)
+          : '';
+      const effectiveSize = liveStdout ? Buffer.byteLength(liveStdout, 'utf-8') : fileMeta.size;
+      const available = liveStdout
+        ? true
+        : isArtifactAvailable(fileName, job.status, fileMeta.exists, fileMeta.size);
 
       return {
         name: fileName,
-        size: fileMeta.size,
+        size: effectiveSize,
         contentType: artifactMeta?.contentType || 'application/octet-stream',
         available,
         description: artifactMeta?.description,

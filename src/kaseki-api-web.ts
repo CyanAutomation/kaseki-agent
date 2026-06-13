@@ -2066,7 +2066,7 @@ const controllerPage = String.raw`<!doctype html>
 
       async function loadRunsList(options) {
         try {
-          const result = await apiRequest('/api/runs', { auth: true, preserveOutput: options && options.preserveOutput });
+          const result = await apiRequest('/api/runs?limit=12', { auth: true, preserveOutput: options && options.preserveOutput });
           if (result.response.ok) {
             renderRunsList(result.payload);
           }
@@ -2163,7 +2163,10 @@ const controllerPage = String.raw`<!doctype html>
       async function run(button, path, options) {
         button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
-        setState('Contacting the controller...');
+        const actionLabel = button.textContent ? button.textContent.trim() : 'request';
+        setState(actionLabel === 'Current Preflight'
+          ? 'Running current preflight checks...'
+          : 'Contacting the controller...');
         try {
           return await apiRequest(path, options);
         } catch (error) {
@@ -2737,7 +2740,10 @@ const controllerPage = String.raw`<!doctype html>
         });
         
         if (textArtifacts.length === 0) {
-          artifactsOutputEl.textContent = 'No text artifacts available.';
+          const status = artifactsResponse && artifactsResponse.runStatus ? String(artifactsResponse.runStatus) : '';
+          artifactsOutputEl.textContent = status === 'running'
+            ? 'No finalized text artifacts yet. Use the Stdout tab for live logs; artifacts appear here as the run writes them.'
+            : 'No text artifacts available.';
           return;
         }
         
@@ -2954,10 +2960,16 @@ const controllerPage = String.raw`<!doctype html>
             
             item.append(numberEl, titleEl, metaEl);
             item.addEventListener('click', () => {
-              // Populate task prompt with issue body
               const body = issue.body || '(No description)';
-              taskPrompt.value = body;
-              repoUrlInput.value = normalizeRepoUrlForSubmit(repoUrl);
+              const submitRepoUrl = normalizeRepoUrlForSubmit(repoUrl);
+              const issueUrl = issue.html_url || (submitRepoUrl + '/issues/' + issue.number);
+              taskPrompt.value = [
+                'GitHub issue #' + issue.number + ': ' + issue.title,
+                issueUrl,
+                '',
+                body,
+              ].join('\n');
+              repoUrlInput.value = submitRepoUrl;
               repoUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
               addRepoToRecent(repoUrl);
               // Switch to Submit Task tab
