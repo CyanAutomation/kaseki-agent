@@ -10,7 +10,6 @@
 set -euo pipefail
 
 TEST_NAME="exit-code-86-diagnostics"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR=""
 
 # Color output for test results
@@ -24,6 +23,7 @@ pass_count=0
 fail_count=0
 
 cleanup() {
+  # shellcheck disable=SC2317
   [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -40,7 +40,7 @@ fail() {
 
 test_header() {
   ((test_count++))
-  echo -e "${YELLOW}Test $test_count: $1${NC}"
+  echo -e "${YELLOW}Test $test_count ($TEST_NAME): $1${NC}"
 }
 
 ###############################################################################
@@ -60,21 +60,27 @@ mkdir -p "$RO_RESULTS" "$RESULTS_DIR"
 chmod a-w "$RO_RESULTS"
 
 # Verify we can detect it's read-only
-if [ ! -w "$RO_RESULTS" ]; then
-  pass "Read-only directory correctly detected as non-writable"
-else
-  fail "Should have detected read-only directory"
-fi
+{
+  if [ ! -w "$RO_RESULTS" ]; then
+    pass "Read-only directory correctly detected as non-writable"
+  else
+    fail "Should have detected read-only directory"
+  fi
+} >> "$RUN_LOG" 2>&1
+cat "$RUN_LOG"
 
 # Try to write a test file
-if ! touch "$RO_RESULTS/.write-test" 2>/dev/null; then
-  pass "Write operation correctly failed on read-only directory"
-else
-  fail "Should not be able to write to read-only directory"
-fi
+{
+  if ! touch "$RO_RESULTS/.write-test" 2>/dev/null; then
+    pass "Write operation correctly failed on read-only directory"
+  else
+    fail "Should not be able to write to read-only directory"
+  fi
+} > "$RUN_LOG" 2>&1
+cat "$RUN_LOG"
 
 chmod u+w "$RO_RESULTS"
-rm -rf "$TMP_DIR"
+# rm -rf "$TMP_DIR"  # Let cleanup handle it
 
 ###############################################################################
 # Summary
