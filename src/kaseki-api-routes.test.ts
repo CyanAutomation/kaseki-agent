@@ -34,6 +34,8 @@ import { ResultCache } from './result-cache';
 import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { createApiRouter } from './kaseki-api-routes';
 import { clearContainerPreflightResults, logContainerPreflightResults } from './startup/container-preflight';
+import { clearCachedStartupHealthReport, writeStartupHealthArtifacts } from './kaseki-api/startup-summary-artifact';
+import type { StartupHealthReport } from './kaseki-api-types';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
 import {
@@ -300,6 +302,105 @@ describe('kaseki-api-routes artifact read behavior', () => {
     fs.writeFileSync(artifactPath, '{"version":2}');
     const secondRead = readArtifactContent(artifactPath, 'running', cache);
     expect(secondRead).toBe('{"version":2}');
+  });
+});
+
+describe('kaseki-api-routes startup health content negotiation', () => {
+  let resultsDir: string;
+
+  const report: StartupHealthReport = {
+    timestamp: '2026-06-13T00:00:00.000Z',
+    status: 'ok',
+    summary: { passed: 1, warnings: 0, blocking: 0 },
+    timing: { bootstrapMs: 100, preflightMs: 50, totalMs: 150 },
+    components: {
+      api: { name: 'api', durationMs: 100, status: 'ok' },
+    },
+    preflight: {
+      docker: { ok: true, detail: 'Docker available' },
+    },
+    issues: [],
+  };
+
+  beforeEach(() => {
+    resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-startup-health-test-'));
+    clearCachedStartupHealthReport();
+  });
+
+  afterEach(() => {
+    clearCachedStartupHealthReport();
+    fs.rmSync(resultsDir, { recursive: true, force: true });
+  });
+
+  test('GET /api/startup-health returns JSON by default', async () => {
+    writeStartupHealthArtifacts(resultsDir, report);
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/startup-health`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      const body = (await res.json()) as StartupHealthReport;
+      expect(body.status).toBe('ok');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/startup-health returns markdown for Accept: text/markdown', async () => {
+    writeStartupHealthArtifacts(resultsDir, report);
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/startup-health`, {
+        headers: { Authorization: 'Bearer test-key', Accept: 'text/markdown' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/markdown');
+      expect(await res.text()).toContain('# Startup Health Report');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/startup-health returns markdown for format=markdown', async () => {
+    writeStartupHealthArtifacts(resultsDir, report);
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/startup-health?format=markdown`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/markdown');
+      expect(await res.text()).toContain('# Startup Health Report');
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('GET /api/startup-health/markdown is removed', async () => {
+    writeStartupHealthArtifacts(resultsDir, report);
+    const scheduler = createMockScheduler();
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/startup-health/markdown`, {
+        headers: { Authorization: 'Bearer test-key' },
+      });
+      expect(res.status).toBe(404);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
   });
 });
 
