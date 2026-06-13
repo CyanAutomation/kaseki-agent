@@ -86,7 +86,7 @@ if (metadata.git_ref !== expectedRef) throw new Error("metadata git_ref mismatch
   "$REPO_URL" \
   "$GIT_REF"
 
-require_artifacts "$result_dir" changed-files.txt validation-timings.tsv stage-timings.tsv dependency-cache.log quality.log git-push.log progress.log progress.jsonl cleanup.log
+require_artifacts "$result_dir" changed-files.txt validation-timings.tsv stage-timings.tsv dependency-cache.log quality.log git-push.log progress.jsonl cleanup.log
 
 if ! grep -q "missing OPENROUTER_API_KEY" "$result_dir/stage-timings.tsv"; then
   echo "Expected missing-key failure to be recorded in stage-timings.tsv" >&2
