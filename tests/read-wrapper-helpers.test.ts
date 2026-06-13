@@ -358,14 +358,11 @@ describe('read-wrapper helpers (Phase 2.2)', () => {
       const stats = fs.statSync(filePath);
       const size = stats.size;
 
-      // Large files might be summarized
-      const shouldSummarize = size > 10000;
       expect(size).toBeGreaterThan(100);
     });
 
     it('should handle explicit full=true override', () => {
       const options = { full: true };
-      const cfg = { enableCache: true };
 
       // When full=true, skip strategy decision
       const shouldUseStrategy = !options.full;

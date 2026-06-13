@@ -10,61 +10,6 @@
  * - validateSuggestedAllowlist
  */
 
-import { spawn } from 'child_process';
-import path from 'path';
-
-/**
- * Helper to run the Node.js validation test script
- * Returns the parsed JSON result from the validator
- */
-function runNodeValidator(testName: string, validator: string, payload: unknown): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, '..', 'scripts', 'scouting-allowlist.js');
-
-    const proc = spawn('node', ['-e', `
-      const validators = require('${scriptPath.replace(/\\/g, '/')}');
-      const payload = ${JSON.stringify(payload)};
-      try {
-        const result = validators.${validator}(payload);
-        console.log(JSON.stringify({ success: true, result }));
-      } catch (err) {
-        console.log(JSON.stringify({ success: false, error: String(err) }));
-      }
-    `], {
-      cwd: __dirname,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let output = '';
-    let errorOutput = '';
-
-    proc.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Validator process exited with code ${code}: ${errorOutput}`));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(output.trim());
-        if (parsed.success) {
-          resolve(parsed.result as Record<string, unknown>);
-        } else {
-          reject(new Error(`Validator error: ${parsed.error}`));
-        }
-      } catch (err) {
-        reject(new Error(`Failed to parse validator output: ${output}\n${errorOutput}`));
-      }
-    });
-  });
-}
-
 describe('scouting-allowlist validators (Phase 2.1)', () => {
   /**
    * VALIDATOR 1: validateArrayField
@@ -168,7 +113,6 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
     });
 
     it('should accept empty relevant_files array', () => {
-      const relevantFiles: unknown[] = [];
       const errors: unknown[] = [];
       expect(errors).toHaveLength(0);
     });
@@ -322,7 +266,6 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
     });
 
     it('should accept empty test examples array', () => {
-      const examples: unknown[] = [];
       const errors: unknown[] = [];
       expect(errors).toHaveLength(0);
     });
