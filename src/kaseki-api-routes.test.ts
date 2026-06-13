@@ -121,6 +121,29 @@ async function cleanupTestApp(server: Server, idempotencyStore: IdempotencyStore
   await idempotencyStore.shutdown();
 }
 
+/**
+ * Drain a fetch response body to ensure the HTTP connection is properly released.
+ * This is critical to prevent connection pool exhaustion and hanging processes.
+ * 
+ * @param response The fetch Response object
+ * @returns A new Response object with the body already consumed
+ */
+async function drainResponseBody(response: Response): Promise<Response> {
+  // Consume the response body to release the socket back to the connection pool
+  // This is necessary because if you don't read the response body,
+  // Node.js keeps the socket open in the HTTP agent's connection pool,
+  // which can prevent the process from exiting.
+  const buffer = await response.arrayBuffer();
+  
+  // Return a new Response object with a fresh body so callers can still use
+  // .json(), .text(), etc. if needed
+  return new Response(buffer, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 describe('kaseki-api-routes log truncation helpers', () => {
   test('decodeUtf8TailSafely trims incomplete 2-byte sequence split at chunk boundary', () => {
     const input = Buffer.concat([Buffer.from('cafe ', 'utf-8'), Buffer.from([0xc3])]);
@@ -464,6 +487,8 @@ describe('kaseki-api-routes readiness and metrics endpoints', () => {
       const res = await fetch(`http://127.0.0.1:${port}/api/metrics`);
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/plain');
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -2108,6 +2133,8 @@ describe('kaseki-api-routes controller replay and events', () => {
     try {
       const first = await fetch(`http://127.0.0.1:${port}/api/runs`, { method: 'POST', headers, body });
       expect(first.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(first);
 
       job.status = 'failed';
       job.completedAt = new Date();
@@ -4030,8 +4057,12 @@ describe('artifact content cache configuration in routes', () => {
     try {
       const first = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(first.status).toBe(200);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(first);
       const second = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(second.status).toBe(200);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(second);
 
       const metrics = await fetch(`http://127.0.0.1:${port}/api/metrics`, { headers });
       expect(metrics.status).toBe(200);
@@ -4083,6 +4114,8 @@ describe('artifact content cache configuration in routes', () => {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/results/${jobId}/metadata.json`, { headers });
       expect(response.status).toBe(200);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(artifactCache.getStats()).toMatchObject({ entries: 0, misses: 1, maxFileBytes: 4 });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
