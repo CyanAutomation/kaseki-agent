@@ -20,7 +20,7 @@ import path from 'path';
 function runNodeValidator(testName: string, validator: string, payload: unknown): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, '..', 'scripts', 'scouting-allowlist.js');
-    
+
     const proc = spawn('node', ['-e', `
       const validators = require('${scriptPath.replace(/\\/g, '/')}');
       const payload = ${JSON.stringify(payload)};
@@ -30,7 +30,7 @@ function runNodeValidator(testName: string, validator: string, payload: unknown)
       } catch (err) {
         console.log(JSON.stringify({ success: false, error: String(err) }));
       }
-    `], { 
+    `], {
       cwd: __dirname,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -142,9 +142,9 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       const errors: unknown[] = [];
       relevantFiles.forEach((item, index) => {
         if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string') {
-          errors.push({ 
-            field: `relevant_files[${index}]`, 
-            issue: 'missing path or reason' 
+          errors.push({
+            field: `relevant_files[${index}]`,
+            issue: 'missing path or reason'
           });
         }
       });
@@ -158,9 +158,9 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       const errors: unknown[] = [];
       relevantFiles.forEach((item, index) => {
         if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string') {
-          errors.push({ 
-            field: `relevant_files[${index}]`, 
-            issue: 'non-string field' 
+          errors.push({
+            field: `relevant_files[${index}]`,
+            issue: 'non-string field'
           });
         }
       });
@@ -186,11 +186,11 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       ];
       const errors: unknown[] = [];
       testImpact.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+        if (!item || typeof item.path !== 'string' || !item.path.trim() ||
             typeof item.reason !== 'string' || !item.reason.trim()) {
-          errors.push({ 
-            field: `test_impact[${index}]`, 
-            issue: 'invalid entry' 
+          errors.push({
+            field: `test_impact[${index}]`,
+            issue: 'invalid entry'
           });
         }
       });
@@ -203,11 +203,11 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       ];
       const errors: unknown[] = [];
       testImpact.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+        if (!item || typeof item.path !== 'string' || !item.path.trim() ||
             typeof item.reason !== 'string' || !item.reason.trim()) {
-          errors.push({ 
-            field: `test_impact[${index}]`, 
-            issue: 'empty path or reason' 
+          errors.push({
+            field: `test_impact[${index}]`,
+            issue: 'empty path or reason'
           });
         }
       });
@@ -220,11 +220,11 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       ];
       const errors: unknown[] = [];
       testImpact.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+        if (!item || typeof item.path !== 'string' || !item.path.trim() ||
             typeof item.reason !== 'string' || !item.reason.trim()) {
-          errors.push({ 
-            field: `test_impact[${index}]`, 
-            issue: 'empty reason' 
+          errors.push({
+            field: `test_impact[${index}]`,
+            issue: 'empty reason'
           });
         }
       });
@@ -233,8 +233,8 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
 
     it('should accept test_impact with optional test_examples', () => {
       const testImpact = [
-        { 
-          path: 'tests/parser.test.ts', 
+        {
+          path: 'tests/parser.test.ts',
           reason: 'syntax tests updated',
           test_examples: [
             { type: 'added_test_case', pattern: 'new edge case', before: 'old', after: 'new' },
@@ -243,11 +243,11 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
       ];
       const errors: unknown[] = [];
       testImpact.forEach((item, index) => {
-        if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+        if (!item || typeof item.path !== 'string' || !item.path.trim() ||
             typeof item.reason !== 'string' || !item.reason.trim()) {
-          errors.push({ 
-            field: `test_impact[${index}]`, 
-            issue: 'invalid entry' 
+          errors.push({
+            field: `test_impact[${index}]`,
+            issue: 'invalid entry'
           });
         }
       });
@@ -339,7 +339,7 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
         validation_patterns: ['tests/**'],
       };
       const errors: unknown[] = [];
-      
+
       if (typeof suggestedAllowlist !== 'object' || Array.isArray(suggestedAllowlist)) {
         errors.push({ field: 'suggested_allowlist', issue: 'not an object' });
       } else {
@@ -360,7 +360,7 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
     it('should reject suggested_allowlist that is an array', () => {
       const suggestedAllowlist: unknown[] = [];
       const errors: unknown[] = [];
-      
+
       if (typeof suggestedAllowlist !== 'object' || Array.isArray(suggestedAllowlist)) {
         errors.push({ field: 'suggested_allowlist', issue: 'is array' });
       }
@@ -373,7 +373,7 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
         validation_patterns: ['tests/**'],
       };
       const errors: unknown[] = [];
-      
+
       if (!Array.isArray(suggestedAllowlist.agent_patterns)) {
         errors.push({ field: 'agent_patterns', issue: 'not an array' });
       }
@@ -386,8 +386,8 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
         validation_patterns: ['tests/**'],
       };
       const errors: unknown[] = [];
-      
-      if (Array.isArray(suggestedAllowlist.agent_patterns) && 
+
+      if (Array.isArray(suggestedAllowlist.agent_patterns) &&
           !suggestedAllowlist.agent_patterns.every((p: unknown) => typeof p === 'string')) {
         errors.push({ field: 'agent_patterns', issue: 'contains non-strings' });
       }
@@ -400,12 +400,12 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
         validation_patterns: [],
       };
       const errors: unknown[] = [];
-      
-      if (Array.isArray(suggestedAllowlist.agent_patterns) && 
+
+      if (Array.isArray(suggestedAllowlist.agent_patterns) &&
           suggestedAllowlist.agent_patterns.every((p: unknown) => typeof p === 'string')) {
         // Valid
       }
-      if (Array.isArray(suggestedAllowlist.validation_patterns) && 
+      if (Array.isArray(suggestedAllowlist.validation_patterns) &&
           suggestedAllowlist.validation_patterns.every((p: unknown) => typeof p === 'string')) {
         // Valid
       }
@@ -417,7 +417,7 @@ describe('scouting-allowlist validators (Phase 2.1)', () => {
         agent_patterns: ['src/lib/**'],
       };
       const errors: unknown[] = [];
-      
+
       if (!Array.isArray(suggestedAllowlist.validation_patterns)) {
         errors.push({ field: 'validation_patterns', issue: 'missing or not array' });
       }

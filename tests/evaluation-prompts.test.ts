@@ -573,13 +573,17 @@ build_scouting_prompt
       const scoutingHelperPath = path.join(projectRoot, 'scripts', 'scouting-allowlist.js');
       const scriptContent = fs.readFileSync(scoutingHelperPath, 'utf8');
       const validationSection = scriptContent.substring(
-        scriptContent.indexOf('export function validateScoutingArtifactObject(artifact) {'),
-        scriptContent.indexOf('export function validateScoutingArtifact(inputPath, outputPath, options = {}) {')
+        scriptContent.indexOf('function validateScoutingArtifactObject(artifact) {'),
+        scriptContent.indexOf('function validateScoutingArtifact(inputPath, outputPath, options = {}) {')
       );
 
+      // Verify that test_impact is included in validation
       expect(validationSection).toMatch(/['"]test_impact['"]/);
-      expect(validationSection).toContain('Array.isArray(artifact.test_impact)');
-      expect(validationSection).toMatch(/test_impact\[\$\{?index\}?\]/);
+      // Verify that array validation is enforced
+      expect(validationSection).toContain('Array.isArray');
+      // Verify that the test_impact specific validation function is called
+      expect(validationSection).toContain('validateTestImpactArray(artifact.test_impact');
+      // Verify that critical severity errors are used in validation
       expect(validationSection).toMatch(/['"]critical['"]/);
     });
   });

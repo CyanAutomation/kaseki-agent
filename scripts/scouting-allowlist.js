@@ -12,7 +12,6 @@ function actualType(value) {
   return typeof value;
 }
 
-
 function summarize(errors) {
   const critical = errors.filter((error) => error.severity === 'critical').length;
   const warning = errors.filter((error) => error.severity === 'warning').length;
@@ -109,7 +108,7 @@ function validateTestExamples(examples, testImpactIndex, errors) {
 function validateTestImpactArray(testImpact, errors) {
   if (!Array.isArray(testImpact)) return;
   testImpact.forEach((item, index) => {
-    if (!item || typeof item.path !== 'string' || !item.path.trim() || 
+    if (!item || typeof item.path !== 'string' || !item.path.trim() ||
         typeof item.reason !== 'string' || !item.reason.trim()) {
       errors.push({
         field: `test_impact[${index}]`,
