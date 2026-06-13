@@ -24,6 +24,13 @@ describe('OpenAPI Path Builders', () => {
       statuses: ['200', '401']
     },
     {
+      path: '/api/startup-health',
+      method: 'get',
+      operationId: 'getStartupHealth',
+      requiresAuth: true,
+      statuses: ['200', '401', '404', '500']
+    },
+    {
       path: '/api/validate',
       method: 'post',
       operationId: 'validateTask',
@@ -373,6 +380,7 @@ describe('OpenAPI Path Builders', () => {
         getMetrics: ['prometheus', 'metrics'],
         getPreFlight: ['pre-flight', 'validation'],
         getReady: ['readiness', 'probe'],
+        getStartupHealth: ['cached', 'startup', 'health'],
         getRunAnalysis: ['run', 'analysis'],
         getRunArtifacts: ['list', 'artifacts'],
         getRunImprovements: ['improvement', 'findings'],
@@ -394,6 +402,10 @@ describe('OpenAPI Path Builders', () => {
         {
           operationId: 'getPreFlight',
           terms: ['controller', 'docker', 'github app']
+        },
+        {
+          operationId: 'getStartupHealth',
+          terms: ['cached', 'boot-time', 'current readiness', '/api/preflight']
         },
         {
           operationId: 'validateTask',
@@ -630,11 +642,12 @@ describe('OpenAPI Path Builders', () => {
       expect(responseProps.isValid.type).toBe('boolean');
       expect(responseProps.checks.type).toBe('array');
       expect(responseProps.containerStartup.description).toContain('boot history');
-      expect(responseProps.containerStartup.properties.scope.enum).toEqual(['cached-startup']);
+      expect(responseProps.containerStartup.properties.scope.enum).toEqual(['startup']);
       expect(responseProps.containerStartup.properties.readinessImpact.enum).toEqual([
         'excluded-from-current-readiness'
       ]);
       expect(responseProps.containerStartup.properties.current.enum).toEqual([false]);
+      expect(responseProps.containerStartup.properties.recommendedCurrentEndpoint.enum).toEqual(['/api/preflight']);
       expect(responseProps.containerStartup.properties.cachedAt.format).toBe('date-time');
     });
 
@@ -906,6 +919,7 @@ describe('OpenAPI Path Builders', () => {
         '/api/improvements': '200',
         '/api/metrics': '200',
         '/api/preflight': '200',
+        '/api/startup-health': '200',
         '/api/results/{id}/{file}': '200',
         '/api/runs': '200',
         '/api/runs/{id}/analysis': '200',

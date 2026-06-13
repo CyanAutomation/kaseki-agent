@@ -1332,12 +1332,12 @@ const controllerPage = String.raw`<!doctype html>
         <div id="health-tab" class="tab-content" role="tabpanel" aria-labelledby="health-heading">
           <div>
             <h2 id="health-heading">Controller Health Checks</h2>
-            <p>Run diagnostics to verify the Kaseki API controller is operating correctly.</p>
+            <p>Run current diagnostics for the Kaseki API controller. Startup diagnostics shown in preflight responses are cached boot-time history, not live readiness.</p>
           </div>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
+            <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
             <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">

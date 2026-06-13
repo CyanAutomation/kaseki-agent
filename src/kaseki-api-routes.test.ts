@@ -348,6 +348,11 @@ describe('kaseki-api-routes startup health content negotiation', () => {
       expect(res.headers.get('content-type')).toContain('application/json');
       const body = (await res.json()) as StartupHealthReport;
       expect(body.status).toBe('ok');
+      expect(body).toMatchObject({
+        scope: 'startup',
+        current: false,
+        recommendedCurrentEndpoint: '/api/preflight',
+      });
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -822,7 +827,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     ]);
     jest.useRealTimers();
 
-    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-cached-startup-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-startup-'));
     const scheduler = createMockScheduler();
     const config = createTestConfig(resultsDir);
     const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
@@ -838,9 +843,10 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       expect(body.checks.map((check: any) => check.name)).not.toContain('setup-completeness');
       expect(body.containerStartup).toEqual(
         expect.objectContaining({
-          scope: 'cached-startup',
+          scope: 'startup',
           readinessImpact: 'excluded-from-current-readiness',
           current: false,
+          recommendedCurrentEndpoint: '/api/preflight',
           timestamp: startupTimestamp,
           cachedAt: startupTimestamp
         })
