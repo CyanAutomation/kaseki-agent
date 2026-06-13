@@ -82,10 +82,15 @@ export class ContainerLauncher {
         const res = await fetch(url, { signal: controller.signal });
         clearTimeout(timer);
 
-        const body = (await res.json()) as { status?: string };
-        if (body.status === 'ready') {
-          logger.info('API is ready');
-          return { ok: true };
+        try {
+          const body = (await res.json()) as { status?: string };
+          if (body.status === 'ready') {
+            logger.info('API is ready');
+            return { ok: true };
+          }
+        } catch {
+          // If JSON parsing fails, ensure body is still drained
+          await res.text().catch(() => {});
         }
       } catch {
         // Container still starting
@@ -116,6 +121,9 @@ export class ContainerLauncher {
       });
 
       clearTimeout(timer);
+
+      // Always drain response body to prevent handle leaks
+      await res.text().catch(() => {});
 
       if (res.ok) {
         logger.info('Smoke test passed');
