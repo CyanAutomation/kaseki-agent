@@ -52,7 +52,8 @@ export class HttpClientFactory {
           const errorData: unknown = await response.json();
           errorDetail = this.parseErrorDetail(errorData);
         } catch {
-          // Ignore non-JSON error payloads
+          // Drain the response body if it wasn't JSON
+          await response.text().catch(() => {});
         }
         throw new Error(`${description} failed: ${errorDetail ?? response.statusText}`);
       }
@@ -70,6 +71,8 @@ export class HttpClientFactory {
       const response = await fetch(url, options);
 
       if (!response.ok) {
+        // Drain the response body to prevent handle leaks
+        await response.text().catch(() => {});
         throw new Error(`${description} failed: ${response.status}`);
       }
 
@@ -85,6 +88,8 @@ export class HttpClientFactory {
       const response = await fetch(url, options);
 
       if (!response.ok) {
+        // Drain the response body to prevent handle leaks
+        await response.text().catch(() => {});
         throw new Error(`${description} failed: ${response.status}`);
       }
 

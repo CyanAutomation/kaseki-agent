@@ -428,6 +428,8 @@ describe('kaseki-api-routes startup health content negotiation', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(res.status).toBe(404);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
@@ -591,6 +593,8 @@ describe('kaseki-api-routes request aliases', () => {
       });
 
       expect(res.status).toBe(200);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
       expect(preFlightValidator.validate).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
@@ -1003,6 +1007,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect([200, 503]).toContain(res.status);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
 
       const runArgs = getWorkerSmokeDockerRunArgs();
       expect(runArgs).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
@@ -1154,6 +1160,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect([200, 503]).toContain(res.status);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
 
       const runArgs = getWorkerSmokeDockerRunArgs();
       expect(runArgs).toContain('/tmp/kaseki-local-secrets:/run/secrets/kaseki:ro');
@@ -1214,6 +1222,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect([200, 503]).toContain(res.status);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(res);
 
       const runArgs = getWorkerSmokeDockerRunArgs();
       expect(runArgs).toContain('/home/pi/secrets:/run/secrets/kaseki:ro');
@@ -1945,6 +1955,8 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
         headers: { Authorization: 'Bearer test-key' }
       });
       expect(response.status).toBe(404);
+      // Drain response body to release HTTP connection
+      await response.text().catch(() => {});
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
@@ -3208,6 +3220,8 @@ exit 0
       });
 
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
@@ -3326,6 +3340,8 @@ exit 0
         body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'pr' })
       });
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3360,6 +3376,8 @@ exit 0
         body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'none' })
       });
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3489,6 +3507,8 @@ exit 0
       });
 
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
@@ -3521,6 +3541,8 @@ exit 0
         body: JSON.stringify({ repoUrl: 'https://github.com/org/repo', publishMode: 'auto' })
       });
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalled();
     } finally {
       await cleanupTestApp(server, idempotencyStore);
@@ -3721,6 +3743,8 @@ describe('kaseki-api-routes idempotency concurrency', () => {
 
       const runResponse = await runPromise;
       expect(runResponse.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(runResponse);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
@@ -3808,6 +3832,8 @@ describe('kaseki-api-routes publish mode validation', () => {
       });
 
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',
@@ -3846,6 +3872,8 @@ describe('kaseki-api-routes publish mode validation', () => {
       });
 
       expect(response.status).toBe(202);
+      // Drain response body to release HTTP connection
+      await drainResponseBody(response);
       expect(scheduler.submitJob).toHaveBeenCalledWith(
         expect.objectContaining({
           repoUrl: 'https://github.com/org/repo',

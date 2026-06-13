@@ -112,7 +112,7 @@ describe('http-client-factory', () => {
         await expect(
           factory.requestText('https://api.example.test/missing-text', { method: 'GET' }, 'Missing text request')
         ).rejects.toThrow('Missing text request failed: 404');
-        expect(errorText).not.toHaveBeenCalled();
+        expect(errorText).toHaveBeenCalled();
         expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/missing-text', { method: 'GET' });
       } finally {
         global.fetch = originalFetch;

@@ -256,6 +256,17 @@ afterAll(async () => {
     // If agents don't exist or we can't access them, continue
   }
 
+  // Explicitly close undici connection pool if available (used by Node's fetch)
+  try {
+    const { getGlobalDispatcher } = require('undici');
+    const dispatcher = getGlobalDispatcher();
+    if (dispatcher && typeof dispatcher.destroy === 'function') {
+      await dispatcher.destroy();
+    }
+  } catch {
+    // undici might not be explicitly installed or accessible
+  }
+
   // Give Node a moment to complete any pending operations
   await new Promise(resolve => setImmediate(resolve));
 

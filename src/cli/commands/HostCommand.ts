@@ -114,6 +114,8 @@ EXAMPLES
     while (Date.now() - startedAt < timeoutMs) {
       try {
         const response = await fetch(url);
+        // Always consume the body to prevent handle leaks
+        await response.text().catch(() => {});
         if (response.ok) {
           console.log('Kaseki API is ready.');
           return 0;
