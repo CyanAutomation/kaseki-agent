@@ -161,7 +161,8 @@ describe('artifact-routes', () => {
 
       try {
         const response = await fetch(`${url}/api/results/${job.id}/metadata.json`);
-        const body = JSON.parse(await response.text());
+        const text = await response.text();
+        const body = JSON.parse(text);
 
         expect(response.status).toBe(200);
         expect(mockScheduler.getJob).toHaveBeenCalledWith(job.id);

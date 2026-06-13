@@ -260,6 +260,8 @@ export class LocalKasekiApiClient {
       const parsed = z.object({ detail: z.string().optional(), error: z.string().optional() }).safeParse(data);
       return parsed.success ? parsed.data.detail || parsed.data.error : undefined;
     } catch {
+      // Drain the response body if it wasn't JSON to prevent handle leaks
+      await response.text().catch(() => {});
       return undefined;
     }
   }

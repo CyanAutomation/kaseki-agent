@@ -122,7 +122,8 @@ export class KasekiApiClient {
         const errorData = await res.json();
         errorDetail = this.parseErrorDetail(errorData);
       } catch {
-        // Ignore
+        // Drain the response body if it wasn't JSON to prevent handle leaks
+        await res.text().catch(() => {});
       }
       throw new Error(`Validation failed: ${errorDetail ?? res.statusText}`);
     }
@@ -141,10 +142,14 @@ export class KasekiApiClient {
     });
 
     if (res.status === 404) {
+      // Drain the response body to release the HTTP connection
+      await res.text().catch(() => {});
       throw new Error(`Run not found: ${runId}`);
     }
 
     if (!res.ok) {
+      // Drain the response body to release the HTTP connection
+      await res.text().catch(() => {});
       throw new Error(`Failed to get status: ${res.status}`);
     }
 

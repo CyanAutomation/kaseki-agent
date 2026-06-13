@@ -185,6 +185,9 @@ export class WebhookManager extends EventEmitter {
 
       const durationMs = Date.now() - startTime;
 
+      // Drain the response body to release the HTTP connection
+      await response.text().catch(() => {});
+
       if (response.ok) {
         // Success
         entry.attempts.push({
@@ -445,7 +448,7 @@ export class WebhookManager extends EventEmitter {
         });
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100).unref());
     }
 
     this.persistDeliveryLog();
