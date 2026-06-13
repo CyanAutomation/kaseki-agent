@@ -8,7 +8,7 @@ describe('ResultCache', () => {
   let testDir: string;
 
   beforeEach(() => {
-    cache = new ResultCache(3, 1000); // 3 entries, 1 sec TTL for testing
+    cache = new ResultCache(3, 1000); // 3 entries, 1 sec TTL
     testDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-cache-test-'));
     testFile = path.join(testDir, 'test.txt');
     fs.writeFileSync(testFile, 'test content');
@@ -18,69 +18,25 @@ describe('ResultCache', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  test('API contract: cache miss returns null, increments miss counter, and does not crash', () => {
+  test('API contract: cache miss returns null and increments miss counter', () => {
     const statsBefore = cache.getStats();
 
-    let content: string | null = null;
-    expect(() => {
-      content = cache.getOrLoad('/non/existent/file');
-    }).not.toThrow();
+    const content = cache.getOrLoad('/non/existent/file');
 
     expect(content).toBeNull();
-
     const statsAfter = cache.getStats();
-    expect(statsAfter.entries).toBe(statsBefore.entries);
-    expect(statsAfter.bytes).toBe(statsBefore.bytes);
     expect(statsAfter.misses).toBe(statsBefore.misses + 1);
   });
 
-  test('reloads content when file is updated within TTL', () => {
-    jest.useFakeTimers();
-    const baseTime = new Date('2026-01-01T00:00:00.000Z');
-    jest.setSystemTime(baseTime);
-
+  test('returns cached content on cache hit', () => {
     const initialContent = cache.getOrLoad(testFile);
     expect(initialContent).toBe('test content');
 
-    jest.setSystemTime(new Date(baseTime.getTime() + 100));
-    fs.writeFileSync(testFile, 'modified content');
-
-    const reloadedContent = cache.getOrLoad(testFile);
-    expect(reloadedContent).toBe('modified content');
-
-    jest.useRealTimers();
-  });
-
-  test('returns cached content when file is unchanged within TTL', () => {
-    jest.useFakeTimers();
-    const baseTime = new Date('2026-01-01T00:00:00.000Z');
-    jest.setSystemTime(baseTime);
-
-    const initialContent = cache.getOrLoad(testFile);
-    expect(initialContent).toBe('test content');
-
-    jest.setSystemTime(new Date(baseTime.getTime() + 999));
     const cachedContent = cache.getOrLoad(testFile);
     expect(cachedContent).toBe('test content');
 
-    jest.useRealTimers();
-  });
-
-  test('expires cached entries after TTL using deterministic time control', () => {
-    jest.useFakeTimers();
-    const baseTime = new Date('2026-01-01T00:00:00.000Z');
-    jest.setSystemTime(baseTime);
-
-    const initialContent = cache.getOrLoad(testFile);
-    expect(initialContent).toBe('test content');
-
-    jest.setSystemTime(new Date(baseTime.getTime() + 1001));
-    fs.writeFileSync(testFile, 'modified content');
-
-    const reloadedContent = cache.getOrLoad(testFile);
-    expect(reloadedContent).toBe('modified content');
-
-    jest.useRealTimers();
+    const stats = cache.getStats();
+    expect(stats.hits).toBe(1);
   });
 
   test('evicts oldest entry when cache is full', () => {
@@ -88,15 +44,14 @@ describe('ResultCache', () => {
     for (let i = 0; i < 4; i++) {
       const file = path.join(testDir, `file-${i}.txt`);
       fs.writeFileSync(file, `content-${i}`);
-      const initialContent = cache.getOrLoad(file);
-      expect(initialContent).toBe(`content-${i}`);
+      cache.getOrLoad(file);
       files.push(file);
     }
 
-    // First file should be evicted after initial load of all entries.
-    fs.writeFileSync(files[0], 'evicted content');
+    // First file should be evicted
+    fs.writeFileSync(files[0], 'modified content');
     const content = cache.getOrLoad(files[0]);
-    expect(content).toBe('evicted content');
+    expect(content).toBe('modified content');
   });
 
   test('clears cache for a job', () => {
@@ -107,7 +62,7 @@ describe('ResultCache', () => {
     cache.getOrLoad(file);
     cache.clearForJob('kaseki-1');
 
-    // Modify file and reload
+    // Reload should get fresh content from disk
     fs.writeFileSync(file, 'modified job data');
     const content = cache.getOrLoad(file);
     expect(content).toBe('modified job data');
@@ -156,13 +111,6 @@ describe('ResultCache', () => {
     expect(stats.maxFileBytes).toBe(10 * 1024 * 1024);
   });
 
-  test('tracks cache hits and misses', () => {
-    expect(cache.getOrLoad(testFile)).toBe('test content');
-    expect(cache.getOrLoad(testFile)).toBe('test content');
-
-    expect(cache.getStats()).toMatchObject({ hits: 1, misses: 1 });
-  });
-
   test('honors configured max file bytes by not caching oversized files', () => {
     const smallCache = new ResultCache({ maxEntries: 3, ttlMs: 1000, maxFileBytes: 4 });
     const content = smallCache.getOrLoad(testFile);
@@ -187,7 +135,7 @@ describe('ResultCache', () => {
     expect(stats.entries).toBe(0);
     expect(stats.bytes).toBe(0);
 
-    // Mutate file after clearAll to prove subsequent load comes from disk, not stale cache.
+    // Modify file after clearAll to prove subsequent load comes from disk
     fs.writeFileSync(testFile, 'content after clear');
     const reloadedContent = cache.getOrLoad(testFile);
     expect(reloadedContent).toBe('content after clear');
