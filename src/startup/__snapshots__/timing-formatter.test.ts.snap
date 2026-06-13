@@ -1,0 +1,18 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`Timing Formatter should produce consistent formatted output 1`] = `
+{
+  "component": "✓ ResultCache initialized (12.3ms)",
+  "fastComponent": "✓ FastComponent initialized (50.0ms)",
+  "ms100": "100.0ms",
+  "ms1234": "1234.6ms",
+  "slowComponent": "⚠️  SlowComponent initialized (1200.0ms) — above threshold (1000ms)",
+  "table": "Component                     Duration
+--------------------------------------------------
+✓ ResultCache                      12.3ms
+✓ WebhookManager                   18.5ms
+✓ JobScheduler                     89.2ms
+--------------------------------------------------
+TOTAL                             120.0ms",
+}
+`;
