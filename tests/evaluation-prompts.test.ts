@@ -73,7 +73,7 @@ describe('Evaluation Prompt Enhancements', () => {
       'build_goal_check_prompt() {',
       'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
       'validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"',
-      'progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.log 2>/dev/null || true)"',
+      'progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"',
       'if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then',
       'if [ -f "$GOAL_SETTING_ARTIFACT" ]; then',
       'if [ -f "${KASEKI_RESULTS_DIR}"/validation-causality-analysis.json ]; then',
@@ -198,10 +198,10 @@ build_goal_check_prompt
       writeJson(path.join(tmpDir, 'metadata.json'), { task_mode: 'patch', instance: 'run-evaluation-test' });
       writeJson(path.join(tmpDir, 'test-impact-warnings.json'), { warnings: [] });
       fs.writeFileSync(path.join(tmpDir, 'validation.log'), 'npm test passed\n');
-      fs.writeFileSync(path.join(tmpDir, 'progress.log'), 'run-evaluation prompt render\n');
+      fs.writeFileSync(path.join(tmpDir, 'progress.jsonl'), '{"detail":"run-evaluation prompt render"}\n');
       fs.writeFileSync(path.join(tmpDir, 'stage-timings.tsv'), 'validation\t0\t1\n');
       fs.writeFileSync(path.join(tmpDir, 'dependency-cache.log'), 'cache disabled for test\n');
-      fs.writeFileSync(path.join(tmpDir, 'restoration-report.md'), 'No restoration needed.\n');
+      fs.writeFileSync(path.join(tmpDir, 'restoration.jsonl'), '{"event":"restoration_summary","detail":"No restoration needed."}\n');
 
       fs.writeFileSync(
         rendererPath,
@@ -1031,7 +1031,7 @@ try {
       runLogPath: run.runLogPath,
       stageTimings: readDiagnosticFileIfExists(path.join(run.resultsDir, 'stage-timings.tsv')),
       runEvaluationStderr: readDiagnosticFileIfExists(path.join(run.resultsDir, 'run-evaluation-stderr.log')),
-      progressLog: readDiagnosticFileIfExists(path.join(run.resultsDir, 'progress.log')),
+      progressLog: readDiagnosticFileIfExists(path.join(run.resultsDir, 'progress.jsonl')),
     });
 
     const expectWithRunEvaluationDiagnostic = (
