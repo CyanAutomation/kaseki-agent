@@ -16,9 +16,10 @@ describe('async-impact-analyzer', () => {
 
     // Initialize a git repo (required by analyzer)
     try {
-      execSync('cd "$TEMP_DIR" && git init -q', { env: { TEMP_DIR: tempDir } });
-      execSync('cd "$TEMP_DIR" && git config user.email "test@test.com" && git config user.name "Test"', {
-        env: { TEMP_DIR: tempDir },
+      execSync('git init -q', { cwd: tempDir });
+      execSync('git config user.email "test@test.com" && git config user.name "Test"', {
+        cwd: tempDir,
+        shell: '/bin/bash'
       });
     } catch {
       // Git not available; will use fallback

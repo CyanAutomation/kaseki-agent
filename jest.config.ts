@@ -40,6 +40,11 @@ const config: Config = {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   testTimeout: 10000,
+  // Force Jest to exit if there are open handles
+  // This is a last resort - the real fix is proper cleanup in tests
+  forceExit: process.env.JEST_FORCE_EXIT === '1',
+  // Detect and report open handles
+  detectOpenHandles: process.env.JEST_DETECT_HANDLES === '1',
 };
 
 export default config;
