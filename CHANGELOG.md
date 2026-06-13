@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.78.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.2...v1.78.3) (2026-06-13)
+
+
+### Bug Fixes
+
+* Drain response body in various components to prevent handle leaks and improve resource management ([8810bc9](https://github.com/CyanAutomation/kaseki-agent/commit/8810bc96592dae2a7414e4ed20b75fc4dc529cc2))
+* Drain response body in various components to prevent handle leaks and improve resource management ([c42abc2](https://github.com/CyanAutomation/kaseki-agent/commit/c42abc21bca30b512e2f8300997e5a0cbdb6de5d))
+* Enhance cleanup in Jest setup to prevent connection pool exhaustion and improve HTTP response handling ([0dc21fd](https://github.com/CyanAutomation/kaseki-agent/commit/0dc21fd9b75317fb1be1a3ca4499b63b1894e4b4))
+* Improve cleanup logic in Jest setup to prevent indefinite hanging during tests ([f973cc6](https://github.com/CyanAutomation/kaseki-agent/commit/f973cc663f3f72d35e6a1c7e6509f2d4af78037b))
+* Improve Jest configuration and cleanup to prevent handle leaks during tests ([96371e3](https://github.com/CyanAutomation/kaseki-agent/commit/96371e3202eb5f2125221644f004260fd717de4d))
+* Refactor tests for clarity and consistency in progress tracking and HTTP client functionality ([6dda2d6](https://github.com/CyanAutomation/kaseki-agent/commit/6dda2d6ea26e25ae7989ed59f5554aa7b49cf15d))
+
 ## [1.78.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.1...v1.78.2) (2026-06-13)
 
 
