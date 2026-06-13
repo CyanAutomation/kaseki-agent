@@ -124,7 +124,7 @@ async function cleanupTestApp(server: Server, idempotencyStore: IdempotencyStore
 /**
  * Drain a fetch response body to ensure the HTTP connection is properly released.
  * This is critical to prevent connection pool exhaustion and hanging processes.
- * 
+ *
  * @param response The fetch Response object
  * @returns A new Response object with the body already consumed
  */
@@ -134,7 +134,7 @@ async function drainResponseBody(response: Response): Promise<Response> {
   // Node.js keeps the socket open in the HTTP agent's connection pool,
   // which can prevent the process from exiting.
   const buffer = await response.arrayBuffer();
-  
+
   // Return a new Response object with a fresh body so callers can still use
   // .json(), .text(), etc. if needed
   return new Response(buffer, {
