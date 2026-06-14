@@ -225,18 +225,7 @@ describe('ToolReliabilityAggregator', () => {
   });
 
   describe('getSummary()', () => {
-    test('returns all required summary fields', () => {
-      aggregator.recordToolStart('test');
-      aggregator.recordToolEnd('Success');
-
-      const summary = aggregator.getSummary();
-      expect(summary).toHaveProperty('total_tool_calls');
-      expect(summary).toHaveProperty('successful_tool_calls');
-      expect(summary).toHaveProperty('failed_tool_calls');
-      expect(summary).toHaveProperty('success_rate_percent');
-    });
-
-    test('rounds success rate to 2 decimal places', () => {
+    test('returns exact summary fields and rounds success rate to 2 decimal places', () => {
       // 1 success, 2 failures = 33.333...%
       aggregator.recordToolStart('t1');
       aggregator.recordToolEnd('Success');
@@ -246,6 +235,9 @@ describe('ToolReliabilityAggregator', () => {
       aggregator.recordToolEnd('Error: fail');
 
       const summary = aggregator.getSummary();
+      expect(summary.total_tool_calls).toBe(3);
+      expect(summary.successful_tool_calls).toBe(1);
+      expect(summary.failed_tool_calls).toBe(2);
       expect(summary.success_rate_percent).toBe(33.33);
     });
   });
