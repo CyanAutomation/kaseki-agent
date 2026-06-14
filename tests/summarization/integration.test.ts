@@ -326,11 +326,31 @@ describe('Summarization Integration', () => {
     });
 
     it('should handle unsupported file types', async () => {
+      const fixturePath = path.join(process.cwd(), 'tests/fixtures/summarization/data.xml');
       const filePath = path.join(testDir, 'data.xml');
-      fs.writeFileSync(filePath, '<root><item>test</item></root>');
+      const content = fs.readFileSync(fixturePath, 'utf-8');
+      fs.copyFileSync(fixturePath, filePath);
 
       const result = await readFileWithSummaryAndMetrics(filePath);
-      expect(result).toBeDefined();
+
+      expectSuccessfulRead(result);
+      expect((result as ReadErrorResult).error).toBeUndefined();
+      expect(result.content).toBe(content);
+      expect(result.content).not.toContain('<!-- SUMMARY:');
+      expect(result.metrics).toMatchObject({
+        strategy: 'full',
+        strategyReason: 'Unsupported language: unknown',
+        language: 'unknown',
+        fullSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        returnedSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        compressionRatio: 1,
+        parseTimeMs: 0,
+        cacheHit: false,
+        decisionPath: 'full_read',
+      });
+      expect(result.metrics?.estimatedTokensFull).toBeGreaterThan(0);
+      expect(result.metrics?.estimatedTokensReturned).toBe(result.metrics?.estimatedTokensFull);
+      expect(result.metrics?.estimatedTokensSaved).toBe(0);
     });
   });
 });
