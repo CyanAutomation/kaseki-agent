@@ -639,6 +639,29 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         const validationErrors = readFileSync(join(resultsDir, 'goal-setting-validation-errors.jsonl'), 'utf8');
         expect(validationErrors).toContain('missing_or_invalid: reasoning (must be non-empty string)');
         expect(readFileSync(invalidReasonFile, 'utf8').trim()).toBe('missing_required_fields');
+
+        const placeholderCandidateArtifact = join(resultsDir, 'goal-setting-candidate-placeholder.json');
+        const placeholderFinalArtifact = join(resultsDir, 'goal-setting-placeholder.json');
+        const placeholderReasonFile = join(resultsDir, 'goal-setting-validation-reason-placeholder.txt');
+        writeFileSync(placeholderCandidateArtifact, JSON.stringify({
+          ...artifact,
+          original_prompt: 'the original user prompt',
+          upgraded_goal: 'concise goal (1-3 sentences), actionable for a coding agent',
+          key_requirements: ['requirement 1 (critical constraint or dependency)'],
+          success_criteria: [{
+            criterion: 'specific, measurable criterion',
+            smart_score: 'high',
+            reasoning: 'brief reason (e.g., clearly measurable, achievable in one run)',
+          }],
+          reasoning: 'explanation of upgrades made and key decisions',
+        }));
+        expect(() =>
+          execFileSync('bash', [validationRunner, placeholderCandidateArtifact, placeholderFinalArtifact, placeholderReasonFile], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }),
+        ).toThrow();
+        expect(readFileSync(placeholderReasonFile, 'utf8').trim()).toBe('placeholder_content');
+        expect(readFileSync(join(resultsDir, 'goal-setting-validation-errors.jsonl'), 'utf8')).toContain('placeholder_content');
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

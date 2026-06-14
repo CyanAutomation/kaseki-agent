@@ -240,6 +240,7 @@ export interface StructuredProgress {
 export interface StatusResponse {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
+  completedAt?: string;
   progress?: StructuredProgress;
   elapsedSeconds?: number;
   timeoutRiskPercent?: number;
@@ -298,9 +299,10 @@ export interface ValidationResponse {
  * Log retrieval response.
  */
 export interface LogResponse {
-  logType: 'stdout' | 'stderr' | 'validation' | 'progress' | 'quality' | 'secret-scan';
+  logType: 'stdout' | 'stderr' | 'validation' | 'progress' | 'quality' | 'secret-scan' | 'combined';
   content: string;
   size: number;
+  sources?: Array<{ logType: string; file?: string; size: number }>;
 }
 
 /**
@@ -432,6 +434,8 @@ export interface PreflightCheck {
 export interface PreflightResponse {
   status: 'ok' | 'degraded' | 'error';
   timestamp: string;
+  checkCount: number;
+  failedChecks: PreflightCheck[];
   checks: PreflightCheck[];
   containerStartup?: {
     /**

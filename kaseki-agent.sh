@@ -1513,6 +1513,20 @@ function normalizeBool(value) {
   }
   return undefined;
 }
+function isPlaceholderString(value) {
+  if (typeof value !== 'string') return false;
+  return [
+    /\brepo-relative files that must be changed to satisfy the goal; use only when certain\b/i,
+    /\bliteral strings or diff hunk markers that must appear in git\.diff; use only when certain\b/i,
+    /\bglob patterns for files the coding agent should modify\b/i,
+    /\bglob patterns for files validation commands may touch\b/i,
+    /\bbrief task interpretation\b/i,
+    /\bimportant requirements and constraints\b/i,
+  ].some((pattern) => pattern.test(value));
+}
+function removePlaceholders(values) {
+  return values.filter((value) => !isPlaceholderString(value));
+}
 function firstContract(...artifacts) {
   for (const artifact of artifacts) {
     if (!artifact || typeof artifact !== 'object') continue;
@@ -1526,8 +1540,8 @@ function firstContract(...artifacts) {
 const goal = readJson(goalPath);
 const scouting = readJson(scoutingPath);
 const explicit = firstContract(scouting, goal);
-const requiredFiles = [...new Set(strings(explicit.required_files || explicit.requiredFiles))];
-const requiredSearchStrings = [...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))];
+const requiredFiles = removePlaceholders([...new Set(strings(explicit.required_files || explicit.requiredFiles))]);
+const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
 const artifact = {
@@ -3908,14 +3922,16 @@ is_transient_goal_setting_failure() {
     return 1
   fi
 
-  # Check for deterministic schema/validation errors first
-  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
-    return 1  # Deterministic (do not retry)
-  fi
-
-  # Check for Pi CLI errors in stderr (transient LLM/network issues)
+  # Check for clear Pi/API transient errors before generic validation words.
+  # Captured stderr can include surrounding Kaseki validation diagnostics even
+  # when the root cause is an upstream timeout or API error.
   if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
     return 0  # Transient (retry)
+  fi
+
+  # Check for deterministic schema/validation errors.
+  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
+    return 1  # Deterministic (do not retry)
   fi
 
   # Pi non-zero exit (transient, could be model unavailability)
@@ -4087,6 +4103,11 @@ validate_goal_setting_artifact() {
     return 1
   fi
 
+  if ! validate_no_goal_setting_placeholders "$candidate_artifact" "$reason_file"; then
+    echo "Goal-setting artifact contains prompt placeholder text" > "$results_dir/goal-setting-validation-summary.txt"
+    return 1
+  fi
+
   # Validate with Node.js
   if ! validate_goal_setting_artifact_with_node "$candidate_artifact" "$reason_file"; then
     cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
@@ -4098,6 +4119,104 @@ validate_goal_setting_artifact() {
   mv "$candidate_artifact" "$final_artifact" 2>/dev/null || cp "$candidate_artifact" "$final_artifact" 2>/dev/null || true
   [ -n "$reason_file" ] && echo "valid" > "$reason_file"
   return 0
+}
+
+validate_no_goal_setting_placeholders() {
+  local candidate_artifact="$1"
+  local reason_file="$2"
+  local results_dir="$KASEKI_RESULTS_DIR"
+
+  if node - "$candidate_artifact" <<'NODE'
+const fs = require('node:fs');
+const artifactPath = process.argv[2];
+const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+const patterns = [
+  /\bthe original user prompt\b/i,
+  /\bconcise goal \(1-3 sentences\), actionable for a coding agent\b/i,
+  /\brequirement 1 \(critical constraint or dependency\)\b/i,
+  /\bspecific, measurable criterion\b/i,
+  /\bbrief reason \(e\.g\., clearly measurable, achievable in one run\)\b/i,
+  /\bpath\/pattern[0-9]+\/\*\*/i,
+  /\be\.g\., max 3 files changed\b/i,
+  /\be\.g\., respect service boundaries\b/i,
+  /\be\.g\., must pass type checking\b/i,
+  /\be\.g\., maintain user-facing behavior\b/i,
+  /\binput\/state before changes \(if inferrable\)\b/i,
+  /\bexpected output\/state after changes \(if inferrable\)\b/i,
+  /\bexplanation of upgrades made and key decisions\b/i,
+];
+const hits = [];
+function visit(value, path = []) {
+  if (typeof value === 'string') {
+    const matched = patterns.find((pattern) => pattern.test(value));
+    if (matched) hits.push({ field: path.join('.') || 'root', value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visit(item, [...path, String(index)]));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    Object.entries(value).forEach(([key, item]) => visit(item, [...path, key]));
+  }
+}
+visit(artifact);
+if (hits.length > 0) {
+  console.error(JSON.stringify({
+    status: 'invalid_placeholder_content',
+    errors: hits.map((hit) => ({
+      field: hit.field,
+      expected: 'task-specific goal-setting content',
+      actual: hit.value,
+      severity: 'critical',
+      suggestion: 'Replace prompt-shape placeholder text with concrete task-specific content.',
+    })),
+  }));
+  process.exit(1);
+}
+NODE
+  then
+    return 0
+  fi
+
+  node - "$candidate_artifact" "$results_dir/goal-setting-validation-errors.jsonl" <<'NODE' || true
+const fs = require('node:fs');
+const [artifactPath, logPath] = process.argv.slice(2);
+try {
+  const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+  const patterns = [
+    /\bthe original user prompt\b/i,
+    /\bconcise goal \(1-3 sentences\), actionable for a coding agent\b/i,
+    /\brequirement 1 \(critical constraint or dependency\)\b/i,
+    /\bspecific, measurable criterion\b/i,
+    /\bpath\/pattern[0-9]+\/\*\*/i,
+    /\be\.g\., max 3 files changed\b/i,
+    /\bexplanation of upgrades made and key decisions\b/i,
+  ];
+  const hits = [];
+  function visit(value, path = []) {
+    if (typeof value === 'string' && patterns.some((pattern) => pattern.test(value))) {
+      hits.push({ field: path.join('.') || 'root', value });
+    } else if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, [...path, String(index)]));
+    } else if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([key, item]) => visit(item, [...path, key]));
+    }
+  }
+  visit(artifact);
+  for (const hit of hits) {
+    fs.appendFileSync(logPath, JSON.stringify({
+      step: 'semantic_validation',
+      status: 'failure',
+      reason: 'placeholder_content',
+      field: hit.field,
+      actual: hit.value,
+    }) + '\n');
+  }
+} catch {}
+NODE
+  [ -n "$reason_file" ] && echo "placeholder_content" > "$reason_file"
+  return 1
 }
 
 validate_goal_setting_artifact_with_node() {
@@ -4565,6 +4684,7 @@ run_goal_setting_agent_with_retry() {
 
   while [ "$attempt" -le "$max_attempts" ]; do
     printf '[Goal-Setting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+    rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
 
     # Capture stderr for failure classification
     goal_setting_stderr_capture="/tmp/goal-setting-stderr-$attempt.log"

@@ -222,6 +222,9 @@ function validateScoutingArtifactObject(artifact) {
 
     // Validate suggested_allowlist object
     validateSuggestedAllowlist(artifact.suggested_allowlist, errors);
+
+    const placeholderErrors = detectPlaceholderContent(artifact);
+    errors.push(...placeholderErrors);
   }
 
   if (errors.length) {
@@ -235,6 +238,48 @@ function validateScoutingArtifactObject(artifact) {
   }
 
   return { status: 'ok', reason_code: 'valid', details: 'artifact validation passed', errors: [] };
+}
+
+function detectPlaceholderContent(artifact) {
+  const placeholderPatterns = [
+    /\bbrief task interpretation\b/i,
+    /\bimportant requirements and constraints\b/i,
+    /\bwhy it matters\b/i,
+    /\bordered coding steps\b/i,
+    /\bfocused commands or checks to run\b/i,
+    /\buncertainties, edge cases, or assumptions\b/i,
+    /\brepo-relative files that must be changed to satisfy the goal; use only when certain\b/i,
+    /\bliteral strings or diff hunk markers that must appear in git\.diff; use only when certain\b/i,
+    /\bglob patterns for files the coding agent should modify\b/i,
+    /\bglob patterns for files validation commands may touch\b/i,
+  ];
+  const errors = [];
+
+  function visit(value, pathParts) {
+    if (typeof value === 'string') {
+      const matched = placeholderPatterns.find((pattern) => pattern.test(value));
+      if (matched) {
+        errors.push({
+          field: pathParts.join('.') || 'root',
+          expected: 'task-specific scouting content',
+          actual: value,
+          severity: 'critical',
+          suggestion: 'Replace prompt-shape placeholder text with concrete analysis, or omit uncertain critical-change expectations.',
+        });
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, [...pathParts, String(index)]));
+      return;
+    }
+    if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([key, item]) => visit(item, [...pathParts, key]));
+    }
+  }
+
+  visit(artifact, []);
+  return errors;
 }
 
 function validateScoutingArtifact(inputPath, outputPath, options = {}) {
