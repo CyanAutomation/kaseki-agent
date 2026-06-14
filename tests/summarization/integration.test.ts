@@ -262,8 +262,56 @@ describe('Summarization Integration', () => {
       }
       fs.writeFileSync(filePath, content);
 
+      const fullResult = await readFileWithSummaryAndMetrics(filePath, { full: true });
+      expectSuccessfulRead(fullResult);
+      expect(fullResult.content).toBe(content);
+      expect(fullResult.metrics).toMatchObject({
+        strategy: 'full',
+        language: 'typescript',
+        fullSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        returnedSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        compressionRatio: 1,
+        decisionPath: 'full_read',
+      });
+      expect(fullResult.content).toContain('export class A {}');
+      for (const symbol of ['func0', 'func1', 'func42', 'func99']) {
+        expect(fullResult.content).toContain(`export function ${symbol}() {`);
+      }
+
       const result = await readFileWithSummaryAndMetrics(filePath);
-      expect(result).toBeDefined();
+
+      expectSuccessfulRead(result);
+      expect(result.metrics).toMatchObject({
+        strategy: 'summary',
+        language: 'typescript',
+        fullSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        cacheHit: false,
+        decisionPath: 'tree_sitter',
+      });
+      expect(result.metrics?.strategyReason).toMatch(/Large supported file in range/);
+      expect(result.metrics?.returnedSizeBytes).toBe(Buffer.byteLength(result.content, 'utf-8'));
+      expect(result.metrics?.compressionRatio).toBeCloseTo(
+        Buffer.byteLength(result.content, 'utf-8') / Buffer.byteLength(content, 'utf-8')
+      );
+      expect(result.metrics?.compressionRatio).toBeGreaterThan(0);
+      expect(result.metrics?.estimatedTokensFull).toBeGreaterThan(0);
+      expect(result.metrics?.estimatedTokensReturned).toBeGreaterThan(0);
+      expect(result.metrics?.estimatedTokensSaved).toBe(
+        (result.metrics?.estimatedTokensFull ?? 0) - (result.metrics?.estimatedTokensReturned ?? 0)
+      );
+
+      expect(result.content).not.toBe(content);
+      expect(result.content).toContain('<!-- SUMMARY: typescript');
+      expect(result.content).toContain('## Exports');
+      expect(result.content).toContain('- A (class)');
+      expect(result.content).toContain('## Classes');
+      expect(result.content).toContain('### A');
+      expect(result.content).toContain('## Functions');
+
+      for (const symbol of ['func0', 'func1', 'func42', 'func99']) {
+        expect(result.content).toContain(`- ${symbol} (function)`);
+        expect(result.content).toContain(`function ${symbol}()`);
+      }
     });
   });
 
