@@ -25,21 +25,31 @@ run_case() {
   chmod +x "$case_dir/kaseki-agent-modified.sh"
 
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$fake_repo/package.json"
+  printf '%s\n' '# fake scouting repo' > "$fake_repo/README.md"
   printf '%s\n' '{"name":"fake-dep","version":"1.0.0","private":true}' > "$fake_repo/deps/fake-dep/package.json"
   printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"fake-scouting-repo","version":"1.0.0","dependencies":{"fake-dep":"file:deps/fake-dep"}},"deps/fake-dep":{"version":"1.0.0"},"node_modules/fake-dep":{"resolved":"deps/fake-dep","link":true}}}' > "$fake_repo/package-lock.json"
   git -C "$fake_repo" init -q -b main
-  git -C "$fake_repo" add package.json package-lock.json deps/fake-dep/package.json
+  git -C "$fake_repo" add README.md package.json package-lock.json deps/fake-dep/package.json
   git -C "$fake_repo" -c user.email=kaseki-test@example.invalid -c user.name="Kaseki Test" commit -q -m initial
 
   cat > "$fake_bin/pi" <<'EOF_PI'
 #!/usr/bin/env bash
 if [ "${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
 prompt="${*: -1}"
-printf 'scouting\n' >> "__PI_CALLS__"
-cat "__PAYLOAD_FILE__" > "__RESULTS_DIR__/scouting-candidate.json"
+if printf '%s' "$prompt" | grep -q 'read-only scouting Pi agent'; then
+  printf 'scouting\n' >> "__PI_CALLS__"
+  cat "__PAYLOAD_FILE__" > "__RESULTS_DIR__/scouting-candidate.json"
+elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  printf 'goal-check\n' >> "__PI_CALLS__"
+  printf '%s\n' '{"met":true,"confidence":"high","summary":"fallback patch completed","evidence":["README changed"],"missing":[],"retry_prompt":"","validation_notes":[]}' > "__RESULTS_DIR__/goal-check-candidate.json"
+else
+  printf 'coding\n' >> "__PI_CALLS__"
+  printf '%s\n' 'fallback patch update' >> README.md
+fi
 printf '{"type":"message","model":"test-model"}\n'
 EOF_PI
-  sed -i "s#__PI_CALLS__#$pi_calls#g; s#__PAYLOAD_FILE__#$payload_file#g; s#__RESULTS_DIR__#$results_dir#g" "$fake_bin/pi"
+  PI_CALLS_PATH="$pi_calls" PAYLOAD_FILE_PATH="$payload_file" RESULTS_DIR_PATH="$results_dir" \
+    perl -0pi -e 's#__PI_CALLS__#$ENV{PI_CALLS_PATH}#g; s#__PAYLOAD_FILE__#$ENV{PAYLOAD_FILE_PATH}#g; s#__RESULTS_DIR__#$ENV{RESULTS_DIR_PATH}#g' "$fake_bin/pi"
 
   cat > "$fake_bin/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
 #!/usr/bin/env bash
@@ -70,21 +80,14 @@ EOF_VALIDATION_FILTER
   local run_exit=$?
   set -e
 
-  [ "$run_exit" -ne 0 ] || fail "$case_name: expected non-zero exit"
+  [ "$run_exit" -eq 0 ] || fail "$case_name: expected fallback run to succeed, got $run_exit"
   local calls
   calls="$(cat "$pi_calls" 2>/dev/null || true)"
-  [ "$calls" = $'scouting' ] || fail "$case_name: scouting should run once without retry (calls=$calls)"
-  [ "$(cat "$results_dir/scouting-validation-reason.txt")" = "$expected_reason" ] || fail "$case_name: reason mismatch"
+  [ "$calls" = $'scouting\ncoding\ngoal-check' ] || fail "$case_name: scouting should run once before fallback coding (calls=$calls)"
+  [ ! -f "$results_dir/scouting-validation-reason.txt" ] || fail "$case_name: reason file should be cleaned after fallback validation"
   [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
-  grep -q -- "- Failure Detail: scouting-validation-errors.jsonl: $expected_reason" "$results_dir/result-summary.md" || fail "$case_name: result summary missing validation detail"
-  node - "$results_dir/failure.json" "$expected_reason" <<'NODE' || fail "$case_name: failure.json missing diagnostic reason"
-const fs = require('node:fs');
-const failure = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-const expectedReason = process.argv[3];
-if (!String(failure.diagnostic_reason || '').includes(`scouting-validation-errors.jsonl: ${expectedReason}`)) {
-  throw new Error(`missing diagnostic reason: ${failure.diagnostic_reason}`);
-}
-NODE
+  grep -q '"reason_code":"patch_fallback"' "$results_dir/scouting-validation-errors.jsonl" || fail "$case_name: fallback warning missing"
+  [ -s "$results_dir/git.diff" ] || fail "$case_name: fallback coding should produce a diff"
   node - "$results_dir/scouting-validation-errors.jsonl" "$expected_reason" <<'NODE' || fail "$case_name: invalid scouting validation errors jsonl"
 const fs = require('node:fs');
 const logPath = process.argv[2];
@@ -93,6 +96,7 @@ const lines = fs.readFileSync(logPath, 'utf8').trim().split(/\n+/).filter(Boolea
 if (!lines.length) throw new Error('expected at least one validation error line');
 const entries = lines.map((line) => JSON.parse(line));
 for (const entry of entries) {
+  if (entry.reason_code === 'patch_fallback') continue;
   for (const key of ['timestamp', 'reason_code', 'field', 'expected', 'actual', 'severity', 'suggestion']) {
     if (!(key in entry)) throw new Error(`missing key ${key}`);
   }
