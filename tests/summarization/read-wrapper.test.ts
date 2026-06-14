@@ -130,7 +130,27 @@ describe('ReadWrapper', () => {
       fs.writeFileSync(filePath, content);
 
       const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
+      expect(result).toBe(content);
+
+      const sizeBytes = fs.statSync(filePath).size;
+      const metricsResult = await readFileWithSummaryAndMetrics(filePath);
+      expect(metricsResult).toEqual({
+        content,
+        metrics: {
+          strategy: 'full',
+          strategyReason: `File too small (${sizeBytes} < ${getConfig().minSizeBytes} bytes)`,
+          language: 'unknown',
+          fullSizeBytes: sizeBytes,
+          returnedSizeBytes: sizeBytes,
+          compressionRatio: 1,
+          parseTimeMs: 0,
+          cacheHit: false,
+          decisionPath: 'full_read',
+          estimatedTokensFull: Math.ceil(sizeBytes / 3.5),
+          estimatedTokensReturned: Math.ceil(sizeBytes / 3.5),
+          estimatedTokensSaved: 0,
+        },
+      });
     });
   });
 
