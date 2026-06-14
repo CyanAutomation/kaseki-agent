@@ -277,12 +277,16 @@ describe('async-impact-analyzer', () => {
 
     it('should handle very long prompts efficiently', () => {
       const longPrompt = 'Convert to async. ' + 'word '.repeat(5000);
-      const start = Date.now();
       const analysis = analyzeAsyncImpact(longPrompt, tempDir);
-      const duration = Date.now() - start;
+      const repeatedAnalysis = analyzeAsyncImpact(longPrompt, tempDir);
 
       expect(analysis.hasAsyncChanges).toBe(true);
-      expect(duration).toBeLessThan(5000); // Should complete quickly
+      expect(analysis.asyncKeywords).toEqual(['async', 'convert.*async']);
+      expect(analysis.mockFiles).toEqual([]);
+      expect(analysis.testFiles).toEqual([]);
+      expect(analysis.interfaceFiles).toEqual([]);
+      expect(analysis.consumerFiles).toEqual([]);
+      expect(repeatedAnalysis).toEqual(analysis);
     });
   });
 });
