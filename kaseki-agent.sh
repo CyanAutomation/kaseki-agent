@@ -4818,26 +4818,23 @@ Research the task before a separate coding agent starts:
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
 - The repository tree is read-only during scouting. Write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT.
 
-The JSON object must be concise and useful to the coding agent. Use this shape:
-{
-  "task": "brief task interpretation",
-  "requirements": ["important requirements and constraints"],
-  "relevant_files": [{"path": "repo-relative path", "reason": "why it matters"}],
-  "observations": ["facts learned from repository inspection"],
-  "plan": ["ordered coding steps"],
-  "validation": ["focused commands or checks to run"],
-  "risks": ["uncertainties, edge cases, or assumptions"],
-  "test_impact": [{"path": "src/job-scheduler.test.ts", "reason": "progress stage expectations"}],
-  "critical_change_expectations": {
-    "required_files": ["repo-relative files that must be changed to satisfy the goal; use only when certain"],
-    "required_search_strings": ["literal strings or diff hunk markers that must appear in git.diff; use only when certain"],
-    "forbidden_empty_diff": true
-  },
-  "suggested_allowlist": {
-    "agent_patterns": ["glob patterns for files the coding agent should modify"],
-    "validation_patterns": ["glob patterns for files validation commands may touch"]
-  }
-}
+The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
+- task: string; a concrete interpretation of the requested task.
+- requirements: array of strings; concrete requirements and constraints from the task.
+- relevant_files: array of objects with path and reason strings; repo-relative files and why each matters.
+- observations: array of strings; concrete facts learned from repository inspection.
+- plan: array of strings; ordered, task-specific coding steps.
+- validation: array of strings; focused commands or checks appropriate for this task.
+- risks: array of strings; concrete unknowns, boundary conditions, or task assumptions.
+- test_impact: array of objects with path, reason, and optional test_examples.
+- critical_change_expectations: optional object with required_files, required_search_strings, and forbidden_empty_diff.
+- suggested_allowlist: object with agent_patterns and validation_patterns arrays.
+
+Output rules for the JSON artifact:
+- Do not copy the example text.
+- Every string must be concrete to the task.
+- Use empty arrays for optional unknown fields.
+- Omit critical_change_expectations or leave its arrays empty unless concrete required files/search strings are certain.
 
 Guidelines for test_impact:
 - Always include test_impact. Use an empty array only when no likely affected tests or expectation strings can be identified.
