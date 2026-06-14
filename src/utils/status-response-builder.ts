@@ -24,6 +24,16 @@ const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check.json',
   'goal-check-attempts.jsonl',
 ] as const;
+const GOAL_SETTING_DIAGNOSTIC_FILES = [
+  'goal-setting-validation-errors.jsonl',
+  'goal-setting-stderr.log',
+  'goal-setting.json',
+] as const;
+const SCOUTING_DIAGNOSTIC_FILES = [
+  'scouting-validation-errors.jsonl',
+  'scouting-stderr.log',
+  'scouting.json',
+] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
 const INLINE_ARTIFACT_LIMIT_BYTES = 65536;
 
@@ -240,16 +250,32 @@ export class StatusResponseBuilder {
     }
 
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const metadata = this.readMetadata(runDir);
     const includeGoalCheckDiagnostics =
       job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON;
-    const artifactFiles = includeGoalCheckDiagnostics
-      ? [...STATUS_KEY_FILES, ...GOAL_CHECK_DIAGNOSTIC_FILES]
-      : [...STATUS_KEY_FILES];
-    const metadata = getRunArtifactMetadata(job.id, runDir, artifactFiles, true);
+    const includeGoalSettingDiagnostics = job.status === 'failed' && this.shouldIncludePhaseDiagnostics(
+      metadata,
+      'goal-setting',
+      GOAL_SETTING_DIAGNOSTIC_FILES,
+      runDir
+    );
+    const includeScoutingDiagnostics = job.status === 'failed' && this.shouldIncludePhaseDiagnostics(
+      metadata,
+      'scouting',
+      SCOUTING_DIAGNOSTIC_FILES,
+      runDir
+    );
+    const artifactFiles = [
+      ...STATUS_KEY_FILES,
+      ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
+      ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
+      ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
+    ];
+    const artifactMetadata = getRunArtifactMetadata(job.id, runDir, artifactFiles, true);
     const isAvailable = (fileName: string): boolean =>
-      metadata[fileName]?.exists === true && metadata[fileName].size > 0;
+      artifactMetadata[fileName]?.exists === true && artifactMetadata[fileName].size > 0;
     const isSmallAvailable = (fileName: string): boolean =>
-      isAvailable(fileName) && metadata[fileName].size <= INLINE_ARTIFACT_LIMIT_BYTES;
+      isAvailable(fileName) && artifactMetadata[fileName].size <= INLINE_ARTIFACT_LIMIT_BYTES;
     const keyFileAvailability = STATUS_KEY_FILES.reduce(
       (acc, fileName) => {
         acc[fileName] = isAvailable(fileName);
@@ -257,9 +283,11 @@ export class StatusResponseBuilder {
       },
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
     );
-    const diagnosticFiles = includeGoalCheckDiagnostics
-      ? GOAL_CHECK_DIAGNOSTIC_FILES.filter((fileName) => isAvailable(fileName))
-      : [];
+    const diagnosticFiles = [
+      ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
+      ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
+      ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
+    ].filter((fileName) => isAvailable(fileName));
 
     response.artifacts = {
       metadataJson: keyFileAvailability['metadata.json'],
@@ -269,7 +297,7 @@ export class StatusResponseBuilder {
       stderrLog: keyFileAvailability['stderr.log'],
       stdoutLog: keyFileAvailability['stdout.log'],
       availableFiles: artifactFiles.filter((fileName) => isAvailable(fileName)),
-      ...(includeGoalCheckDiagnostics ? { diagnosticFiles } : {}),
+      ...(diagnosticFiles.length > 0 ? { diagnosticFiles } : {}),
     };
 
     // Inline diagnostic content for immediate access
@@ -293,33 +321,57 @@ export class StatusResponseBuilder {
           }
         }
 
-        if (includeGoalCheckDiagnostics && isSmallAvailable('goal-check-validation-errors.jsonl')) {
-          const validationErrorsPath = path.join(runDir, 'goal-check-validation-errors.jsonl');
-          const validationErrorsContent = this.readSmallTerminalArtifact(validationErrorsPath);
-          if (validationErrorsContent && validationErrorsContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) {
-            this.addGoalCheckValidationErrorsContent(response, validationErrorsContent);
-          }
-        }
+        this.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
+        this.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
+        this.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
       }
     } catch {
       // Silently skip inlining if any error occurs
     }
 
     if (job.status === 'failed') {
-      const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = includeGoalCheckDiagnostics
-        ? [
+      const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+        ...(includeGoalSettingDiagnostics ? [
+          'goal-setting-validation-errors.jsonl',
+          'goal-setting-stderr.log',
+        ] as DiagnosticEntryPoint[] : []),
+        ...(includeScoutingDiagnostics ? [
+          'scouting-validation-errors.jsonl',
+          'scouting-stderr.log',
+        ] as DiagnosticEntryPoint[] : []),
+        ...(includeGoalCheckDiagnostics ? [
           'goal-check-validation-errors.jsonl',
           'goal-check-stderr.log',
-          'failure.json',
-          'analysis.md',
-          'result-summary.md',
-          'stderr.log',
-          'stdout.log',
-        ]
-        : ['failure.json', 'analysis.md', 'result-summary.md', 'stderr.log', 'stdout.log'];
+        ] as DiagnosticEntryPoint[] : []),
+      ];
+      const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = [
+        ...phaseDiagnosticEntryPoints,
+        'failure.json',
+        'analysis.md',
+        'result-summary.md',
+        'stderr.log',
+        'stdout.log',
+      ];
 
       response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
     }
+  }
+
+  private shouldIncludePhaseDiagnostics(
+    metadata: any,
+    phase: 'goal-setting' | 'scouting',
+    files: readonly string[],
+    runDir: string
+  ): boolean {
+    const failedCommand = String(metadata?.failed_command ?? '');
+    if (failedCommand.includes(`pi ${phase} agent`)) {
+      return true;
+    }
+    const phaseExitCode = metadata?.[phase === 'goal-setting' ? 'goal_setting_exit_code' : 'scouting_exit_code'];
+    if (Number(phaseExitCode) === 86) {
+      return true;
+    }
+    return files.some((fileName) => fs.existsSync(path.join(runDir, fileName)));
   }
 
   private addTaskProgressInfo(response: StatusResponse, job: Job): void {
@@ -518,7 +570,29 @@ export class StatusResponseBuilder {
     return {};
   }
 
-  private addGoalCheckValidationErrorsContent(response: StatusResponse, content: string): void {
+  private addValidationErrorsContent(
+    response: StatusResponse,
+    runDir: string,
+    fileName: 'goal-setting-validation-errors.jsonl' | 'scouting-validation-errors.jsonl' | 'goal-check-validation-errors.jsonl',
+    phase: 'goalSetting' | 'scouting' | 'goalCheck',
+    isSmallAvailable: (fileName: string) => boolean
+  ): void {
+    if (!isSmallAvailable(fileName)) {
+      return;
+    }
+    const validationErrorsPath = path.join(runDir, fileName);
+    const validationErrorsContent = this.readSmallTerminalArtifact(validationErrorsPath);
+    if (!validationErrorsContent || validationErrorsContent.length > INLINE_ARTIFACT_LIMIT_BYTES) {
+      return;
+    }
+    this.addValidationErrorsContentFields(response, validationErrorsContent, phase);
+  }
+
+  private addValidationErrorsContentFields(
+    response: StatusResponse,
+    content: string,
+    phase: 'goalSetting' | 'scouting' | 'goalCheck'
+  ): void {
     try {
       const parsedErrors = content
         .split('\n')
@@ -526,14 +600,27 @@ export class StatusResponseBuilder {
         .map(line => JSON.parse(line) as unknown);
 
       if (parsedErrors.every(this.isRecord)) {
-        response.goalCheckValidationErrorsContent = parsedErrors;
+        if (phase === 'goalSetting') {
+          response.goalSettingValidationErrorsContent = parsedErrors;
+        } else if (phase === 'scouting') {
+          response.scoutingValidationErrorsContent = parsedErrors;
+        } else {
+          response.goalCheckValidationErrorsContent = parsedErrors;
+        }
         return;
       }
     } catch {
       // Fall through to bounded raw content fallback.
     }
 
-    response.goalCheckValidationErrorsRawContent = content.slice(0, INLINE_ARTIFACT_LIMIT_BYTES);
+    const rawContent = content.slice(0, INLINE_ARTIFACT_LIMIT_BYTES);
+    if (phase === 'goalSetting') {
+      response.goalSettingValidationErrorsRawContent = rawContent;
+    } else if (phase === 'scouting') {
+      response.scoutingValidationErrorsRawContent = rawContent;
+    } else {
+      response.goalCheckValidationErrorsRawContent = rawContent;
+    }
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

@@ -223,6 +223,10 @@ export type DiagnosticEntryPoint =
   | 'result-summary.md'
   | 'stderr.log'
   | 'stdout.log'
+  | 'goal-setting-validation-errors.jsonl'
+  | 'goal-setting-stderr.log'
+  | 'scouting-validation-errors.jsonl'
+  | 'scouting-stderr.log'
   | 'goal-check-validation-errors.jsonl'
   | 'goal-check-stderr.log';
 
@@ -258,6 +262,10 @@ export interface StatusResponse {
   // Inline diagnostic content (always available for terminal jobs)
   resultSummaryContent?: string; // Human-readable markdown summary
   failureJsonContent?: Record<string, any>; // Structured failure info (only if failed)
+  goalSettingValidationErrorsContent?: Array<Record<string, unknown>>; // Parsed goal-setting artifact validation errors (only if small)
+  goalSettingValidationErrorsRawContent?: string; // Raw goal-setting validation errors fallback when JSONL parsing fails
+  scoutingValidationErrorsContent?: Array<Record<string, unknown>>; // Parsed scouting artifact validation errors (only if small)
+  scoutingValidationErrorsRawContent?: string; // Raw scouting validation errors fallback when JSONL parsing fails
   goalCheckValidationErrorsContent?: Array<Record<string, unknown>>; // Parsed goal-check artifact validation errors (only if small)
   goalCheckValidationErrorsRawContent?: string; // Raw goal-check validation errors fallback when JSONL parsing fails
   artifacts?: {
@@ -384,6 +392,11 @@ export interface AnalysisResponse {
       exitCode: number;
       elapsed: number;
     }>;
+  };
+  diagnostics?: {
+    entryPoint?: DiagnosticEntryPoint;
+    files: string[];
+    details?: Array<Record<string, unknown>>;
   };
   errors?: string[];
 }
