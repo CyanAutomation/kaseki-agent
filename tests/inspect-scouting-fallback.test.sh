@@ -90,7 +90,7 @@ set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
 expected_calls=$'goal-setting\nscouting\ncoding\ngoal-check'
-actual_calls="$(cat "$PI_CALLS")"
+actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 [ "$actual_calls" = "$expected_calls" ] || fail "expected fallback to continue through inspect agent, got: $(tr '\n' ',' < "$PI_CALLS")"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "fallback scouting.json was not produced"
 grep -q 'missing_scouting_candidate_for_inspect_mode' "$RESULTS_DIR/scouting.json" || fail "fallback reason missing"
