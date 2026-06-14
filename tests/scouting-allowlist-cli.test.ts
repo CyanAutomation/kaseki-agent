@@ -80,6 +80,45 @@ describe('scouting-allowlist.js CLI', () => {
     expect(['missing_required_fields', 'schema_mismatch']).toContain(result.reason_code);
   });
 
+  test('should reject prompt-shape placeholder scouting content', () => {
+    const artifact = {
+      task: 'brief task interpretation',
+      requirements: ['important requirements and constraints'],
+      relevant_files: [{ path: 'repo-relative path', reason: 'why it matters' }],
+      observations: ['facts learned from repository inspection'],
+      plan: ['ordered coding steps'],
+      validation: ['focused commands or checks to run'],
+      risks: ['uncertainties, edge cases, or assumptions'],
+      test_impact: [],
+      critical_change_expectations: {
+        required_files: ['repo-relative files that must be changed to satisfy the goal; use only when certain'],
+        required_search_strings: ['literal strings or diff hunk markers that must appear in git.diff; use only when certain'],
+        forbidden_empty_diff: true,
+      },
+      suggested_allowlist: {
+        agent_patterns: ['glob patterns for files the coding agent should modify'],
+        validation_patterns: ['glob patterns for files validation commands may touch'],
+      },
+    };
+
+    const artifactPath = path.join(tmpDir, 'scouting-placeholder.json');
+    fs.writeFileSync(artifactPath, JSON.stringify(artifact));
+
+    let result: any;
+    try {
+      execSync(`node scripts/scouting-allowlist.js validate ${artifactPath}`, {
+        encoding: 'utf-8',
+        cwd: process.cwd(),
+      });
+    } catch (e: any) {
+      result = JSON.parse(String(e.stdout || '{}'));
+    }
+
+    expect(result.status).toBe('rejected');
+    expect(result.reason_code).toBe('schema_mismatch');
+    expect(result.errors.some((error: any) => error.suggestion.includes('placeholder'))).toBe(true);
+  });
+
   test('should derive allowlist from valid artifact', () => {
     const artifact = {
       task: 'refactor parser',

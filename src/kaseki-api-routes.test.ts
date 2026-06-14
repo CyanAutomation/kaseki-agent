@@ -892,6 +892,42 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight includes server-side check summary fields', async () => {
+    const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-summary-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-summary-results-'));
+    const { templateDir, checkoutDir } = writePreflightTemplateFixture(root);
+    const envSnapshot = { ...process.env };
+
+    try {
+      process.env.KASEKI_TEMPLATE_DIR = templateDir;
+      process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+      execDockerCommandMock.mockImplementation((args: string[]) => ({
+        ok: args[0] === 'version',
+        stdout: args[0] === 'version' ? '24.0.0 -> 24.0.0' : '',
+        classification: { detail: 'image missing', remediation: 'pull image' }
+      }));
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(body.checkCount).toBe(body.checks.length);
+        expect(body.failedChecks).toEqual(body.checks.filter((check: any) => !check.ok));
+        expect(body.failedChecks.length).toBeGreaterThan(0);
+      } finally {
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports template activator parity when checkout and template match', async () => {
     const originalTemplateDir = process.env.KASEKI_TEMPLATE_DIR;
     const originalCheckoutDir = process.env.KASEKI_CHECKOUT_DIR;
@@ -2087,6 +2123,41 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
       await idempotencyStore.shutdown();
     }
   });
+
+  test('combined logs concatenate available run logs with source metadata', async () => {
+    const jobId = 'kaseki-combined-logs';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout line\n');
+    fs.writeFileSync(path.join(jobDir, 'validation.log'), 'validation line\n');
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'failed',
+        createdAt: new Date(),
+        resultDir: jobDir
+      } as any
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/combined`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.logType).toBe('combined');
+      expect(body.content).toContain('===== stdout (stdout.log) =====');
+      expect(body.content).toContain('stdout line');
+      expect(body.content).toContain('===== validation (validation.log) =====');
+      expect(body.content).toContain('validation line');
+      expect(body.sources.map((source: any) => source.logType)).toEqual(['stdout', 'validation']);
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
 });
 
 describe('kaseki-api-routes controller replay and events', () => {
@@ -2820,7 +2891,7 @@ describe('kaseki-api-routes status artifact hints', () => {
         message: 'file tail was malformed',
         updatedAt: '2026-05-05T00:00:01.000Z'
       });
-      expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 1);
+      expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 100);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();
@@ -2956,7 +3027,7 @@ describe('kaseki-api-routes status artifact hints', () => {
       expect(body.taskProgressPercent).toBeGreaterThanOrEqual(0);
       expect(body.taskProgressPercent).toBeLessThanOrEqual(100);
       expect(body.taskProgressPercent).toBeLessThan(100);
-      expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 1);
+      expect(scheduler.getLiveProgressEvents).toHaveBeenCalledWith(jobId, 100);
     } finally {
       await cleanupTestApp(server, idempotencyStore);
     }
