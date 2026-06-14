@@ -133,6 +133,23 @@ describe('StatusResponseBuilder', () => {
       expect(response.error).toBe('Validation failed');
     });
 
+    it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {
+      const job: Partial<Job> = {
+        id: 'job-terminal-metadata',
+        status: 'failed',
+        resultDir: '/results/job-terminal-metadata',
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => filePath.endsWith('metadata.json'));
+      (fs.readFileSync as jest.Mock).mockReturnValue(JSON.stringify({
+        ended_at: '2026-06-14T08:48:29Z',
+      }));
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.completedAt).toBe('2026-06-14T08:48:29.000Z');
+    });
+
     it('should expose validation allowlist failures as validation-related status reasons', () => {
       const job: Partial<Job> = {
         id: 'job-validation-allowlist',
@@ -648,7 +665,7 @@ describe('StatusResponseBuilder', () => {
 
       expect(fs.existsSync).toHaveBeenCalledWith(progressPath);
       expect(fs.readFileSync).not.toHaveBeenCalledWith(progressPath, expect.anything());
-      expect(mockScheduler.getLiveProgressEvents).toHaveBeenCalledWith('job-1', 1);
+      expect(mockScheduler.getLiveProgressEvents).toHaveBeenCalledWith('job-1', 100);
       expect(response.taskProgressPercent).toBe(0);
       expect(response.progress).toBeUndefined();
       expect(response.status).toBe('running');
@@ -675,7 +692,7 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      expect(mockScheduler.getLiveProgressEvents).toHaveBeenCalledWith('job-1', 1);
+      expect(mockScheduler.getLiveProgressEvents).toHaveBeenCalledWith('job-1', 100);
       expect(response.taskProgressPercent).toBeDefined();
     });
 

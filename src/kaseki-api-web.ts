@@ -2180,14 +2180,17 @@ const controllerPage = String.raw`<!doctype html>
         }
       }
 
-      async function pollRun(runId) {
+      async function pollRun(runId, options) {
         stopPolling();
         if (!runId) return;
         let retryCount = 0;
+        let firstPoll = true;
         const maxRetries = 36;
         async function poll() {
           try {
-            const result = await apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput: activeRunView !== 'status' });
+            const preserveOutput = (options && options.preserveFirstOutput && firstPoll) || activeRunView !== 'status';
+            firstPoll = false;
+            const result = await apiRequest(runUrl(runId, '/status'), { auth: true, preserveOutput });
             summarizeRun(result.payload);
             retryCount = 0;
             if (result.response.ok && result.payload && result.payload.status && !isTerminalStatus(result.payload.status)) {
@@ -2872,7 +2875,7 @@ const controllerPage = String.raw`<!doctype html>
               showRunLinks(payload.id);
               activeRunView = 'status';
               loadRunsList({ preserveOutput: true });
-              pollRun(payload.id);
+              pollRun(payload.id, { preserveFirstOutput: true });
             }
           })
           .catch((error) => {

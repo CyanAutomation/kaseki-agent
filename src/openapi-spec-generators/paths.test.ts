@@ -752,6 +752,7 @@ describe('OpenAPI Path Builders', () => {
       expect(logtypeParam.schema.enum).toContain('stdout');
       expect(logtypeParam.schema.enum).toContain('stderr');
       expect(logtypeParam.schema.enum).toContain('validation');
+      expect(logtypeParam.schema.enum).toContain('combined');
     });
 
     it('GET /api/runs/{id}/logs/{logtype} should support tail parameter', () => {

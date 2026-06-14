@@ -1297,9 +1297,12 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     : checks.some((check) => check.name === 'docker-daemon' && !check.ok)
       ? 'error'
       : 'degraded';
+  const failedChecks = checks.filter((check) => !check.ok);
   return {
     status,
     timestamp: new Date().toISOString(),
+    checkCount: checks.length,
+    failedChecks,
     checks,
     image,
     imageDigest: templateImageDigest,

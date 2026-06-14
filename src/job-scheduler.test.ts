@@ -211,6 +211,84 @@ describe('JobScheduler timeout lifecycle', () => {
     expect(fs.existsSync(job.resultDir || '')).toBe(false);
   });
 
+  test('infers lightweight docs-only defaults when validation and allowlist are omitted', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      taskPrompt: 'Please make a small documentation-only improvement in README formatting and docs cross-reference wording.',
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_DOCS_ONLY_TASK: '1',
+          KASEKI_PRE_AGENT_VALIDATION: '0',
+          KASEKI_VALIDATION_COMMANDS: 'npm run type-check',
+          KASEKI_CHANGED_FILES_ALLOWLIST: 'README.md docs/**/*.md *.md',
+        }),
+      }),
+    );
+  });
+
+  test('does not override explicit validation commands for docs-like prompts', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+    const resultsDir = createResultsDir();
+
+    const scheduler = new JobScheduler(
+      {
+        port: 8080,
+        apiKeys: ['test-key'],
+        resultsDir,
+        maxConcurrentRuns: 1,
+        defaultTaskMode: 'patch',
+        maxDiffBytes: 400000,
+        agentTimeoutSeconds: 30,
+        logLevel: 'info',
+      },
+      createMockWebhookManager(),
+    );
+
+    await scheduler.submitJob({
+      repoUrl: 'https://github.com/org/repo',
+      ref: 'main',
+      taskPrompt: 'Please update README documentation wording.',
+      validationCommands: ['npm test'],
+    });
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      'bash',
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          KASEKI_VALIDATION_COMMANDS: 'npm test',
+        }),
+      }),
+    );
+  });
+
   test('passes GitHub App secret file paths for controller runs', async () => {
     const secretsDir = fs.mkdtempSync('/tmp/kaseki-job-secrets-test-');
     tempDirs.push(secretsDir);

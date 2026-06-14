@@ -23,6 +23,37 @@ import { getSecretFilePath } from './secrets/host-secrets-reader';
 import type { ResultCache } from './result-cache';
 import { JobPersistenceManager } from './job-persistence-manager';
 
+function isDocsOnlyTaskPrompt(prompt?: string): boolean {
+  if (!prompt) {
+    return false;
+  }
+  const normalized = prompt.toLowerCase();
+  const docsSignals = [
+    'documentation',
+    'docs',
+    'readme',
+    'markdown',
+    'formatting',
+    'cross-reference',
+    'cross reference',
+    'wording',
+    'typo',
+  ];
+  const codeSignals = [
+    'runtime',
+    'api route',
+    'endpoint',
+    'typescript',
+    'javascript',
+    'source code',
+    'unit test',
+    'bug',
+    'fix failing',
+  ];
+  return docsSignals.some((signal) => normalized.includes(signal)) &&
+    !codeSignals.some((signal) => normalized.includes(signal));
+}
+
 /**
  * Execution state for a job process lifecycle.
  * Replaces distributed boolean flags (timedOut, processExited) with a single state machine.
@@ -363,6 +394,10 @@ export class JobScheduler {
       job.request.validationCommands ?? job.request.validation?.commands;
     if (validationCommands) {
       env.KASEKI_VALIDATION_COMMANDS = validationCommands.join(';');
+    } else if (isDocsOnlyTaskPrompt(job.request.taskPrompt)) {
+      env.KASEKI_VALIDATION_COMMANDS = 'npm run type-check';
+      env.KASEKI_PRE_AGENT_VALIDATION = '0';
+      env.KASEKI_DOCS_ONLY_TASK = '1';
     }
   }
 
@@ -389,6 +424,8 @@ export class JobScheduler {
       job.request.changedFilesAllowlist ?? job.request.allowlist?.include;
     if (changedFilesAllowlist) {
       env.KASEKI_CHANGED_FILES_ALLOWLIST = changedFilesAllowlist.join(' ');
+    } else if (isDocsOnlyTaskPrompt(job.request.taskPrompt)) {
+      env.KASEKI_CHANGED_FILES_ALLOWLIST = 'README.md docs/**/*.md *.md';
     }
   }
 
