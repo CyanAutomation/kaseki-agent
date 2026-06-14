@@ -8,6 +8,27 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+const PROMPT_SHAPE_PLACEHOLDERS = [
+  'brief task interpretation',
+  'important requirements and constraints',
+  'why it matters',
+  'ordered coding steps',
+  'focused commands or checks to run',
+  'uncertainties, edge cases, or assumptions',
+  'repo-relative files that must be changed to satisfy the goal; use only when certain',
+  'literal strings or diff hunk markers that must appear in git.diff; use only when certain',
+  'glob patterns for files the coding agent should modify',
+  'glob patterns for files validation commands may touch',
+];
+
+function extractScoutingPrompt(scriptText: string): string {
+  const match = scriptText.match(/build_scouting_prompt\(\) \{\n  cat <<EOF\n([\s\S]*?)\nEOF\n\}/);
+  if (!match) {
+    throw new Error('Unable to locate build_scouting_prompt heredoc in kaseki-agent.sh');
+  }
+  return match[1];
+}
+
 describe('scouting-allowlist.js CLI', () => {
   let tmpDir: string;
 
@@ -81,23 +102,35 @@ describe('scouting-allowlist.js CLI', () => {
   });
 
   test('should reject prompt-shape placeholder scouting content', () => {
+    const [
+      task,
+      requirement,
+      reason,
+      plan,
+      validation,
+      risk,
+      requiredFile,
+      requiredSearchString,
+      agentPattern,
+      validationPattern,
+    ] = PROMPT_SHAPE_PLACEHOLDERS;
     const artifact = {
-      task: 'brief task interpretation',
-      requirements: ['important requirements and constraints'],
-      relevant_files: [{ path: 'repo-relative path', reason: 'why it matters' }],
+      task,
+      requirements: [requirement],
+      relevant_files: [{ path: 'repo-relative path', reason }],
       observations: ['facts learned from repository inspection'],
-      plan: ['ordered coding steps'],
-      validation: ['focused commands or checks to run'],
-      risks: ['uncertainties, edge cases, or assumptions'],
+      plan: [plan],
+      validation: [validation],
+      risks: [risk],
       test_impact: [],
       critical_change_expectations: {
-        required_files: ['repo-relative files that must be changed to satisfy the goal; use only when certain'],
-        required_search_strings: ['literal strings or diff hunk markers that must appear in git.diff; use only when certain'],
+        required_files: [requiredFile],
+        required_search_strings: [requiredSearchString],
         forbidden_empty_diff: true,
       },
       suggested_allowlist: {
-        agent_patterns: ['glob patterns for files the coding agent should modify'],
-        validation_patterns: ['glob patterns for files validation commands may touch'],
+        agent_patterns: [agentPattern],
+        validation_patterns: [validationPattern],
       },
     };
 
@@ -117,6 +150,15 @@ describe('scouting-allowlist.js CLI', () => {
     expect(result.status).toBe('rejected');
     expect(result.reason_code).toBe('schema_mismatch');
     expect(result.errors.some((error: any) => error.suggestion.includes('placeholder'))).toBe(true);
+  });
+
+  test('build_scouting_prompt should not include rejected placeholder literals', () => {
+    const scriptText = fs.readFileSync(path.join(process.cwd(), 'kaseki-agent.sh'), 'utf8');
+    const scoutingPrompt = extractScoutingPrompt(scriptText);
+
+    for (const placeholder of PROMPT_SHAPE_PLACEHOLDERS) {
+      expect(scoutingPrompt).not.toContain(placeholder);
+    }
   });
 
   test('should derive allowlist from valid artifact', () => {
