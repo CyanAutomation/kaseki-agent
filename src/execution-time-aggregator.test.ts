@@ -125,16 +125,16 @@ describe('ExecutionTimeAggregator', () => {
   });
 
   describe('getSummary()', () => {
-    test('returns all required summary fields', () => {
+    test('returns API, tool, total, and percentage values after recording durations', () => {
       aggregator.recordApiCall('pi-agent', 5.0);
       aggregator.recordToolExecution('npm test', 10.0);
 
       const summary = aggregator.getSummary();
-      expect(summary).toHaveProperty('api_time_seconds');
-      expect(summary).toHaveProperty('tool_time_seconds');
-      expect(summary).toHaveProperty('total_time_seconds');
-      expect(summary).toHaveProperty('api_percent');
-      expect(summary).toHaveProperty('tool_percent');
+      expect(summary.api_time_seconds).toBe(5.0);
+      expect(summary.tool_time_seconds).toBe(10.0);
+      expect(summary.total_time_seconds).toBe(15.0);
+      expect(summary.api_percent).toBe(33.33);
+      expect(summary.tool_percent).toBe(66.67);
     });
   });
 
