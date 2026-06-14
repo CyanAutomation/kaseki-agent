@@ -247,7 +247,7 @@ build_run_evaluation_prompt
 
     const expectedMarkers = [
       'build_scouting_prompt() {',
-      'The JSON object must be concise and useful to the coding agent. Use this shape:',
+      'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
       'Guidelines for test_impact:',
       'Enhanced Guidelines by Change Type:',
       'Guidelines for critical_change_expectations:',
@@ -330,7 +330,7 @@ build_scouting_prompt
   const extractScoutingTestImpactContract = (prompt: string) => {
     const schemaSection = extractSection(
       prompt,
-      'The JSON object must be concise and useful to the coding agent. Use this shape:',
+      'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
       'Guidelines for test_impact:'
     );
     const testImpactGuidanceSection = extractSection(
@@ -343,9 +343,9 @@ build_scouting_prompt
       'Enhanced Guidelines by Change Type:',
       'Guidelines for critical_change_expectations:'
     );
-    const topLevelFields = [...schemaSection.matchAll(/^ {2}"([^"]+)":/gm)].map(match => match[1]);
-    const testImpactShape = schemaSection.match(/"test_impact": \[\{([^\n]+)\}\]/)?.[1] ?? '';
-    const testImpactFields = [...testImpactShape.matchAll(/"([^"]+)":/g)].map(match => match[1]);
+    const topLevelFields = [...schemaSection.matchAll(/^- ([^:]+):/gm)].map(match => match[1]);
+    const testImpactLine = schemaSection.match(/^- test_impact: ([^\n]+)/m)?.[1] ?? '';
+    const testImpactFields = ['path', 'reason'].filter(field => testImpactLine.includes(field));
     const testExampleFields = [...testImpactGuidanceSection.matchAll(/- \*\*([^*]+)\*\*:/g)].map(match => match[1]);
     const requiresImpactedTests = (section: string) => /Typical test_impact:/i.test(section)
       && /Tests?|assertions?|expectations?|Files to check:/i.test(section);
