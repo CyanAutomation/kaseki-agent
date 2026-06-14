@@ -1,8 +1,8 @@
 /**
  * Tests for Timing Formatter
  *
- * Collapsed into snapshot and semantic tests to reduce test maintenance cost.
- * Low-value formatting utility tests combined into minimal coverage.
+ * Focused on externally meaningful formatting contracts rather than full
+ * serialized output snapshots.
  */
 
 import {
@@ -13,22 +13,65 @@ import {
 } from './timing-formatter';
 
 describe('Timing Formatter', () => {
-  // Snapshot test for overall format consistency across all functions
-  it('should produce consistent formatted output', () => {
-    const components = {
-      ResultCache: 12.3,
-      WebhookManager: 18.5,
-      JobScheduler: 89.2,
-    };
+  describe('formatTimingMs', () => {
+    it('should format durations in milliseconds with one decimal place', () => {
+      expect(formatTimingMs(100)).toBe('100.0ms');
+      expect(formatTimingMs(1234.567)).toBe('1234.6ms');
+    });
+  });
 
-    expect({
-      ms100: formatTimingMs(100),
-      ms1234: formatTimingMs(1234.567),
-      component: formatComponentTiming('ResultCache', 12.3),
-      slowComponent: formatComponentTiming('SlowComponent', 1200),
-      fastComponent: formatComponentTiming('FastComponent', 50),
-      table: formatTimingTable(components),
-    }).toMatchSnapshot();
+  describe('formatComponentTiming', () => {
+    it('should include the component name and formatted duration', () => {
+      expect(formatComponentTiming('ResultCache', 12.3)).toEqual(
+        expect.stringContaining('ResultCache initialized (12.3ms)')
+      );
+    });
+
+    it('should mark components above the slow threshold', () => {
+      const formatted = formatComponentTiming('SlowComponent', 1200, 1000);
+
+      expect(formatted).toContain('⚠️');
+      expect(formatted).toContain('above threshold (1000ms)');
+    });
+
+    it('should mark components at or below the slow threshold as healthy', () => {
+      const formatted = formatComponentTiming('FastComponent', 1000, 1000);
+
+      expect(formatted).toContain('✓');
+      expect(formatted).not.toContain('above threshold');
+    });
+  });
+
+  describe('formatTimingTable', () => {
+    it('should include each component name in the table', () => {
+      const table = formatTimingTable({
+        ResultCache: 12.3,
+        WebhookManager: 18.5,
+      });
+
+      expect(table).toContain('ResultCache');
+      expect(table).toContain('WebhookManager');
+    });
+
+    it('should mark slow rows and healthy rows distinctly', () => {
+      const table = formatTimingTable({
+        FastComponent: 50,
+        SlowComponent: 1200,
+      });
+
+      expect(table).toMatch(/✓\s+FastComponent/);
+      expect(table).toMatch(/⚠️\s+SlowComponent/);
+    });
+
+    it('should include a total duration summary', () => {
+      const table = formatTimingTable({
+        ResultCache: 12.3,
+        WebhookManager: 18.5,
+      });
+
+      expect(table).toContain('TOTAL');
+      expect(table).toContain('30.8ms');
+    });
   });
 
   // Semantic assertions (behavior, not formatting)
