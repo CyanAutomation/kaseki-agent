@@ -743,10 +743,10 @@ validate_scouting_artifact() {
   [ "$reason_code" = "valid" ]
 }
 
-write_inspect_scouting_fallback_artifact() {
+write_scouting_fallback_artifact() {
   local candidate_artifact="$1"
 
-  if [ "$KASEKI_TASK_MODE" != "inspect" ] || [ -s "$candidate_artifact" ]; then
+  if [ -s "$candidate_artifact" ]; then
     return 0
   fi
 
@@ -754,32 +754,56 @@ write_inspect_scouting_fallback_artifact() {
 const fs = require('node:fs');
 const output = process.argv[2];
 const taskPrompt = process.env.TASK_PROMPT || '';
+const taskMode = process.env.KASEKI_TASK_MODE || 'patch';
+const isInspect = taskMode === 'inspect';
 const fallback = {
-  task: 'Read-only inspect task; scouting agent did not produce a candidate artifact.',
-  requirements: [
-    'Do not modify repository files.',
-    'Do not commit, push, or open a pull request.',
-    taskPrompt ? `Original task prompt: ${taskPrompt}` : 'Use the original task prompt from the run environment.',
-  ],
+  task: isInspect
+    ? 'Read-only inspect task; scouting agent did not produce a candidate artifact.'
+    : 'Patch task; scouting agent did not produce a usable candidate artifact.',
+  requirements: isInspect
+    ? [
+      'Do not modify repository files.',
+      'Do not commit, push, or open a pull request.',
+      taskPrompt ? `Original task prompt: ${taskPrompt}` : 'Use the original task prompt from the run environment.',
+    ]
+    : [
+      taskPrompt ? `Implement the original task prompt: ${taskPrompt}` : 'Implement the original task prompt from the run environment.',
+      'Keep changes tightly scoped to files directly needed for the task.',
+      'Do not expose secrets, credentials, or mounted secret file contents.',
+    ],
   relevant_files: [],
   observations: [
-    'Kaseki generated this fallback because inspect-mode scouting completed without writing scouting-candidate.json.',
+    isInspect
+      ? 'Kaseki generated this fallback because inspect-mode scouting completed without writing scouting-candidate.json.'
+      : 'Kaseki generated this fallback because patch-mode scouting completed without a valid scouting-candidate.json.',
   ],
-  plan: [
-    'Run the inspect agent using the original task prompt.',
-    'Report findings without requiring a repository diff.',
-  ],
-  validation: [
-    'Inspect mode is read-only; no validation commands are required by the scouting fallback.',
-  ],
+  plan: isInspect
+    ? [
+      'Run the inspect agent using the original task prompt.',
+      'Report findings without requiring a repository diff.',
+    ]
+    : [
+      'Use the original task prompt as the authoritative task source.',
+      'Inspect relevant files before editing.',
+      'Make the smallest useful change and run lightweight validation appropriate for the files changed.',
+    ],
+  validation: isInspect
+    ? [
+      'Inspect mode is read-only; no validation commands are required by the scouting fallback.',
+    ]
+    : [
+      'Run the narrowest available validation for changed files; for documentation-only work, formatting or link checks are sufficient when present.',
+    ],
   risks: [
-    'The inspect agent has less pre-analysis context because scouting did not produce structured findings.',
+    isInspect
+      ? 'The inspect agent has less pre-analysis context because scouting did not produce structured findings.'
+      : 'The coding agent has less pre-analysis context because scouting did not produce structured findings.',
   ],
   test_impact: [],
   critical_change_expectations: {
     required_files: [],
     required_search_strings: [],
-    forbidden_empty_diff: false,
+    forbidden_empty_diff: !isInspect,
   },
   suggested_allowlist: {
     agent_patterns: [],
@@ -792,8 +816,8 @@ fs.writeFileSync(output, JSON.stringify(fallback, null, 2) + '\n');
 NODE
 
   if [ -s "$candidate_artifact" ]; then
-    emit_event "inspect_scouting_fallback_created" "candidate=$candidate_artifact"
-    printf '%s\n' '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","reason_code":"inspect_fallback","field":"scouting-candidate.json","expected":"file at '"${KASEKI_RESULTS_DIR}"'/scouting-candidate.json","actual":"generated fallback for inspect mode","severity":"warning","suggestion":"inspect mode continued with original task prompt because scouting did not write a candidate artifact"}' >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null || true
+    emit_event "scouting_fallback_created" "candidate=$candidate_artifact" "task_mode=$KASEKI_TASK_MODE"
+    printf '%s\n' '{"timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","reason_code":"'"${KASEKI_TASK_MODE}"'_fallback","field":"scouting-candidate.json","expected":"file at '"${KASEKI_RESULTS_DIR}"'/scouting-candidate.json","actual":"generated fallback for '"${KASEKI_TASK_MODE}"' mode","severity":"warning","suggestion":"'"${KASEKI_TASK_MODE}"' mode continued with original task prompt because scouting did not write a valid candidate artifact"}' >> "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" 2>/dev/null || true
   fi
 }
 
@@ -1038,10 +1062,13 @@ NODE
 
 remove_low_value_artifacts() {
   local artifact
+  local cleanup_artifacts
+  cleanup_artifacts="progress.log baseline-npm-ci.log validation-baseline-raw.log validation-baseline-env.log pre-agent-validation-env.log validation-env.log restoration-report.md critical-change-expectations.log summarizer-stdout.log"
+  if [ "${STATUS:-0}" -eq 0 ]; then
+    cleanup_artifacts="stdout.log $cleanup_artifacts"
+  fi
   for artifact in \
-    stdout.log progress.log baseline-npm-ci.log validation-baseline-raw.log \
-    validation-baseline-env.log pre-agent-validation-env.log validation-env.log \
-    restoration-report.md critical-change-expectations.log summarizer-stdout.log; do
+    $cleanup_artifacts; do
     if [ -e "${KASEKI_RESULTS_DIR}/$artifact" ]; then
       emit_event "artifact_consolidated" "artifact=$artifact" "action=removed_after_finalization"
       rm -f "${KASEKI_RESULTS_DIR}/$artifact" 2>/dev/null || true
@@ -4046,6 +4073,12 @@ Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, 
 
 Enum fields must contain only one literal value: "high", "medium", or "low".
 Do not copy placeholder strings such as "high|medium|low" into any JSON value.
+Do not copy any example or schema description text into JSON values. Values such as
+"the original user prompt", "concise goal (1-3 sentences)", "specific, measurable
+criterion", "path/pattern1/**", "path/pattern2/**", "e.g., max 3 files changed",
+and "explanation of upgrades made and key decisions" are invalid placeholders.
+If the prompt is already specific, still rewrite every field with concrete wording
+from the actual task prompt.
 
 === TEST UPDATE REQUIREMENTS ===
 
@@ -5097,14 +5130,26 @@ if (valid.size === 1) {
 NODE
   fi
 
-  if [ "$SCOUTING_EXIT" -eq 0 ]; then
-    write_inspect_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ]; then
+    write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
-    SCOUTING_EXIT=86
-    scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
-    emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
+    if [ "$KASEKI_TASK_MODE" = "patch" ]; then
+      rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
+      write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      if ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
+        SCOUTING_EXIT=86
+        scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+        emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid after fallback: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
+      else
+        emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid; continuing with conservative patch fallback (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "continue"
+      fi
+    else
+      SCOUTING_EXIT=86
+      scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
+      emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
+    fi
   fi
   scout_dirty_after="$(git status --porcelain 2>/dev/null || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then

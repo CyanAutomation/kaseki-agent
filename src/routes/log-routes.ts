@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
-import { LogResponse, AnalysisResponse } from '../kaseki-api-types';
+import { DiagnosticEntryPoint, LogResponse, AnalysisResponse } from '../kaseki-api-types';
 import { sendErrorResponse } from '../utils/response-helpers';
 import { isNonEmptyFile } from '../utils/file-helpers';
 import { decodeUtf8TailSafely, tailLogByLines, readTailBytes } from '../utils/utf8-helpers';
@@ -13,6 +13,20 @@ import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-ev
 
 const VALID_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined'] as const;
 const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
+const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
+  'goal-setting-validation-errors.jsonl',
+  'goal-setting-stderr.log',
+  'scouting-validation-errors.jsonl',
+  'scouting-stderr.log',
+  'goal-check-validation-errors.jsonl',
+  'goal-check-stderr.log',
+  'failure.json',
+  'analysis.md',
+  'result-summary.md',
+  'stderr.log',
+  'stdout.log',
+];
+const DIAGNOSTIC_INLINE_LIMIT_BYTES = 65536;
 
 function logFileForType(runDir: string, logType: string): string {
   return path.join(runDir, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
@@ -65,6 +79,47 @@ function readCombinedLogs(runDir: string, req: Request): LogResponse | undefined
     content,
     size: Buffer.byteLength(content, 'utf-8'),
     sources,
+  };
+}
+
+function readJsonlRecords(filePath: string): Array<Record<string, unknown>> | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  const stat = fs.statSync(filePath);
+  if (stat.size <= 0 || stat.size > DIAGNOSTIC_INLINE_LIMIT_BYTES) {
+    return undefined;
+  }
+  try {
+    const records = fs
+      .readFileSync(filePath, 'utf-8')
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as unknown);
+    return records.every((record) => record && typeof record === 'object' && !Array.isArray(record))
+      ? records as Array<Record<string, unknown>>
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function collectDiagnostics(runDir: string): AnalysisResponse['diagnostics'] | undefined {
+  const files = DIAGNOSTIC_FILE_CANDIDATES.filter((fileName) => {
+    const filePath = path.join(runDir, fileName);
+    return fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+  });
+  if (files.length === 0) {
+    return undefined;
+  }
+  const entryPoint = files[0];
+  const details = files
+    .filter((fileName) => fileName.endsWith('-validation-errors.jsonl'))
+    .flatMap((fileName) => readJsonlRecords(path.join(runDir, fileName)) ?? []);
+  return {
+    entryPoint,
+    files,
+    ...(details.length > 0 ? { details } : {}),
   };
 }
 
@@ -202,6 +257,7 @@ function streamProgressEvents(
     }
     sendProgressUpdate();
   }, 2000);
+  interval.unref?.();
 
   req.on('close', () => {
     clearInterval(interval);
@@ -376,6 +432,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     try {
+      const runDir = job.resultDir || path.join(config.resultsDir, job.id);
       const response: AnalysisResponse = {
         id: job.id,
         status: job.status,
@@ -392,7 +449,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       }
 
       // Try to read metadata
-      const metadataPath = path.join(config.resultsDir, job.id, 'metadata.json');
+      const metadataPath = path.join(runDir, 'metadata.json');
       if (fs.existsSync(metadataPath)) {
         const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
         response.metadata = {
@@ -404,7 +461,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       }
 
       // Try to read changed files
-      const changedFilesPath = path.join(config.resultsDir, job.id, 'changed-files.txt');
+      const changedFilesPath = path.join(runDir, 'changed-files.txt');
       if (fs.existsSync(changedFilesPath)) {
         const changedFiles = fs
           .readFileSync(changedFilesPath, 'utf-8')
@@ -412,7 +469,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
           .split('\n')
           .filter((f) => f);
 
-        const diffPath = path.join(config.resultsDir, job.id, 'git.diff');
+        const diffPath = path.join(runDir, 'git.diff');
         const diffSize = fs.existsSync(diffPath) ? fs.statSync(diffPath).size : 0;
 
         response.changes = {
@@ -422,7 +479,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       }
 
       // Try to read validation results
-      const validationPath = path.join(config.resultsDir, job.id, 'validation-timings.tsv');
+      const validationPath = path.join(runDir, 'validation-timings.tsv');
       if (fs.existsSync(validationPath)) {
         const lines = fs.readFileSync(validationPath, 'utf-8').trim().split('\n');
         const commandResults = lines
@@ -440,6 +497,11 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
           passed: commandResults.every((r) => r.exitCode === 0),
           commandResults
         };
+      }
+
+      const diagnostics = collectDiagnostics(runDir);
+      if (diagnostics) {
+        response.diagnostics = diagnostics;
       }
 
       res.json(response);

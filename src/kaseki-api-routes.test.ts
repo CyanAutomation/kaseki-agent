@@ -2562,6 +2562,115 @@ describe('kaseki-api-routes status artifact hints', () => {
     }
   });
 
+  test('failed scouting artifact validation status exposes scouting diagnostics first', async () => {
+    const jobId = 'kaseki-failed-scouting-artifact-invalid';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobDir, 'metadata.json'),
+      JSON.stringify({
+        instance: jobId,
+        failed_command: 'pi scouting agent',
+        scouting_exit_code: 86,
+        exit_code: 86
+      })
+    );
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"exit_code":86}');
+    fs.writeFileSync(
+      path.join(jobDir, 'scouting-validation-errors.jsonl'),
+      '{"reason_code":"missing_file","field":"scouting-candidate.json"}\n'
+    );
+    fs.writeFileSync(path.join(jobDir, 'scouting-stderr.log'), 'scouting schema validation failed');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn()
+    } as any;
+
+    const config = createTestConfig(resultsDir);
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.artifacts.diagnosticFiles).toEqual([
+        'scouting-validation-errors.jsonl',
+        'scouting-stderr.log'
+      ]);
+      expect(body.diagnosticEntryPoint).toBe('scouting-validation-errors.jsonl');
+      expect(body.scoutingValidationErrorsContent).toEqual([
+        { reason_code: 'missing_file', field: 'scouting-candidate.json' }
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('analysis response includes validation diagnostics summary', async () => {
+    const jobId = 'kaseki-analysis-diagnostics';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), JSON.stringify({ instance: jobId, model: 'test-model' }));
+    fs.writeFileSync(
+      path.join(jobDir, 'goal-setting-validation-errors.jsonl'),
+      '{"reason":"placeholder_content","field":"upgraded_goal"}\n'
+    );
+    fs.writeFileSync(
+      path.join(jobDir, 'scouting-validation-errors.jsonl'),
+      '{"reason_code":"missing_file","field":"scouting-candidate.json"}\n'
+    );
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn()
+    } as any;
+
+    const config = createTestConfig(resultsDir);
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/analysis`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.diagnostics.entryPoint).toBe('goal-setting-validation-errors.jsonl');
+      expect(body.diagnostics.files).toEqual([
+        'goal-setting-validation-errors.jsonl',
+        'scouting-validation-errors.jsonl'
+      ]);
+      expect(body.diagnostics.details).toEqual([
+        { reason: 'placeholder_content', field: 'upgraded_goal' },
+        { reason_code: 'missing_file', field: 'scouting-candidate.json' }
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
   test('runs list includes terminal exit code from result metadata when scheduler job lacks it', async () => {
     const jobId = 'kaseki-list-exit-code';
     const jobDir = path.join(resultsDir, jobId);
