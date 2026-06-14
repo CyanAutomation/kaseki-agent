@@ -11,6 +11,63 @@ import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 
+const VALID_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined'] as const;
+const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
+
+function logFileForType(runDir: string, logType: string): string {
+  return path.join(runDir, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
+}
+
+function readLogContent(logFile: string, req: Request): { content: string; size: number } {
+  const stat = fs.statSync(logFile);
+  const size = stat.size;
+  const maxSize = 1024 * 100; // 100 KB
+
+  if (size <= maxSize) {
+    return { content: fs.readFileSync(logFile, 'utf-8'), size };
+  }
+
+  const truncated = readTailBytes(logFile, size, maxSize);
+  let tailContent = decodeUtf8TailSafely(truncated);
+  if (req.query.tail === 'lines') {
+    const lineCount = Number(req.query.lines ?? 200);
+    const maxLines = Number.isFinite(lineCount) ? Math.max(1, Math.floor(lineCount)) : 200;
+    tailContent = tailLogByLines(tailContent, maxLines);
+  }
+
+  return {
+    content: `[... truncated, showing last ${maxSize} bytes ...]\n${tailContent}`,
+    size,
+  };
+}
+
+function readCombinedLogs(runDir: string, req: Request): LogResponse | undefined {
+  const parts: string[] = [];
+  const sources: NonNullable<LogResponse['sources']> = [];
+
+  for (const logType of COMBINED_LOG_TYPES) {
+    const logFile = logFileForType(runDir, logType);
+    if (!fs.existsSync(logFile)) {
+      continue;
+    }
+    const { content, size } = readLogContent(logFile, req);
+    sources.push({ logType, file: path.basename(logFile), size });
+    parts.push(`===== ${logType} (${path.basename(logFile)}) =====\n${content}`);
+  }
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  const content = parts.join('\n\n');
+  return {
+    logType: 'combined',
+    content,
+    size: Buffer.byteLength(content, 'utf-8'),
+    sources,
+  };
+}
+
 function readStructuredEventSnapshot(
   scheduler: JobScheduler,
   config: KasekiApiConfig,
@@ -225,19 +282,38 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
     }
 
     const logType = req.params.logtype;
-    const validLogTypes = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'];
-
-    if (!validLogTypes.includes(logType)) {
+    if (!(VALID_LOG_TYPES as readonly string[]).includes(logType)) {
       return sendErrorResponse(
         res,
         400,
         'Bad Request',
-        `Unknown log type: ${logType}. Valid types: ${validLogTypes.join(', ')}`
+        `Unknown log type: ${logType}. Valid types: ${VALID_LOG_TYPES.join(', ')}`
       );
     }
 
     try {
-      const logFile = path.join(config.resultsDir, job.id, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
+      const runDir = path.join(config.resultsDir, job.id);
+      if (logType === 'combined') {
+        const combined = readCombinedLogs(runDir, req);
+        if (combined) {
+          return res.json(combined);
+        }
+        if (job.status === 'running' && typeof scheduler.getLiveDockerLogTail === 'function') {
+          const liveContent = scheduler.getLiveDockerLogTail(job.id, 300);
+          if (liveContent) {
+            const response: LogResponse = {
+              logType: 'combined',
+              content: liveContent,
+              size: Buffer.byteLength(liveContent, 'utf-8'),
+              sources: [{ logType: 'docker-live', size: Buffer.byteLength(liveContent, 'utf-8') }],
+            };
+            return res.json(response);
+          }
+        }
+        return sendErrorResponse(res, 404, 'Not Found', 'No log files found for combined log');
+      }
+
+      const logFile = logFileForType(runDir, logType);
 
       if (!fs.existsSync(logFile)) {
         if (
@@ -276,27 +352,7 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
         return sendErrorResponse(res, 404, 'Not Found', `Log file not found: ${logType}`);
       }
 
-      const stat = fs.statSync(logFile);
-      const size = stat.size;
-
-      // For large files, just return metadata and a truncated tail
-      const maxSize = 1024 * 100; // 100 KB
-      let content = '';
-
-      if (size > maxSize) {
-        const truncated = readTailBytes(logFile, size, maxSize);
-
-        let tailContent = decodeUtf8TailSafely(truncated);
-        if (req.query.tail === 'lines') {
-          const lineCount = Number(req.query.lines ?? 200);
-          const maxLines = Number.isFinite(lineCount) ? Math.max(1, Math.floor(lineCount)) : 200;
-          tailContent = tailLogByLines(tailContent, maxLines);
-        }
-
-        content = `[... truncated, showing last ${maxSize} bytes ...]\n${tailContent}`;
-      } else {
-        content = fs.readFileSync(logFile, 'utf-8');
-      }
+      const { content, size } = readLogContent(logFile, req);
 
       const response: LogResponse = {
         logType: logType as any,

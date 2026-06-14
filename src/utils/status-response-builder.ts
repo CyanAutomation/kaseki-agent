@@ -160,6 +160,7 @@ export class StatusResponseBuilder {
     const response: StatusResponse = {
       id: job.id,
       status: job.status,
+      completedAt: this.resolveCompletedAt(job, metadata),
       exitCode: exitCode ?? undefined,
       failureClass: job.failureClass,
       validationFailureReason: validationReason ?? undefined,
@@ -208,7 +209,7 @@ export class StatusResponseBuilder {
       }
 
       if (typeof this.scheduler.getLiveProgressEvents === 'function') {
-        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
+        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 100);
         const lastEvent = liveEvents[liveEvents.length - 1];
         if (lastEvent) {
           const structuredProgress = toStructuredProgress(lastEvent, 'running');
@@ -412,10 +413,9 @@ export class StatusResponseBuilder {
       }
     } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
       try {
-        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 1);
-        const lastEvent = liveEvents[liveEvents.length - 1] as ProgressEventLike | undefined;
-        if (lastEvent) {
-          ingestEvent(lastEvent);
+        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 100);
+        for (const event of liveEvents) {
+          ingestEvent(event as ProgressEventLike);
         }
       } catch {
         // Ignore live progress errors; status remains resilient
@@ -568,5 +568,23 @@ export class StatusResponseBuilder {
     } catch {
       return null;
     }
+  }
+
+  private resolveCompletedAt(job: Job, metadata: any): string | undefined {
+    if (job.completedAt) {
+      return job.completedAt.toISOString();
+    }
+    if (!(job.status === 'completed' || job.status === 'failed')) {
+      return undefined;
+    }
+    const rawEndedAt = metadata?.ended_at ?? metadata?.completedAt ?? metadata?.completed_at;
+    if (typeof rawEndedAt !== 'string' || rawEndedAt.trim().length === 0) {
+      return undefined;
+    }
+    const normalized = /^\d{4}-\d{2}-\d{2}T.*Z$/.test(rawEndedAt)
+      ? rawEndedAt
+      : rawEndedAt.replace(' ', 'T');
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
   }
 }

@@ -657,7 +657,7 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
         operationId: 'getRunLog',
         summary: 'Get specific log file',
         description:
-          'Returns a specific log file (stdout, stderr, validation, progress, quality, or secret-scan). Large logs are truncated.',
+          'Returns a specific log file (stdout, stderr, validation, progress, quality, secret-scan, or combined). Large logs are truncated.',
         tags: ['Run Logs & Progress'],
         parameters: [
           {
@@ -673,7 +673,7 @@ function buildLogsProgressPaths(errorResponseSchema: Record<string, unknown>): R
             required: true,
             schema: {
               type: 'string',
-              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan']
+              enum: ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined']
             },
             description: 'Log type to retrieve'
           },
