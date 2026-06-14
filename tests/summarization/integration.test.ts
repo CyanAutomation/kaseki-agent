@@ -228,15 +228,30 @@ describe('Summarization Integration', () => {
   });
 
   describe('Performance Characteristics', () => {
-    it('should complete small file processing quickly', async () => {
+    it('should return content and metrics for a small TypeScript file', async () => {
       const filePath = path.join(testDir, 'small.ts');
-      fs.writeFileSync(filePath, 'export const x = 1;');
+      const content = 'export const x: number = 1;\n';
+      fs.writeFileSync(filePath, content);
 
-      const start = Date.now();
-      await readFileWithSummaryAndMetrics(filePath);
-      const elapsed = Date.now() - start;
+      const result = await readFileWithSummaryAndMetrics(filePath);
 
-      expect(elapsed).toBeLessThan(1000); // Should be fast
+      expectSuccessfulRead(result);
+      expect((result as ReadErrorResult).error).toBeUndefined();
+      expect(result.content).toBe(content);
+      expect(result.metrics).toMatchObject({
+        strategy: 'full',
+        language: 'typescript',
+        fullSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        returnedSizeBytes: Buffer.byteLength(content, 'utf-8'),
+        compressionRatio: 1,
+        cacheHit: false,
+        decisionPath: 'full_read',
+      });
+      expect(result.metrics?.strategyReason).toMatch(/File too small/);
+      expect(result.metrics?.parseTimeMs).toBe(0);
+      expect(result.metrics?.estimatedTokensFull).toBeGreaterThan(0);
+      expect(result.metrics?.estimatedTokensReturned).toBe(result.metrics?.estimatedTokensFull);
+      expect(result.metrics?.estimatedTokensSaved).toBe(0);
     });
 
     it('should handle moderate file sizes', async () => {
