@@ -163,12 +163,14 @@ describe('TokenUsageAggregator', () => {
       aggregator.recordCacheReadTokens('gemini-3-flash', 80);
 
       const summary = aggregator.getSummary();
-      expect(summary.total_input_tokens).toBe(100);
-      expect(summary.total_output_tokens).toBe(50);
-      expect(summary.total_cache_creation_tokens).toBe(10);
-      expect(summary.total_cache_read_tokens).toBe(80);
-      expect(summary.total_tokens).toBe(240);
-      expect(summary.cache_efficiency_percent).toBeCloseTo(80 / 240 * 100, 2);
+      expect(summary).toEqual({
+        total_input_tokens: 100,
+        total_output_tokens: 50,
+        total_cache_creation_tokens: 10,
+        total_cache_read_tokens: 80,
+        total_tokens: 240,
+        cache_efficiency_percent: 33.33,
+      });
     });
   });
 
@@ -202,23 +204,6 @@ describe('TokenUsageAggregator', () => {
       // Total should be sum of both
       const summary = aggregator.getSummary();
       expect(summary.total_tokens).toBe(290);
-    });
-  });
-
-  describe('getSummary()', () => {
-    test('returns all required summary fields', () => {
-      aggregator.recordInputTokens('test', 100);
-      aggregator.recordOutputTokens('test', 50);
-      aggregator.recordCacheCreationTokens('test', 10);
-      aggregator.recordCacheReadTokens('test', 80);
-
-      const summary = aggregator.getSummary();
-      expect(summary).toHaveProperty('total_input_tokens');
-      expect(summary).toHaveProperty('total_output_tokens');
-      expect(summary).toHaveProperty('total_cache_creation_tokens');
-      expect(summary).toHaveProperty('total_cache_read_tokens');
-      expect(summary).toHaveProperty('total_tokens');
-      expect(summary).toHaveProperty('cache_efficiency_percent');
     });
   });
 
