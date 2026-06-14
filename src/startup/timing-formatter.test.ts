@@ -59,6 +59,7 @@ describe('Timing Formatter', () => {
         SlowComponent: 1200,
       });
 
+      // Use regex whitespace (\s+) so the assertions are insensitive to column padding.
       expect(table).toMatch(/✓\s+FastComponent/);
       expect(table).toMatch(/⚠️\s+SlowComponent/);
     });
