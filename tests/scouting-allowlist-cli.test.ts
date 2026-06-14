@@ -22,7 +22,7 @@ const PROMPT_SHAPE_PLACEHOLDERS = [
 ];
 
 function extractScoutingPrompt(scriptText: string): string {
-  const match = scriptText.match(/build_scouting_prompt\(\) \{\n  cat <<EOF\n([\s\S]*?)\nEOF\n\}/);
+  const match = scriptText.match(/build_scouting_prompt\(\) \{\n {2}cat <<EOF\n([\s\S]*?)\nEOF\n\}/);
   if (!match) {
     throw new Error('Unable to locate build_scouting_prompt heredoc in kaseki-agent.sh');
   }
