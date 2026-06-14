@@ -296,11 +296,10 @@ describe('pi-progress-summarizer', () => {
       expect(summary?.detail).toContain('create');
     });
 
-    it('returns null for events with no extractable data', () => {
+    it('returns elapsed-only summary for events with no other extractable data', () => {
       const event = { type: 'unknown' };
       const summary = summarizeEvent(event, 'unknown_tool', Date.now() - 5000);
-      // Should return an object (elapsed is always added)
-      expect(summary).toBeTruthy();
+      expect(summary).toEqual({ elapsed: expect.stringMatching(/^5s$/) });
     });
   });
 
