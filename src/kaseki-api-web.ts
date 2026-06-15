@@ -560,6 +560,23 @@ const controllerPage = String.raw`<!doctype html>
         border-color: var(--color-focus);
         color: var(--color-focus-text);
       }
+      .run-button-content {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+        text-align: left;
+        width: 100%;
+      }
+      .run-button-primary,
+      .run-button-secondary {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .run-button-secondary {
+        color: var(--color-text-muted);
+        font-size: var(--font-size-xs);
+        line-height: var(--line-height-tight);
+      }
       .panel-section-label {
         display: block;
         font-family: var(--font-mono);
@@ -683,6 +700,12 @@ const controllerPage = String.raw`<!doctype html>
       }
       .response-summary-item.full-width {
         grid-column: 1 / -1;
+      }
+      .response-summary-item.warning {
+        border: 1px solid var(--color-bad-overlay-20);
+        border-radius: var(--radius-sm);
+        background: color-mix(in srgb, var(--color-bad) 8%, transparent);
+        padding: var(--space-1);
       }
       .response-log {
         align-self: start;
@@ -1383,9 +1406,9 @@ const controllerPage = String.raw`<!doctype html>
           <fieldset class="form-fields">
             <legend>Required information</legend>
             <div class="form-field">
-              <label for="repo-url">Repository URL</label>
+              <label for="repo-url">Task repository URL</label>
               <div class="repo-input-wrapper">
-                <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo">
+                <input id="repo-url" name="repoUrl" type="url" required placeholder="https://github.com/org/repo" data-testid="task-repo-url">
                 <div id="recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
               </div>
               <p class="field-error" data-error-for="repoUrl" aria-live="polite"></p>
@@ -1424,10 +1447,10 @@ const controllerPage = String.raw`<!doctype html>
           </div>
           <form class="issues-form" id="issues-form">
             <div class="form-field">
-              <label for="issues-repo-url">Repository URL</label>
+              <label for="issues-repo-url">Issues repository URL</label>
               <div class="issues-repo-input-wrapper">
                 <div class="issues-input-group">
-                  <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" />
+                  <input id="issues-repo-url" type="text" placeholder="https://github.com/owner/repo or owner/repo" data-testid="issues-repo-url" />
                   <button class="run" id="load-issues-btn" type="button">Load Issues</button>
                 </div>
                 <div id="issues-recent-repos-dropdown" class="recent-repos-dropdown hidden" role="listbox"></div>
@@ -1738,6 +1761,47 @@ const controllerPage = String.raw`<!doctype html>
         return String(minutes) + 'm ' + String(remainingSeconds).padStart(2, '0') + 's';
       }
 
+      function compactRunFailure(run) {
+        if (!run || typeof run !== 'object') return '';
+        const parts = [
+          run.failureClass,
+          run.validationFailureReason,
+          run.validationAllowlistFailureReason,
+          run.qualityFailureReason,
+          run.goalCheckFailureReason,
+          run.error,
+        ].filter((value) => typeof value === 'string' && value.trim());
+        return parts.length > 0 ? stripControlSequences(parts[0]).slice(0, 120) : '';
+      }
+
+      function preflightStartupSummary(payload) {
+        const startup = payload && typeof payload === 'object' ? payload.containerStartup : null;
+        if (!startup || typeof startup !== 'object') return '';
+        const checks = Array.isArray(startup.checks) ? startup.checks : [];
+        const refCheck = checks.find((check) => check && check.name === 'git-freshness' && typeof check.detail === 'string');
+        const timestamp = typeof startup.timestamp === 'string' ? startup.timestamp : '';
+        return [
+          'startup history',
+          startup.current === false ? 'not current' : '',
+          timestamp ? new Date(timestamp).toLocaleString() : '',
+          refCheck ? stripControlSequences(refCheck.detail) : '',
+        ].filter(Boolean).join(' | ');
+      }
+
+      function appendSummaryItem(label, value, options) {
+        if (!responseSummary || !value) return;
+        const item = document.createElement('div');
+        item.className = 'response-summary-item' + (options && options.warning ? ' warning' : '') + (options && options.fullWidth ? ' full-width' : '');
+        const labelEl = document.createElement('span');
+        labelEl.className = 'response-summary-label';
+        labelEl.textContent = label;
+        const valueEl = document.createElement('span');
+        valueEl.className = 'response-summary-value';
+        valueEl.textContent = value;
+        item.append(labelEl, valueEl);
+        responseSummary.appendChild(item);
+      }
+
       function setResponseSummary(payload) {
         if (!responseSummary) return;
         responseSummary.replaceChildren();
@@ -1759,6 +1823,20 @@ const controllerPage = String.raw`<!doctype html>
           if (typeof payload.taskProgressPercent === 'number') {
             items.push(['Progress (%)', payload.taskProgressPercent + '%']);
           }
+          if (typeof payload.timeoutRiskPercent === 'number') {
+            items.push(['Timeout risk', payload.timeoutRiskPercent + '%']);
+          }
+          if (payload.progress && typeof payload.progress.updatedAt === 'string') {
+            items.push(['Progress updated', new Date(payload.progress.updatedAt).toLocaleTimeString()]);
+          }
+          if (payload.failureClass || payload.error) {
+            const failure = compactRunFailure(payload);
+            if (failure) items.push(['Failure reason', failure, { warning: true, fullWidth: true }]);
+          }
+          if (payload.containerStartup) {
+            const startupSummary = preflightStartupSummary(payload);
+            if (startupSummary) items.push(['Startup diagnostics', startupSummary, { warning: true, fullWidth: true }]);
+          }
         }
         let progressMessage = null;
         if (payload && typeof payload === 'object' && payload.progress && typeof payload.progress.message === 'string') {
@@ -1766,29 +1844,11 @@ const controllerPage = String.raw`<!doctype html>
           if (msg) progressMessage = msg;
         }
         responseSummary.hidden = items.length === 0 && !progressMessage;
-        items.forEach(([label, value]) => {
-          const item = document.createElement('div');
-          item.className = 'response-summary-item';
-          const labelEl = document.createElement('span');
-          labelEl.className = 'response-summary-label';
-          labelEl.textContent = label;
-          const valueEl = document.createElement('span');
-          valueEl.className = 'response-summary-value';
-          valueEl.textContent = value;
-          item.append(labelEl, valueEl);
-          responseSummary.appendChild(item);
+        items.forEach(([label, value, options]) => {
+          appendSummaryItem(label, value, options);
         });
         if (progressMessage) {
-          const item = document.createElement('div');
-          item.className = 'response-summary-item full-width';
-          const labelEl = document.createElement('span');
-          labelEl.className = 'response-summary-label';
-          labelEl.textContent = 'Progress message';
-          const valueEl = document.createElement('span');
-          valueEl.className = 'response-summary-value';
-          valueEl.textContent = progressMessage;
-          item.append(labelEl, valueEl);
-          responseSummary.appendChild(item);
+          appendSummaryItem('Progress message', progressMessage, { fullWidth: true });
         }
       }
 
@@ -1827,6 +1887,15 @@ const controllerPage = String.raw`<!doctype html>
 
       function summarizedResponseBody(path, method, status, payload) {
         const base = { method, path, status };
+        if (status >= 400) {
+          return JSON.stringify({
+            ...base,
+            error: typeof payload === 'string' ? stripControlSequences(payload) : payload,
+            guidance: status === 502
+              ? 'The web endpoint returned Bad Gateway. The request may have failed before reaching the controller; retry once, then compare against /health and /api/preflight.'
+              : 'The request failed. Check the response status, authentication, and controller readiness.',
+          }, null, 2);
+        }
         if (path === '/api/preflight' && payload && typeof payload === 'object') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
           const failed = checks.filter((check) => !check.ok);
@@ -1834,6 +1903,24 @@ const controllerPage = String.raw`<!doctype html>
             ...base,
             response: {
               status: payload.status,
+              currentDiagnostics: {
+                checkCount: checks.length,
+                failedChecks: failed.map((check) => ({
+                  name: check.name,
+                  detail: check.detail,
+                  remediation: check.remediation,
+                })),
+                templateRef: payload.templateRef,
+                imageDigest: payload.imageDigest,
+                resultsDir: payload.resultsDir,
+              },
+              startupDiagnostics: payload.containerStartup ? {
+                scope: payload.containerStartup.scope,
+                current: payload.containerStartup.current,
+                readinessImpact: payload.containerStartup.readinessImpact,
+                timestamp: payload.containerStartup.timestamp,
+                note: 'Historical startup diagnostics only; use currentDiagnostics/checks for live readiness.',
+              } : undefined,
               checkCount: checks.length,
               failedChecks: failed.map((check) => ({
                 name: check.name,
@@ -1847,7 +1934,6 @@ const controllerPage = String.raw`<!doctype html>
               resultsDir: payload.resultsDir,
               runtime: payload.runtime,
               docker: payload.docker,
-              containerStartup: payload.containerStartup,
               checks: checks.map((check) => ({
                 name: check.name,
                 ok: check.ok,
@@ -1858,7 +1944,7 @@ const controllerPage = String.raw`<!doctype html>
                 remoteRef: check.remoteRef,
               })),
             },
-            note: 'Showing diagnostics summary with check details. Use the API directly for the exact raw payload.',
+            note: 'Current diagnostics and startup diagnostics are separated to avoid treating boot history as live readiness.',
           }, null, 2);
         }
         if (path.startsWith('/api/results/') && payload && typeof payload === 'object') {
@@ -2035,14 +2121,38 @@ const controllerPage = String.raw`<!doctype html>
 
       function formatRunButtonLabel(run) {
         const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+        const failure = run.status === 'failed' ? compactRunFailure(run) : '';
         if (!isDesktop) {
           // Mobile: Extract number from 'kaseki-77' and show condensed format
           const runNumber = run.id.split('-')[1] || run.id;
-          return 'K-' + runNumber + ' ' + (run.status || '');
+          return 'K-' + runNumber + ' ' + (run.status || '') + (failure ? ' - ' + failure : '');
         }
         // Desktop: Full format with time, allow wrapping
         const created = run.createdAt ? new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-        return [run.id, run.status, created].filter(Boolean).join(' - ');
+        return [run.id, run.status, created, failure].filter(Boolean).join(' - ');
+      }
+
+      function setRunButtonContent(button, run) {
+        const primary = formatRunButtonLabel(run);
+        const secondary = [
+          run.progress && run.progress.stage ? stripControlSequences(run.progress.stage) : '',
+          typeof run.taskProgressPercent === 'number' ? run.taskProgressPercent + '%' : '',
+        ].filter(Boolean).join(' | ');
+        button.replaceChildren();
+        const content = document.createElement('span');
+        content.className = 'run-button-content';
+        const primaryEl = document.createElement('span');
+        primaryEl.className = 'run-button-primary';
+        primaryEl.textContent = primary;
+        content.appendChild(primaryEl);
+        if (secondary) {
+          const secondaryEl = document.createElement('span');
+          secondaryEl.className = 'run-button-secondary';
+          secondaryEl.textContent = secondary;
+          content.appendChild(secondaryEl);
+        }
+        button.title = primary + (secondary ? ' | ' + secondary : '');
+        button.appendChild(content);
       }
 
       function renderRunsList(payload) {
@@ -2052,7 +2162,7 @@ const controllerPage = String.raw`<!doctype html>
           const button = document.createElement('button');
           button.className = 'secondary toolbar-button';
           button.type = 'button';
-          button.textContent = formatRunButtonLabel(run);
+          setRunButtonContent(button, run);
           button.addEventListener('click', () => {
             runIdInput.value = run.id;
             updateCancelRunButtonState();
@@ -2128,14 +2238,19 @@ const controllerPage = String.raw`<!doctype html>
         if (needsAuth && token && !isLikelyBearerToken(token)) {
           throw new Error('Token format looks invalid. Use a plain bearer token without spaces.');
         }
-        const response = await fetch(path, {
-          method: options && options.method || 'GET',
-          headers: {
-            ...(needsAuth ? { Authorization: 'Bearer ' + token } : {}),
-            ...(options && options.body ? { 'Content-Type': 'application/json' } : {}),
-          },
-          body: options && options.body ? JSON.stringify(options.body) : undefined,
-        });
+        let response;
+        try {
+          response = await fetch(path, {
+            method: options && options.method || 'GET',
+            headers: {
+              ...(needsAuth ? { Authorization: 'Bearer ' + token } : {}),
+              ...(options && options.body ? { 'Content-Type': 'application/json' } : {}),
+            },
+            body: options && options.body ? JSON.stringify(options.body) : undefined,
+          });
+        } catch (error) {
+          throw new Error('Network request failed before the controller responded: ' + (error instanceof Error ? error.message : String(error)));
+        }
         const contentType = response.headers.get('content-type') || '';
         const payload = contentType.includes('json') ? await response.json() : await response.text();
         if (needsAuth && response.ok) sessionStorage.setItem('kasekiApiToken', token);
@@ -2147,7 +2262,14 @@ const controllerPage = String.raw`<!doctype html>
           setOutputMetadata(statusLabel, runId || undefined);
           setResponseSummary(payload);
           setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload));
-          setState(response.ok ? (runId ? 'Run status updated.' : 'Request completed.') : 'Request failed.', response.ok ? 'ok' : 'bad');
+          setState(
+            response.ok
+              ? (runId ? 'Run status updated.' : 'Request completed.')
+              : response.status === 502
+                ? 'Request failed at the web gateway. Retry once, then check health/preflight.'
+                : 'Request failed with HTTP ' + response.status + '.',
+            response.ok ? 'ok' : 'bad',
+          );
         }
         if (response.ok && payload && typeof payload === 'object') {
           summarizeHealth(path, payload);

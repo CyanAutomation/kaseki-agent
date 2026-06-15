@@ -64,6 +64,16 @@ function createJsonResponse(payload: unknown, status = 200): MockResponse {
   };
 }
 
+function createTextResponse(payload: string, status = 200): MockResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'text/plain' : null },
+    json: async () => payload,
+    text: async () => payload,
+  };
+}
+
 async function renderConsole(options: {
   storedToken?: string;
   fetchHandler?: (path: string, init?: FetchInit) => MockResponse | Promise<MockResponse>;
@@ -142,6 +152,10 @@ describe('kaseki API web console routes', () => {
     expect(response.headers.get('content-security-policy')).toContain("style-src 'unsafe-inline'");
     expect(document.querySelector('h1')?.textContent).toBe('Kaseki Task Console');
     expect(document.querySelector('#header-api-token')?.getAttribute('aria-label')).toBe('API bearer token');
+    expect(document.querySelector('label[for="repo-url"]')?.textContent).toBe('Task repository URL');
+    expect(document.querySelector('label[for="issues-repo-url"]')?.textContent).toBe('Issues repository URL');
+    expect(document.querySelector('[data-testid="task-repo-url"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
@@ -211,6 +225,35 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-101');
     expect(document.querySelector<HTMLButtonElement>('#cancel-run')?.disabled).toBe(false);
     expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  test('shows failure reasons and progress context in recent runs', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+      await new Promise(resolve => setTimeout(resolve, Number(process.env.TEST_RETRY_TIMEOUT) || 10000));
+        return createJsonResponse({
+          runs: [
+            {
+              id: 'kaseki-901',
+              status: 'failed',
+              createdAt: '2026-06-09T12:00:00Z',
+              failureClass: 'validation_failed',
+              error: 'fallback error',
+              taskProgressPercent: 25,
+              progress: { stage: 'pre-agent validation' },
+            },
+          ],
+        });
+      },
+    });
+
+    click(document.querySelector('#refresh-runs'));
+    await waitFor(() => expect(document.querySelectorAll('#runs-list button')).toHaveLength(1));
+    expect(document.querySelector('#runs-list')?.textContent).toContain('validation_failed');
+    expect(document.querySelector('#runs-list')?.textContent).toContain('pre-agent validation');
+    expect(document.querySelector('#runs-list')?.textContent).toContain('25%');
+    expect(document.querySelector('#runs-list button')?.getAttribute('title')).toContain('validation_failed');
   });
 
   test('loads status-triggered recommended artifacts and filters binary entries', async () => {
@@ -433,6 +476,15 @@ describe('kaseki API web console behavior', () => {
             image: 'docker.io/cyanautomation/kaseki-agent:latest',
             templateRef: 'abc123',
             resultsDir: '/agents/kaseki-results',
+            containerStartup: {
+              scope: 'startup',
+              current: false,
+              readinessImpact: 'excluded-from-current-readiness',
+              timestamp: '2026-06-15T21:47:29.203Z',
+              checks: [
+                { name: 'git-freshness', ok: true, detail: 'Git repository is readable and at ref: d8cf3954' },
+              ],
+            },
             doctorStdoutTail: 'large nested payload should not be displayed',
           });
         }
@@ -454,8 +506,12 @@ describe('kaseki API web console behavior', () => {
 
     click(document.querySelector('[data-probe="/api/preflight"]'));
     await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"checkCount": 2'));
+    expect(document.querySelector('#output')?.textContent).toContain('"currentDiagnostics"');
+    expect(document.querySelector('#output')?.textContent).toContain('"startupDiagnostics"');
+    expect(document.querySelector('#output')?.textContent).toContain('Historical startup diagnostics only');
     expect(document.querySelector('#output')?.textContent).toContain('"failedChecks"');
     expect(document.querySelector('#output')?.textContent).not.toContain('large nested payload');
+    expect(document.querySelector('#response-summary')?.textContent).toContain('Startup diagnostics');
 
     const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
     if (!runIdInput) throw new Error('Expected #run-id to exist');
@@ -535,5 +591,36 @@ describe('kaseki API web console behavior', () => {
       { label: 'Progress message', value: 'Checks passed' },
     ]);
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('\u001b');
+  });
+
+  test('renders gateway failures with retry guidance', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/validate') {
+          return createJsonResponse({
+            isValid: true,
+            checks: [{ name: 'repo-reachable', status: 'pass', message: 'ok' }],
+          });
+        }
+        if (path === '/api/runs') return createTextResponse('Bad Gateway', 502);
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
+    const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
+    if (!repoInput || !taskPrompt) throw new Error('Expected submit inputs to exist');
+
+    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
+    input(taskPrompt, 'Inspect the repository and report docs formatting drift.');
+    click(document.querySelector('#validate'));
+    await waitFor(() => expect(document.querySelector<HTMLButtonElement>('#submit')?.disabled).toBe(false));
+
+    click(document.querySelector('#submit'));
+    await waitFor(() => expect(document.querySelector('#state')?.textContent).toContain('web gateway'));
+    expect(document.querySelector('#output')?.textContent).toContain('"status": 502');
+    expect(document.querySelector('#output')?.textContent).toContain('retry once');
+    expect(document.querySelector('#output')?.textContent).toContain('Bad Gateway');
   });
 });
