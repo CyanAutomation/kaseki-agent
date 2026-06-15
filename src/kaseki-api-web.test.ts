@@ -230,8 +230,10 @@ describe('kaseki API web console behavior', () => {
   test('shows failure reasons and progress context in recent runs', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-      await new Promise(resolve => setTimeout(resolve, Number(process.env.TEST_RETRY_TIMEOUT) || 10000));
+      fetchHandler: async (path) => {
+        if (path !== '/api/runs') return createJsonResponse({});
+        const retryTimeoutMs = Number(process.env.TEST_RETRY_TIMEOUT ?? 10);
+        await new Promise((resolve) => setTimeout(resolve, retryTimeoutMs));
         return createJsonResponse({
           runs: [
             {
