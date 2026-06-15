@@ -231,7 +231,7 @@ describe('kaseki API web console behavior', () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',
       fetchHandler: (path) => {
-        if (path !== '/api/runs') return createJsonResponse({});
+      await new Promise(resolve => setTimeout(resolve, Number(process.env.TEST_RETRY_TIMEOUT) || 10000));
         return createJsonResponse({
           runs: [
             {
