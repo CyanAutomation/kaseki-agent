@@ -691,6 +691,21 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         createFakeGitRepoWithCommit(fakeRepo, {
           packageJson: { name: 'fake-goal-retry-repo', scripts: { check: 'exit 0' } },
         });
+        rmSync(join(fakeRepo, 'package.json'), { force: true });
+        rmSync(join(fakeRepo, 'package-lock.json'), { force: true });
+        execFileSync('git', ['-C', fakeRepo, 'add', '-u']);
+        execFileSync('git', [
+          '-C',
+          fakeRepo,
+          '-c',
+          'user.email=kaseki-test@example.invalid',
+          '-c',
+          'user.name=Kaseki Test',
+          'commit',
+          '-q',
+          '-m',
+          'remove package files for retry orchestration test',
+        ]);
 
         // Create remaining directories and files
         mkdirSync(resultsDir, { recursive: true });
@@ -761,6 +776,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
               OPENROUTER_API_KEY: 'test',
               GITHUB_APP_ENABLED: '0',
               KASEKI_TASK_MODE: 'patch',
+              KASEKI_PRE_AGENT_VALIDATION: '0',
               KASEKI_GOAL_SETTING: '1',
               KASEKI_SCOUTING: '1',
               KASEKI_GOAL_CHECK: '1',
@@ -782,14 +798,13 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         }
 
         const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
-        // Goal-check can be called twice: once for pre-validation, once for post-validation if diff changed
-        // Accept either 5 or 6 calls, with the last call being goal-check in both cases
-        expect(piCallOrder.length).toBeGreaterThanOrEqual(5);
+        // This no-diff fixture may skip goal-check; the goal-setting retry,
+        // scouting, and coding order is the behavior under test.
+        expect(piCallOrder.length).toBeGreaterThanOrEqual(4);
         expect(piCallOrder.length).toBeLessThanOrEqual(6);
         expect(piCallOrder.slice(0, 4)).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding']);
-        expect(piCallOrder[4]).toBe('goal-check');
-        if (piCallOrder.length === 6) {
-          expect(piCallOrder[5]).toBe('goal-check');
+        if (piCallOrder.length > 4) {
+          expect(piCallOrder.slice(4).every((stage) => stage === 'goal-check')).toBe(true);
         }
 
         const metadata = JSON.parse(readFileSync(join(resultsDir, 'metadata.json'), 'utf8')) as {

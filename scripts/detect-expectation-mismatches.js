@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_DIFF = '/results/git.diff';
 const DEFAULT_OUTPUT = '/results/expectation-mismatch-warnings.jsonl';
@@ -509,8 +510,7 @@ export {
   appendProgress,
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const options = parseArgs(process.argv.slice(2));
   detectExpectationMismatches(options);
 }
-

@@ -42,7 +42,7 @@ ${
   printf '%s\\n' "$attempt" > "${piState}"
   if [ "$attempt" -eq 1 ]; then
     echo 'api error: upstream timeout' >&2
-    exit 1
+    exit 124
   fi
   cat > "${resultsDir}/goal-setting-candidate.json" <<'JSON'
 {"original_prompt":"retry original prompt","upgraded_goal":"retry-upgraded prompt from attempt two","reasoning":"second attempt succeeded after a transient failure","key_requirements":["persist retry metadata"],"success_criteria":[{"criterion":"metadata records the successful retry attempt","smart_score":"high","reasoning":"numeric metadata can be asserted"}],"anti_patterns":{"do_not_modify":[],"do_not_break":["retry metadata"],"must_preserve":["original prompt fallback"]},"constraints":{"operational":["retry once after transient goal-setting failure"],"architectural":[],"technical":[],"business":[]},"quality_metrics":{"clarity":"high","measurability":"high","specificity":"high","scope_clarity":"high","constraint_strength":"high"},"confidence":"high"}

@@ -368,7 +368,19 @@ json_encode() {
 }
 
 json_array() {
+  if [ "$#" -eq 0 ]; then
+    printf '[]\n'
+    return 0
+  fi
   jq -cn --args '$ARGS.positional' "$@"
+}
+
+github_skip_reasons_json() {
+  if [ "${#GITHUB_SKIP_REASONS[@]}" -eq 0 ]; then
+    printf '[]\n'
+    return 0
+  fi
+  json_array "${GITHUB_SKIP_REASONS[@]}"
 }
 
 json_object_from_pairs() {
@@ -1187,7 +1199,7 @@ write_metadata() {
   "run_evaluation_warning": $(printf '%s' "$RUN_EVALUATION_WARNING" | json_encode),
   "github_pr_url": $(printf '%s' "$GITHUB_PR_URL" | json_encode),
   "publish_mode": $(printf '%s' "$KASEKI_PUBLISH_MODE" | json_encode),
-  "github_skip_reasons": $(json_array "${GITHUB_SKIP_REASONS[@]}"),
+  "github_skip_reasons": $(github_skip_reasons_json),
   "git_cache_mode": $(printf '%s' "$GIT_CACHE_MODE_USED" | json_encode),
   "git_cache_status": $(printf '%s' "$GIT_CACHE_STATUS" | json_encode),
   "git_cache_hit": $GIT_CACHE_HIT,
