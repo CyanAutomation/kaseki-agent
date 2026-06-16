@@ -36,6 +36,7 @@ const SCOUTING_DIAGNOSTIC_FILES = [
 ] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
 const INLINE_ARTIFACT_LIMIT_BYTES = 65536;
+// eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const DEPENDENCY_CACHE_MESSAGE_PATTERN = /^Dependency cache status:\s*(.+)$/;
 
