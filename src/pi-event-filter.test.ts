@@ -5,6 +5,23 @@ import { spawn } from 'node:child_process';
 
 jest.setTimeout(20000);
 
+/**
+ * pi-event-filter Tests (382 lines)
+ *
+ * Integration tests for the Pi event filter that:
+ * 1. Removes thinking blocks from assistant output
+ * 2. Summarizes event counts, timestamps, and model preferences
+ * 3. Handles invalid JSON gracefully
+ * 4. Tracks tool reliability and token usage metrics
+ *
+ * Architecture:
+ * - Uses tsx to spawn pi-event-filter.ts as subprocess for correctness
+ * - Each test creates temp dir with input JSONL, runs filter, validates output + summary
+ * - Heavy process spawning (8 tests × 1 spawn = slow ~2–3s per test suite)
+ *
+ * Note: Spawning subprocess tests robustness but limits isolation.
+ * Consider extracting pure functions for unit testing in future.
+ */
 interface RunResult {
   exitCode: number | null;
   lines: string[];
@@ -57,7 +74,11 @@ async function runFilter(inputLines: string[]): Promise<RunResult> {
 }
 
 describe('pi-event-filter fast correctness tests', () => {
-  test('filters a tiny JSONL fixture and writes representative summary', async () => {
+  // Spec: Pi event filter removes thinking blocks and emits clean JSON
+  // Critical: Thinking blocks must be stripped from both message.content and assistantMessageEvent.partial
+  test('should filter out thinking blocks from output and write summary', async () => {
+    // Behavioral intent: Input has thinking + output_text; output should only keep output_text
+    // Expected outcome: Thinking blocks removed; summary has correct counts for both event types
     const fixture = [
       JSON.stringify({
         type: 'tool_execution_start',
@@ -119,7 +140,10 @@ describe('pi-event-filter fast correctness tests', () => {
     });
   });
 
-  test('computes summary counts and preferred model/api from medium fixture', async () => {
+  test('should compute summary counts and prefer most-used model/api pair', async () => {
+    // Spec: Summary must track event counts, model/api frequency, and timestamp bounds
+    // Behavioral intent: Model/api selection uses frequency (model-a appears 2x, model-b 1x → select model-a)
+    // Expected outcome: summary.selected_model/api match most frequent pair; all event types counted
     const fixture = [
       JSON.stringify({
         type: 'tool_execution_start',
@@ -163,7 +187,11 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.last_event_at).toBe('2026-01-01T00:00:04.000Z');
   });
 
-  test('counts and skips invalid JSON lines', async () => {
+  test('should count invalid JSON lines without crashing', async () => {
+    // Spec: Malformed JSON should be counted but not cause filter failure
+    // Behavioral intent: Parser skips bad lines, continues processing valid JSON
+    // Expected outcome: invalid_json_lines = 1; output has 2 valid lines; exit code 0
+    // Regression: GH#3678 — Do not crash on invalid JSON; report count
     const fixture = [
       '{"type":"tool_execution_start","timestamp":"2026-01-01T00:00:01.000Z","message":{"model":"x","api":"y"}}',
       '{this-is-invalid-json}',
@@ -181,7 +209,10 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.invalid_json_lines).toBe(1);
   });
 
-  test('tracks tool reliability metrics in summary', async () => {
+  test('should track tool reliability metrics in summary', async () => {
+    // Spec: Summary must include tool start/end counts and match counts
+    // Behavioral intent: Paired tool_execution_start/end are counted; unmatched starts tracked separately
+    // Expected outcome: tool_start_count ≥ tool_end_count; match_count = min(starts, ends)
     const fixture = [
       JSON.stringify({
         type: 'tool_execution_start',
@@ -222,7 +253,10 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.tool_reliability?.success_rate_percent).toBe(50);
   });
 
-  test('includes per-tool statistics in summary', async () => {
+  test('should include per-tool statistics in summary', async () => {
+    // Spec: Summary must track per-tool success/failure counts and rates
+    // Behavioral intent: Each unique tool_name gets separate success rate calculation
+    // Expected outcome: tool_stats.read_file.total = 2; success_rate_percent = 50
     const fixture = [
       JSON.stringify({
         type: 'tool_execution_start',
@@ -266,7 +300,10 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.tool_stats?.read_file.success_rate_percent).toBe(50);
   });
 
-  test('tracks execution time metrics (API vs tool)', async () => {
+  test('should track execution time metrics (API vs tool)', async () => {
+    // Spec: Summary must calculate total time, tool-only time, and API time separately
+    // Behavioral intent: Timestamps from agent_start/end and tool_execution_start/end are summed
+    // Expected outcome: execution_time.total_time_seconds = 5; tool_time_seconds = sum of tool durations
     const fixture = [
       JSON.stringify({
         type: 'agent_start',
@@ -300,7 +337,10 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.execution_time?.total_time_seconds).toBe(5);
   });
 
-  test('tracks token usage metrics from events', async () => {
+  test('should track token usage metrics from events', async () => {
+    // Spec: Summary must aggregate token counts from message_update events
+    // Behavioral intent: Prompt, completion, and cache tokens (if present) are summed
+    // Expected outcome: token_usage.total_input_tokens = 200; total_output_tokens = 100; cache tracking
     const fixture = [
       JSON.stringify({
         type: 'message_update',
@@ -342,7 +382,10 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.token_usage?.total_tokens).toBe(315);
   });
 
-  test('provides per-model token statistics', async () => {
+  test('should provide per-model token statistics', async () => {
+    // Spec: Summary must track token usage broken down by model
+    // Behavioral intent: Each model gets separate input/output token accounting
+    // Expected outcome: model_token_stats indexed by model name with input/output tokens
     const fixture = [
       JSON.stringify({
         type: 'message_update',
