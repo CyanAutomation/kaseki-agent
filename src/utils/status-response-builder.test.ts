@@ -176,7 +176,7 @@ describe('StatusResponseBuilder', () => {
 
       // Mock fs methods
       (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
-        return filePath.includes('metadata.json') || 
+        return filePath.includes('metadata.json') ||
                filePath.includes('scouting-validation-errors.jsonl') ||
                filePath.includes('failure.json') ||
                filePath.includes('stdout.log');

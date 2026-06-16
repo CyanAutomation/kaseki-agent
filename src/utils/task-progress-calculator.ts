@@ -213,7 +213,7 @@ export class TaskProgressCalculator {
     // Count stage index if current stage is found
     const stageList = metadata?.stages || denominatorStages;
     const currentStageIndex = currentStage && stageList.length > 0 ? stageList.indexOf(currentStage) : -1;
-    
+
     if (currentStageIndex >= 0) {
       completedStages = Math.max(completedStages, currentStageIndex);
       if (currentStage && finishedStages.has(currentStage)) {
