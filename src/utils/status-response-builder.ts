@@ -16,6 +16,9 @@ import { toStructuredProgress } from './progress-normalizer';
 import { readLastJsonlEvent } from './file-helpers';
 import type { ResultCache } from '../result-cache';
 import { progressEventsFromDockerLogTail } from './docker-log-progress-events';
+import { TaskProgressCalculator } from './task-progress-calculator';
+import { DiagnosticExtractor } from './diagnostic-extractor';
+import { ArtifactContentLoader } from './artifact-content-loader';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
@@ -68,45 +71,6 @@ const BASE_ORCHESTRATOR_STAGES = [
   'secret scan',
   'complete',
 ] as const;
-
-function normalizeStageName(stage: unknown): string | undefined {
-  return typeof stage === 'string' && stage.trim().length > 0 ? stage.trim() : undefined;
-}
-
-const PI_STREAM_ONLY_STAGES = new Set(['pi agent', 'pi tool batch']);
-
-/**
- * Normalize progress-only Pi stream stages to denominator stages for task progress.
- *
- * Pi emits generic stream stages while several orchestrator Pi stages can be active.
- * Prefer the surrounding orchestrator stage tracked on the job when it is in the
- * active denominator; otherwise, treat generic Pi stream progress as coding work.
- */
-function normalizeTaskProgressStage(
-  stage: unknown,
-  jobCurrentStage?: unknown,
-  denominatorStages: readonly string[] = []
-): string | undefined {
-  const normalizedStage = normalizeStageName(stage);
-  if (!normalizedStage) {
-    return undefined;
-  }
-
-  if (!PI_STREAM_ONLY_STAGES.has(normalizedStage)) {
-    return normalizedStage;
-  }
-
-  const normalizedJobCurrentStage = normalizeStageName(jobCurrentStage);
-  if (normalizedJobCurrentStage && denominatorStages.includes(normalizedJobCurrentStage)) {
-    return normalizedJobCurrentStage;
-  }
-
-  return 'pi coding agent';
-}
-
-function isFinishedProgressEvent(event: ProgressEventLike): boolean {
-  return event.status === 'finished' || (typeof event.detail === 'string' && event.detail.includes('finished'));
-}
 
 export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
   const request = job.request ?? ({} as Job['request']);
@@ -171,11 +135,19 @@ export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): str
  * Encapsulates complex response building logic from status routes.
  */
 export class StatusResponseBuilder {
+  private taskProgressCalculator: TaskProgressCalculator;
+  private diagnosticExtractor: DiagnosticExtractor;
+  private artifactContentLoader: ArtifactContentLoader;
+
   constructor(
     private scheduler: JobScheduler,
     private config: KasekiApiConfig,
     private artifactCache?: Pick<ResultCache, 'getOrLoad'>
-  ) {}
+  ) {
+    this.taskProgressCalculator = new TaskProgressCalculator(scheduler, config);
+    this.diagnosticExtractor = new DiagnosticExtractor();
+    this.artifactContentLoader = new ArtifactContentLoader(artifactCache);
+  }
 
   /**
    * Build a complete StatusResponse for a job.
@@ -344,13 +316,13 @@ export class StatusResponseBuilder {
         }
 
         if (includeGoalSettingDiagnostics) {
-          this.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
+          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
         }
         if (includeScoutingDiagnostics) {
-          this.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
+          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
         }
         if (includeGoalCheckDiagnostics) {
-          this.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
+          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
         }
       }
     } catch {
@@ -465,296 +437,19 @@ export class StatusResponseBuilder {
   }
 
   private addTaskProgressInfo(response: StatusResponse, job: Job): void {
-    if (job.status === 'queued') {
-      return;
-    }
-    try {
-      const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
-      const metadata = this.readMetadata(runDir);
-      const progressFile = path.join(runDir, 'progress.jsonl');
-      const orchestratorStages = deriveOrchestratorStages(job, this.config);
-      const { denominatorStages, totalStages } = this.determineStageDenominator(metadata, orchestratorStages);
-
-      const { observedStages, finishedStages, currentStage } = this.processProgressEvents(
-        progressFile,
-        job,
-        response,
-        denominatorStages
-      );
-
-      if (totalStages <= 0) {
-        response.taskProgressPercent = undefined;
-        return;
-      }
-
-      const completedStages = this.calculateCompletedStages(
-        finishedStages,
-        denominatorStages,
-        currentStage,
-        observedStages,
-        orchestratorStages,
-        metadata,
-        totalStages
-      );
-
-      response.taskProgressPercent = this.normalizeProgressPercent(completedStages, totalStages, job.id);
-    } catch (error) {
-      // If any error occurs, skip task progress calculation.
-      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
-        console.error(`[TaskProgressInfo] Error calculating progress for ${job.id}:`, error);
-      }
-      response.taskProgressPercent = undefined;
-    }
-  }
-
-  /**
-   * Process progress events from file or live scheduler.
-   * Returns observed and finished stages plus current stage.
-   */
-  private processProgressEvents(
-    progressFile: string,
-    job: Job,
-    response: StatusResponse,
-    denominatorStages: readonly string[]
-  ): { observedStages: Set<string>; finishedStages: Set<string>; currentStage: string | undefined } {
-    const observedStages = new Set<string>();
-    const finishedStages = new Set<string>();
-    let currentStage: string | undefined = normalizeTaskProgressStage(
-      job.currentStage,
-      undefined,
-      denominatorStages
-    ) ?? normalizeTaskProgressStage(response.progress?.stage, job.currentStage, denominatorStages);
-
-    const ingestEvent = (event: ProgressEventLike): void => {
-      const progressStage = normalizeTaskProgressStage(event.stage, job.currentStage, denominatorStages);
-      if (!progressStage) {
-        return;
-      }
-
-      observedStages.add(progressStage);
-      currentStage = progressStage;
-
-      if (isFinishedProgressEvent(event)) {
-        finishedStages.add(progressStage);
-      }
-    };
-
-    if (fs.existsSync(progressFile)) {
-      try {
-        const content = fs.readFileSync(progressFile, 'utf-8');
-        const lines = content.split('\n').filter(line => line.trim());
-        for (const line of lines) {
-          try {
-            ingestEvent(JSON.parse(line) as ProgressEventLike);
-          } catch {
-            // Skip malformed JSON lines
-          }
-        }
-      } catch {
-        // If reading progress.jsonl fails, continue with live progress fallback
-      }
-    } else if (typeof this.scheduler.getLiveProgressEvents === 'function') {
-      try {
-        const liveEvents = this.scheduler.getLiveProgressEvents(job.id, 100);
-        for (const event of liveEvents) {
-          ingestEvent(event as ProgressEventLike);
-        }
-      } catch {
-        // Ignore live progress errors; status remains resilient
-      }
-    }
-
-    if (observedStages.size === 0 && typeof this.scheduler.getLiveDockerLogTail === 'function') {
-      try {
-        const dockerEvents = progressEventsFromDockerLogTail(this.scheduler.getLiveDockerLogTail(job.id, 300) ?? undefined);
-        for (const event of dockerEvents) {
-          ingestEvent(event);
-        }
-      } catch {
-        // Ignore live Docker log fallback errors; status remains resilient
-      }
-    }
-
-    return { observedStages, finishedStages, currentStage };
-  }
-
-  /**
-   * Determine the authoritative list of stages (denominator) and total count.
-   */
-  private determineStageDenominator(
-    metadata: any,
-    orchestratorStages: string[]
-  ): { denominatorStages: string[]; totalStages: number } {
-    const hasMetadataStages = metadata && Array.isArray(metadata.stages) && metadata.stages.length > 0;
-    if (hasMetadataStages) {
-      const denominatorStages = metadata.stages
-        .map(normalizeStageName)
-        .filter((stage: string | undefined): stage is string => Boolean(stage));
-      return { denominatorStages, totalStages: metadata.stages.length };
-    }
-
-    // Fallback to orchestrator stages
-    return { denominatorStages: orchestratorStages, totalStages: orchestratorStages.length };
-  }
-
-  /**
-   * Calculate how many stages have been completed based on observed and finished stages.
-   */
-  private calculateCompletedStages(
-    finishedStages: Set<string>,
-    denominatorStages: string[],
-    currentStage: string | undefined,
-    observedStages: Set<string>,
-    orchestratorStages: string[],
-    metadata: any,
-    totalStages: number
-  ): number {
-    let completedStages = finishedStages.size;
-
-    const currentStageIndex = currentStage && denominatorStages.length > 0 ? denominatorStages.indexOf(currentStage) : -1;
-    if (currentStageIndex >= 0) {
-      completedStages = Math.max(completedStages, currentStageIndex);
-      if (currentStage && finishedStages.has(currentStage)) {
-        completedStages = Math.max(completedStages, currentStageIndex + 1);
-      } else {
-        completedStages = Math.max(completedStages, currentStageIndex + 0.5);
-      }
-    } else if (!metadata.stages && observedStages.size > 0) {
-      const orchestratorStageSet = new Set(orchestratorStages);
-      const knownObservedStageCount = Array.from(observedStages).filter(stage => orchestratorStageSet.has(stage)).length;
-      completedStages = Math.max(completedStages, Math.min(knownObservedStageCount, totalStages - 1));
-    }
-
-    // Clamp to not exceed totalStages
-    if (completedStages > totalStages) {
-      if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
-        console.warn(`[TaskProgressInfo] Warning: completedStages (${completedStages}) > totalStages (${totalStages}). Clamping.`);
-      }
-      completedStages = totalStages;
-    }
-
-    return completedStages;
-  }
-
-  /**
-   * Normalize completed/total stages into a percentage (0-100).
-   */
-  private normalizeProgressPercent(completedStages: number, totalStages: number, jobId: string): number {
-    const rawPercent = totalStages > 0 ? (completedStages / totalStages) * 100 : 0;
-    const normalized = Math.min(100, Math.max(0, Math.round(rawPercent)));
-
-    if (process.env.KASEKI_DEBUG_PROGRESS === '1') {
-      console.log(`[TaskProgressInfo] ${jobId}: ${completedStages}/${totalStages} stages = ${normalized}%`);
-    }
-
-    return normalized;
+    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const metadata = this.readMetadata(runDir);
+    response.taskProgressPercent = this.taskProgressCalculator.calculateProgressPercent(
+      response,
+      job,
+      runDir,
+      metadata
+    );
   }
 
   private addDiagnosticSummary(response: StatusResponse, job: Job): void {
-    if (!(job.status === 'completed' || job.status === 'failed')) {
-      return;
-    }
-
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
-    const phaseDiagnostics = [
-      ...this.phaseDiagnosticsFromErrors('goal-setting', response.goalSettingValidationErrorsContent),
-      ...this.phaseDiagnosticsFromErrors('scouting', response.scoutingValidationErrorsContent),
-      ...this.phaseDiagnosticsFromErrors('goal-check', response.goalCheckValidationErrorsContent),
-    ];
-    const dependencyCache = this.readDependencyCacheDiagnostics(runDir);
-    const primaryReason = this.resolvePrimaryDiagnosticReason(response, phaseDiagnostics);
-
-    if (!primaryReason && phaseDiagnostics.length === 0 && !dependencyCache) {
-      return;
-    }
-
-    response.diagnosticSummary = {
-      ...(primaryReason ? { primaryReason } : {}),
-      ...(response.diagnosticEntryPoint ? { recommendedEntryPoint: response.diagnosticEntryPoint } : {}),
-      ...(phaseDiagnostics.length > 0 ? { phaseDiagnostics } : {}),
-      ...(dependencyCache ? { dependencyCache } : {}),
-    };
-  }
-
-  private resolvePrimaryDiagnosticReason(
-    response: StatusResponse,
-    phaseDiagnostics: PhaseDiagnostic[]
-  ): string | undefined {
-    const failureJson = response.failureJsonContent ?? {};
-    const candidates = [
-      response.goalCheckFailureReason,
-      response.validationAllowlistFailureReason,
-      response.validationFailureReason,
-      response.qualityFailureReason,
-      typeof failureJson.goal_check_failure_reason === 'string' ? failureJson.goal_check_failure_reason : undefined,
-      typeof failureJson.diagnostic_reason === 'string' ? failureJson.diagnostic_reason : undefined,
-      typeof failureJson.failed_command === 'string' ? failureJson.failed_command : undefined,
-      response.error,
-      phaseDiagnostics[0]?.detail,
-    ];
-
-    return candidates
-      .map((candidate) => typeof candidate === 'string' ? this.cleanDiagnosticText(candidate) : undefined)
-      .find((candidate): candidate is string => Boolean(candidate));
-  }
-
-  private phaseDiagnosticsFromErrors(
-    phase: PhaseDiagnostic['phase'],
-    errors: Array<Record<string, unknown>> | undefined
-  ): PhaseDiagnostic[] {
-    if (!errors || errors.length === 0) {
-      return [];
-    }
-
-    return errors.slice(0, 5).map((error) => {
-      const reason = this.stringField(error, 'reason_code') ?? this.stringField(error, 'reason');
-      const actual = this.stringField(error, 'actual');
-      const expected = this.stringField(error, 'expected');
-      const detail = [reason, actual ? `actual: ${actual}` : undefined, expected ? `expected: ${expected}` : undefined]
-        .filter(Boolean)
-        .join('; ');
-      return {
-        phase,
-        ...(this.stringField(error, 'severity') ? { severity: this.stringField(error, 'severity') } : {}),
-        ...(reason ? { reason } : {}),
-        ...(this.stringField(error, 'field') ? { field: this.stringField(error, 'field') } : {}),
-        ...(detail ? { detail: this.cleanDiagnosticText(detail) } : {}),
-        ...(this.stringField(error, 'suggestion') ? { suggestion: this.cleanDiagnosticText(this.stringField(error, 'suggestion') as string) } : {}),
-      };
-    });
-  }
-
-  private readDependencyCacheDiagnostics(runDir: string): DependencyCacheDiagnostic | undefined {
-    const stdoutPath = path.join(runDir, 'stdout.log');
-    const stdout = this.readSmallTerminalArtifact(stdoutPath);
-    if (!stdout) {
-      return undefined;
-    }
-
-    const messages = stdout
-      .split(/\r?\n/)
-      .map((line) => this.cleanDiagnosticText(line))
-      .map((line) => line.match(DEPENDENCY_CACHE_MESSAGE_PATTERN)?.[1])
-      .filter((message): message is string => Boolean(message))
-      .slice(0, 8);
-    if (messages.length === 0) {
-      return undefined;
-    }
-
-    return {
-      restored: messages.some((message) => message.includes('restoring node_modules')),
-      reinstallTriggered: messages.some((message) => /failed npm ls validation|cache miss|running install/.test(message)),
-      messages,
-    };
-  }
-
-  private stringField(record: Record<string, unknown>, key: string): string | undefined {
-    const value = record[key];
-    return typeof value === 'string' && value.trim().length > 0 ? this.cleanDiagnosticText(value) : undefined;
-  }
-
-  private cleanDiagnosticText(value: string): string {
-    return value.replace(ANSI_ESCAPE_PATTERN, '').replace(/\s+/g, ' ').trim();
+    this.diagnosticExtractor.extractDiagnosticSummary(response, runDir, (filePath: string) => this.readSmallTerminalArtifact(filePath));
   }
 
   private readMetadata(runDir: string): any {
@@ -767,63 +462,6 @@ export class StatusResponseBuilder {
       // Ignore metadata read errors
     }
     return {};
-  }
-
-  private addValidationErrorsContent(
-    response: StatusResponse,
-    runDir: string,
-    fileName: 'goal-setting-validation-errors.jsonl' | 'scouting-validation-errors.jsonl' | 'goal-check-validation-errors.jsonl',
-    phase: 'goalSetting' | 'scouting' | 'goalCheck',
-    isSmallAvailable: (fileName: string) => boolean
-  ): void {
-    if (!isSmallAvailable(fileName)) {
-      return;
-    }
-    const validationErrorsPath = path.join(runDir, fileName);
-    const validationErrorsContent = this.readSmallTerminalArtifact(validationErrorsPath);
-    if (!validationErrorsContent || validationErrorsContent.length > INLINE_ARTIFACT_LIMIT_BYTES) {
-      return;
-    }
-    this.addValidationErrorsContentFields(response, validationErrorsContent, phase);
-  }
-
-  private addValidationErrorsContentFields(
-    response: StatusResponse,
-    content: string,
-    phase: 'goalSetting' | 'scouting' | 'goalCheck'
-  ): void {
-    try {
-      const parsedErrors = content
-        .split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => JSON.parse(line) as unknown);
-
-      if (parsedErrors.every(this.isRecord)) {
-        if (phase === 'goalSetting') {
-          response.goalSettingValidationErrorsContent = parsedErrors;
-        } else if (phase === 'scouting') {
-          response.scoutingValidationErrorsContent = parsedErrors;
-        } else {
-          response.goalCheckValidationErrorsContent = parsedErrors;
-        }
-        return;
-      }
-    } catch {
-      // Fall through to bounded raw content fallback.
-    }
-
-    const rawContent = content.slice(0, INLINE_ARTIFACT_LIMIT_BYTES);
-    if (phase === 'goalSetting') {
-      response.goalSettingValidationErrorsRawContent = rawContent;
-    } else if (phase === 'scouting') {
-      response.scoutingValidationErrorsRawContent = rawContent;
-    } else {
-      response.goalCheckValidationErrorsRawContent = rawContent;
-    }
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private readSmallTerminalArtifact(filePath: string): string | null {
