@@ -3,9 +3,11 @@ import { getPhaseDisplayName } from './phase-names';
 
 const SHELL_DIAGNOSTIC_PATTERN = /\/[^\s:]+(?:\/[^\s:]+)*:\s+line\s+\d+:\s+.*$/;
 const GIT_CLONE_STDERR_PATTERN = /Cloning into '[^']+'\.\.\.$/;
+const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 function sanitizeProgressMessage(message: string): string {
   return message
+    .replace(ANSI_ESCAPE_PATTERN, '')
     .replace(SHELL_DIAGNOSTIC_PATTERN, '')
     .replace(GIT_CLONE_STDERR_PATTERN, '')
     .replace(/\s+/g, ' ')
@@ -42,7 +44,7 @@ export function toStructuredProgress(
   event: Record<string, unknown>,
   fallbackStage: string = 'running'
 ): StructuredProgress | null {
-  const stage = typeof event.stage === 'string' ? event.stage.trim() : fallbackStage;
+  const stage = typeof event.stage === 'string' ? sanitizeProgressMessage(event.stage) : fallbackStage;
   if (!stage) {
     return null;
   }
