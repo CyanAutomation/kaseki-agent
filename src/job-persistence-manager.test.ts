@@ -5,6 +5,16 @@ import { Job } from './kaseki-api-types';
 import { JobPersistenceManager, PersistedJob } from './job-persistence-manager';
 import { KasekiApiConfig } from './kaseki-api-config';
 
+/**
+ * JobPersistenceManager Tests
+ *
+ * Validates persistence and recovery of job state across API restarts.
+ * Tests cover:
+ * - Loading jobs from the index file (empty, filled, with queued jobs)
+ * - Marking running jobs as failed on restart (API crash recovery)
+ * - Persisting new jobs to index
+ * - Lock contention and event loop responsiveness during load
+ */
 describe('JobPersistenceManager', () => {
   let tempDir: string;
   let config: KasekiApiConfig;
@@ -41,13 +51,16 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('loadPersistedJobs', () => {
-    it('should return empty arrays when no jobs are persisted', async () => {
+    test('should return empty arrays when no jobs are persisted', async () => {
+      // Spec: Empty state is valid — no prior jobs means clean slate
       const result = await manager.loadPersistedJobs();
       expect(result.jobs).toEqual([]);
       expect(result.queuedJobs).toEqual([]);
     });
 
-    it('should load persisted jobs from index file', async () => {
+    test('should load persisted jobs from index file', async () => {
+      // Spec: Jobs persisted to disk should be loaded back with state restored
+      // Behavioral intent: Parse index file, convert timestamp strings to Date objects
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -73,7 +86,10 @@ describe('JobPersistenceManager', () => {
       expect(result.jobs[0].createdAt).toBeInstanceOf(Date);
     });
 
-    it('should mark running jobs as failed if API restarted', async () => {
+    test('should mark running jobs as failed if API restarted', async () => {
+      // Spec: Incomplete jobs are marked failed on restart
+      // Regression: GH#2789 — API restart should set exitCode=143 (SIGTERM), failureClass=api_restart
+      // Expected behavior: This signals that job was killed by external force (container restart, etc)
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'running',
@@ -97,7 +113,9 @@ describe('JobPersistenceManager', () => {
       expect(result.jobs[0].failureClass).toBe('api_restart');
     });
 
-    it('should return queued jobs separately', async () => {
+    test('should return queued jobs separately', async () => {
+      // Spec: Queued (not yet started) jobs are returned in a separate array
+      // Behavioral intent: Distinguish jobs that never started from those in progress
       const queuedJob: PersistedJob = {
         id: 'kaseki-1',
         status: 'queued',
@@ -123,7 +141,10 @@ describe('JobPersistenceManager', () => {
       expect(result.queuedJobs[0].id).toBe('kaseki-1');
     });
 
-    it('retries sync lock acquisition during initial contention and eventually loads jobs', async () => {
+    test('should retry sync lock acquisition during initial contention and eventually load jobs', async () => {
+      // Spec: If lock exists (held by another process), retry with exponential backoff
+      // Behavioral intent: Polling strategy allows concurrent safe access to shared index file
+      // This test spawns a subprocess to simulate contention
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -156,7 +177,10 @@ describe('JobPersistenceManager', () => {
       expect(result.jobs).toHaveLength(1);
     });
 
-    it('keeps the event loop responsive while waiting for the jobs index lock', async () => {
+    test('should keep the event loop responsive while waiting for jobs index lock', async () => {
+      // Spec: Lock waiting uses async primitives (not busy-loop)
+      // Behavioral intent: Event loop should tick regularly while blocked on lock
+      // Assertion: Multiple event loop ticks should occur during lock wait
       const job: PersistedJob = {
         id: 'kaseki-1',
         status: 'completed',
@@ -197,7 +221,7 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('persistJobs', () => {
-    it('should persist jobs to index file', async () => {
+    test('should persist jobs to index file', async () => {
       const job: Job = {
         id: 'kaseki-1',
         status: 'completed',
@@ -225,7 +249,7 @@ describe('JobPersistenceManager', () => {
       expect(typeof content.jobs[0].createdAt).toBe('string');
     });
 
-    it('should apply retention policy to terminal jobs', async () => {
+    test('should apply retention policy to terminal jobs', async () => {
       const maxEntries = 5;
       config.jobIndexMaxEntries = maxEntries;
       manager = new JobPersistenceManager(config);
@@ -274,7 +298,7 @@ describe('JobPersistenceManager', () => {
       return found as PersistedJob;
     };
 
-    it('prefers newer startedAt for running jobs when completedAt is missing', async () => {
+    test('prefers newer startedAt for running jobs when completedAt is missing', async () => {
       const id = 'kaseki-conflict-running';
       const oldRunning: PersistedJob = {
         id,
@@ -309,7 +333,7 @@ describe('JobPersistenceManager', () => {
       expect(merged.requestId).toBe('req-new');
     });
 
-    it('prefers running over queued for equal timestamp signals', async () => {
+    test('prefers running over queued for equal timestamp signals', async () => {
       const id = 'kaseki-conflict-queued-running';
       const queued: PersistedJob = {
         id,
@@ -343,7 +367,7 @@ describe('JobPersistenceManager', () => {
       expect(merged.requestId).toBe('req-running');
     });
 
-    it('prefers terminal over non-terminal when recency signals tie', async () => {
+    test('prefers terminal over non-terminal when recency signals tie', async () => {
       const id = 'kaseki-conflict-terminal';
       const running: PersistedJob = {
         id,
@@ -381,7 +405,7 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('generateInstanceId', () => {
-    it('should generate unique instance IDs', async () => {
+    test('should generate unique instance IDs', async () => {
       const id1 = await manager.generateInstanceId([]);
       expect(id1).toMatch(/^kaseki-\d+$/);
 
@@ -390,7 +414,7 @@ describe('JobPersistenceManager', () => {
       expect(id2).toMatch(/^kaseki-\d+$/);
     });
 
-    it('should increment ID counter on disk', async () => {
+    test('should increment ID counter on disk', async () => {
       await manager.generateInstanceId([]);
       const nextIdPath = path.join(tempDir, '.kaseki-api-next-id');
       expect(fs.existsSync(nextIdPath)).toBe(true);
@@ -399,7 +423,7 @@ describe('JobPersistenceManager', () => {
       expect(nextId).toBeGreaterThan(1);
     });
 
-    it('should discover highest ID from result directory', async () => {
+    test('should discover highest ID from result directory', async () => {
       // Create existing result directories
       fs.mkdirSync(path.join(tempDir, 'kaseki-100'), { recursive: true });
       fs.mkdirSync(path.join(tempDir, 'kaseki-200'), { recursive: true });
@@ -411,14 +435,14 @@ describe('JobPersistenceManager', () => {
   });
 
   describe('getResultDir', () => {
-    it('should return correct path for job', async () => {
+    test('should return correct path for job', async () => {
       const resultDir = manager.getResultDir('kaseki-1');
       expect(resultDir).toBe(path.join(tempDir, 'kaseki-1'));
     });
   });
 
   describe('lockingBehavior', () => {
-    it('should handle concurrent persist operations', async () => {
+    test('should handle concurrent persist operations', async () => {
       const job1: Job = {
         id: 'kaseki-1',
         status: 'completed',
