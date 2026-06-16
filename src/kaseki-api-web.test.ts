@@ -521,9 +521,10 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#full-results-btn'));
     await waitFor(() => expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false));
     click(document.querySelector('.tab-btn[data-tab="artifacts"]'));
-    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"availableArtifacts"'));
-    expect(document.querySelector('#output')?.textContent).toContain('"name": "failure.json"');
-    expect(document.querySelector('#output')?.textContent).not.toContain('missing.txt');
+    await waitFor(() => expect(document.querySelector('#artifacts-output')?.textContent).toContain('failure.json'));
+    expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
+    expect(document.querySelector('#output')?.textContent).toContain('"path": "/api/preflight"');
+    expect(document.querySelector('#output')?.textContent).not.toContain('"availableArtifacts"');
   });
 
   test('handles status and cancel actions through the run controls', async () => {
