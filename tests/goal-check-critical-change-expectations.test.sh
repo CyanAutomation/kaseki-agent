@@ -68,7 +68,9 @@ if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
   printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
   printf 'scouting\n' >> "$PI_CALLS"
-  printf '%s\n' '$EXPECTATION_JSON' > "$RESULTS_DIR/scouting-candidate.json"
+  if [ '$EXPECTATION_JSON' != '__NO_SCOUTING_ARTIFACT__' ]; then
+    printf '%s\n' '$EXPECTATION_JSON' > "$RESULTS_DIR/scouting-candidate.json"
+  fi
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
@@ -135,6 +137,27 @@ empty_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"obse
 setup_case "empty-diff" "$empty_expectation" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
 grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/critical-change-verification.log" || fail "empty-diff did not fail on empty diff"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "empty-diff invoked goal-check"
+
+setup_case "fallback-empty-diff" "__NO_SCOUTING_ARTIFACT__" ":" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 0
+node - "$RESULTS_DIR/critical-change-expectations.json" <<'NODE' || fail "fallback-empty-diff expectation artifact missing fallback marker"
+const fs = require('node:fs');
+const artifact = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (artifact.source_artifacts?.scouting_fallback !== true) {
+  throw new Error('expected source_artifacts.scouting_fallback=true');
+}
+if (artifact.fallback_reason !== 'missing_scouting_candidate_for_patch_mode') {
+  throw new Error(`unexpected fallback_reason=${artifact.fallback_reason}`);
+}
+if (artifact.forbidden_empty_diff !== true) {
+  throw new Error('expected forbidden_empty_diff=true');
+}
+NODE
+grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary did not name empty diff as terminal failure"
+grep -q 'scouting did not produce a candidate artifact' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing missing-scouting context"
+grep -q 'Kaseki used conservative patch fallback' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing conservative fallback context"
+grep -q 'coding agent still produced no git diff' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing no-diff context"
+grep -q 'inspect mode / allow empty diff' "$RESULTS_DIR/goal-check-stderr.log" || fail "fallback-empty-diff retry prompt missing inspect/allow-empty guidance"
+! grep -q '^goal-check$' "$PI_CALLS" || fail "fallback-empty-diff invoked goal-check"
 
 missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":[],"forbidden_empty_diff":false}}'
 setup_case "missing-file" "$missing_file_expectation" "printf 'changed other\n' > '__WORKSPACE_REPO__/other.txt'" 8 $'goal-setting\nscouting\ncoding\ncoding' false 0 "critical change verification" 1
