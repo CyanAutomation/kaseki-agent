@@ -87,8 +87,9 @@ export interface SummarizerConfig {
 
 /**
  * Default configuration
+ * @internal
  */
-export const DEFAULT_CONFIG: SummarizerConfig = {
+const DEFAULT_CONFIG: SummarizerConfig = {
   supportedLanguages: ['typescript', 'javascript', 'go'],
   minSizeBytes: 2048, // 2KB
   maxSizeBytes: 1048576, // 1MB
@@ -105,8 +106,9 @@ export const DEFAULT_CONFIG: SummarizerConfig = {
 
 /**
  * Get config from environment variables (overrides defaults)
+ * @internal
  */
-export function getConfigFromEnv(): Partial<SummarizerConfig> {
+function getConfigFromEnv(): Partial<SummarizerConfig> {
   return {
     minSizeBytes: process.env.KASEKI_SUMMARY_MIN_BYTES ? parseInt(process.env.KASEKI_SUMMARY_MIN_BYTES, 10) : undefined,
     maxSizeBytes: process.env.KASEKI_SUMMARY_MAX_BYTES ? parseInt(process.env.KASEKI_SUMMARY_MAX_BYTES, 10) : undefined,

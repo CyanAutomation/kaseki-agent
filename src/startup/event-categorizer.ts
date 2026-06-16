@@ -140,22 +140,3 @@ export function filterEventsBySeverity(
 ): CategorizedEvent[] {
   return events.filter(e => e.severity === severity);
 }
-
-/**
- * Get event counts by category
- */
-export function getEventCountsByCategory(events: CategorizedEvent[]): Record<EventCategory, number> {
-  const counts: Record<EventCategory, number> = {
-    bootstrap: 0,
-    preflight: 0,
-    validation: 0,
-    error: 0,
-    other: 0,
-  };
-
-  for (const event of events) {
-    counts[event.category]++;
-  }
-
-  return counts;
-}
