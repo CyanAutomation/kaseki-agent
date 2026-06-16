@@ -5,7 +5,16 @@ import { spawn } from 'child_process';
 import { IdempotencyStore } from './idempotency-store';
 import { RunResponse } from './kaseki-api-types';
 
-describe('IdempotencyStore persistence', () => {
+/**
+ * IdempotencyStore Tests
+ *
+ * Organized into 4 suites:
+ * 1. Idempotency — Ensures responses are restored exactly across restarts
+ * 2. Backward Compatibility — Handles legacy log formats
+ * 3. Lock Management — Safe concurrent access via file-based locks
+ * 4. Concurrent Claiming — Only one claimant succeeds for the same key
+ */
+describe('IdempotencyStore', () => {
   let resultsDir: string;
 
   beforeEach(async () => {
@@ -16,7 +25,12 @@ describe('IdempotencyStore persistence', () => {
     fs.rmSync(resultsDir, { recursive: true, force: true });
   });
 
-  test('restores exact fulfilled response payload across restart', async () => {
+  // ============================================================================
+  // SUITE 1: Idempotency
+  // ============================================================================
+  // Spec: Idempotency Store ensures duplicate requests return identical responses
+  // This is critical for API correctness: retries must not create duplicate side effects
+  test('should restore exact fulfilled response payload across restart', async () => {
     const key = 'a-key';
     const fingerprint = 'fp-1';
     const response: RunResponse = {
@@ -47,6 +61,11 @@ describe('IdempotencyStore persistence', () => {
     store2.shutdown();
   });
 
+  // ============================================================================
+  // SUITE 2: Backward Compatibility
+  // ============================================================================
+  // Spec: Store must handle log entries created by older versions
+  // Regression: GH#3456 — Gracefully migrate legacy responsePayload format
   test('supports older log lines without responsePayload fields', async () => {
     const persistencePath = path.join(
       resultsDir,
@@ -83,6 +102,11 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  // ============================================================================
+  // SUITE 3: Lock Management
+  // ============================================================================
+  // Spec: Locks ensure only one claimant can claim a key
+  // Expected behavior: Write owner metadata, prevent concurrent claims
   test('writes pid timestamp and token owner metadata while a lock is held', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     const ownerPath = path.join(lockPath, 'owner.json');
@@ -107,6 +131,8 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  // Regression: GH#2345 — Do not release lock if ownership changed
+  // This prevents race condition where another process claims lock
   test('does not release a lock when the owner token was replaced', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     const ownerPath = path.join(lockPath, 'owner.json');
@@ -134,6 +160,7 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  // Spec: Stale lock removal respects age and liveness checks
   test('removes stale locks only after owner age and liveness checks pass', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     const ownerPath = path.join(lockPath, 'owner.json');
@@ -157,6 +184,7 @@ describe('IdempotencyStore persistence', () => {
     store.shutdown();
   });
 
+  // Spec: Windows EPERM (permission denied) means process is dead
   test('treats EPERM process liveness checks as dead on Windows only', () => {
     const store = new IdempotencyStore(resultsDir, 24);
     const originalKill = process.kill;
@@ -190,6 +218,11 @@ describe('IdempotencyStore persistence', () => {
     }
   });
 
+  // ============================================================================
+  // SUITE 4: Concurrent Claiming
+  // ============================================================================
+  // Spec: Exactly one claimant should succeed, others pending
+  // Expected behavior: Race condition resolved deterministically
   test('only one parallel claimer gets claimed for the same key', async () => {
     const workerPath = path.join(resultsDir, 'claim-worker.ts');
     fs.writeFileSync(
@@ -252,6 +285,7 @@ describe('IdempotencyStore persistence', () => {
     expect(kinds).toEqual(['claimed', 'pending']);
   }, 15000);
 
+  // Spec: Lock ensures exclusive critical sections during contention
   test('enforces exclusive critical section during long-held lock contention', async () => {
     const workerPath = path.join(resultsDir, 'lock-worker.ts');
     const markerPath = path.join(resultsDir, 'critical-section-marker.txt');
@@ -329,6 +363,7 @@ describe('IdempotencyStore persistence', () => {
     expect(overlaps).toEqual([]);
   }, 20000);
 
+  // Spec: Event loop remains responsive while waiting for lock
   test('keeps the event loop responsive while waiting for the idempotency lock', async () => {
     const lockPath = path.join(resultsDir, '.kaseki-api-idempotency.lock');
     fs.mkdirSync(lockPath, { recursive: true });
