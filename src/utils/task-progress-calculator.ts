@@ -45,7 +45,7 @@ export class TaskProgressCalculator {
       const orchestratorStages = deriveOrchestratorStages(job, this.config);
       const { denominatorStages, totalStages } = this.determineStageDenominator(metadata, orchestratorStages);
 
-      const { observedStages, finishedStages, currentStage } = this.processProgressEvents(
+      const { finishedStages, currentStage } = this.processProgressEvents(
         progressFile,
         job,
         response,
@@ -60,8 +60,6 @@ export class TaskProgressCalculator {
         finishedStages,
         denominatorStages,
         currentStage,
-        observedStages,
-        orchestratorStages,
         metadata,
         totalStages
       );
@@ -122,8 +120,7 @@ export class TaskProgressCalculator {
     job: Job,
     response: StatusResponse,
     denominatorStages: readonly string[]
-  ): { observedStages: Set<string>; finishedStages: Set<string>; currentStage: string | undefined } {
-    const observedStages = new Set<string>();
+  ): { finishedStages: Set<string>; currentStage: string | undefined } {
     const finishedStages = new Set<string>();
     let currentStage: string | undefined = this.normalizeTaskProgressStage(
       job.currentStage,
@@ -137,7 +134,6 @@ export class TaskProgressCalculator {
         return;
       }
 
-      observedStages.add(progressStage);
       currentStage = progressStage;
 
       if (this.isFinishedProgressEvent(event)) {
@@ -172,7 +168,7 @@ export class TaskProgressCalculator {
       }
     }
 
-    return { observedStages, finishedStages, currentStage };
+    return { finishedStages, currentStage };
   }
 
   /**
@@ -203,8 +199,6 @@ export class TaskProgressCalculator {
     finishedStages: Set<string>,
     denominatorStages: readonly string[],
     currentStage: string | undefined,
-    observedStages: Set<string>,
-    orchestratorStages: readonly string[],
     metadata: any,
     totalStages: number
   ): number {
