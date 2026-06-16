@@ -343,9 +343,15 @@ export class StatusResponseBuilder {
           }
         }
 
-        this.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
-        this.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
-        this.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
+        if (includeGoalSettingDiagnostics) {
+          this.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
+        }
+        if (includeScoutingDiagnostics) {
+          this.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
+        }
+        if (includeGoalCheckDiagnostics) {
+          this.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
+        }
       }
     } catch {
       // Silently skip inlining if any error occurs
@@ -393,7 +399,69 @@ export class StatusResponseBuilder {
     if (Number(phaseExitCode) === 86) {
       return true;
     }
+    if (phase === 'scouting') {
+      return this.hasUnrecoveredCriticalScoutingDiagnostics(runDir);
+    }
     return files.some((fileName) => fs.existsSync(path.join(runDir, fileName)));
+  }
+
+  private hasUnrecoveredCriticalScoutingDiagnostics(runDir: string): boolean {
+    const validationErrorsContent = this.readSmallTerminalArtifact(path.join(runDir, 'scouting-validation-errors.jsonl'));
+    if (!validationErrorsContent || validationErrorsContent.length > INLINE_ARTIFACT_LIMIT_BYTES) {
+      return false;
+    }
+
+    const errors = this.parseValidationErrorsJsonl(validationErrorsContent);
+    if (errors.length === 0) {
+      return false;
+    }
+
+    const hasRecoveryMarker = errors.some((error) => this.isScoutingRecoveredDiagnostic(error));
+    return errors.some((error) => this.isUnrecoveredCriticalScoutingDiagnostic(error, hasRecoveryMarker));
+  }
+
+  private parseValidationErrorsJsonl(content: string): Array<Record<string, unknown>> {
+    try {
+      return content
+        .split(/\r?\n/)
+        .filter((line) => line.trim().length > 0)
+        .map((line) => JSON.parse(line) as unknown)
+        .filter(this.isRecord);
+    } catch {
+      return [];
+    }
+  }
+
+  private isScoutingRecoveryDiagnostic(error: Record<string, unknown>): boolean {
+    const reason = this.stringField(error, 'reason_code') ?? this.stringField(error, 'reason');
+    if (!reason) {
+      return false;
+    }
+    return reason === 'patch_fallback'
+      || reason === 'inspect_fallback'
+      || this.isRecoveredReason(reason);
+  }
+
+  private isScoutingRecoveredDiagnostic(error: Record<string, unknown>): boolean {
+    const reason = this.stringField(error, 'reason_code') ?? this.stringField(error, 'reason');
+    return reason ? this.isRecoveredReason(reason) : false;
+  }
+
+  private isRecoveredReason(reason: string): boolean {
+    return reason === 'patch_fallback_recovered'
+      || reason === 'inspect_fallback_recovered'
+      || reason.endsWith('_recovered');
+  }
+
+  private isUnrecoveredCriticalScoutingDiagnostic(error: Record<string, unknown>, hasRecoveryMarker: boolean): boolean {
+    const severity = this.stringField(error, 'severity')?.toLowerCase();
+    if (severity !== 'critical') {
+      return false;
+    }
+    if (this.isScoutingRecoveryDiagnostic(error)) {
+      return false;
+    }
+    return !hasRecoveryMarker;
   }
 
   private addTaskProgressInfo(response: StatusResponse, job: Job): void {
