@@ -36,6 +36,8 @@ const SCOUTING_DIAGNOSTIC_FILES = [
 ] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
 const INLINE_ARTIFACT_LIMIT_BYTES = 65536;
+const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+const DEPENDENCY_CACHE_MESSAGE_PATTERN = /^Dependency cache status:\s*(.+)$/;
 
 type ProgressEventLike = {
   stage?: unknown;
@@ -43,9 +45,21 @@ type ProgressEventLike = {
   detail?: unknown;
 };
 
+type PhaseDiagnostic = {
+  phase: 'goal-setting' | 'scouting' | 'goal-check';
+  severity?: string;
+  reason?: string;
+  field?: string;
+  detail?: string;
+  suggestion?: string;
+};
+type DependencyCacheDiagnostic = NonNullable<StatusResponse['diagnosticSummary']>['dependencyCache'];
+
 const BASE_ORCHESTRATOR_STAGES = [
   'clone repository',
+  'prepare node dependencies',
   'agent setup',
+  'TypeScript pre-check',
   'pi coding agent',
   'collect agent diff',
   'quality checks',
@@ -117,13 +131,19 @@ export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): str
 
   const stages: string[] = [];
   stages.push('clone repository');
+  stages.push('prepare node dependencies');
   if (preAgentValidation) {
+    if ((request.validationCommands ?? request.validation?.commands)?.length) {
+      stages.push('baseline validation');
+    }
     stages.push('pre-agent validation');
   }
+  stages.push('TypeScript pre-check');
   if (goalSettingEnabled) {
     stages.push('pi goal-setting agent');
   }
   if (scoutingEnabled) {
+    stages.push('scouting prerequisites check');
     stages.push('pi scouting agent', 'derive allowlist from scouting');
   }
   if (goalCheckEnabled) {
@@ -187,6 +207,7 @@ export class StatusResponseBuilder {
     this.addProgressInfo(response, job);
     this.addTaskProgressInfo(response, job);
     this.addArtifactInfo(response, job);
+    this.addDiagnosticSummary(response, job);
 
     return response;
   }
@@ -526,6 +547,8 @@ export class StatusResponseBuilder {
       completedStages = Math.max(completedStages, currentStageIndex);
       if (currentStage && finishedStages.has(currentStage)) {
         completedStages = Math.max(completedStages, currentStageIndex + 1);
+      } else {
+        completedStages = Math.max(completedStages, currentStageIndex + 0.5);
       }
     } else if (!metadata.stages && observedStages.size > 0) {
       const orchestratorStageSet = new Set(orchestratorStages);
@@ -556,6 +579,113 @@ export class StatusResponseBuilder {
     }
 
     return normalized;
+  }
+
+  private addDiagnosticSummary(response: StatusResponse, job: Job): void {
+    if (!(job.status === 'completed' || job.status === 'failed')) {
+      return;
+    }
+
+    const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
+    const phaseDiagnostics = [
+      ...this.phaseDiagnosticsFromErrors('goal-setting', response.goalSettingValidationErrorsContent),
+      ...this.phaseDiagnosticsFromErrors('scouting', response.scoutingValidationErrorsContent),
+      ...this.phaseDiagnosticsFromErrors('goal-check', response.goalCheckValidationErrorsContent),
+    ];
+    const dependencyCache = this.readDependencyCacheDiagnostics(runDir);
+    const primaryReason = this.resolvePrimaryDiagnosticReason(response, phaseDiagnostics);
+
+    if (!primaryReason && phaseDiagnostics.length === 0 && !dependencyCache) {
+      return;
+    }
+
+    response.diagnosticSummary = {
+      ...(primaryReason ? { primaryReason } : {}),
+      ...(response.diagnosticEntryPoint ? { recommendedEntryPoint: response.diagnosticEntryPoint } : {}),
+      ...(phaseDiagnostics.length > 0 ? { phaseDiagnostics } : {}),
+      ...(dependencyCache ? { dependencyCache } : {}),
+    };
+  }
+
+  private resolvePrimaryDiagnosticReason(
+    response: StatusResponse,
+    phaseDiagnostics: PhaseDiagnostic[]
+  ): string | undefined {
+    const failureJson = response.failureJsonContent ?? {};
+    const candidates = [
+      response.goalCheckFailureReason,
+      response.validationAllowlistFailureReason,
+      response.validationFailureReason,
+      response.qualityFailureReason,
+      typeof failureJson.goal_check_failure_reason === 'string' ? failureJson.goal_check_failure_reason : undefined,
+      typeof failureJson.diagnostic_reason === 'string' ? failureJson.diagnostic_reason : undefined,
+      typeof failureJson.failed_command === 'string' ? failureJson.failed_command : undefined,
+      response.error,
+      phaseDiagnostics[0]?.detail,
+    ];
+
+    return candidates
+      .map((candidate) => typeof candidate === 'string' ? this.cleanDiagnosticText(candidate) : undefined)
+      .find((candidate): candidate is string => Boolean(candidate));
+  }
+
+  private phaseDiagnosticsFromErrors(
+    phase: PhaseDiagnostic['phase'],
+    errors: Array<Record<string, unknown>> | undefined
+  ): PhaseDiagnostic[] {
+    if (!errors || errors.length === 0) {
+      return [];
+    }
+
+    return errors.slice(0, 5).map((error) => {
+      const reason = this.stringField(error, 'reason_code') ?? this.stringField(error, 'reason');
+      const actual = this.stringField(error, 'actual');
+      const expected = this.stringField(error, 'expected');
+      const detail = [reason, actual ? `actual: ${actual}` : undefined, expected ? `expected: ${expected}` : undefined]
+        .filter(Boolean)
+        .join('; ');
+      return {
+        phase,
+        ...(this.stringField(error, 'severity') ? { severity: this.stringField(error, 'severity') } : {}),
+        ...(reason ? { reason } : {}),
+        ...(this.stringField(error, 'field') ? { field: this.stringField(error, 'field') } : {}),
+        ...(detail ? { detail: this.cleanDiagnosticText(detail) } : {}),
+        ...(this.stringField(error, 'suggestion') ? { suggestion: this.cleanDiagnosticText(this.stringField(error, 'suggestion') as string) } : {}),
+      };
+    });
+  }
+
+  private readDependencyCacheDiagnostics(runDir: string): DependencyCacheDiagnostic | undefined {
+    const stdoutPath = path.join(runDir, 'stdout.log');
+    const stdout = this.readSmallTerminalArtifact(stdoutPath);
+    if (!stdout) {
+      return undefined;
+    }
+
+    const messages = stdout
+      .split(/\r?\n/)
+      .map((line) => this.cleanDiagnosticText(line))
+      .map((line) => line.match(DEPENDENCY_CACHE_MESSAGE_PATTERN)?.[1])
+      .filter((message): message is string => Boolean(message))
+      .slice(0, 8);
+    if (messages.length === 0) {
+      return undefined;
+    }
+
+    return {
+      restored: messages.some((message) => message.includes('restoring node_modules')),
+      reinstallTriggered: messages.some((message) => /failed npm ls validation|cache miss|running install/.test(message)),
+      messages,
+    };
+  }
+
+  private stringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' && value.trim().length > 0 ? this.cleanDiagnosticText(value) : undefined;
+  }
+
+  private cleanDiagnosticText(value: string): string {
+    return value.replace(ANSI_ESCAPE_PATTERN, '').replace(/\s+/g, ' ').trim();
   }
 
   private readMetadata(runDir: string): any {

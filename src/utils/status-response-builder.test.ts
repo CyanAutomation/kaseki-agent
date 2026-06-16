@@ -133,6 +133,61 @@ describe('StatusResponseBuilder', () => {
       expect(response.error).toBe('Validation failed');
     });
 
+    it('should expose actionable terminal diagnostics and dependency cache notes', () => {
+      const job: Partial<Job> = {
+        id: 'job-diagnostics',
+        status: 'failed',
+        resultDir: '/results/job-diagnostics',
+      };
+      const failureJson = {
+        goal_check_failure_reason: 'critical_change_expectations_failed: git.diff is empty but forbidden_empty_diff is true',
+        diagnostic_reason: 'scouting-validation-errors.jsonl: missing_file',
+      };
+      const scoutingError = {
+        reason_code: 'missing_file',
+        field: 'scouting-candidate.json',
+        actual: 'missing: /results/scouting-candidate.json',
+        severity: 'critical',
+        suggestion: 'ensure the scouting Pi writes exactly one valid JSON object',
+      };
+
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: JSON.stringify(failureJson).length },
+        'stdout.log': { exists: true, size: 500 },
+        'scouting-validation-errors.jsonl': { exists: true, size: JSON.stringify(scoutingError).length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return JSON.stringify(failureJson);
+        }
+        if (filePath.includes('scouting-validation-errors.jsonl')) {
+          return JSON.stringify(scoutingError);
+        }
+        if (filePath.includes('stdout.log')) {
+          return [
+            'Dependency cache status: restoring node_modules from workspace cache (/cache/node_modules).',
+            'Dependency cache status: workspace cache failed npm ls validation; reinstalling.',
+            'Dependency cache status: cache miss for lock hash abc, running install.',
+          ].join('\n');
+        }
+        return null;
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.diagnosticSummary?.primaryReason).toBe(failureJson.goal_check_failure_reason);
+      expect(response.diagnosticSummary?.phaseDiagnostics?.[0]).toMatchObject({
+        phase: 'scouting',
+        severity: 'critical',
+        reason: 'missing_file',
+        field: 'scouting-candidate.json',
+      });
+      expect(response.diagnosticSummary?.dependencyCache).toMatchObject({
+        restored: true,
+        reinstallTriggered: true,
+      });
+    });
+
     it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {
       const job: Partial<Job> = {
         id: 'job-terminal-metadata',
@@ -256,6 +311,8 @@ describe('StatusResponseBuilder', () => {
         autoLintCleanup: { enabled: false },
       }), mockConfig)).toEqual([
         'clone repository',
+        'prepare node dependencies',
+        'TypeScript pre-check',
         'agent setup',
         'pi coding agent',
         'collect agent diff',
@@ -276,7 +333,10 @@ describe('StatusResponseBuilder', () => {
         autoLintCleanup: { enabled: false },
       }), mockConfig)).toEqual([
         'clone repository',
+        'prepare node dependencies',
         'pre-agent validation',
+        'TypeScript pre-check',
+        'scouting prerequisites check',
         'pi scouting agent',
         'derive allowlist from scouting',
         'goal check',
@@ -300,8 +360,11 @@ describe('StatusResponseBuilder', () => {
         autoLintCleanup: { enabled: true },
       }), mockConfig)).toEqual([
         'clone repository',
+        'prepare node dependencies',
         'pre-agent validation',
+        'TypeScript pre-check',
         'pi goal-setting agent',
+        'scouting prerequisites check',
         'pi scouting agent',
         'derive allowlist from scouting',
         'goal check',
@@ -477,7 +540,7 @@ describe('StatusResponseBuilder', () => {
       // 4 of ~15+ stages finished ≈ 25-27%
       expect(response.taskProgressPercent).toBeDefined();
       expect(response.taskProgressPercent).toBeGreaterThan(20);
-      expect(response.taskProgressPercent).toBeLessThan(35);
+      expect(response.taskProgressPercent).toBeLessThan(40);
     });
 
     it('should use metadata-provided stages to calculate taskProgressPercent', () => {
@@ -565,8 +628,8 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // Should calculate progress based on finished stages
-      expect(response.taskProgressPercent).toBe(33); // 1 of 3 finished
+      // Should include partial credit for the active stage.
+      expect(response.taskProgressPercent).toBe(50); // 1.5 of 3 stages
     });
 
     it('should map generic pi agent progress to pi coding agent for task progress', () => {
@@ -778,8 +841,8 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBe(100);
     });
 
-    it('should calculate 0% through addTaskProgressInfo when zero stages are completed', () => {
-      // Semantic boundary test: zero completed stages should yield 0% progress
+    it('should calculate partial progress through addTaskProgressInfo when first stage is active', () => {
+      // Semantic boundary test: a started stage should show visible forward movement.
       const job: Partial<Job> = {
         id: 'job-zero-progress',
         status: 'running',
@@ -811,8 +874,8 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // No stages finished: 0/4 = 0%
-      expect(response.taskProgressPercent).toBe(0);
+      // First stage active: 0.5/4 = 12.5%, rounded to 13%.
+      expect(response.taskProgressPercent).toBe(13);
     });
 
     it('should calculate 100% through addTaskProgressInfo when all stages are completed', () => {

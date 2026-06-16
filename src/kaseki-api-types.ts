@@ -255,6 +255,23 @@ export interface StatusResponse {
   validationFailureReason?: string; // e.g., "validation_command_failed: npm run test (exit 1)"
   validationAllowlistFailureReason?: string; // e.g., "validation_allowlist_check: 1 file(s) changed during validation outside KASEKI_VALIDATION_ALLOWLIST"
   qualityFailureReason?: string; // e.g., "max_diff_bytes: 250KB exceeds limit of 200KB"
+  diagnosticSummary?: {
+    primaryReason?: string;
+    recommendedEntryPoint?: DiagnosticEntryPoint;
+    phaseDiagnostics?: Array<{
+      phase: 'goal-setting' | 'scouting' | 'goal-check';
+      severity?: string;
+      reason?: string;
+      field?: string;
+      detail?: string;
+      suggestion?: string;
+    }>;
+    dependencyCache?: {
+      restored?: boolean;
+      reinstallTriggered?: boolean;
+      messages: string[];
+    };
+  };
   error?: string;
   resultDir?: string;
   correlationId?: string; // Request correlation ID
