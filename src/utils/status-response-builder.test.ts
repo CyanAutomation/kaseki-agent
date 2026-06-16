@@ -135,9 +135,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.error).toBe('Validation failed');
     });
 
-    it.skip('should expose actionable terminal diagnostics and dependency cache notes', () => {
-      // TODO: Fix diagnostic test - phaseDiagnostics not being populated despite proper mock setup.
-      // The validation error content loading may require different mock patterns or additional setup.
+    it('should expose actionable terminal diagnostics and dependency cache notes', () => {
       // This test validates that diagnostic extraction works end-to-end with mocked file I/O.
       const job: Partial<Job> = {
         id: 'job-diagnostics',
@@ -185,7 +183,7 @@ describe('StatusResponseBuilder', () => {
       });
       (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
         if (filePath.includes('metadata.json')) {
-          return '{}';
+          return JSON.stringify({ scouting_exit_code: 86 });
         }
         return '{}';
       });
