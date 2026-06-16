@@ -1304,6 +1304,29 @@ build_stages_array() {
 }
 
 extract_failure_diagnostic_reason() {
+  # Prefer terminal failure state captured by the main flow over validation
+  # diagnostics from earlier phases that recovered and completed successfully.
+  if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then
+    printf '%s' "$GOAL_CHECK_FAILURE_REASON"
+    return 0
+  fi
+  if [ -n "$QUALITY_FAILURE_REASON" ]; then
+    printf '%s' "$QUALITY_FAILURE_REASON"
+    return 0
+  fi
+  if [ -n "$VALIDATION_FAILURE_REASON" ]; then
+    printf '%s' "$VALIDATION_FAILURE_REASON"
+    return 0
+  fi
+  if [ -n "$VALIDATION_ALLOWLIST_FAILURE_REASON" ]; then
+    printf '%s' "$VALIDATION_ALLOWLIST_FAILURE_REASON"
+    return 0
+  fi
+  if [ -n "$PRE_VALIDATION_FAILURE_REASON" ]; then
+    printf '%s' "$PRE_VALIDATION_FAILURE_REASON"
+    return 0
+  fi
+
   local diagnostic
   diagnostic="$(node - "${KASEKI_RESULTS_DIR}" <<'NODE'
 const fs = require('node:fs');
@@ -1320,12 +1343,13 @@ function firstJsonLine(file) {
   const full = path.join(resultsDir, file);
   if (!fs.existsSync(full) || fs.statSync(full).size === 0) return undefined;
   const lines = fs.readFileSync(full, 'utf8').split(/\r?\n/).filter(Boolean);
+  const parsed = [];
   for (const line of lines) {
-    try {
-      return { file, data: JSON.parse(line) };
-    } catch {}
+    try { parsed.push(JSON.parse(line)); } catch {}
   }
-  return undefined;
+  const unrecovered = parsed.filter((data) => data && data.severity !== 'warning' && !data.recovered);
+  const data = unrecovered.length ? unrecovered[unrecovered.length - 1] : undefined;
+  return data ? { file, data } : undefined;
 }
 
 for (const file of files) {
@@ -5155,6 +5179,32 @@ NODE
         scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
         emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid after fallback: $scouting_validation_error (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "exit"
       else
+        node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const file = process.argv[2];
+let lines = [];
+try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean); } catch {}
+const updated = lines.map((line) => {
+  try {
+    const entry = JSON.parse(line);
+    if (entry && entry.severity === 'critical' && entry.reason_code === 'missing_file' && entry.field === 'scouting-candidate.json') {
+      return JSON.stringify({ ...entry, recovered: true, recovery_reason_code: 'patch_fallback_recovered' });
+    }
+  } catch {}
+  return line;
+});
+updated.push(JSON.stringify({
+  timestamp: new Date().toISOString(),
+  reason_code: 'patch_fallback_recovered',
+  field: 'scouting-candidate.json',
+  expected: 'valid patch fallback scouting artifact',
+  actual: 'fallback artifact validated successfully',
+  severity: 'info',
+  recovered: true,
+  suggestion: 'ignore earlier missing_file diagnostics for the recovered scouting phase',
+}));
+fs.writeFileSync(file, updated.join('\n') + '\n');
+NODE
         emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid; continuing with conservative patch fallback (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "continue"
       fi
     else
