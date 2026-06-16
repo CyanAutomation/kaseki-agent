@@ -1322,9 +1322,6 @@ const controllerPage = String.raw`<!doctype html>
         90% { opacity: 1; transform: translateY(0); }
         100% { opacity: 0; transform: translateY(10px); }
       }
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
       @keyframes slideUp {
         from { transform: translate(-50%, -45%); opacity: 0; }
         to { transform: translate(-50%, -50%); opacity: 1; }
@@ -1723,19 +1720,19 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       function sanitizeOutput(value) {
-        if (typeof value === 'string') return value;
+        if (typeof value === 'string') return stripControlSequences(value);
         try {
-          return JSON.stringify(value, null, 2);
+          return stripControlSequences(JSON.stringify(value, null, 2));
         } catch {
-          return String(value);
+          return stripControlSequences(String(value));
         }
       }
 
       function stripControlSequences(value) {
         return String(value || '')
+          .replace(/\\u001b\[[0-?]*[ -/]*[@-~]/gi, '')
           .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
-          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-          .trim();
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
       }
 
       function isLikelyBearerToken(token) {
@@ -2546,7 +2543,7 @@ const controllerPage = String.raw`<!doctype html>
       }
 
       async function loadModalTab(tabName) {
-        if (modalTabCache[tabName]) {
+        if (tabName === 'artifacts' && modalTabCache[tabName]) {
           displayModalTab(tabName);
           return;
         }
@@ -2573,7 +2570,7 @@ const controllerPage = String.raw`<!doctype html>
             artifacts: runUrl(runId, '/artifacts'),
           };
           
-          const result = await apiRequest(paths[tabName], { auth: true });
+          const result = await apiRequest(paths[tabName], { auth: true, preserveOutput: true });
           
           if (tabName === 'artifacts') {
             // Format artifacts as a grid of links
@@ -2587,7 +2584,7 @@ const controllerPage = String.raw`<!doctype html>
                 ? result.payload.content
                 : result.payload)
               : JSON.stringify(result.payload, null, 2);
-            modalTabCache[tabName] = content;
+            modalTabCache[tabName] = stripControlSequences(content);
             displayModalTab(tabName);
           }
         } catch (error) {

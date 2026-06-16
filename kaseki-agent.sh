@@ -822,7 +822,7 @@ const fallback = {
     validation_patterns: [],
   },
   fallback: true,
-  fallback_reason: 'missing_scouting_candidate_for_inspect_mode',
+  fallback_reason: isInspect ? 'missing_scouting_candidate_for_inspect_mode' : 'missing_scouting_candidate_for_patch_mode',
 };
 fs.writeFileSync(output, JSON.stringify(fallback, null, 2) + '\n');
 NODE

@@ -54,6 +54,30 @@ function isDocsOnlyTaskPrompt(prompt?: string): boolean {
     !codeSignals.some((signal) => normalized.includes(signal));
 }
 
+function allowsNoChangeTaskPrompt(prompt?: string): boolean {
+  if (!prompt) {
+    return false;
+  }
+  const normalized = prompt.toLowerCase();
+  return [
+    'otherwise report no change',
+    'otherwise report that no change',
+    'otherwise report no changes',
+    'if no change is needed',
+    'if no changes are needed',
+    'if you find a clear improvement',
+    'if a clear improvement',
+    'if needed',
+    'if necessary',
+    'no change needed',
+    'no changes needed',
+    'no change is needed',
+    'no changes are needed',
+    'make a minimal documentation-only patch if',
+    'make a minimal patch if',
+  ].some((signal) => normalized.includes(signal));
+}
+
 /**
  * Execution state for a job process lifecycle.
  * Replaces distributed boolean flags (timedOut, processExited) with a single state machine.
@@ -489,13 +513,16 @@ export class JobScheduler {
     if (job.request.taskPrompt) {
       env.TASK_PROMPT = job.request.taskPrompt;
     }
-    if ((job.request.taskMode || this.config.defaultTaskMode) === 'inspect') {
+    const taskMode = job.request.taskMode || this.config.defaultTaskMode;
+    if (taskMode === 'inspect') {
       env.KASEKI_ALLOW_EMPTY_DIFF = '1';
       env.KASEKI_SCOUTING = '0';
       env.KASEKI_GOAL_CHECK = job.request.goalCheck?.enabled ? '1' : '0';
       env.KASEKI_RUN_EVALUATION = job.request.runEvaluation?.enabled
         ? '1'
         : '0';
+    } else if (allowsNoChangeTaskPrompt(job.request.taskPrompt)) {
+      env.KASEKI_ALLOW_EMPTY_DIFF = '1';
     }
   }
 

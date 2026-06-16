@@ -251,6 +251,54 @@ describe('JobScheduler timeout lifecycle', () => {
     );
   });
 
+  test('allows empty diffs for conditional no-change patch prompts', async () => {
+    const originalAllowEmptyDiff = process.env.KASEKI_ALLOW_EMPTY_DIFF;
+    process.env.KASEKI_ALLOW_EMPTY_DIFF = '0';
+
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager(),
+      );
+
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+        taskPrompt: 'Make a minimal documentation-only patch if you find a clear improvement; otherwise report no change needed.',
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'bash',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            KASEKI_TASK_MODE: 'patch',
+            KASEKI_ALLOW_EMPTY_DIFF: '1',
+          }),
+        }),
+      );
+    } finally {
+      if (originalAllowEmptyDiff === undefined) {
+        delete process.env.KASEKI_ALLOW_EMPTY_DIFF;
+      } else {
+        process.env.KASEKI_ALLOW_EMPTY_DIFF = originalAllowEmptyDiff;
+      }
+    }
+  });
+
   test('does not override explicit validation commands for docs-like prompts', async () => {
     const proc = new MockProcess();
     mockSpawn.mockReturnValue(proc);
