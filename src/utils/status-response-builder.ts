@@ -492,4 +492,13 @@ export class StatusResponseBuilder {
     const parsed = new Date(normalized);
     return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
   }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private stringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+  }
 }
