@@ -19,6 +19,7 @@ type PhaseDiagnostic = {
 
 type DependencyCacheDiagnostic = NonNullable<StatusResponse['diagnosticSummary']>['dependencyCache'];
 
+// eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const DEPENDENCY_CACHE_MESSAGE_PATTERN = /^Dependency cache status:\s*(.+)$/;
 

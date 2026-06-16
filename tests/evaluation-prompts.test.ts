@@ -16,13 +16,22 @@ import {
 } from '../src/test-utils/orchestration-stub';
 
 /**
- * Tests for evaluation prompt enhancements
+ * Evaluation Prompt Enhancements Tests (1542 lines)
  *
- * These tests verify that:
- * 1. Evaluation prompts include goal-setting context
- * 2. SMART framework is integrated into goal-check
- * 3. Confidence grounding guidance is present
- * 4. Evaluation JSON schemas remain valid
+ * Validates that evaluation prompts integrate goal-setting, SMART framework,
+ * confidence grounding, and test impact guidance.
+ *
+ * Test Organization:
+ * 1. Goal-Check Prompt (5 tests) — Goal-setting context, SMART guidance, evidence requests
+ * 2. Run-Evaluation Prompt (7 tests) — Goal quality influence, stage value, kaseki improvements
+ * 3. Scouting & Coding Prompt (3 tests) — Test impact contract, parser changes handling
+ * 4. Feedback Collection (1 test) — Feedback loop integration
+ * 5. Integration (1 test) — Goal-setting + evaluation pipeline
+ *
+ * Performance Notes:
+ * - Uses bash function extraction caching to avoid re-reading kaseki-agent.sh
+ * - Heavy shell script parsing (execFileSync, bash -n syntax checks)
+ * - Should remain organized by prompt type for maintainability
  */
 
 describe('Evaluation Prompt Enhancements', () => {
@@ -405,13 +414,17 @@ build_scouting_prompt
   };
 
   describe('Goal-Check Prompt', () => {
-    it('should include goal-setting artifact in prompt context', () => {
+    // Spec: Goal-Check Prompt must include goal-setting artifact context
+    // Behavioral intent: Prompt should reference goal-setting.json for success criteria
+    test('should include goal-setting artifact in prompt context', () => {
       expect(cachedScriptContent).toContain('GOAL_SETTING_ARTIFACT');
       expect(cachedScriptContent).toContain('build_goal_check_prompt');
       expect(cachedScriptContent).toContain('goal_setting_context');
     });
 
-    it('should render semantic SMART assessment guidance from the production goal-check prompt builder', () => {
+    // Spec: Render complete SMART assessment guidance from goal-check prompt builder
+    // Behavioral intent: Validation should check each success criterion against 5 SMART dimensions
+    test('should render semantic SMART assessment guidance from the production goal-check prompt builder', () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-prompt-contract-'));
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
 
@@ -449,18 +462,24 @@ build_scouting_prompt
       }
     });
 
-    it('should include confidence grounding guidance', () => {
+    // Spec: Confidence grounding means explaining why the goal-check assessment is confident
+    // Behavioral intent: Guidance should instruct how to justify confidence levels with evidence
+    test('should include confidence grounding guidance', () => {
       expect(cachedGoalCheckSection).toContain('confidence');
       expect(cachedGoalCheckSection.toLowerCase()).toContain('grounding');
     });
 
-    it('should request specific evidence with file/line references', () => {
+    // Spec: Prompt should request specific evidence with traceable file/line references
+    // Behavioral intent: Evidence statements must cite concrete code locations, not vague statements
+    test('should request specific evidence with file/line references', () => {
       expect(cachedGoalCheckSection).toContain('specific');
       expect(cachedGoalCheckSection).toContain('verifiable');
       expect(cachedGoalCheckSection).toContain('line');
     });
 
-    it('should maintain required JSON schema fields', () => {
+    // Spec: JSON schema for goal-check result must include all required fields
+    // Behavioral intent: Each criterion assessment includes met status, confidence, summary, evidence, and retry
+    test('should maintain required JSON schema fields', () => {
       const goalCheckSection = cachedGoalCheckSection;
       expect(goalCheckSection).toContain('"met"');
       expect(goalCheckSection).toContain('"confidence"');
@@ -471,30 +490,30 @@ build_scouting_prompt
   });
 
   describe('Run-Evaluation Prompt', () => {
-    it('should include goal-setting artifact for quality context', () => {
+    test('should include goal-setting artifact for quality context', () => {
       expect(cachedRunEvaluationSection).toContain('GOAL_SETTING_ARTIFACT');
       expect(cachedRunEvaluationSection).toContain('goal_setting_context');
     });
 
-    it('should mention goal quality influence on reviewer confidence', () => {
+    test('should mention goal quality influence on reviewer confidence', () => {
       expect(cachedRunEvaluationSection.toLowerCase()).toContain('quality');
       expect(cachedRunEvaluationSection.toLowerCase()).toContain('confidence');
       expect(cachedRunEvaluationSection).toContain('goal');
     });
 
-    it('should include stage value assessment framework', () => {
+    test('should include stage value assessment framework', () => {
       expect(cachedRunEvaluationSection).toContain('stage');
       expect(cachedRunEvaluationSection).toContain('value');
     });
 
-    it('should provide kaseki improvement categories and guidance', () => {
+    test('should provide kaseki improvement categories and guidance', () => {
       const runEvalSection = cachedRunEvaluationSection;
       expect(runEvalSection).toContain('category');
       expect(runEvalSection).toContain('priority');
       expect(runEvalSection).toContain('goal_setting');
     });
 
-    it('should define task_completion_score framework tied to SMART', () => {
+    test('should define task_completion_score framework tied to SMART', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
         scriptContent.indexOf('build_run_evaluation_prompt()'),
@@ -503,7 +522,7 @@ build_scouting_prompt
       expect(runEvalSection).toContain('SMART');
     });
 
-    it('should include required evidence cross-check contradiction handling rules', () => {
+    test('should include required evidence cross-check contradiction handling rules', () => {
       const runEvalSection = cachedRunEvaluationSection;
       expect(runEvalSection).toContain('### 2. Evidence Cross-Check (REQUIRED)');
       expect(runEvalSection).toContain('goal-check.json.met');
@@ -519,7 +538,7 @@ build_scouting_prompt
       expect(runEvalSection).toContain('reviewer_confidence should be low unless task mode is inspect or dry-run');
     });
 
-    it('should maintain required JSON schema fields', () => {
+    test('should maintain required JSON schema fields', () => {
       const prompt = renderRunEvaluationPrompt();
       const jsonContract = extractRunEvaluationJsonContract(prompt);
 
@@ -540,7 +559,7 @@ build_scouting_prompt
   });
 
   describe('Scouting and Coding Prompt Test Impact Guidance', () => {
-    it('should define a structured scouting test impact contract for parser and output contract changes', () => {
+    test('should define a structured scouting test impact contract for parser and output contract changes', () => {
       const prompt = renderScoutingPrompt();
       const contract = extractScoutingTestImpactContract(prompt);
 
@@ -560,7 +579,7 @@ build_scouting_prompt
       });
     });
 
-    it('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
+    test('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
       expect(cachedAgentSection).toContain('test_impact files');
       expect(cachedAgentSection).toContain('parser logic');
       expect(cachedAgentSection).toContain('output format');
@@ -569,7 +588,7 @@ build_scouting_prompt
       expect(cachedAgentSection).toContain('progress/event fields');
     });
 
-    it('should enforce test impact in scouting artifact validation', () => {
+    test('should enforce test impact in scouting artifact validation', () => {
       const scoutingHelperPath = path.join(projectRoot, 'scripts', 'scouting-allowlist.js');
       const scriptContent = fs.readFileSync(scoutingHelperPath, 'utf8');
       const validationSection = scriptContent.substring(
@@ -744,7 +763,7 @@ try {
       fs.rmSync(run.tmpDir, { recursive: true, force: true });
     };
 
-    it('should collect goal-check feedback after the orchestration completes goal-check with the expected paths', () => {
+    test('should collect goal-check feedback after the orchestration completes goal-check with the expected paths', () => {
       const run = runGoalCheckOrchestration('success');
 
       try {
@@ -799,7 +818,7 @@ try {
       }
     });
 
-    it('should collect goal-check feedback with the expected artifact contract', () => {
+    test('should collect goal-check feedback with the expected artifact contract', () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-check-feedback-contract-'));
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
       const goalCheckPath = path.join(tmpDir, 'goal-check.json');
@@ -1053,7 +1072,7 @@ try {
       }
     };
 
-    it('should collect run-evaluation feedback after artifact-contract invocation with the expected paths and fields', () => {
+    test('should collect run-evaluation feedback after artifact-contract invocation with the expected paths and fields', () => {
       const run = runRunEvaluationOrchestration('success');
 
       try {
@@ -1143,7 +1162,7 @@ try {
       }
     });
 
-    it('should report CLI usage and phase errors at execution time', () => {
+    test('should report CLI usage and phase errors at execution time', () => {
       const noArgs = runCollectFeedback([]);
       expect(noArgs.status).toBe(1);
       expect(noArgs.stderr).toContain('Usage: collect-feedback.js <phase> <instance_name> [paths...]');
@@ -1161,7 +1180,7 @@ try {
       expect(unknownPhase.stderr).toContain('Unknown phase: unknown-phase');
     });
 
-    it('should fall back to default feedback values and warn when artifact JSON cannot be parsed', () => {
+    test('should fall back to default feedback values and warn when artifact JSON cannot be parsed', () => {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'feedback-parse-error-'));
       const goalSettingPath = path.join(tmpDir, 'goal-setting.json');
       const goalCheckPath = path.join(tmpDir, 'goal-check.json');
