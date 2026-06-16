@@ -5,8 +5,26 @@
 # Tests the new validation-stages.sh consolidation and kaseki-setup-host.sh refactoring.
 # Each test validates a specific aspect of the Phase 1 implementation.
 #
+# Test Coverage:
+#   1. validation-stages.sh exists and is executable
+#   2. validation-stages.sh sources without syntax errors
+#   3. kaseki-setup-host.sh --help displays usage
+#   4. kaseki-setup-host.sh --check-only flag works
+#   5. kaseki-setup-host.sh generates host-state.json
+#   6. host-state.json is valid JSON
+#   7. host-state.json contains probe results
+#   8. kaseki-setup-host.sh generates setup-results.json
+#   9. setup-results.json is valid JSON
+#  10. setup-results.json contains mode field
+#  11. --check-only mode does not change /agents
+#  12. validation-stages.sh exports functions
+#  13. validate_container_entry accepts all modes
+#  14. Log functions are exported
+#  15. kaseki-setup-host.sh sources validation-stages.sh correctly
+#
 # Usage:
-#   bash tests/host-setup-phase1.test.sh [--phase=1] [--verbose]
+#   bash tests/host-setup-phase1.test.sh [--verbose]
+#   VERBOSE=1 bash tests/host-setup-phase1.test.sh
 #
 # Exit codes:
 #   0 = all tests passed
