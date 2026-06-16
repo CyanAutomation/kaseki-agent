@@ -1716,6 +1716,22 @@ format_fallback_empty_diff_critical_change_failure() {
   printf '%s' "${phase_label} critical-change verification failed: scouting did not produce a candidate artifact, so Kaseki used conservative patch fallback expectations; the coding agent still produced no git diff. Inspect the original TASK_PROMPT and make the smallest required repository change, or run in inspect mode / allow empty diff if no code change is expected. Failures: ${failure_summary}"
 }
 
+format_fallback_empty_diff_repair_prompt() {
+  local phase_label="$1"
+  local failure_summary="$2"
+  cat <<EOF
+${phase_label} critical-change verification failed because the previous coding attempt produced an empty git diff after scouting fell back to the original task prompt.
+
+This is a patch-mode run, so a no-op is not acceptable. Re-read the task below, inspect the repository, and make the smallest useful repository change that satisfies it. If the request is documentation-only or formatting-only, edit the most relevant documentation or formatting target directly. Do not finish until git diff is non-empty.
+
+Original task prompt:
+${TASK_PROMPT}
+
+Verification failure:
+${failure_summary}
+EOF
+}
+
 
 run_expectation_mismatch_detector() {
   local detector_script
@@ -8808,7 +8824,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     GOAL_CHECK_MET=false
     if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
       GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
-      GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
+      GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Pre-goal-check" "$critical_change_failure_summary")"
     else
       GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
       GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
@@ -8840,7 +8856,7 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
       GOAL_CHECK_MET=false
       if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
         GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
-        GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
+        GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_repair_prompt "Post-cleanup" "$critical_change_failure_summary")"
       else
         GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
         GOAL_CHECK_RETRY_PROMPT="Post-cleanup critical-change verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then restore or implement the required repository changes before secondary work. Failures: $critical_change_failure_summary"

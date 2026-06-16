@@ -100,5 +100,7 @@ grep -q '^pi scouting agent[[:space:]]0[[:space:]]' "$RESULTS_DIR/stage-timings.
 node -e 'const fs=require("node:fs");const f=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(!String(f.diagnostic_reason).includes("critical_change_expectations_failed")) throw new Error(f.diagnostic_reason);if(String(f.diagnostic_reason).includes("missing_file")) throw new Error("stale missing_file diagnostic: "+f.diagnostic_reason);' "$RESULTS_DIR/failure.json" || fail "failure diagnostic reason did not prioritize terminal critical-change failure"
 grep -q 'Failure Detail: critical_change_expectations_failed' "$RESULTS_DIR/result-summary.md" || fail "summary did not report critical-change failure"
 grep -q 'empty diff\|diff is empty\|no patch diff' "$RESULTS_DIR/result-summary.md" || fail "summary did not mention empty diff"
+grep -q 'no-op is not acceptable' "$RESULTS_DIR/goal-check-stderr.log" || fail "retry guidance did not forbid no-op"
+grep -q 'Do not finish until git diff is non-empty' "$RESULTS_DIR/goal-check-stderr.log" || fail "retry guidance did not require non-empty diff"
 
 echo "PASS: $TEST_NAME"

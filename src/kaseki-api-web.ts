@@ -901,6 +901,10 @@ const controllerPage = String.raw`<!doctype html>
       .recent-repo-item:hover {
         background-color: var(--color-surface-high);
       }
+      .recent-repo-item:focus {
+        outline: 2px solid var(--color-focus);
+        outline-offset: -2px;
+      }
       .recent-repo-item-text {
         flex: 1;
         min-width: 0;
@@ -964,17 +968,26 @@ const controllerPage = String.raw`<!doctype html>
         padding: var(--space-3);
       }
       .issues-list-item {
+        display: block;
+        width: 100%;
+        text-align: left;
         padding: var(--space-2) var(--space-3);
         background: var(--color-surface-high);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
         cursor: pointer;
+        color: var(--color-text);
+        font: inherit;
         transition: all var(--transition-base) var(--transition-easing);
       }
       .issues-list-item:hover {
         background: var(--color-surface-highest);
         border-color: var(--color-focus);
         color: var(--color-focus-text);
+      }
+      .issues-list-item:focus {
+        outline: 2px solid var(--color-focus);
+        outline-offset: 1px;
       }
       .issues-list-item-number {
         font-weight: var(--font-weight-semibold);
@@ -1588,11 +1601,13 @@ const controllerPage = String.raw`<!doctype html>
 
       function addRepoToRecent(url) {
         if (!url || typeof url !== 'string') return;
-        const trimmed = url.trim();
+        const trimmed = normalizeRepoUrlForSubmit(url);
         if (!trimmed) return;
         let repos = loadRecentRepos();
         // Remove duplicate if exists
-        repos = repos.filter(r => r !== trimmed);
+        repos = repos
+          .map(normalizeRepoUrlForSubmit)
+          .filter(r => r && r !== trimmed);
         // Add to front (most recently used)
         repos.unshift(trimmed);
         // Keep only last 5
@@ -1735,6 +1750,13 @@ const controllerPage = String.raw`<!doctype html>
           .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
       }
 
+      function cleanProgressText(value) {
+        return stripControlSequences(value)
+          .replace(/\s*ℹ?\s*Kaseki startup checks \(mode:[^)]+\)[\s\S]*$/, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
       function isLikelyBearerToken(token) {
         return /^[A-Za-z0-9._~+\/-]{8,512}$/.test(token);
       }
@@ -1816,8 +1838,8 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (payload.progress && typeof payload.progress.stage === 'string') {
             const progressStageName = payload.progress.displayName 
-              ? stripControlSequences(payload.progress.displayName)
-              : stripControlSequences(payload.progress.stage);
+              ? cleanProgressText(payload.progress.displayName)
+              : cleanProgressText(payload.progress.stage);
             items.push(['Response progress stage', progressStageName]);
           }
           if (typeof payload.taskProgressPercent === 'number') {
@@ -1874,7 +1896,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         let progressMessage = null;
         if (payload && typeof payload === 'object' && payload.progress && typeof payload.progress.message === 'string') {
-          const msg = stripControlSequences(payload.progress.message);
+          const msg = cleanProgressText(payload.progress.message);
           if (msg) progressMessage = msg;
         }
         responseSummary.hidden = items.length === 0 && !progressMessage;
@@ -1897,6 +1919,25 @@ const controllerPage = String.raw`<!doctype html>
       function setOutputBody(text) {
         output.textContent = text;
         output.classList.toggle('empty', !text);
+      }
+
+      function requestCompletionMessage(path, method, response, payload) {
+        const verb = method || 'GET';
+        if (!response.ok) {
+          return response.status === 502
+            ? 'Request failed at the web gateway. Retry once, then check health/preflight.'
+            : verb + ' ' + path + ' failed with HTTP ' + response.status + '.';
+        }
+        if (path === '/health') return 'Health check completed.';
+        if (path === '/ready') return 'Readiness check completed.';
+        if (path === '/api/preflight') return 'Current preflight completed.';
+        if (path === '/api/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
+        if (path.endsWith('/status')) return 'Run status updated.';
+        if (path.endsWith('/cancel')) return 'Cancel request sent.';
+        if (path.endsWith('/artifacts')) return 'Artifacts loaded.';
+        if (path.startsWith('/api/results/')) return 'Artifact loaded.';
+        if (payload && typeof payload === 'object' && typeof payload.id === 'string') return 'Run status updated.';
+        return verb + ' ' + path + ' completed.';
       }
 
       function maybeParseJsonString(value) {
@@ -2025,7 +2066,7 @@ const controllerPage = String.raw`<!doctype html>
           detailsEl.innerHTML = '';
           return;
         }
-        const stage = progress.displayName ? stripControlSequences(progress.displayName) : (progress.stage ? stripControlSequences(progress.stage) : '');
+        const stage = progress.displayName ? cleanProgressText(progress.displayName) : (progress.stage ? cleanProgressText(progress.stage) : '');
         const percent = typeof progress.percentComplete === 'number' ? progress.percentComplete + '%' : '';
         const parts = [stage, percent].filter(Boolean);
         detailsEl.textContent = parts.join(' | ');
@@ -2169,7 +2210,7 @@ const controllerPage = String.raw`<!doctype html>
       function setRunButtonContent(button, run) {
         const primary = formatRunButtonLabel(run);
         const secondary = [
-          run.progress && run.progress.stage ? stripControlSequences(run.progress.stage) : '',
+          run.progress && run.progress.stage ? cleanProgressText(run.progress.stage) : '',
           typeof run.taskProgressPercent === 'number' ? run.taskProgressPercent + '%' : '',
         ].filter(Boolean).join(' | ');
         button.replaceChildren();
@@ -2186,6 +2227,7 @@ const controllerPage = String.raw`<!doctype html>
           content.appendChild(secondaryEl);
         }
         button.title = primary + (secondary ? ' | ' + secondary : '');
+        button.setAttribute('aria-label', primary + (secondary ? ', ' + secondary : ''));
         button.appendChild(content);
       }
 
@@ -2296,14 +2338,7 @@ const controllerPage = String.raw`<!doctype html>
           setOutputMetadata(statusLabel, runId || undefined);
           setResponseSummary(payload);
           setOutputBody(summarizedResponseBody(path, options && options.method || 'GET', response.status, payload));
-          setState(
-            response.ok
-              ? (runId ? 'Run status updated.' : 'Request completed.')
-              : response.status === 502
-                ? 'Request failed at the web gateway. Retry once, then check health/preflight.'
-                : 'Request failed with HTTP ' + response.status + '.',
-            response.ok ? 'ok' : 'bad',
-          );
+          setState(requestCompletionMessage(path, options && options.method || 'GET', response, payload), response.ok ? 'ok' : 'bad');
         }
         if (response.ok && payload && typeof payload === 'object') {
           summarizeHealth(path, payload);
@@ -3099,9 +3134,9 @@ const controllerPage = String.raw`<!doctype html>
           issuesList.replaceChildren();
           addRepoToRecent(repoUrl);
           issues.forEach(issue => {
-            const item = document.createElement('div');
+            const item = document.createElement('button');
             item.className = 'issues-list-item';
-            item.role = 'option';
+            item.type = 'button';
             
             const numberEl = document.createElement('div');
             numberEl.className = 'issues-list-item-number';
@@ -3130,7 +3165,7 @@ const controllerPage = String.raw`<!doctype html>
               ].join('\n');
               repoUrlInput.value = submitRepoUrl;
               repoUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
-              addRepoToRecent(repoUrl);
+              addRepoToRecent(submitRepoUrl);
               // Switch to Submit Task tab
               submitTab.click();
               // Scroll to task prompt

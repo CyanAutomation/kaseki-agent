@@ -195,7 +195,7 @@ describe('kaseki API web console behavior', () => {
     expect(calls[0]).toMatchObject({ path: '/api/preflight' });
     expect(calls[0].init?.headers).toMatchObject({ Authorization: 'Bearer newtoken456' });
     expect(dom.window.sessionStorage.getItem('kasekiApiToken')).toBe('newtoken456');
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Request completed.'));
+    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Current preflight completed.'));
     calls.length = 0;
 
     change(tokenInput!, 'bad token with spaces');
@@ -397,6 +397,7 @@ describe('kaseki API web console behavior', () => {
     input(issuesRepoInput, 'CyanAutomation/kaseki-agent');
     click(document.querySelector('#load-issues-btn'));
     await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Stage names drift'));
+    expect(document.querySelector('.issues-list-item')?.tagName).toBe('BUTTON');
 
     click(document.querySelector('.issues-list-item'));
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('false');
@@ -407,6 +408,41 @@ describe('kaseki API web console behavior', () => {
       '',
       'Align the setup stage name.',
     ].join('\n'));
+  });
+
+  test('normalizes recent repository entries across submit and issues flows', async () => {
+    const { dom, document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/github-issues') {
+          return createJsonResponse([
+            {
+              number: 516,
+              title: 'Progress fallback issue',
+              body: 'Use better progress fallback.',
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        }
+        return createJsonResponse({ runs: [] });
+      },
+    });
+
+    const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
+    const issuesRepoInput = document.querySelector<HTMLInputElement>('#issues-repo-url');
+    if (!repoInput || !issuesRepoInput) throw new Error('Expected repo inputs to exist');
+
+    input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
+    dom.window.sessionStorage.setItem('kasekiRecentRepos', JSON.stringify(['https://github.com/CyanAutomation/kaseki-agent']));
+
+    click(document.querySelector('[data-tab="issues"]'));
+    input(issuesRepoInput, 'CyanAutomation/kaseki-agent');
+    click(document.querySelector('#load-issues-btn'));
+    await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Progress fallback issue'));
+
+    expect(JSON.parse(dom.window.sessionStorage.getItem('kasekiRecentRepos') || '[]')).toEqual([
+      'https://github.com/CyanAutomation/kaseki-agent',
+    ]);
   });
 
   test('submitting a validated task immediately surfaces the new run id', async () => {
@@ -446,7 +482,7 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#submit'));
     await waitFor(() => expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-777'));
     expect(document.querySelector('#output-meta')?.textContent).toContain('Run ID: kaseki-777');
-    expect(document.querySelector('#state')?.textContent).not.toBe('Contacting the controller...');
+    expect(document.querySelector('#state')?.textContent).toBe('Run submitted.');
     expect(calls.some((call) => call.path === '/api/runs' && call.init?.method === 'POST')).toBe(true);
   });
 
@@ -603,6 +639,30 @@ describe('kaseki API web console behavior', () => {
       { label: 'Progress message', value: 'Checks passed' },
     ]);
     expect(document.querySelector('#response-summary')?.textContent).not.toContain('\u001b');
+  });
+
+  test('cleans interleaved startup check text from response progress summaries', async () => {
+    const { document } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: () => createJsonResponse({
+        id: 'kaseki-502',
+        status: 'running',
+        progress: {
+          stage: 'clone repository\u001b[0;34mℹ\u001b[0m Kaseki startup checks (mode: worker)',
+          message: 'started',
+        },
+      }),
+    });
+
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!runIdInput) throw new Error('Expected #run-id to exist');
+    runIdInput.value = 'kaseki-502';
+    click(document.querySelector('#status-check'));
+
+    await waitFor(() => expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(false));
+    expect(document.querySelector('#response-summary')?.textContent).toContain('clone repository');
+    expect(document.querySelector('#response-summary')?.textContent).not.toContain('Kaseki startup checks');
+    expect(document.querySelector('#run-details')?.textContent).toBe('clone repository');
   });
 
   test('renders gateway failures with retry guidance', async () => {
