@@ -429,6 +429,21 @@ describe('progress-normalizer', () => {
       });
     });
 
+    it('should strip startup check text accidentally interleaved into live progress stages', () => {
+      const structured = toStructuredProgress({
+        stage: 'clone repository\u001b[0;34mℹ\u001b[0m Kaseki startup checks (mode: worker)',
+        message: 'started',
+        timestamp: '2026-06-16T20:58:15.318Z',
+      });
+
+      expect(structured).toEqual({
+        stage: 'clone repository',
+        message: 'started',
+        percentComplete: undefined,
+        updatedAt: '2026-06-16T20:58:15.318Z',
+      });
+    });
+
     it('should handle missing fields gracefully in pipeline', () => {
       const event = {
         stage: 'running',

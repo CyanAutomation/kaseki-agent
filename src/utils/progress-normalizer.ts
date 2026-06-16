@@ -3,12 +3,14 @@ import { getPhaseDisplayName } from './phase-names';
 
 const SHELL_DIAGNOSTIC_PATTERN = /\/[^\s:]+(?:\/[^\s:]+)*:\s+line\s+\d+:\s+.*$/;
 const GIT_CLONE_STDERR_PATTERN = /Cloning into '[^']+'\.\.\.$/;
+const STARTUP_CHECK_INTERLEAVE_PATTERN = /\s*ℹ?\s*Kaseki startup checks \(mode:[^)]+\)[\s\S]*$/;
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 function sanitizeProgressMessage(message: string): string {
   return message
     .replace(ANSI_ESCAPE_PATTERN, '')
+    .replace(STARTUP_CHECK_INTERLEAVE_PATTERN, '')
     .replace(SHELL_DIAGNOSTIC_PATTERN, '')
     .replace(GIT_CLONE_STDERR_PATTERN, '')
     .replace(/\s+/g, ' ')

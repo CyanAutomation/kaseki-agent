@@ -156,7 +156,10 @@ grep -q 'git.diff is empty but forbidden_empty_diff is true' "$RESULTS_DIR/resul
 grep -q 'scouting did not produce a candidate artifact' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing missing-scouting context"
 grep -q 'Kaseki used conservative patch fallback' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing conservative fallback context"
 grep -q 'coding agent still produced no git diff' "$RESULTS_DIR/result-summary.md" || fail "fallback-empty-diff summary missing no-diff context"
-grep -q 'inspect mode / allow empty diff' "$RESULTS_DIR/goal-check-stderr.log" || fail "fallback-empty-diff retry prompt missing inspect/allow-empty guidance"
+grep -q 'no-op is not acceptable' "$RESULTS_DIR/goal-check-stderr.log" || fail "fallback-empty-diff retry prompt missing no-op guidance"
+grep -q 'Do not finish until git diff is non-empty' "$RESULTS_DIR/goal-check-stderr.log" || fail "fallback-empty-diff retry prompt missing non-empty diff guidance"
+grep -q 'Original task prompt:' "$RESULTS_DIR/coding-prompt.txt" || fail "fallback-empty-diff second coding prompt did not include original task"
+grep -q 'no-op is not acceptable' "$RESULTS_DIR/coding-prompt.txt" || fail "fallback-empty-diff second coding prompt did not include repair guidance"
 ! grep -q '^goal-check$' "$PI_CALLS" || fail "fallback-empty-diff invoked goal-check"
 
 missing_file_expectation='{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[],"suggested_allowlist":{"agent_patterns":["**"],"validation_patterns":["**"]},"critical_change_expectations":{"required_files":["target.txt"],"required_search_strings":[],"forbidden_empty_diff":false}}'
