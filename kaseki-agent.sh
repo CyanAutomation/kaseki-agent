@@ -1609,12 +1609,15 @@ const requiredFiles = removePlaceholders([...new Set(strings(explicit.required_f
 const requiredSearchStrings = removePlaceholders([...new Set(strings(explicit.required_search_strings || explicit.requiredSearchStrings || explicit.required_diff_markers || explicit.requiredDiffMarkers))]);
 const explicitForbidden = normalizeBool(explicit.forbidden_empty_diff ?? explicit.forbiddenEmptyDiff);
 const forbiddenEmptyDiff = explicitForbidden === undefined ? allowEmptyDiff !== '1' : explicitForbidden;
+const scoutingFallback = Boolean(scouting && typeof scouting === 'object' && (scouting.fallback === true || scouting.fallback_reason));
 const artifact = {
   version: 1,
   source_artifacts: {
     goal_setting: goal && fs.existsSync(goalPath) ? path.basename(goalPath) : null,
     scouting: scouting && fs.existsSync(scoutingPath) ? path.basename(scoutingPath) : null,
+    ...(scoutingFallback ? { scouting_fallback: true } : {}),
   },
+  ...(scoutingFallback ? { fallback_reason: String(scouting.fallback_reason || 'scouting_fallback') } : {}),
   required_files: requiredFiles,
   required_search_strings: requiredSearchStrings,
   forbidden_empty_diff: forbiddenEmptyDiff,
@@ -1689,6 +1692,28 @@ if (failures.length) {
 lines.push('[critical-change] verification passed');
 fs.writeFileSync(reportPath, lines.join('\n') + '\n');
 NODE
+}
+
+critical_change_expectations_from_scouting_fallback() {
+  local expectation_file="${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT:-${KASEKI_RESULTS_DIR}/critical-change-expectations.json}"
+  [ -s "$expectation_file" ] || return 1
+  node - "$expectation_file" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+try {
+  const expectations = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const sources = expectations && typeof expectations === 'object' ? expectations.source_artifacts : null;
+  if ((sources && sources.scouting_fallback === true) || Boolean(expectations && expectations.fallback_reason)) {
+    process.exit(0);
+  }
+} catch {}
+process.exit(1);
+NODE
+}
+
+format_fallback_empty_diff_critical_change_failure() {
+  local phase_label="$1"
+  local failure_summary="$2"
+  printf '%s' "${phase_label} critical-change verification failed: scouting did not produce a candidate artifact, so Kaseki used conservative patch fallback expectations; the coding agent still produced no git diff. Inspect the original TASK_PROMPT and make the smallest required repository change, or run in inspect mode / allow empty diff if no code change is expected. Failures: ${failure_summary}"
 }
 
 
@@ -8781,8 +8806,13 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
     skip_auto_lint_cleanup_before_core_change_verified "critical_change_verification_failed" "$critical_change_failure_summary"
     GOAL_CHECK_MET=false
-    GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
-    GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
+    if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
+      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
+      GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_critical_change_failure "Pre-goal-check" "$critical_change_failure_summary")"
+    else
+      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed: $critical_change_failure_summary"
+      GOAL_CHECK_RETRY_PROMPT="Pre-goal-check verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then make the required repository changes before finishing. Failures: $critical_change_failure_summary"
+    fi
     printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
     emit_progress "critical change verification" "failed on attempt $coding_attempt"
     snapshot_attempt_artifacts "$coding_attempt"
@@ -8808,8 +8838,13 @@ if [ "$STATUS" -eq 0 ] && [ "$PI_EXIT" -eq 0 ] && [ "$QUALITY_EXIT" -eq 0 ]; the
     if ! critical_change_failure_output="$(verify_critical_change_expectations 2>&1)"; then
       critical_change_failure_summary="$(printf '%s\n' "$critical_change_failure_output" | awk 'NF { if (seen) printf "; "; printf "%s", $0; seen=1 }')"
       GOAL_CHECK_MET=false
-      GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
-      GOAL_CHECK_RETRY_PROMPT="Post-cleanup critical-change verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then restore or implement the required repository changes before secondary work. Failures: $critical_change_failure_summary"
+      if critical_change_expectations_from_scouting_fallback && printf '%s' "$critical_change_failure_summary" | grep -q 'git.diff is empty but forbidden_empty_diff is true'; then
+        GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup_empty_diff_after_scouting_fallback: $(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
+        GOAL_CHECK_RETRY_PROMPT="$(format_fallback_empty_diff_critical_change_failure "Post-cleanup" "$critical_change_failure_summary")"
+      else
+        GOAL_CHECK_FAILURE_REASON="critical_change_expectations_failed_after_cleanup: $critical_change_failure_summary"
+        GOAL_CHECK_RETRY_PROMPT="Post-cleanup critical-change verification failed before invoking the LLM evaluator. Re-read ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, inspect ${KASEKI_RESULTS_DIR}/changed-files.txt and ${KASEKI_RESULTS_DIR}/git.diff, then restore or implement the required repository changes before secondary work. Failures: $critical_change_failure_summary"
+      fi
       printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
       emit_progress "critical change verification" "failed after cleanup on attempt $coding_attempt"
       snapshot_attempt_artifacts "$coding_attempt"
