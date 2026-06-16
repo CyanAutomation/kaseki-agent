@@ -9,11 +9,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 
-export interface TempDirPoolConfig {
-  prefix?: string;
-  reusable?: boolean; // Allow reuse across multiple tests
-}
-
 /**
  * Create a temporary directory with cleanup tracking
  *
