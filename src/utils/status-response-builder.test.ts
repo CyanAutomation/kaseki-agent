@@ -188,6 +188,77 @@ describe('StatusResponseBuilder', () => {
       });
     });
 
+    it('keeps recovered scouting fallback diagnostics contextual for critical-change empty diff failures', () => {
+      const job: Partial<Job> = {
+        id: 'job-critical-change-recovered-scouting',
+        status: 'failed',
+        resultDir: '/results/job-critical-change-recovered-scouting',
+      };
+      const goalCheckReason = 'critical_change_expectations_failed: git.diff is empty but forbidden_empty_diff is true';
+      const failureJson = {
+        failed_command: 'critical change verification',
+        goal_check_failure_reason: goalCheckReason,
+        diagnostic_reason: goalCheckReason,
+      };
+      const resultSummary = `# Run Summary\n\nFailure Detail: ${goalCheckReason}\n`;
+      const scoutingFallbackWarning = {
+        reason_code: 'patch_fallback',
+        field: 'scouting-candidate.json',
+        expected: 'valid scouting candidate artifact',
+        actual: 'missing candidate history',
+        severity: 'warning',
+        suggestion: 'continuing with patch-mode fallback scouting context',
+      };
+      const recoveredMissingCandidate = {
+        reason_code: 'missing_file',
+        field: 'scouting-candidate.json',
+        expected: 'valid scouting candidate artifact',
+        actual: 'missing candidate history',
+        severity: 'critical',
+        suggestion: 'fallback recovered this missing candidate history',
+      };
+      const scoutingFallbackRecovered = {
+        reason_code: 'patch_fallback_recovered',
+        field: 'scouting-candidate.json',
+        expected: 'fallback scouting.json',
+        actual: 'fallback recovered missing candidate history',
+        severity: 'warning',
+        suggestion: 'use terminal failure diagnostics first',
+      };
+      const scoutingValidationErrors = [
+        JSON.stringify(scoutingFallbackWarning),
+        JSON.stringify(recoveredMissingCandidate),
+        JSON.stringify(scoutingFallbackRecovered),
+      ].join('\n');
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: JSON.stringify(failureJson).length },
+        'result-summary.md': { exists: true, size: resultSummary.length },
+        'scouting-validation-errors.jsonl': { exists: true, size: scoutingValidationErrors.length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return JSON.stringify(failureJson);
+        }
+        if (filePath.includes('result-summary.md')) {
+          return resultSummary;
+        }
+        if (filePath.includes('scouting-validation-errors.jsonl')) {
+          return scoutingValidationErrors;
+        }
+        return null;
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.diagnosticSummary?.primaryReason).toBe(goalCheckReason);
+      expect(response.diagnosticEntryPoint).toMatch(/^(failure\.json|result-summary\.md)$/);
+      expect(response.diagnosticEntryPoint).not.toBe('scouting-validation-errors.jsonl');
+      expect(response.diagnosticSummary?.recommendedEntryPoint).toMatch(/^(failure\.json|result-summary\.md)$/);
+      expect(response.diagnosticSummary?.phaseDiagnostics).toBeUndefined();
+    });
+
     it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {
       const job: Partial<Job> = {
         id: 'job-terminal-metadata',
