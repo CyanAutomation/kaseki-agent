@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.79.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.4...v1.79.0) (2026-06-16)
+
+
+### Bug Fixes
+
+* enable diagnostic test and update mock return value for metadata.json ([3469e38](https://github.com/CyanAutomation/kaseki-agent/commit/3469e3844d93ae4f6f2e04082a125924a94e7ddd))
+
+
+### Features
+
+* add artifact content loader and diagnostic extractor utilities ([09c4150](https://github.com/CyanAutomation/kaseki-agent/commit/09c4150f31692b529d3227d27e6ee31da3a23024))
+
 ## [1.78.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.78.3...v1.78.4) (2026-06-13)
 
 
