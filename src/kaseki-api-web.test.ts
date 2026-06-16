@@ -23,6 +23,8 @@ type MockResponse = {
   text(): Promise<string>;
 };
 
+const openDoms: JSDOM[] = [];
+
 async function listen(app: express.Express): Promise<{ server: Server; url: string }> {
   const server = await new Promise<Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -96,6 +98,7 @@ async function renderConsole(options: {
       window.fetch = fetchMock as unknown as typeof window.fetch;
     },
   });
+  openDoms.push(dom);
 
   await waitFor(() => expect(dom.window.document.querySelector('#header-status')).not.toBeNull());
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -103,6 +106,12 @@ async function renderConsole(options: {
   fetchMock.mockClear();
   return { dom, document: dom.window.document, calls, fetchMock };
 }
+
+afterEach(() => {
+  while (openDoms.length > 0) {
+    openDoms.pop()?.window.close();
+  }
+});
 
 async function waitFor(assertion: () => void | Promise<void>): Promise<void> {
   const started = Date.now();

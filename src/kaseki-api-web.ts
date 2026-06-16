@@ -1760,6 +1760,9 @@ const controllerPage = String.raw`<!doctype html>
 
       function compactRunFailure(run) {
         if (!run || typeof run !== 'object') return '';
+        if (run.diagnosticSummary && typeof run.diagnosticSummary.primaryReason === 'string') {
+          return stripControlSequences(run.diagnosticSummary.primaryReason).slice(0, 180);
+        }
         const parts = [
           run.failureClass,
           run.validationFailureReason,
@@ -1829,6 +1832,40 @@ const controllerPage = String.raw`<!doctype html>
           if (payload.failureClass || payload.error) {
             const failure = compactRunFailure(payload);
             if (failure) items.push(['Failure reason', failure, { warning: true, fullWidth: true }]);
+          }
+          if (payload.diagnosticSummary && typeof payload.diagnosticSummary === 'object') {
+            const summary = payload.diagnosticSummary;
+            if (typeof summary.primaryReason === 'string' && !payload.failureClass && !payload.error) {
+              items.push(['Failure reason', stripControlSequences(summary.primaryReason).slice(0, 180), { warning: true, fullWidth: true }]);
+            }
+            if (Array.isArray(summary.phaseDiagnostics) && summary.phaseDiagnostics.length > 0) {
+              const phaseText = summary.phaseDiagnostics
+                .slice(0, 3)
+                .map((item) => [
+                  item.phase,
+                  item.severity,
+                  item.reason,
+                  item.field,
+                  item.detail,
+                ].filter(Boolean).join(': '))
+                .filter(Boolean)
+                .join(' | ');
+              if (phaseText) {
+                items.push(['Phase diagnostics', stripControlSequences(phaseText).slice(0, 240), { warning: true, fullWidth: true }]);
+              }
+            }
+            if (summary.dependencyCache && summary.dependencyCache.reinstallTriggered && Array.isArray(summary.dependencyCache.messages)) {
+              const cacheText = summary.dependencyCache.messages
+                .filter((message) => /failed npm ls validation|cache miss|running install/.test(String(message)))
+                .slice(0, 2)
+                .join(' | ');
+              if (cacheText) {
+                items.push(['Dependency cache', stripControlSequences(cacheText).slice(0, 220), { warning: true, fullWidth: true }]);
+              }
+            }
+            if (typeof summary.recommendedEntryPoint === 'string') {
+              items.push(['Start debugging with', stripControlSequences(summary.recommendedEntryPoint)]);
+            }
           }
           if (payload.containerStartup) {
             const startupSummary = preflightStartupSummary(payload);
