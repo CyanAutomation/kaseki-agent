@@ -490,22 +490,30 @@ build_scouting_prompt
   });
 
   describe('Run-Evaluation Prompt', () => {
+    // Spec: Run-evaluation must include goal-setting context for quality assessment
+    // Behavioral intent: Evaluator should consider goal quality when grading task completion
     test('should include goal-setting artifact for quality context', () => {
       expect(cachedRunEvaluationSection).toContain('GOAL_SETTING_ARTIFACT');
       expect(cachedRunEvaluationSection).toContain('goal_setting_context');
     });
 
+    // Spec: Evaluator should understand how goal quality influences their confidence assessment
+    // Behavioral intent: Lower quality goals → lower confidence cap; higher quality → higher possible confidence
     test('should mention goal quality influence on reviewer confidence', () => {
       expect(cachedRunEvaluationSection.toLowerCase()).toContain('quality');
       expect(cachedRunEvaluationSection.toLowerCase()).toContain('confidence');
       expect(cachedRunEvaluationSection).toContain('goal');
     });
 
+    // Spec: Run-evaluation must include stage value assessment framework
+    // Behavioral intent: Framework guides evaluator on what stage completion/quality should mean
     test('should include stage value assessment framework', () => {
       expect(cachedRunEvaluationSection).toContain('stage');
       expect(cachedRunEvaluationSection).toContain('value');
     });
 
+    // Spec: Evaluator guidance must include kaseki improvement categories with recommendations
+    // Behavioral intent: Improvements should be categorized (e.g., code quality, performance, test coverage)
     test('should provide kaseki improvement categories and guidance', () => {
       const runEvalSection = cachedRunEvaluationSection;
       expect(runEvalSection).toContain('category');
@@ -513,6 +521,8 @@ build_scouting_prompt
       expect(runEvalSection).toContain('goal_setting');
     });
 
+    // Spec: task_completion_score must align with SMART criterion achievement
+    // Behavioral intent: Score reflects how many SMART dimensions are met by the implementation
     test('should define task_completion_score framework tied to SMART', () => {
       const scriptContent = fs.readFileSync(kasekiAgentPath, 'utf8');
       const runEvalSection = scriptContent.substring(
@@ -522,6 +532,8 @@ build_scouting_prompt
       expect(runEvalSection).toContain('SMART');
     });
 
+    // Spec: Evidence cross-check must detect contradictions between goal-check and git diff
+    // Behavioral intent: If goal-check says met=true but no code changes, score must be 1 (contradiction)
     test('should include required evidence cross-check contradiction handling rules', () => {
       const runEvalSection = cachedRunEvaluationSection;
       expect(runEvalSection).toContain('### 2. Evidence Cross-Check (REQUIRED)');
@@ -538,6 +550,8 @@ build_scouting_prompt
       expect(runEvalSection).toContain('reviewer_confidence should be low unless task mode is inspect or dry-run');
     });
 
+    // Spec: JSON schema for run-evaluation result must include all required fields
+    // Behavioral intent: Result must contain assessment, confidence, score, stage values, and improvement suggestions
     test('should maintain required JSON schema fields', () => {
       const prompt = renderRunEvaluationPrompt();
       const jsonContract = extractRunEvaluationJsonContract(prompt);
