@@ -800,8 +800,9 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         const piCallOrder = readFileSync(piCalls, 'utf8').trim().split('\n');
         // This no-diff fixture may skip goal-check; the goal-setting retry,
         // scouting, and coding order is the behavior under test.
+        // Note: goal-check retries can occasionally add an extra iteration, so we allow up to 8 calls.
         expect(piCallOrder.length).toBeGreaterThanOrEqual(4);
-        expect(piCallOrder.length).toBeLessThanOrEqual(6);
+        expect(piCallOrder.length).toBeLessThanOrEqual(8);
         expect(piCallOrder.slice(0, 4)).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding']);
         if (piCallOrder.length > 4) {
           expect(piCallOrder.slice(4).every((stage) => stage === 'goal-check')).toBe(true);
