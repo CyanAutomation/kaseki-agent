@@ -163,7 +163,6 @@ PI_EXIT=0
 SCOUTING_EXIT=0
 SCOUTING_DURATION_SECONDS=0
 SCOUTING_ACTUAL_MODEL="unknown"
-SCOUTING_FALLBACK_ACTIVE=0
 KASEKI_SCOUTING_ATTEMPTS=1
 KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
 GOAL_SETTING_EXIT=0
@@ -5211,7 +5210,6 @@ NODE
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
     write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
-    SCOUTING_FALLBACK_ACTIVE=1
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
@@ -5249,7 +5247,6 @@ updated.push(JSON.stringify({
 }));
 fs.writeFileSync(file, updated.join('\n') + '\n');
 NODE
-        SCOUTING_FALLBACK_ACTIVE=1
         emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid; continuing with conservative patch fallback (full details: "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl)" "continue"
       fi
     else

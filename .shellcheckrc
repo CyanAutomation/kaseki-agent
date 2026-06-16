@@ -1,0 +1,11 @@
+# ShellCheck configuration for kaseki-agent
+# See https://www.shellcheck.net/wiki/SC2034 for more information
+
+# Enable source following (follows source files)
+external-sources=false
+
+# Specify the shell dialect (bash)
+shell=bash
+
+# Exclude patterns
+exclude=SC2086,SC2181
