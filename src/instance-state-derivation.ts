@@ -188,7 +188,13 @@ export function classifyFailure(
   if (failedCommand === 'quality checks') return 'quality';
   if (failedCommand === 'secret scan') return 'secret-scan';
   if (failedCommand.startsWith('github')) return 'github';
-  if (failedCommand.includes('LLM_GATEWAY') || failedCommand.includes('gateway')) {
+  const lowerFailedCommand = failedCommand.toLowerCase();
+  if (
+    lowerFailedCommand.includes('llm_gateway') ||
+    lowerFailedCommand.includes('gateway') ||
+    lowerFailedCommand.includes('openrouter') ||
+    lowerFailedCommand.includes('api_key')
+  ) {
     return 'credentials';
   }
   if (failedCommand) return failedCommand.replace(/\s+/g, '-');

@@ -1370,6 +1370,7 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test" type="button"><span class="hc-label">Gateway Test</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
             <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
@@ -1385,6 +1386,10 @@ const controllerPage = String.raw`<!doctype html>
             <div class="summary-card">
               <span class="summary-label">Preflight</span>
               <span class="summary-value" data-summary="preflight">Not checked</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">Gateway</span>
+              <span class="summary-value" data-summary="gateway">Not checked</span>
             </div>
             <div class="summary-card">
               <span class="summary-label">Run</span>
@@ -1930,6 +1935,7 @@ const controllerPage = String.raw`<!doctype html>
         }
         if (path === '/health') return 'Health check completed.';
         if (path === '/ready') return 'Readiness check completed.';
+        if (path === '/api/gateway-test') return 'Gateway test completed.';
         if (path === '/api/preflight') return 'Current preflight completed.';
         if (path === '/api/runs') return verb === 'POST' ? 'Run submitted.' : 'Recent runs refreshed.';
         if (path.endsWith('/status')) return 'Run status updated.';
@@ -2283,6 +2289,11 @@ const controllerPage = String.raw`<!doctype html>
         }
         if (path === '/ready') {
           setSummary('controller', payload.status || 'Ready', 'ok');
+        }
+        if (path === '/api/gateway-test') {
+          const responseTime = payload.responseTime || 0;
+          const summary = payload.status === 'ok' ? responseTime + 'ms' : 'Failed';
+          setSummary('gateway', summary, payload.status === 'ok' ? 'ok' : 'bad');
         }
         if (path === '/api/preflight') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
