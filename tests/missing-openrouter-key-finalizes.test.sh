@@ -66,9 +66,10 @@ chmod +x "$MODIFIED_SCRIPT"
 
 set +e
 env \
-  -u OPENROUTER_API_KEY \
+  -u LLM_GATEWAY_API_KEY \
+  LLM_GATEWAY_URL="https://example.com/v1" \
   PATH="$FAKE_BIN:$PATH" \
-  OPENROUTER_API_KEY_FILE="$KEY_FILE" \
+  LLM_GATEWAY_API_KEY_FILE="$KEY_FILE" \
   GITHUB_APP_ENABLED=0 \
   KASEKI_GIT_CACHE_MODE=off \
   KASEKI_BASELINE_VALIDATION_ENABLED=0 \
@@ -80,7 +81,7 @@ run_exit=$?
 set -e
 
 if [ "$run_exit" -ne 2 ]; then
-  fail "expected missing OpenRouter configuration exit code 2, got $run_exit"
+  fail "expected missing configuration exit code 2, got $run_exit"
 fi
 
 if grep -Eq 'goal-setting|scouting' "$PI_CALLS"; then
@@ -90,23 +91,23 @@ fi
 node - "$RESULTS_DIR/metadata.json" <<'NODE' || fail "metadata did not preserve config/auth failure status"
 const fs = require('node:fs');
 const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-if (metadata.exit_code !== 2) throw new Error(`expected exit_code 2, got ${metadata.exit_code}`);
-if (metadata.failed_command !== 'missing OPENROUTER_API_KEY') throw new Error(`expected missing OPENROUTER_API_KEY, got ${metadata.failed_command}`);
+if (metadata.exit_code !== 2) throw new Error(`expected exit_code 2 (status), got ${metadata.exit_code}`);
+if (metadata.failed_command !== 'missing LLM_GATEWAY_API_KEY') throw new Error(`expected missing LLM_GATEWAY_API_KEY, got ${metadata.failed_command}`);
 NODE
 
 node - "$RESULTS_DIR/failure.json" <<'NODE' || fail "failure artifact did not preserve config/auth failure status"
 const fs = require('node:fs');
 const failure = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-if (failure.exit_code !== 2) throw new Error(`expected exit_code 2, got ${failure.exit_code}`);
-if (failure.failed_command !== 'missing OPENROUTER_API_KEY') throw new Error(`expected missing OPENROUTER_API_KEY, got ${failure.failed_command}`);
+if (failure.exit_code !== 2) throw new Error(`expected exit_code 2 (status), got ${failure.exit_code}`);
+if (failure.failed_command !== 'missing LLM_GATEWAY_API_KEY') throw new Error(`expected missing LLM_GATEWAY_API_KEY, got ${failure.failed_command}`);
 NODE
 
-assert_file_contains "$RUN_LOG" "Missing OpenRouter API key"
-assert_file_contains "$RUN_LOG" "OPENROUTER_API_KEY_FILE at $KEY_FILE"
-assert_file_contains "$RESULTS_DIR/pi-stderr.log" "OPENROUTER_API_KEY_FILE at $KEY_FILE"
-assert_file_contains "$RESULTS_DIR/progress.jsonl" "openrouter_auth_config_missing"
-assert_file_contains "$RESULTS_DIR/progress.jsonl" "OPENROUTER_API_KEY_FILE=$KEY_FILE"
+assert_file_contains "$RUN_LOG" "Missing LLM Gateway API key"
+assert_file_contains "$RUN_LOG" "LLM_GATEWAY_API_KEY_FILE at $KEY_FILE"
+assert_file_contains "$RESULTS_DIR/pi-stderr.log" "LLM_GATEWAY_API_KEY_FILE at $KEY_FILE"
+assert_file_contains "$RESULTS_DIR/progress.jsonl" "llm_gateway_auth_config_missing"
+assert_file_contains "$RESULTS_DIR/progress.jsonl" "LLM_GATEWAY_API_KEY_FILE=$KEY_FILE"
 assert_file_contains "$RESULTS_DIR/result-summary.md" "Exit Code: 2"
-assert_file_contains "$RESULTS_DIR/result-summary.md" "missing OPENROUTER_API_KEY"
+assert_file_contains "$RESULTS_DIR/result-summary.md" "missing LLM_GATEWAY_API_KEY"
 
 printf '✓ %s\n' "$TEST_NAME"

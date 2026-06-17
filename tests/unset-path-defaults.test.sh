@@ -50,25 +50,26 @@ set +e
 env \
   -u KASEKI_RESULTS_DIR \
   -u KASEKI_WORKSPACE_BASELINE_DIR \
-  -u OPENROUTER_API_KEY \
+  -u LLM_GATEWAY_API_KEY \
+  -u LLM_GATEWAY_URL \
   KASEKI_DRY_RUN=1 \
   KASEKI_STARTUP_CHECK_MODE=boot \
   GITHUB_APP_ENABLED=0 \
-  OPENROUTER_API_KEY_FILE="$TMP_DIR/missing-openrouter-key" \
+  LLM_GATEWAY_API_KEY_FILE="$TMP_DIR/missing-gateway-key" \
   bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
 if [ "$run_exit" -ne 2 ]; then
-  fail "expected missing OpenRouter configuration exit code 2, got $run_exit"
+  fail "expected missing configuration exit code 2, got $run_exit"
 fi
 
 if grep -q 'unbound variable' "$RUN_LOG"; then
   fail "startup failed with an unbound variable instead of missing configuration"
 fi
 
-assert_file_contains "$RUN_LOG" 'Missing OpenRouter API key'
-assert_file_contains "$RESULTS_DIR/result-summary.md" 'missing OPENROUTER_API_KEY'
-assert_file_contains "$RESULTS_DIR/failure.json" '"failed_command": "missing OPENROUTER_API_KEY"'
+assert_file_contains "$RUN_LOG" 'Missing LLM Gateway configuration'
+assert_file_contains "$RESULTS_DIR/result-summary.md" 'missing LLM_GATEWAY_URL'
+assert_file_contains "$RESULTS_DIR/failure.json" '"failed_command": "missing LLM_GATEWAY_URL"'
 
 printf '✓ %s\n' "$TEST_NAME"
