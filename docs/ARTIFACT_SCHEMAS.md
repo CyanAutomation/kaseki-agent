@@ -24,8 +24,8 @@ This document defines the formal structure of all kaseki-agent artifacts using J
   "instance": "kaseki-N",
   "repo_url": "https://github.com/org/repo",
   "git_ref": "main",
-  "provider": "openrouter",
-  "model": "openrouter/auto",
+  "provider": "gateway",
+  "model": "auto",
   "started_at": "2026-06-11T10:30:00Z",
   "ended_at": "2026-06-11T10:35:00Z",
   "duration_seconds": 300,
@@ -79,7 +79,7 @@ This document defines the formal structure of all kaseki-agent artifacts using J
 | `instance` | string | Yes | Unique run identifier (kaseki-1, kaseki-2, ...) |
 | `repo_url` | string | Yes | Git repository URL |
 | `git_ref` | string | Yes | Git branch, tag, or commit SHA |
-| `provider` | string | Yes | AI provider (openrouter, anthropic, etc.) |
+| `provider` | string | Yes | AI provider (gateway, custom, etc.) |
 | `model` | string | Yes | Model identifier |
 | `started_at` | ISO8601 | Yes | Run start timestamp |
 | `ended_at` | ISO8601 | Yes | Run end timestamp |
@@ -158,7 +158,7 @@ This document defines the formal structure of all kaseki-agent artifacts using J
 ## Key Metrics
 
 - **Duration**: 5m 23s
-- **Model**: openrouter/auto
+- **Model**: auto (defaults to gateway's default model)
 - **Commands**: 3 attempted, 3 passed
 - **Diff Size**: 1.2 KB
 
@@ -242,7 +242,7 @@ Each line is a JSON object:
   "input_tokens": 12450,
   "output_tokens": 3210,
   "thinking_time_ms": 15000,
-  "model": "openrouter/auto",
+  "model": "auto",
   "started_at": "2026-06-11T10:30:30Z",
   "ended_at": "2026-06-11T10:31:45Z",
   "duration_seconds": 75
