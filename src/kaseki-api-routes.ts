@@ -39,6 +39,7 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
+import { testGatewayConnectivity, formatGatewayTestResponse } from './kaseki-api-gateway-test';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
@@ -1013,7 +1014,10 @@ function extractLLMGatewayPathFromStartupDetail(detail: string): string | undefi
   const patterns = [
     /LLM_GATEWAY_API_KEY_FILE:\s*([^\s]+)/i,
     /LLM_GATEWAY_API_KEY_FILE\s+(?:at|to)\s+([^\s.]+)/i,
+    /OPENROUTER_API_KEY_FILE:\s*([^\s]+)/i,
+    /OPENROUTER_API_KEY_FILE\s+(?:at|to)\s+([^\s.]+)/i,
     /Create:\s*([^\s]+llm_gateway_api_key)/i,
+    /Create:\s*([^\s]+openrouter_api_key)/i,
   ];
 
   for (const pattern of patterns) {
@@ -1039,17 +1043,20 @@ function workerSmokeStartupSecretsRemediation(
     'github app credentials are incomplete',
     'openrouter_api_key_file',
     'openrouter_api_key',
+    'llm_gateway_api_key',
   ].some((warning) => normalized.includes(warning));
 
   if (!includesStartupSecretsWarning) {
     return undefined;
   }
 
+  const isOpenRouter = normalized.includes('openrouter');
+  const keyName = isOpenRouter ? 'openrouter_api_key' : 'llm_gateway_api_key';
   const effectivePath =
     extractLLMGatewayPathFromStartupDetail(detail) ||
-    '/run/secrets/kaseki/llm_gateway_api_key';
+    `/run/secrets/kaseki/${keyName}`;
 
-  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/llm_gateway_api_key is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/llm_gateway_api_key is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
+  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/${keyName} is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/${keyName} is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
 }
 
 function workerSmokeStartupResultsRemediation(
@@ -1470,6 +1477,29 @@ export function createApiRouter(
     }
 
     res.status(response.status === 'error' ? 503 : 200).json(response);
+  });
+
+  /**
+   * GET /api/gateway-test - Test LLM gateway connectivity and responsiveness
+   * Validates that the configured gateway is reachable and authenticated.
+   */
+  router.get('/gateway-test', async (_req: Request, res: Response) => {
+    try {
+      const result = await testGatewayConnectivity();
+      const status = result.status === 'ok' ? 200 : 503;
+      res.status(status).json(formatGatewayTestResponse(result));
+    } catch (error) {
+      logger.error('Gateway test error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        status: 'error',
+        detail: 'Unexpected error during gateway test',
+        responseTime: 0,
+        timestamp: new Date().toISOString(),
+        authenticationValidated: false,
+      });
+    }
   });
 
   /**
