@@ -289,7 +289,7 @@ Fallback:  ~/secrets/{secret-name}
 
 | Secret Name | File Path | Content | Required |
 |---|---|---|---|
-| `openrouter_api_key` | `/agents/secrets/openrouter_api_key` | API key starting with `sk-or-` | ✓ |
+| `llm_gateway_api_key` | `/agents/secrets/llm_gateway_api_key` | API key for your LLM gateway | ✓ |
 | `kaseki_api_keys` | `/agents/secrets/kaseki_api_keys` | Newline-separated keys | ✓ (for API service) |
 | `github_app_id` | `/agents/secrets/github_app_id` | Numeric ID | — |
 | `github_app_client_id` | `/agents/secrets/github_app_client_id` | OAuth Client ID | — |
@@ -313,7 +313,8 @@ chown 10000:10000 /agents/secrets/*
 export REPO_URL="https://github.com/myorg/myrepo"
 export GIT_REF="main"
 export TASK_PROMPT="Fix the null pointer bug in src/parser.ts"
-export OPENROUTER_API_KEY="sk-or-your-key-here"
+export LLM_GATEWAY_URL="https://manifest.scheimann.xyz/v1/responses"
+export LLM_GATEWAY_API_KEY="your-api-key-here"
 
 KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
 ```
@@ -323,7 +324,8 @@ KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF"
 ```bash
 # API server configuration
 # Put one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
-export OPENROUTER_API_KEY_FILE="/agents/secrets/openrouter_api_key"
+export LLM_GATEWAY_URL="https://manifest.scheimann.xyz/v1/responses"
+export LLM_GATEWAY_API_KEY_FILE="/agents/secrets/llm_gateway_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info
 export KASEKI_API_MAX_CONCURRENT_RUNS=5
@@ -379,11 +381,11 @@ export KASEKI_VALIDATION_COMMANDS="npm run check;npm run test;npm run lint;npm r
 
 Configuration is resolved in this order (first match wins):
 
-1. **Explicit env var** (e.g., `OPENROUTER_API_KEY=...`)
-2. **File-based env var** (e.g., `OPENROUTER_API_KEY_FILE=...`)
-3. **Default location** (e.g., `/agents/secrets/openrouter_api_key`)
-4. **Fallback location** (e.g., `~/secrets/openrouter_api_key`)
-5. **Compiled default** (e.g., `openrouter/free` for `KASEKI_MODEL`)
+1. **Explicit env var** (e.g., `LLM_GATEWAY_API_KEY=...`)
+2. **File-based env var** (e.g., `LLM_GATEWAY_API_KEY_FILE=...`)
+3. **Default location** (e.g., `/agents/secrets/llm_gateway_api_key`)
+4. **Fallback location** (e.g., `~/secrets/llm_gateway_api_key`)
+5. **Compiled default** (e.g., `auto` for `KASEKI_MODEL`)
 
 ---
 
@@ -406,9 +408,9 @@ for var in "${REQUIRED[@]}"; do
 done
 
 # Check credentials
-test -s "${OPENROUTER_API_KEY_FILE:-$HOME/secrets/openrouter_api_key}" && \
-  echo "✓ OpenRouter key found" || \
-  echo "✗ OpenRouter key missing"
+test -s "${LLM_GATEWAY_API_KEY_FILE:-$HOME/secrets/llm_gateway_api_key}" && \
+  echo "✓ LLM Gateway key found" || \
+  echo "✗ LLM Gateway key missing"
 
 { test -s /agents/secrets/kaseki_api_keys || test -s "$HOME/secrets/kaseki_api_keys"; } && \
   echo "✓ Kaseki API keys found" || \

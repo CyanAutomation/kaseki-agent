@@ -1,6 +1,6 @@
 # Kaseki Agent
 
-Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent with OpenRouter.
+Kaseki is a proof-of-concept ephemeral coding-agent runner. Each run creates a numbered, disposable container instance (kaseki-1, kaseki-2, etc.) that orchestrates the Pi coding-agent via a generic LLM gateway (Manifest, OpenAI, Ollama, etc.).
 
 ## Quick Start
 
@@ -24,7 +24,8 @@ docker run -it docker.io/cyanautomation/kaseki-agent:latest init
 
 The setup wizard will guide you through providing:
 
-- **OpenRouter API Key** (required): `sk-or-...`
+- **LLM Gateway URL** (required): Your LLM provider endpoint (e.g., `https://manifest.scheimann.xyz/v1/responses`)
+- **LLM Gateway API Key** (required): Authentication token for your provider
 - **GitHub App Credentials** (optional): App ID, Client ID, Private Key
 
 ### 3. Run Your First Task
@@ -121,7 +122,7 @@ kaseki-agent status kaseki-1 --follow
 ### Authentication
 
 - **Config file** (recommended): `~/.kaseki/config.json`
-- **Environment variables**: `OPENROUTER_API_KEY_FILE`, `GITHUB_APP_*_FILE`
+- **Environment variables**: `LLM_GATEWAY_API_KEY_FILE`, `GITHUB_APP_*_FILE`
 - **Docker secrets**: Mount `/secrets` volume
 
 ### Environment Variables

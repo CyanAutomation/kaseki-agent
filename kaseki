@@ -95,7 +95,7 @@ CONTAINER OPERATIONS (new, easier interface):
   ./kaseki setup [--help]                   Interactive setup wizard
   ./kaseki doctor [--help]                  Health check
   ./kaseki agent <repo> <ref> [--help]      Run agent task
-  ./kaseki run-mode <repo> <ref>            One-command run (needs OPENROUTER_API_KEY)
+  ./kaseki run-mode <repo> <ref>            One-command run (needs LLM_GATEWAY_API_KEY)
   ./kaseki setup-remote <host> <key>        Remote host setup
 
 CLI OPERATIONS (instance monitoring, requires /agents directory):
@@ -109,7 +109,8 @@ CLI OPERATIONS (instance monitoring, requires /agents directory):
 
 Environment Variables:
   KASEKI_IMAGE                      Docker image (default: docker.io/cyanautomation/kaseki-agent:latest)
-  OPENROUTER_API_KEY                For run-mode: your OpenRouter API key
+  LLM_GATEWAY_URL                   LLM Gateway endpoint (required)
+  LLM_GATEWAY_API_KEY               LLM Gateway API key (for run-mode)
   KASEKI_RESULTS_DIR                Results directory (default: ./results)
 
 Examples:
@@ -121,7 +122,7 @@ Examples:
   ./kaseki agent https://github.com/org/repo main
   
   # Container: one-command run (no setup needed)
-  OPENROUTER_API_KEY=sk-or-... ./kaseki run-mode https://github.com/org/repo main
+  LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses LLM_GATEWAY_API_KEY=... ./kaseki run-mode https://github.com/org/repo main
   
   # CLI: monitor running instance
   ./kaseki watch kaseki-1 --interval=2
@@ -164,8 +165,8 @@ case "$COMMAND" in
         ;;
       
       agent)
-        if [ ! -f "$SECRETS_DIR/openrouter_api_key" ]; then
-          echo "Error: API key not found at $SECRETS_DIR/openrouter_api_key" >&2
+        if [ ! -f "$SECRETS_DIR/llm_gateway_api_key" ]; then
+          echo "Error: API key not found at $SECRETS_DIR/llm_gateway_api_key" >&2
           echo "Run setup first: ./kaseki setup"
           exit 1
         fi
@@ -182,9 +183,9 @@ case "$COMMAND" in
         ;;
       
       run-mode)
-        if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-          echo "Error: OPENROUTER_API_KEY environment variable is required" >&2
-          echo "Usage: OPENROUTER_API_KEY=sk-or-... ./kaseki run-mode <repo> <ref>"
+        if [ -z "${LLM_GATEWAY_API_KEY:-}" ] || [ -z "${LLM_GATEWAY_URL:-}" ]; then
+          echo "Error: LLM_GATEWAY_API_KEY and LLM_GATEWAY_URL environment variables are required" >&2
+          echo "Usage: LLM_GATEWAY_URL=<endpoint> LLM_GATEWAY_API_KEY=<key> ./kaseki run-mode <repo> <ref>"
           exit 1
         fi
         
@@ -192,7 +193,8 @@ case "$COMMAND" in
         
         docker run -it \
           --rm \
-          -e OPENROUTER_API_KEY \
+          -e LLM_GATEWAY_URL \
+          -e LLM_GATEWAY_API_KEY \
           -v /var/run/docker.sock:/var/run/docker.sock \
           -v "$RESULTS_DIR:/results" \
           "$IMAGE" \
