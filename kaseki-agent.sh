@@ -182,6 +182,12 @@ RUN_EVALUATION_EXIT=0
 RUN_EVALUATION_DURATION_SECONDS=0
 RUN_EVALUATION_ACTUAL_MODEL="unknown"
 RUN_EVALUATION_WARNING=""
+PROVIDER_ERROR_TYPE=""
+PROVIDER_ERROR_PHASE=""
+PROVIDER_ERROR_PROVIDER=""
+PROVIDER_ERROR_API=""
+PROVIDER_ERROR_MODEL=""
+PROVIDER_ERROR_MESSAGE=""
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -1165,6 +1171,12 @@ write_metadata() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "provider_error_type": $(printf '%s' "$PROVIDER_ERROR_TYPE" | json_encode),
+  "provider_error_phase": $(printf '%s' "$PROVIDER_ERROR_PHASE" | json_encode),
+  "provider_error_provider": $(printf '%s' "$PROVIDER_ERROR_PROVIDER" | json_encode),
+  "provider_error_api": $(printf '%s' "$PROVIDER_ERROR_API" | json_encode),
+  "provider_error_model": $(printf '%s' "$PROVIDER_ERROR_MODEL" | json_encode),
+  "provider_error_message": $(printf '%s' "$PROVIDER_ERROR_MESSAGE" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -1307,6 +1319,10 @@ build_stages_array() {
 extract_failure_diagnostic_reason() {
   # Prefer terminal failure state captured by the main flow over validation
   # diagnostics from earlier phases that recovered and completed successfully.
+  if [ -n "$PROVIDER_ERROR_MESSAGE" ]; then
+    printf '%s: %s%s' "$PROVIDER_ERROR_TYPE" "$PROVIDER_ERROR_MESSAGE" "$([ -n "$PROVIDER_ERROR_PHASE" ] && printf ' (phase: %s)' "$PROVIDER_ERROR_PHASE")"
+    return 0
+  fi
   if [ -n "$GOAL_CHECK_FAILURE_REASON" ]; then
     printf '%s' "$GOAL_CHECK_FAILURE_REASON"
     return 0
@@ -1370,6 +1386,59 @@ NODE
   if [ -n "$diagnostic" ]; then
     printf '%s' "$diagnostic"
   fi
+}
+
+capture_provider_error_from_summary() {
+  local summary_file="$1"
+  local phase="$2"
+  local payload
+
+  [ -s "$summary_file" ] || return 1
+  payload="$(node - "$summary_file" "$phase" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [summaryPath, phase] = process.argv.slice(2);
+let summary;
+try { summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')); } catch { process.exit(0); }
+const error = summary && typeof summary === 'object'
+  ? summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null)
+  : null;
+if (!error || typeof error !== 'object' || typeof error.message !== 'string' || !error.message.trim()) {
+  process.exit(0);
+}
+const normalized = {
+  type: typeof error.type === 'string' && error.type ? error.type : 'provider_error',
+  phase,
+  provider: typeof error.provider === 'string' ? error.provider : '',
+  api: typeof error.api === 'string' ? error.api : '',
+  model: typeof error.model === 'string' ? error.model : '',
+  message: error.message,
+};
+process.stdout.write(JSON.stringify(normalized));
+NODE
+)"
+  [ -n "$payload" ] || return 1
+
+  printf '%s\n' "$payload" > "${KASEKI_RESULTS_DIR}/provider-error.json"
+  PROVIDER_ERROR_TYPE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.type || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_PHASE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.phase || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_PROVIDER="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.provider || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_API="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.api || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_MODEL="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.model || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_MESSAGE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.message || ""));' "$payload" 2>/dev/null || true)"
+  return 0
+}
+
+provider_error_is_terminal() {
+  [ -n "$PROVIDER_ERROR_MESSAGE" ]
+}
+
+clear_provider_error() {
+  PROVIDER_ERROR_TYPE=""
+  PROVIDER_ERROR_PHASE=""
+  PROVIDER_ERROR_PROVIDER=""
+  PROVIDER_ERROR_API=""
+  PROVIDER_ERROR_MODEL=""
+  PROVIDER_ERROR_MESSAGE=""
 }
 
 write_result_summary() {
@@ -1472,6 +1541,12 @@ write_failure_json() {
   "pre_validation_failure_reason": $(printf '%s' "$PRE_VALIDATION_FAILURE_REASON" | json_encode),
   "quality_failure_reason": $(printf '%s' "$QUALITY_FAILURE_REASON" | json_encode),
   "goal_check_failure_reason": $(printf '%s' "$GOAL_CHECK_FAILURE_REASON" | json_encode),
+  "provider_error_type": $(printf '%s' "$PROVIDER_ERROR_TYPE" | json_encode),
+  "provider_error_phase": $(printf '%s' "$PROVIDER_ERROR_PHASE" | json_encode),
+  "provider_error_provider": $(printf '%s' "$PROVIDER_ERROR_PROVIDER" | json_encode),
+  "provider_error_api": $(printf '%s' "$PROVIDER_ERROR_API" | json_encode),
+  "provider_error_model": $(printf '%s' "$PROVIDER_ERROR_MODEL" | json_encode),
+  "provider_error_message": $(printf '%s' "$PROVIDER_ERROR_MESSAGE" | json_encode),
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
   "goal_check_met": $GOAL_CHECK_MET,
   "stage": $(printf '%s' "$CURRENT_STAGE" | json_encode),
@@ -4022,6 +4097,11 @@ is_transient_goal_setting_failure() {
     return 1
   fi
 
+  # Exit code 88 = provider/model error (deterministic until model/config changes)
+  if [ "$exit_code" -eq 88 ]; then
+    return 1
+  fi
+
   # Exit code 2 = missing config/API key (not retryable)
   if [ "$exit_code" -eq 2 ]; then
     return 1
@@ -4651,6 +4731,11 @@ NODE
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl ${KASEKI_RESULTS_DIR}/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/goal-setting-events.raw.jsonl 2>/dev/null || true
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/goal-setting-summary.json" "goal-setting"; then
+    GOAL_SETTING_EXIT=88
+    emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider error: $PROVIDER_ERROR_MESSAGE" "continue"
+    clear_provider_error
+  fi
   # Phase 3A: Consolidate goal-setting summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "goal-setting" "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json
   GOAL_SETTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/goal-setting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
@@ -4891,6 +4976,11 @@ is_transient_scouting_failure() {
 
   # Exit code 86 = local validation failure (deterministic, not retryable)
   if [ "$exit_code" -eq 86 ]; then
+    return 1
+  fi
+
+  # Exit code 88 = provider/model error (deterministic until model/config changes)
+  if [ "$exit_code" -eq 88 ]; then
     return 1
   fi
 
@@ -5264,6 +5354,10 @@ NODE
   git reset --hard -q HEAD 2>/dev/null || true
   git clean -fd -q 2>/dev/null || true
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl ${KASEKI_RESULTS_DIR}/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" ${KASEKI_RESULTS_DIR}/scouting-events.raw.jsonl 2>/dev/null || true
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
+    SCOUTING_EXIT=88
+    emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+  fi
   # Phase 3A: Consolidate scouting summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "scouting" "${KASEKI_RESULTS_DIR}"/scouting-summary.json
   SCOUTING_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/scouting-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
@@ -6130,6 +6224,12 @@ fs.writeFileSync(output, JSON.stringify(artifact, null, 2) + "\n");
   fi
   rm -f "$RUN_EVALUATION_CANDIDATE_ARTIFACT"
   kaseki-pi-event-filter "$RUN_EVALUATION_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl ${KASEKI_RESULTS_DIR}/run-evaluation-summary.json 2>/dev/null || true
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/run-evaluation-summary.json" "run-evaluation"; then
+    RUN_EVALUATION_EXIT=88
+    emit_error_event "$PROVIDER_ERROR_TYPE" "Run-evaluation provider error: $PROVIDER_ERROR_MESSAGE" "continue"
+    RUN_EVALUATION_WARNING="run_evaluation_provider_error_$PROVIDER_ERROR_TYPE"
+    clear_provider_error
+  fi
   # Phase 3A: Consolidate run-evaluation summary to all-phase-summaries.json
   append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "run-evaluation" "${KASEKI_RESULTS_DIR}"/run-evaluation-summary.json
   RUN_EVALUATION_ACTUAL_MODEL="$(node -e 'try { const s=require(process.env.KASEKI_RESULTS_DIR + "/run-evaluation-summary.json"); const v=String(s.selected_model || s.model || "").trim(); console.log(v && v !== "unknown" && v !== "null" ? v : "unknown"); } catch { console.log("unknown"); }' 2>/dev/null)"
@@ -6152,7 +6252,11 @@ NODE
   fi
 
   if [ "$RUN_EVALUATION_EXIT" -ne 0 ] || [ ! -s "$RUN_EVALUATION_ARTIFACT" ]; then
-    write_run_evaluation_fallback "run_evaluation_failed_exit_$RUN_EVALUATION_EXIT"
+    if [ -n "$RUN_EVALUATION_WARNING" ]; then
+      write_run_evaluation_fallback "$RUN_EVALUATION_WARNING"
+    else
+      write_run_evaluation_fallback "run_evaluation_failed_exit_$RUN_EVALUATION_EXIT"
+    fi
     emit_progress "run evaluation" "finished with warning $RUN_EVALUATION_WARNING"
   else
     emit_progress "run evaluation" "wrote run evaluation artifact"
@@ -8665,9 +8769,17 @@ NODE
       FAILED_COMMAND="pi event export incomplete"
     fi
   fi
+  if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/pi-summary.json" "coding"; then
+    PI_EXIT=88
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=88
+      FAILED_COMMAND="pi provider error"
+    fi
+    emit_error_event "$PROVIDER_ERROR_TYPE" "Coding provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+  fi
 
   # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
-  if [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ]; then
+  if [ "$PI_EXIT" -eq 0 ] && [ "$KASEKI_HASHLINE_EDITS" != "0" ] && [ -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ]; then
     emit_progress "hashline validation" "started"
     HASHLINE_EXIT=0
     set +e

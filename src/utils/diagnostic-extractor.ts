@@ -65,6 +65,7 @@ export class DiagnosticExtractor {
   ): string | undefined {
     const failureJson = response.failureJsonContent ?? {};
     const candidates = [
+      this.formatProviderError(failureJson),
       response.goalCheckFailureReason,
       response.validationAllowlistFailureReason,
       response.validationFailureReason,
@@ -79,6 +80,22 @@ export class DiagnosticExtractor {
     return candidates
       .map((candidate) => typeof candidate === 'string' ? this.cleanDiagnosticText(candidate) : undefined)
       .find((candidate): candidate is string => Boolean(candidate));
+  }
+
+  private formatProviderError(failureJson: Record<string, unknown>): string | undefined {
+    const message = this.stringField(failureJson, 'provider_error_message');
+    if (!message) {
+      return undefined;
+    }
+
+    const type = this.stringField(failureJson, 'provider_error_type') ?? 'provider_error';
+    const phase = this.stringField(failureJson, 'provider_error_phase');
+    const model = this.stringField(failureJson, 'provider_error_model');
+    const context = [
+      phase ? `phase: ${phase}` : undefined,
+      model ? `model: ${model}` : undefined,
+    ].filter(Boolean);
+    return this.cleanDiagnosticText(`${type}: ${message}${context.length ? ` (${context.join(', ')})` : ''}`);
   }
 
   /**
