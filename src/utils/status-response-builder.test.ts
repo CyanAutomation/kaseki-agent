@@ -286,6 +286,40 @@ describe('StatusResponseBuilder', () => {
       expect(response.diagnosticSummary?.phaseDiagnostics).toBeUndefined();
     });
 
+    it('prioritizes provider errors in the diagnostic summary', () => {
+      const job: Partial<Job> = {
+        id: 'job-provider-error',
+        status: 'failed',
+        resultDir: '/results/job-provider-error',
+      };
+      const failureJson = {
+        failed_command: 'pi provider error',
+        diagnostic_reason: 'model_unavailable: 404 This model is unavailable for free. (phase: coding)',
+        provider_error_type: 'model_unavailable',
+        provider_error_phase: 'coding',
+        provider_error_model: 'z-ai/glm-4.5-air:free',
+        provider_error_message: '404 This model is unavailable for free.',
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: JSON.stringify(failureJson).length },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return JSON.stringify(failureJson);
+        }
+        return null;
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.diagnosticSummary?.primaryReason).toBe(
+        'model_unavailable: 404 This model is unavailable for free. (phase: coding, model: z-ai/glm-4.5-air:free)'
+      );
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+
     it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {
       const job: Partial<Job> = {
         id: 'job-terminal-metadata',
