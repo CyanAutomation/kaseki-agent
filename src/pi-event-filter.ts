@@ -614,6 +614,17 @@ interface Summary {
   execution_tool_stats?: ExecutionStats;
   token_usage?: TokenUsageSummary;
   model_token_stats?: ModelTokenStats;
+  provider_errors?: ProviderErrorSummary[];
+  primary_provider_error?: ProviderErrorSummary;
+}
+
+interface ProviderErrorSummary {
+  type: 'model_unavailable' | 'provider_error';
+  provider?: string;
+  api?: string;
+  model?: string;
+  stop_reason?: string;
+  message: string;
 }
 
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
@@ -766,6 +777,37 @@ function extractUsage(event: PiEvent): any {
   return null;
 }
 
+function classifyProviderError(message: string): ProviderErrorSummary['type'] {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('model is unavailable') ||
+    lower.includes('model unavailable') ||
+    lower.includes('no endpoints found') ||
+    lower.includes('not a valid model') ||
+    lower.includes('model_not_found')
+  ) {
+    return 'model_unavailable';
+  }
+  return 'provider_error';
+}
+
+function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
+  const message = (event as any).message;
+  if (!message || typeof message !== 'object') return null;
+  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage.trim() : '';
+  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
+  if (!errorMessage || stopReason !== 'error') return null;
+
+  return {
+    type: classifyProviderError(errorMessage),
+    provider: typeof message.provider === 'string' ? message.provider : undefined,
+    api: typeof message.api === 'string' ? message.api : undefined,
+    model: typeof message.model === 'string' ? message.model : undefined,
+    stop_reason: stopReason,
+    message: errorMessage,
+  };
+}
+
 /**
  * Extract model name from event (for token usage association).
  */
@@ -784,6 +826,7 @@ async function main(): Promise<void> {
   const toolReliability = new ToolReliabilityAggregator();
   const executionTime = new ExecutionTimeAggregator();
   const tokenUsage = new TokenUsageAggregator();
+  const providerErrors: ProviderErrorSummary[] = [];
   const tracker = new TimestampTracker();
   let invalidJsonLines = 0;
 
@@ -824,6 +867,10 @@ async function main(): Promise<void> {
     if (usage) {
       const modelName = extractModelName(event);
       tokenUsage.recordUsage(modelName, usage);
+    }
+    const providerError = extractProviderError(event);
+    if (providerError) {
+      providerErrors.push(providerError);
     }
 
     // Track agent timing (API invocation time)
@@ -876,6 +923,7 @@ async function main(): Promise<void> {
     execution_tool_stats: executionTime.getToolStats(),
     token_usage: tokenUsage.getSummary(),
     model_token_stats: tokenUsage.getModelStats(),
+    ...(providerErrors.length > 0 ? { provider_errors: providerErrors, primary_provider_error: providerErrors[0] } : {}),
   };
 
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
