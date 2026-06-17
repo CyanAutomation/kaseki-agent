@@ -175,7 +175,7 @@ function buildModelsEndpoint(baseUrl: string): string {
  */
 async function fetchWithTimeout(
   url: string,
-  options: RequestInit,
+  options: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();

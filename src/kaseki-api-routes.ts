@@ -845,7 +845,7 @@ function checkWritableDirectory(
 function checkLLMGatewayKey(): PreflightCheck {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const keyValue = readHostSecret('llm_gateway_api_key');
-  
+
   if (gatewayUrl && keyValue) {
     return {
       name: 'llm-gateway-key',
@@ -858,7 +858,7 @@ function checkLLMGatewayKey(): PreflightCheck {
   const missingParts = [];
   if (!gatewayUrl) missingParts.push('LLM_GATEWAY_URL');
   if (!keyValue) missingParts.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE');
-  
+
   return {
     name: 'llm-gateway-key',
     ok: false,
