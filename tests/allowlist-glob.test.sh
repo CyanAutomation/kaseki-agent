@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Source only the allowlist matcher helpers, without running a full Kaseki job.
-# shellcheck source=scripts/allowlist-helper.sh
+# shellcheck source=../scripts/allowlist-helper.sh
 . "$ROOT_DIR/scripts/allowlist-helper.sh"
 
 matches_allowlist() {

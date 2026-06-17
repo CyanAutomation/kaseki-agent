@@ -10,7 +10,7 @@
 #
 # That's it! The wizard will:
 # - Auto-configure secrets directories with correct permissions
-# - Ask for your OpenRouter API key
+# - Ask for your LLM Gateway endpoint and API key
 # - Create necessary files and directories
 # - Show you how to deploy
 #
@@ -45,7 +45,8 @@ services:
       KASEKI_AGENT_TIMEOUT_SECONDS: "${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
       KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS: "${KASEKI_TEMPLATE_DOCTOR_TIMEOUT_MS:-15000}"
       KASEKI_MAX_DIFF_BYTES: "${KASEKI_MAX_DIFF_BYTES:-400000}"
-      OPENROUTER_API_KEY_FILE: "${OPENROUTER_API_KEY_FILE:-/run/secrets/kaseki/openrouter_api_key}"
+      LLM_GATEWAY_URL: "${LLM_GATEWAY_URL:-}"
+      LLM_GATEWAY_API_KEY_FILE: "${LLM_GATEWAY_API_KEY_FILE:-/run/secrets/kaseki/llm_gateway_api_key}"
       GITHUB_APP_ID_FILE: "${GITHUB_APP_ID_FILE:-/run/secrets/kaseki/github_app_id}"
       GITHUB_APP_CLIENT_ID_FILE: "${GITHUB_APP_CLIENT_ID_FILE:-/run/secrets/kaseki/github_app_client_id}"
       GITHUB_APP_PRIVATE_KEY_FILE: "${GITHUB_APP_PRIVATE_KEY_FILE:-/run/secrets/kaseki/github_app_private_key}"

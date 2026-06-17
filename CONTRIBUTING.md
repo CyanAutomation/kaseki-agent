@@ -303,7 +303,7 @@ Use either the published image or a local build, then run `./run-kaseki.sh` from
 
 ```bash
 docker pull docker.io/cyanautomation/kaseki-agent:latest
-OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
+LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses LLM_GATEWAY_API_KEY=<your_api_key> ./run-kaseki.sh
 ```
 
 Use stable version tags such as `0.1.0` for reproducible runs. Reserve `latest`
@@ -313,7 +313,7 @@ for smoke testing a freshly published image before a stable release tag is cut.
 
 ```bash
 docker build -t kaseki-template:latest .
-KASEKI_IMAGE=kaseki-template:latest OPENROUTER_API_KEY=<your_openrouter_api_key> ./run-kaseki.sh
+KASEKI_IMAGE=kaseki-template:latest LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses LLM_GATEWAY_API_KEY=<your_api_key> ./run-kaseki.sh
 ```
 
 Optional: pass a specific instance name (for example `kaseki-7`) as the first arg.

@@ -62,8 +62,8 @@ fi
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
-KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
-KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
+KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
+KASEKI_MODEL="${KASEKI_MODEL:-auto}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
@@ -3234,7 +3234,7 @@ run_auto_lint_cleanup() {
     set -o pipefail
     {
       printf '\n==> %s\n' "$trimmed"
-      unset OPENROUTER_API_KEY
+      unset LLM_GATEWAY_API_KEY
       if [ "$trimmed" = "__kaseki_trailing_whitespace_cleanup__" ]; then
         run_trailing_whitespace_cleanup_for_changed_tracked_text_files
         command_exit=$?
@@ -3684,7 +3684,7 @@ run_validation_commands() {
         # does not emit noisy benign broken-pipe warnings for pipe sinks.
         {
           printf '\n==> %s\n' "$trimmed"
-          unset OPENROUTER_API_KEY
+          unset LLM_GATEWAY_API_KEY
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
@@ -4613,14 +4613,15 @@ run_goal_setting_agent() {
   goal_setting_start="$(date +%s)"
   
   set +e
-  OPENROUTER_API_KEY="$openrouter_api_key" \
+  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+    LLM_GATEWAY_URL="$llm_gateway_url" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
     | tee "$GOAL_SETTING_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
-  unset goal_setting_prompt
+  unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
 
   # Artifact recovery: if artifact file doesn't exist, try to recover from event stream
@@ -5120,14 +5121,15 @@ run_scouting_agent() {
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  OPENROUTER_API_KEY="$openrouter_api_key" \
+  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+    LLM_GATEWAY_URL="$llm_gateway_url" \
     timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
     | tee "$SCOUTING_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   SCOUTING_EXIT="${PIPESTATUS[0]}"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
-  unset scouting_prompt
+  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
 
@@ -5712,13 +5714,14 @@ run_goal_check() {
   goal_prompt="$(build_goal_check_prompt)"
   goal_start="$(date +%s)"
   set +e
-  OPENROUTER_API_KEY="$openrouter_api_key" \
+  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+    LLM_GATEWAY_URL="$llm_gateway_url" \
     timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
     | tee "$GOAL_CHECK_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
-  unset goal_prompt
+  unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
 
@@ -6180,13 +6183,14 @@ run_run_evaluation() {
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  OPENROUTER_API_KEY="$openrouter_api_key" \
+  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+    LLM_GATEWAY_URL="$llm_gateway_url" \
     timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
     | tee "$RUN_EVALUATION_RAW_EVENTS" \
     | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null
   RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
-  unset evaluation_prompt
+  unset evaluation_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
@@ -8047,48 +8051,61 @@ if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   fi
 fi
 
-openrouter_api_key=""
-openrouter_api_key_source=""
-if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-  openrouter_api_key="$OPENROUTER_API_KEY"
-  openrouter_api_key_source="env"
-else
-  openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-  if [ -r "$openrouter_api_key_file" ]; then
-    secret_content="$(cat "$openrouter_api_key_file")"
-    if [ -n "$secret_content" ]; then
-      openrouter_api_key="$secret_content"
-      openrouter_api_key_source="secret file"
-    fi
-  fi
-fi
-unset OPENROUTER_API_KEY secret_content
+# Resolve LLM Gateway Configuration
+llm_gateway_url=""
+llm_gateway_api_key=""
+llm_gateway_api_key_source=""
 
-if [ -z "$openrouter_api_key" ]; then
+# Stage 1: Check explicit gateway URL
+if [ -z "${LLM_GATEWAY_URL:-}" ]; then
   set_current_stage "agent setup"
-  openrouter_api_key_file="${OPENROUTER_API_KEY_FILE:-/agents/secrets/openrouter_api_key}"
-  upstream_openrouter_api_key_file=""
-  if [ -n "${KASEKI_SECRETS_DIR:-}" ]; then
-    upstream_openrouter_api_key_file="$KASEKI_SECRETS_DIR/openrouter_api_key"
-  fi
-  if [ -n "$upstream_openrouter_api_key_file" ] && [ "$upstream_openrouter_api_key_file" != "$openrouter_api_key_file" ]; then
-    printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s (current worker path). Upstream host/API secret convention: %s.\n' "$openrouter_api_key_file" "$upstream_openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-  else
-    printf 'Missing OpenRouter API key. Set OPENROUTER_API_KEY or provide a readable OPENROUTER_API_KEY_FILE at %s (current worker path).\n' "$openrouter_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-  fi
+  printf 'Missing LLM Gateway configuration. Set LLM_GATEWAY_URL environment variable with the gateway endpoint (e.g., https://manifest.scheimann.xyz/v1/responses).\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
-  FAILED_COMMAND="missing OPENROUTER_API_KEY"
-  emit_error_event "openrouter_auth_config_missing" "Missing OpenRouter API key; checked OPENROUTER_API_KEY and OPENROUTER_API_KEY_FILE=$openrouter_api_key_file" "exit"
+  FAILED_COMMAND="missing LLM_GATEWAY_URL"
+  emit_error_event "llm_gateway_config_missing" "Missing LLM gateway configuration; LLM_GATEWAY_URL not set" "exit"
+  printf 'Skipped: LLM Gateway URL is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+  printf 'Skipped: LLM Gateway URL is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  exit 0
+fi
+llm_gateway_url="$LLM_GATEWAY_URL"
+
+# Stage 2: Check explicit API key
+if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
+  llm_gateway_api_key="$LLM_GATEWAY_API_KEY"
+  llm_gateway_api_key_source="env"
+else
+  # Stage 3: Check secret file
+  llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
+  if [ -r "$llm_gateway_api_key_file" ]; then
+    secret_content="$(cat "$llm_gateway_api_key_file")"
+    if [ -n "$secret_content" ]; then
+      llm_gateway_api_key="$secret_content"
+      llm_gateway_api_key_source="secret file"
+    fi
+  fi
+fi
+unset LLM_GATEWAY_API_KEY secret_content
+
+if [ -z "$llm_gateway_api_key" ]; then
+  set_current_stage "agent setup"
+  llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
+  printf 'Missing LLM Gateway API key. Set LLM_GATEWAY_API_KEY or provide a readable LLM_GATEWAY_API_KEY_FILE at %s.\n' "$llm_gateway_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  : > "$RAW_EVENTS"
+  PI_EXIT=2
+  STATUS=2
+  FAILED_COMMAND="missing LLM_GATEWAY_API_KEY"
+  emit_error_event "llm_gateway_auth_config_missing" "Missing LLM Gateway API key; checked LLM_GATEWAY_API_KEY and LLM_GATEWAY_API_KEY_FILE=$llm_gateway_api_key_file" "exit"
   
   # Create required artifacts for early exit
-  printf 'Skipped: OpenRouter API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
-  printf 'Skipped: OpenRouter API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  printf 'Skipped: LLM Gateway API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+  printf 'Skipped: LLM Gateway API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
   
   # Finalize deterministically before any Pi-dependent agent phase can run with an empty key.
   exit 0
 fi
+
 
 if ! run_clone_repository; then
   exit 0
@@ -8669,7 +8686,7 @@ if [ "$KASEKI_DRY_RUN" = "1" ]; then
   record_stage_timing "pi coding agent" "0" "$PI_DURATION_SECONDS" "dry_run=true"
 else
   set +e
-  printf 'OpenRouter API key source: %s\n' "$openrouter_api_key_source"
+  printf 'LLM Gateway API key source: %s\n' "$llm_gateway_api_key_source"
   export KASEKI_STREAM_PROGRESS
   
   # Run kaseki-summarizer to pre-process files
@@ -8699,7 +8716,8 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
-  OPENROUTER_API_KEY="$openrouter_api_key" \
+  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+    LLM_GATEWAY_URL="$llm_gateway_url" \
     timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
     pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$agent_prompt" \
     2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2) \
@@ -8708,7 +8726,7 @@ NODE
   PI_EXIT="${PIPESTATUS[0]}"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
-  unset OPENROUTER_API_KEY
+  unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
   record_stage_timing "pi coding agent" "$PI_EXIT" "$PI_DURATION_SECONDS" "timeout_seconds=$KASEKI_AGENT_TIMEOUT_SECONDS"
 

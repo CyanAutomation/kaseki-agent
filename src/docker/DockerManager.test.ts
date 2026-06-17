@@ -116,7 +116,7 @@ describe('DockerManager', () => {
         environment: {
           REPO_URL: 'https://github.com/test/repo',
           GIT_REF: 'main',
-          OPENROUTER_API_KEY: 'sk-or-xxx',
+          LLM_GATEWAY_API_KEY: 'test-key-xxx',
         },
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
         command: ['agent', '--task', 'run'],
@@ -140,12 +140,12 @@ describe('DockerManager', () => {
       expect(spawnArgs[workspaceMountIndex + 1]).toBe('/workspace:/workspace:rw');
       expect(spawnArgs).toContain('/results:/results:rw');
       expect(spawnArgs).toContain('/cache:/cache:rw');
-      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/llm_gateway_api_key:ro');
 
       expect(spawnArgs).toContain('-e');
       expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');
       expect(spawnArgs).toContain('GIT_REF=main');
-      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
+      expect(spawnArgs).not.toContain('LLM_GATEWAY_API_KEY=test-key-xxx');
 
       expect(entrypointIndex).toBeLessThan(imageIndex);
       expect(spawnArgs[imageIndex + 1]).toBe('agent');
@@ -177,7 +177,7 @@ describe('DockerManager', () => {
         resultsDir: '/results',
         environment: {
           REPO_URL: 'https://github.com/test/repo',
-          OPENROUTER_API_KEY: 'sk-or-xxx',
+          LLM_GATEWAY_API_KEY: 'test-key-xxx',
         },
         apiKeyFile: '/secrets/key',
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
@@ -190,19 +190,19 @@ describe('DockerManager', () => {
       const [, spawnArgs] = (spawn as jest.Mock).mock.calls[0];
 
       // Positive assertion: file-based secret wiring is present.
-      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/llm_gateway_api_key:ro');
 
       // Negative assertions: no plain env secret leakage.
-      expect(spawnArgs).not.toContain('-e OPENROUTER_API_KEY=sk-or-xxx');
-      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
+      expect(spawnArgs).not.toContain('-e LLM_GATEWAY_API_KEY=test-key-xxx');
+      expect(spawnArgs).not.toContain('LLM_GATEWAY_API_KEY=test-key-xxx');
 
-      const openRouterEnvArgs = (spawnArgs as string[]).filter((arg: string) =>
-        arg.startsWith('OPENROUTER_API_KEY=')
+      const llmGatewayEnvArgs = (spawnArgs as string[]).filter((arg: string) =>
+        arg.startsWith('LLM_GATEWAY_API_KEY=')
       );
-      expect(openRouterEnvArgs).toEqual([]);
+      expect(llmGatewayEnvArgs).toEqual([]);
     });
 
-    it('should not leak OPENROUTER_API_KEY with mixed environment input in apiKeyFile mode', async () => {
+    it('should not leak LLM_GATEWAY_API_KEY with mixed environment input in apiKeyFile mode', async () => {
       const mockChild = {
         stdout: null,
         stderr: null,
@@ -227,8 +227,8 @@ describe('DockerManager', () => {
         environment: {
           REPO_URL: 'https://github.com/test/repo',
           GIT_REF: 'main',
-          OPENROUTER_API_KEY: 'sk-or-xxx',
-          OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
+          LLM_GATEWAY_API_KEY: 'test-key-xxx',
+          LLM_GATEWAY_URL: 'https://manifest.scheimann.xyz/v1/responses',
           CUSTOM_FLAG: '1',
         },
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
@@ -242,12 +242,12 @@ describe('DockerManager', () => {
       // Non-secret env vars still flow through.
       expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');
       expect(spawnArgs).toContain('GIT_REF=main');
-      expect(spawnArgs).toContain('OPENROUTER_BASE_URL=https://openrouter.ai/api/v1');
+      expect(spawnArgs).toContain('LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses');
       expect(spawnArgs).toContain('CUSTOM_FLAG=1');
 
       // Secret must be file-only in this mode.
-      expect(spawnArgs).toContain('/secrets/key:/run/secrets/openrouter_api_key:ro');
-      expect(spawnArgs).not.toContain('OPENROUTER_API_KEY=sk-or-xxx');
+      expect(spawnArgs).toContain('/secrets/key:/run/secrets/llm_gateway_api_key:ro');
+      expect(spawnArgs).not.toContain('LLM_GATEWAY_API_KEY=test-key-xxx');
     });
   });
 

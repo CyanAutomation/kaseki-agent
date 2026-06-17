@@ -14,7 +14,7 @@ This will:
 
 - ✓ Auto-configure secrets directories with proper permissions
 - ✓ Ask which deployment path you want (Docker Compose or single-run)
-- ✓ Collect your OpenRouter API key and other credentials
+- ✓ Collect your LLM Gateway endpoint and API key
 - ✓ Save everything securely
 
 **First time?** The wizard will guide you through each step.
@@ -25,11 +25,18 @@ This will:
 
 When prompted, provide:
 
-1. **OpenRouter API Key** (required)
-   - Get one at [openrouter.ai](https://openrouter.ai) → Settings → API Keys
-   - Looks like: `sk-or-...`
+1. **LLM Gateway URL** (required)
+   - Examples:
+     - `https://manifest.scheimann.xyz/v1/responses` (Manifest Gateway)
+     - `https://api.openai.com/v1/chat/completions` (OpenAI)
+     - `http://localhost:11434/v1/chat/completions` (Ollama self-hosted)
+   - Contact your gateway provider for the endpoint
 
-2. **GitHub App Credentials** (optional)
+2. **LLM Gateway API Key** (required)
+   - Get one from your gateway provider (see endpoint examples above)
+   - Looks like: `Bearer sk-...` or similar (varies by provider)
+
+3. **GitHub App Credentials** (optional)
    - Only needed if you want GitHub-authenticated deployments
    - Provide App ID, Client ID, and Private Key
 
@@ -194,7 +201,8 @@ See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for detailed 
 **Best for**: One-off tasks, CI/CD scripts, experiments  
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-your-key-here
+export LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses
+export LLM_GATEWAY_API_KEY=your-api-key-here
 ./run-kaseki.sh https://github.com/user/repo main
 ```
 
@@ -246,7 +254,7 @@ Or via API:
 Use a different model or timeout:
 
 ```bash
-export KASEKI_GOAL_SETTING_MODEL=openrouter/anthropic/claude-3-opus
+export KASEKI_GOAL_SETTING_MODEL=gpt-4-turbo
 export KASEKI_GOAL_SETTING_TIMEOUT_SECONDS=600
 ./run-kaseki.sh
 ```
@@ -300,7 +308,8 @@ Via environment variable:
 
 ```bash
 export KASEKI_SCOUTING=1
-export OPENROUTER_API_KEY=sk-or-your-key
+export LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses
+export LLM_GATEWAY_API_KEY=your-api-key-here
 ./run-kaseki.sh
 ```
 
@@ -312,7 +321,7 @@ Or via API request:
   "taskPrompt": "Fix the parser bug in src/parser.ts",
   "scouting": {
     "enabled": true,
-    "model": "openrouter/free",
+    "model": "auto",
     "timeoutSeconds": 300
   }
 }
@@ -446,10 +455,10 @@ All three paths support advanced customization via environment variables:
 KASEKI_CHANGED_FILES_ALLOWLIST="src/** tests/**"
 ```
 
-**Use a different AI model** (costs more, better quality):
+**Use a different AI model** (check your gateway for available models):
 
 ```bash
-KASEKI_MODEL=openrouter/openai/gpt-4-turbo
+KASEKI_MODEL=gpt-4-turbo
 ```
 
 **Increase timeout for complex tasks**:
@@ -604,7 +613,7 @@ Variables are organized by zone:
 
 - [Deployment Guide](../docs/DEPLOYMENT.md) — Production hardening, monitoring
 - [Disaster Recovery](../docs/DISASTER_RECOVERY.md) — Backups, incident response
-- [Cost Estimation](../docs/COST_ESTIMATION.md) — OpenRouter pricing, optimization
+- [Cost Estimation](../docs/COST_ESTIMATION.md) — Gateway pricing, cost optimization
 
 ---
 

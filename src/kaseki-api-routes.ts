@@ -841,22 +841,28 @@ function checkWritableDirectory(
   }
 }
 
-function checkOpenRouterKey(): PreflightCheck {
-  const keyValue = readHostSecret('openrouter_api_key');
-  if (keyValue) {
+function checkLLMGatewayKey(): PreflightCheck {
+  const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const keyValue = readHostSecret('llm_gateway_api_key');
+  
+  if (gatewayUrl && keyValue) {
     return {
-      name: 'openrouter-key',
+      name: 'llm-gateway-key',
       ok: true,
-      detail: 'OpenRouter API key is available from host secrets.',
+      detail: 'LLM Gateway URL and API key are configured.',
     };
   }
 
-  const locations = getSecretLocations('openrouter_api_key');
+  const locations = getSecretLocations('llm_gateway_api_key');
+  const missingParts = [];
+  if (!gatewayUrl) missingParts.push('LLM_GATEWAY_URL');
+  if (!keyValue) missingParts.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE');
+  
   return {
-    name: 'openrouter-key',
+    name: 'llm-gateway-key',
     ok: false,
-    detail: 'No OpenRouter API key was found in host secrets.',
-    remediation: `Create a secret file with your OpenRouter API key (one key per file):\n  Primary: ${locations.primary}\n  Fallback: ${locations.secondary}`,
+    detail: `Missing required LLM Gateway configuration: ${missingParts.join(', ')}`,
+    remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-endpoint>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
   };
 }
 
@@ -954,9 +960,9 @@ function resolveWorkerHostSecretsDir(): string {
   }
 
   const secretFile =
-    resolveHostSecretPath('openrouter_api_key') ||
-    process.env.OPENROUTER_API_KEY_FILE ||
-    '/run/secrets/kaseki/openrouter_api_key';
+    resolveHostSecretPath('llm_gateway_api_key') ||
+    process.env.LLM_GATEWAY_API_KEY_FILE ||
+    '/run/secrets/kaseki/llm_gateway_api_key';
   const secretsDir = path.dirname(secretFile);
   return resolveDockerBindSource(secretsDir) || secretsDir;
 }
@@ -1003,11 +1009,11 @@ function resolveDockerBindSource(containerPath: string): string | null {
   return null;
 }
 
-function extractOpenRouterPathFromStartupDetail(detail: string): string | undefined {
+function extractLLMGatewayPathFromStartupDetail(detail: string): string | undefined {
   const patterns = [
-    /OPENROUTER_API_KEY_FILE:\s*([^\s]+)/i,
-    /OPENROUTER_API_KEY_FILE\s+(?:at|to)\s+([^\s.]+)/i,
-    /Create:\s*([^\s]+openrouter_api_key)/i,
+    /LLM_GATEWAY_API_KEY_FILE:\s*([^\s]+)/i,
+    /LLM_GATEWAY_API_KEY_FILE\s+(?:at|to)\s+([^\s.]+)/i,
+    /Create:\s*([^\s]+llm_gateway_api_key)/i,
   ];
 
   for (const pattern of patterns) {
@@ -1040,10 +1046,10 @@ function workerSmokeStartupSecretsRemediation(
   }
 
   const effectivePath =
-    extractOpenRouterPathFromStartupDetail(detail) ||
-    '/run/secrets/kaseki/openrouter_api_key';
+    extractLLMGatewayPathFromStartupDetail(detail) ||
+    '/run/secrets/kaseki/llm_gateway_api_key';
 
-  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective OpenRouter path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/openrouter_api_key is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/openrouter_api_key is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
+  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/llm_gateway_api_key is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/llm_gateway_api_key is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
 }
 
 function workerSmokeStartupResultsRemediation(
@@ -1196,7 +1202,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
     ),
   );
 
-  checks.push(checkOpenRouterKey());
+  checks.push(checkLLMGatewayKey());
   checks.push(checkGitHubAppCredentials());
 
   const dockerVersion = execDockerCommand([
