@@ -188,7 +188,7 @@ export function classifyFailure(
   if (failedCommand === 'quality checks') return 'quality';
   if (failedCommand === 'secret scan') return 'secret-scan';
   if (failedCommand.startsWith('github')) return 'github';
-  if (failedCommand.includes('OPENROUTER_API_KEY') || failedCommand.includes('OpenRouter')) {
+  if (failedCommand.includes('LLM_GATEWAY') || failedCommand.includes('gateway')) {
     return 'credentials';
   }
   if (failedCommand) return failedCommand.replace(/\s+/g, '-');

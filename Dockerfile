@@ -35,6 +35,11 @@ RUN npm install -g --no-audit @earendil-works/pi-coding-agent@0.77.0 undici
 # Phase 3b: Install tree-sitter-cli for Go code summarization (no native compilation)
 RUN npm install -g --no-audit tree-sitter-cli
 
+# Phase 3c: Copy Pi CLI Custom Extensions (LLM Gateway provider)
+# Extensions are loaded from ~/.pi/extensions/ and must be compiled TypeScript
+# We'll use a simpler approach: copy extension to a known location in the image
+RUN mkdir -p /opt/kaseki/pi-extensions
+
 
 FROM ${NODE_IMAGE} AS runtime
 
@@ -51,6 +56,7 @@ ENV HOME=/tmp/kaseki-home \
     NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm_config_cache=/tmp/npm-cache \
     PI_CODING_AGENT_DIR=/tmp/pi-agent \
+    PI_EXTENSIONS_DIR=/opt/kaseki/pi-extensions \
     KASEKI_APP_ROOT=/app \
     PI_TELEMETRY=0 \
     PI_SKIP_VERSION_CHECK=1 \
@@ -79,6 +85,10 @@ COPY docs ./docs
 COPY docker/ops ./ops
 COPY docker ./docker
 COPY test ./test
+
+# Copy Pi CLI custom extensions (LLM Gateway provider)
+RUN mkdir -p /opt/kaseki/pi-extensions
+COPY .pi-extensions.js /opt/kaseki/pi-extensions/llm-gateway.js
 
 # Copy entrypoints to /usr/local/bin
 COPY kaseki-agent.sh /usr/local/bin/kaseki-agent

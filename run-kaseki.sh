@@ -16,8 +16,8 @@ fi
 KASEKI_CONTAINER_USER="${KASEKI_CONTAINER_USER:-$(id -u):$(id -g)}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
-KASEKI_PROVIDER="${KASEKI_PROVIDER:-openrouter}"
-KASEKI_MODEL="${KASEKI_MODEL:-openrouter/free}"
+KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
+KASEKI_MODEL="${KASEKI_MODEL:-auto}"
 KASEKI_AGENT_TIMEOUT_SECONDS="${KASEKI_AGENT_TIMEOUT_SECONDS:-10800}"
 KASEKI_VALIDATION_COMMANDS="${KASEKI_VALIDATION_COMMANDS-npm run check;npm run test}"
 KASEKI_PRE_AGENT_VALIDATION="${KASEKI_PRE_AGENT_VALIDATION:-1}"
@@ -37,8 +37,8 @@ if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
 else
   KASEKI_ALLOW_EMPTY_DIFF="${KASEKI_ALLOW_EMPTY_DIFF:-0}"
 fi
-KASEKI_VERIFY_OPENROUTER_AUTH="${KASEKI_VERIFY_OPENROUTER_AUTH:-0}"
-KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY="${KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY:-1}"
+KASEKI_VERIFY_LLM_GATEWAY_AUTH="${KASEKI_VERIFY_LLM_GATEWAY_AUTH:-0}"
+KASEKI_DOCTOR_REQUIRE_LLM_GATEWAY_KEY="${KASEKI_DOCTOR_REQUIRE_LLM_GATEWAY_KEY:-1}"
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
@@ -47,7 +47,7 @@ KASEKI_VALIDATION_ALLOWLIST="${KASEKI_VALIDATION_ALLOWLIST:-}"
 KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
-HOST_SECRET_FILE="${OPENROUTER_API_KEY_FILE:-${HOME}/.kaseki/secrets.json}"
+HOST_SECRET_FILE="${LLM_GATEWAY_API_KEY_FILE:-${HOME}/.kaseki/secrets.json}"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
@@ -266,9 +266,10 @@ OPTIONS:
 ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   REPO_URL                          Repository URL
   GIT_REF                           Git reference
-  OPENROUTER_API_KEY                OpenRouter API key (or use OPENROUTER_API_KEY_FILE)
-  OPENROUTER_API_KEY_FILE           Path to file containing API key
-  KASEKI_MODEL                      AI model (default: openrouter/free)
+  LLM_GATEWAY_URL                   LLM Gateway endpoint URL (e.g., https://manifest.scheimann.xyz/v1/responses)
+  LLM_GATEWAY_API_KEY               LLM Gateway API key (or use LLM_GATEWAY_API_KEY_FILE)
+  LLM_GATEWAY_API_KEY_FILE          Path to file containing API key
+  KASEKI_MODEL                      AI model (default: auto)
   KASEKI_AGENT_TIMEOUT_SECONDS      Timeout in seconds (default: 1200)
   KASEKI_PRE_AGENT_VALIDATION       Run baseline validation before Pi (default: 1)
   KASEKI_PRE_AGENT_VALIDATION_COMMANDS
@@ -284,7 +285,7 @@ ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
                                     Restore changes outside the allowlist before validation (default: 1)
   KASEKI_TASK_MODE                  patch or inspect (inspect allows empty diffs)
   KASEKI_ALLOW_EMPTY_DIFF           Treat no-change runs as success when 1 (default: 0)
-  KASEKI_VERIFY_OPENROUTER_AUTH     In --doctor, verify key with OpenRouter when 1
+  KASEKI_VERIFY_LLM_GATEWAY_AUTH    In --doctor, verify gateway connectivity when 1
   KASEKI_CACHE_DIR                  Persistent host cache directory (default: /agents/kaseki-cache)
   KASEKI_CHANGED_FILES_ALLOWLIST    Space-separated file patterns (agent phase)
   KASEKI_VALIDATION_ALLOWLIST       Space-separated file patterns (validation phase; optional)
@@ -491,8 +492,8 @@ setup_host_logging "${INSTANCE:-session}"
 doctor() {
   local status=0
   local image_present=0
-  local openrouter_key_source=""
-  local openrouter_key_value=""
+  local gateway_key_source=""
+  local gateway_key_value=""
   printf 'Kaseki doctor\n'
   printf 'Root: %s\n' "$ROOT"
   printf 'Image: %s\n' "$IMAGE"
@@ -518,46 +519,31 @@ doctor() {
   }
   [ -w "$RUNS" ] && [ -w "$RESULTS" ] && [ -w "$CACHE" ] && printf 'Writable Kaseki directories: ok\n'
 
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    printf 'OpenRouter API key: env\n'
-    openrouter_key_source="env"
-    openrouter_key_value="$OPENROUTER_API_KEY"
+  if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
+    printf 'LLM Gateway API key: env\n'
+    gateway_key_source="env"
+    gateway_key_value="$LLM_GATEWAY_API_KEY"
   elif [ -r "$HOST_SECRET_FILE" ] && [ -s "$HOST_SECRET_FILE" ]; then
-    printf 'OpenRouter API key: secret file (%s)\n' "$HOST_SECRET_FILE"
-    openrouter_key_source="secret file"
-    openrouter_key_value="$(cat "$HOST_SECRET_FILE")"
+    printf 'LLM Gateway API key: secret file (%s)\n' "$HOST_SECRET_FILE"
+    gateway_key_source="secret file"
+    gateway_key_value="$(cat "$HOST_SECRET_FILE")"
   else
-    printf 'OpenRouter API key: missing\n' >&2
-    if [ "$KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY" = "1" ]; then
+    printf 'LLM Gateway API key: missing\n' >&2
+    if [ "$KASEKI_DOCTOR_REQUIRE_LLM_GATEWAY_KEY" = "1" ]; then
       status=1
     else
-      printf 'OpenRouter API key: warning only for doctor (KASEKI_DOCTOR_REQUIRE_OPENROUTER_KEY=0)\n' >&2
+      printf 'LLM Gateway API key: warning only for doctor (KASEKI_DOCTOR_REQUIRE_LLM_GATEWAY_KEY=0)\n' >&2
     fi
   fi
 
-  if [ "$KASEKI_VERIFY_OPENROUTER_AUTH" = "1" ]; then
-    if [ -z "$openrouter_key_value" ]; then
-      printf 'OpenRouter API key auth: skipped (missing key)\n' >&2
-    elif command -v curl >/dev/null 2>&1; then
-      if curl -fsS -H "Authorization: Bearer $openrouter_key_value" https://openrouter.ai/api/v1/auth/key >/dev/null 2>&1; then
-        printf 'OpenRouter API key auth: ok (%s)\n' "$openrouter_key_source"
-      else
-        printf 'OpenRouter API key auth: failed (%s)\n' "$openrouter_key_source" >&2
-        status=1
-      fi
-    elif command -v wget >/dev/null 2>&1; then
-      if wget -qO- --header="Authorization: Bearer $openrouter_key_value" https://openrouter.ai/api/v1/auth/key >/dev/null 2>&1; then
-        printf 'OpenRouter API key auth: ok (%s)\n' "$openrouter_key_source"
-      else
-        printf 'OpenRouter API key auth: failed (%s)\n' "$openrouter_key_source" >&2
-        status=1
-      fi
+  if [ "$KASEKI_VERIFY_LLM_GATEWAY_AUTH" = "1" ]; then
+    if [ -z "$gateway_key_value" ]; then
+      printf 'LLM Gateway API key auth: skipped (missing key)\n' >&2
     else
-      printf 'OpenRouter API key auth: skipped (curl or wget required)\n' >&2
-      status=1
+      printf 'LLM Gateway API key auth: skipped (provider-specific verification not available)\n' >&2
     fi
   fi
-  unset openrouter_key_value
+  unset gateway_key_value
 
   local docker_image_error=""
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then

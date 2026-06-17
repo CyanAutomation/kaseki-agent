@@ -13,7 +13,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL ([https://github.com/owner/repo](https://github.com/owner/repo)) |
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
-| `KASEKI_MODEL` | `openrouter/free` | string | Pi model identifier (see [OpenRouter catalog](https://openrouter.ai/models)) |
+| `KASEKI_MODEL` | `auto` | string | LLM model identifier (e.g., `auto`, `gpt-4-turbo`, or gateway's native model IDs) |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
@@ -24,7 +24,7 @@ Complete reference for all environment variables used by kaseki-agent.
 
 | Variable | Default / Alternative | Type | Purpose |
 |----------|---|---|---|
-| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter.ai API key (required) |
+| `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key (required) |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
@@ -228,36 +228,49 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 
 ---
 
-## OpenRouter Configuration
+## LLM Gateway Configuration
+
+### Gateway Endpoint
+
+| Variable | Default | Type | Purpose |
+|----------|---------|------|---------|
+| `LLM_GATEWAY_URL` | — | string | Gateway API endpoint URL (required; e.g., `https://manifest.scheimann.xyz/v1/responses`) |
+
+**Examples:**
+
+- `https://manifest.scheimann.xyz/v1/responses` — Manifest Gateway
+- `https://api.openai.com/v1/chat/completions` — OpenAI
+- `http://localhost:11434/v1/chat/completions` — Ollama (self-hosted)
+- `https://api.anthropic.com/v1/messages` — Anthropic
+
+### API Authentication
+
+| Variable | Default | Type | Purpose |
+|----------|---------|------|---------|
+| `LLM_GATEWAY_API_KEY` | — | string | Gateway API key (required if using inline auth) |
+| `LLM_GATEWAY_API_KEY_FILE` | `$HOME/.kaseki/secrets.json` | string | Path to file containing API key (preferred) |
 
 ### Model Selection
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `KASEKI_MODEL` | `openrouter/free` | string | AI model identifier (see [OpenRouter catalog](https://openrouter.ai/models)) |
+| `KASEKI_MODEL` | `auto` | string | Model identifier (gateway-specific; use `auto` for gateway default) |
 
-**Common Models:**
+**Common Model Values:**
 
-- `openrouter/free` — Free tier (varied models)
-- `openai/gpt-4-turbo` — GPT-4 Turbo
-- `anthropic/claude-3-opus` — Claude 3 Opus
-- `google/gemini-pro` — Google Gemini
+- `auto` — Use gateway's default model (recommended)
+- `gpt-4-turbo` — OpenAI GPT-4 Turbo (if using OpenAI gateway)
+- `claude-3-opus-20240229` — Anthropic Claude 3 Opus (if using Anthropic gateway)
+- Gateway-specific IDs — Check your gateway's model list for available options
 
-### API Configuration
-
-| Variable | Default | Type | Purpose |
-|----------|---------|------|---------|
-| `OPENROUTER_API_KEY` | — | string | OpenRouter API key (required) |
-| `OPENROUTER_API_KEY_FILE` | `/agents/secrets/openrouter_api_key` | string | Path to API key file (preferred) |
-| `OPENROUTER_API_URL` | `https://openrouter.ai/api/v1` | string | OpenRouter API endpoint |
-| `OPENROUTER_REFERER` | `kaseki-agent` | string | Referer header for OpenRouter |
-
-### Request Options
+### Multi-Phase Model Overrides
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `OPENROUTER_TEMPERATURE` | (model default) | float | Model temperature (0-1; higher = more creative) |
-| `OPENROUTER_MAX_TOKENS` | (model default) | integer | Max output tokens per response |
+| `KASEKI_SCOUTING_MODEL` | `$KASEKI_MODEL` | string | Model override for scouting phase |
+| `KASEKI_GOAL_SETTING_MODEL` | `$KASEKI_SCOUTING_MODEL` | string | Model override for goal-setting phase |
+| `KASEKI_GOAL_CHECK_MODEL` | `$KASEKI_SCOUTING_MODEL` | string | Model override for goal-check phase |
+| `KASEKI_RUN_EVALUATION_MODEL` | (derived) | string | Model override for run-evaluation phase |
 
 ---
 

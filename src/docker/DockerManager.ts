@@ -224,12 +224,12 @@ export class DockerManager {
 
     // Mount API key file (ro for security)
     if (config.apiKeyFile) {
-      args.push('-v', `${config.apiKeyFile}:/run/secrets/openrouter_api_key:ro`);
+      args.push('-v', `${config.apiKeyFile}:/run/secrets/llm_gateway_api_key:ro`);
     }
 
     // Set environment variables (never pass API key via env)
     for (const [key, value] of Object.entries(config.environment)) {
-      if (key !== 'OPENROUTER_API_KEY') {
+      if (key !== 'LLM_GATEWAY_API_KEY') {
         // Skip inline API key
         args.push('-e', `${key}=${value}`);
       }

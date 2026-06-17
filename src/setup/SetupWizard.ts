@@ -46,9 +46,11 @@ export type ExecutionPath = 'single-run' | 'local-api' | 'production-api';
  * Essential 8 variables for setup
  */
 export interface Essential8Config {
-  // Required: Authentication
-  openRouterApiKey: string;
-  openRouterApiKeyFile?: string;
+  // Required: LLM Gateway configuration
+  llmGatewayUrl: string;
+  llmGatewayApiKey: string;
+  llmGatewayApiKeyFile?: string;
+  llmModel: string;
 
   // Required: Execution context
   repoUrl?: string;
@@ -435,14 +437,29 @@ export class SetupWizard {
   private async collectEssential8(executionPath: ExecutionPath): Promise<Essential8Config> {
     const answers = await this.enquirer.prompt([
       {
-        type: 'password',
-        name: 'openRouterApiKey',
-        message: '🔑 OpenRouter API key (sk-or-...)',
+        type: 'input',
+        name: 'llmGatewayUrl',
+        message: '🌐 LLM Gateway URL (e.g., https://manifest.scheimann.xyz/v1/responses)',
         validate: (value: string) => {
-          if (!value) return 'API key is required';
-          if (!value.startsWith('sk-or-')) return 'API key must start with "sk-or-"';
+          if (!value) return 'Gateway URL is required';
+          if (!value.startsWith('http')) return 'Gateway URL must start with "http://" or "https://"';
           return true;
         },
+      },
+      {
+        type: 'password',
+        name: 'llmGatewayApiKey',
+        message: '🔑 LLM Gateway API key',
+        validate: (value: string) => {
+          if (!value) return 'API key is required';
+          return true;
+        },
+      },
+      {
+        type: 'input',
+        name: 'llmModel',
+        message: '🤖 Model identifier (or "auto" for gateway default)',
+        initial: 'auto',
       },
       {
         type: 'input',
@@ -478,8 +495,10 @@ export class SetupWizard {
     }
 
     return {
-      openRouterApiKey: answers.openRouterApiKey,
-      openRouterApiKeyFile: path.join(os.homedir(), '.kaseki', 'secrets.json'),
+      llmGatewayUrl: answers.llmGatewayUrl,
+      llmGatewayApiKey: answers.llmGatewayApiKey,
+      llmGatewayApiKeyFile: path.join(os.homedir(), '.kaseki', 'secrets.json'),
+      llmModel: answers.llmModel,
       validationCommands: answers.validationCommands,
       kasekiMaxDiffBytes: answers.kasekiMaxDiffBytes,
       kasekiAgentTimeoutSeconds: answers.kasekiAgentTimeoutSeconds,
@@ -558,8 +577,12 @@ export class SetupWizard {
 
 # === ESSENTIAL 8 ===
 
-# OpenRouter API Key - required for all paths
-OPENROUTER_API_KEY_FILE=\${HOME}/.kaseki/secrets.json
+# LLM Gateway Configuration - required for all paths
+LLM_GATEWAY_URL=${essential8.llmGatewayUrl}
+LLM_GATEWAY_API_KEY_FILE=\${HOME}/.kaseki/secrets.json
+
+# Model selection
+KASEKI_MODEL=${essential8.llmModel}
 
 # Validation commands - what to check after agent runs
 KASEKI_VALIDATION_COMMANDS=${essential8.validationCommands}
@@ -570,7 +593,6 @@ KASEKI_AGENT_TIMEOUT_SECONDS=${essential8.kasekiAgentTimeoutSeconds}
 
 # === DEFAULTS (can be overridden) ===
 
-KASEKI_MODEL=${autoDefaults.KASEKI_MODEL}
 KASEKI_PRE_AGENT_VALIDATION=${autoDefaults.KASEKI_PRE_AGENT_VALIDATION}
 KASEKI_CACHE_ENABLED=${autoDefaults.KASEKI_CACHE_ENABLED}
 KASEKI_STREAM_PROGRESS=${autoDefaults.KASEKI_STREAM_PROGRESS}
@@ -628,7 +650,7 @@ ${essential8.kasekiApiKeys ? `# API Service\nKASEKI_API_KEYS=${essential8.kaseki
 
       // Store secrets.json with strict permissions
       const secretsContent = {
-        openrouter_api_key: essential8.openRouterApiKey,
+        llm_gateway_api_key: essential8.llmGatewayApiKey,
         kaseki_api_keys: essential8.kasekiApiKeys ? [essential8.kasekiApiKeys] : [],
         generated_at: new Date().toISOString(),
       };
