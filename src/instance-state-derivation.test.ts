@@ -157,6 +157,26 @@ describe('instance-state-derivation', () => {
       expect(classification2).toBe('empty-diff');
     });
 
+    it('should classify model availability errors before empty diff failures', () => {
+      const classification = classifyFailure({
+        failed_command: 'empty git diff',
+        provider_error_type: 'model_unavailable',
+        provider_error_message: '404 This model is unavailable for free.',
+      }, 3);
+
+      expect(classification).toBe('model-unavailable');
+    });
+
+    it('should classify generic provider errors before goal check failures', () => {
+      const classification = classifyFailure({
+        failed_command: 'pi provider error',
+        provider_error_type: 'provider_error',
+        provider_error_message: 'Provider request failed',
+      }, 8);
+
+      expect(classification).toBe('provider-error');
+    });
+
     it('should classify validation failures', () => {
       const classification = classifyFailure({ failed_command: 'validation' }, 1);
       expect(classification).toBe('validation');

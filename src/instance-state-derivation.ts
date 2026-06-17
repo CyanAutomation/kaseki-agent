@@ -139,6 +139,37 @@ export function extractGoalCheckFailureReason(metadata: Metadata = {}): string |
 /**
  * Classify failure type from metadata and exit code.
  */
+function classifyProviderFailure(metadata: Metadata, failedCommand: string): string | null {
+  const providerType = typeof metadata.provider_error_type === 'string'
+    ? metadata.provider_error_type.trim()
+    : '';
+  const providerMessage = typeof metadata.provider_error_message === 'string'
+    ? metadata.provider_error_message.trim()
+    : '';
+  const diagnosticReason = typeof metadata.diagnostic_reason === 'string'
+    ? metadata.diagnostic_reason.trim()
+    : '';
+  const haystack = [providerType, providerMessage, diagnosticReason, failedCommand].join(' ').toLowerCase();
+
+  if (
+    providerType === 'model_unavailable' ||
+    haystack.includes('model_unavailable') ||
+    haystack.includes('model is unavailable') ||
+    haystack.includes('model unavailable') ||
+    haystack.includes('no endpoints found') ||
+    haystack.includes('not a valid model') ||
+    haystack.includes('model_not_found')
+  ) {
+    return 'model-unavailable';
+  }
+
+  if (providerMessage || providerType === 'provider_error' || failedCommand.includes('provider error')) {
+    return 'provider-error';
+  }
+
+  return null;
+}
+
 export function classifyFailure(
   metadata: Metadata = {},
   exitCode: number | string | null = null
@@ -146,8 +177,10 @@ export function classifyFailure(
   const normalizedExitCode = normalizeExitCodeCandidate(exitCode);
   const failedCommand =
     typeof metadata.failed_command === 'string' ? metadata.failed_command.trim() : '';
+  const providerFailure = classifyProviderFailure(metadata, failedCommand);
 
   if (normalizedExitCode === 0) return 'none';
+  if (providerFailure) return providerFailure;
   if (normalizedExitCode === 124) return 'timeout';
   if (normalizedExitCode === 8 || failedCommand === 'goal check') return 'goal-unmet';
   if (failedCommand === 'empty git diff' || normalizedExitCode === 3) return 'empty-diff';

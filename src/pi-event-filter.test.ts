@@ -209,6 +209,35 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.invalid_json_lines).toBe(1);
   });
 
+  test('should summarize provider model availability errors', async () => {
+    const message = '404 This model is unavailable for free. The paid version is available now - use this slug instead: z-ai/glm-4.5-air';
+    const fixture = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: {
+          provider: 'openrouter',
+          api: 'responses',
+          model: 'z-ai/glm-4.5-air:free',
+          stopReason: 'error',
+          errorMessage: message,
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.primary_provider_error).toMatchObject({
+      type: 'model_unavailable',
+      provider: 'openrouter',
+      api: 'responses',
+      model: 'z-ai/glm-4.5-air:free',
+      stop_reason: 'error',
+      message,
+    });
+    expect(result.summary.provider_errors).toHaveLength(1);
+  });
+
   test('should track tool reliability metrics in summary', async () => {
     // Spec: Summary must include tool start/end counts and match counts
     // Behavioral intent: Paired tool_execution_start/end are counted; unmatched starts tracked separately
