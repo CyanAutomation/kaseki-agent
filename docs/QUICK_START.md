@@ -27,7 +27,7 @@ When prompted, provide:
 
 1. **LLM Gateway URL** (required)
    - Examples:
-     - `https://manifest.scheimann.xyz/v1/responses` (Manifest Gateway)
+     - `https://llmgateway.local.xyz/v1/responses` (Manifest Gateway)
      - `https://api.openai.com/v1/chat/completions` (OpenAI)
      - `http://localhost:11434/v1/chat/completions` (Ollama self-hosted)
    - Contact your gateway provider for the endpoint
