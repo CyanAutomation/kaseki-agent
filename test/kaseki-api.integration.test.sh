@@ -58,7 +58,7 @@ wait_until() {
   local timeout_seconds="$1"
   local check_command="$2"
   local deadline=$((SECONDS + timeout_seconds))
-  until eval "$check_command"; do
+  until bash -c "$check_command"; do
     if (( SECONDS >= deadline )); then
       return 1
     fi
