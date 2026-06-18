@@ -34,7 +34,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should fail when LLM_GATEWAY_API_KEY is not configured', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       delete process.env.LLM_GATEWAY_API_KEY;
 
       const result = await testGatewayConnectivity();
@@ -55,7 +55,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should return ok when gateway is reachable and responsive', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -72,7 +72,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should return error with 401 when authentication fails', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'invalid-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -91,7 +91,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should return error with 403 when forbidden', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -121,7 +121,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should include timestamp in response', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -139,7 +139,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should measure and return response time', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -155,7 +155,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should include gateway URL in response', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -166,11 +166,11 @@ describe('LLM Gateway Test', () => {
 
       const result = await testGatewayConnectivity();
 
-      expect(result.gatewayUrl).toBe('https://manifest.scheimann.xyz/v1/responses');
+      expect(result.gatewayUrl).toBe('https://llmgateway.local.xyz/v1/responses');
     });
 
     it('should not include API key in response', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'secret-test-key-12345';
 
       mockFetch.mockResolvedValueOnce({
@@ -185,7 +185,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should validate Bearer token format', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -211,7 +211,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should have a detail field describing the test result', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1/responses';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
