@@ -16,6 +16,10 @@ jest.mock('child_process');
 // Mock fs for filesystem operations
 jest.mock('fs');
 
+jest.mock('../secrets/host-secrets-reader', () => ({
+  readHostSecret: jest.fn(() => null),
+}));
+
 describe('ContainerPreflightDiagnostics', () => {
   let diagnostics: ContainerPreflightDiagnostics;
   let mockConfig: Partial<KasekiApiConfig>;

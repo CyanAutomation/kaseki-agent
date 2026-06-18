@@ -17,6 +17,8 @@ import { spawnSync } from 'child_process';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { createEventLogger } from '../logger';
 import { PreflightCheck } from '../kaseki-api-types';
+import { resolveGatewayApiKey } from '../kaseki-api-gateway-test';
+import { readHostSecret } from '../secrets/host-secrets-reader';
 
 const logger = createEventLogger('container-preflight');
 
@@ -63,6 +65,9 @@ export class ContainerPreflightDiagnostics {
 
     // ✅ Check 2: Secrets directory is readable
     checks.push(this.measureCheck(() => this.checkSecretsReadable()));
+
+    // ✅ Check 2B: Gateway Test and preflight resolve the same LLM key source
+    checks.push(this.measureCheck(() => this.checkGatewayTestSecretConsistency()));
 
     // ✅ Check 3: Checkout directory exists and is readable
     checks.push(this.measureCheck(() => this.checkCheckoutExists()));
@@ -217,6 +222,37 @@ export class ContainerPreflightDiagnostics {
       ok: false,
       detail: issues.join('; '),
       remediation: 'Run: sudo kaseki-agent host setup --fix',
+    };
+  }
+
+  private checkGatewayTestSecretConsistency(): PreflightCheck {
+    const preflightSecret = readHostSecret('llm_gateway_api_key');
+    const gatewaySecret = resolveGatewayApiKey();
+
+    if (preflightSecret && gatewaySecret.configured) {
+      return {
+        name: 'gateway-test-secret-consistency',
+        ok: true,
+        detail: `Gateway Test and startup preflight can both resolve the LLM Gateway API key (${gatewaySecret.source}).`,
+      };
+    }
+
+    if (!preflightSecret && !gatewaySecret.configured) {
+      return {
+        name: 'gateway-test-secret-consistency',
+        ok: false,
+        detail: 'Neither startup preflight nor Gateway Test can resolve the LLM Gateway API key.',
+        remediation:
+          'Set LLM_GATEWAY_API_KEY or create a readable llm_gateway_api_key file in the configured Kaseki secrets directory.',
+      };
+    }
+
+    return {
+      name: 'gateway-test-secret-consistency',
+      ok: false,
+      detail: `Startup preflight secret visibility and Gateway Test secret resolution disagree: preflight=${preflightSecret ? 'configured' : 'missing'}, gatewayTest=${gatewaySecret.source}.`,
+      remediation:
+        'Ensure Gateway Test and startup preflight use the same secret source: set LLM_GATEWAY_API_KEY consistently or provide a readable llm_gateway_api_key file in KASEKI_SECRETS_DIR.',
     };
   }
 

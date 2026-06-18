@@ -39,7 +39,7 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
-import { testGatewayConnectivity, formatGatewayTestResponse } from './kaseki-api-gateway-test';
+import { testGatewayConnectivity, formatGatewayTestResponse, resolveGatewayApiKey } from './kaseki-api-gateway-test';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
@@ -867,6 +867,37 @@ function checkLLMGatewayKey(): PreflightCheck {
   };
 }
 
+function checkGatewayTestSecretConsistency(): PreflightCheck {
+  const preflightSecret = readHostSecret('llm_gateway_api_key');
+  const gatewaySecret = resolveGatewayApiKey();
+
+  if (preflightSecret && gatewaySecret.configured) {
+    return {
+      name: 'gateway-test-secret-consistency',
+      ok: true,
+      detail: `Gateway Test and preflight can both resolve the LLM Gateway API key (${gatewaySecret.source}).`,
+    };
+  }
+
+  if (!preflightSecret && !gatewaySecret.configured) {
+    return {
+      name: 'gateway-test-secret-consistency',
+      ok: false,
+      detail: 'Neither preflight nor Gateway Test can resolve the LLM Gateway API key.',
+      remediation:
+        'Set LLM_GATEWAY_API_KEY or create a readable llm_gateway_api_key file in the configured Kaseki secrets directory.',
+    };
+  }
+
+  return {
+    name: 'gateway-test-secret-consistency',
+    ok: false,
+    detail: `Preflight secret visibility and Gateway Test secret resolution disagree: preflight=${preflightSecret ? 'configured' : 'missing'}, gatewayTest=${gatewaySecret.source}.`,
+    remediation:
+      'Ensure Gateway Test and preflight use the same secret source: set LLM_GATEWAY_API_KEY consistently or provide a readable llm_gateway_api_key file in KASEKI_SECRETS_DIR.',
+  };
+}
+
 /**
  * Read a secret from host secrets (no inline env var fallback).
  * Returns undefined if the secret is not found.
@@ -1210,6 +1241,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
   );
 
   checks.push(checkLLMGatewayKey());
+  checks.push(checkGatewayTestSecretConsistency());
   checks.push(checkGitHubAppCredentials());
 
   const dockerVersion = execDockerCommand([
