@@ -386,7 +386,7 @@ jobs:
           jq -e '
             .instance == "kaseki-smoke" and
             .exit_code == 2 and
-            .failed_command == "missing OPENROUTER_API_KEY"
+            .failed_command == "missing LLM_GATEWAY_URL"
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
           test -f "$RESULTS/quality.log"
@@ -443,7 +443,7 @@ jobs:
           jq -e '
             .instance == "kaseki-smoke-ghcr" and
             .exit_code == 2 and
-            .failed_command == "missing OPENROUTER_API_KEY"
+            .failed_command == "missing LLM_GATEWAY_URL"
           ' "$RESULTS/metadata.json"
           test -s "$RESULTS/result-summary.md"
           test -f "$RESULTS/quality.log"
