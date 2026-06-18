@@ -7,13 +7,14 @@ export function clean(value) {
   const model = String(value).trim();
   if (!model) return '';
   const lower = model.toLowerCase();
-  if (lower === 'unknown' || lower === 'null') return '';
+  if (lower === 'unknown' || lower === 'null' || lower === 'undefined') return '';
+  if (/[\r\n\0]/.test(model)) return '';
   return model;
 }
 
 export function modelFromEventStream(eventsPath) {
   if (!eventsPath) return '';
-      ? resolvedModels[modelType] || defaultGenerativeModels[modelType]
+  let content;
   try {
     content = fs.readFileSync(eventsPath, 'utf8');
   } catch {
@@ -21,10 +22,11 @@ export function modelFromEventStream(eventsPath) {
   }
 
   for (const line of content.split('\n')) {
-  } catch (error) {
-    console.error(`Error resolving model: ${error.message}`);
-    process.exit(1);
-  }
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const event = JSON.parse(trimmed);
+      const model = clean(event && event.model);
       if (model) return model;
     } catch {
       // Ignore malformed event lines; attribution is best-effort metadata.
@@ -49,25 +51,20 @@ export function modelFromSummary(summaryPath) {
     summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
   } catch {
     return '';
-const modelId = process.argv[2];
-if (!modelId) {
-  console.error('Error: Model ID argument is required');
-  process.exit(1);
-}
-  } catch (error) {
-    // Check for specific error types
-    if (error.name === 'ResourceNotFoundException' || error.name === 'ValidationException') {
-      // Model not found or invalid - return fallback
-      console.log(JSON.stringify({ modelId: modelId }));
-    } else {
-      // Re-throw other errors (permissions, network, etc.)
-      console.error(`Error resolving model: ${error.message}`);
-      process.exit(1);
-    }
   }
+
+  return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
+}
+
+export function resolveActualModel({ summaryPath, eventsPath } = {}) {
+  return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [summaryPath, eventsPath] = process.argv.slice(2);
+  if (!summaryPath || !eventsPath) {
+    console.error('Usage: resolve-actual-model.js <summaryPath> <eventsPath>');
+    process.exit(1);
+  }
   process.stdout.write(`${resolveActualModel({ summaryPath, eventsPath })}\n`);
 }
