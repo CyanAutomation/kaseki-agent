@@ -1015,7 +1015,14 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
     chmod 0600 "$GATEWAY_SECRET_FILE"
     GATEWAY_WORKER_HOST_SECRET_FILE="$GATEWAY_SECRET_FILE"
   elif [ -r "$GATEWAY_HOST_SECRET_FILE" ]; then
-    GATEWAY_WORKER_HOST_SECRET_FILE="$GATEWAY_HOST_SECRET_FILE"
+    # Stage the file to a local path, matching GitHub App credentials pattern.
+    # This ensures Docker mounts resolve correctly when run-kaseki.sh executes
+    # inside the API container (container paths must be staged to host-mountable files).
+    if [ -f "$GATEWAY_HOST_SECRET_FILE" ]; then
+      cat "$GATEWAY_HOST_SECRET_FILE" > "$GATEWAY_SECRET_FILE"
+      chmod 0600 "$GATEWAY_SECRET_FILE"
+      GATEWAY_WORKER_HOST_SECRET_FILE="$GATEWAY_SECRET_FILE"
+    fi
   fi
 fi
 
