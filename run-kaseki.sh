@@ -48,6 +48,27 @@ KASEKI_MAX_DIFF_BYTES="${KASEKI_MAX_DIFF_BYTES:-400000}"
 KASEKI_NPM_OMIT_DEV="${KASEKI_NPM_OMIT_DEV:-0}"
 TASK_PROMPT="${TASK_PROMPT:-Make normalizeRole treat a non-string Name fallback safely when FriendlyName is empty or missing. It should fall back to \"Unnamed Role\" instead of preserving arbitrary truthy non-string values. Add or update exactly one compact table-driven Vitest case in tests/parser.validation.ts, with a neutral static test title and no per-case assertion messages or explanatory comments. Do not add broad repeated test blocks. Do not print, inspect, or expose environment variables, secrets, credentials, or API keys. Keep changes limited to the source and test files needed for this fix.}"
 HOST_SECRET_FILE="${LLM_GATEWAY_API_KEY_FILE:-${HOME}/.kaseki/secrets.json}"
+resolve_gateway_host_secret_file() {
+  if [ -n "${LLM_GATEWAY_API_KEY_FILE:-}" ]; then
+    printf '%s' "$LLM_GATEWAY_API_KEY_FILE"
+    return 0
+  fi
+
+  local candidate
+  for candidate in \
+    "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key" \
+    "${HOME}/.kaseki/secrets/llm_gateway_api_key" \
+    "${HOME}/.kaseki/secrets.json"; do
+    if [ -r "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key"
+}
+GATEWAY_HOST_SECRET_FILE="$(resolve_gateway_host_secret_file)"
+GATEWAY_WORKER_SECRET_PATH="/agents/secrets/llm_gateway_api_key"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"
@@ -521,9 +542,9 @@ doctor() {
   if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
     printf 'LLM Gateway API key: env\n'
     gateway_key_value="$LLM_GATEWAY_API_KEY"
-  elif [ -r "$HOST_SECRET_FILE" ] && [ -s "$HOST_SECRET_FILE" ]; then
-    printf 'LLM Gateway API key: secret file (%s)\n' "$HOST_SECRET_FILE"
-    gateway_key_value="$(cat "$HOST_SECRET_FILE")"
+  elif [ -r "$GATEWAY_HOST_SECRET_FILE" ] && [ -s "$GATEWAY_HOST_SECRET_FILE" ]; then
+    printf 'LLM Gateway API key: secret file (%s)\n' "$GATEWAY_HOST_SECRET_FILE"
+    gateway_key_value="$(cat "$GATEWAY_HOST_SECRET_FILE")"
   else
     printf 'LLM Gateway API key: missing\n' >&2
     if [ "$KASEKI_DOCTOR_REQUIRE_LLM_GATEWAY_KEY" = "1" ]; then
@@ -716,6 +737,7 @@ RUN_DIR="$RUN_STAGE_DIR"
 RESULT_DIR="$RESULT_STAGE_DIR"
 WORKSPACE="$RUN_DIR/workspace"
 SECRET_FILE="$RUN_DIR/openrouter_api_key"
+GATEWAY_SECRET_FILE="$RUN_DIR/llm_gateway_api_key"
 GITHUB_APP_ID_FILE="$RUN_DIR/github_app_id"
 GITHUB_APP_CLIENT_ID_FILE="$RUN_DIR/github_app_client_id"
 GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE="$RUN_DIR/github_app_private_key"
@@ -736,7 +758,7 @@ fi
 # shellcheck disable=SC2317,SC2329
 # Invoked via trap in the unified exit handler.
 cleanup_secret() {
-  rm -f "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
+  rm -f "$SECRET_FILE" "$GATEWAY_SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"
 }
 # shellcheck disable=SC2317,SC2329
 # Invoked via trap in the unified exit handler.
@@ -986,6 +1008,17 @@ printf '%s' "$key_value" > "$SECRET_FILE"
 chmod 0600 "$SECRET_FILE"
 unset key_value key_source
 
+GATEWAY_WORKER_HOST_SECRET_FILE=""
+if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+  if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
+    printf '%s' "$LLM_GATEWAY_API_KEY" > "$GATEWAY_SECRET_FILE"
+    chmod 0600 "$GATEWAY_SECRET_FILE"
+    GATEWAY_WORKER_HOST_SECRET_FILE="$GATEWAY_SECRET_FILE"
+  elif [ -r "$GATEWAY_HOST_SECRET_FILE" ]; then
+    GATEWAY_WORKER_HOST_SECRET_FILE="$GATEWAY_HOST_SECRET_FILE"
+  fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   fail_before_container "$FAILURE_EXIT_CODE_VALUE" "preflight docker" "Docker is required but was not found on the host."
 fi
@@ -1087,7 +1120,7 @@ prepare_worker_paths() {
   fi
 
   chown -R "$KASEKI_CONTAINER_USER" "$RUN_DIR" "$RESULT_DIR"
-  for secret_path in "$SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"; do
+  for secret_path in "$SECRET_FILE" "$GATEWAY_SECRET_FILE" "$GATEWAY_HOST_SECRET_FILE" "$GITHUB_APP_ID_FILE" "$GITHUB_APP_CLIENT_ID_FILE" "$GITHUB_APP_PRIVATE_KEY_MOUNTED_FILE"; do
     if [ -f "$secret_path" ]; then
       chown "$KASEKI_CONTAINER_USER" "$secret_path"
     fi
@@ -1144,6 +1177,19 @@ docker_args=(
   -v "$RESULT_DIR:/results:rw"
   -v "$SECRET_FILE:/agents/secrets/openrouter_api_key:ro"
 )
+if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+  if [ -n "${LLM_GATEWAY_URL:-}" ]; then
+    docker_args+=(
+      -e LLM_GATEWAY_URL="$LLM_GATEWAY_URL"
+    )
+  fi
+  if [ -n "$GATEWAY_WORKER_HOST_SECRET_FILE" ]; then
+    docker_args+=(
+      -e LLM_GATEWAY_API_KEY_FILE="$GATEWAY_WORKER_SECRET_PATH"
+      -v "$GATEWAY_WORKER_HOST_SECRET_FILE:$GATEWAY_WORKER_SECRET_PATH:ro"
+    )
+  fi
+fi
 if [ "$GITHUB_APP_ENABLED" = "1" ]; then
   docker_args+=(
     -e GITHUB_APP_ID_FILE="/run/secrets/github_app_id"
