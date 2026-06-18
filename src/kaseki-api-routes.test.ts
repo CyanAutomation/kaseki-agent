@@ -765,7 +765,12 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     'GITHUB_APP_CLIENT_ID_FILE',
     'GITHUB_APP_PRIVATE_KEY',
     'GITHUB_APP_PRIVATE_KEY_FILE',
-    'OPENROUTER_API_KEY'
+    'OPENROUTER_API_KEY',
+    'KASEKI_PROVIDER',
+    'LLM_GATEWAY_URL',
+    'LLM_GATEWAY_API_KEY',
+    'LLM_GATEWAY_API_KEY_FILE',
+    'KASEKI_SECRETS_DIR'
   ];
 
   function restoreEnv(snapshot: Record<string, string | undefined>): void {
@@ -965,6 +970,65 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           })
         );
         expect(JSON.stringify(consistencyCheck)).not.toContain('test-gateway-key');
+      } finally {
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
+    const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      if (name === 'github_app_private_key') return defaultGithubPrivateKeyPem;
+      return null;
+    });
+    (resolveHostSecretPath as jest.Mock).mockReturnValue('/tmp/kaseki-missing-worker-secrets/llm_gateway_api_key');
+
+    const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-gateway-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-gateway-results-'));
+    const { templateDir, checkoutDir } = writePreflightTemplateFixture(root);
+    const envSnapshot = { ...process.env };
+
+    try {
+      process.env.KASEKI_TEMPLATE_DIR = templateDir;
+      process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+      process.env.KASEKI_PROVIDER = 'gateway';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
+      process.env.LLM_GATEWAY_API_KEY = 'inline-api-gateway-test-key';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        const consistencyCheck = body.checks.find((check: any) => check.name === 'gateway-test-secret-consistency');
+        const workerGatewayCheck = body.checks.find((check: any) => check.name === 'worker-gateway-config');
+
+        expect(consistencyCheck).toEqual(
+          expect.objectContaining({
+            ok: false,
+            detail: expect.stringContaining('gatewayTest=env')
+          })
+        );
+        expect(workerGatewayCheck).toEqual(
+          expect.objectContaining({
+            ok: false,
+            detail: expect.stringContaining('readable worker-mounted llm_gateway_api_key host path'),
+            remediation: expect.stringContaining('Gateway test passed for the API container')
+          })
+        );
+        expect(workerGatewayCheck.remediation).toContain('worker containers also require LLM_GATEWAY_URL and a mounted llm_gateway_api_key');
+        expect(JSON.stringify(workerGatewayCheck)).not.toContain('inline-api-gateway-test-key');
       } finally {
         await cleanupTestApp(server, idempotencyStore);
       }
