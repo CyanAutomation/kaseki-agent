@@ -91,7 +91,10 @@ describe('read-wrapper behavior', () => {
 
   it('falls back to a full read for files above the maximum summarization size', async () => {
     const filePath = path.join(testDir, 'oversized.ts');
-    const content = `export const oversized = '${'x'.repeat(getConfig().maxSizeBytes + 1)}';\n`;
+    const minimalContent = 'export const oversized = "x";\n';
+    fs.writeFileSync(filePath, minimalContent);
+    fs.truncateSync(filePath, getConfig().maxSizeBytes + 1);
+    const content = fs.readFileSync(filePath, 'utf-8');
     fs.writeFileSync(filePath, content);
 
     const result = await readFileWithSummaryAndMetrics(filePath);
