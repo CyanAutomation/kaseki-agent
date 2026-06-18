@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090
-# Helper-focused tests for JSON encoding utilities sourced from kaseki-agent.sh.
+# Helper-focused tests for JSON encoding utilities sourced from scripts/lib/json.sh.
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KASEKI_SCRIPT="${SCRIPT_DIR}/kaseki-agent.sh"
+JSON_HELPER="${SCRIPT_DIR}/scripts/lib/json.sh"
 
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 
 source_json_encode() {
-  source <(sed -n '/^json_encode()/,/^}/p' "$KASEKI_SCRIPT")
+  # shellcheck source=../scripts/lib/json.sh
+  source "$JSON_HELPER"
 }
 
 assert_valid_nonempty_json() {
