@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+const isRoot = () => typeof process.getuid === 'function' && process.getuid() === 0;
+
 /**
  * Unit tests for exit code 86 scouting diagnostics.
  *
@@ -35,10 +37,16 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
       // Make it read-only
       fs.chmodSync(resultsDir, 0o555);
 
-      // Should not be writable now
-      expect(() => {
-        fs.accessSync(resultsDir, fs.constants.W_OK);
-      }).toThrow();
+      // The mode bits should mark the directory non-writable for normal users.
+      expect(fs.statSync(resultsDir).mode & 0o222).toBe(0);
+
+      // Root can still pass access(2) checks for read-only mode bits in containers,
+      // so only assert the OS-level access failure when not running as root.
+      if (!isRoot()) {
+        expect(() => {
+          fs.accessSync(resultsDir, fs.constants.W_OK);
+        }).toThrow();
+      }
 
       // Clean up
       fs.chmodSync(resultsDir, 0o755);
@@ -49,11 +57,17 @@ describe('Exit Code 86 - Scouting Artifact Diagnostics', () => {
       fs.mkdirSync(resultsDir, { recursive: true });
       fs.chmodSync(resultsDir, 0o555);
 
-      // Attempt to write test file
+      // The mode bits should mark the directory non-writable for normal users.
+      expect(fs.statSync(resultsDir).mode & 0o222).toBe(0);
+
+      // Root can still create files despite read-only mode bits in containers,
+      // so only assert the write failure when not running as root.
       const testFile = path.join(resultsDir, '.write-test');
-      expect(() => {
-        fs.writeFileSync(testFile, 'test');
-      }).toThrow();
+      if (!isRoot()) {
+        expect(() => {
+          fs.writeFileSync(testFile, 'test');
+        }).toThrow();
+      }
 
       // Clean up
       fs.chmodSync(resultsDir, 0o755);
