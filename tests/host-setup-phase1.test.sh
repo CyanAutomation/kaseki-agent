@@ -224,7 +224,7 @@ test_check_only_does_not_mutate_target_dir() {
   local marker="$TEST_SETUP_ROOT/check-only-marker"
   local before after
   printf 'deterministic-marker\n' > "$marker"
-  before="$(find "$TEST_SETUP_ROOT" -type f -printf '%P\n' | sort)"
+  before="$(find "$TEST_SETUP_ROOT" -type f | sed "s|^$TEST_SETUP_ROOT/||" | sort)"
   run_setup_check_only >/dev/null
   after="$(find "$TEST_SETUP_ROOT" -type f -printf '%P\n' | sort)"
 
