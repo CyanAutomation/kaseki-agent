@@ -20,22 +20,10 @@ assert_file_contains() {
 }
 
 load_validation_helpers() {
-  # Load the real validation helpers while stubbing unrelated runtime plumbing.
-  eval "$(awk '
-    /^npm_run_script_name\(\)/ { emit=1 }
-    /^classify_auto_lint_cleanup_command_exit\(\)/ { emit=0 }
-    emit { print }
-  ' "$REPO_ROOT/kaseki-agent.sh")"
-  eval "$(awk '
-    /^append_validation_failure_tail\(\)/ { emit=1 }
-    /^auto_lint_cleanup_enabled_for_mode\(\)/ { emit=0 }
-    emit { print }
-  ' "$REPO_ROOT/kaseki-agent.sh")"
-  eval "$(awk '
-    /^run_validation_commands\(\)/ { emit=1 }
-    /^compute_repo_memory_key\(\)/ { emit=0 }
-    emit { print }
-  ' "$REPO_ROOT/kaseki-agent.sh")"
+  # Load the dedicated validation helper library instead of extracting functions
+  # from the executable entrypoint. Tests stub the runtime callbacks below.
+  # shellcheck source=../scripts/validation-helpers.sh
+  source "$REPO_ROOT/scripts/validation-helpers.sh"
 
   set_current_stage() { printf '%s\n' "$1" > "$TEST_RESULTS_DIR/current-stage.txt"; }
   emit_progress() { printf 'progress\t%s\t%s\n' "$1" "$2" >> "$TEST_RESULTS_DIR/progress.tsv"; }
@@ -54,52 +42,16 @@ EOF_FILTER
   export PATH
 }
 
-setup_results_dir() {
-  if [ -e /results ]; then
-    RESULTS_PREEXISTED=1
-  else
-    RESULTS_PREEXISTED=0
-    mkdir -p /results || fail "Failed to create /results directory"
-  fi
-  : > /results/quality.log || fail "Failed to initialize /results/quality.log"
+use_workspace_repo_missing() {
+  rm -rf "$KASEKI_WORKSPACE_DIR/repo"
+  mkdir -p "$KASEKI_WORKSPACE_DIR"
 }
 
-cleanup_workspace_repo() {
-  if [ "$WORKSPACE_REPO_STATE" = "created" ]; then
-    rm -rf /workspace/repo
-  elif [ "$WORKSPACE_REPO_STATE" = "moved" ]; then
-    rm -rf /workspace/repo
-    mv "$WORKSPACE_REPO_BACKUP" /workspace/repo
-  fi
-}
-
-cleanup_results_dir() {
-  if [ "${RESULTS_PREEXISTED:-0}" = "0" ]; then
-    rm -rf /results
-  fi
-}
-
-with_workspace_repo_missing() {
-  if [ -e /workspace/repo ] || [ -L /workspace/repo ]; then
-    WORKSPACE_REPO_STATE="moved"
-    WORKSPACE_REPO_BACKUP="$TEST_ROOT/workspace-repo.backup"
-    mv /workspace/repo "$WORKSPACE_REPO_BACKUP" 2>/dev/null || fail "Failed to backup /workspace/repo"
-  else
-    WORKSPACE_REPO_STATE="absent"
-  fi
-}
-
-with_workspace_repo_fixture() {
+use_workspace_repo_fixture() {
   local fixture="$1"
-  if [ -e /workspace/repo ] || [ -L /workspace/repo ]; then
-    WORKSPACE_REPO_STATE="moved"
-    WORKSPACE_REPO_BACKUP="$TEST_ROOT/workspace-repo.backup"
-    mv /workspace/repo "$WORKSPACE_REPO_BACKUP"
-  else
-    WORKSPACE_REPO_STATE="created"
-  fi
-  [ -d "$fixture" ] || fail "Fixture directory does not exist: $fixture"
-  ln -s "$fixture" /workspace/repo
+  rm -rf "$KASEKI_WORKSPACE_DIR/repo"
+  mkdir -p "$KASEKI_WORKSPACE_DIR"
+  cp -a "$fixture" "$KASEKI_WORKSPACE_DIR/repo"
 }
 
 reset_validation_state() {
@@ -192,8 +144,8 @@ test_pre_agent_validation_env_log_argument_via_production_helper() {
   local pre_helper_exit
 
   setup_fixture_repo "$fixture"
-  with_workspace_repo_fixture "$fixture"
-  cd "$fixture"
+  use_workspace_repo_fixture "$fixture"
+  cd "$KASEKI_WORKSPACE_DIR/repo"
   reset_validation_state
 
   : > "$pre_raw_log"
@@ -232,8 +184,8 @@ test_pre_agent_validation_env_log_argument_via_production_helper() {
 test_non_login_validation_via_production_helper() {
   local fixture="$TEST_ROOT/fixture-success"
   setup_fixture_repo "$fixture"
-  with_workspace_repo_fixture "$fixture"
-  cd "$fixture"
+  use_workspace_repo_fixture "$fixture"
+  cd "$KASEKI_WORKSPACE_DIR/repo"
   reset_validation_state
 
   run_validation_helper "validation" "npm run check"
@@ -247,14 +199,14 @@ test_non_login_validation_via_production_helper() {
 }
 
 test_directory_checkpoint_via_production_helper() {
-  with_workspace_repo_missing
+  use_workspace_repo_missing
   cd "$TEST_ROOT"
   reset_validation_state
 
   run_validation_helper "validation" "npm run check"
 
-  [ "$helper_exit" -eq 1 ] || fail "validation helper should fail when /workspace/repo is missing, got $helper_exit"
-  assert_file_contains "$TEST_RESULTS_DIR/validation.log" "ERROR: Working directory /workspace/repo does not exist before validation" "validation.log should contain the production checkpoint error"
+  [ "$helper_exit" -eq 1 ] || fail "validation helper should fail when the temp workspace repo is missing, got $helper_exit"
+  assert_file_contains "$TEST_RESULTS_DIR/validation.log" "ERROR: Working directory $KASEKI_WORKSPACE_DIR/repo does not exist before validation" "validation.log should contain the production checkpoint error for the temp workspace"
   assert_file_contains "$TEST_RESULTS_DIR/stage-timings.tsv" "directory_missing" "stage timings should classify the missing workspace directory"
   [ "$VALIDATION_FAILURE_REASON" = "validation_command_failed: workspace_missing" ] || fail "unexpected failure reason: $VALIDATION_FAILURE_REASON"
   pass "Production validation helper logs missing workspace checkpoint"
@@ -263,8 +215,8 @@ test_directory_checkpoint_via_production_helper() {
 test_directory_diagnostics_via_production_helper() {
   local fixture="$TEST_ROOT/fixture-diagnostics"
   setup_fixture_repo "$fixture"
-  with_workspace_repo_fixture "$fixture"
-  cd "$fixture"
+  use_workspace_repo_fixture "$fixture"
+  cd "$KASEKI_WORKSPACE_DIR/repo"
   reset_validation_state
 
   run_validation_helper "validation" "npm run diagnose"
@@ -272,39 +224,31 @@ test_directory_diagnostics_via_production_helper() {
   [ "$helper_exit" -eq 9 ] || fail "validation helper should preserve failing command exit 9, got $helper_exit"
   assert_file_contains "$TEST_RESULTS_DIR/validation.log" "Error: getcwd: cannot access parent directories: No such file or directory" "validation.log should contain the real command stderr"
   assert_file_contains "$TEST_RESULTS_DIR/validation.log" "Validation failed: first failing command was \"npm run diagnose\" with exit 9" "validation.log should record the failed production command"
-  assert_file_contains /results/quality.log "[DIAGNOSTICS] Validation command failed with directory access error:" "quality.log should include production directory diagnostics"
-  assert_file_contains /results/quality.log "  /workspace/repo exists: yes" "quality.log should report workspace fixture status"
+  assert_file_contains "$KASEKI_RESULTS_DIR/quality.log" "[DIAGNOSTICS] Validation command failed with directory access error:" "quality.log should include production directory diagnostics"
+  assert_file_contains "$KASEKI_RESULTS_DIR/quality.log" "  $KASEKI_WORKSPACE_DIR/repo exists: yes" "quality.log should report workspace fixture status"
   pass "Production validation helper emits directory diagnostics from real failing command output"
 }
 
 printf '==> Validation Integration Tests\n'
 TEST_ROOT="$(mktemp -d)"
-TEST_RESULTS_DIR="$TEST_ROOT/results"
-TEST_BIN_DIR="$TEST_ROOT/bin"
-KASEKI_RESULTS_DIR="/results"
-KASEKI_WORKSPACE_DIR="/workspace"
+TEST_RESULTS_DIR="$(mktemp -d "$TEST_ROOT/results.XXXXXX")"
+TEST_WORKSPACE_DIR="$(mktemp -d "$TEST_ROOT/workspace.XXXXXX")"
+TEST_BIN_DIR="$(mktemp -d "$TEST_ROOT/bin.XXXXXX")"
+KASEKI_RESULTS_DIR="$TEST_RESULTS_DIR"
+KASEKI_WORKSPACE_DIR="$TEST_WORKSPACE_DIR"
 export KASEKI_RESULTS_DIR KASEKI_WORKSPACE_DIR
-mkdir -p "$TEST_RESULTS_DIR"
-WORKSPACE_REPO_STATE="absent"
-WORKSPACE_REPO_BACKUP=""
-trap 'cleanup_workspace_repo; cleanup_results_dir; rm -rf "$TEST_ROOT"' EXIT
-setup_results_dir
+mkdir -p "$TEST_RESULTS_DIR" "$KASEKI_WORKSPACE_DIR"
+trap 'rm -rf "$TEST_ROOT"' EXIT
 setup_fake_filter
 load_validation_helpers
 FILTER_DIAGNOSTICS_LOG="$TEST_RESULTS_DIR/filter-diagnostics.log"
 FILTER_STDERR_FILE="$TEST_RESULTS_DIR/filter-stderr.log"
 
 # The checkpoint test must run before fixture tests because it intentionally
-# observes the helper behavior when /workspace/repo is absent.
+# observes the helper behavior when the temporary workspace repo is absent.
 test_directory_checkpoint_via_production_helper
-cleanup_workspace_repo
-WORKSPACE_REPO_STATE="absent"
 test_non_login_validation_via_production_helper
-cleanup_workspace_repo
-WORKSPACE_REPO_STATE="absent"
 test_pre_agent_validation_env_log_argument_via_production_helper
-cleanup_workspace_repo
-WORKSPACE_REPO_STATE="absent"
 test_directory_diagnostics_via_production_helper
 
 printf '\n✓ All integration tests passed\n'
