@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.0...v1.80.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* Refactor LLM_GATEWAY_URL in DockerManager tests to use full URL ([d840b41](https://github.com/CyanAutomation/kaseki-agent/commit/d840b419ec026b062e2d6399e8dde2f80ee6d2e9))
+* Update LLM_GATEWAY_URL example in error message for clarity ([c59de9a](https://github.com/CyanAutomation/kaseki-agent/commit/c59de9a2487e3a101357e7e3665d294b61eb23c7))
+
 # [1.80.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.79.0...v1.80.0) (2026-06-17)
 
 
