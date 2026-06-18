@@ -48,6 +48,11 @@ grep -q 'pi_event_filter_failed' "$RESULTS_DIR/progress.jsonl"
 grep -q 'kaseki-pi-event-filter' "$RESULTS_DIR/metadata.json"
 grep -q 'filter stderr details' "$RESULTS_DIR/pi-stderr.log"
 grep -q 'ERROR: kaseki-pi-event-filter failed' "$RESULTS_DIR/pi-stderr.log"
+mode="$(stat -c '%a' "$RESULTS_DIR/pi-stderr.log")"
+if [[ "$mode" != "600" ]]; then
+  echo "[$TEST_NAME] expected pi-stderr.log mode 600, got $mode"
+  exit 1
+fi
 cmp -s "$RAW_EVENTS" "$RESULTS_DIR/pi-events.raw.jsonl"
 
 echo "[$TEST_NAME] PASS"
