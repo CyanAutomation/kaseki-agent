@@ -16,6 +16,26 @@ source_json_encode() {
   source "$JSON_HELPER"
 }
 
+with_temp_json_helper_path_with_spaces() {
+  local temp_dir helper_copy
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/kaseki json helper.XXXXXX") || return 1
+  helper_copy="${temp_dir}/json helper.sh"
+
+  cp "$JSON_HELPER" "$helper_copy" || {
+    if [ -n "$temp_dir" ] && [ "$temp_dir" != "/" ]; then
+      rm -rf "$temp_dir"
+    fi
+    return 1
+  }
+
+  JSON_HELPER="$helper_copy" source_json_encode
+  local source_status=$?
+  if [ -n "$temp_dir" ] && [ "$temp_dir" != "/" ]; then
+    rm -rf "$temp_dir"
+  fi
+  return "$source_status"
+}
+
 assert_valid_nonempty_json() {
   local output="$1"
 
@@ -61,11 +81,21 @@ test_json_encode_control_characters() {
   assert_valid_nonempty_json "$output" && [ "$output" = '"line1\nline2\tctrl:\u0001"' ]
 }
 
+test_json_helper_sources_from_path_with_spaces() {
+  with_temp_json_helper_path_with_spaces || return 1
+
+  local output
+  output=$(printf 'space path' | json_encode)
+
+  assert_valid_nonempty_json "$output" && [ "$output" = '"space path"' ]
+}
+
 main() {
   printf '\n%s\n' '=== Testing JSON helper functions ==='
 
   run_test 'json_encode escapes quotes exactly' test_json_encode_quotes
   run_test 'json_encode escapes newline/tab/control characters exactly' test_json_encode_control_characters
+  run_test 'json helper sources from paths containing spaces' test_json_helper_sources_from_path_with_spaces
 
   printf '\nTest Results: %d/%d passed, %d failed\n' "$TESTS_PASSED" "$TESTS_RUN" "$TESTS_FAILED"
 
