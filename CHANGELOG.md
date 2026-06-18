@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.5...v1.80.6) (2026-06-18)
+
+
+### Bug Fixes
+
+* add data-auth attribute to gateway test button and update related test ([59009c3](https://github.com/CyanAutomation/kaseki-agent/commit/59009c33a56ac0a72b95808df027b8bc20e6861b))
+
 ## [1.80.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.4...v1.80.5) (2026-06-18)
 
 
