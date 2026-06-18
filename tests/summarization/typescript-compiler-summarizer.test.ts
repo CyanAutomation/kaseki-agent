@@ -128,7 +128,7 @@ describe('TypeScriptCompilerSummarizer', () => {
       expect(summary.interfaces.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should handle arrow functions', () => {
+    it('should ignore const-assigned arrow functions without parse errors', () => {
       const code = `
         const process = (data: string): void => {
           console.log(data);
@@ -136,10 +136,12 @@ describe('TypeScriptCompilerSummarizer', () => {
       `;
       const summary = summarizer.summarize(code);
 
-      // Arrow functions declared with const may or may not be extracted
-      // depending on implementation; test for robustness
+      // The summarizer supports declaration surfaces (for example, function,
+      // class, interface, and type declarations). Const-assigned arrow
+      // functions are intentionally not extracted as top-level functions.
       expect(summary).toBeDefined();
       expect(summary.parseError).toBeUndefined();
+      expect(summary.functions).toEqual([]);
     });
   });
 
