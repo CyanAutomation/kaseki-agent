@@ -43,7 +43,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       responseTime: 0,
       timestamp,
       authenticationValidated: false,
-      remediation: 'Set the LLM_GATEWAY_URL environment variable to your gateway endpoint (e.g., https://manifest.scheimann.xyz/v1/responses)',
+      remediation: 'Set the LLM_GATEWAY_URL environment variable to your gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses)',
     };
   }
 
