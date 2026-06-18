@@ -5,131 +5,191 @@
 import { buildAllPaths } from './paths';
 import { buildErrorResponseSchema, buildRunRequestSchema, buildRunResponseSchema } from './schemas';
 
+type RouteContract = {
+  path: string;
+  method: string;
+  operationId: string;
+  requiresAuth: boolean;
+  statuses: string[];
+  tags: string[];
+  requiredResponseSchemas?: (schemas: {
+    errorSchema: Record<string, unknown>;
+    responseSchema: Record<string, unknown>;
+  }) => Array<{ status: string; mediaType: string; schema: unknown }>;
+};
+
 describe('OpenAPI Path Builders', () => {
-  const routeContracts = [
-    { path: '/health', method: 'get', operationId: 'getHealth', requiresAuth: false, statuses: ['200'] },
-    { path: '/ready', method: 'get', operationId: 'getReady', requiresAuth: false, statuses: ['200', '503'] },
+  const routeContracts: RouteContract[] = [
+    {
+      path: '/health',
+      method: 'get',
+      operationId: 'getHealth',
+      requiresAuth: false,
+      statuses: ['200'],
+      tags: ['Health & Status']
+    },
+    {
+      path: '/ready',
+      method: 'get',
+      operationId: 'getReady',
+      requiresAuth: false,
+      statuses: ['200', '503'],
+      tags: ['Health & Status']
+    },
     {
       path: '/api/metrics',
       method: 'get',
       operationId: 'getMetrics',
       requiresAuth: true,
-      statuses: ['200', '401']
+      statuses: ['200', '401'],
+      tags: ['Service Info']
     },
     {
       path: '/api/preflight',
       method: 'get',
       operationId: 'getPreFlight',
       requiresAuth: true,
-      statuses: ['200', '401']
+      statuses: ['200', '401'],
+      tags: ['Service Info']
     },
     {
       path: '/api/startup-health',
       method: 'get',
       operationId: 'getStartupHealth',
       requiresAuth: true,
-      statuses: ['200', '401', '404', '500']
+      statuses: ['200', '401', '404', '500'],
+      tags: ['Service Info']
     },
     {
       path: '/api/validate',
       method: 'post',
       operationId: 'validateTask',
       requiresAuth: true,
-      statuses: ['200', '400', '401']
+      statuses: ['200', '400', '401'],
+      tags: ['Service Info'],
+      requiredResponseSchemas: ({ errorSchema }) => [
+        { status: '400', mediaType: 'application/json', schema: errorSchema },
+        { status: '401', mediaType: 'application/json', schema: errorSchema }
+      ]
     },
     {
       path: '/api/runs',
       method: 'get',
       operationId: 'listRuns',
       requiresAuth: true,
-      statuses: ['200', '401']
+      statuses: ['200', '401'],
+      tags: ['Run Management']
     },
     {
       path: '/api/runs',
       method: 'post',
       operationId: 'triggerRun',
       requiresAuth: true,
-      statuses: ['200', '202', '400', '401']
+      statuses: ['200', '202', '400', '401'],
+      tags: ['Run Management'],
+      requiredResponseSchemas: ({ errorSchema, responseSchema }) => [
+        { status: '200', mediaType: 'application/json', schema: responseSchema },
+        { status: '202', mediaType: 'application/json', schema: responseSchema },
+        { status: '400', mediaType: 'application/json', schema: errorSchema },
+        { status: '401', mediaType: 'application/json', schema: errorSchema }
+      ]
     },
     {
       path: '/api/runs/{id}/status',
       method: 'get',
       operationId: 'getRunStatus',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Management'],
+      requiredResponseSchemas: ({ errorSchema }) => [
+        { status: '200', mediaType: 'application/json', schema: { $ref: '#/components/schemas/StatusResponse' } },
+        { status: '404', mediaType: 'application/json', schema: errorSchema }
+      ]
     },
     {
       path: '/api/runs/{id}/cancel',
       method: 'post',
       operationId: 'cancelRun',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Management']
     },
     {
       path: '/api/runs/{id}/events',
       method: 'get',
       operationId: 'getRunEvents',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Logs & Progress']
     },
     {
       path: '/api/runs/{id}/events/stream',
       method: 'get',
       operationId: 'streamRunEvents',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Logs & Progress']
     },
     {
       path: '/api/runs/{id}/progress',
       method: 'get',
       operationId: 'getRunProgress',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Logs & Progress']
     },
     {
       path: '/api/runs/{id}/logs/{logtype}',
       method: 'get',
       operationId: 'getRunLog',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Logs & Progress']
     },
     {
       path: '/api/runs/{id}/artifacts',
       method: 'get',
       operationId: 'getRunArtifacts',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Artifacts']
     },
     {
       path: '/api/results/{id}/{file}',
       method: 'get',
       operationId: 'downloadArtifact',
       requiresAuth: true,
-      statuses: ['200', '401', '404', '422']
+      statuses: ['200', '401', '404', '422'],
+      tags: ['Artifacts']
     },
     {
       path: '/api/runs/{id}/analysis',
       method: 'get',
       operationId: 'getRunAnalysis',
       requiresAuth: true,
-      statuses: ['200', '401', '404']
+      statuses: ['200', '401', '404'],
+      tags: ['Run Details']
     },
     {
       path: '/api/improvements',
       method: 'get',
       operationId: 'getRunImprovements',
       requiresAuth: true,
-      statuses: ['200', '401']
+      statuses: ['200', '401'],
+      tags: ['Run Details']
     },
     {
       path: '/api/webhooks/test',
       method: 'post',
       operationId: 'testWebhook',
       requiresAuth: true,
-      statuses: ['200', '400', '401']
+      statuses: ['200', '400', '401'],
+      tags: ['Webhooks'],
+      requiredResponseSchemas: ({ errorSchema }) => [
+        { status: '400', mediaType: 'application/json', schema: errorSchema }
+      ]
     }
   ];
-
   let errorSchema: Record<string, unknown>;
   let requestSchema: Record<string, unknown>;
   let responseSchema: Record<string, unknown>;
@@ -143,89 +203,39 @@ describe('OpenAPI Path Builders', () => {
   describe('buildAllPaths', () => {
     it.each(routeContracts)(
       'should define route contract for $method $path',
-      ({ path, method, operationId, requiresAuth, statuses }) => {
+      ({ path, method, operationId, requiresAuth, statuses, tags, requiredResponseSchemas }) => {
         const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
         const pathDef = paths[path] as Record<string, any>;
+        const operation = pathDef?.[method];
 
         expect(pathDef).toBeDefined();
-        expect(pathDef[method]).toBeDefined();
-        expect(pathDef[method].operationId).toBe(operationId);
+        expect(operation).toBeDefined();
+        expect(operation.operationId).toBe(operationId);
+        expect(operation.tags).toEqual(tags);
         if (requiresAuth) {
-          expect(pathDef[method].security).toEqual([{ BearerAuth: [] }]);
+          expect(operation.security).toEqual([{ BearerAuth: [] }]);
         } else {
-          expect(pathDef[method].security).toBeUndefined();
+          expect(operation.security).toBeUndefined();
         }
-        expect(Object.keys(pathDef[method].responses).sort()).toEqual([...statuses].sort());
+        expect(operation.responses).toBeDefined();
+        expect(typeof operation.responses).toBe('object');
+        expect(Object.keys(operation.responses).sort()).toEqual([...statuses].sort());
+        requiredResponseSchemas?.({ errorSchema, responseSchema }).forEach(({ status, mediaType, schema }) => {
+          expect(operation.responses[status].content[mediaType].schema).toEqual(schema);
+        });
       }
     );
 
-    it('should include every required route contract path and method', () => {
+    it('should not expose routes missing route contracts', () => {
       const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-      const requiredContractsByPath = routeContracts.reduce<Record<string, string[]>>(
-        (contractsByPath, { path, method }) => ({
-          ...contractsByPath,
-          [path]: [...(contractsByPath[path] ?? []), method]
-        }),
-        {}
-      );
+      const expectedOperations = routeContracts.map(({ path, method }) => `${method.toUpperCase()} ${path}`).sort();
+      const actualOperations = Object.entries(paths)
+        .flatMap(([path, pathDef]) =>
+          Object.keys(pathDef as Record<string, unknown>).map((method) => `${method.toUpperCase()} ${path}`)
+        )
+        .sort();
 
-      expect(Object.keys(paths)).toEqual(expect.arrayContaining(Object.keys(requiredContractsByPath)));
-      Object.entries(requiredContractsByPath).forEach(([path, methods]) => {
-        const actualMethods = Object.keys(paths[path] as Record<string, unknown>);
-
-        expect(actualMethods).toEqual(expect.arrayContaining(methods));
-      });
-    });
-
-    it('each operation should have operationId', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      Object.entries(paths).forEach(([_, pathDef]) => {
-        const def = pathDef as Record<string, any>;
-        const methods = ['get', 'post', 'put', 'delete', 'patch'];
-
-        methods.forEach((method) => {
-          if (def[method]) {
-            expect(def[method].operationId).toBeDefined();
-            expect(typeof def[method].operationId).toBe('string');
-          }
-        });
-      });
-    });
-
-    it('each operation should have tags', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      Object.entries(paths).forEach(([_, pathDef]) => {
-        const def = pathDef as Record<string, any>;
-        const methods = ['get', 'post', 'put', 'delete', 'patch'];
-
-        methods.forEach((method) => {
-          if (def[method]) {
-            expect(def[method].tags).toBeDefined();
-            expect(Array.isArray(def[method].tags)).toBe(true);
-            expect(def[method].tags.length).toBeGreaterThan(0);
-          }
-        });
-      });
-    });
-
-    it('each operation should have responses defined', () => {
-      const paths = buildAllPaths(errorSchema, requestSchema, responseSchema);
-
-      Object.entries(paths).forEach(([_, pathDef]) => {
-        const def = pathDef as Record<string, any>;
-        const methods = ['get', 'post', 'put', 'delete', 'patch'];
-
-        methods.forEach((method) => {
-          if (def[method]) {
-            expect(def[method].responses).toBeDefined();
-            expect(typeof def[method].responses).toBe('object');
-            const responseKeys = Object.keys(def[method].responses);
-            expect(responseKeys.length).toBeGreaterThan(0);
-          }
-        });
-      });
+      expect(actualOperations).toEqual(expectedOperations);
     });
 
     it('request body routes should define precise required JSON contracts', () => {
