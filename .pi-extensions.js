@@ -5,7 +5,7 @@
  * from environment variables.
  *
  * Configuration Environment Variables:
- * - LLM_GATEWAY_URL: Gateway API endpoint (required, e.g., https://manifest.scheimann.xyz/v1/responses)
+ * - LLM_GATEWAY_URL: Gateway API endpoint (required, e.g., https://llmgateway.local.xyz/v1/responses)
  * - LLM_GATEWAY_API_KEY: API key literal (optional, prefer file)
  * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key (default: ~/.kaseki/secrets.json)
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
