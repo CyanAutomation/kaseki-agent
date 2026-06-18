@@ -21,10 +21,10 @@ export function modelFromEventStream(eventsPath) {
   }
 
   for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line);
-      const model = clean(event && event.model);
+  } catch (error) {
+    console.error(`Error resolving model: ${error.message}`);
+    process.exit(1);
+  }
       if (model) return model;
     } catch {
       // Ignore malformed event lines; attribution is best-effort metadata.
