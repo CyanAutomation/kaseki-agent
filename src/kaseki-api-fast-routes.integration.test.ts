@@ -46,7 +46,9 @@ describe('kaseki API fast route/service integration', () => {
   let cleanup: Array<() => Promise<void> | void> = [];
 
   afterEach(async () => {
-    for (const item of cleanup.reverse()) await item();
+    for (const item of cleanup.reverse()) {
+      try { await item(); } catch (e) { console.error('Cleanup error:', e); }
+    }
     cleanup = [];
     delete process.env.KASEKI_SKIP_BOOTSTRAP_CHECK;
   });
