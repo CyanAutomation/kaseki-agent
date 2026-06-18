@@ -24,7 +24,7 @@ docker run -it docker.io/cyanautomation/kaseki-agent:latest init
 
 The setup wizard will guide you through providing:
 
-- **LLM Gateway URL** (required): Your LLM provider endpoint (e.g., `https://manifest.scheimann.xyz/v1/responses`)
+- **LLM Gateway URL** (required): Your LLM provider endpoint (e.g., `https://llmgateway.local.xyz/v1/responses`)
 - **LLM Gateway API Key** (required): Authentication token for your provider
 - **GitHub App Credentials** (optional): App ID, Client ID, Private Key
 
