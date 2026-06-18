@@ -44,6 +44,13 @@ assert_model \
   '{"selected_model":"unknown","model":"null"}' \
   '{"type":"message"}'
 
+if node "$HELPER" >/tmp/actual-model-missing-args.out 2>/tmp/actual-model-missing-args.err; then
+  echo "[$TEST_NAME/missing-args] expected helper to fail without arguments" >&2
+  exit 1
+fi
+grep -q 'Usage: resolve-actual-model.js <summaryPath> <eventsPath>' /tmp/actual-model-missing-args.err
+rm -f /tmp/actual-model-missing-args.out /tmp/actual-model-missing-args.err
+
 run_wrapper_smoke() {
   rm -rf /results
   mkdir -p /results
