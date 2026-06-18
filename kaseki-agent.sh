@@ -2248,9 +2248,18 @@ finish() {
   
   # restoration-report.md artifact removed (Phase 1: low-value artifacts deletion)
 
-  # Calculate and record maturity score
+  # Calculate and record maturity score without leaking artifact JSON into live logs.
   if [ -x /app/scripts/kaseki-maturity-score.sh ]; then
-    /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json 2>/dev/null || true
+    maturity_score_log="${KASEKI_RESULTS_DIR}/maturity-score.log"
+    if [ -d "${KASEKI_WORKSPACE_DIR}"/repo ]; then
+      if KASEKI_MATURITY_SCORE_STDOUT=0 /app/scripts/kaseki-maturity-score.sh "${KASEKI_WORKSPACE_DIR}"/repo "${KASEKI_RESULTS_DIR}"/maturity-score.json >"$maturity_score_log" 2>&1; then
+        printf 'maturity-score: wrote %s\n' "${KASEKI_RESULTS_DIR}/maturity-score.json" >"$maturity_score_log"
+      else
+        printf 'maturity-score: generation failed; see prior output if any\n' >>"$maturity_score_log"
+      fi
+    else
+      printf 'maturity-score: skipped because repo checkout is missing: %s\n' "${KASEKI_WORKSPACE_DIR}/repo" >"$maturity_score_log"
+    fi
   fi
   
   # Calculate and record performance metrics
