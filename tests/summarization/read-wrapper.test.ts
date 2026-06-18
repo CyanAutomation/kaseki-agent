@@ -87,6 +87,10 @@ describe("ReadWrapper", () => {
       "",
     ].join("\n");
     fs.writeFileSync(filePath, content);
+    expect(content).toContain(
+      "  method0(value: number): number {\n    return value + 0;\n  }",
+    );
+    expect(content).not.toContain("\\n");
     return content;
   }
 
@@ -260,6 +264,12 @@ describe("ReadWrapper", () => {
       const content =
         "export class A {}\nexport function b() {}\nexport interface C {}";
       fs.writeFileSync(filePath, content);
+      expect(content.split("\n")).toEqual([
+        "export class A {}",
+        "export function b() {}",
+        "export interface C {}",
+      ]);
+      expect(content).not.toContain("\\n");
 
       const result = await readFileWithSummaryAndMetrics(filePath);
 
