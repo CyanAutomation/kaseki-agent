@@ -134,6 +134,17 @@ if [ "$KASEKI_TASK_MODE" = "inspect" ]; then
 fi
 KASEKI_PUBLISH_MODE="${KASEKI_PUBLISH_MODE:-pr}"
 GITHUB_APP_ENABLED="${GITHUB_APP_ENABLED:-1}"
+# Auto-disable when no GitHub App credentials are mounted to avoid redundant preflight noise.
+# startup-checks.sh already warned about missing credentials; this prevents a second round of errors.
+if [ "$GITHUB_APP_ENABLED" = "1" ]; then
+  _gid="${GITHUB_APP_ID_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_id}"
+  _gcid="${GITHUB_APP_CLIENT_ID_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_client_id}"
+  _gkey="${GITHUB_APP_PRIVATE_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/github_app_private_key}"
+  if ! { [ -r "$_gid" ] && [ -r "$_gcid" ] && [ -r "$_gkey" ]; }; then
+    GITHUB_APP_ENABLED="0"
+  fi
+  unset _gid _gcid _gkey
+fi
 if [ -z "${KASEKI_RUN_EVALUATION+x}" ]; then
   case "$KASEKI_PUBLISH_MODE:$KASEKI_TASK_MODE:$KASEKI_DRY_RUN:$GITHUB_APP_ENABLED" in
     pr:patch:0:1|draft_pr:patch:0:1) KASEKI_RUN_EVALUATION="1" ;;
@@ -2305,11 +2316,12 @@ finish() {
     fi
   fi
   
-  # Debug output for restoration report generation
-  if [ -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
-    printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < "${KASEKI_RESULTS_DIR}"/restoration.jsonl)" >&2
-  else
-    printf '[debug] restoration.jsonl does not exist\n' >&2
+  if [ "${KASEKI_DEBUG_RAW_EVENTS:-0}" = "1" ]; then
+    if [ -f "${KASEKI_RESULTS_DIR}"/restoration.jsonl ]; then
+      printf '[debug] restoration.jsonl exists (size=%d bytes)\n' "$(wc -c < "${KASEKI_RESULTS_DIR}"/restoration.jsonl)" >&2
+    else
+      printf '[debug] restoration.jsonl does not exist\n' >&2
+    fi
   fi
   
   # restoration-report.md artifact removed (Phase 1: low-value artifacts deletion)
@@ -8131,54 +8143,60 @@ llm_gateway_url=""
 llm_gateway_api_key=""
 llm_gateway_api_key_source=""
 
-# Stage 1: Check explicit gateway URL
-if [ -z "${LLM_GATEWAY_URL:-}" ]; then
-  set_current_stage "agent setup"
-  printf 'Missing LLM Gateway configuration. Set LLM_GATEWAY_URL environment variable with the gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses).\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-  : > "$RAW_EVENTS"
-  PI_EXIT=2
-  STATUS=2
-  FAILED_COMMAND="missing LLM_GATEWAY_URL"
-  emit_error_event "llm_gateway_config_missing" "Missing LLM gateway configuration; LLM_GATEWAY_URL not set" "exit"
-  printf 'Skipped: LLM Gateway URL is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
-  printf 'Skipped: LLM Gateway URL is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
-  exit 0
-fi
-llm_gateway_url="$LLM_GATEWAY_URL"
+# Only validate and resolve gateway credentials when using the gateway provider.
+# Other providers (openrouter, anthropic, etc.) use their own credential mechanisms.
+if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+  # Stage 1: Check explicit gateway URL
+  if [ -z "${LLM_GATEWAY_URL:-}" ]; then
+    set_current_stage "agent setup"
+    printf 'Missing LLM Gateway configuration for provider=gateway.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '  Set LLM_GATEWAY_URL with the gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses), or\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '  Set KASEKI_PROVIDER=openrouter and provide OPENROUTER_API_KEY to use OpenRouter instead.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    : > "$RAW_EVENTS"
+    PI_EXIT=2
+    STATUS=2
+    FAILED_COMMAND="missing LLM_GATEWAY_URL"
+    emit_error_event "llm_gateway_config_missing" "Missing LLM gateway configuration; LLM_GATEWAY_URL not set" "exit"
+    printf 'Skipped: LLM Gateway URL is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+    printf 'Skipped: LLM Gateway URL is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+    exit 0
+  fi
+  llm_gateway_url="$LLM_GATEWAY_URL"
 
-# Stage 2: Check explicit API key
-if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
-  llm_gateway_api_key="$LLM_GATEWAY_API_KEY"
-  llm_gateway_api_key_source="env"
-else
-  # Stage 3: Check secret file
-  llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
-  if [ -r "$llm_gateway_api_key_file" ]; then
-    secret_content="$(cat "$llm_gateway_api_key_file")"
-    if [ -n "$secret_content" ]; then
-      llm_gateway_api_key="$secret_content"
-      llm_gateway_api_key_source="secret file"
+  # Stage 2: Check explicit API key
+  if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
+    llm_gateway_api_key="$LLM_GATEWAY_API_KEY"
+    llm_gateway_api_key_source="env"
+  else
+    # Stage 3: Check secret file
+    llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
+    if [ -r "$llm_gateway_api_key_file" ]; then
+      secret_content="$(cat "$llm_gateway_api_key_file")"
+      if [ -n "$secret_content" ]; then
+        llm_gateway_api_key="$secret_content"
+        llm_gateway_api_key_source="secret file"
+      fi
     fi
   fi
-fi
-unset LLM_GATEWAY_API_KEY secret_content
+  unset LLM_GATEWAY_API_KEY secret_content
 
-if [ -z "$llm_gateway_api_key" ]; then
-  set_current_stage "agent setup"
-  llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
-  printf 'Missing LLM Gateway API key. Set LLM_GATEWAY_API_KEY or provide a readable LLM_GATEWAY_API_KEY_FILE at %s.\n' "$llm_gateway_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-  : > "$RAW_EVENTS"
-  PI_EXIT=2
-  STATUS=2
-  FAILED_COMMAND="missing LLM_GATEWAY_API_KEY"
-  emit_error_event "llm_gateway_auth_config_missing" "Missing LLM Gateway API key; checked LLM_GATEWAY_API_KEY and LLM_GATEWAY_API_KEY_FILE=$llm_gateway_api_key_file" "exit"
-  
-  # Create required artifacts for early exit
-  printf 'Skipped: LLM Gateway API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
-  printf 'Skipped: LLM Gateway API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
-  
-  # Finalize deterministically before any Pi-dependent agent phase can run with an empty key.
-  exit 0
+  if [ -z "$llm_gateway_api_key" ]; then
+    set_current_stage "agent setup"
+    llm_gateway_api_key_file="${LLM_GATEWAY_API_KEY_FILE:-$HOME/.kaseki/secrets.json}"
+    printf 'Missing LLM Gateway API key. Set LLM_GATEWAY_API_KEY or provide a readable LLM_GATEWAY_API_KEY_FILE at %s.\n' "$llm_gateway_api_key_file" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    : > "$RAW_EVENTS"
+    PI_EXIT=2
+    STATUS=2
+    FAILED_COMMAND="missing LLM_GATEWAY_API_KEY"
+    emit_error_event "llm_gateway_auth_config_missing" "Missing LLM Gateway API key; checked LLM_GATEWAY_API_KEY and LLM_GATEWAY_API_KEY_FILE=$llm_gateway_api_key_file" "exit"
+
+    # Create required artifacts for early exit
+    printf 'Skipped: LLM Gateway API key is missing; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+    printf 'Skipped: LLM Gateway API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+
+    # Finalize deterministically before any Pi-dependent agent phase can run with an empty key.
+    exit 0
+  fi
 fi
 
 
@@ -8760,7 +8778,7 @@ if [ "$KASEKI_DRY_RUN" = "1" ]; then
   record_stage_timing "pi coding agent" "0" "$PI_DURATION_SECONDS" "dry_run=true"
 else
   set +e
-  printf 'LLM Gateway API key source: %s\n' "$llm_gateway_api_key_source"
+  [ -n "$llm_gateway_api_key_source" ] && printf 'LLM Gateway API key source: %s\n' "$llm_gateway_api_key_source"
   export KASEKI_STREAM_PROGRESS
   
   # Run kaseki-summarizer to pre-process files
