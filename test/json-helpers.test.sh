@@ -22,7 +22,9 @@ with_temp_json_helper_path_with_spaces() {
   helper_copy="${temp_dir}/json helper.sh"
 
   cp "$JSON_HELPER" "$helper_copy" || {
-    rm -rf "$temp_dir"
+    if [ -n "$temp_dir" ] && [ "$temp_dir" != "/" ]; then
+      rm -rf "$temp_dir"
+    fi
     return 1
   }
 
