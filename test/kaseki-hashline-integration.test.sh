@@ -8,7 +8,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_root=""
 cleanup() {
   [ "${KASEKI_KEEP_TEST_ARTIFACTS:-0}" = "1" ] && return 0
-  rm -rf "$tmp_root" /results /workspace/repo 2>/dev/null || true
+  rm -rf "$tmp_root" 2>/dev/null || true
+  # Only remove test paths if they exist and are not system-critical
+  [ -d /results ] && [ "$(stat -c %i /results)" != "$(stat -c %i /)" ] && rm -rf /results 2>/dev/null || true
+  [ -d /workspace/repo ] && [ "$(stat -c %i /workspace/repo)" != "$(stat -c %i /)" ] && rm -rf /workspace/repo 2>/dev/null || true
 }
 trap cleanup EXIT
 
