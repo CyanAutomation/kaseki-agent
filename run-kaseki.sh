@@ -266,7 +266,7 @@ OPTIONS:
 ENVIRONMENT VARIABLES (override defaults, CLI args take precedence):
   REPO_URL                          Repository URL
   GIT_REF                           Git reference
-  LLM_GATEWAY_URL                   LLM Gateway endpoint URL (e.g., https://manifest.scheimann.xyz/v1/responses)
+  LLM_GATEWAY_URL                   LLM Gateway endpoint URL (e.g., https://llmgateway.local.xyz/v1/responses)
   LLM_GATEWAY_API_KEY               LLM Gateway API key (or use LLM_GATEWAY_API_KEY_FILE)
   LLM_GATEWAY_API_KEY_FILE          Path to file containing API key
   KASEKI_MODEL                      AI model (default: auto)
