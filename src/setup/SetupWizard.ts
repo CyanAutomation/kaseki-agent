@@ -439,7 +439,7 @@ export class SetupWizard {
       {
         type: 'input',
         name: 'llmGatewayUrl',
-        message: '🌐 LLM Gateway URL (e.g., https://manifest.scheimann.xyz/v1/responses)',
+        message: '🌐 LLM Gateway URL (e.g., https://llmgateway.local.xyz/v1/responses)',
         validate: (value: string) => {
           if (!value) return 'Gateway URL is required';
           if (!value.startsWith('http')) return 'Gateway URL must start with "http://" or "https://"';
