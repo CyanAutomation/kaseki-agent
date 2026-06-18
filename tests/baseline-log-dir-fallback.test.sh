@@ -64,6 +64,8 @@ env \
   REPO_URL="$FAKE_REPO" \
   GIT_REF="main" \
   OPENROUTER_API_KEY="test-key-not-used" \
+  LLM_GATEWAY_URL="https://example.invalid/v1/responses" \
+  LLM_GATEWAY_API_KEY="test-key-not-used" \
   GITHUB_APP_ENABLED=0 \
   KASEKI_GIT_CACHE_MODE=off \
   KASEKI_BASELINE_VALIDATION_ENABLED=1 \
