@@ -20,6 +20,7 @@ set -euo pipefail
 
 REPO_PATH="${1:-.}"
 OUTPUT_FILE="${2:-/results/maturity-score.json}"
+KASEKI_MATURITY_SCORE_STDOUT="${KASEKI_MATURITY_SCORE_STDOUT:-1}"
 
 # Score tracking variables
 SETUP_SCORE=0
@@ -287,5 +288,7 @@ cat > "$OUTPUT_FILE" <<EOF
 }
 EOF
 
-# Output to stdout as well
-cat "$OUTPUT_FILE"
+# Output to stdout as well unless invoked as an internal artifact generator.
+if [ "$KASEKI_MATURITY_SCORE_STDOUT" != "0" ]; then
+  cat "$OUTPUT_FILE"
+fi
