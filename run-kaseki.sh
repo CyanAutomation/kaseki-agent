@@ -492,7 +492,6 @@ setup_host_logging "${INSTANCE:-session}"
 doctor() {
   local status=0
   local image_present=0
-  local gateway_key_source=""
   local gateway_key_value=""
   printf 'Kaseki doctor\n'
   printf 'Root: %s\n' "$ROOT"
@@ -521,11 +520,9 @@ doctor() {
 
   if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
     printf 'LLM Gateway API key: env\n'
-    gateway_key_source="env"
     gateway_key_value="$LLM_GATEWAY_API_KEY"
   elif [ -r "$HOST_SECRET_FILE" ] && [ -s "$HOST_SECRET_FILE" ]; then
     printf 'LLM Gateway API key: secret file (%s)\n' "$HOST_SECRET_FILE"
-    gateway_key_source="secret file"
     gateway_key_value="$(cat "$HOST_SECRET_FILE")"
   else
     printf 'LLM Gateway API key: missing\n' >&2
