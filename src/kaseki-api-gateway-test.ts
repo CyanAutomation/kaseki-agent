@@ -1,3 +1,5 @@
+import { readHostSecret } from './secrets/host-secrets-reader';
+
 /**
  * LLM Gateway Responsiveness Test
  *
@@ -23,6 +25,36 @@ export interface GatewayTestResult {
   httpStatus?: number;
 }
 
+export interface GatewayApiKeyResolution {
+  configured: boolean;
+  source: 'env' | 'host-secret' | 'missing';
+  value?: string;
+}
+
+export function resolveGatewayApiKey(): GatewayApiKeyResolution {
+  if (process.env.LLM_GATEWAY_API_KEY) {
+    return {
+      configured: true,
+      source: 'env',
+      value: process.env.LLM_GATEWAY_API_KEY,
+    };
+  }
+
+  const hostSecret = readHostSecret('llm_gateway_api_key');
+  if (hostSecret) {
+    return {
+      configured: true,
+      source: 'host-secret',
+      value: hostSecret,
+    };
+  }
+
+  return {
+    configured: false,
+    source: 'missing',
+  };
+}
+
 /**
  * Test LLM gateway responsiveness
  *
@@ -34,7 +66,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
 
   // Check configuration
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
-  const apiKey = process.env.LLM_GATEWAY_API_KEY;
+  const apiKey = resolveGatewayApiKey().value;
 
   if (!gatewayUrl) {
     return {
@@ -55,7 +87,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       responseTime: 0,
       timestamp,
       authenticationValidated: false,
-      remediation: 'Set the LLM_GATEWAY_API_KEY environment variable with your gateway authentication token',
+      remediation: 'Set LLM_GATEWAY_API_KEY or provide a readable llm_gateway_api_key file in the configured Kaseki secrets directory',
     };
   }
 
@@ -107,7 +139,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
         authenticationValidated: !authError,
         httpStatus: response.status,
         remediation: authError
-          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid and properly formatted'
+          ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
           : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
       };
     }
