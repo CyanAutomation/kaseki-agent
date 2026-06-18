@@ -228,7 +228,7 @@ describe('DockerManager', () => {
           REPO_URL: 'https://github.com/test/repo',
           GIT_REF: 'main',
           LLM_GATEWAY_API_KEY: 'test-key-xxx',
-          LLM_GATEWAY_URL: 'https://manifest.scheimann.xyz/v1/responses',
+          LLM_GATEWAY_URL: 'https://llmgateway.local.xyz/v1/responses',
           CUSTOM_FLAG: '1',
         },
         entrypoint: '/usr/local/bin/kaseki-entrypoint',
@@ -242,7 +242,7 @@ describe('DockerManager', () => {
       // Non-secret env vars still flow through.
       expect(spawnArgs).toContain('REPO_URL=https://github.com/test/repo');
       expect(spawnArgs).toContain('GIT_REF=main');
-      expect(spawnArgs).toContain('LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1/responses');
+      expect(spawnArgs).toContain('LLM_GATEWAY_URL=llmgateway.local.xyz/v1/responses');
       expect(spawnArgs).toContain('CUSTOM_FLAG=1');
 
       // Secret must be file-only in this mode.
