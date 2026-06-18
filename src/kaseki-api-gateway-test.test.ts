@@ -2,6 +2,9 @@
  * Tests for LLM Gateway responsiveness validation
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { testGatewayConnectivity, GatewayTestResult } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
@@ -10,13 +13,17 @@ global.fetch = jest.fn();
 describe('LLM Gateway Test', () => {
   const originalEnv = process.env;
   const mockFetch = global.fetch as jest.Mock;
+  let secretsDir: string;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-gateway-test-secrets-'));
+    process.env.KASEKI_SECRETS_DIR = secretsDir;
     mockFetch.mockClear();
   });
 
   afterEach(() => {
+    fs.rmSync(secretsDir, { recursive: true, force: true });
     process.env = originalEnv;
     mockFetch.mockClear();
   });
@@ -42,6 +49,31 @@ describe('LLM Gateway Test', () => {
       expect(result.status).toBe('error');
       expect(result.detail).toContain('LLM_GATEWAY_API_KEY');
       expect(result.remediation).toContain('LLM_GATEWAY_API_KEY');
+    });
+
+    it('should read LLM gateway API key from host secrets when inline env is not configured', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
+      delete process.env.LLM_GATEWAY_API_KEY;
+      fs.writeFileSync(path.join(secretsDir, 'llm_gateway_api_key'), 'file-test-key\n');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{"models": []}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://llmgateway.local.xyz/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer file-test-key',
+          }),
+        }),
+      );
+      expect(JSON.stringify(result)).not.toContain('file-test-key');
     });
 
     it('should fail when gateway URL is invalid', async () => {
@@ -88,6 +120,7 @@ describe('LLM Gateway Test', () => {
       expect(result.authenticationValidated).toBe(false);
       expect(result.remediation).toBeDefined();
       expect(result.remediation).toContain('LLM_GATEWAY_API_KEY');
+      expect(result.remediation).toContain('llm_gateway_api_key');
     });
 
     it('should return error with 403 when forbidden', async () => {
