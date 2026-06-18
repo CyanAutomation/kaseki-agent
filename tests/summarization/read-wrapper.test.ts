@@ -225,21 +225,31 @@ describe('ReadWrapper', () => {
 
     it('should handle very large files gracefully', async () => {
       const filePath = path.join(testDir, 'large.ts');
-      // Create a very large file (2MB+) to exceed the 1MB threshold
-      // Each export function declaration is about 50 bytes, so we need ~40,000 of them
-      let largeContent = 'export class A {}\n';
-      // Add 40,000 function declarations (each ~50 bytes) = ~2MB total
-      for (let i = 0; i < 40000; i++) {
-        largeContent += `export function func${i}(param: string): string { return param; }\n`;
-      }
-      fs.writeFileSync(filePath, largeContent);
+      const config = getConfig();
+      const content = 'x'.repeat(config.maxSizeBytes + 1);
+      fs.writeFileSync(filePath, content);
+
+      const fullSizeBytes = fs.statSync(filePath).size;
+      const estimatedTokens = Math.ceil(fullSizeBytes / 3.5);
 
       const result = await readFileWithSummaryAndMetrics(filePath);
-      expect(result).toBeDefined();
-      if (result?.metrics) {
-        // Files larger than 1MB threshold should use 'full' strategy
-        expect(result.metrics.strategy).toBe('full'); // Should choose full for very large
-      }
+      expect(result).toEqual({
+        content,
+        metrics: {
+          strategy: 'full',
+          strategyReason: `File too large (${fullSizeBytes} > ${config.maxSizeBytes} bytes)`,
+          language: 'typescript',
+          fullSizeBytes,
+          returnedSizeBytes: fullSizeBytes,
+          compressionRatio: 1,
+          parseTimeMs: 0,
+          cacheHit: false,
+          decisionPath: 'full_read',
+          estimatedTokensFull: estimatedTokens,
+          estimatedTokensReturned: estimatedTokens,
+          estimatedTokensSaved: 0,
+        },
+      });
     });
 
     it('should track decision rationale', async () => {
