@@ -57,7 +57,7 @@ set -euo pipefail
 read_repo_memory_section() { :; }
 TASK_PROMPT='Implement the requested change.'
 SCOUTING_ARTIFACT=''
-KASEKI_RESULTS_DIR='$(mktemp -d)'
+KASEKI_RESULTS_DIR="\$(mktemp -d)"
 GOAL_CHECK_RETRY_PROMPT=''
 KASEKI_HASHLINE_EDITS='$hashline_edits'
 KASEKI_AGENT_GUARDRAILS='1'
