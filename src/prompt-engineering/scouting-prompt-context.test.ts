@@ -313,26 +313,91 @@ describe('scouting-prompt-context', () => {
   });
 
   describe('formatting', () => {
-    it('should use markdown formatting', () => {
-      const context = buildScoutingPromptContext(mockBuildCapability, mockAsyncImpact);
+    it('should include the build command exactly once per command instruction and format it as inline code', () => {
+      const command = 'npm run build && echo safe';
+      const context = buildBuildContext({
+        ...mockBuildCapability,
+        command,
+      });
 
-      expect(context.combinedContext).toContain('##');
-      expect(context.combinedContext).toContain('**');
-      expect(context.combinedContext).toContain('`');
+      const formattedCommand = `\`${command}\``;
+      expect(context.split(formattedCommand)).toHaveLength(3);
+      expect(context).toContain(`command: ${formattedCommand}`);
+      expect(context).toContain(`validated by running: ${formattedCommand}`);
     });
 
-    it('should use emoji for visual clarity', () => {
-      const buildContext = buildBuildContext(mockBuildCapability);
-      const asyncContext = buildAsyncContext(mockAsyncImpact);
+    it('should cap async file lists to the documented maximum per section', () => {
+      const asyncImpact: AsyncImpactAnalysis = {
+        ...mockAsyncImpact,
+        mockFiles: Array.from({ length: 8 }, (_, i) => `src/mock-${i}.ts`),
+        testFiles: Array.from({ length: 8 }, (_, i) => `src/test-${i}.ts`),
+        interfaceFiles: Array.from({ length: 6 }, (_, i) => `src/interface-${i}.ts`),
+        consumerFiles: Array.from({ length: 6 }, (_, i) => `src/consumer-${i}.ts`),
+      };
 
-      expect(buildContext).toMatch(/[🔧]/u);
-      expect(asyncContext).toMatch(/⚠️/);
+      const context = buildAsyncContext(asyncImpact);
+
+      expect(context).toContain('`src/mock-4.ts`');
+      expect(context).not.toContain('`src/mock-5.ts`');
+      expect(context).toContain('(and 3 more)');
+
+      expect(context).toContain('`src/test-4.ts`');
+      expect(context).not.toContain('`src/test-5.ts`');
+      expect(context).toContain('(and 3 more)');
+
+      expect(context).toContain('`src/interface-2.ts`');
+      expect(context).not.toContain('`src/interface-3.ts`');
+
+      expect(context).toContain('`src/consumer-2.ts`');
+      expect(context).not.toContain('`src/consumer-3.ts`');
     });
 
-    it('should separate sections clearly', () => {
-      const context = buildScoutingPromptContext(mockBuildCapability, mockAsyncImpact);
+    it('should preserve the original user prompt verbatim after injected context', () => {
+      const originalPrompt = `Fix the parser logic.
 
-      expect(context.combinedContext).toContain('\n\n');
+Do not rewrite this markdown fence:
+\`\`\`ts
+const value = '**not context markup**';
+\`\`\``;
+
+      const enhanced = embedScoutingContextInTaskPrompt(
+        originalPrompt,
+        mockBuildCapability,
+        mockAsyncImpact,
+      );
+
+      expect(enhanced.endsWith(originalPrompt)).toBe(true);
+      expect(enhanced.slice(enhanced.length - originalPrompt.length)).toBe(originalPrompt);
+      expect(enhanced.indexOf(originalPrompt)).toBeGreaterThan(0);
+    });
+
+    it('should include context sections only when their corresponding data exists', () => {
+      const noBuild: BuildCapabilityInfo = {
+        language: null,
+        command: null,
+        detected: false,
+        detectedAt: Date.now(),
+      };
+      const noAsync: AsyncImpactAnalysis = {
+        hasAsyncChanges: false,
+        asyncKeywords: [],
+        mockFiles: [],
+        testFiles: [],
+        interfaceFiles: [],
+        consumerFiles: [],
+        summary: '',
+      };
+
+      const buildOnly = buildScoutingPromptContext(mockBuildCapability, noAsync);
+      expect(buildOnly.combinedContext).toContain('Build System');
+      expect(buildOnly.combinedContext).not.toContain('Async Changes Detected');
+
+      const asyncOnly = buildScoutingPromptContext(noBuild, mockAsyncImpact);
+      expect(asyncOnly.combinedContext).not.toContain('Build System');
+      expect(asyncOnly.combinedContext).toContain('Async Changes Detected');
+
+      const empty = buildScoutingPromptContext(noBuild, noAsync);
+      expect(empty.combinedContext).toBe('');
     });
   });
 
