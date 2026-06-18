@@ -88,34 +88,52 @@ describe('ReadWrapper', () => {
       fs.writeFileSync(filePath, content);
 
       const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
+      expect(result).toBe(content);
+
+      const metricsResult = await readFileWithSummaryAndMetrics(filePath);
+      expect(metricsResult?.content).toBe(content);
+      expect(metricsResult?.metrics).toMatchObject({
+        language: 'typescript',
+        strategy: 'full',
+        cacheHit: false,
+        decisionPath: 'full_read',
+      });
     });
 
-    it('should handle TypeScript files', async () => {
-      const filePath = path.join(testDir, 'test.ts');
-      const content = 'export interface User { name: string; age: number; }';
+    it.each([
+      {
+        name: 'should handle TypeScript files',
+        fileName: 'test.ts',
+        content: 'export interface User { name: string; age: number; }',
+        language: 'typescript',
+      },
+      {
+        name: 'should handle JavaScript files',
+        fileName: 'test.js',
+        content: 'export const myFunc = () => console.log("test");',
+        language: 'javascript',
+      },
+      {
+        name: 'should handle Go files',
+        fileName: 'test.go',
+        content: 'func main() { }',
+        language: 'go',
+      },
+    ])('$name', async ({ fileName, content, language }) => {
+      const filePath = path.join(testDir, fileName);
       fs.writeFileSync(filePath, content);
 
       const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
-    });
+      expect(result).toBe(content);
 
-    it('should handle JavaScript files', async () => {
-      const filePath = path.join(testDir, 'test.js');
-      const content = 'export const myFunc = () => console.log("test");';
-      fs.writeFileSync(filePath, content);
-
-      const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
-    });
-
-    it('should handle Go files', async () => {
-      const filePath = path.join(testDir, 'test.go');
-      const content = 'func main() { }';
-      fs.writeFileSync(filePath, content);
-
-      const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
+      const metricsResult = await readFileWithSummaryAndMetrics(filePath);
+      expect(metricsResult?.content).toBe(content);
+      expect(metricsResult?.metrics).toMatchObject({
+        language,
+        strategy: 'full',
+        cacheHit: false,
+        decisionPath: 'full_read',
+      });
     });
 
     it('should return null for missing files', async () => {
@@ -243,7 +261,16 @@ describe('ReadWrapper', () => {
       fs.writeFileSync(filePath, content);
 
       const result = await readFileWithSummary(filePath);
-      expect(result).toBeDefined();
+      expect(result).toBe(content);
+
+      const metricsResult = await readFileWithSummaryAndMetrics(filePath);
+      expect(metricsResult?.content).toBe(content);
+      expect(metricsResult?.metrics).toMatchObject({
+        language: 'typescript',
+        strategy: 'full',
+        cacheHit: false,
+        decisionPath: 'full_read',
+      });
     });
 
     it('should handle symlinks', async () => {
