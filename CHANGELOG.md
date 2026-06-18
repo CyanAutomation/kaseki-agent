@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.2...v1.80.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* ensure JSON helper script is copied to the correct directory in tests ([e49e7a5](https://github.com/CyanAutomation/kaseki-agent/commit/e49e7a530cae4b525ceeb7c6d199e8425070e622))
+* remove unused FILTER_EXIT variable from validation logic ([7d961e2](https://github.com/CyanAutomation/kaseki-agent/commit/7d961e2a922cc4eb4ab294aa73dfb2cb6aedbe48))
+
 ## [1.80.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.1...v1.80.2) (2026-06-18)
 
 
