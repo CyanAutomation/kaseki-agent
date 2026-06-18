@@ -30,7 +30,9 @@ with_temp_json_helper_path_with_spaces() {
 
   JSON_HELPER="$helper_copy" source_json_encode
   local source_status=$?
-  rm -rf "$temp_dir"
+  if [ -n "$temp_dir" ] && [ "$temp_dir" != "/" ]; then
+    rm -rf "$temp_dir"
+  fi
   return "$source_status"
 }
 
