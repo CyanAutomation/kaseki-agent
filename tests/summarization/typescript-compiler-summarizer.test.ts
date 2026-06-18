@@ -162,13 +162,36 @@ describe('TypeScriptCompilerSummarizer', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle parse errors gracefully', () => {
+    it('should handle malformed code with documented graceful result shape', () => {
       const code = 'function broken(( { // malformed code';
       const summary = summarizer.summarize(code);
 
       expect(summary).toBeDefined();
-      // Should not throw, may have parseError or empty results
-      expect(summary.originalSizeBytes).toBeGreaterThan(0);
+      expect(summary).toMatchObject({
+        language: 'typescript',
+        imports: [],
+        exports: [],
+        classes: [],
+        types: [],
+        interfaces: [],
+        originalSizeBytes: Buffer.byteLength(code, 'utf-8'),
+      });
+      expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
+
+      if (summary.parseError) {
+        expect(summary).toMatchObject({
+          functions: [],
+          parseError: expect.any(String),
+        });
+      } else {
+        expect(summary.functions).toEqual([
+          {
+            name: 'broken',
+            signature: 'function broken() {',
+            kind: 'function',
+          },
+        ]);
+      }
     });
 
     it('should return metadata', () => {
@@ -183,23 +206,58 @@ describe('TypeScriptCompilerSummarizer', () => {
     it('should handle empty code', () => {
       const summary = summarizer.summarize('');
       expect(summary).toBeDefined();
-      expect(summary.language).toBe('typescript');
+      expect(summary).toMatchObject({
+        language: 'typescript',
+        imports: [],
+        exports: [],
+        classes: [],
+        functions: [],
+        types: [],
+        interfaces: [],
+        originalSizeBytes: 0,
+      });
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
     });
   });
 
   describe('Timeout Handling', () => {
-    it('should complete within timeout', () => {
+    it('should accept a timeout parameter while returning deterministic summary data', () => {
       const code = `
         function a() {}
         function b() {}
         function c() {}
       `;
-      const startTime = performance.now();
       const summary = summarizer.summarize(code, 200);
-      const elapsed = performance.now() - startTime;
 
-      expect(summary).toBeDefined();
-      expect(elapsed).toBeLessThan(1000); // Should be very fast
+      expect(summary).toMatchObject({
+        language: 'typescript',
+        imports: [],
+        exports: [],
+        classes: [],
+        functions: [
+          {
+            name: 'a',
+            signature: 'function a() {',
+            kind: 'function',
+          },
+          {
+            name: 'b',
+            signature: 'function b() {',
+            kind: 'function',
+          },
+          {
+            name: 'c',
+            signature: 'function c() {',
+            kind: 'function',
+          },
+        ],
+        types: [],
+        interfaces: [],
+        originalSizeBytes: Buffer.byteLength(code, 'utf-8'),
+      });
+      expect(summary.parseError).toBeUndefined();
+      expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
     });
   });
 });
