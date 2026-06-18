@@ -718,6 +718,8 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         writeFileSync(join(appLib, 'progress-stream-utils.js'), '');
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
+        mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
         const kasekiLogDir = join(tempDir, 'var-log-kaseki');

@@ -8835,10 +8835,8 @@ NODE
     cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
   fi
 
-  FILTER_EXIT=0
   if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
     run_pi_event_filter_export "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
-    FILTER_EXIT=$?
   fi
   if [ -s "$RAW_EVENTS" ] && { [ ! -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ] || [ ! -s "${KASEKI_RESULTS_DIR}"/pi-summary.json ]; }; then
     printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
