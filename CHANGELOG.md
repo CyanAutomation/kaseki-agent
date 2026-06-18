@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.6...v1.80.7) (2026-06-18)
+
+
+### Bug Fixes
+
+* stage gateway host secret file for correct Docker mounts ([b376ed5](https://github.com/CyanAutomation/kaseki-agent/commit/b376ed550bb78deb0267c2d6b729bcdcc88c11f6))
+
 ## [1.80.6](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.5...v1.80.6) (2026-06-18)
 
 
