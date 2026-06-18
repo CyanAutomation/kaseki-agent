@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.5](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.4...v1.80.5) (2026-06-18)
+
+
+### Bug Fixes
+
+* update error messages for missing environment variables in scripts ([98f6cc3](https://github.com/CyanAutomation/kaseki-agent/commit/98f6cc393fefb9f82d8873fce2435c7024dbe01a))
+
 ## [1.80.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.3...v1.80.4) (2026-06-18)
 
 
