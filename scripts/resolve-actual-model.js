@@ -13,7 +13,7 @@ export function clean(value) {
 
 export function modelFromEventStream(eventsPath) {
   if (!eventsPath) return '';
-  let content;
+      ? resolvedModels[modelType] || defaultGenerativeModels[modelType]
   try {
     content = fs.readFileSync(eventsPath, 'utf8');
   } catch {
