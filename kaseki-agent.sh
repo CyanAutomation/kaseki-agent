@@ -59,6 +59,22 @@ if [ "${KASEKI_AGENT_HELPER_RESOLUTION_CHECK:-0}" = "1" ]; then
   exit 0
 fi
 
+
+KASEKI_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KASEKI_JSON_HELPER="${KASEKI_JSON_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json.sh}"
+if [ ! -r "$KASEKI_JSON_HELPER" ] && [ -r /app/scripts/lib/json.sh ]; then
+  KASEKI_JSON_HELPER="/app/scripts/lib/json.sh"
+fi
+if [ ! -r "$KASEKI_JSON_HELPER" ]; then
+  printf 'ERROR: JSON helper is not readable. Expected %s or /app/scripts/lib/json.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/json.sh.\n' "$KASEKI_JSON_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_JSON_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_HELPER" $? >&2
+  exit 1
+}
+
 INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
@@ -368,11 +384,6 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/goal-check-attempts.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check.json
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl
-# Safely encode values as JSON using jq, which is required for this script.
-json_encode() {
-  jq -Rs .
-}
-
 json_array() {
   if [ "$#" -eq 0 ]; then
     printf '[]\n'
