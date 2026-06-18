@@ -3,6 +3,7 @@
 # --- Allowlist only what Dockerfile copies ---
 **
 !Dockerfile
+!.pi-extensions.js
 !kaseki
 !kaseki-agent.sh
 !run-kaseki.sh

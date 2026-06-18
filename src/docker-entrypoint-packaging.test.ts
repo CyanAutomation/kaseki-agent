@@ -74,6 +74,49 @@ build_allowlist_regex() {
     expect(dockerfile).toContain('CMD ["agent"]');
   });
 
+  test('root-level Dockerfile COPY sources are included by the dockerignore allowlist', () => {
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+    const dockerignore = fs.readFileSync(path.join(repoRoot, '.dockerignore'), 'utf-8');
+    const allowlistedEntries = new Set(
+      dockerignore
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('!'))
+        .map((line) => line.slice(1).replace(/\/$/, '')),
+    );
+
+    const parseCopySources = (line: string): string[] => {
+      const tokens = line.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+      const copyIndex = tokens.indexOf('COPY');
+      const copyArgs = tokens
+        .slice(copyIndex + 1)
+        .filter((token) => !token.startsWith('--'))
+        .map((token) => token.replace(/^['"]|['"]$/g, ''));
+
+      return copyArgs.slice(0, -1);
+    };
+
+    const rootLevelCopySources = dockerfile
+      .split(/\r?\n/)
+      .flatMap((line) => {
+        const trimmed = line.trim();
+
+        if (!trimmed.startsWith('COPY ') || trimmed.includes('--from=')) {
+          return [];
+        }
+
+        return parseCopySources(trimmed);
+      })
+      .filter((source) => source && !source.includes('/'));
+
+    expect(rootLevelCopySources).toContain('.pi-extensions.js');
+    expect(rootLevelCopySources).not.toHaveLength(0);
+
+    const missingAllowlistEntries = rootLevelCopySources.filter((source) => !allowlistedEntries.has(source));
+
+    expect(missingAllowlistEntries).toEqual([]);
+  });
+
   describe('docker-entrypoint command dispatch', () => {
     const entrypointScript = path.join(repoRoot, 'scripts/docker-entrypoint.sh');
 
