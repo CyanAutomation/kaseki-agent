@@ -8059,7 +8059,7 @@ llm_gateway_api_key_source=""
 # Stage 1: Check explicit gateway URL
 if [ -z "${LLM_GATEWAY_URL:-}" ]; then
   set_current_stage "agent setup"
-  printf 'Missing LLM Gateway configuration. Set LLM_GATEWAY_URL environment variable with the gateway endpoint (e.g., https://manifest.scheimann.xyz/v1/responses).\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'Missing LLM Gateway configuration. Set LLM_GATEWAY_URL environment variable with the gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses).\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
   : > "$RAW_EVENTS"
   PI_EXIT=2
   STATUS=2
