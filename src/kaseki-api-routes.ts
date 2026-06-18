@@ -867,6 +867,65 @@ function checkLLMGatewayKey(): PreflightCheck {
   };
 }
 
+function isGatewayProviderEnabled(): boolean {
+  return (
+    !process.env.KASEKI_PROVIDER || process.env.KASEKI_PROVIDER === 'gateway'
+  );
+}
+
+function checkWorkerGatewayConfig(): PreflightCheck {
+  if (!isGatewayProviderEnabled()) {
+    return {
+      name: 'worker-gateway-config',
+      ok: true,
+      detail: `Worker LLM Gateway launch configuration is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER}.`,
+    };
+  }
+
+  const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const gatewaySecret = resolveGatewayApiKey();
+  const hostSecretPath =
+    process.env.LLM_GATEWAY_API_KEY_FILE ||
+    resolveHostSecretPath('llm_gateway_api_key') ||
+    path.join(
+      process.env.KASEKI_SECRETS_DIR || '/run/secrets/kaseki',
+      'llm_gateway_api_key',
+    );
+  const missingParts: string[] = [];
+
+  if (!gatewayUrl) {
+    missingParts.push('LLM_GATEWAY_URL in the API environment');
+  }
+
+  if (!gatewaySecret.configured) {
+    missingParts.push('a readable gateway key source for the API gateway test');
+  }
+
+  try {
+    fs.accessSync(hostSecretPath, fs.constants.R_OK);
+  } catch (err) {
+    missingParts.push(
+      `readable worker-mounted llm_gateway_api_key host path at ${hostSecretPath}: ${(err as Error).message}`,
+    );
+  }
+
+  if (missingParts.length === 0) {
+    return {
+      name: 'worker-gateway-config',
+      ok: true,
+      detail: `Worker launch has LLM_GATEWAY_URL and readable llm_gateway_api_key host mount source at ${hostSecretPath}.`,
+    };
+  }
+
+  return {
+    name: 'worker-gateway-config',
+    ok: false,
+    detail: `Worker LLM Gateway launch configuration is incomplete: ${missingParts.join('; ')}.`,
+    remediation:
+      'Gateway test passed for the API container only when the API can resolve LLM_GATEWAY_URL and a key; worker containers also require LLM_GATEWAY_URL and a mounted llm_gateway_api_key. Set LLM_GATEWAY_URL in the API environment and create a readable llm_gateway_api_key file at the host path mounted by run-kaseki.sh (or KASEKI_SECRETS_DIR/llm_gateway_api_key), then recreate/restart the API container if mounts changed.',
+  };
+}
+
 function checkGatewayTestSecretConsistency(): PreflightCheck {
   const preflightSecret = readHostSecret('llm_gateway_api_key');
   const gatewaySecret = resolveGatewayApiKey();
@@ -1242,6 +1301,7 @@ function buildPreflightResponse(config: KasekiApiConfig): PreflightResponse {
 
   checks.push(checkLLMGatewayKey());
   checks.push(checkGatewayTestSecretConsistency());
+  checks.push(checkWorkerGatewayConfig());
   checks.push(checkGitHubAppCredentials());
 
   const dockerVersion = execDockerCommand([
