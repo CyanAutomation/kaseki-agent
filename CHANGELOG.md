@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.4](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.3...v1.80.4) (2026-06-18)
+
+
+### Bug Fixes
+
+* enhance GitHub App credential checks and improve error handling for missing configurations ([d79bf8e](https://github.com/CyanAutomation/kaseki-agent/commit/d79bf8e5f1783d1b2f6ef966eba6e79da73c427b))
+
 ## [1.80.3](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.2...v1.80.3) (2026-06-18)
 
 
