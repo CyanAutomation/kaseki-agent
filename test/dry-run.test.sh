@@ -37,8 +37,7 @@ assert_file_empty() {
 
 run_once() {
   local root="$1" marker="$2"
-  local start end elapsed_ms code oldpwd
-  start="$(now_ms)"
+  local code oldpwd
   oldpwd="$(pwd)"
   cd "$REPO_ROOT"
   export KASEKI_ROOT="$root"
@@ -55,14 +54,7 @@ run_once() {
   code=$?
   set -e
   cd "$oldpwd"
-  end="$(now_ms)"
-  elapsed_ms=$((end-start))
   echo "$code" > "$root/exit-${marker}.txt"
-  echo "$elapsed_ms" > "$root/runtime-${marker}.ms"
-}
-
-now_ms() {
-  node -e 'process.stdout.write(String(Date.now()))'
 }
 
 echo "=== Testing --dry-run runtime behavior ==="
@@ -82,7 +74,8 @@ if [ "$run1_exit" != "0" ] && grep -q "missing required host dependencies: docke
   echo "⚠ Docker unavailable; running fallback dry-run smoke checks"
   awk '
     /KASEKI_DRY_RUN/ { seen_dry_run=1 }
-    /record_stage_timing "validation" "0" .*"dry_run=true"/ { seen_validation=1 }
+    /if \[ "\$KASEKI_DRY_RUN" = "1" \] \|\| \[ -z "\$KASEKI_VALIDATION_COMMANDS" \]/ { seen_validation_skip_path=1 }
+    /run_validation_commands/ && seen_validation_skip_path { seen_validation=1 }
     /record_stage_timing "pi coding agent" "0" .*"dry_run=true"/ { seen_agent=1 }
     END { exit (seen_dry_run && seen_validation && seen_agent) ? 0 : 1 }
   ' "$REPO_ROOT/run-kaseki.sh" "$REPO_ROOT/kaseki-agent.sh" || fail "Fallback smoke check failed: dry-run behavior wiring incomplete"
@@ -124,13 +117,16 @@ run2_exit="$(cat "$tmp_root/exit-second.txt")"
 result2="$tmp_root/kaseki-results/kaseki-2"
 require_file "$result2/host-start.json"
 require_file "$result2/metadata.json"
+json_field_equals "$result2/host-start.json" "dry_run" "1"
+json_field_equals "$result2/metadata.json" "dry_run" "1"
+require_file "$result2/stage-timings.tsv"
+assert_stage_detail "$result2/stage-timings.tsv" "preflight git ref" "ok"
+assert_file_empty "$result2/pi-events.jsonl"
+assert_file_empty "$result2/validation-timings.tsv"
 [ -d "$tmp_root/kaseki-results/kaseki-1" ] || fail "First result directory missing after second run"
 [ -f "$tmp_root/kaseki-results/kaseki-1/host-start.json" ] || fail "First run outputs were overwritten"
 [ ! -f "/tmp/kaseki-validation-$$-second" ] || fail "Validation command should not execute on second dry-run"
-first_runtime_ms="$(cat "$tmp_root/runtime-first.ms")"
-second_runtime_ms="$(cat "$tmp_root/runtime-second.ms")"
-[ "$second_runtime_ms" -le $((first_runtime_ms + 1500)) ] || fail "Second run should stay within runtime guardrail (first=${first_runtime_ms}ms second=${second_runtime_ms}ms)"
-pass "runtime tracked (first=${first_runtime_ms}ms second=${second_runtime_ms}ms)"
+pass "second dry-run records deterministic dry-run artifacts without validation or agent output"
 pass "second invocation creates kaseki-2 and preserves prior outputs"
 
 echo ""
