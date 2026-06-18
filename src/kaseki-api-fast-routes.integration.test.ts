@@ -19,7 +19,7 @@ async function listen(app: express.Express): Promise<{ server: Server; baseUrl: 
 }
 
 async function close(server: Server, idempotencyStore: IdempotencyStore): Promise<void> {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
   await idempotencyStore.shutdown();
 }
 
