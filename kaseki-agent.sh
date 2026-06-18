@@ -2193,6 +2193,47 @@ check_secret_scan_allowlist() {
 }
 
 
+run_pi_event_filter_export() {
+  local raw_events_file="$1"
+  local events_file="$2"
+  local summary_file="$3"
+  local filter_exit=0
+
+  set +e
+  kaseki-pi-event-filter "$raw_events_file" "$events_file" "$summary_file" \
+    2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2)
+  filter_exit=$?
+  set +e
+
+  if [ "$filter_exit" -eq 0 ]; then
+    # Phase 3A: Consolidate pi-agent summary to all-phase-summaries.json
+    append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "pi-agent" "$summary_file"
+    return 0
+  fi
+
+  printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$filter_exit" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+  printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$filter_exit" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  emit_error_event "pi_event_filter_failed" "kaseki-pi-event-filter exited with code $filter_exit" "continue"
+  if [ "$STATUS" -eq 0 ]; then
+    STATUS="$filter_exit"
+    FAILED_COMMAND="kaseki-pi-event-filter"
+  fi
+  cp "$raw_events_file" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
+  return "$filter_exit"
+}
+
+if [ "${KASEKI_PI_EVENT_FILTER_HELPER_TEST:-0}" = "1" ]; then
+  mkdir -p "$KASEKI_RESULTS_DIR"
+  RAW_EVENTS="${KASEKI_TEST_RAW_EVENTS:-$RAW_EVENTS}"
+  : > "${KASEKI_RESULTS_DIR}/progress.jsonl"
+  : > "${KASEKI_RESULTS_DIR}/quality.log"
+  : > "${KASEKI_RESULTS_DIR}/pi-stderr.log"
+  run_pi_event_filter_export "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-summary.json"
+  helper_exit=$?
+  write_metadata "$STATUS"
+  exit "$helper_exit"
+fi
+
 finish() {
   local code=$?
   maybe_call_finish_helper() {
@@ -8782,22 +8823,8 @@ NODE
 
   FILTER_EXIT=0
   if [ "$PI_EXTRACTION_DEPS_OK" -eq 1 ]; then
-    set +e
-    kaseki-pi-event-filter "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
-    # Phase 3A: Consolidate pi-agent summary to all-phase-summaries.json
-    append_phase_summary "${KASEKI_RESULTS_DIR}"/all-phase-summaries.json "pi-agent" "${KASEKI_RESULTS_DIR}"/pi-summary.json
+    run_pi_event_filter_export "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.jsonl "${KASEKI_RESULTS_DIR}"/pi-summary.json
     FILTER_EXIT=$?
-    set +e
-  fi
-  if [ "$FILTER_EXIT" -ne 0 ]; then
-    printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$FILTER_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
-    printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$FILTER_EXIT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    emit_error_event "pi_event_filter_failed" "kaseki-pi-event-filter exited with code $FILTER_EXIT" "continue"
-    if [ "$STATUS" -eq 0 ]; then
-      STATUS="$FILTER_EXIT"
-      FAILED_COMMAND="kaseki-pi-event-filter"
-    fi
-    cp "$RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
   fi
   if [ -s "$RAW_EVENTS" ] && { [ ! -s "${KASEKI_RESULTS_DIR}"/pi-events.jsonl ] || [ ! -s "${KASEKI_RESULTS_DIR}"/pi-summary.json ]; }; then
     printf 'ERROR: pi event export incomplete; raw events are non-empty but event artifacts are missing/empty\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
