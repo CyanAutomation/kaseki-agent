@@ -226,7 +226,7 @@ test_check_only_does_not_mutate_target_dir() {
   printf 'deterministic-marker\n' > "$marker"
   before="$(find "$TEST_SETUP_ROOT" -type f | sed "s|^$TEST_SETUP_ROOT/||" | sort)"
   run_setup_check_only >/dev/null
-  after="$(find "$TEST_SETUP_ROOT" -type f -printf '%P\n' | sort)"
+  after="$(find "$TEST_SETUP_ROOT" -type f | sed "s|^$TEST_SETUP_ROOT/||" | sort)"
 
   if [ "$before" = "$after" ] && [ -f "$marker" ]; then
     pass "--check-only leaves temporary target file list unchanged"
