@@ -166,6 +166,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="task-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
+    expect(document.querySelector('[data-probe="/api/gateway-test"]')?.getAttribute('data-auth')).toBe('true');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');

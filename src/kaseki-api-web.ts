@@ -1370,7 +1370,7 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test" type="button"><span class="hc-label">Gateway Test</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test" data-auth="true" type="button"><span class="hc-label">Gateway Test</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
             <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
