@@ -234,11 +234,11 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `LLM_GATEWAY_URL` | — | string | Gateway API endpoint URL (required; e.g., `https://manifest.scheimann.xyz/v1/responses`) |
+| `LLM_GATEWAY_URL` | — | string | Gateway API endpoint URL (required; e.g., `https://llmgateway.local.xyz/v1/responses`) |
 
 **Examples:**
 
-- `https://manifest.scheimann.xyz/v1/responses` — Manifest Gateway
+- `https://llmgateway.local.xyz/v1/responses` — Manifest Gateway
 - `https://api.openai.com/v1/chat/completions` — OpenAI
 - `http://localhost:11434/v1/chat/completions` — Ollama (self-hosted)
 - `https://api.anthropic.com/v1/messages` — Anthropic
@@ -313,7 +313,7 @@ chown 10000:10000 /agents/secrets/*
 export REPO_URL="https://github.com/myorg/myrepo"
 export GIT_REF="main"
 export TASK_PROMPT="Fix the null pointer bug in src/parser.ts"
-export LLM_GATEWAY_URL="https://manifest.scheimann.xyz/v1/responses"
+export LLM_GATEWAY_URL="https://llmgateway.local.xyz/v1/responses"
 export LLM_GATEWAY_API_KEY="your-api-key-here"
 
 KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF" "$TASK_PROMPT"
@@ -324,7 +324,7 @@ KASEKI_API_URL=http://localhost:8080/api kaseki-agent run "$REPO_URL" "$GIT_REF"
 ```bash
 # API server configuration
 # Put one API key per line in /agents/secrets/kaseki_api_keys or ~/secrets/kaseki_api_keys
-export LLM_GATEWAY_URL="https://manifest.scheimann.xyz/v1/responses"
+export LLM_GATEWAY_URL="https://llmgateway.local.xyz/v1/responses"
 export LLM_GATEWAY_API_KEY_FILE="/agents/secrets/llm_gateway_api_key"
 export KASEKI_API_PORT=8080
 export KASEKI_API_LOG_LEVEL=info
