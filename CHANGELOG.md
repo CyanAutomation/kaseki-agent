@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.1...v1.80.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* enhance maturity score calculation and logging; add tests for stdout behavior ([132f6d4](https://github.com/CyanAutomation/kaseki-agent/commit/132f6d4f6b2dcc29ee794d3fda3a693c4a96c2e9))
+
 ## [1.80.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.0...v1.80.1) (2026-06-18)
 
 
