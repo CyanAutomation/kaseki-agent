@@ -25,6 +25,25 @@ describe('hashline-event-handler', () => {
     }
   });
 
+  const writeEventsFile = (events: unknown[]): string => {
+    const jsonlPath = path.join(tempDir, 'events.jsonl');
+    fs.writeFileSync(jsonlPath, events.map((event) => JSON.stringify(event)).join('\n'));
+    return jsonlPath;
+  };
+
+  const lineHash = (line: string): string => {
+    const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
+    return crypto.createHash('sha256').update(normalized, 'utf-8').digest('hex').slice(0, 8);
+  };
+
+  const writeSummaryJson = (summary: unknown): string => {
+    const summaryPath = path.join(tempDir, 'hashline-summary.json');
+    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
+    return summaryPath;
+  };
+
+  const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T;
+
   describe('processHashlineEventsFromFile', () => {
     it('should process empty JSONL file', async () => {
       const jsonlPath = path.join(tempDir, 'events.jsonl');
@@ -53,7 +72,7 @@ describe('hashline-event-handler', () => {
       expect(results).toHaveLength(0);
     });
 
-    it('should process valid hashline_edit events', async () => {
+    it('applies a valid hashline_edit event and records structured summary counts', async () => {
       const filePath = path.join(tempDir, 'test.ts');
       const content = `function hello() {
   console.log('world');
@@ -62,56 +81,46 @@ describe('hashline-event-handler', () => {
 
       fs.writeFileSync(filePath, content);
 
-      // Compute hashes for the file
       const lines = content.split('\n');
-      const getHash = (line: string) => {
-        const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
-        return crypto
-          .createHash('sha256')
-          .update(normalized, 'utf-8')
-          .digest('hex')
-          .slice(0, 8);
-      };
-
-      const startHash = getHash(lines[1]);
-      const endHash = getHash(lines[2]);
-
-      const jsonlPath = path.join(tempDir, 'events.jsonl');
-      const event = JSON.stringify({
+      const jsonlPath = writeEventsFile([{
         type: 'tool_call',
         tool_name: 'hashline_edit',
         call: {
           file: 'test.ts',
           anchor: {
-            start_hash: startHash,
-            end_hash: endHash,
+            start_hash: lineHash(lines[1]),
+            end_hash: lineHash(lines[2]),
             context_lines: 3,
           },
           replacement: '  console.log("updated");\n  return 100;',
         },
-      });
-
-      fs.writeFileSync(jsonlPath, event);
+      }]);
 
       const { results, summary } = await processHashlineEventsFromFile(jsonlPath, tempDir);
+      const summaryJson = readJson<typeof summary>(writeSummaryJson(summary));
 
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('applied');
       expect(results[0].file).toBe('test.ts');
       expect(results[0].linesModified).toBe(2);
-      expect(summary.applied).toBe(1);
-
-      // Verify the file was modified
-      const updatedContent = fs.readFileSync(filePath, 'utf-8');
-      expect(updatedContent).toContain('console.log("updated")');
+      expect(summaryJson).toMatchObject({
+        applied: 1,
+        rejected: 0,
+        errors: 0,
+        totalLinesModified: 2,
+      });
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe(`function hello() {
+  console.log("updated");
+  return 100;
+}`);
     });
 
-    it('should reject events with stale anchors', async () => {
+    it('rejects stale anchors without mutating files and records structured summary counts', async () => {
       const filePath = path.join(tempDir, 'test.ts');
-      fs.writeFileSync(filePath, 'line 0\nline 1\nline 2');
+      const originalContent = 'line 0\nline 1\nline 2';
+      fs.writeFileSync(filePath, originalContent);
 
-      const jsonlPath = path.join(tempDir, 'events.jsonl');
-      const event = JSON.stringify({
+      const jsonlPath = writeEventsFile([{
         type: 'tool_call',
         tool_name: 'hashline_edit',
         call: {
@@ -123,17 +132,21 @@ describe('hashline-event-handler', () => {
           },
           replacement: 'replaced',
         },
-      });
-
-      fs.writeFileSync(jsonlPath, event);
+      }]);
 
       const { results, summary } = await processHashlineEventsFromFile(jsonlPath, tempDir);
+      const summaryJson = readJson<typeof summary>(writeSummaryJson(summary));
 
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('rejected');
       expect(results[0].reason).toContain('not found');
-      expect(summary.rejected).toBe(1);
-      expect(summary.applied).toBe(0);
+      expect(summaryJson).toMatchObject({
+        applied: 0,
+        rejected: 1,
+        errors: 0,
+        totalLinesModified: 0,
+      });
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe(originalContent);
     });
 
     it('should handle malformed JSON in events', async () => {
@@ -305,7 +318,7 @@ line 4`;
       expect(summary.applied).toBe(1);
     });
 
-    it('should handle newlines in JSONL properly', async () => {
+    it('applies multi-line replacements exactly and records structured summary counts', async () => {
       const filePath = path.join(tempDir, 'test.ts');
       const content = `function test() {
   return 42;
@@ -313,43 +326,37 @@ line 4`;
 
       fs.writeFileSync(filePath, content);
 
-      const getHash = (line: string) => {
-        const normalized = line.endsWith('\n') ? line.slice(0, -1) : line;
-        return crypto
-          .createHash('sha256')
-          .update(normalized, 'utf-8')
-          .digest('hex')
-          .slice(0, 8);
-      };
-
       const lines = content.split('\n');
-
-      const jsonlPath = path.join(tempDir, 'events.jsonl');
-      // Multi-line replacement with embedded newlines
-      const event = JSON.stringify({
+      const jsonlPath = writeEventsFile([{
         type: 'tool_call',
         tool_name: 'hashline_edit',
         call: {
           file: 'test.ts',
           anchor: {
-            start_hash: getHash(lines[1]),
-            end_hash: getHash(lines[1]),
+            start_hash: lineHash(lines[1]),
+            end_hash: lineHash(lines[1]),
             context_lines: 1,
           },
-          replacement: 'return 100;\n  // Updated',
+          replacement: '  const answer = 100;\n  return answer;',
         },
-      });
+      }]);
 
-      fs.writeFileSync(jsonlPath, event);
-
-      const { results } = await processHashlineEventsFromFile(jsonlPath, tempDir);
+      const { results, summary } = await processHashlineEventsFromFile(jsonlPath, tempDir);
+      const summaryJson = readJson<typeof summary>(writeSummaryJson(summary));
 
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe('applied');
-
-      const updatedContent = fs.readFileSync(filePath, 'utf-8');
-      expect(updatedContent).toContain('return 100;');
-      expect(updatedContent).toContain('// Updated');
+      expect(results[0].linesModified).toBe(1);
+      expect(summaryJson).toMatchObject({
+        applied: 1,
+        rejected: 0,
+        errors: 0,
+        totalLinesModified: 1,
+      });
+      expect(fs.readFileSync(filePath, 'utf-8')).toBe(`function test() {
+  const answer = 100;
+  return answer;
+}`);
     });
 
     it('should continue processing after error', async () => {
