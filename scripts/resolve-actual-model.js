@@ -54,12 +54,17 @@ if (!modelId) {
   console.error('Error: Model ID argument is required');
   process.exit(1);
 }
-
-  return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
-}
-
-export function resolveActualModel({ summaryPath, eventsPath }) {
-  return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
+  } catch (error) {
+    // Check for specific error types
+    if (error.name === 'ResourceNotFoundException' || error.name === 'ValidationException') {
+      // Model not found or invalid - return fallback
+      console.log(JSON.stringify({ modelId: modelId }));
+    } else {
+      // Re-throw other errors (permissions, network, etc.)
+      console.error(`Error resolving model: ${error.message}`);
+      process.exit(1);
+    }
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
