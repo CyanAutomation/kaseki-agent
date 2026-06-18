@@ -2198,10 +2198,24 @@ run_pi_event_filter_export() {
   local events_file="$2"
   local summary_file="$3"
   local filter_exit=0
+  local pi_stderr_log="${KASEKI_RESULTS_DIR}/pi-stderr.log"
+
+  if [ ! -r "$raw_events_file" ]; then
+    printf 'ERROR: raw Pi events file is not readable: %s\n' "$raw_events_file" | tee -a "$pi_stderr_log" >&2
+    emit_error_event "pi_event_filter_failed" "raw Pi events file is not readable" "continue"
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=66
+      FAILED_COMMAND="kaseki-pi-event-filter"
+    fi
+    return 66
+  fi
+
+  : >> "$pi_stderr_log"
+  chmod 600 "$pi_stderr_log" 2>/dev/null || true
 
   set +e
   kaseki-pi-event-filter "$raw_events_file" "$events_file" "$summary_file" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2)
+    2> >(tee -a "$pi_stderr_log" >&2)
   filter_exit=$?
   set +e
 
@@ -2212,7 +2226,7 @@ run_pi_event_filter_export() {
   fi
 
   printf 'pi-event-filter failed with exit %s; raw events preserved as fallback artifact\n' "$filter_exit" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
-  printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$filter_exit" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'ERROR: kaseki-pi-event-filter failed with exit %s while exporting Pi events\n' "$filter_exit" | tee -a "$pi_stderr_log" >&2
   emit_error_event "pi_event_filter_failed" "kaseki-pi-event-filter exited with code $filter_exit" "continue"
   if [ "$STATUS" -eq 0 ]; then
     STATUS="$filter_exit"
