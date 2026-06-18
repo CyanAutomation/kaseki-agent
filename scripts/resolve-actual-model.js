@@ -49,7 +49,11 @@ export function modelFromSummary(summaryPath) {
     summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
   } catch {
     return '';
-  }
+const modelId = process.argv[2];
+if (!modelId) {
+  console.error('Error: Model ID argument is required');
+  process.exit(1);
+}
 
   return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
 }
