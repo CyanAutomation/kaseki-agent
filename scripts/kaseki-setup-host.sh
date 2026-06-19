@@ -204,7 +204,7 @@ normalize_secrets_dir() {
   fi
 
   printf 'ok: host secrets directory found at %s\n' "$secrets_dir"
-  for required_secret in openrouter_api_key github_app_id github_app_client_id github_app_private_key kaseki_api_keys; do
+  for required_secret in llm_gateway_api_key github_app_id github_app_client_id github_app_private_key kaseki_api_keys; do
     if [ -f "$secrets_dir/$required_secret" ]; then
       printf 'ok: secret present: %s\n' "$required_secret"
     else

@@ -87,11 +87,11 @@ export class QuickstartCommand extends BaseCommand {
     const secrets = this.secretResolver.discover();
     this.secretResolver.printSummary(secrets);
 
-    if (!secrets.openrouterKeyFile) {
-      console.error('\n❌ OpenRouter API key not found.');
-      console.error('   Place it at ~/secrets/openrouter_api_key  OR');
-      console.error('   set OPENROUTER_API_KEY_FILE in your environment.');
-      throw new Error('OpenRouter API key not found');
+    if (!secrets.llmGatewayKeyFile) {
+      console.error('\n❌ LLM Gateway API key not found.');
+      console.error('   Place it at ~/secrets/llm_gateway_api_key  OR');
+      console.error('   set LLM_GATEWAY_API_KEY_FILE in your environment.');
+      throw new Error('LLM Gateway API key not found');
     }
 
     const missingGithubSecrets = [

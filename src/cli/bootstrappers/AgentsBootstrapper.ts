@@ -77,7 +77,7 @@ export class AgentsBootstrapper {
    */
   async writeConfig(
     secrets: {
-      openrouterKeyFile?: { filePath: string } | null;
+      llmGatewayKeyFile?: { filePath: string } | null;
       githubAppIdFile?: { filePath: string } | null;
       githubAppClientIdFile?: { filePath: string } | null;
       githubAppPrivateKeyFile?: { filePath: string } | null;
@@ -88,7 +88,7 @@ export class AgentsBootstrapper {
     await fs.mkdir(kasekiDir, { recursive: true, mode: 0o700 });
 
     const auth: Record<string, string> = {};
-    if (secrets.openrouterKeyFile) auth.openrouter_api_key_file = secrets.openrouterKeyFile.filePath;
+    if (secrets.llmGatewayKeyFile) auth.llm_gateway_api_key_file = secrets.llmGatewayKeyFile.filePath;
     if (secrets.githubAppIdFile) auth.github_app_id_file = secrets.githubAppIdFile.filePath;
     if (secrets.githubAppClientIdFile) auth.github_app_client_id_file = secrets.githubAppClientIdFile.filePath;
     if (secrets.githubAppPrivateKeyFile) auth.github_app_private_key_file = secrets.githubAppPrivateKeyFile.filePath;
