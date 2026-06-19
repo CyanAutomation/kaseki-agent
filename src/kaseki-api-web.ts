@@ -2366,6 +2366,16 @@ const controllerPage = String.raw`<!doctype html>
         button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
         const actionLabel = button.textContent ? button.textContent.trim() : 'request';
+        const startedAt = Date.now();
+        setResponseSummary(null);
+        setOutputBody(actionLabel === 'Current Preflight'
+          ? 'Running current preflight checks... 0s elapsed'
+          : 'Contacting the controller...');
+        const elapsedTimer = actionLabel === 'Current Preflight'
+          ? window.setInterval(() => {
+              setOutputBody('Running current preflight checks... ' + String(Math.floor((Date.now() - startedAt) / 1000)) + 's elapsed');
+            }, 1000)
+          : null;
         setState(actionLabel === 'Current Preflight'
           ? 'Running current preflight checks...'
           : 'Contacting the controller...');
@@ -2378,6 +2388,7 @@ const controllerPage = String.raw`<!doctype html>
           setState('Request could not be sent.', 'bad');
           return { payload: null, response: { ok: false } };
         } finally {
+          if (elapsedTimer) window.clearInterval(elapsedTimer);
           button.disabled = false;
         }
       }
@@ -3064,6 +3075,8 @@ const controllerPage = String.raw`<!doctype html>
         const button = document.querySelector('#submit');
         button.disabled = true;
         setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
+        setResponseSummary(null);
+        setOutputBody('Submitting run request...');
         setState('Contacting the controller...');
         apiRequest('/api/runs', { method: 'POST', auth: true, body: requestBody() })
           .then(({ payload, response }) => {
