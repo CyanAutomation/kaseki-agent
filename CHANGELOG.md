@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.9...v1.80.10) (2026-06-19)
+
+
+### Bug Fixes
+
+* update mock behavior for host secret path and set non-existent secrets directory in preflight diagnostics ([9d474fc](https://github.com/CyanAutomation/kaseki-agent/commit/9d474fc4d9a57a12277faeadb3339181d321e3f3))
+
 ## [1.80.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.8...v1.80.9) (2026-06-19)
 
 
