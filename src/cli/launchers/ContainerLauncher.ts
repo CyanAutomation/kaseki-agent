@@ -163,7 +163,7 @@ export class ContainerLauncher {
       '-e', 'KASEKI_AGENT_TIMEOUT_SECONDS=10800',
       '-e', 'KASEKI_MAX_DIFF_BYTES=400000',
       '-e', `KASEKI_API_KEYS=${apiKey}`,
-      '-e', 'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+      '-e', 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
       '-e', 'GITHUB_APP_ID_FILE=/run/secrets/kaseki/github_app_id',
       '-e', 'GITHUB_APP_CLIENT_ID_FILE=/run/secrets/kaseki/github_app_client_id',
       '-e', 'GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/kaseki/github_app_private_key',

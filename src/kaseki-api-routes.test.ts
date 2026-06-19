@@ -1162,7 +1162,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       expect(runArgs).not.toContain('/run/secrets/kaseki:/run/secrets/kaseki:ro');
       expect(runArgs).toEqual(
         expect.arrayContaining([
-          'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+          'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
           'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
           'KASEKI_RESULTS_DIR=/results'
         ])

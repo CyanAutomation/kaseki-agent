@@ -230,7 +230,7 @@ export class DoctorCommand extends BaseCommand {
    */
   private async checkAuthFiles(): Promise<Check> {
     const requiredAuthFiles = [
-      { key: 'auth.openrouter_api_key_file', name: 'OpenRouter API Key File', envVar: 'OPENROUTER_API_KEY_FILE', filename: 'openrouter_api_key' },
+      { key: 'auth.llm_gateway_api_key_file', name: 'LLM Gateway API Key File', envVar: 'LLM_GATEWAY_API_KEY_FILE', filename: 'llm_gateway_api_key' },
       { key: 'auth.github_app_id_file', name: 'GitHub App ID File', envVar: 'GITHUB_APP_ID_FILE', filename: 'github_app_id' },
       { key: 'auth.github_app_client_id_file', name: 'GitHub App Client ID File', envVar: 'GITHUB_APP_CLIENT_ID_FILE', filename: 'github_app_client_id' },
       { key: 'auth.github_app_private_key_file', name: 'GitHub App Private Key File', envVar: 'GITHUB_APP_PRIVATE_KEY_FILE', filename: 'github_app_private_key' },

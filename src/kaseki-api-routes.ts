@@ -1202,7 +1202,7 @@ function checkWorkerSmokeTest(
         '-u',
         `${process.getuid?.() || 10000}:${process.getgid?.() || 10000}`,
         '-e',
-        'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
+        'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
         '-e',
         `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}`,
         '-e',

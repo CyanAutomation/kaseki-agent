@@ -17,7 +17,7 @@ export interface SecretLocation {
 }
 
 export interface DiscoveredSecrets {
-  openrouterKeyFile: SecretLocation | null;
+  llmGatewayKeyFile: SecretLocation | null;
   githubAppIdFile: SecretLocation | null;
   githubAppClientIdFile: SecretLocation | null;
   githubAppPrivateKeyFile: SecretLocation | null;
@@ -54,7 +54,7 @@ export class SecretResolver {
     };
 
     return {
-      openrouterKeyFile: resolve('auth.openrouter_api_key_file', 'OPENROUTER_API_KEY_FILE', 'openrouter_api_key'),
+      llmGatewayKeyFile: resolve('auth.llm_gateway_api_key_file', 'LLM_GATEWAY_API_KEY_FILE', 'llm_gateway_api_key'),
       githubAppIdFile: resolve('auth.github_app_id_file', 'GITHUB_APP_ID_FILE', 'github_app_id'),
       githubAppClientIdFile: resolve('auth.github_app_client_id_file', 'GITHUB_APP_CLIENT_ID_FILE', 'github_app_client_id'),
       githubAppPrivateKeyFile: resolve('auth.github_app_private_key_file', 'GITHUB_APP_PRIVATE_KEY_FILE', 'github_app_private_key'),
@@ -101,7 +101,7 @@ export class SecretResolver {
         console.log(`  ✗ ${label}: not found`);
       }
     };
-    show('OpenRouter key      ', secrets.openrouterKeyFile);
+    show('LLM Gateway key     ', secrets.llmGatewayKeyFile);
     show('GitHub App ID       ', secrets.githubAppIdFile);
     show('GitHub App Client ID', secrets.githubAppClientIdFile);
     show('GitHub App key      ', secrets.githubAppPrivateKeyFile);
