@@ -988,7 +988,9 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       if (name === 'github_app_private_key') return defaultGithubPrivateKeyPem;
       return null;
     });
-    (resolveHostSecretPath as jest.Mock).mockReturnValue('/tmp/kaseki-missing-worker-secrets/llm_gateway_api_key');
+    // Return null so the code falls through to the KASEKI_SECRETS_DIR/path.join logic,
+    // then set KASEKI_SECRETS_DIR to a non-existent path so the final hostSecretPath doesn't exist
+    (resolveHostSecretPath as jest.Mock).mockReturnValue(null);
 
     const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-gateway-'));
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-worker-gateway-results-'));
@@ -1001,6 +1003,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       process.env.KASEKI_PROVIDER = 'gateway';
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'inline-api-gateway-test-key';
+      // Set to a non-existent path so the gateway secret file path doesn't exist
+      process.env.KASEKI_SECRETS_DIR = '/tmp/kaseki-nonexistent-secrets-' + Math.random().toString(36).substring(7);
 
       const scheduler = createMockScheduler({});
       const config = createTestConfig(resultsDir);
