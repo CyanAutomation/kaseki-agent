@@ -1450,6 +1450,63 @@ NODE
   return 0
 }
 
+capture_provider_error_from_log() {
+  local log_file="$1"
+  local phase="$2"
+  local payload
+
+  [ -s "$log_file" ] || return 1
+  payload="$(node - "$log_file" "$phase" "$KASEKI_PROVIDER" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [logPath, phase, provider] = process.argv.slice(2);
+let text = '';
+try { text = fs.readFileSync(logPath, 'utf8'); } catch { process.exit(0); }
+const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+if (lines.length === 0) process.exit(0);
+const keywords = [
+  /gateway/i,
+  /provider/i,
+  /api key/i,
+  /auth/i,
+  /unauthori[sz]ed/i,
+  /\b401\b/,
+  /\b403\b/,
+  /model/i,
+  /manifest/i,
+  /fetch/i,
+  /network/i,
+  /responses/i,
+  /openai/i,
+];
+const matched = lines.filter((line) => keywords.some((pattern) => pattern.test(line)));
+const selected = (matched.length ? matched : lines).slice(-8).join('\n');
+if (!selected) process.exit(0);
+const lower = selected.toLowerCase();
+const type = lower.includes('api key') || lower.includes('auth') || lower.includes('401') || lower.includes('403')
+  ? 'provider_auth_error'
+  : 'provider_error';
+process.stdout.write(JSON.stringify({
+  type,
+  phase,
+  provider: provider || '',
+  api: '',
+  model: '',
+  message: selected,
+}));
+NODE
+)"
+  [ -n "$payload" ] || return 1
+
+  printf '%s\n' "$payload" > "${KASEKI_RESULTS_DIR}/provider-error.json"
+  PROVIDER_ERROR_TYPE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.type || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_PHASE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.phase || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_PROVIDER="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.provider || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_API="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.api || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_MODEL="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.model || ""));' "$payload" 2>/dev/null || true)"
+  PROVIDER_ERROR_MESSAGE="$(node -e 'const p=JSON.parse(process.argv[1]); process.stdout.write(String(p.message || ""));' "$payload" 2>/dev/null || true)"
+  return 0
+}
+
 provider_error_is_terminal() {
   [ -n "$PROVIDER_ERROR_MESSAGE" ]
 }
@@ -4978,12 +5035,20 @@ run_goal_setting_agent_with_retry() {
     set -e
 
     goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
+    if [ -n "$goal_setting_last_stderr" ]; then
+      {
+        printf '[attempt %d exit %d]\n' "$attempt" "$goal_setting_last_exit"
+        printf '%s\n' "$goal_setting_last_stderr"
+      } >> "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log"
+      capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log" "goal-setting" || true
+    fi
     rm -f "$goal_setting_stderr_capture"
 
     # Success on any attempt
     if [ "$goal_setting_last_exit" -eq 0 ]; then
       export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
       export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      clear_provider_error
       
       # Extract upgraded goal and replace TASK_PROMPT
       if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
@@ -4997,6 +5062,7 @@ run_goal_setting_agent_with_retry() {
       
       STATUS="$pre_goal_setting_status"
       FAILED_COMMAND="$pre_goal_setting_failed_command"
+      clear_provider_error
       write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
       return 0
     fi
@@ -5033,6 +5099,7 @@ run_goal_setting_agent_with_retry() {
   printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d), using original TASK_PROMPT\n' "$goal_setting_last_exit"
   STATUS="$pre_goal_setting_status"
   FAILED_COMMAND="$pre_goal_setting_failed_command"
+  clear_provider_error
   write_goal_setting_metrics "$goal_setting_phase_start_time" "$(date +%s)"
   return 0
 }
@@ -5487,12 +5554,20 @@ run_scouting_agent_with_retry() {
     set -e
 
     scouting_last_stderr="$(cat "$scouting_stderr_capture" 2>/dev/null || true)"
+    if [ -n "$scouting_last_stderr" ]; then
+      {
+        printf '[attempt %d exit %d]\n' "$attempt" "$scouting_last_exit"
+        printf '%s\n' "$scouting_last_stderr"
+      } >> "${KASEKI_RESULTS_DIR}/scouting-stderr.log"
+      capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/scouting-stderr.log" "scouting" || true
+    fi
     rm -f "$scouting_stderr_capture"
 
     # Success on any attempt
     if [ "$scouting_last_exit" -eq 0 ]; then
       export KASEKI_SCOUTING_ATTEMPTS=$attempt
       export KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=$attempt
+      clear_provider_error
       return 0
     fi
 
