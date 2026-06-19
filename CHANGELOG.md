@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.9](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.8...v1.80.9) (2026-06-19)
+
+
+### Bug Fixes
+
+* add json helper script to test directories for improved functionality ([df99669](https://github.com/CyanAutomation/kaseki-agent/commit/df99669bcef80415353f1ba581ef3a04b940b7a7))
+* update references from OpenRouter API key to LLM Gateway API key across the codebase ([00f917e](https://github.com/CyanAutomation/kaseki-agent/commit/00f917eb1c4e293c758aa74de22c1655bb19ae0b))
+
 ## [1.80.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.7...v1.80.8) (2026-06-19)
 
 
