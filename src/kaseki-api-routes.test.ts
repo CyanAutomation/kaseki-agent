@@ -1274,10 +1274,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       );
       expect(workerSmokeCheck.remediation).toContain('/run/secrets/kaseki/custom_openrouter_key');
       expect(workerSmokeCheck.remediation).toContain(
-        '/run/secrets/kaseki/openrouter_api_key is the API container/host secret mount'
-      );
-      expect(workerSmokeCheck.remediation).toContain(
-        '/agents/secrets/openrouter_api_key is the nested worker mount used by run-kaseki.sh'
+        '/run/secrets/kaseki/openrouter_api_key is the API container and nested worker secret mount'
       );
       expect(workerSmokeCheck.remediation).not.toMatch(/Docker daemon|Docker socket|docker\.sock/i);
     } finally {

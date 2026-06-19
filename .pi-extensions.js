@@ -7,19 +7,40 @@
  * Configuration Environment Variables:
  * - LLM_GATEWAY_URL: Gateway API endpoint (required, e.g., https://llmgateway.local.xyz/v1/responses)
  * - LLM_GATEWAY_API_KEY: API key literal (optional, prefer file)
- * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key (default: ~/.kaseki/secrets.json)
+ * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
  */
 
+const fs = require('node:fs');
+
+function resolveGatewayApiKey() {
+  if (process.env.LLM_GATEWAY_API_KEY) {
+    return process.env.LLM_GATEWAY_API_KEY;
+  }
+
+  const filePath = process.env.LLM_GATEWAY_API_KEY_FILE;
+  if (filePath) {
+    try {
+      const value = fs.readFileSync(filePath, 'utf8').trim();
+      if (value) return value;
+    } catch {
+      // Pi will surface the provider initialization failure to the caller.
+    }
+  }
+
+  return '';
+}
+
 module.exports = function (pi) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const gatewayApiKey = resolveGatewayApiKey();
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
     pi.registerProvider('gateway', {
       name: 'LLM Gateway',
       baseUrl: gatewayUrl,
-      apiKey: '$LLM_GATEWAY_API_KEY', // Env var interpolation
+      apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
       api: 'openai-responses', // Manifest gateway is OpenAI Responses API compatible
       models: [
         {

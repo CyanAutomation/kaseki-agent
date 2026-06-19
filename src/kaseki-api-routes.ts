@@ -1146,7 +1146,7 @@ function workerSmokeStartupSecretsRemediation(
     extractLLMGatewayPathFromStartupDetail(detail) ||
     `/run/secrets/kaseki/${keyName}`;
 
-  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/${keyName} is the API container/host secret mount used by /api/preflight worker smoke checks; /agents/secrets/${keyName} is the nested worker mount used by run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
+  return `The API can read host secrets, but the nested worker smoke test did not receive the same files. The effective LLM Gateway API key path reported by startup checks is ${effectivePath}. /run/secrets/kaseki/${keyName} is the API container and nested worker secret mount used by /api/preflight and run-kaseki.sh. Ensure the API container bind-mounts the host secrets directory, for example /home/pi/secrets:/run/secrets/kaseki:ro. If this persists, set KASEKI_HOST_SECRETS_DIR to the host path and recreate the API container.`;
 }
 
 function workerSmokeStartupResultsRemediation(
@@ -1204,6 +1204,12 @@ function checkWorkerSmokeTest(
         '-e',
         'OPENROUTER_API_KEY_FILE=/run/secrets/kaseki/openrouter_api_key',
         '-e',
+        `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}`,
+        '-e',
+        `LLM_GATEWAY_URL=${process.env.LLM_GATEWAY_URL || ''}`,
+        '-e',
+        'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
+        '-e',
         'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
         '-e',
         'KASEKI_RESULTS_DIR=/results',
@@ -1228,7 +1234,7 @@ function checkWorkerSmokeTest(
         name: 'worker-smoke',
         ok: true,
         detail:
-          'Worker container can start with workspace, results, cache, and OpenRouter secret mounts.',
+          'Worker container can start with workspace, results, cache, OpenRouter, and LLM Gateway secret mounts.',
       };
     }
 
