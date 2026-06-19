@@ -68,7 +68,7 @@ resolve_gateway_host_secret_file() {
   printf '%s' "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key"
 }
 GATEWAY_HOST_SECRET_FILE="$(resolve_gateway_host_secret_file)"
-GATEWAY_WORKER_SECRET_PATH="/agents/secrets/llm_gateway_api_key"
+GATEWAY_WORKER_SECRET_PATH="/run/secrets/kaseki/llm_gateway_api_key"
 KASEKI_LOG_DIR="${KASEKI_LOG_DIR:-/var/log/kaseki}"
 KASEKI_STRICT_HOST_LOGGING="${KASEKI_STRICT_HOST_LOGGING:-0}"
 KASEKI_APPEND_METRICS_JSONL="${KASEKI_APPEND_METRICS_JSONL:-1}"

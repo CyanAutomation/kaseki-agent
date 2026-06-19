@@ -488,6 +488,39 @@ check_worker_mounts() {
   return "$exit_code"
 }
 
+check_gateway_worker_secret() {
+  if [ "${KASEKI_PROVIDER:-gateway}" != "gateway" ]; then
+    return 0
+  fi
+
+  log_info "Checking LLM Gateway worker credentials..."
+
+  if [ -z "${LLM_GATEWAY_URL:-}" ]; then
+    log_error "LLM_GATEWAY_URL is required for KASEKI_PROVIDER=gateway"
+    return 2
+  fi
+
+  if [ -n "${LLM_GATEWAY_API_KEY:-}" ]; then
+    log_warn "LLM_GATEWAY_API_KEY is set inline; prefer LLM_GATEWAY_API_KEY_FILE with a mounted secret file"
+    return 0
+  fi
+
+  local gateway_key_file="${LLM_GATEWAY_API_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key}"
+  if [ ! -r "$gateway_key_file" ]; then
+    log_error "LLM Gateway API key file is not readable: $gateway_key_file"
+    log_error "  Mount ~/secrets/llm_gateway_api_key into the worker and set LLM_GATEWAY_API_KEY_FILE=$gateway_key_file"
+    return 2
+  fi
+
+  if [ ! -s "$gateway_key_file" ]; then
+    log_error "LLM Gateway API key file is empty: $gateway_key_file"
+    return 2
+  fi
+
+  log_pass "LLM Gateway API key file is readable: $gateway_key_file"
+  return 0
+}
+
 check_git_safe_directory() {
   log_info "Checking git safe.directory configuration..."
 
@@ -575,6 +608,7 @@ main() {
       check_results_writable || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_github_app_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_github_app_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;

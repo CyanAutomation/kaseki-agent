@@ -78,7 +78,14 @@ assert_arg_present() {
 
 assert_arg_present 'KASEKI_PROVIDER=gateway' 'gateway provider'
 assert_arg_present 'LLM_GATEWAY_URL=https://gateway.example.invalid/v1/responses' 'gateway URL worker env'
-assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key' 'gateway key worker file env'
-assert_arg_present "$GATEWAY_KEY_FILE:/agents/secrets/llm_gateway_api_key:ro" 'gateway key worker mount'
+assert_arg_present 'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key' 'gateway key worker file env'
+if ! grep -Eq '.+/llm_gateway_api_key:/run/secrets/kaseki/llm_gateway_api_key:ro$' "$DOCKER_ARGS_CAPTURE"; then
+  printf '✗ missing docker volume mount for gateway key worker secret path\n'
+  printf '%s\n' '--- captured docker args ---'
+  cat "$DOCKER_ARGS_CAPTURE"
+  printf '%s\n' '--- run-kaseki output ---'
+  cat "$OUTPUT_LOG"
+  exit 1
+fi
 
 printf '✓ run-kaseki.sh passes gateway worker URL and key file env vars\n'
