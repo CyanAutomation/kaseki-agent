@@ -45,9 +45,10 @@ if [ ! -f "$DIST_FILTER" ]; then
   fail "dist/validation-output-filter.js is missing; run npm run build before this test"
 fi
 
-mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts"
+mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
 cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 
 # Create a temporary version of the script with paths redirected to $TMP_DIR
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
