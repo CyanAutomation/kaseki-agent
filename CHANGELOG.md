@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.8](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.7...v1.80.8) (2026-06-19)
+
+
+### Bug Fixes
+
+* mount gateway key file for worker pi provider ([f42e276](https://github.com/CyanAutomation/kaseki-agent/commit/f42e27663387161eb5dd18382509abc9b9d5618a))
+* mount gateway key file for worker pi provider ([#748](https://github.com/CyanAutomation/kaseki-agent/issues/748)) ([7a5f14b](https://github.com/CyanAutomation/kaseki-agent/commit/7a5f14bd7888078da858f3c83b674e45464ab0c5))
+
 ## [1.80.7](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.6...v1.80.7) (2026-06-18)
 
 
