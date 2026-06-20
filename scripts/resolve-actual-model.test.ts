@@ -1,7 +1,6 @@
 /**
- * Tests for scripts/resolve-actual-model.js
- * 
- * Tests invoke the script via subprocess to properly handle ESM + import.meta patterns
+ * Tests for scripts/resolve-actual-model.ts
+ *
  * Coverage targets:
  * - Model extraction from event stream (JSONL)
  * - Model extraction from summary.json (selected_model, model, counters)
@@ -9,300 +8,308 @@
  * - Robustness: malformed JSON, missing files, empty files
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { resolveActualModel } from './resolve-actual-model';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 
-const SCRIPT_PATH = path.resolve(process.cwd(), 'scripts/resolve-actual-model.js');
-const RESULTS_DIR = path.resolve(process.cwd(), 'test-resolve-model-tmp');
+let tmpDir: string;
 
-// Helper to run the resolve-actual-model script as subprocess
-function runScript(summaryPath: string, eventsPath: string = ''): string {
-  try {
-    const output = execSync(
-      `node "${SCRIPT_PATH}" "${summaryPath}" "${eventsPath}"`,
-      {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
-    );
-    return output.trim();
-  } catch (error: any) {
-    return error.stdout?.trim() || '';
-  }
+function createTempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'resolve-model-test-'));
 }
 
+/**
+ * Tests for scripts/resolve-actual-model.ts
+ *
+ * Coverage targets:
+ * - Model extraction from event stream (JSONL)
+ * - Model extraction from summary.json (selected_model, model, counters)
+ * - Fallback chain: events → summary.selected_model → summary.model → counters → "unknown"
+ * - Robustness: malformed JSON, missing files, empty files
+ */
+
+import { resolveActualModel } from './resolve-actual-model';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+
 describe('resolve-actual-model', () => {
+  let tmpDir: string;
+
   beforeEach(() => {
-    if (!fs.existsSync(RESULTS_DIR)) {
-      fs.mkdirSync(RESULTS_DIR, { recursive: true });
-    }
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resolve-model-test-'));
   });
 
   afterEach(() => {
-    if (fs.existsSync(RESULTS_DIR)) {
-      fs.rmSync(RESULTS_DIR, { recursive: true, force: true });
+    if (fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
-  describe('happy path', () => {
-    it('should extract model from pi-events.jsonl', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const eventsContent =
-        '{"type":"tool_call","model":"openrouter/anthropic/claude-opus-4-1"}\n' +
-        '{"type":"tool_result","text":"done"}\n';
-      fs.writeFileSync(eventsPath, eventsContent);
+  const writeSummary = (filename: string, data: Record<string, unknown>): string => {
+    const filePath = path.join(tmpDir, filename);
+    fs.writeFileSync(filePath, JSON.stringify(data));
+    return filePath;
+  };
 
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('openrouter/anthropic/claude-opus-4-1');
+  const writeEvents = (filename: string, events: Array<Record<string, unknown>>): string => {
+    const filePath = path.join(tmpDir, filename);
+    const lines = events.map(e => JSON.stringify(e)).join('\n');
+    fs.writeFileSync(filePath, lines);
+    return filePath;
+  };
+
+  describe('Tier 1: Event Stream', () => {
+    it('should extract model from first valid event in stream', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'openrouter/free' },
+        { type: 'step', model: 'ignored' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('openrouter/free');
     });
 
-    it('should extract model from first event in stream', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const eventsContent =
-        '{"type":"start","model":"model1"}\n' +
-        '{"type":"intermediate","model":"model2"}\n' +
-        '{"type":"end","model":"model3"}\n';
-      fs.writeFileSync(eventsPath, eventsContent);
+    it('should skip malformed events and find next valid one', () => {
+      const eventsPath = path.join(tmpDir, 'events.jsonl');
+      fs.writeFileSync(eventsPath, '{ invalid json\n' + JSON.stringify({ type: 'init', model: 'gpt-4-turbo' }));
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('gpt-4-turbo');
+    });
 
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('model1');
+    it('should ignore empty model strings in events', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: '' },
+        { type: 'init', model: null },
+        { type: 'step', model: 'claude-3-opus' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('claude-3-opus');
+    });
+
+    it('should filter out "unknown", "null", "undefined" strings', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'unknown' },
+        { type: 'init', model: 'null' },
+        { type: 'init', model: 'undefined' },
+        { type: 'step', model: 'actual-model' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('actual-model');
+    });
+
+    it('should handle case-insensitive filtering', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'UNKNOWN' },
+        { type: 'init', model: 'NULL' },
+        { type: 'step', model: 'valid-model' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('valid-model');
+    });
+
+    it('should reject model strings with control characters', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'bad\nmodel' },
+        { type: 'init', model: 'good-model' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('good-model');
+    });
+
+    it('should trim whitespace from model strings', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: '  trimmed-model  ' },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('trimmed-model');
     });
   });
 
-  describe('fallback 1: summary.selected_model', () => {
-    it('should fallback to summary.selected_model when events absent', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        selected_model: 'openrouter/google/gemini-2.0-flash',
-        model: 'fallback-model',
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('openrouter/google/gemini-2.0-flash');
+  describe('Tier 2: Summary Metadata', () => {
+    it('should extract selected_model from summary', () => {
+      const summaryPath = writeSummary('summary.json', {
+        selected_model: 'openrouter/auto',
+      });
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('openrouter/auto');
     });
 
     it('should prefer selected_model over model field', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
+      const summaryPath = writeSummary('summary.json', {
         selected_model: 'preferred-model',
-        model: 'less-preferred-model',
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
+        model: 'ignored-model',
+      });
+      const result = resolveActualModel({ summaryPath });
       expect(result).toBe('preferred-model');
     });
-  });
 
-  describe('fallback 2: summary.model', () => {
-    it('should fallback to summary.model when selected_model absent', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        model: 'openrouter/cohere/command-r',
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('openrouter/cohere/command-r');
-    });
-  });
-
-  describe('fallback 3: summary.counters.models deduplication', () => {
-    it('should extract from counters.models object', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        counters: {
-          models: {
-            'model-a': 5,
-            'model-b': 3,
-            'model-c': 1,
-          },
-        },
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      // Should return unknown because multiple models exist (ambiguous)
-      expect(result).toBe('unknown');
-    });
-
-    it('should handle single model in counters.models', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        counters: {
-          models: {
-            'openrouter/only-model': 1,
-          },
-        },
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('openrouter/only-model');
-    });
-
-    it('should reject array-format counters.models', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        counters: {
-          models: ['openrouter/model1', 'openrouter/model2'],
-        },
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('unknown');
-    });
-  });
-
-  describe('fallback chain', () => {
-    it('should follow chain: events → selected_model → model → counters → unknown', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        counters: {
-          models: {
-            'fallback-model': 1,
-          },
-        },
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
+    it('should fallback to model field if selected_model missing', () => {
+      const summaryPath = writeSummary('summary.json', {
+        model: 'fallback-model',
+      });
+      const result = resolveActualModel({ summaryPath });
       expect(result).toBe('fallback-model');
     });
 
-    it('should return "unknown" when no model data available', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {};
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
+    it('should extract model from counters if only 1 model counted', () => {
+      const summaryPath = writeSummary('summary.json', {
+        counters: {
+          models: {
+            'claude-3-sonnet': 15,
+          },
+        },
+      });
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('claude-3-sonnet');
+    });
 
-      const result = runScript(summaryPath, eventsPath);
+    it('should ignore counters if multiple models present (ambiguous)', () => {
+      const summaryPath = writeSummary('summary.json', {
+        counters: {
+          models: {
+            'model-a': 8,
+            'model-b': 7,
+          },
+        },
+      });
+      const result = resolveActualModel({ summaryPath });
       expect(result).toBe('unknown');
+    });
+
+    it('should ignore counters if no models with count > 0', () => {
+      const summaryPath = writeSummary('summary.json', {
+        counters: {
+          models: {
+            'model-a': 0,
+          },
+        },
+      });
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('unknown');
+    });
+
+    it('should filter "unknown" from selected_model', () => {
+      const summaryPath = writeSummary('summary.json', {
+        selected_model: 'unknown',
+        model: 'fallback-model',
+      });
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('fallback-model');
     });
   });
 
-  describe('edge cases', () => {
-    it('should handle whitespace in model names', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = {
-        selected_model: '  openrouter/model-with-spaces  ',
-      };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('openrouter/model-with-spaces');
+  describe('Tier 3: Fallback', () => {
+    it('should return "unknown" if all tiers fail', () => {
+      const result = resolveActualModel({});
+      expect(result).toBe('unknown');
     });
 
-    it('should skip malformed JSON lines and use valid ones', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const eventsContent = 'not valid json\n{"model":"from-events"}\n';
-      fs.writeFileSync(eventsPath, eventsContent);
-
-      const summaryContent = { selected_model: 'from-summary' };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      // Should extract from events since valid JSON exists there
-      expect(result).toBe('from-events');
+    it('should return "unknown" if paths do not exist', () => {
+      const result = resolveActualModel({
+        summaryPath: '/nonexistent/summary.json',
+        eventsPath: '/nonexistent/events.jsonl',
+      });
+      expect(result).toBe('unknown');
     });
 
-    it('should handle very long model names', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const longName = 'openrouter/' + 'a'.repeat(500);
-      const summaryContent = { selected_model: longName };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe(longName);
+    it('should return "unknown" if summary JSON is malformed', () => {
+      const summaryPath = path.join(tmpDir, 'bad.json');
+      fs.writeFileSync(summaryPath, '{ invalid json }');
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('unknown');
     });
 
-    it('should handle special characters in model name', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const specialName = 'model/with-special_chars.v2:updated@2024';
-      const summaryContent = { selected_model: specialName };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe(specialName);
-    });
-
-    it('should handle empty event stream', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
+    it('should return "unknown" if events file is empty', () => {
+      const eventsPath = path.join(tmpDir, 'empty.jsonl');
       fs.writeFileSync(eventsPath, '');
-
-      const summaryContent = { selected_model: 'fallback-model' };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('fallback-model');
-    });
-
-    it('should handle missing events but present summary', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const summaryContent = { model: 'summary-only-model' };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('summary-only-model');
-    });
-
-    it('should prioritize events over summary', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      const eventsContent = '{"type":"start","model":"from-events"}\n';
-      fs.writeFileSync(eventsPath, eventsContent);
-
-      const summaryContent = { selected_model: 'from-summary' };
-      fs.writeFileSync(summaryPath, JSON.stringify(summaryContent, null, 2));
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('from-events');
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('unknown');
     });
   });
 
-  describe('default case', () => {
-    it('should return "unknown" when no files provided', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'nonexistent-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'nonexistent-summary.json');
+  describe('Chain Integration', () => {
+    it('should use event stream if available, ignoring summary', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'event-model' },
+      ]);
+      const summaryPath = writeSummary('summary.json', {
+        selected_model: 'summary-model',
+      });
+      const result = resolveActualModel({ eventsPath, summaryPath });
+      expect(result).toBe('event-model');
+    });
 
-      const result = runScript(summaryPath, eventsPath);
+    it('should use summary if event stream has no valid model', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'unknown' },
+      ]);
+      const summaryPath = writeSummary('summary.json', {
+        selected_model: 'summary-model',
+      });
+      const result = resolveActualModel({ eventsPath, summaryPath });
+      expect(result).toBe('summary-model');
+    });
+
+    it('should prefer event stream model over counter extraction', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 'event-model' },
+      ]);
+      const summaryPath = writeSummary('summary.json', {
+        counters: {
+          models: {
+            'counter-model': 20,
+          },
+        },
+      });
+      const result = resolveActualModel({ eventsPath, summaryPath });
+      expect(result).toBe('event-model');
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle large event streams', () => {
+      const largeEvents = Array.from({ length: 1000 }, (_, i) => ({
+        type: 'event',
+        model: i === 999 ? 'target-model' : undefined,
+      }));
+      const eventsPath = writeEvents('large.jsonl', largeEvents);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('target-model');
+    });
+
+    it('should handle numeric model values', () => {
+      const eventsPath = writeEvents('events.jsonl', [
+        { type: 'init', model: 12345 },
+      ]);
+      const result = resolveActualModel({ eventsPath });
+      expect(result).toBe('12345');
+    });
+
+    it('should handle counters with non-numeric counts', () => {
+      const summaryPath = writeSummary('summary.json', {
+        counters: {
+          models: {
+            'model-a': 'invalid',
+          },
+        },
+      });
+      const result = resolveActualModel({ summaryPath });
       expect(result).toBe('unknown');
     });
 
-    it('should return "unknown" when directory is empty', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      // Don't create any files - both paths are non-existent
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('unknown');
-    });
-
-    it('should return "unknown" when summary.json is malformed', () => {
-      const eventsPath = path.join(RESULTS_DIR, 'pi-events.jsonl');
-      const summaryPath = path.join(RESULTS_DIR, 'pi-summary.json');
-      fs.writeFileSync(summaryPath, 'not valid json at all');
-
-      const result = runScript(summaryPath, eventsPath);
-      expect(result).toBe('unknown');
+    it('should handle deeply nested summary structures', () => {
+      const summaryPath = writeSummary('summary.json', {
+        data: {
+          nested: {
+            field: 'ignored',
+          },
+        },
+        selected_model: 'top-level-model',
+      });
+      const result = resolveActualModel({ summaryPath });
+      expect(result).toBe('top-level-model');
     });
   });
 });
+

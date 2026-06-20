@@ -159,33 +159,75 @@ export class StatusResponseBuilder {
 
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     const metadata = this.readMetadata(runDir);
-    const includePreValidationDiagnostics = job.status === 'failed' && this.shouldIncludePreValidationDiagnostics(metadata, runDir);
-    const includeGoalCheckDiagnostics =
-      job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON;
-    const includeGoalSettingDiagnostics = job.status === 'failed' && this.shouldIncludePhaseDiagnostics(
-      metadata,
-      'goal-setting',
-      GOAL_SETTING_DIAGNOSTIC_FILES,
-      runDir
-    );
-    const includeScoutingDiagnostics = job.status === 'failed' && this.shouldIncludePhaseDiagnostics(
-      metadata,
-      'scouting',
-      SCOUTING_DIAGNOSTIC_FILES,
-      runDir
-    );
-    const artifactFiles = [
-      ...STATUS_KEY_FILES,
-      ...(includePreValidationDiagnostics ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
-      ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
-      ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
-      ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
-    ];
+
+    // Determine which diagnostic files to include based on failure reasons
+    const diagnosticInclusionFlags = this.deriveDiagnosticInclusionFlags(job, response, metadata, runDir);
+
+    // Build the artifact file lists
+    const artifactFiles = this.buildArtifactFileList(diagnosticInclusionFlags);
     const artifactMetadata = getRunArtifactMetadata(job.id, runDir, artifactFiles, true);
     const isAvailable = (fileName: string): boolean =>
       artifactMetadata[fileName]?.exists === true && artifactMetadata[fileName].size > 0;
     const isSmallAvailable = (fileName: string): boolean =>
       isAvailable(fileName) && artifactMetadata[fileName].size <= INLINE_ARTIFACT_LIMIT_BYTES;
+
+    // Populate artifact availability metadata
+    this.populateArtifactAvailability(response, artifactFiles, isAvailable);
+
+    // Load and inline small diagnostic content
+    if (job.status === 'completed' || job.status === 'failed') {
+      this.inlineSmallArtifacts(response, job, runDir, diagnosticInclusionFlags, isSmallAvailable);
+    }
+
+    // Determine diagnostic entry point for failed jobs
+    if (job.status === 'failed') {
+      this.setDiagnosticEntryPoint(response, diagnosticInclusionFlags, isAvailable);
+    }
+  }
+
+  private deriveDiagnosticInclusionFlags(
+    job: Job,
+    response: StatusResponse,
+    metadata: any,
+    runDir: string
+  ): {
+    includePreValidation: boolean;
+    includeGoalSetting: boolean;
+    includeScouting: boolean;
+    includeGoalCheck: boolean;
+  } {
+    return {
+      includePreValidation: job.status === 'failed' && this.shouldIncludePreValidationDiagnostics(metadata, runDir),
+      includeGoalSetting:
+        job.status === 'failed' &&
+        this.shouldIncludePhaseDiagnostics(metadata, 'goal-setting', GOAL_SETTING_DIAGNOSTIC_FILES, runDir),
+      includeScouting:
+        job.status === 'failed' &&
+        this.shouldIncludePhaseDiagnostics(metadata, 'scouting', SCOUTING_DIAGNOSTIC_FILES, runDir),
+      includeGoalCheck: job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON,
+    };
+  }
+
+  private buildArtifactFileList(flags: {
+    includePreValidation: boolean;
+    includeGoalSetting: boolean;
+    includeScouting: boolean;
+    includeGoalCheck: boolean;
+  }): string[] {
+    return [
+      ...STATUS_KEY_FILES,
+      ...(flags.includePreValidation ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
+      ...(flags.includeGoalSetting ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
+      ...(flags.includeScouting ? SCOUTING_DIAGNOSTIC_FILES : []),
+      ...(flags.includeGoalCheck ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
+    ];
+  }
+
+  private populateArtifactAvailability(
+    response: StatusResponse,
+    artifactFiles: string[],
+    isAvailable: (fileName: string) => boolean
+  ): void {
     const keyFileAvailability = STATUS_KEY_FILES.reduce(
       (acc, fileName) => {
         acc[fileName] = isAvailable(fileName);
@@ -194,10 +236,10 @@ export class StatusResponseBuilder {
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
     );
     const diagnosticFiles = [
-      ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
-      ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
-      ...(includePreValidationDiagnostics ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
-      ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
+      ...GOAL_SETTING_DIAGNOSTIC_FILES,
+      ...SCOUTING_DIAGNOSTIC_FILES,
+      ...PRE_VALIDATION_DIAGNOSTIC_FILES,
+      ...GOAL_CHECK_DIAGNOSTIC_FILES,
     ].filter((fileName) => isAvailable(fileName));
 
     response.artifacts = {
@@ -210,72 +252,110 @@ export class StatusResponseBuilder {
       availableFiles: artifactFiles.filter((fileName) => isAvailable(fileName)),
       ...(diagnosticFiles.length > 0 ? { diagnosticFiles } : {}),
     };
+  }
 
-    // Inline diagnostic content for immediate access
+  private inlineSmallArtifacts(
+    response: StatusResponse,
+    job: Job,
+    runDir: string,
+    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    isSmallAvailable: (fileName: string) => boolean
+  ): void {
     try {
-      // Always try to load result-summary.md for terminal jobs
-      const summaryPath = path.join(runDir, 'result-summary.md');
-      const summaryContent = this.readSmallTerminalArtifact(summaryPath);
-      if (summaryContent && summaryContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) { // Max 64 KB inline
-        response.resultSummaryContent = summaryContent;
-      }
-
-      // Load failure.json for failed jobs
+      this.inlineResultSummary(response, runDir);
       if (job.status === 'failed') {
-        const failurePath = path.join(runDir, 'failure.json');
-        const failureContent = this.readSmallTerminalArtifact(failurePath);
-        if (failureContent && failureContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) { // Max 64 KB inline
-          try {
-            response.failureJsonContent = JSON.parse(failureContent);
-          } catch {
-            // If JSON parse fails, skip inlining
-          }
-        }
-
-        if (includeGoalSettingDiagnostics) {
-          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'goal-setting-validation-errors.jsonl', 'goalSetting', isSmallAvailable);
-        }
-        if (includeScoutingDiagnostics) {
-          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'scouting-validation-errors.jsonl', 'scouting', isSmallAvailable);
-        }
-        if (includeGoalCheckDiagnostics) {
-          this.artifactContentLoader.addValidationErrorsContent(response, runDir, 'goal-check-validation-errors.jsonl', 'goalCheck', isSmallAvailable);
-        }
+        this.inlineFailureContent(response, runDir);
+        this.inlinePhaseValidationErrors(response, runDir, flags, isSmallAvailable);
       }
     } catch {
       // Silently skip inlining if any error occurs
     }
+  }
 
-    if (job.status === 'failed') {
-      const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
-        ...(includePreValidationDiagnostics ? [
-          'test-baseline-comparison.json',
-          'pre-validation.log',
-        ] as DiagnosticEntryPoint[] : []),
-        ...(includeGoalSettingDiagnostics ? [
-          'goal-setting-validation-errors.jsonl',
-          'goal-setting-stderr.log',
-        ] as DiagnosticEntryPoint[] : []),
-        ...(includeScoutingDiagnostics ? [
-          'scouting-validation-errors.jsonl',
-          'scouting-stderr.log',
-        ] as DiagnosticEntryPoint[] : []),
-        ...(includeGoalCheckDiagnostics ? [
-          'goal-check-validation-errors.jsonl',
-          'goal-check-stderr.log',
-        ] as DiagnosticEntryPoint[] : []),
-      ];
-      const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = [
-        ...phaseDiagnosticEntryPoints,
-        'failure.json',
-        'analysis.md',
-        'result-summary.md',
-        'stderr.log',
-        'stdout.log',
-      ];
-
-      response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
+  private inlineResultSummary(response: StatusResponse, runDir: string): void {
+    const summaryPath = path.join(runDir, 'result-summary.md');
+    const summaryContent = this.readSmallTerminalArtifact(summaryPath);
+    if (summaryContent && summaryContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) {
+      response.resultSummaryContent = summaryContent;
     }
+  }
+
+  private inlineFailureContent(response: StatusResponse, runDir: string): void {
+    const failurePath = path.join(runDir, 'failure.json');
+    const failureContent = this.readSmallTerminalArtifact(failurePath);
+    if (failureContent && failureContent.length <= INLINE_ARTIFACT_LIMIT_BYTES) {
+      try {
+        response.failureJsonContent = JSON.parse(failureContent);
+      } catch {
+        // If JSON parse fails, skip inlining
+      }
+    }
+  }
+
+  private inlinePhaseValidationErrors(
+    response: StatusResponse,
+    runDir: string,
+    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    isSmallAvailable: (fileName: string) => boolean
+  ): void {
+    if (flags.includeGoalSetting) {
+      this.artifactContentLoader.addValidationErrorsContent(
+        response,
+        runDir,
+        'goal-setting-validation-errors.jsonl',
+        'goalSetting',
+        isSmallAvailable
+      );
+    }
+    if (flags.includeScouting) {
+      this.artifactContentLoader.addValidationErrorsContent(
+        response,
+        runDir,
+        'scouting-validation-errors.jsonl',
+        'scouting',
+        isSmallAvailable
+      );
+    }
+    if (flags.includeGoalCheck) {
+      this.artifactContentLoader.addValidationErrorsContent(
+        response,
+        runDir,
+        'goal-check-validation-errors.jsonl',
+        'goalCheck',
+        isSmallAvailable
+      );
+    }
+  }
+
+  private setDiagnosticEntryPoint(
+    response: StatusResponse,
+    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    isAvailable: (fileName: string) => boolean
+  ): void {
+    const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+      ...(flags.includePreValidation
+        ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])
+        : []),
+      ...(flags.includeGoalSetting
+        ? (['goal-setting-validation-errors.jsonl', 'goal-setting-stderr.log'] as DiagnosticEntryPoint[])
+        : []),
+      ...(flags.includeScouting
+        ? (['scouting-validation-errors.jsonl', 'scouting-stderr.log'] as DiagnosticEntryPoint[])
+        : []),
+      ...(flags.includeGoalCheck
+        ? (['goal-check-validation-errors.jsonl', 'goal-check-stderr.log'] as DiagnosticEntryPoint[])
+        : []),
+    ];
+    const diagnosticEntryPointCandidates: DiagnosticEntryPoint[] = [
+      ...phaseDiagnosticEntryPoints,
+      'failure.json',
+      'analysis.md',
+      'result-summary.md',
+      'stderr.log',
+      'stdout.log',
+    ];
+
+    response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
   }
 
   private shouldIncludePreValidationDiagnostics(metadata: any, runDir: string): boolean {

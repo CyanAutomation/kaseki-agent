@@ -113,30 +113,3 @@ function getEventProperties(
 export function getEventCategories(): EventCategory[] {
   return ['bootstrap', 'preflight', 'validation', 'error', 'other'];
 }
-
-/**
- * Sort events by rank (highest first)
- */
-export function sortEventsByRank(events: CategorizedEvent[]): CategorizedEvent[] {
-  return [...events].sort((a, b) => b.rank - a.rank);
-}
-
-/**
- * Filter events by category
- */
-export function filterEventsByCategory(
-  events: CategorizedEvent[],
-  category: EventCategory
-): CategorizedEvent[] {
-  return events.filter(e => e.category === category);
-}
-
-/**
- * Filter events by severity
- */
-export function filterEventsBySeverity(
-  events: CategorizedEvent[],
-  severity: EventSeverity
-): CategorizedEvent[] {
-  return events.filter(e => e.severity === severity);
-}
