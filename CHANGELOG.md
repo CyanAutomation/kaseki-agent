@@ -4,6 +4,18 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.85.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.84.0...v1.85.0) (2026-06-20)
+
+
+### Bug Fixes
+
+* simplify feature flag derivation logic in deriveFeatureFlags function ([10d9b96](https://github.com/CyanAutomation/kaseki-agent/commit/10d9b96236b3ee058c7fdd48012cf88771948e6c))
+
+
+### Features
+
+* enhance goal-setting artifact to preserve full task prompt and improve placeholder handling ([25026f3](https://github.com/CyanAutomation/kaseki-agent/commit/25026f35fdd2a0ea716b9553c50d707a0b2e7be3))
+
 # [1.84.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.83.2...v1.84.0) (2026-06-20)
 
 
