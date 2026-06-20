@@ -531,7 +531,10 @@ check_gateway_provider_capability() {
   local artifact="${KASEKI_RESULTS_DIR:-/results}/provider-capability.json"
   local output_file
   local tmp_parent="${TMPDIR:-/tmp}"
-  if [ ! -d "$tmp_parent" ] && ! mkdir -p "$tmp_parent" 2>/dev/null; then
+  if [ ! -d "$tmp_parent" ]; then
+    tmp_parent="/tmp"
+  fi
+  if ! mkdir -p "$tmp_parent" 2>/dev/null && [ ! -d "$tmp_parent" ]; then
     tmp_parent="/tmp"
   fi
   output_file="$(TMPDIR="$tmp_parent" mktemp)"
