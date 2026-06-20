@@ -23,6 +23,9 @@ const repoRoot = process.cwd();
 const streamScript = path.join(repoRoot, 'src', 'pi-progress-stream.ts');
 
 function readJsonl(filePath: string): ProgressEvent[] {
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
   return fs
     .readFileSync(filePath, 'utf8')
     .trim()
