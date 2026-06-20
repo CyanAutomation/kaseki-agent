@@ -60,13 +60,17 @@ describe('compilation-validator', () => {
     });
 
     it('should capture both stdout and stderr', () => {
-      // Note: In Node.js execSync, stderr needs shell option or special handling
-      // For now, we just test that the output field is populated
-      const result = runCompilation(tempDir, 'echo test-output', 'test');
+      const result = runCompilation(
+        tempDir,
+        'node -e "process.stdout.write(\'stdout-text\'); process.stderr.write(\'stderr-text\'); process.exit(1)"',
+        'test',
+      );
 
-      expect(result.output).toContain('test-output');
-      expect(result).toHaveProperty('stdout');
-      expect(result).toHaveProperty('stderr');
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('stdout-text');
+      expect(result.stderr).toBe('stderr-text');
+      expect(result.output).toBe('stdout-text\nstderr-text');
     });
 
     it('should handle timeout gracefully', () => {
