@@ -27,7 +27,9 @@ export interface GatewayTestResult {
 }
 
 const GATEWAY_LATENCY_WARNING_MS = 5000;
-const GATEWAY_RESPONSES_PATH_PATTERN = /\/v\d+\/responses\/?$/;
+// Accept both base URLs (/v1) and full response paths (/v1/responses)
+// Pi CLI automatically appends /responses, so either format is valid
+const GATEWAY_VALID_PATH_PATTERN = /\/v\d+(\/responses)?\/?$/;
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -117,12 +119,12 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
   if (!isResponsesEndpoint(parsedUrl)) {
     return {
       status: 'error',
-      detail: `Gateway URL must point to an OpenAI Responses-compatible endpoint such as /v1/responses: ${gatewayUrl}`,
+      detail: `Gateway URL must point to a versioned OpenAI API endpoint (/v1, /v2, etc.): ${gatewayUrl}`,
       gatewayUrl,
       responseTime: 0,
       timestamp,
       authenticationValidated: false,
-      remediation: 'Set LLM_GATEWAY_URL to the same endpoint Pi will call for generation, for example https://gateway.example/v1/responses. A gateway root URL can make /api/gateway-test pass while scouting/coding fails later with 404/502 provider errors.',
+      remediation: 'Set LLM_GATEWAY_URL to a base API endpoint such as https://gateway.example/v1. Pi CLI will automatically append /responses for the OpenAI Responses API. Examples: https://api.openai.com/v1, https://llmgateway.local.xyz/v1',
     };
   }
 
@@ -199,31 +201,26 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
 
 /**
  * Build the appropriate models endpoint for the gateway
- * Different gateways have different paths:
- * - OpenAI-compatible: /v1/models
- * - Ollama: /api/tags
- * - Custom: Try /v1/models first
+ * Handles both base URLs (/v1) and full paths (/v1/responses or /v1/chat/completions)
  */
 function buildModelsEndpoint(baseUrl: string): string {
   const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
-  // If it already has a path component, assume it's correct
-  if (url.includes('/v1/')) {
-    // Replace the last part with /models
-    const parts = url.split('/');
-    if (parts[parts.length - 1] !== 'models') {
-      parts[parts.length - 1] = 'models';
-      return parts.join('/');
-    }
-    return url;
+  // Match base version path: /v1, /v2, /v3, etc., optionally with /responses or other paths
+  const versionMatch = url.match(/\/(v\d+)(?:\/|$)/);
+
+  if (versionMatch) {
+    // Extract the base URL up to and including the version (e.g., https://example.com/v1)
+    const baseWithVersion = url.split(versionMatch[0])[0] + '/' + versionMatch[1];
+    return `${baseWithVersion}/models`;
   }
 
-  // Default to OpenAI-compatible path
+  // Default to OpenAI-compatible path (shouldn't reach here if validation works)
   return `${url}/v1/models`;
 }
 
 export function isResponsesEndpoint(url: URL): boolean {
-  return GATEWAY_RESPONSES_PATH_PATTERN.test(url.pathname);
+  return GATEWAY_VALID_PATH_PATTERN.test(url.pathname);
 }
 
 /**

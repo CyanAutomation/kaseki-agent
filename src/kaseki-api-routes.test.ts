@@ -1084,13 +1084,13 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         expect(apiGatewayCheck).toEqual(
           expect.objectContaining({
             ok: false,
-            detail: expect.stringContaining('/v1/responses')
+            detail: expect.stringContaining('versioned OpenAI API endpoint')
           })
         );
         expect(workerGatewayCheck).toEqual(
           expect.objectContaining({
             ok: false,
-            detail: expect.stringContaining('LLM_GATEWAY_URL must point to an OpenAI Responses endpoint')
+            detail: expect.stringContaining('LLM_GATEWAY_URL must point to a versioned OpenAI API endpoint')
           })
         );
       } finally {

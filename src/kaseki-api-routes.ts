@@ -873,7 +873,7 @@ function checkLLMGatewayKey(): PreflightCheck {
     name: 'llm-gateway-connectivity',
     ok: false,
     detail: `Gateway URL/key connectivity prerequisites are missing: ${missingParts.join(', ')}`,
-    remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-endpoint, e.g. https://gateway.example/v1/responses>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
+    remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-base-endpoint, e.g. https://gateway.example/v1>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
   };
 }
 
@@ -885,7 +885,7 @@ function validateGatewayRuntimeUrl(gatewayUrl: string | undefined): string | und
       return 'LLM_GATEWAY_URL must use HTTP or HTTPS';
     }
     if (!isResponsesEndpoint(parsed)) {
-      return 'LLM_GATEWAY_URL must point to an OpenAI Responses endpoint such as /v1/responses';
+      return 'LLM_GATEWAY_URL must point to a versioned OpenAI API endpoint (/v1, /v2, etc.)';
     }
     return undefined;
   } catch {

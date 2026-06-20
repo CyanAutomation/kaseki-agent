@@ -86,20 +86,20 @@ describe('LLM Gateway Test', () => {
       expect(result.detail).toContain('invalid');
     });
 
-    it('should fail before probing when gateway URL is not the runtime responses endpoint', async () => {
+    it('should fail before probing when gateway URL does not have a version path', async () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       const result = await testGatewayConnectivity();
 
       expect(result.status).toBe('error');
-      expect(result.detail).toContain('/v1/responses');
-      expect(result.remediation).toContain('same endpoint Pi will call');
+      expect(result.detail).toContain('versioned OpenAI API endpoint');
+      expect(result.remediation).toContain('Pi CLI will automatically append /responses');
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('should return ok when gateway is reachable and responsive', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
+    it('should accept base URL format (e.g., /v1) and succeed when reachable', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockResolvedValueOnce({
@@ -113,6 +113,11 @@ describe('LLM Gateway Test', () => {
       expect(result.status).toBe('ok');
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
       expect(result.authenticationValidated).toBe(true);
+      // Verify it converts /v1 to /v1/models for the test probe
+      expect(mockFetch).toHaveBeenCalled();
+      const callArgs = mockFetch.mock.calls[0];
+      expect(callArgs[0]).toBe('https://llmgateway.local.xyz/v1/models');
+      expect(callArgs[1].headers.Authorization).toBe('Bearer test-key');
     });
 
     it('should return error with 401 when authentication fails', async () => {
@@ -269,6 +274,59 @@ describe('LLM Gateway Test', () => {
 
       expect(result.detail).toBeDefined();
       expect(typeof result.detail).toBe('string');
+    });
+
+    it('should accept full response path format (e.g., /v1/responses)', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{"models": []}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.authenticationValidated).toBe(true);
+    });
+
+    it('should accept different API versions (/v2, /v3, etc.)', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://gateway.example/v2';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+    });
+
+    it('should reject URLs without version path', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://gateway.example/api';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('error');
+      expect(result.detail).toContain('versioned');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should reject URLs with version path but wrong structure', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://gateway.example/v1/chat/completions';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('error');
+      expect(result.detail).toContain('versioned');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
