@@ -20,12 +20,20 @@ trap cleanup EXIT
 fail() {
   echo "✗ FAIL: $TEST_NAME: $*" >&2
   if [ -f "$RUN_LOG" ]; then
-    echo "--- kaseki run log ---" >&2
-    tail -120 "$RUN_LOG" >&2 || true
-  fi
-  if [ -f "$RESULTS_DIR/provider-capability.json" ]; then
-    echo "--- provider capability artifact ---" >&2
-    cat "$RESULTS_DIR/provider-capability.json" >&2 || true
+test_provider_capability() {
+    local provider="${1:-anthropic}"
+    local model="${2:-claude-3-sonnet}"
+    
+    # Validate inputs contain only safe characters
+    if [[ ! "$provider" =~ ^[a-zA-Z0-9_-]+$ ]] || [[ ! "$model" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        echo "Error: Invalid provider or model name format"
+        return 1
+    fi
+    
+    echo "Testing provider capability: $provider with model: $model"
+    
+    local response
+    response=$(curl -s -X POST "" \
   fi
   exit 1
 }
