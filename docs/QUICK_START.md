@@ -25,15 +25,15 @@ This will:
 
 When prompted, provide:
 
-1. **OpenRouter API Key** (required for the default provider)
-   - Kaseki defaults to `KASEKI_PROVIDER=openrouter` for deterministic startup on images that do not include the optional gateway Pi extension.
-   - Set `OPENROUTER_API_KEY` or provide the `OPENROUTER_API_KEY_FILE` secret.
-
-2. **LLM Gateway settings** (optional; only for explicit gateway runs)
-   - Set `KASEKI_PROVIDER=gateway` to use the gateway Pi extension.
+1. **LLM Gateway settings** (required for the default provider)
+   - Kaseki defaults to `KASEKI_PROVIDER=gateway` so the LLM Gateway is the primary provider.
    - Provide `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`.
    - Examples: `https://llmgateway.local.xyz/v1/responses`, `https://api.openai.com/v1/chat/completions`, or `http://localhost:11434/v1/chat/completions`.
    - Gateway preflight validates URL/key configuration, worker secret mounting, and Pi provider registration before agent phases run.
+
+2. **OpenRouter API Key** (fallback / secondary provider)
+   - Set `KASEKI_PROVIDER=openrouter` to use OpenRouter instead of the gateway.
+   - Set `OPENROUTER_API_KEY` or provide the `OPENROUTER_API_KEY_FILE` secret.
 
 3. **GitHub App Credentials** (optional)
    - Only needed if you want GitHub-authenticated deployments

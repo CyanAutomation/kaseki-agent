@@ -35,18 +35,18 @@ describe('ConfigManager', () => {
     restoreEnv(originalCleanupEnv);
   });
 
-  test('defaults provider to openrouter', () => {
-    expect(configManager.get('agent.provider')).toBe('openrouter');
+  test('defaults provider to gateway', () => {
+    expect(configManager.get('agent.provider')).toBe('gateway');
   });
 
-  test('honors explicit gateway provider from environment', async () => {
-    process.env.KASEKI_PROVIDER = 'gateway';
+  test('honors explicit openrouter provider from environment', async () => {
+    process.env.KASEKI_PROVIDER = 'openrouter';
 
     try {
       const manager = new ConfigManager();
       await manager.load();
 
-      expect(manager.get('agent.provider')).toBe('gateway');
+      expect(manager.get('agent.provider')).toBe('openrouter');
     } finally {
       clearEnv(['KASEKI_PROVIDER']);
     }
