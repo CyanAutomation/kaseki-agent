@@ -21,57 +21,84 @@ const BASE_ORCHESTRATOR_STAGES = [
   'complete',
 ] as const;
 
-export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
+/**
+ * Derived feature flags for orchestrator stage sequencing.
+ * Encapsulates logic for determining which stages to include.
+ */
+interface OrchestratorFeatureFlags {
+  preAgentValidation: boolean;
+  goalSettingEnabled: boolean;
+  scoutingEnabled: boolean;
+  goalCheckEnabled: boolean;
+  runEvaluationEnabled: boolean;
+  autoLintCleanupEnabled: boolean;
+  dryRun: boolean;
+  githubAppEnabled: boolean;
+}
+
+/**
+ * Derive feature flags based on job request and config.
+ * Encapsulates complex ternary logic for condition derivation.
+ */
+function deriveFeatureFlags(job: Job, config: KasekiApiConfig): OrchestratorFeatureFlags {
   const request = job.request ?? ({} as Job['request']);
   const taskMode = request.taskMode || config.defaultTaskMode;
   const publishMode = request.publishMode || 'pr';
   const startupCheck = request.startupCheck === true;
-  const dryRun = startupCheck;
-  const githubAppEnabled = publishMode !== 'none';
-  const preAgentValidation = taskMode === 'inspect' ? false : true;
-  const goalSettingEnabled = taskMode === 'inspect' ? request.goalSetting?.enabled === true : request.goalSetting?.enabled ?? true;
-  const scoutingEnabled = taskMode === 'inspect' ? false : true;
-  const goalCheckEnabled = taskMode === 'inspect'
-    ? request.goalCheck?.enabled === true
-    : request.goalCheck?.enabled ?? scoutingEnabled;
-  const defaultRunEvaluation = (publishMode === 'pr' || publishMode === 'draft_pr') && taskMode !== 'inspect' && !startupCheck;
-  const runEvaluationEnabled = taskMode === 'inspect'
-    ? request.runEvaluation?.enabled === true
-    : request.runEvaluation?.enabled ?? defaultRunEvaluation;
-  const autoLintCleanup = request.autoLintCleanup ?? request.validation?.autoLintCleanup;
-  const autoLintCleanupEnabled = taskMode === 'inspect' && autoLintCleanup?.enabled === undefined
-    ? false
-    : autoLintCleanup?.enabled ?? true;
+
+  return {
+    dryRun: startupCheck,
+    githubAppEnabled: publishMode !== 'none',
+    preAgentValidation: taskMode !== 'inspect',
+    goalSettingEnabled: taskMode === 'inspect'
+      ? request.goalSetting?.enabled === true
+      : request.goalSetting?.enabled ?? true,
+    scoutingEnabled: taskMode !== 'inspect',
+    goalCheckEnabled: taskMode === 'inspect'
+      ? request.goalCheck?.enabled === true
+      : request.goalCheck?.enabled ?? (taskMode !== 'inspect'),
+    runEvaluationEnabled: taskMode === 'inspect'
+      ? request.runEvaluation?.enabled === true
+      : request.runEvaluation?.enabled ?? ((publishMode === 'pr' || publishMode === 'draft_pr') && taskMode !== 'inspect' && !startupCheck),
+    autoLintCleanupEnabled: taskMode === 'inspect' && (request.autoLintCleanup ?? request.validation?.autoLintCleanup)?.enabled === undefined
+      ? false
+      : (request.autoLintCleanup ?? request.validation?.autoLintCleanup)?.enabled ?? true,
+  };
+}
+
+export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): string[] {
+  const flags = deriveFeatureFlags(job, config);
 
   const stages: string[] = [];
   stages.push('clone repository');
   stages.push('prepare node dependencies');
-  if (preAgentValidation) {
+  if (flags.preAgentValidation) {
+    const request = job.request ?? ({} as Job['request']);
     if ((request.validationCommands ?? request.validation?.commands)?.length) {
       stages.push('baseline validation');
     }
     stages.push('pre-agent validation');
   }
   stages.push('TypeScript pre-check');
-  if (goalSettingEnabled) {
+  if (flags.goalSettingEnabled) {
     stages.push('pi goal-setting agent');
   }
-  if (scoutingEnabled) {
+  if (flags.scoutingEnabled) {
     stages.push('scouting prerequisites check');
     stages.push('pi scouting agent', 'derive allowlist from scouting');
   }
-  if (goalCheckEnabled) {
+  if (flags.goalCheckEnabled) {
     stages.push('goal check');
   }
-  if (runEvaluationEnabled) {
+  if (flags.runEvaluationEnabled) {
     stages.push('run evaluation');
   }
   stages.push('agent setup', 'pi coding agent');
-  if (autoLintCleanupEnabled && !dryRun) {
+  if (flags.autoLintCleanupEnabled && !flags.dryRun) {
     stages.push('auto lint cleanup');
   }
   stages.push('collect agent diff', 'quality checks', 'validation', 'secret scan');
-  if (!dryRun && githubAppEnabled) {
+  if (!flags.dryRun && flags.githubAppEnabled) {
     stages.push('github operations');
   }
   stages.push('complete');

@@ -1762,6 +1762,655 @@ describe('StatusResponseBuilder', () => {
     });
   });
 
+  describe('addArtifactInfo', () => {
+    // Comprehensive test suite for the 180 LOC artifact information builder
+    // Tests file availability detection, inlining, and diagnostic set inclusion
+
+    it('should skip artifact info for queued jobs', () => {
+      const job: Partial<Job> = {
+        id: 'job-queued',
+        status: 'queued',
+        resultDir: '/results/job-queued',
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({});
+
+      const response: StatusResponse = {
+        id: 'job-queued',
+        status: 'queued',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts).toBeUndefined();
+      expect(response.resultSummaryContent).toBeUndefined();
+      expect(response.failureJsonContent).toBeUndefined();
+    });
+
+    it('should skip artifact info for running jobs', () => {
+      const job: Partial<Job> = {
+        id: 'job-running',
+        status: 'running',
+        resultDir: '/results/job-running',
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({});
+
+      const response: StatusResponse = {
+        id: 'job-running',
+        status: 'running',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts).toBeUndefined();
+    });
+
+    it('should detect available key files for completed jobs', () => {
+      const job: Partial<Job> = {
+        id: 'job-completed',
+        status: 'completed',
+        resultDir: '/results/job-completed',
+      };
+
+      const keyFiles = {
+        'metadata.json': { exists: true, size: 1000 },
+        'analysis.md': { exists: true, size: 2000 },
+        'result-summary.md': { exists: true, size: 1500 },
+        'failure.json': { exists: false, size: 0 },
+        'stderr.log': { exists: true, size: 500 },
+        'stdout.log': { exists: true, size: 300 },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(keyFiles);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-completed',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts).toBeDefined();
+      expect(response.artifacts!.metadataJson).toBe(true);
+      expect(response.artifacts!.analysisMd).toBe(true);
+      expect(response.artifacts!.resultSummaryMd).toBe(true);
+      expect(response.artifacts!.failureJson).toBe(false);
+      expect(response.artifacts!.stderrLog).toBe(true);
+      expect(response.artifacts!.stdoutLog).toBe(true);
+    });
+
+    it('should inline result-summary.md when present and under 64KB limit', () => {
+      const job: Partial<Job> = {
+        id: 'job-inline-summary',
+        status: 'completed',
+        resultDir: '/results/job-inline-summary',
+      };
+
+      const summaryContent = '# Summary\n\nThis is a test summary.';
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: summaryContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('result-summary.md')) {
+          return summaryContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-inline-summary',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.resultSummaryContent).toBe(summaryContent);
+    });
+
+    it('should not inline result-summary.md when exceeding 64KB limit', () => {
+      const job: Partial<Job> = {
+        id: 'job-large-summary',
+        status: 'completed',
+        resultDir: '/results/job-large-summary',
+      };
+
+      const largeContent = 'x'.repeat(65537); // Just over 64KB
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: largeContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('result-summary.md')) {
+          return largeContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-large-summary',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.resultSummaryContent).toBeUndefined();
+      expect(response.artifacts!.resultSummaryMd).toBe(true); // File still marked as available
+    });
+
+    it('should inline failure.json for failed jobs when under 64KB limit', () => {
+      const job: Partial<Job> = {
+        id: 'job-failure',
+        status: 'failed',
+        resultDir: '/results/job-failure',
+      };
+
+      const failureJson = {
+        failed_command: 'validation',
+        exit_code: 1,
+        reason: 'Test failure',
+      };
+      const failureContent = JSON.stringify(failureJson);
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'failure.json': { exists: true, size: failureContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return failureContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-failure',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.failureJsonContent).toEqual(failureJson);
+    });
+
+    it('should not inline failure.json for completed jobs', () => {
+      const job: Partial<Job> = {
+        id: 'job-completed-no-failure',
+        status: 'completed',
+        resultDir: '/results/job-completed-no-failure',
+      };
+
+      const failureContent = JSON.stringify({ error: 'should not appear' });
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'failure.json': { exists: true, size: failureContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return failureContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-completed-no-failure',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.failureJsonContent).toBeUndefined();
+    });
+
+    it('should skip inlining failure.json with invalid JSON', () => {
+      const job: Partial<Job> = {
+        id: 'job-invalid-failure-json',
+        status: 'failed',
+        resultDir: '/results/job-invalid-failure-json',
+      };
+
+      const invalidContent = 'not valid json {]';
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'failure.json': { exists: true, size: invalidContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return invalidContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-invalid-failure-json',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.failureJsonContent).toBeUndefined();
+      expect(response.artifacts!.failureJson).toBe(true); // File still marked available
+    });
+
+    it('should include pre-validation diagnostics when pre-validation failed', () => {
+      const job: Partial<Job> = {
+        id: 'job-pre-validation-failed',
+        status: 'failed',
+        resultDir: '/results/job-pre-validation-failed',
+      };
+
+      const metadata = {
+        failed_command: 'pre-agent validation',
+        pre_validation_exit_code: 1,
+      };
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'pre-validation.log': { exists: true, size: 500 },
+        'test-baseline-comparison.json': { exists: true, size: 300 },
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return metadataContent;
+        }
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-pre-validation-failed',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.diagnosticFiles).toContain('pre-validation.log');
+      expect(response.artifacts!.diagnosticFiles).toContain('test-baseline-comparison.json');
+    });
+
+    it('should include goal-setting diagnostics when goal-setting phase failed', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-setting-failed',
+        status: 'failed',
+        resultDir: '/results/job-goal-setting-failed',
+      };
+
+      const metadata = {
+        failed_command: 'pi goal-setting agent',
+        goal_setting_exit_code: 1,
+      };
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'goal-setting-validation-errors.jsonl': { exists: true, size: 200 },
+        'goal-setting-stderr.log': { exists: true, size: 300 },
+        'goal-setting.json': { exists: true, size: 400 },
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return metadataContent;
+        }
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-goal-setting-failed',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.diagnosticFiles).toContain('goal-setting-validation-errors.jsonl');
+      expect(response.artifacts!.diagnosticFiles).toContain('goal-setting-stderr.log');
+    });
+
+    it('should include scouting diagnostics when scouting phase failed', () => {
+      const job: Partial<Job> = {
+        id: 'job-scouting-failed',
+        status: 'failed',
+        resultDir: '/results/job-scouting-failed',
+      };
+
+      const metadata = {
+        failed_command: 'pi scouting agent',
+        scouting_exit_code: 1,
+      };
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'scouting-validation-errors.jsonl': { exists: true, size: 150 },
+        'scouting-stderr.log': { exists: true, size: 250 },
+        'scouting.json': { exists: true, size: 350 },
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return metadataContent;
+        }
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-scouting-failed',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+      expect(response.artifacts!.diagnosticFiles).toContain('scouting-stderr.log');
+    });
+
+    it('should include goal-check diagnostics when goal_check_artifact_invalid', () => {
+      const job: Partial<Job> = {
+        id: 'job-goal-check-invalid',
+        status: 'failed',
+        resultDir: '/results/job-goal-check-invalid',
+      };
+
+      const metadata = {};
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'goal-check-validation-errors.jsonl': { exists: true, size: 100 },
+        'goal-check-stderr.log': { exists: true, size: 200 },
+        'goal-check.json': { exists: true, size: 300 },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-goal-check-invalid',
+        status: 'failed',
+        goalCheckFailureReason: 'goal_check_artifact_invalid',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.diagnosticFiles).toContain('goal-check-validation-errors.jsonl');
+      expect(response.artifacts!.diagnosticFiles).toContain('goal-check-stderr.log');
+      expect(response.artifacts!.diagnosticFiles).toContain('goal-check.json');
+    });
+
+    it('should set diagnosticEntryPoint to failure.json with priority over result-summary.md', () => {
+      const job: Partial<Job> = {
+        id: 'job-entry-point',
+        status: 'failed',
+        resultDir: '/results/job-entry-point',
+      };
+
+      const metadata = {};
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'result-summary.md': { exists: true, size: 500 },
+        'failure.json': { exists: true, size: 300 },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-entry-point',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      // failure.json has priority over result-summary.md
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+
+    it('should set diagnosticEntryPoint to failure.json as fallback', () => {
+      const job: Partial<Job> = {
+        id: 'job-entry-point-fallback',
+        status: 'failed',
+        resultDir: '/results/job-entry-point-fallback',
+      };
+
+      const metadata = {};
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'result-summary.md': { exists: false, size: 0 },
+        'failure.json': { exists: true, size: 300 },
+        'stderr.log': { exists: true, size: 200 },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-entry-point-fallback',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.diagnosticEntryPoint).toBe('failure.json');
+    });
+
+    it('should not set diagnosticEntryPoint for completed jobs', () => {
+      const job: Partial<Job> = {
+        id: 'job-no-entry-point',
+        status: 'completed',
+        resultDir: '/results/job-no-entry-point',
+      };
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: 500 },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-no-entry-point',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.diagnosticEntryPoint).toBeUndefined();
+    });
+
+    it('should handle files at exactly 64KB boundary', () => {
+      const job: Partial<Job> = {
+        id: 'job-boundary',
+        status: 'completed',
+        resultDir: '/results/job-boundary',
+      };
+
+      const boundaryContent = 'x'.repeat(65536); // Exactly 64KB (64 * 1024)
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: boundaryContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('result-summary.md')) {
+          return boundaryContent;
+        }
+        return null;
+      });
+
+      const response: StatusResponse = {
+        id: 'job-boundary',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.resultSummaryContent).toBe(boundaryContent);
+    });
+
+    it('should handle missing artifact cache gracefully', () => {
+      const builderNoCacheOption = new StatusResponseBuilder(mockScheduler, mockConfig);
+
+      const job: Partial<Job> = {
+        id: 'job-no-cache',
+        status: 'completed',
+        resultDir: '/results/job-no-cache',
+      };
+
+      const summaryContent = '# Summary\n\nNo cache version.';
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 100 },
+        'result-summary.md': { exists: true, size: summaryContent.length },
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('result-summary.md') || filePath.includes('failure.json') || filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('result-summary.md')) {
+          return summaryContent;
+        }
+        if (filePath.includes('metadata.json')) {
+          return JSON.stringify({});
+        }
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+
+      const response: StatusResponse = {
+        id: 'job-no-cache',
+        status: 'completed',
+      };
+
+      builderNoCacheOption['addArtifactInfo'](response, job as Job);
+
+      expect(response.resultSummaryContent).toBe(summaryContent);
+    });
+
+    it('should collect multiple diagnostic file types for complex failures', () => {
+      const job: Partial<Job> = {
+        id: 'job-complex-failure',
+        status: 'failed',
+        resultDir: '/results/job-complex-failure',
+      };
+
+      const metadata = {
+        failed_command: 'pi scouting agent',
+        pre_validation_exit_code: 1,
+        goal_setting_exit_code: 0,
+        scouting_exit_code: 86,
+      };
+      const metadataContent = JSON.stringify(metadata);
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: metadataContent.length },
+        'pre-validation.log': { exists: true, size: 100 },
+        'test-baseline-comparison.json': { exists: true, size: 150 },
+        'scouting-validation-errors.jsonl': { exists: true, size: 200 },
+        'scouting-stderr.log': { exists: true, size: 250 },
+        'scouting.json': { exists: true, size: 300 },
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return metadataContent;
+        }
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-complex-failure',
+        status: 'failed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.diagnosticFiles).toContain('pre-validation.log');
+      expect(response.artifacts!.diagnosticFiles).toContain('test-baseline-comparison.json');
+      expect(response.artifacts!.diagnosticFiles).toContain('scouting-validation-errors.jsonl');
+      expect(response.artifacts!.diagnosticFiles).toContain('scouting-stderr.log');
+    });
+
+    it('should skip zero-size files from availability check', () => {
+      const job: Partial<Job> = {
+        id: 'job-zero-size',
+        status: 'completed',
+        resultDir: '/results/job-zero-size',
+      };
+
+      const artifactMetadata = {
+        'metadata.json': { exists: true, size: 0 }, // Zero size
+        'result-summary.md': { exists: true, size: 500 },
+        'failure.json': { exists: true, size: 0 }, // Zero size
+      };
+
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue(artifactMetadata);
+      mockCache.getOrLoad.mockReturnValue(null);
+
+      const response: StatusResponse = {
+        id: 'job-zero-size',
+        status: 'completed',
+      };
+
+      builder['addArtifactInfo'](response, job as Job);
+
+      expect(response.artifacts!.metadataJson).toBe(false); // Zero size treated as unavailable
+      expect(response.artifacts!.resultSummaryMd).toBe(true);
+      expect(response.artifacts!.failureJson).toBe(false); // Zero size treated as unavailable
+    });
+  });
+
   describe('resilience', () => {
     it('should not crash when result directory does not exist', () => {
       const job: Partial<Job> = {

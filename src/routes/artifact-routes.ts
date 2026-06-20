@@ -10,7 +10,7 @@ import { getJobOrRespond } from '../utils/route-helpers';
 import { getRunArtifactMetadata } from '../run-artifact-metadata-cache';
 import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
 import { isTerminalJobStatus, isArtifactAvailable, getArtifactStatus, getArtifactUnavailableReason, getSafeFileStats } from '../lib/artifact-availability';
-import { renderRunEvaluationPayload, getArtifactContentType } from './artifact-content-helpers';
+import { renderRunEvaluationPayload, artifactContentType } from './artifact-content-helpers';
 
 // All artifacts from the metadata registry
 const ALL_ARTIFACT_NAMES = Object.keys(ARTIFACT_METADATA_REGISTRY);
@@ -75,7 +75,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         ) {
           const liveContent = scheduler.getLiveDockerLogTail(job.id, 300);
           if (liveContent) {
-            const contentType = getArtifactContentType(fileName);
+            const contentType = artifactContentType(fileName);
             const response: ArtifactResponse = {
               file: fileName,
               contentType,
@@ -91,7 +91,7 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
         return sendErrorResponse(res, statusCode, 'Bad Request', reason);
       }
 
-      const contentType = getArtifactContentType(fileName);
+      const contentType = artifactContentType(fileName);
 
       // Read from disk for non-terminal jobs; cache only terminal artifacts.
       const content = readArtifactContent(filePath, job.status, cache);
