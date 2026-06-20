@@ -530,7 +530,14 @@ check_gateway_provider_capability() {
 
   local artifact="${KASEKI_RESULTS_DIR:-/results}/provider-capability.json"
   local output_file
-  output_file="$(mktemp)"
+  local tmp_parent="${TMPDIR:-/tmp}"
+  if [ ! -d "$tmp_parent" ]; then
+    tmp_parent="/tmp"
+  fi
+  if ! mkdir -p "$tmp_parent" 2>/dev/null && [ ! -d "$tmp_parent" ]; then
+    tmp_parent="/tmp"
+  fi
+  output_file="$(TMPDIR="$tmp_parent" mktemp)"
   local pi_version
   pi_version="$(pi --version 2>&1 || true)"
   local extensions_dir="${PI_EXTENSIONS_DIR:-}"

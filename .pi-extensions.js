@@ -11,7 +11,7 @@
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
  */
 
-const fs = require('node:fs');
+import fs from 'node:fs';
 
 function resolveGatewayApiKey() {
   if (process.env.LLM_GATEWAY_API_KEY) {
@@ -31,7 +31,7 @@ function resolveGatewayApiKey() {
   return '';
 }
 
-module.exports = function (pi) {
+export default function registerGatewayProvider(pi) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const gatewayApiKey = resolveGatewayApiKey();
 
@@ -55,4 +55,4 @@ module.exports = function (pi) {
       ]
     });
   }
-};
+}

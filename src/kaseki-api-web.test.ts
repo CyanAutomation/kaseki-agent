@@ -473,14 +473,19 @@ describe('kaseki API web console behavior', () => {
 
     const repoInput = document.querySelector<HTMLInputElement>('#repo-url');
     const taskPrompt = document.querySelector<HTMLTextAreaElement>('#task-prompt');
-    if (!repoInput || !taskPrompt) throw new Error('Expected submit inputs to exist');
+    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
+    if (!repoInput || !taskPrompt || !runIdInput) throw new Error('Expected submit inputs to exist');
 
     input(repoInput, 'https://github.com/CyanAutomation/kaseki-agent');
     input(taskPrompt, 'Inspect the repository and report stage naming drift.');
+    runIdInput.value = 'kaseki-old';
     click(document.querySelector('#validate'));
     await waitFor(() => expect(document.querySelector<HTMLButtonElement>('#submit')?.disabled).toBe(false));
 
     click(document.querySelector('#submit'));
+    expect(runIdInput.value).toBe('');
+    expect(document.querySelector('#output-meta')?.textContent).toBe('Status: submitting');
+    expect(document.querySelector('#output-meta')?.textContent).not.toContain('kaseki-old');
     await waitFor(() => expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-777'));
     expect(document.querySelector('#output-meta')?.textContent).toContain('Run ID: kaseki-777');
     expect(document.querySelector('#state')?.textContent).toBe('Run submitted.');
