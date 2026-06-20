@@ -143,7 +143,7 @@ CLI
   set +e
   env PATH="$tmp_root/bin:$PATH" \
     OPENROUTER_API_KEY="test-key-not-used" \
-    LLM_GATEWAY_URL="https://gateway.invalid/v1/responses" \
+    LLM_GATEWAY_URL="https://gateway.invalid/v1" \
     LLM_GATEWAY_API_KEY="test-key-not-used" \
     KASEKI_PROVIDER="openrouter" \
     REPO_URL="https://example.com/repo.git" \

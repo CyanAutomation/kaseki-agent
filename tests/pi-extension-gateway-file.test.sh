@@ -13,7 +13,7 @@ EXTENSION_COPY="$TMP_DIR/llm-gateway.mjs"
 printf '%s\n' 'file-backed-gateway-key' > "$KEY_FILE"
 cp "$PROJECT_ROOT/.pi-extensions.js" "$EXTENSION_COPY"
 
-LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
+LLM_GATEWAY_URL="https://gateway.example.invalid/v1" \
 LLM_GATEWAY_API_KEY_FILE="$KEY_FILE" \
 node - "$EXTENSION_COPY" <<'NODE'
 const extensionPath = process.argv[2];

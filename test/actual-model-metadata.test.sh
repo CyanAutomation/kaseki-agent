@@ -126,7 +126,7 @@ GIT
   chmod +x "$fake_bin"/*
 
   set +e
-  env PATH="$fake_bin:$PATH" KASEKI_APP_LIB_DIR="$fake_lib" OPENROUTER_API_KEY="test" GITHUB_APP_ENABLED=0 LLM_GATEWAY_URL="https://example.invalid/v1/responses" LLM_GATEWAY_API_KEY="test" REPO_URL="https://example.com/repo.git" GIT_REF="main" TASK_PROMPT="test" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 KASEKI_SCOUTING=0 KASEKI_GOAL_CHECK=0 KASEKI_HASHLINE_EDITS=0 \
+  env PATH="$fake_bin:$PATH" KASEKI_APP_LIB_DIR="$fake_lib" OPENROUTER_API_KEY="test" GITHUB_APP_ENABLED=0 LLM_GATEWAY_URL="https://example.invalid/v1" LLM_GATEWAY_API_KEY="test" REPO_URL="https://example.com/repo.git" GIT_REF="main" TASK_PROMPT="test" KASEKI_VALIDATION_COMMANDS=":" KASEKI_ALLOW_EMPTY_DIFF=1 KASEKI_SCOUTING=0 KASEKI_GOAL_CHECK=0 KASEKI_HASHLINE_EDITS=0 \
     bash "$REPO_ROOT/kaseki-agent.sh" >"$tmp_root/stdout.log" 2>"$tmp_root/stderr.log"
   code=$?
   set -e

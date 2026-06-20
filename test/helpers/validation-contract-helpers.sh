@@ -192,7 +192,7 @@ run_kaseki_agent_for_validation() {
     REPO_URL="$fake_repo" \
     GIT_REF="main" \
     OPENROUTER_API_KEY="test-key-not-used" \
-    LLM_GATEWAY_URL="http://127.0.0.1:9/v1/responses" \
+    LLM_GATEWAY_URL="http://127.0.0.1:9/v1" \
     LLM_GATEWAY_API_KEY="test-key-not-used" \
     GITHUB_APP_ENABLED=0 \
     KASEKI_DRY_RUN=1 \

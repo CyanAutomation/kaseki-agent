@@ -51,7 +51,7 @@ set +e
 docker run --rm \
   --entrypoint /bin/bash \
   -e KASEKI_PROVIDER=gateway \
-  -e LLM_GATEWAY_URL=https://gateway.example.invalid/v1/responses \
+  -e LLM_GATEWAY_URL=https://gateway.example.invalid/v1 \
   -e LLM_GATEWAY_API_KEY_FILE=/secrets/llm_gateway_api_key \
   -v "$KEY_FILE:/secrets/llm_gateway_api_key:ro" \
   "$IMAGE_TAG" \

@@ -5,7 +5,9 @@
  * from environment variables.
  *
  * Configuration Environment Variables:
- * - LLM_GATEWAY_URL: Gateway API endpoint (required, e.g., https://llmgateway.local.xyz/v1/responses)
+ * - LLM_GATEWAY_URL: Gateway API endpoint (required; base URL only, e.g., https://llmgateway.local.xyz/v1).
+ *   NOTE: Pi CLI automatically appends /responses for the openai-responses API type.
+ *   So LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1 results in requests to /v1/responses.
  * - LLM_GATEWAY_API_KEY: API key literal (optional, prefer file)
  * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key (default: ~/.kaseki/secrets.json)
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
