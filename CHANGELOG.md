@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.82.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.81.0...v1.82.0) (2026-06-20)
+
+
+### Features
+
+* enhance task progress calculation to prevent regression from late streaming events ([7f1e6b3](https://github.com/CyanAutomation/kaseki-agent/commit/7f1e6b36f6a33562254ad3532c626d2888060273))
+
 # [1.81.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.10...v1.81.0) (2026-06-20)
 
 
