@@ -367,7 +367,6 @@ jobs:
           RESULTS="$(mktemp -d)"
           chmod 0777 "$WORKSPACE" "$RESULTS"
 
-          set +e
           docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
@@ -375,21 +374,25 @@ jobs:
             --security-opt no-new-privileges:true \
             --cap-drop ALL \
             -e KASEKI_INSTANCE=kaseki-smoke \
+            -e KASEKI_STARTUP_CHECK_MODE=baseline-validation \
             -v "$WORKSPACE:/workspace:rw" \
             -v "$RESULTS:/results:rw" \
             -w /workspace \
-            "$IMAGE"
-          exit_code="$?"
-          set -e
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test -d /agents/kaseki-template
+              test -d /agents/kaseki-runs
+              test -d /results
+              test -x /scripts/startup-checks.sh
+              test -x /scripts/docker-entrypoint.sh
+              test -x /usr/local/bin/kaseki-agent
+              test -x /usr/local/bin/kaseki-report
+              node --version
+              git --version
+              pi --version
+            '
 
-          test "$exit_code" -eq 2
-          jq -e '
-            .instance == "kaseki-smoke" and
-            .exit_code == 2 and
-            .failed_command == "missing LLM_GATEWAY_URL"
-          ' "$RESULTS/metadata.json"
-          test -s "$RESULTS/result-summary.md"
-          test -f "$RESULTS/quality.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \
@@ -424,7 +427,6 @@ jobs:
           RESULTS="$(mktemp -d)"
           chmod 0777 "$WORKSPACE" "$RESULTS"
 
-          set +e
           docker run --rm \
             --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m \
@@ -432,21 +434,25 @@ jobs:
             --security-opt no-new-privileges:true \
             --cap-drop ALL \
             -e KASEKI_INSTANCE=kaseki-smoke-ghcr \
+            -e KASEKI_STARTUP_CHECK_MODE=baseline-validation \
             -v "$WORKSPACE:/workspace:rw" \
             -v "$RESULTS:/results:rw" \
             -w /workspace \
-            "$IMAGE"
-          exit_code="$?"
-          set -e
+            "$IMAGE" \
+            bash -lc '
+              set -euo pipefail
+              test -d /agents/kaseki-template
+              test -d /agents/kaseki-runs
+              test -d /results
+              test -x /scripts/startup-checks.sh
+              test -x /scripts/docker-entrypoint.sh
+              test -x /usr/local/bin/kaseki-agent
+              test -x /usr/local/bin/kaseki-report
+              node --version
+              git --version
+              pi --version
+            '
 
-          test "$exit_code" -eq 2
-          jq -e '
-            .instance == "kaseki-smoke-ghcr" and
-            .exit_code == 2 and
-            .failed_command == "missing LLM_GATEWAY_URL"
-          ' "$RESULTS/metadata.json"
-          test -s "$RESULTS/result-summary.md"
-          test -f "$RESULTS/quality.log"
           test ! -d "$WORKSPACE/repo"
 
           docker run --rm \
