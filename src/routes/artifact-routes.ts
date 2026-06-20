@@ -156,12 +156,12 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     }
 
     const runDir = job.resultDir || path.join(config.resultsDir, job.id);
-    const metadata = getRunArtifactMetadata(job.id, runDir, ALL_ARTIFACT_NAMES, isTerminalJobStatus(job.status));
+    const artifactMetadata = getRunArtifactMetadata(job.id, runDir, ALL_ARTIFACT_NAMES, isTerminalJobStatus(job.status));
 
     // Build comprehensive artifact list with metadata
     const artifacts = ALL_ARTIFACT_NAMES.map((fileName) => {
       const artifactMeta = ARTIFACT_METADATA_REGISTRY[fileName];
-      const fileMeta = metadata[fileName] ?? { exists: false, size: 0 };
+      const fileMeta = artifactMetadata[fileName] ?? { exists: false, size: 0 };
       const liveStdout =
         job.status === 'running' &&
         fileName === 'stdout.log' &&
@@ -185,10 +185,25 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
       };
     });
 
-    // Determine recommended triage order (by triageOrder, then by availability)
+    const runMetadata = readArtifactMetadata(runDir);
+    const preAgentValidationFailed =
+      String(runMetadata?.failed_command ?? '').includes('pre-agent validation') ||
+      Number(runMetadata?.pre_validation_exit_code ?? 0) !== 0;
+
+    const triageRank = (artifactName: string, fallback: number | undefined): number => {
+      if (preAgentValidationFailed) {
+        if (artifactName === 'test-baseline-comparison.json') return 0;
+        if (artifactName === 'pre-validation.log') return 1;
+        if (artifactName === 'failure.json') return 2;
+        if (artifactName === 'result-summary.md') return 3;
+      }
+      return fallback ?? 999;
+    };
+
+    // Determine recommended triage order (failure-aware triageOrder, then availability)
     const recommended = artifacts
       .filter((a) => a.available)
-      .sort((a, b) => (a.triageOrder ?? 999) - (b.triageOrder ?? 999))
+      .sort((a, b) => triageRank(a.name, a.triageOrder) - triageRank(b.name, b.triageOrder))
       .slice(0, 5) // Top 5 for quick triage
       .map((a) => a.name);
 
@@ -206,4 +221,16 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
   });
 
   return router;
+}
+
+function readArtifactMetadata(runDir: string): Record<string, unknown> {
+  try {
+    const metadataPath = path.join(runDir, 'metadata.json');
+    if (fs.existsSync(metadataPath)) {
+      return JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<string, unknown>;
+    }
+  } catch {
+    // Keep artifact listing resilient when metadata is malformed.
+  }
+  return {};
 }

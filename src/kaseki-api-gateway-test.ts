@@ -23,7 +23,10 @@ export interface GatewayTestResult {
   authenticationValidated: boolean;
   remediation?: string;
   httpStatus?: number;
+  warning?: string;
 }
+
+const GATEWAY_LATENCY_WARNING_MS = 5000;
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -145,6 +148,9 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
     }
 
     // Successful response
+    const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
+      ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
+      : undefined;
     return {
       status: 'ok',
       detail: `Gateway is responsive (${responseTime}ms)`,
@@ -152,6 +158,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       responseTime,
       timestamp,
       authenticationValidated: true,
+      ...(warning ? { warning } : {}),
     };
   } catch (error) {
     const responseTime = Math.round(performance.now() - startTime);
@@ -236,5 +243,6 @@ export function formatGatewayTestResponse(result: GatewayTestResult): object {
     authenticationValidated: result.authenticationValidated,
     remediation: result.remediation,
     httpStatus: result.httpStatus,
+    warning: result.warning,
   };
 }
