@@ -14,7 +14,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
 | `KASEKI_MODEL` | `auto` | string | LLM model identifier (e.g., `auto`, `gpt-4-turbo`, or gateway's native model IDs) |
-| `KASEKI_PROVIDER` | `gateway` | string | Pi provider to use. The LLM Gateway is primary by default; set `KASEKI_PROVIDER=openrouter` to use OpenRouter as the fallback/secondary provider. |
+| `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. Options: `gateway` (default, uses LLM Gateway), `openrouter` (uses OpenRouter). OpenRouter is always validated during startup as a fallback option. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
@@ -23,7 +23,46 @@ Complete reference for all environment variables used by kaseki-agent.
 
 ### Provider Selection
 
-Kaseki defaults to `KASEKI_PROVIDER=gateway` so runs primarily use the LLM Gateway. Configure `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY`/`LLM_GATEWAY_API_KEY_FILE` for the gateway path; the worker preflight checks gateway URL/key configuration, worker secret mounting, and Pi provider registration before scouting, goal-setting, or coding phases start. Set `KASEKI_PROVIDER=openrouter` with `OPENROUTER_API_KEY`/`OPENROUTER_API_KEY_FILE` to use OpenRouter as the fallback or secondary provider.
+**Kaseki uses a two-tier LLM provider system:**
+
+- **Primary Provider** (selected via `KASEKI_PROVIDER`):
+  - `gateway` (default): Uses LLM Gateway for all agent runs
+  - `openrouter`: Uses OpenRouter for all agent runs
+  
+- **Fallback Provider** (always available):
+  - OpenRouter is always validated during startup as a fallback, regardless of primary provider selection
+  - This ensures you have a backup execution path if the primary provider has issues
+
+**Startup Behavior:**
+
+- On startup, kaseki-agent logs the active LLM provider (e.g., "Active LLM provider: gateway")
+- Checks are organized by category: primary provider, fallback provider (OpenRouter), GitHub integration
+- If you've configured both providers, you'll see validation output for both (primary section + fallback section)
+- If you have unused provider secrets mounted (e.g., OpenRouter key configured but gateway is primary), a warning will appear during startup
+
+**Configuration Guide:**
+
+1. **Using Gateway (recommended, default):**
+
+   ```bash
+   export KASEKI_PROVIDER=gateway
+   export LLM_GATEWAY_URL=https://gateway.example.com/v1
+   export LLM_GATEWAY_API_KEY_FILE=/path/to/key
+   # Optional: configure OpenRouter as fallback
+   export OPENROUTER_API_KEY_FILE=/path/to/openrouter/key
+   ```
+
+2. **Using OpenRouter:**
+
+   ```bash
+   export KASEKI_PROVIDER=openrouter
+   export OPENROUTER_API_KEY_FILE=/path/to/key
+   # Optional: keep gateway configured for fallback (logs will warn about unused if not set)
+   export LLM_GATEWAY_URL=https://gateway.example.com/v1
+   export LLM_GATEWAY_API_KEY_FILE=/path/to/gateway/key
+   ```
+
+For the gateway path, worker preflight checks verify gateway URL/key configuration, worker secret mounting, and Pi provider registration before agent phases start. For OpenRouter, the API key availability is confirmed.
 
 ### API Keys & Credentials
 
