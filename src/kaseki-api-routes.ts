@@ -847,7 +847,7 @@ function checkLLMGatewayKey(): PreflightCheck {
     return {
       name: 'llm-gateway-connectivity',
       ok: true,
-      detail: `LLM Gateway URL/key connectivity is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}. Set KASEKI_PROVIDER=gateway to enable gateway preflight checks.`,
+      detail: `LLM Gateway URL/key connectivity is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}. Set KASEKI_PROVIDER=gateway to use the primary gateway provider.`,
     };
   }
 
@@ -876,7 +876,7 @@ function checkLLMGatewayKey(): PreflightCheck {
 }
 
 function isGatewayProviderEnabled(): boolean {
-  return process.env.KASEKI_PROVIDER === 'gateway';
+  return (process.env.KASEKI_PROVIDER || 'gateway') === 'gateway';
 }
 
 function checkWorkerGatewayConfig(): PreflightCheck {
@@ -884,7 +884,7 @@ function checkWorkerGatewayConfig(): PreflightCheck {
     return {
       name: 'worker-gateway-secret-mount',
       ok: true,
-      detail: `Worker gateway secret mounting is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}.`,
+      detail: `Worker gateway secret mounting is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}.`,
     };
   }
 
@@ -937,7 +937,7 @@ function checkGatewayTestSecretConsistency(): PreflightCheck {
     return {
       name: 'gateway-api-secret-consistency',
       ok: true,
-      detail: `Gateway API secret consistency is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}.`,
+      detail: `Gateway API secret consistency is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}.`,
     };
   }
 
@@ -1218,7 +1218,7 @@ function checkWorkerSmokeTest(
         '-e',
         'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
         '-e',
-        `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}`,
+        `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}`,
         '-e',
         `LLM_GATEWAY_URL=${process.env.LLM_GATEWAY_URL || ''}`,
         '-e',

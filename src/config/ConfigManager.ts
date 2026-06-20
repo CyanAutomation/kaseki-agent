@@ -135,7 +135,7 @@ const DEFAULT_CONFIG: Config = {
   },
   agent: {
     model: 'openrouter/free',
-    provider: 'openrouter',
+    provider: 'gateway',
     timeout_seconds: 10800,
     guardrails: true,
   },
