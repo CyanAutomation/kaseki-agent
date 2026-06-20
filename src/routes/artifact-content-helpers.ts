@@ -137,10 +137,3 @@ export function renderRunEvaluationPayload(parsed: Record<string, unknown>, incl
   };
 }
 
-/**
- * Determine MIME content type for an artifact.
- * @internal
- */
-export function getArtifactContentType(fileName: string): string {
-  return artifactContentType(fileName);
-}

@@ -10,7 +10,6 @@
 
 import {
   renderRunEvaluationPayload,
-  getArtifactContentType,
   extractOverallAssessment,
   extractProblems,
   extractSolutions,
@@ -23,37 +22,37 @@ import {
 } from './artifact-content-helpers';
 
 describe('artifact-content-helpers', () => {
-  // ===== getArtifactContentType Tests =====
-  describe('getArtifactContentType', () => {
+  // ===== artifactContentType Tests =====
+  describe('artifactContentType', () => {
     test('should return content type from metadata registry', () => {
       // Mock metadata - test with a known artifact
-      const contentType = getArtifactContentType('metadata.json');
+      const contentType = artifactContentType('metadata.json');
       expect(contentType).toBeDefined();
       expect(typeof contentType).toBe('string');
     });
 
     test('should return application/json for .json files', () => {
-      const contentType = getArtifactContentType('unknown.json');
+      const contentType = artifactContentType('unknown.json');
       expect(contentType).toBe('application/json');
     });
 
     test('should return text/markdown for .md files', () => {
-      const contentType = getArtifactContentType('README.md');
+      const contentType = artifactContentType('README.md');
       expect(contentType).toBe('text/markdown');
     });
 
     test('should return application/x-jsonl for .jsonl files', () => {
-      const contentType = getArtifactContentType('events.jsonl');
+      const contentType = artifactContentType('events.jsonl');
       expect(contentType).toBe('application/x-jsonl');
     });
 
     test('should return text/tab-separated-values for .tsv files', () => {
-      const contentType = getArtifactContentType('data.tsv');
+      const contentType = artifactContentType('data.tsv');
       expect(contentType).toBe('text/tab-separated-values');
     });
 
     test('should return text/plain as fallback', () => {
-      const contentType = getArtifactContentType('unknown.txt');
+      const contentType = artifactContentType('unknown.txt');
       expect(contentType).toBe('text/plain');
     });
   });
