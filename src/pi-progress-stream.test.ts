@@ -37,10 +37,12 @@ function readJsonl(filePath: string): ProgressEvent[] {
 async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = {}): Promise<{
   events: ProgressEvent[];
   log: string;
+  stdout: string;
 }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-progress-stream-'));
   const progressJsonlPath = path.join(tmpDir, 'progress.jsonl');
   const progressLogPath = path.join(tmpDir, 'progress.log');
+  let stdout = '';
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -59,6 +61,10 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
       );
 
       let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
       child.stderr.on('data', (chunk: Buffer) => {
         stderr += chunk.toString();
       });
@@ -81,6 +87,7 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
     return {
       events: readJsonl(progressJsonlPath),
       log: fs.existsSync(progressLogPath) ? fs.readFileSync(progressLogPath, 'utf8') : '',
+      stdout,
     };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -134,6 +141,64 @@ describe('pi-progress-stream executable', () => {
       },
       toolStartCount: 3,
       toolEndCount: 1,
+    });
+  });
+
+  it('emits API-visible progress summaries for representative tool and progress events', async () => {
+    const thinkingEvents = Array.from({ length: 15 }, (_, index) =>
+      JSON.stringify({
+        type: 'message_update',
+        message: {
+          content: `Investigating authentication middleware and route validation step ${index + 1}`,
+        },
+      })
+    );
+
+    const { events, stdout } = await runProgressStream(
+      [
+        JSON.stringify({ type: 'agent_start' }),
+        JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
+        JSON.stringify({ type: 'toolcall_start', call: { name: 'bash' } }),
+        JSON.stringify({ type: 'tool_execution_end' }),
+        ...thinkingEvents,
+        JSON.stringify({ type: 'auto_retry_start' }),
+        JSON.stringify({ type: 'auto_retry_end' }),
+        JSON.stringify({ type: 'agent_end' }),
+      ],
+      { KASEKI_STREAM_PROGRESS: '1' }
+    );
+
+    expect(stdout).toContain('[progress] pi tool batch: [tools] read_file (1x), bash (1x)');
+    expect(stdout).toContain('[progress] pi agent: agent finished');
+
+    const messageSummary = events.find(
+      (event) => event.stage === 'pi agent' && event.type === 'message_update'
+    );
+    expect(messageSummary?.message).toContain('Validation step 15');
+
+    const batchEvent = events.find((event) => event.stage === 'pi tool batch');
+    expect(batchEvent).toMatchObject({
+      message: expect.stringContaining('[tools] read_file (1x), bash (1x)'),
+      toolBatchSummary: {
+        read_file: 1,
+        bash: 1,
+      },
+    });
+
+    expect(events.at(-1)).toMatchObject({
+      counts: {
+        agent_start: 1,
+        tool_execution_start: 1,
+        toolcall_start: 1,
+        tool_execution_end: 1,
+        message_update: 15,
+        auto_retry_start: 1,
+        auto_retry_end: 1,
+        agent_end: 1,
+      },
+      toolStartCount: 2,
+      toolEndCount: 1,
+      messageUpdateCount: 15,
     });
   });
 
