@@ -59,13 +59,15 @@ export function runCompilation(
       timestamp: Date.now(),
     };
   } catch (error: any) {
-    const stderr = error.stderr ? error.stderr.toString() : '';
     const stdout = error.stdout ? error.stdout.toString() : '';
+    const isTimeout = error.code === 'ETIMEDOUT';
+    const fallbackStderr = isTimeout ? error.message : '';
+    const stderr = error.stderr ? error.stderr.toString() : fallbackStderr;
     const output = stdout + (stderr ? '\n' + stderr : '');
 
     return {
       success: false,
-      exitCode: error.status ?? 1,
+      exitCode: isTimeout ? 124 : (error.status ?? 1),
       command: buildCommand,
       language,
       duration: Date.now() - start,

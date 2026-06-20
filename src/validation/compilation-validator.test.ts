@@ -70,11 +70,15 @@ describe('compilation-validator', () => {
     });
 
     it('should handle timeout gracefully', () => {
-      // Note: In a real test, this would timeout; here we just verify the timeout parameter is accepted
-      const result = runCompilation(tempDir, 'sleep 0', 'test', 1000);
+      const result = runCompilation(tempDir, 'node -e "setTimeout(() => {}, 1000)"', 'test', 10);
 
-      expect(result).toHaveProperty('duration');
-      expect(result).toHaveProperty('timestamp');
+      expect(result.success).toBe(false);
+      expect(result.exitCode).toBe(124);
+      expect(result.output).toContain('ETIMEDOUT');
+      expect(result.stderr).toContain('ETIMEDOUT');
+      expect(result.duration).toBeGreaterThanOrEqual(0);
+      expect(result.timestamp).toBeLessThanOrEqual(Date.now());
+      expect(isCompilationFailureCritical(result)).toBe(false);
     });
 
     it('should work in specified directory', () => {
