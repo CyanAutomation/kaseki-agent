@@ -7,15 +7,30 @@ import {
 } from './webhook-event-builder';
 import { WebhookEventType } from '../kaseki-api-types';
 
+const EXPECTED_TIMESTAMP = '2026-05-06T12:34:56.789Z';
+
+const withFixedSystemTime = <T>(callback: () => T): T => {
+  jest.useFakeTimers();
+  jest.setSystemTime(new Date(EXPECTED_TIMESTAMP));
+
+  try {
+    return callback();
+  } finally {
+    jest.useRealTimers();
+  }
+};
+
 describe('webhook-event-builder', () => {
   describe('createJobSubmittedEvent', () => {
-    it('should create a JOB_SUBMITTED event', () => {
-      const event = createJobSubmittedEvent('job-123');
+    it('should build the queued JOB_SUBMITTED webhook contract', () => {
+      withFixedSystemTime(() => {
+        const event = createJobSubmittedEvent('job-123');
 
-      expect(event.eventType).toBe(WebhookEventType.JOB_SUBMITTED);
-      expect(event.jobId).toBe('job-123');
-      expect(event.data.status).toBe('queued');
-      expect(event.timestamp).toBeTruthy();
+        expect(event.eventType).toBe(WebhookEventType.JOB_SUBMITTED);
+        expect(event.jobId).toBe('job-123');
+        expect(event.data.status).toBe('queued');
+        expect(event.timestamp).toBe(EXPECTED_TIMESTAMP);
+      });
     });
   });
 
@@ -113,14 +128,8 @@ describe('webhook-event-builder', () => {
 
   describe('Event payload structure', () => {
     it('should have consistent timestamp format', () => {
-      const expectedTimestamp = '2026-05-06T12:34:56.789Z';
-
-      jest.useFakeTimers();
-      jest.setSystemTime(new Date(expectedTimestamp));
-
-      try {
+      withFixedSystemTime(() => {
         const events = [
-          createJobSubmittedEvent('job-1'),
           createJobStartedEvent('job-2'),
           createJobCompletedEvent('job-3'),
           createJobCancelledEvent('job-4'),
@@ -129,15 +138,13 @@ describe('webhook-event-builder', () => {
 
         for (const event of events) {
           // Webhook timestamps are UTC ISO 8601 strings with millisecond precision.
-          expect(event.timestamp).toBe(expectedTimestamp);
+          expect(event.timestamp).toBe(EXPECTED_TIMESTAMP);
           expect(event.timestamp).toMatch(
             /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/
           );
           expect(new Date(event.timestamp).toISOString()).toBe(event.timestamp);
         }
-      } finally {
-        jest.useRealTimers();
-      }
+      });
     });
   });
 });
