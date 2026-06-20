@@ -372,7 +372,7 @@ export function writeIfEmptyAtomic(
  */
 export function logWriteError(operation: string, filePath: string, error: unknown, jobId?: string): void {
   const jobContext = jobId ? ` (job: ${jobId})` : '';
-  const errno = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+  const errno = error && typeof error === 'object' ? (error as NodeJS.ErrnoException).code : undefined;
   const errorInfo = error instanceof Error ? error.message : String(error);
   const errnoInfo = errno ? ` [${errno}]` : '';
   console.error(`[FailureArtifactWriter] Failed to ${operation} ${filePath}${jobContext}: ${errorInfo}`);
