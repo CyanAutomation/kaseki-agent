@@ -42,45 +42,49 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
   const progressJsonlPath = path.join(tmpDir, 'progress.jsonl');
   const progressLogPath = path.join(tmpDir, 'progress.log');
 
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ['--import', 'tsx', streamScript, progressJsonlPath, progressLogPath],
-      {
-        cwd: repoRoot,
-        env: {
-          ...process.env,
-          KASEKI_STREAM_PROGRESS: '0',
-          ...env,
-        },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }
-    );
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        ['--import', 'tsx', streamScript, progressJsonlPath, progressLogPath],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            KASEKI_STREAM_PROGRESS: '0',
+            ...env,
+          },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
 
-    let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      child.on('error', reject);
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`pi-progress-stream exited with ${code}: ${stderr}`));
+        }
+      });
+
+      for (const line of inputLines) {
+        child.stdin.write(`${line}\n`);
+      }
+      child.stdin.end();
     });
 
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`pi-progress-stream exited with ${code}: ${stderr}`));
-      }
-    });
-
-    for (const line of inputLines) {
-      child.stdin.write(`${line}\n`);
-    }
-    child.stdin.end();
-  });
-
-  return {
-    events: readJsonl(progressJsonlPath),
-    log: fs.readFileSync(progressLogPath, 'utf8'),
-  };
+    return {
+      events: readJsonl(progressJsonlPath),
+      log: fs.existsSync(progressLogPath) ? fs.readFileSync(progressLogPath, 'utf8') : '',
+    };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 describe('pi-progress-stream executable', () => {
