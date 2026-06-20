@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.83.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.83.0...v1.83.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* harden gateway preflight and run diagnostics ([05f59d3](https://github.com/CyanAutomation/kaseki-agent/commit/05f59d3f79016c4b67c2c665195a9ac2842e35ed))
+
 # [1.83.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.82.0...v1.83.0) (2026-06-20)
 
 
