@@ -3,8 +3,9 @@ import { RunEvaluationRenderedResponse } from '../kaseki-api-types';
 
 /**
  * Determine MIME content type for an artifact based on file name.
+ * @internal exported for testing
  */
-function artifactContentType(fileName: string): string {
+export function artifactContentType(fileName: string): string {
   const metadata = ARTIFACT_METADATA_REGISTRY[fileName];
   if (metadata) {
     return metadata.contentType;
@@ -19,8 +20,9 @@ function artifactContentType(fileName: string): string {
 
 /**
  * Convert a value to a string array, handling multiple input types.
+ * @internal exported for testing
  */
-function asStringArray(value: unknown): string[] {
+export function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((entry) => String(entry));
   }
@@ -32,8 +34,9 @@ function asStringArray(value: unknown): string[] {
 
 /**
  * Convert a value to an array of objects, handling type coercion.
+ * @internal exported for testing
  */
-function asObjectArray(value: unknown): Array<Record<string, unknown>> {
+export function asObjectArray(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : { value: entry }));
 }
@@ -78,8 +81,9 @@ export function extractHumanReviewRecommendations(parsed: Record<string, unknown
 /**
  * Extract improvement opportunities from parsed evaluation.
  * Handles variants: opportunities, kaseki_improvement_opportunities, improvement_opportunities, improvementOpportunities.
+ * @internal exported for testing
  */
-function extractOpportunities(parsed: Record<string, unknown>): Array<Record<string, unknown>> {
+export function extractOpportunities(parsed: Record<string, unknown>): Array<Record<string, unknown>> {
   return asObjectArray(
     parsed.opportunities ?? parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities
   );
@@ -87,8 +91,9 @@ function extractOpportunities(parsed: Record<string, unknown>): Array<Record<str
 
 /**
  * Build markdown content from evaluation sections.
+ * @internal exported for testing
  */
-function buildMarkdownContent(sections: { summary: string[]; problem: string[]; solution: string[]; humanReview: string[] }): string | undefined {
+export function buildMarkdownContent(sections: { summary: string[]; problem: string[]; solution: string[]; humanReview: string[] }): string | undefined {
   const parts = [
     sections.summary.length ? `## Summary\n${sections.summary.map((line) => `- ${line}`).join('\n')}` : '',
     sections.problem.length ? `## Problem\n${sections.problem.map((line) => `- ${line}`).join('\n')}` : '',

@@ -10,7 +10,7 @@ import * as path from 'path';
 import { Job, StatusResponse } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { JobScheduler } from '../job-scheduler';
-import { deriveOrchestratorStages } from './status-response-builder';
+import { deriveOrchestratorStages } from './orchestrator-stages';
 
 type ProgressEventLike = {
   stage?: unknown;

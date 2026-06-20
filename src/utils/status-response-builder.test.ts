@@ -1,5 +1,6 @@
 import * as fs from 'fs';
-import { deriveOrchestratorStages, StatusResponseBuilder } from './status-response-builder';
+import { StatusResponseBuilder } from './status-response-builder';
+import { deriveOrchestratorStages } from './orchestrator-stages';
 import { JobScheduler } from '../job-scheduler';
 import { KasekiApiConfig } from '../kaseki-api-config';
 import { ResultCache } from '../result-cache';

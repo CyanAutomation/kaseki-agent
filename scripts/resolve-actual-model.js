@@ -2,7 +2,10 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export function clean(value) {
+/**
+ * @private
+ */
+function clean(value) {
   if (value === undefined || value === null) return '';
   const model = String(value).trim();
   if (!model) return '';
@@ -12,7 +15,10 @@ export function clean(value) {
   return model;
 }
 
-export function modelFromEventStream(eventsPath) {
+/**
+ * @private
+ */
+function modelFromEventStream(eventsPath) {
   if (!eventsPath) return '';
   let content;
   try {
@@ -44,7 +50,10 @@ function modelFromSummaryCounters(summary) {
   return clean(entries[0][0]);
 }
 
-export function modelFromSummary(summaryPath) {
+/**
+ * @private
+ */
+function modelFromSummary(summaryPath) {
   if (!summaryPath) return '';
   let summary;
   try {

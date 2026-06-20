@@ -15,6 +15,11 @@ import {
   extractProblems,
   extractSolutions,
   extractHumanReviewRecommendations,
+  artifactContentType,
+  asStringArray,
+  asObjectArray,
+  extractOpportunities,
+  buildMarkdownContent,
 } from './artifact-content-helpers';
 
 describe('artifact-content-helpers', () => {
@@ -616,6 +621,313 @@ describe('artifact-content-helpers', () => {
       const parsed2 = { human_review_recommendations: undefined };
       const result2 = extractHumanReviewRecommendations(parsed2);
       expect(result2).toEqual([]);
+    });
+  });
+
+  // ===== asStringArray Tests =====
+  describe('asStringArray', () => {
+    test('should convert array of values to string array', () => {
+      const result = asStringArray([1, 2, 3, 'test']);
+      expect(result).toEqual(['1', '2', '3', 'test']);
+    });
+
+    test('should convert single string to array', () => {
+      const result = asStringArray('hello');
+      expect(result).toEqual(['hello']);
+    });
+
+    test('should convert number to array with string', () => {
+      const result = asStringArray(42);
+      expect(result).toEqual(['42']);
+    });
+
+    test('should convert object to array with string representation', () => {
+      const obj = { key: 'value' };
+      const result = asStringArray(obj);
+      expect(result).toHaveLength(1);
+      expect(typeof result[0]).toBe('string');
+    });
+
+    test('should return empty array for undefined', () => {
+      const result = asStringArray(undefined);
+      expect(result).toEqual([]);
+    });
+
+    test('should return empty array for null', () => {
+      const result = asStringArray(null);
+      expect(result).toEqual([]);
+    });
+
+    test('should return empty array for empty string', () => {
+      const result = asStringArray('');
+      expect(result).toEqual([]);
+    });
+
+    test('should preserve array order', () => {
+      const result = asStringArray(['z', 'a', 'm', 'b']);
+      expect(result).toEqual(['z', 'a', 'm', 'b']);
+    });
+  });
+
+  // ===== asObjectArray Tests =====
+  describe('asObjectArray', () => {
+    test('should return empty array for non-array input', () => {
+      const result = asObjectArray('not an array');
+      expect(result).toEqual([]);
+    });
+
+    test('should return empty array for null', () => {
+      const result = asObjectArray(null);
+      expect(result).toEqual([]);
+    });
+
+    test('should return empty array for undefined', () => {
+      const result = asObjectArray(undefined);
+      expect(result).toEqual([]);
+    });
+
+    test('should preserve objects in array', () => {
+      const obj1 = { id: 1, name: 'test' };
+      const obj2 = { id: 2, name: 'test2' };
+      const result = asObjectArray([obj1, obj2]);
+      expect(result).toEqual([obj1, obj2]);
+    });
+
+    test('should wrap non-object array values in { value } object', () => {
+      const result = asObjectArray(['string', 42, true]);
+      expect(result).toEqual([{ value: 'string' }, { value: 42 }, { value: true }]);
+    });
+
+    test('should wrap null/undefined in array as { value } objects', () => {
+      const result = asObjectArray([null, undefined, 'test']);
+      expect(result).toEqual([{ value: null }, { value: undefined }, { value: 'test' }]);
+    });
+
+    test('should skip nested arrays without wrapping', () => {
+      const result = asObjectArray([[1, 2, 3], { key: 'val' }]);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ value: [1, 2, 3] });
+      expect(result[1]).toEqual({ key: 'val' });
+    });
+  });
+
+  // ===== extractOpportunities Tests =====
+  describe('extractOpportunities', () => {
+    test('should extract opportunities field variant', () => {
+      const parsed = { opportunities: [{ area: 'performance', priority: 'high' }] };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([{ area: 'performance', priority: 'high' }]);
+    });
+
+    test('should extract kaseki_improvement_opportunities field variant', () => {
+      const parsed = { kaseki_improvement_opportunities: [{ suggestion: 'Add caching' }] };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([{ suggestion: 'Add caching' }]);
+    });
+
+    test('should extract improvement_opportunities field variant', () => {
+      const parsed = { improvement_opportunities: [{ idea: 'Refactor utils' }] };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([{ idea: 'Refactor utils' }]);
+    });
+
+    test('should extract improvementOpportunities field variant (camelCase)', () => {
+      const parsed = { improvementOpportunities: [{ change: 'Optimize queries' }] };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([{ change: 'Optimize queries' }]);
+    });
+
+    test('should prefer opportunities over other variants', () => {
+      const parsed = {
+        opportunities: [{ primary: true }],
+        kaseki_improvement_opportunities: [{ secondary: true }],
+        improvement_opportunities: [{ tertiary: true }],
+        improvementOpportunities: [{ quaternary: true }],
+      };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([{ primary: true }]);
+    });
+
+    test('should return empty array when no opportunities exist', () => {
+      const parsed = { other_field: 'value' };
+      const result = extractOpportunities(parsed);
+      expect(result).toEqual([]);
+    });
+
+    test('should handle multiple opportunities', () => {
+      const parsed = {
+        opportunities: [
+          { id: 1, area: 'perf' },
+          { id: 2, area: 'security' },
+          { id: 3, area: 'UX' },
+        ],
+      };
+      const result = extractOpportunities(parsed);
+      expect(result).toHaveLength(3);
+      expect(result[0].id).toBe(1);
+      expect(result[2].id).toBe(3);
+    });
+  });
+
+  // ===== buildMarkdownContent Tests =====
+  describe('buildMarkdownContent', () => {
+    test('should build markdown with all sections populated', () => {
+      const sections = {
+        summary: ['Item 1', 'Item 2'],
+        problem: ['Problem 1'],
+        solution: ['Solution 1', 'Solution 2'],
+        humanReview: ['Review 1'],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toContain('## Summary');
+      expect(result).toContain('- Item 1');
+      expect(result).toContain('- Item 2');
+      expect(result).toContain('## Problem');
+      expect(result).toContain('- Problem 1');
+      expect(result).toContain('## Solution');
+      expect(result).toContain('- Solution 1');
+      expect(result).toContain('- Solution 2');
+      expect(result).toContain('## Human review');
+      expect(result).toContain('- Review 1');
+    });
+
+    test('should return undefined when all sections are empty', () => {
+      const sections = {
+        summary: [],
+        problem: [],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toBeUndefined();
+    });
+
+    test('should skip empty sections', () => {
+      const sections = {
+        summary: ['Summary 1'],
+        problem: [],
+        solution: ['Solution 1'],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toContain('## Summary');
+      expect(result).toContain('## Solution');
+      expect(result).not.toContain('## Problem');
+      expect(result).not.toContain('## Human review');
+    });
+
+    test('should include only summary section', () => {
+      const sections = {
+        summary: ['Only summary'],
+        problem: [],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toBe('## Summary\n- Only summary');
+    });
+
+    test('should format multiple items with proper line breaks', () => {
+      const sections = {
+        summary: ['First', 'Second', 'Third'],
+        problem: [],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toContain('- First\n- Second\n- Third');
+    });
+
+    test('should separate sections with double newlines', () => {
+      const sections = {
+        summary: ['Summary item'],
+        problem: ['Problem item'],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toMatch(/## Summary\n- Summary item\n\n## Problem\n- Problem item/);
+    });
+
+    test('should handle section with single item', () => {
+      const sections = {
+        summary: ['One item'],
+        problem: [],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toBe('## Summary\n- One item');
+    });
+
+    test('should preserve item text exactly', () => {
+      const sections = {
+        summary: [
+          'Item with special chars: !@#$%',
+          'Item with spaces   and   tabs',
+          'Item with line content',
+        ],
+        problem: [],
+        solution: [],
+        humanReview: [],
+      };
+      const result = buildMarkdownContent(sections);
+      expect(result).toContain('Item with special chars: !@#$%');
+      expect(result).toContain('Item with spaces   and   tabs');
+    });
+  });
+
+  // ===== artifactContentType Tests =====
+  describe('artifactContentType', () => {
+    test('should return application/json for .json files', () => {
+      const result = artifactContentType('file.json');
+      expect(result).toBe('application/json');
+    });
+
+    test('should return text/markdown for .md files', () => {
+      const result = artifactContentType('README.md');
+      expect(result).toBe('text/markdown');
+    });
+
+    test('should return application/x-jsonl for .jsonl files', () => {
+      const result = artifactContentType('events.jsonl');
+      expect(result).toBe('application/x-jsonl');
+    });
+
+    test('should return text/tab-separated-values for .tsv files', () => {
+      const result = artifactContentType('data.tsv');
+      expect(result).toBe('text/tab-separated-values');
+    });
+
+    test('should return text/plain as fallback for unknown extensions', () => {
+      const result = artifactContentType('file.txt');
+      expect(result).toBe('text/plain');
+    });
+
+    test('should return text/plain for files without extension', () => {
+      const result = artifactContentType('noextension');
+      expect(result).toBe('text/plain');
+    });
+
+    test('should check ARTIFACT_METADATA_REGISTRY first', () => {
+      // metadata.json has a specific type in the registry
+      const result = artifactContentType('metadata.json');
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
+    });
+
+    test('should handle case-sensitive extension matching', () => {
+      const result1 = artifactContentType('file.JSON');
+      // Uppercase extension won't match .json pattern
+      expect(result1).toBe('text/plain');
+
+      const result2 = artifactContentType('file.json');
+      expect(result2).toBe('application/json');
+    });
+
+    test('should handle multiple dots in filename', () => {
+      const result = artifactContentType('my.file.name.json');
+      expect(result).toBe('application/json');
     });
   });
 });
