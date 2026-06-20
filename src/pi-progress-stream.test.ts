@@ -37,10 +37,12 @@ function readJsonl(filePath: string): ProgressEvent[] {
 async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = {}): Promise<{
   events: ProgressEvent[];
   log: string;
+  stdout: string;
 }> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-progress-stream-'));
   const progressJsonlPath = path.join(tmpDir, 'progress.jsonl');
   const progressLogPath = path.join(tmpDir, 'progress.log');
+  let stdout = '';
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
@@ -58,6 +60,10 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
     );
 
     let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
@@ -80,6 +86,7 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
   return {
     events: readJsonl(progressJsonlPath),
     log: fs.readFileSync(progressLogPath, 'utf8'),
+    stdout,
   };
 }
 
@@ -131,6 +138,91 @@ describe('pi-progress-stream executable', () => {
       toolStartCount: 3,
       toolEndCount: 1,
     });
+  });
+
+  it('emits production progress summaries for representative tool and agent events', async () => {
+    const messageUpdates = Array.from({ length: 15 }, (_, index) =>
+      JSON.stringify({
+        type: 'message_update',
+        message: {
+          content: `Reviewing repository files and tests before implementation step ${index + 1}`,
+        },
+      })
+    );
+
+    const { events, stdout } = await runProgressStream(
+      [
+        JSON.stringify({ type: 'agent_start' }),
+        JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
+        JSON.stringify({ type: 'tool_execution_start', toolName: 'bash' }),
+        JSON.stringify({ type: 'toolcall_start', call: { name: 'write_file' } }),
+        JSON.stringify({ type: 'tool_execution_end' }),
+        ...messageUpdates,
+        JSON.stringify({ type: 'auto_retry_start' }),
+        JSON.stringify({ type: 'auto_retry_end' }),
+        JSON.stringify({ type: 'agent_end' }),
+      ],
+      { KASEKI_STREAM_PROGRESS: '1' }
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: 'pi agent',
+        message: 'agent started',
+        type: 'agent_start',
+      })
+    );
+
+    const toolBatchEvent = events.find((event) => event.stage === 'pi tool batch');
+    expect(toolBatchEvent).toMatchObject({
+      toolBatchSummary: {
+        read_file: 1,
+        bash: 1,
+        write_file: 1,
+      },
+    });
+    expect(toolBatchEvent?.message).toContain('[tools] read_file (1x), bash (1x), write_file (1x)');
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: 'pi agent',
+        message: expect.stringContaining('[thinking] Implementation step 15'),
+        type: 'message_update',
+      })
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: 'pi agent',
+        message: 'auto retry started',
+        type: 'auto_retry_start',
+      })
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: 'pi agent',
+        message: 'agent finished',
+        type: 'agent_end',
+      })
+    );
+
+    const finalEvent = events.at(-1);
+    expect(finalEvent).toMatchObject({
+      counts: {
+        agent_start: 1,
+        tool_execution_start: 2,
+        toolcall_start: 1,
+        tool_execution_end: 1,
+        message_update: 15,
+        auto_retry_start: 1,
+        auto_retry_end: 1,
+        agent_end: 1,
+      },
+      toolStartCount: 3,
+      toolEndCount: 1,
+      messageUpdateCount: 15,
+    });
+    expect(stdout).toContain('[progress] pi tool batch: [tools] read_file (1x), bash (1x), write_file (1x)');
+    expect(stdout).toContain('[progress] pi agent: event stream ended');
   });
 
   it('suppresses tool batch summaries when progress summarization is disabled', async () => {
