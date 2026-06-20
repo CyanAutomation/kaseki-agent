@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.81.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.10...v1.81.0) (2026-06-20)
+
+
+### Features
+
+* add LLM Gateway extension installation to Pi CLI ([dd90a09](https://github.com/CyanAutomation/kaseki-agent/commit/dd90a09ce2b20597578f213b151b4378051313c6))
+
 ## [1.80.10](https://github.com/CyanAutomation/kaseki-agent/compare/v1.80.9...v1.80.10) (2026-06-19)
 
 
