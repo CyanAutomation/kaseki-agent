@@ -14,7 +14,7 @@ This will:
 
 - ✓ Auto-configure secrets directories with proper permissions
 - ✓ Ask which deployment path you want (Docker Compose or single-run)
-- ✓ Collect your LLM Gateway endpoint and API key
+- ✓ Collect provider credentials (OpenRouter by default, or LLM Gateway when explicitly selected)
 - ✓ Save everything securely
 
 **First time?** The wizard will guide you through each step.
@@ -25,16 +25,15 @@ This will:
 
 When prompted, provide:
 
-1. **LLM Gateway URL** (required)
-   - Examples:
-     - `https://llmgateway.local.xyz/v1/responses` (Manifest Gateway)
-     - `https://api.openai.com/v1/chat/completions` (OpenAI)
-     - `http://localhost:11434/v1/chat/completions` (Ollama self-hosted)
-   - Contact your gateway provider for the endpoint
+1. **OpenRouter API Key** (required for the default provider)
+   - Kaseki defaults to `KASEKI_PROVIDER=openrouter` for deterministic startup on images that do not include the optional gateway Pi extension.
+   - Set `OPENROUTER_API_KEY` or provide the `OPENROUTER_API_KEY_FILE` secret.
 
-2. **LLM Gateway API Key** (required)
-   - Get one from your gateway provider (see endpoint examples above)
-   - Looks like: `Bearer sk-...` or similar (varies by provider)
+2. **LLM Gateway settings** (optional; only for explicit gateway runs)
+   - Set `KASEKI_PROVIDER=gateway` to use the gateway Pi extension.
+   - Provide `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`.
+   - Examples: `https://llmgateway.local.xyz/v1/responses`, `https://api.openai.com/v1/chat/completions`, or `http://localhost:11434/v1/chat/completions`.
+   - Gateway preflight validates URL/key configuration, worker secret mounting, and Pi provider registration before agent phases run.
 
 3. **GitHub App Credentials** (optional)
    - Only needed if you want GitHub-authenticated deployments

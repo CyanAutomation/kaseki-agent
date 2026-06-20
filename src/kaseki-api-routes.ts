@@ -843,14 +843,22 @@ function checkWritableDirectory(
 }
 
 function checkLLMGatewayKey(): PreflightCheck {
+  if (!isGatewayProviderEnabled()) {
+    return {
+      name: 'llm-gateway-connectivity',
+      ok: true,
+      detail: `LLM Gateway URL/key connectivity is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}. Set KASEKI_PROVIDER=gateway to enable gateway preflight checks.`,
+    };
+  }
+
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const keyValue = readHostSecret('llm_gateway_api_key');
 
   if (gatewayUrl && keyValue) {
     return {
-      name: 'llm-gateway-key',
+      name: 'llm-gateway-connectivity',
       ok: true,
-      detail: 'LLM Gateway URL and API key are configured.',
+      detail: 'Gateway URL/key connectivity prerequisites are configured for the API container.',
     };
   }
 
@@ -860,25 +868,23 @@ function checkLLMGatewayKey(): PreflightCheck {
   if (!keyValue) missingParts.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE');
 
   return {
-    name: 'llm-gateway-key',
+    name: 'llm-gateway-connectivity',
     ok: false,
-    detail: `Missing required LLM Gateway configuration: ${missingParts.join(', ')}`,
+    detail: `Gateway URL/key connectivity prerequisites are missing: ${missingParts.join(', ')}`,
     remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-endpoint>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
   };
 }
 
 function isGatewayProviderEnabled(): boolean {
-  return (
-    !process.env.KASEKI_PROVIDER || process.env.KASEKI_PROVIDER === 'gateway'
-  );
+  return process.env.KASEKI_PROVIDER === 'gateway';
 }
 
 function checkWorkerGatewayConfig(): PreflightCheck {
   if (!isGatewayProviderEnabled()) {
     return {
-      name: 'worker-gateway-config',
+      name: 'worker-gateway-secret-mount',
       ok: true,
-      detail: `Worker LLM Gateway launch configuration is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER}.`,
+      detail: `Worker gateway secret mounting is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}.`,
     };
   }
 
@@ -911,28 +917,36 @@ function checkWorkerGatewayConfig(): PreflightCheck {
 
   if (missingParts.length === 0) {
     return {
-      name: 'worker-gateway-config',
+      name: 'worker-gateway-secret-mount',
       ok: true,
-      detail: `Worker launch has LLM_GATEWAY_URL and readable llm_gateway_api_key host mount source at ${hostSecretPath}. Worker startup preflight will also verify that pi --list-models reports provider gateway before goal-setting/scouting/coding runs.`,
+      detail: `Worker launch has LLM_GATEWAY_URL and a readable llm_gateway_api_key host mount source at ${hostSecretPath}. Worker startup preflight will also verify that pi --list-models reports provider gateway before goal-setting/scouting/coding runs.`,
     };
   }
 
   return {
-    name: 'worker-gateway-config',
+    name: 'worker-gateway-secret-mount',
     ok: false,
-    detail: `Worker LLM Gateway launch configuration is incomplete: ${missingParts.join('; ')}.`,
+    detail: `Worker gateway secret mounting configuration is incomplete: ${missingParts.join('; ')}.`,
     remediation:
       'Gateway test passed for the API container only when the API can resolve LLM_GATEWAY_URL and a key; worker containers also require LLM_GATEWAY_URL, a mounted llm_gateway_api_key, and a Pi installation whose extension registry includes provider gateway. Set LLM_GATEWAY_URL in the API environment and create a readable llm_gateway_api_key file at the host path mounted by run-kaseki.sh (or KASEKI_SECRETS_DIR/llm_gateway_api_key), then recreate/restart the API container if mounts changed. If worker-smoke fails at provider capability, rebuild the worker image or install the gateway Pi extension so pi --list-models includes gateway.',
   };
 }
 
 function checkGatewayTestSecretConsistency(): PreflightCheck {
+  if (!isGatewayProviderEnabled()) {
+    return {
+      name: 'gateway-api-secret-consistency',
+      ok: true,
+      detail: `Gateway API secret consistency is not required for KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}.`,
+    };
+  }
+
   const preflightSecret = readHostSecret('llm_gateway_api_key');
   const gatewaySecret = resolveGatewayApiKey();
 
   if (preflightSecret && gatewaySecret.configured) {
     return {
-      name: 'gateway-test-secret-consistency',
+      name: 'gateway-api-secret-consistency',
       ok: true,
       detail: `Gateway Test and preflight can both resolve the LLM Gateway API key (${gatewaySecret.source}).`,
     };
@@ -940,7 +954,7 @@ function checkGatewayTestSecretConsistency(): PreflightCheck {
 
   if (!preflightSecret && !gatewaySecret.configured) {
     return {
-      name: 'gateway-test-secret-consistency',
+      name: 'gateway-api-secret-consistency',
       ok: false,
       detail: 'Neither preflight nor Gateway Test can resolve the LLM Gateway API key.',
       remediation:
@@ -949,7 +963,7 @@ function checkGatewayTestSecretConsistency(): PreflightCheck {
   }
 
   return {
-    name: 'gateway-test-secret-consistency',
+    name: 'gateway-api-secret-consistency',
     ok: false,
     detail: `Preflight secret visibility and Gateway Test secret resolution disagree: preflight=${preflightSecret ? 'configured' : 'missing'}, gatewayTest=${gatewaySecret.source}.`,
     remediation:
@@ -1204,7 +1218,7 @@ function checkWorkerSmokeTest(
         '-e',
         'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
         '-e',
-        `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'gateway'}`,
+        `KASEKI_PROVIDER=${process.env.KASEKI_PROVIDER || 'openrouter'}`,
         '-e',
         `LLM_GATEWAY_URL=${process.env.LLM_GATEWAY_URL || ''}`,
         '-e',

@@ -14,17 +14,25 @@ Complete reference for all environment variables used by kaseki-agent.
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
 | `KASEKI_MODEL` | `auto` | string | LLM model identifier (e.g., `auto`, `gpt-4-turbo`, or gateway's native model IDs) |
+| `KASEKI_PROVIDER` | `openrouter` | string | Pi provider to use. `openrouter` is the safe default; set `KASEKI_PROVIDER=gateway` explicitly to use the LLM Gateway extension. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
 | `KASEKI_GOAL_CHECK_MAX_RETRIES` | `1` | integer | Number of coding-agent retries after goal-check misses |
 | `KASEKI_GOAL_CHECK_MODEL` | `KASEKI_SCOUTING_MODEL` | string | Pi model identifier for the goal-check evaluator |
 | `KASEKI_GOAL_CHECK_TIMEOUT_SECONDS` | `KASEKI_SCOUTING_TIMEOUT_SECONDS` | integer | Goal-check evaluator timeout in seconds |
 
+
+### Provider Selection
+
+Kaseki defaults to `KASEKI_PROVIDER=openrouter` so runs do not depend on the optional Pi gateway extension being present in the worker image. Gateway runs must opt in explicitly with `KASEKI_PROVIDER=gateway`, `LLM_GATEWAY_URL`, and `LLM_GATEWAY_API_KEY`/`LLM_GATEWAY_API_KEY_FILE`. When gateway is selected, the worker preflight checks gateway URL/key configuration, worker secret mounting, and Pi provider registration before scouting, goal-setting, or coding phases start.
+
 ### API Keys & Credentials
 
 | Variable | Default / Alternative | Type | Purpose |
 |----------|---|---|---|
-| `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key (required) |
+| `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used by the default `KASEKI_PROVIDER=openrouter` path. |
+| `LLM_GATEWAY_URL` | — | string | LLM Gateway endpoint. Required only when `KASEKI_PROVIDER=gateway`. |
+| `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required only when `KASEKI_PROVIDER=gateway`. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |
