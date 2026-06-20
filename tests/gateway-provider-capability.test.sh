@@ -68,7 +68,7 @@ env \
   KASEKI_RESULTS_DIR="$RESULTS_DIR" \
   KASEKI_PROVIDER=gateway \
   KASEKI_MODEL=auto \
-  LLM_GATEWAY_URL="https://gateway.example.invalid/v1/responses" \
+  LLM_GATEWAY_URL="https://gateway.example.invalid/v1" \
   LLM_GATEWAY_API_KEY="test-key-not-used" \
   GITHUB_APP_ENABLED=0 \
   KASEKI_DRY_RUN=0 \

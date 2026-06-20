@@ -200,7 +200,7 @@ See [HOST_SETUP_TROUBLESHOOTING.md](HOST_SETUP_TROUBLESHOOTING.md) for detailed 
 **Best for**: One-off tasks, CI/CD scripts, experiments  
 
 ```bash
-export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1/responses
+export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1
 export LLM_GATEWAY_API_KEY=your-api-key-here
 ./run-kaseki.sh https://github.com/user/repo main
 ```
@@ -307,7 +307,7 @@ Via environment variable:
 
 ```bash
 export KASEKI_SCOUTING=1
-export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1/responses
+export LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1
 export LLM_GATEWAY_API_KEY=your-api-key-here
 ./run-kaseki.sh
 ```

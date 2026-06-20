@@ -122,7 +122,7 @@ Examples:
   ./kaseki agent https://github.com/org/repo main
   
   # Container: one-command run (no setup needed)
-  LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1/responses LLM_GATEWAY_API_KEY=... ./kaseki run-mode https://github.com/org/repo main
+  LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1 LLM_GATEWAY_API_KEY=... ./kaseki run-mode https://github.com/org/repo main
   
   # CLI: monitor running instance
   ./kaseki watch kaseki-1 --interval=2
