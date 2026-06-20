@@ -68,7 +68,18 @@ COPY --from=deps /usr/local/bin/tree-sitter /usr/local/bin/tree-sitter
 COPY --from=deps /opt/kaseki/workspace-cache-seed/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 # Create a wrapper script for the Pi CLI that properly resolves node modules
-RUN mkdir -p /usr/local/bin && printf '#!/bin/sh\nexec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js "$@"\n' > /usr/local/bin/pi && chmod +x /usr/local/bin/pi
+# and explicitly loads Kaseki's bundled gateway provider extension. Pi 0.77
+# does not auto-discover image-bundled home extensions for non-interactive
+# commands such as --list-models, so relying on implicit discovery makes
+# preflight pass/fail depend on Pi internals.
+RUN mkdir -p /usr/local/bin && printf '%s\n' \
+  '#!/bin/sh' \
+  'gateway_extension="${KASEKI_PI_GATEWAY_EXTENSION:-/opt/kaseki/pi-extensions/llm-gateway.js}"' \
+  'if [ -r "$gateway_extension" ]; then' \
+  '  exec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --extension "$gateway_extension" "$@"' \
+  'fi' \
+  'exec node --preserve-symlinks /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js "$@"' \
+  > /usr/local/bin/pi && chmod +x /usr/local/bin/pi
 
 # Build kaseki application (cache-optimal: dependencies first, then source code)
 WORKDIR /app
@@ -91,7 +102,9 @@ RUN mkdir -p /opt/kaseki/pi-extensions
 COPY .pi-extensions.js /opt/kaseki/pi-extensions/llm-gateway.js
 # Also install at ~/.pi/extensions/ — the path Pi CLI actually scans for extensions
 RUN mkdir -p /tmp/kaseki-home/.pi/extensions \
+    && mkdir -p /tmp/kaseki-home/.pi/agent/extensions \
     && ln -sf /opt/kaseki/pi-extensions/llm-gateway.js /tmp/kaseki-home/.pi/extensions/llm-gateway.js \
+    && ln -sf /opt/kaseki/pi-extensions/llm-gateway.js /tmp/kaseki-home/.pi/agent/extensions/llm-gateway.js \
     && chown -R kaseki:kaseki /tmp/kaseki-home/.pi
 
 # Copy entrypoints to /usr/local/bin
@@ -208,6 +221,7 @@ ENV HOME=/tmp/kaseki-home \
     NPM_CONFIG_CACHE=/tmp/npm-cache \
     npm_config_cache=/tmp/npm-cache \
     PI_CODING_AGENT_DIR=/tmp/pi-agent \
+    PI_EXTENSIONS_DIR=/opt/kaseki/pi-extensions \
     PI_TELEMETRY=0 \
     PI_SKIP_VERSION_CHECK=1 \
     CI=true
@@ -215,6 +229,7 @@ ENV HOME=/tmp/kaseki-home \
 # Copy runtime essentials from runtime stage (skip test/, docs/, src/)
 COPY --from=runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=runtime /usr/local/bin/pi /usr/local/bin/pi
+COPY --from=runtime /opt/kaseki/pi-extensions /opt/kaseki/pi-extensions
 COPY --from=runtime /opt/kaseki/workspace-cache/default/node_modules /opt/kaseki/workspace-cache/default/node_modules
 
 # Copy application files (excluding build artifacts)
@@ -236,6 +251,11 @@ COPY --from=runtime /app/node_modules ./node_modules
 # Install global binaries and set up scripts (from runtime stage)
 # Keep github_app_helper_dependencies in sync with static relative imports in src/github-app-token.ts and src/github-utils.ts.
 RUN mkdir -p /scripts \
+    && mkdir -p /tmp/kaseki-home/.pi/extensions \
+    && mkdir -p /tmp/kaseki-home/.pi/agent/extensions \
+    && ln -sf /opt/kaseki/pi-extensions/llm-gateway.js /tmp/kaseki-home/.pi/extensions/llm-gateway.js \
+    && ln -sf /opt/kaseki/pi-extensions/llm-gateway.js /tmp/kaseki-home/.pi/agent/extensions/llm-gateway.js \
+    && chown -R kaseki:kaseki /tmp/kaseki-home/.pi /opt/kaseki/pi-extensions \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \

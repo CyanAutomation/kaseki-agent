@@ -15,6 +15,7 @@ type PhaseDiagnostic = {
   field?: string;
   detail?: string;
   suggestion?: string;
+  recovered?: boolean;
 };
 
 type DependencyCacheDiagnostic = NonNullable<StatusResponse['diagnosticSummary']>['dependencyCache'];
@@ -36,13 +37,14 @@ export class DiagnosticExtractor {
       return;
     }
 
-    const phaseDiagnostics = [
+    const rawPhaseDiagnostics = [
       ...this.phaseDiagnosticsFromErrors('goal-setting', response.goalSettingValidationErrorsContent),
       ...this.phaseDiagnosticsFromErrors('scouting', response.scoutingValidationErrorsContent),
       ...this.phaseDiagnosticsFromErrors('goal-check', response.goalCheckValidationErrorsContent),
     ];
     const dependencyCache = this.readDependencyCacheDiagnostics(runDir, readSmallArtifact);
-    const primaryReason = this.resolvePrimaryDiagnosticReason(response, phaseDiagnostics);
+    const primaryReason = this.resolvePrimaryDiagnosticReason(response, rawPhaseDiagnostics);
+    const phaseDiagnostics = this.filterPhaseDiagnostics(rawPhaseDiagnostics, primaryReason);
 
     if (!primaryReason && phaseDiagnostics.length === 0 && !dependencyCache) {
       return;
@@ -123,8 +125,35 @@ export class DiagnosticExtractor {
         ...(this.stringField(error, 'field') ? { field: this.stringField(error, 'field') } : {}),
         ...(detail ? { detail: this.cleanDiagnosticText(detail) } : {}),
         ...(this.stringField(error, 'suggestion') ? { suggestion: this.cleanDiagnosticText(this.stringField(error, 'suggestion') as string) } : {}),
+        ...(error.recovered === true || error.recovered === 'true' ? { recovered: true } : {}),
       };
     });
+  }
+
+  private filterPhaseDiagnostics(
+    phaseDiagnostics: PhaseDiagnostic[],
+    primaryReason: string | undefined
+  ): PhaseDiagnostic[] {
+    if (!primaryReason || !this.isProviderPrimaryReason(primaryReason)) {
+      return phaseDiagnostics;
+    }
+
+    return phaseDiagnostics.filter((diagnostic) => {
+      if (diagnostic.recovered) {
+        return false;
+      }
+
+      const reason = diagnostic.reason ?? '';
+      return ![
+        'placeholder_content',
+        'patch_fallback',
+        'patch_fallback_recovered',
+      ].includes(reason);
+    });
+  }
+
+  private isProviderPrimaryReason(primaryReason: string): boolean {
+    return /provider_error|model_unavailable|OpenAI API error|Bad Gateway|gateway/i.test(primaryReason);
   }
 
   /**
@@ -150,9 +179,16 @@ export class DiagnosticExtractor {
       return undefined;
     }
 
+    const validationFailed = messages.some((message) =>
+      /failed npm ls validation|failed validation|validation_failed|restored dependency cache failed validation/.test(message)
+    );
+
     return {
       restored: messages.some((message) => message.includes('restoring node_modules')),
-      reinstallTriggered: messages.some((message) => /failed npm ls validation|cache miss|running install/.test(message)),
+      reinstallTriggered: messages.some((message) =>
+        /failed npm ls validation|restored dependency cache failed validation|cache miss|running install/.test(message)
+      ),
+      ...(validationFailed ? { validationFailed } : {}),
       messages,
     };
   }

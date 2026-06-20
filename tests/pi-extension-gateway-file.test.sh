@@ -9,7 +9,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 KEY_FILE="$TMP_DIR/llm_gateway_api_key"
-EXTENSION_COPY="$TMP_DIR/llm-gateway.cjs"
+EXTENSION_COPY="$TMP_DIR/llm-gateway.mjs"
 printf '%s\n' 'file-backed-gateway-key' > "$KEY_FILE"
 cp "$PROJECT_ROOT/.pi-extensions.js" "$EXTENSION_COPY"
 
@@ -26,7 +26,8 @@ const pi = {
   },
 };
 
-require(extensionPath)(pi);
+const extension = await import(`file://${extensionPath}`);
+extension.default(pi);
 
 if (!registered) {
   console.error('gateway provider was not registered');

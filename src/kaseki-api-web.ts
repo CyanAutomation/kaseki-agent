@@ -2113,6 +2113,13 @@ const controllerPage = String.raw`<!doctype html>
         runLinks.hidden = false;
       }
 
+      function clearRunFollowThrough() {
+        runLinks.hidden = true;
+        recommendedArtifacts.hidden = true;
+        if (recommendedArtifactLinks) recommendedArtifactLinks.replaceChildren();
+        activeRunView = null;
+      }
+
       function artifactUrl(runId, fileName) {
         return '/api/results/' + encodeURIComponent(runId) + '/' + encodeURIComponent(fileName);
       }
@@ -3103,7 +3110,11 @@ const controllerPage = String.raw`<!doctype html>
         }
         const button = document.querySelector('#submit');
         button.disabled = true;
-        setOutputMetadata('running', String(runIdInput.value || '').trim() || undefined);
+        stopPolling();
+        runIdInput.value = '';
+        updateCancelRunButtonState();
+        clearRunFollowThrough();
+        setOutputMetadata('submitting');
         setResponseSummary(null);
         setOutputBody('Submitting run request...');
         setState('Contacting the controller...');
@@ -3123,7 +3134,7 @@ const controllerPage = String.raw`<!doctype html>
             }
           })
           .catch((error) => {
-            setOutputMetadata('failed', String(runIdInput.value || '').trim() || undefined);
+            setOutputMetadata('failed');
             setResponseSummary(null);
             setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
             setState('Request could not be sent.', 'bad');

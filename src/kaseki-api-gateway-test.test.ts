@@ -86,6 +86,18 @@ describe('LLM Gateway Test', () => {
       expect(result.detail).toContain('invalid');
     });
 
+    it('should fail before probing when gateway URL is not the runtime responses endpoint', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('error');
+      expect(result.detail).toContain('/v1/responses');
+      expect(result.remediation).toContain('same endpoint Pi will call');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('should return ok when gateway is reachable and responsive', async () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
@@ -141,7 +153,7 @@ describe('LLM Gateway Test', () => {
     });
 
     it('should handle network errors gracefully', async () => {
-      process.env.LLM_GATEWAY_URL = 'https://unreachable-gateway-xyz.invalid/v1/models';
+      process.env.LLM_GATEWAY_URL = 'https://unreachable-gateway-xyz.invalid/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
       mockFetch.mockRejectedValueOnce(new Error('ENOTFOUND'));
@@ -265,7 +277,7 @@ describe('LLM Gateway Test', () => {
       const result: GatewayTestResult = {
         status: 'ok',
         detail: 'Gateway is responsive',
-        gatewayUrl: 'https://example.com/v1/models',
+        gatewayUrl: 'https://example.com/v1/responses',
         responseTime: 125,
         timestamp: new Date().toISOString(),
         authenticationValidated: true,
@@ -297,7 +309,7 @@ describe('LLM Gateway Test', () => {
       const result: GatewayTestResult = {
         status: 'ok',
         detail: 'Gateway is responsive',
-        gatewayUrl: 'https://example.com/v1/models',
+        gatewayUrl: 'https://example.com/v1/responses',
         responseTime: 9459,
         timestamp: new Date().toISOString(),
         authenticationValidated: true,
