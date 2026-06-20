@@ -641,14 +641,58 @@ invalid json line
   describe('edge cases and error handling', () => {
     test('readFeedbackFile should handle large files gracefully', () => {
       const testFile = path.join(testDir, 'large.jsonl');
-      const entries = Array.from({ length: 1000 }, (_, __) => ({
-        phase: 'goal_check',
-        goal_quality: { score: Math.random() * 100 },
-      }));
+      const representativeScores = [95, 88, 85, 72, 60, 84, 59, 42, 0, 30];
+      // 1,000 records is the meaningful threshold here: it exercises four-digit
+      // JSONL parsing and bucket aggregation at a scale large enough to catch
+      // truncation or off-by-one issues while keeping this as a fast unit test.
+      const recordCount = 1000;
+      const entries: GoalCheckEntry[] = Array.from({ length: recordCount }, (_, index) => {
+        const score = representativeScores[index % representativeScores.length];
+        return {
+          phase: 'goal_check',
+          goal_quality: {
+            score,
+            smart_criteria: [{ smart_score: score >= 85 ? 'high' : score >= 60 ? 'medium' : 'low' }],
+          },
+          correlation: { success: score >= 60 },
+          goal_check_verdict: {
+            met: score >= 60,
+            confidence: score >= 85 ? 'high' : score >= 60 ? 'medium' : 'low',
+            evidenceCount: (index % 5) + 1,
+            missingCount: index % 3,
+          },
+          outcomes: { coding_attempts: (index % 4) + 1 },
+        };
+      });
       fs.writeFileSync(testFile, entries.map((e) => JSON.stringify(e)).join('\n'));
 
       const result = readFeedbackFile(testFile);
-      expect(result).toHaveLength(1000);
+      const analysis = analyzeGoalFeedback(result);
+
+      expect(result).toHaveLength(recordCount);
+      expect(result[0]).toEqual(entries[0]);
+      expect(result[recordCount - 1]).toEqual(entries[recordCount - 1]);
+      expect(result[0].goal_quality?.score).toBe(95);
+      expect(result[recordCount - 1].goal_quality?.score).toBe(30);
+      expect(result[0].goal_quality?.smart_criteria?.[0].smart_score).toBe('high');
+      expect(result[recordCount - 1].goal_quality?.smart_criteria?.[0].smart_score).toBe('low');
+
+      expect(analysis.total_runs).toBe(recordCount);
+      expect(analysis.quality_buckets?.high).toEqual(
+        expect.objectContaining({ count: 300, success_rate: '100.0', avg_quality_score: '89.3' })
+      );
+      expect(analysis.quality_buckets?.medium).toEqual(
+        expect.objectContaining({ count: 300, success_rate: '100.0', avg_quality_score: '72.0' })
+      );
+      expect(analysis.quality_buckets?.low).toEqual(
+        expect.objectContaining({ count: 400, success_rate: '0.0', avg_quality_score: '32.8' })
+      );
+      expect(analysis.smart_analysis).toEqual(
+        expect.objectContaining({
+          total_criteria: recordCount,
+          distribution: { high: '30.0%', medium: '30.0%', low: '40.0%' },
+        })
+      );
     });
 
     test('analyzeGoalFeedback should handle undefined fields gracefully', () => {
