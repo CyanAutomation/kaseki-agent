@@ -913,7 +913,7 @@ function checkWorkerGatewayConfig(): PreflightCheck {
     return {
       name: 'worker-gateway-config',
       ok: true,
-      detail: `Worker launch has LLM_GATEWAY_URL and readable llm_gateway_api_key host mount source at ${hostSecretPath}.`,
+      detail: `Worker launch has LLM_GATEWAY_URL and readable llm_gateway_api_key host mount source at ${hostSecretPath}. Worker startup preflight will also verify that pi --list-models reports provider gateway before goal-setting/scouting/coding runs.`,
     };
   }
 
@@ -922,7 +922,7 @@ function checkWorkerGatewayConfig(): PreflightCheck {
     ok: false,
     detail: `Worker LLM Gateway launch configuration is incomplete: ${missingParts.join('; ')}.`,
     remediation:
-      'Gateway test passed for the API container only when the API can resolve LLM_GATEWAY_URL and a key; worker containers also require LLM_GATEWAY_URL and a mounted llm_gateway_api_key. Set LLM_GATEWAY_URL in the API environment and create a readable llm_gateway_api_key file at the host path mounted by run-kaseki.sh (or KASEKI_SECRETS_DIR/llm_gateway_api_key), then recreate/restart the API container if mounts changed.',
+      'Gateway test passed for the API container only when the API can resolve LLM_GATEWAY_URL and a key; worker containers also require LLM_GATEWAY_URL, a mounted llm_gateway_api_key, and a Pi installation whose extension registry includes provider gateway. Set LLM_GATEWAY_URL in the API environment and create a readable llm_gateway_api_key file at the host path mounted by run-kaseki.sh (or KASEKI_SECRETS_DIR/llm_gateway_api_key), then recreate/restart the API container if mounts changed. If worker-smoke fails at provider capability, rebuild the worker image or install the gateway Pi extension so pi --list-models includes gateway.',
   };
 }
 
