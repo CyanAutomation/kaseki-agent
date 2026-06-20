@@ -794,6 +794,54 @@ describe('StatusResponseBuilder', () => {
       expect(response.taskProgressPercent).toBeGreaterThanOrEqual(50);
     });
 
+    it('should never decrease taskProgressPercent when late pi streaming events follow a later stage', () => {
+      // Regression: "pi agent" / "pi tool batch" events normalize to "pi coding agent"
+      // (an earlier stage). If these arrive after a later stage has started, the old code
+      // would reset currentStage backward, dropping the percentage.
+      const job: Partial<Job> = {
+        id: 'job-monotonic',
+        status: 'running',
+        resultDir: '/results/job-monotonic',
+      };
+
+      const stages = ['clone repository', 'pi coding agent', 'quality checks', 'complete'];
+
+      // A typical sequence: pi coding agent finishes, quality checks starts, then a
+      // late "pi agent" streaming event arrives (it normalizes back to "pi coding agent").
+      const progressAtQualityChecks = [
+        JSON.stringify({ stage: 'clone repository', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'pi coding agent', status: 'finished', detail: 'finished' }),
+        JSON.stringify({ stage: 'quality checks', status: 'started' }),
+      ].join('\n');
+
+      const progressWithLateStreamingEvent = [
+        ...progressAtQualityChecks.split('\n'),
+        JSON.stringify({ stage: 'pi agent', status: 'running' }), // late Pi stream event
+      ].join('\n');
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('progress.jsonl') || filePath.includes('metadata.json');
+      });
+
+      let progressContent = progressAtQualityChecks;
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('progress.jsonl')) return progressContent;
+        return JSON.stringify({ stages });
+      });
+
+      const responseA: StatusResponse = { id: 'job-monotonic', status: 'running' };
+      builder['addTaskProgressInfo'](responseA, job as Job);
+      const percentAtQualityChecks = responseA.taskProgressPercent!;
+
+      // Now simulate a late Pi streaming event arriving
+      progressContent = progressWithLateStreamingEvent;
+      const responseB: StatusResponse = { id: 'job-monotonic', status: 'running' };
+      builder['addTaskProgressInfo'](responseB, job as Job);
+      const percentAfterLateEvent = responseB.taskProgressPercent!;
+
+      expect(percentAfterLateEvent).toBeGreaterThanOrEqual(percentAtQualityChecks);
+    });
+
     it('should handle malformed JSON in progress.jsonl gracefully', () => {
       const job: Partial<Job> = {
         id: 'job-1',
@@ -928,8 +976,9 @@ describe('StatusResponseBuilder', () => {
 
       builder['addTaskProgressInfo'](response, job as Job);
 
-      // Two finished progress events over four declared stages: 2/4 = 50%.
-      expect(response.taskProgressPercent).toBe(50);
+      // 'runtime-only stage' is not in metadata.stages so its position is -1 and doesn't
+      // advance the high-water mark. Only 'clone repository' (index 0) counts: 1/4 = 25%.
+      expect(response.taskProgressPercent).toBe(25);
     });
 
     it('should calculate 100% through addTaskProgressInfo when stages are over-completed', () => {

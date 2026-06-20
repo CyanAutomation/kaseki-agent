@@ -128,13 +128,24 @@ export class TaskProgressCalculator {
       denominatorStages
     ) ?? this.normalizeTaskProgressStage(response.progress?.stage, job.currentStage, denominatorStages);
 
+    // Track the furthest stage index seen so far to prevent currentStage from going backward.
+    // Pi streaming events (e.g. "pi agent") can arrive after later stages have started and
+    // would otherwise reset currentStage to an earlier position, causing the percentage to drop.
+    let highWaterStageIndex = currentStage ? denominatorStages.indexOf(currentStage) : -1;
+
     const ingestEvent = (event: ProgressEventLike): void => {
       const progressStage = this.normalizeTaskProgressStage(event.stage, job.currentStage, denominatorStages);
       if (!progressStage) {
         return;
       }
 
-      currentStage = progressStage;
+      // Only advance currentStage monotonically. Unknown stages (index -1) are skipped for
+      // currentStage tracking but still recorded in finishedStages below.
+      const stageIndex = denominatorStages.indexOf(progressStage);
+      if (stageIndex >= 0 && stageIndex >= highWaterStageIndex) {
+        currentStage = progressStage;
+        highWaterStageIndex = stageIndex;
+      }
 
       if (this.isFinishedProgressEvent(event)) {
         finishedStages.add(progressStage);
@@ -202,10 +213,18 @@ export class TaskProgressCalculator {
     metadata: any,
     totalStages: number
   ): number {
-    let completedStages = finishedStages.size;
-
     // Count stage index if current stage is found
     const stageList = metadata?.stages || denominatorStages;
+
+    // Use max finished stage POSITION instead of count so this signal is in the same units
+    // as currentStageIndex. finishedStages.size would count names regardless of position,
+    // which can disagree with currentStageIndex when names don't appear in stageList.
+    let maxFinishedIndex = -1;
+    for (const stage of finishedStages) {
+      const idx = stageList.indexOf(stage);
+      if (idx > maxFinishedIndex) maxFinishedIndex = idx;
+    }
+    let completedStages = maxFinishedIndex >= 0 ? maxFinishedIndex + 1 : 0;
     const currentStageIndex = currentStage && stageList.length > 0 ? stageList.indexOf(currentStage) : -1;
 
     if (currentStageIndex >= 0) {
