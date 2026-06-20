@@ -521,9 +521,55 @@ check_gateway_worker_secret() {
   return 0
 }
 
+write_gateway_provider_capability_skip_artifact() {
+  local reason="$1"
+  local artifact="${KASEKI_RESULTS_DIR:-/results}/provider-capability.json"
+  local pi_version
+  pi_version="$(pi --version 2>&1 || true)"
+  local extensions_dir="${PI_EXTENSIONS_DIR:-}"
+  local home_extensions="${HOME:-}/.pi/extensions"
+
+  mkdir -p "$(dirname "$artifact")" 2>/dev/null || true
+  node - "$artifact" "$pi_version" "$extensions_dir" "$home_extensions" "$reason" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [artifact, piVersion, extensionsDir, homeExtensions, reason] = process.argv.slice(2);
+fs.writeFileSync(artifact, JSON.stringify({
+  check: 'gateway-provider-capability',
+  provider: 'gateway',
+  ok: false,
+  skipped: true,
+  reason,
+  pi_version: piVersion || 'unavailable',
+  command: 'pi --list-models',
+  exit_code: null,
+  extension_paths_checked: {
+    PI_EXTENSIONS_DIR: extensionsDir || null,
+    HOME_PI_EXTENSIONS: homeExtensions || null,
+  },
+  output_tail: '',
+  remediation: 'Fix the missing LLM Gateway configuration, then rerun startup checks before validating Pi provider registration.',
+}, null, 2) + '\n');
+NODE
+
+  log_info "Skipping Pi provider registration check because gateway configuration is incomplete: $reason"
+  log_info "  Diagnostic artifact: $artifact"
+  return 2
+}
+
 check_gateway_provider_capability() {
   if [ "${KASEKI_PROVIDER:-gateway}" != "gateway" ]; then
     return 0
+  fi
+
+  if [ -z "${LLM_GATEWAY_URL:-}" ]; then
+    write_gateway_provider_capability_skip_artifact "missing_llm_gateway_url"
+    return $?
+  fi
+
+  local gateway_key_file="${LLM_GATEWAY_API_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key}"
+  if [ -z "${LLM_GATEWAY_API_KEY:-}" ] && [ ! -r "$gateway_key_file" ]; then
+    write_gateway_provider_capability_skip_artifact "missing_llm_gateway_api_key"
+    return $?
   fi
 
   log_info "Checking Pi provider registration for gateway..."
@@ -589,8 +635,16 @@ NODE
     return 0
   fi
 
-  log_error "Pi provider gateway is not registered in the worker environment"
-  log_error "  The worker image/Pi extension did not register gateway; rebuild the image or install the gateway extension before running scouting/coding."
+  if [ "$list_exit" -eq 0 ]; then
+    log_error "Pi provider gateway is not registered in the worker environment"
+    log_error "  The worker image/Pi extension did not register gateway; rebuild the image or install the gateway extension before running scouting/coding."
+  elif grep -Eiq 'extension|provider|plugin|registration|register|load' "$output_file"; then
+    log_error "Pi provider gateway could not be verified because pi --list-models reported an extension/provider loading problem"
+    log_error "  The worker image/Pi extension may not have loaded gateway; rebuild the image or fix extension registration before running scouting/coding."
+  else
+    log_error "Pi provider gateway could not be verified because pi --list-models failed"
+    log_error "  Fix the pi --list-models error shown in the diagnostic artifact, then rerun startup checks."
+  fi
   log_error "  Pi version: ${pi_version:-unavailable}"
   log_error "  Extension paths checked: PI_EXTENSIONS_DIR=${extensions_dir:-<unset>}, ${home_extensions:-<unknown>}"
   log_error "  Diagnostic artifact: $artifact"
@@ -711,8 +765,11 @@ main() {
       # LLM provider checks
       log_info "Checking primary LLM provider..."
       if [ "${KASEKI_PROVIDER:-gateway}" = "gateway" ]; then
-        check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
-        check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        if check_gateway_worker_secret; then
+          check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        else
+          overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        fi
       else
         check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       fi
@@ -755,8 +812,11 @@ main() {
       # LLM provider checks
       log_info "Checking primary LLM provider..."
       if [ "${KASEKI_PROVIDER:-gateway}" = "gateway" ]; then
-        check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
-        check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        if check_gateway_worker_secret; then
+          check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        else
+          overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        fi
       else
         check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       fi
