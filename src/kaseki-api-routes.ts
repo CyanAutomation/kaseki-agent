@@ -1227,6 +1227,8 @@ function checkWorkerSmokeTest(
         'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
         '-e',
         'KASEKI_RESULTS_DIR=/results',
+        '-e',
+        'PI_EXTENSIONS_DIR=/opt/kaseki/pi-extensions',
         '-v',
         `${workspaceDir}:/workspace:rw`,
         '-v',
