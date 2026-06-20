@@ -195,6 +195,8 @@ KASEKI_SCOUTING_SUCCEEDED_ON_ATTEMPT=""
 GOAL_SETTING_EXIT=0
 GOAL_SETTING_DURATION_SECONDS=0
 GOAL_SETTING_ACTUAL_MODEL="unknown"
+GOAL_SETTING_FALLBACK_USED=0
+GOAL_SETTING_FALLBACK_MODE=""
 KASEKI_GOAL_SETTING_ATTEMPTS=1
 KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
 ORIGINAL_TASK_PROMPT="$TASK_PROMPT"
@@ -1275,6 +1277,8 @@ write_metadata() {
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
+  "goal_setting_fallback_used": $([[ "${GOAL_SETTING_FALLBACK_USED:-0}" == "1" ]] && printf 'true' || printf 'false'),
+  "goal_setting_fallback_mode": $(printf '%s' "${GOAL_SETTING_FALLBACK_MODE:-}" | json_encode),
   "goal_check_exit_code": $GOAL_CHECK_EXIT,
   "run_evaluation_exit_code": $RUN_EVALUATION_EXIT,
   "goal_check_attempts": $GOAL_CHECK_ATTEMPTS,
@@ -4808,6 +4812,64 @@ validate_goal_setting_artifact_with_node() {
   return 0
 }
 
+create_fallback_goal_setting_artifact() {
+  local task_prompt="$1"
+  local output_path="$2"
+  local results_dir="${KASEKI_RESULTS_DIR:-/results}"
+  
+  # Generate fallback using Node.js utility function
+  node - "$task_prompt" "$output_path" <<'NODE_FALLBACK'
+const fs = require('fs');
+const path = require('path');
+
+const taskPrompt = process.argv[2];
+const outputPath = process.argv[3];
+
+// Inline fallback generation since we're in shell
+const goalPrefix = taskPrompt.substring(0, 60);
+const abbrev = taskPrompt.length > 60 ? goalPrefix + '...' : taskPrompt;
+
+const fallbackGoal = {
+  original_prompt: taskPrompt,
+  upgraded_goal: `Apply the following task: ${abbrev}`,
+  key_requirements: [
+    'Complete the task as specified',
+    'Maintain stability'
+  ],
+  success_criteria: [
+    {
+      criterion: 'Task completed as specified in the original prompt',
+      smart_score: 'medium',
+      reasoning: 'Primary success criterion when goal-setting failed'
+    }
+  ],
+  anti_patterns: {
+    do_not_modify: [],
+    do_not_break: ['Existing functionality', 'API contracts'],
+    must_preserve: []
+  },
+  constraints: {
+    operational: [],
+    architectural: [],
+    technical: ['Must pass type checking if applicable'],
+    business: []
+  },
+  reasoning: 'Fallback goal-setting artifact generated because the goal-setting agent failed to produce valid output with concrete task-specific content. Using original task prompt as primary reference.',
+  confidence: 'low'
+};
+
+fs.writeFileSync(outputPath, JSON.stringify(fallbackGoal, null, 2) + '\n');
+NODE_FALLBACK
+  
+  if [ -f "$output_path" ]; then
+    printf 'Goal-setting fallback artifact created at %s\n' "$output_path" >> "${results_dir}/goal-setting.log" 2>/dev/null || true
+    return 0
+  else
+    printf 'Failed to create fallback goal-setting artifact\n' >> "${results_dir}/goal-setting.log" 2>/dev/null || true
+    return 1
+  fi
+}
+
 run_goal_setting_agent() {
   local goal_setting_prompt goal_setting_start goal_setting_stderr_capture
 
@@ -4945,6 +5007,18 @@ NODE
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
     emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: "${KASEKI_RESULTS_DIR}"/goal-setting-validation-errors.jsonl)" "continue"
+    
+    # TIER 1 FALLBACK: Create minimal valid goal-setting artifact
+    printf '\n==> Creating fallback goal-setting artifact (degraded mode)\n'
+    if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+      printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
+      GOAL_SETTING_EXIT=0  # Mark as success since we have valid artifact
+      GOAL_SETTING_FALLBACK_USED=1
+      emit_error_event "goal_setting_fallback_activated" "Goal-setting validation failed, using fallback mode (confidence=low)" "warning"
+    else
+      printf 'Failed to create fallback artifact. Run will fail.\n'
+      # Keep GOAL_SETTING_EXIT=86 to indicate failure
+    fi
   fi
   
   rm -f "$GOAL_SETTING_CANDIDATE_ARTIFACT"
