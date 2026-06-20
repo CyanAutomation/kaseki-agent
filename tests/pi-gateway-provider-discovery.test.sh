@@ -55,7 +55,7 @@ docker run --rm \
   -e LLM_GATEWAY_API_KEY_FILE=/secrets/llm_gateway_api_key \
   -v "$KEY_FILE:/secrets/llm_gateway_api_key:ro" \
   "$IMAGE_TAG" \
-  -lc 'set -euo pipefail; pi --version; pi --list-models' >"$RUN_LOG" 2>&1
+  -l -c 'set -euo pipefail; pi --version; pi --list-models' >"$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
