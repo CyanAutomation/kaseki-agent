@@ -403,7 +403,11 @@ check_gateway_provider_capability() {
 
   local artifact="${KASEKI_RESULTS_DIR}/provider-capability.json"
   local output_file pi_version extensions_dir home_extensions list_exit gateway_registered
-  output_file="$(mktemp)"
+  local tmp_parent="${TMPDIR:-/tmp}"
+  if [ ! -d "$tmp_parent" ] && ! mkdir -p "$tmp_parent" 2>/dev/null; then
+    tmp_parent="/tmp"
+  fi
+  output_file="$(TMPDIR="$tmp_parent" mktemp)"
   pi_version="$(pi --version 2>&1 || true)"
   extensions_dir="${PI_EXTENSIONS_DIR:-}"
   home_extensions="${HOME:-}/.pi/extensions"
@@ -414,7 +418,7 @@ check_gateway_provider_capability() {
     set +e
     LLM_GATEWAY_URL="$llm_gateway_url" LLM_GATEWAY_API_KEY="$llm_gateway_api_key" pi --list-models >"$output_file" 2>&1
     list_exit=$?
-    set +e
+    set -e
   else
     printf 'pi executable not found in PATH\n' >"$output_file"
   fi
@@ -8390,6 +8394,7 @@ prepare_dependencies() {
   cache_reused="false"
   cache_source="none"
   install_mode="skipped"
+  install_reason="no_cache_available"
   restore_mode="$KASEKI_DEPENDENCY_RESTORE_MODE"
   restore_method="$restore_mode"
   case "$restore_mode" in
@@ -8459,6 +8464,7 @@ prepare_dependencies() {
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
+      install_reason="workspace_cache_validation_failed"
     fi
   elif [ ! -d node_modules ] && [ -d "$image_cache_dir" ]; then
     printf 'Dependency cache status: restoring node_modules from image cache (%s; lock_hash=%s; repo_ref_key=%s).\n' "$image_cache_dir" "$lock_hash" "$repo_ref_key"
@@ -8484,15 +8490,20 @@ prepare_dependencies() {
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
+      install_reason="image_cache_validation_failed"
     fi
   fi
 
   if [ ! -d node_modules ]; then
-    printf 'Dependency cache status: cache miss for lock hash %s (repo_ref_key=%s), running install.\n' "$lock_hash" "$repo_ref_key"
-    set_dependency_cache_status "cache-miss" "$cache_detail"
-    emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=no_cache_available" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
+    if [ "$install_reason" = "no_cache_available" ]; then
+      printf 'Dependency cache status: cache miss for lock hash %s (repo_ref_key=%s), running install.\n' "$lock_hash" "$repo_ref_key"
+    else
+      printf 'Dependency cache status: installing after restored dependency cache failed validation (reason=%s; lock_hash=%s; repo_ref_key=%s).\n' "$install_reason" "$lock_hash" "$repo_ref_key"
+    fi
+    set_dependency_cache_status "cache-install-required" "$cache_detail reason=$install_reason"
+    emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=$install_reason" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON (cache miss)
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "false" "none" "0" "no_cache_available"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "false" "none" "0" "$install_reason"
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then

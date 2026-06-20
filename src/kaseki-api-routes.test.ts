@@ -1045,6 +1045,64 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/preflight rejects gateway URLs that do not match the Pi responses endpoint', async () => {
+    const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
+    (readHostSecret as jest.Mock).mockImplementation((name: string) => {
+      if (name === 'github_app_id') return '12345';
+      if (name === 'github_app_client_id') return 'Iv123client';
+      if (name === 'github_app_private_key') return defaultGithubPrivateKeyPem;
+      if (name === 'llm_gateway_api_key') return 'host-gateway-key';
+      return null;
+    });
+    (resolveHostSecretPath as jest.Mock).mockImplementation((name: string) => `/tmp/secrets/${name}`);
+
+    const root = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-gateway-url-'));
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-preflight-gateway-url-results-'));
+    const { templateDir, checkoutDir } = writePreflightTemplateFixture(root);
+    const envSnapshot = { ...process.env };
+
+    try {
+      process.env.KASEKI_TEMPLATE_DIR = templateDir;
+      process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+      process.env.KASEKI_PROVIDER = 'gateway';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/';
+      delete process.env.LLM_GATEWAY_API_KEY;
+      delete process.env.LLM_GATEWAY_API_KEY_FILE;
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/preflight`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        const apiGatewayCheck = body.checks.find((check: any) => check.name === 'llm-gateway-connectivity');
+        const workerGatewayCheck = body.checks.find((check: any) => check.name === 'worker-gateway-secret-mount');
+
+        expect(apiGatewayCheck).toEqual(
+          expect.objectContaining({
+            ok: false,
+            detail: expect.stringContaining('/v1/responses')
+          })
+        );
+        expect(workerGatewayCheck).toEqual(
+          expect.objectContaining({
+            ok: false,
+            detail: expect.stringContaining('LLM_GATEWAY_URL must point to an OpenAI Responses endpoint')
+          })
+        );
+      } finally {
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports template activator parity when checkout and template match', async () => {
     const originalTemplateDir = process.env.KASEKI_TEMPLATE_DIR;
     const originalCheckoutDir = process.env.KASEKI_CHECKOUT_DIR;
@@ -1170,7 +1228,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         expect.arrayContaining([
           'LLM_GATEWAY_API_KEY_FILE=/run/secrets/kaseki/llm_gateway_api_key',
           'KASEKI_SECRETS_DIR=/run/secrets/kaseki',
-          'KASEKI_RESULTS_DIR=/results'
+          'KASEKI_RESULTS_DIR=/results',
+          'TMPDIR=/workspace/tmp'
         ])
       );
       expect(runArgs.slice(runArgs.indexOf('-e'), runArgs.indexOf('-v'))).toContain('KASEKI_RESULTS_DIR=/results');

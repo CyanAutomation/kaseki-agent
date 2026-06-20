@@ -39,7 +39,7 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
-import { testGatewayConnectivity, formatGatewayTestResponse, resolveGatewayApiKey } from './kaseki-api-gateway-test';
+import { testGatewayConnectivity, formatGatewayTestResponse, resolveGatewayApiKey, isResponsesEndpoint } from './kaseki-api-gateway-test';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
@@ -853,8 +853,9 @@ function checkLLMGatewayKey(): PreflightCheck {
 
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const keyValue = readHostSecret('llm_gateway_api_key');
+  const gatewayUrlError = validateGatewayRuntimeUrl(gatewayUrl);
 
-  if (gatewayUrl && keyValue) {
+  if (gatewayUrl && !gatewayUrlError && keyValue) {
     return {
       name: 'llm-gateway-connectivity',
       ok: true,
@@ -865,14 +866,31 @@ function checkLLMGatewayKey(): PreflightCheck {
   const locations = getSecretLocations('llm_gateway_api_key');
   const missingParts = [];
   if (!gatewayUrl) missingParts.push('LLM_GATEWAY_URL');
+  if (gatewayUrlError) missingParts.push(gatewayUrlError);
   if (!keyValue) missingParts.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE');
 
   return {
     name: 'llm-gateway-connectivity',
     ok: false,
     detail: `Gateway URL/key connectivity prerequisites are missing: ${missingParts.join(', ')}`,
-    remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-endpoint>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
+    remediation: `Set environment variables:\n  LLM_GATEWAY_URL=<your-gateway-endpoint, e.g. https://gateway.example/v1/responses>\n  LLM_GATEWAY_API_KEY_FILE=${locations.primary}\n  or LLM_GATEWAY_API_KEY=<inline-key>`,
   };
+}
+
+function validateGatewayRuntimeUrl(gatewayUrl: string | undefined): string | undefined {
+  if (!gatewayUrl) return undefined;
+  try {
+    const parsed = new URL(gatewayUrl);
+    if (!parsed.protocol.startsWith('http')) {
+      return 'LLM_GATEWAY_URL must use HTTP or HTTPS';
+    }
+    if (!isResponsesEndpoint(parsed)) {
+      return 'LLM_GATEWAY_URL must point to an OpenAI Responses endpoint such as /v1/responses';
+    }
+    return undefined;
+  } catch {
+    return 'LLM_GATEWAY_URL must be a valid URL';
+  }
 }
 
 function isGatewayProviderEnabled(): boolean {
@@ -898,9 +916,12 @@ function checkWorkerGatewayConfig(): PreflightCheck {
       'llm_gateway_api_key',
     );
   const missingParts: string[] = [];
+  const gatewayUrlError = validateGatewayRuntimeUrl(gatewayUrl);
 
   if (!gatewayUrl) {
     missingParts.push('LLM_GATEWAY_URL in the API environment');
+  } else if (gatewayUrlError) {
+    missingParts.push(gatewayUrlError);
   }
 
   if (!gatewaySecret.configured) {
@@ -1228,6 +1249,8 @@ function checkWorkerSmokeTest(
         '-e',
         'KASEKI_RESULTS_DIR=/results',
         '-e',
+        'TMPDIR=/workspace/tmp',
+        '-e',
         'PI_EXTENSIONS_DIR=/opt/kaseki/pi-extensions',
         '-v',
         `${workspaceDir}:/workspace:rw`,
@@ -1250,7 +1273,7 @@ function checkWorkerSmokeTest(
         name: 'worker-smoke',
         ok: true,
         detail:
-          'Worker container can start with workspace, results, cache, OpenRouter, and LLM Gateway secret mounts.',
+          'Worker container can start with workspace, results, cache, OpenRouter, LLM Gateway secret mounts, and a worker TMPDIR path that may need runtime creation.',
       };
     }
 

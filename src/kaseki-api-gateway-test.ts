@@ -27,6 +27,7 @@ export interface GatewayTestResult {
 }
 
 const GATEWAY_LATENCY_WARNING_MS = 5000;
+const GATEWAY_RESPONSES_PATH_PATTERN = /\/v\d+\/responses\/?$/;
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -110,6 +111,18 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       timestamp,
       authenticationValidated: false,
       remediation: 'Ensure LLM_GATEWAY_URL is a valid HTTP/HTTPS URL',
+    };
+  }
+
+  if (!isResponsesEndpoint(parsedUrl)) {
+    return {
+      status: 'error',
+      detail: `Gateway URL must point to an OpenAI Responses-compatible endpoint such as /v1/responses: ${gatewayUrl}`,
+      gatewayUrl,
+      responseTime: 0,
+      timestamp,
+      authenticationValidated: false,
+      remediation: 'Set LLM_GATEWAY_URL to the same endpoint Pi will call for generation, for example https://gateway.example/v1/responses. A gateway root URL can make /api/gateway-test pass while scouting/coding fails later with 404/502 provider errors.',
     };
   }
 
@@ -207,6 +220,10 @@ function buildModelsEndpoint(baseUrl: string): string {
 
   // Default to OpenAI-compatible path
   return `${url}/v1/models`;
+}
+
+export function isResponsesEndpoint(url: URL): boolean {
+  return GATEWAY_RESPONSES_PATH_PATTERN.test(url.pathname);
 }
 
 /**

@@ -212,6 +212,7 @@ describe('StatusResponseBuilder', () => {
       expect(response.diagnosticSummary?.dependencyCache).toMatchObject({
         restored: true,
         reinstallTriggered: true,
+        validationFailed: true,
       });
     });
 
@@ -300,14 +301,37 @@ describe('StatusResponseBuilder', () => {
         provider_error_model: 'z-ai/glm-4.5-air:free',
         provider_error_message: '404 This model is unavailable for free.',
       };
+      const goalSettingPlaceholder = {
+        reason_code: 'placeholder_content',
+        field: 'goal.json',
+        actual: 'placeholder goal output',
+        severity: 'warning',
+        suggestion: 'retry goal setting',
+      };
+      const scoutingFallbackRecovered = {
+        reason_code: 'patch_fallback_recovered',
+        field: 'scouting-candidate.json',
+        actual: 'fallback recovered missing candidate history',
+        recovered: true,
+        severity: 'warning',
+        suggestion: 'use terminal failure diagnostics first',
+      };
 
       (fs.existsSync as jest.Mock).mockReturnValue(false);
       (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
         'failure.json': { exists: true, size: JSON.stringify(failureJson).length },
+        'goal-setting-validation-errors.jsonl': { exists: true, size: JSON.stringify(goalSettingPlaceholder).length + 1 },
+        'scouting-validation-errors.jsonl': { exists: true, size: JSON.stringify(scoutingFallbackRecovered).length + 1 },
       });
       mockCache.getOrLoad.mockImplementation((filePath: string) => {
         if (filePath.includes('failure.json')) {
           return JSON.stringify(failureJson);
+        }
+        if (filePath.includes('goal-setting-validation-errors.jsonl')) {
+          return JSON.stringify(goalSettingPlaceholder) + '\n';
+        }
+        if (filePath.includes('scouting-validation-errors.jsonl')) {
+          return JSON.stringify(scoutingFallbackRecovered) + '\n';
         }
         return null;
       });
@@ -318,6 +342,7 @@ describe('StatusResponseBuilder', () => {
         'model_unavailable: 404 This model is unavailable for free. (phase: coding, model: z-ai/glm-4.5-air:free)'
       );
       expect(response.diagnosticEntryPoint).toBe('failure.json');
+      expect(response.diagnosticSummary?.phaseDiagnostics).toBeUndefined();
     });
 
     it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {

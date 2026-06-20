@@ -267,10 +267,12 @@ export interface StatusResponse {
       field?: string;
       detail?: string;
       suggestion?: string;
+      recovered?: boolean;
     }>;
     dependencyCache?: {
       restored?: boolean;
       reinstallTriggered?: boolean;
+      validationFailed?: boolean;
       messages: string[];
     };
     testFailure?: {
