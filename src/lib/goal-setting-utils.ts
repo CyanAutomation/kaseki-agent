@@ -72,13 +72,9 @@ export function hasPlaceholders(artifact: unknown): boolean {
  * @returns Valid GoalSettingOutput with low confidence
  */
 export function createFallbackGoalSettingArtifact(taskPrompt: string): GoalSettingOutput {
-  // Extract first 60 chars for abbreviated goal
-  const goalPrefix = taskPrompt.substring(0, 60);
-  const abbrev = taskPrompt.length > 60 ? goalPrefix + '...' : taskPrompt;
-
   return {
     original_prompt: taskPrompt,
-    upgraded_goal: `Apply the following task: ${abbrev}`,
+    upgraded_goal: taskPrompt,
     key_requirements: ['Complete the task as specified', 'Maintain stability'],
     success_criteria: [
       {

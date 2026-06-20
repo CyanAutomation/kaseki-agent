@@ -4301,6 +4301,11 @@ is_transient_goal_setting_failure() {
       valid)
         return 1
         ;;
+      placeholder_content)
+        # Deterministic failure - same prompt will produce same placeholder result
+        # Retry requires a different prompt or model configuration, not just retry
+        return 1
+        ;;
       schema_mismatch|malformed_json|missing_required_fields|empty_goal)
         # Deterministic failures - do not retry
         return 1
@@ -4411,53 +4416,92 @@ Analyze this prompt for:
 Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT (no markdown, no code fences) with this shape:
 
 {
-  "original_prompt": "the original user prompt",
-  "upgraded_goal": "concise goal (1-3 sentences), actionable for a coding agent",
-  "key_requirements": [
-    "requirement 1 (critical constraint or dependency)",
-    "requirement 2"
-  ],
+  "original_prompt": "<the user's original task prompt, verbatim>",
+  "upgraded_goal": "<concise goal (1-3 sentences), actionable for a coding agent>",
+  "key_requirements": ["<requirement 1>", "<requirement 2>"],
   "success_criteria": [
     {
-      "criterion": "specific, measurable criterion",
+      "criterion": "<specific, measurable criterion>",
       "smart_score": "high",
-      "reasoning": "brief reason (e.g., clearly measurable, achievable in one run)"
+      "reasoning": "<brief reason why this is SMART (Specific, Measurable, Achievable, Relevant, Time-bound)>"
     }
   ],
   "anti_patterns": {
-    "do_not_modify": ["path/pattern1/**", "path/pattern2/**"],
-    "do_not_break": ["API contract", "backward compatibility"],
-    "must_preserve": ["error messages", "existing behavior"]
+    "do_not_modify": ["<file/pattern to preserve>"],
+    "do_not_break": ["<functionality/contract to preserve>"],
+    "must_preserve": ["<behavior/structure to preserve>"]
   },
   "constraints": {
-    "operational": ["e.g., max 3 files changed", "must not require migration"],
-    "architectural": ["e.g., respect service boundaries", "no new dependencies"],
-    "technical": ["e.g., must pass type checking", "no deprecated APIs"],
-    "business": ["e.g., maintain user-facing behavior", "no data loss"]
+    "operational": ["<operational constraint>"],
+    "architectural": ["<architectural constraint>"],
+    "technical": ["<technical constraint>"],
+    "business": ["<business constraint>"]
   },
   "examples": {
-    "before": "input/state before changes (if inferrable)",
-    "after": "expected output/state after changes (if inferrable)"
+    "before": "<input/state before changes>",
+    "after": "<expected output/state after changes>"
   },
   "quality_metrics": {
-    "clarity": "high",
-    "measurability": "high",
-    "specificity": "medium",
-    "scope_clarity": "medium",
-    "constraint_strength": "high"
+    "clarity": "high|medium|low",
+    "measurability": "high|medium|low",
+    "specificity": "high|medium|low",
+    "scope_clarity": "high|medium|low",
+    "constraint_strength": "high|medium|low"
   },
-  "reasoning": "explanation of upgrades made and key decisions",
+  "reasoning": "<explanation of upgrades made and key decisions>",
+  "confidence": "high|medium|low"
+}
+
+=== CONCRETE EXAMPLE (for reference - NOT to be copied) ===
+
+For a task like "Fix the parser's null-handling in parseRole()", a valid output would be:
+
+{
+  "original_prompt": "Fix null-safety in parseRole() function. Currently crashes on null input; should return undefined instead.",
+  "upgraded_goal": "Add null-safety checks to parseRole() to handle null/undefined inputs gracefully, with test coverage",
+  "key_requirements": [
+    "Must pass TypeScript type checking",
+    "Must not break existing callers",
+    "All new tests must pass"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "parseRole(null) returns undefined instead of throwing",
+      "smart_score": "high",
+      "reasoning": "Directly addresses the null-safety issue and is immediately testable"
+    },
+    {
+      "criterion": "Add 3 tests covering null, undefined, and invalid-type cases",
+      "smart_score": "high",
+      "reasoning": "Specific, measurable, and verifiable in one run"
+    }
+  ],
+  "anti_patterns": {
+    "do_not_modify": ["src/lib/role-constants.ts", "src/types/**"],
+    "do_not_break": ["API contract for parseRole()", "existing error handling patterns"],
+    "must_preserve": ["Error message format for validation failures"]
+  },
+  "constraints": {
+    "operational": ["Change only src/lib/parser.ts and tests/parser.test.ts"],
+    "architectural": ["Respect the existing error-handling pattern"],
+    "technical": ["Must pass type checking and linting"],
+    "business": ["No breaking changes to API callers"]
+  },
+  "reasoning": "The task is focused on defensive programming (null-handling) in a well-tested function. Constraint to parser.ts+tests is tight, making this achievable in one run.",
   "confidence": "high"
 }
 
+=== CRITICAL INSTRUCTIONS ===
+
+1. **DO NOT COPY THE SCHEMA TEMPLATE ABOVE.** Replace every field with concrete values from the actual task prompt.
+2. **DO NOT USE PLACEHOLDER TEXT.** Never write "e.g., max 3 files changed" or "path/pattern1/**" or "input/state before changes (if inferrable)". Write actual values.
+3. **DO NOT USE ANGLE BRACKETS <...> IN YOUR OUTPUT.** The angle brackets above are markers only. Replace them with real text.
+4. **CONFIDENCE FIELD**: Use only "high", "medium", or "low" (not "high|medium|low").
+5. **ENUM FIELDS**: quality_metrics.clarity must be one of: "high", "medium", "low" (not all three).
+
+If you find yourself about to output a template or example shape, STOP and rewrite with concrete values instead.
+
 Enum fields must contain only one literal value: "high", "medium", or "low".
-Do not copy placeholder strings such as "high|medium|low" into any JSON value.
-Do not copy any example or schema description text into JSON values. Values such as
-"the original user prompt", "concise goal (1-3 sentences)", "specific, measurable
-criterion", "path/pattern1/**", "path/pattern2/**", "e.g., max 3 files changed",
-and "explanation of upgrades made and key decisions" are invalid placeholders.
-If the prompt is already specific, still rewrite every field with concrete wording
-from the actual task prompt.
 
 === TEST UPDATE REQUIREMENTS ===
 
@@ -4825,13 +4869,11 @@ const path = require('path');
 const taskPrompt = process.argv[2];
 const outputPath = process.argv[3];
 
-// Inline fallback generation since we're in shell
-const goalPrefix = taskPrompt.substring(0, 60);
-const abbrev = taskPrompt.length > 60 ? goalPrefix + '...' : taskPrompt;
-
+// Use full task prompt as upgraded_goal (no truncation)
+// This preserves rich context for downstream phases
 const fallbackGoal = {
   original_prompt: taskPrompt,
-  upgraded_goal: `Apply the following task: ${abbrev}`,
+  upgraded_goal: taskPrompt,
   key_requirements: [
     'Complete the task as specified',
     'Maintain stability'
@@ -5104,6 +5146,10 @@ classify_goal_setting_error() {
     local reason_code
     reason_code=$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || echo "")
     case "$reason_code" in
+      placeholder_content)
+        echo "GOAL_SETTING_PLACEHOLDER_CONTENT"
+        return 0
+        ;;
       schema_mismatch)
         echo "GOAL_SETTING_SCHEMA_MISMATCH"
         return 0
@@ -5197,14 +5243,17 @@ run_goal_setting_agent_with_retry() {
       export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=$attempt
       clear_provider_error
       
-      # Extract upgraded goal and replace TASK_PROMPT
-      if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
+      # Extract upgraded goal and replace TASK_PROMPT, BUT only if we didn't use fallback
+      # (If fallback was used, preserve the original rich TASK_PROMPT for better downstream context)
+      if [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && [ -f "$GOAL_SETTING_ARTIFACT" ]; then
         local upgraded_goal
         upgraded_goal="$(node -e 'try { const a=require("'"$GOAL_SETTING_ARTIFACT"'"); console.log(a.upgraded_goal || ""); } catch { console.log(""); }' 2>/dev/null || true)"
         if [ -n "$upgraded_goal" ]; then
           export TASK_PROMPT="$upgraded_goal"
           printf '[Goal-Setting Phase] Upgraded TASK_PROMPT\n'
         fi
+      elif [ "$GOAL_SETTING_FALLBACK_USED" = "1" ]; then
+        printf '[Goal-Setting Phase] Fallback artifact used; preserving original TASK_PROMPT for downstream agents\n'
       fi
       
       STATUS="$pre_goal_setting_status"
