@@ -77,6 +77,14 @@ async function main(): Promise<void> {
   // Detect npm version (async, with graceful fallback)
   const npmVersion = await getNpmVersion();
 
+  // Determine active LLM provider
+  const activeLLMProvider = process.env.KASEKI_PROVIDER || 'gateway';
+  const hasOpenRouterFallback = !!(
+    process.env.OPENROUTER_API_KEY ||
+    process.env.OPENROUTER_API_KEY_FILE ||
+    process.env.KASEKI_API_KEY
+  );
+
   logger.event('service_startup_config', {
     port: config.port,
     host: config.host,
@@ -93,6 +101,8 @@ async function main(): Promise<void> {
     npmVersion,
     platform: process.platform,
     arch: process.arch,
+    activeLLMProvider,
+    fallbackProviderAvailable: hasOpenRouterFallback,
   });
 
   if (config.apiKeys.length === 0) {

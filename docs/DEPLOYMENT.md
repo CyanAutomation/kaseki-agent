@@ -492,6 +492,7 @@ This file (created with 0644 permissions) records where setup normalized your se
 **Checkout freshness note**: A successful `host setup --fix` is necessary but not sufficient for freshness enforcement. Runtime preflight still needs read access to `/agents/kaseki-agent/.git` as the service UID/GID (default `10000:10000`). If ownership or permissions drift after setup, preflight will report the contextualized failure recorded in host state and suggest remediation.
 
 **Checkout freshness troubleshooting**:
+
 - If the probe fails with git metadata/readability signals (for example `permission denied`, `not a git repository`, or inaccessible `.git`), remediation remains ownership/permission focused.
 - If the probe fails with identity-switch/tooling signals (for example unknown user/group or `sudo`/`runuser` invocation errors), remediation will explicitly indicate that the host could not impersonate UID:GID `10000:10000` and instruct you to configure a valid impersonation method (or passwd/group mapping) before rerunning setup.
 
@@ -723,18 +724,21 @@ Should return:
 **Solution Steps**:
 
 1. **Check the state file** (created by setup):
+
    ```bash
    sudo cat ~/.kaseki/host-state.json
    # Should show: { "normalized_secrets_dir": "/home/pi/secrets", ... }
    ```
 
 2. **If state file doesn't exist**, re-run setup to create it:
+
    ```bash
    sudo kaseki-agent host setup --fix
    # This creates ~/.kaseki/host-state.json and normalizes secrets
    ```
 
 3. **Verify secrets exist** at the discovered location:
+
    ```bash
    # Replace /home/pi with your actual home from the state file
    sudo ls -la /home/pi/secrets/
@@ -742,6 +746,7 @@ Should return:
    ```
 
 4. **If using a custom secrets path**:
+
    ```bash
    # Re-run setup with the custom path
    sudo KASEKI_HOST_SECRETS_DIR=/custom/path kaseki-agent host setup --fix
@@ -749,6 +754,7 @@ Should return:
    ```
 
 5. **If secrets are in `/agents/secrets` but preflight checks elsewhere**:
+
    ```bash
    # Force preflight to use the correct path
    sudo KASEKI_SECRETS_DIR=/agents/secrets kaseki-agent host preflight
@@ -793,6 +799,89 @@ KASEKI_API_LOG_DIR=/var/log/kaseki-api
 ```
 
 **Note on secrets:** Kaseki API keys are read from the fixed host-secret locations. For Docker deployments, the canonical path is `/agents/secrets/kaseki_api_keys`; the `~/secrets/kaseki_api_keys` fallback is for non-Docker (host Node.js) deployments only. Other supported secret file variables are optional if their files are in `/agents/secrets/`; set them only for non-standard locations.
+
+### LLM Provider Configuration
+
+Kaseki Agent uses a two-tier LLM provider system:
+
+1. **Primary Provider** (selected via `KASEKI_PROVIDER`):
+   - `gateway` (default): LLM Gateway for all agent runs
+   - `openrouter`: OpenRouter for all agent runs
+
+2. **Fallback Provider**: OpenRouter is always validated during startup as a backup, regardless of primary selection
+
+**Provider Selection & Startup Behavior:**
+
+When the API service starts, it logs the active LLM provider:
+
+```
+ℹ Active LLM provider: gateway (with OpenRouter fallback)
+```
+
+Startup checks are organized by category:
+
+- **Primary LLM Provider** — validates the active provider (gateway or openrouter)
+- **Fallback LLM Provider** — always validates OpenRouter availability
+- **GitHub Integration** — separate from provider choice
+- **Platform Infrastructure** — /agents paths, git config
+
+**Configuration Examples:**
+
+**Using Gateway (recommended, default):**
+
+```bash
+# docker-compose.yml or .env
+KASEKI_PROVIDER=gateway
+LLM_GATEWAY_URL=https://gateway.example.com/v1
+LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key
+
+# Also configure OpenRouter as optional fallback
+OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key
+```
+
+Then set up secrets:
+
+```bash
+sudo tee /agents/secrets/llm_gateway_api_key >/dev/null <<'EOF'
+your-gateway-api-key-here
+EOF
+
+sudo tee /agents/secrets/openrouter_api_key >/dev/null <<'EOF'
+your-openrouter-api-key-here
+EOF
+
+sudo chown 10000:10000 /agents/secrets/llm_gateway_api_key /agents/secrets/openrouter_api_key
+sudo chmod 600 /agents/secrets/llm_gateway_api_key /agents/secrets/openrouter_api_key
+```
+
+**Using OpenRouter:**
+
+```bash
+# docker-compose.yml or .env
+KASEKI_PROVIDER=openrouter
+OPENROUTER_API_KEY_FILE=/agents/secrets/openrouter_api_key
+
+# Optionally keep Gateway configured for reference/fallback testing
+LLM_GATEWAY_URL=https://gateway.example.com/v1
+LLM_GATEWAY_API_KEY_FILE=/agents/secrets/llm_gateway_api_key
+```
+
+**Startup Log Example (Gateway Primary):**
+
+```
+ℹ Active LLM provider: gateway (with OpenRouter fallback)
+
+ℹ Checking primary LLM provider...
+✓ LLM_GATEWAY_URL is set
+✓ Gateway API key found and readable: /run/secrets/kaseki/llm_gateway_api_key
+✓ Pi provider registration verified
+
+ℹ Checking fallback LLM provider (OpenRouter)...
+✓ OpenRouter API key found and readable: /run/secrets/kaseki/openrouter_api_key
+
+ℹ Checking GitHub integration...
+✓ GitHub App credentials found
+```
 
 ---
 
@@ -1097,16 +1186,20 @@ docker run --rm \
      1. Update the docker-compose.yml with your domain (`kaseki-api.example.com` → your domain)
      2. Update Traefik ACME email in the `--certificatesresolvers.letsencrypt.acme.email` flag
      3. Create/verify secrets directory:
+
         ```bash
         sudo mkdir -p /home/pi/secrets
         sudo chown 10000:10000 /home/pi/secrets
         sudo chmod 700 /home/pi/secrets
         ```
+
      4. Start services:
+
         ```bash
         docker-compose up -d
         docker-compose logs -f traefik kaseki-api
         ```
+
      5. Access the Task Console at `https://kaseki-api.example.com/ui`
 
      **Key Features:**

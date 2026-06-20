@@ -83,6 +83,7 @@ append_validation_failure_tail() {
 }
 
 run_validation_commands() {
+  # shellcheck disable=SC2034 # Reference variables are assigned for external use via namerefs
   local stage_label="$1"
   local commands="$2"
   local log_file="$3"

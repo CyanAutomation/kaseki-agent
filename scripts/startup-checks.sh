@@ -650,24 +650,88 @@ check_git_safe_directory() {
   fi
 }
 
+# --- Provider awareness functions ---
+
+log_provider_info() {
+  local active_provider="${KASEKI_PROVIDER:-gateway}"
+  local fallback_status="OpenRouter"
+  
+  echo ""
+  log_info "Kaseki startup checks (mode: $MODE)"
+  echo ""
+  log_info "Active LLM provider: $active_provider (with $fallback_status fallback)"
+  echo ""
+}
+
+check_unused_secrets() {
+  local active_provider="${KASEKI_PROVIDER:-gateway}"
+  local gateway_key_file="${LLM_GATEWAY_API_KEY_FILE:-${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}/llm_gateway_api_key}"
+  local openrouter_key_present=0
+  local gateway_key_present=0
+  
+  # Check if OpenRouter key is configured
+  if [ -n "${OPENROUTER_API_KEY:-}" ] || [ -f "${OPENROUTER_API_KEY_FILE:-}" ] || [ -f "$KASEKI_SECRETS_DIR/openrouter_api_key" ] 2>/dev/null || [ -f "$HOME/.kaseki/secrets/openrouter_api_key" ] 2>/dev/null; then
+    openrouter_key_present=1
+  fi
+  
+  # Check if Gateway secrets are configured
+  if [ -n "${LLM_GATEWAY_URL:-}" ] || [ -n "${LLM_GATEWAY_API_KEY:-}" ] || [ -f "$gateway_key_file" ] 2>/dev/null; then
+    gateway_key_present=1
+  fi
+  
+  # Warn about unused secrets (non-blocking)
+  if [ "$active_provider" = "gateway" ] && [ "$openrouter_key_present" -eq 1 ]; then
+    log_warn "Unused secret detected: OpenRouter API key configured but gateway is primary provider"
+  fi
+  
+  if [ "$active_provider" = "openrouter" ] && [ "$gateway_key_present" -eq 1 ]; then
+    log_warn "Unused secret detected: LLM Gateway URL/key configured but OpenRouter is primary provider"
+  fi
+  
+  return 0
+}
+
 # --- Main execution ---
 
 main() {
   local overall_exit=0
 
-  echo ""
-  log_info "Kaseki startup checks (mode: $MODE)"
-  echo ""
+  log_provider_info
 
   case "$MODE" in
     all)
+      # Platform infrastructure checks
+      log_info "Checking platform infrastructure..."
       check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_subdirectories || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_bootstrap_status || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      echo ""
+      
+      # LLM provider checks
+      log_info "Checking primary LLM provider..."
+      if [ "${KASEKI_PROVIDER:-gateway}" = "gateway" ]; then
+        check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      else
+        check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      fi
+      echo ""
+      
+      # Fallback provider validation
+      log_info "Checking fallback LLM provider (OpenRouter)..."
       check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_unused_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      echo ""
+      
+      # GitHub integration checks
+      log_info "Checking GitHub integration..."
       check_github_app_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_github_app_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      echo ""
+      
+      # Platform-specific setup
+      log_info "Checking git configuration..."
       check_git_safe_directory || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     permissions)
@@ -681,12 +745,31 @@ main() {
       check_kaseki_root || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
     worker)
+      # Worker container setup checks
+      log_info "Checking worker container mounts..."
       check_worker_mounts || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_results_writable || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      echo ""
+      
+      # LLM provider checks
+      log_info "Checking primary LLM provider..."
+      if [ "${KASEKI_PROVIDER:-gateway}" = "gateway" ]; then
+        check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+        check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      else
+        check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      fi
+      echo ""
+      
+      # Fallback provider validation
+      log_info "Checking fallback LLM provider (OpenRouter)..."
       check_api_key || overall_exit=$(merge_startup_status "$overall_exit" "$?")
-      check_gateway_worker_secret || overall_exit=$(merge_startup_status "$overall_exit" "$?")
-      check_gateway_provider_capability || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      check_unused_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
+      echo ""
+      
+      # GitHub integration checks
+      log_info "Checking GitHub integration..."
       check_github_app_secrets || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_github_app_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       ;;
