@@ -197,6 +197,16 @@ describe('goal-setting-utils', () => {
       expect(artifact.upgraded_goal).toBeTruthy();
     });
 
+    test('should preserve full task prompt in upgraded_goal (not truncate)', () => {
+      const taskPrompt = 'Fix GitHub issue #487: Graceful shutdown can exit before scheduler persistence finishes. Update src/job-scheduler.ts and src/kaseki-api/service-bootstrapper.ts to make JobScheduler.shutdown() return Promise<void> and await persistence.';
+      const artifact = createFallbackGoalSettingArtifact(taskPrompt);
+      // The full prompt should be included in the upgraded_goal, not truncated to 60 chars
+      expect(artifact.upgraded_goal).toContain('GitHub issue #487');
+      expect(artifact.upgraded_goal).toContain('scheduler');
+      // Verify it's not just truncated
+      expect(artifact.upgraded_goal.length).toBeGreaterThan(80);
+    });
+
     test('should have valid constraint structure', () => {
       const taskPrompt = 'Fix parser bug';
       const artifact = createFallbackGoalSettingArtifact(taskPrompt);
