@@ -365,16 +365,39 @@ describe('FailureArtifactWriter', () => {
       expect(fs.existsSync(resultDir)).toBe(false);
     });
 
-    test('gracefully handles write errors without throwing', () => {
-      // Use a directory that cannot be written to
-      const resultsDir = '/root/.kaseki-cant-write-here';
+    test('gracefully handles deterministic artifact directory failures without partial artifacts or state changes', () => {
+      const resultsDir = createResultsDir();
       const writer = new FailureArtifactWriter(resultsDir);
       const job = createMockJob();
+      const originalJobState = JSON.stringify(job);
+      const resultDirPath = path.join(resultsDir, job.id);
+      const blockingFixtureContent = 'controlled fixture that prevents artifact directory creation\n';
+      fs.writeFileSync(resultDirPath, blockingFixtureContent);
 
-      // This should not throw even though we can't write
       expect(() => {
         writer.writeFailureArtifacts(job, { attempted: true, ok: false });
       }).not.toThrow();
+
+      expect(fs.statSync(resultDirPath).isFile()).toBe(true);
+      expect(fs.readFileSync(resultDirPath, 'utf-8')).toBe(blockingFixtureContent);
+      expect(JSON.stringify(job)).toBe(originalJobState);
+      expect(fs.existsSync(path.join(resultDirPath, 'failure.json'))).toBe(false);
+      expect(fs.existsSync(path.join(resultDirPath, 'metadata.json'))).toBe(false);
+      expect(fs.existsSync(path.join(resultDirPath, 'stderr.log'))).toBe(false);
+
+      const structuredErrors = debugSpy.mock.calls.filter(
+        ([message]) => typeof message === 'string' && (message as string).includes('write_error_context')
+      );
+      expect(structuredErrors).toHaveLength(1);
+      const payload = structuredErrors[0][1] as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        operation: 'write failure artifacts',
+        filePath: resultDirPath,
+        jobId: job.id,
+        errorCode: 'EEXIST',
+      });
+      expect(String(payload.errorMessage)).toContain('file already exists');
+      expect(errorSpy).toHaveBeenCalledTimes(1);
     });
 
     test('logs errno-style failure context for duplicate artifacts', () => {
