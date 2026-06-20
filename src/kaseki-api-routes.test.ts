@@ -951,6 +951,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     try {
       process.env.KASEKI_TEMPLATE_DIR = templateDir;
       process.env.KASEKI_CHECKOUT_DIR = checkoutDir;
+      process.env.KASEKI_PROVIDER = 'gateway';
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
 
       const scheduler = createMockScheduler({});
@@ -962,7 +963,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
-        const consistencyCheck = body.checks.find((check: any) => check.name === 'gateway-test-secret-consistency');
+        const consistencyCheck = body.checks.find((check: any) => check.name === 'gateway-api-secret-consistency');
         expect(consistencyCheck).toEqual(
           expect.objectContaining({
             ok: true,
@@ -1016,8 +1017,8 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           headers: { Authorization: 'Bearer test-key' }
         });
         const body = (await res.json()) as any;
-        const consistencyCheck = body.checks.find((check: any) => check.name === 'gateway-test-secret-consistency');
-        const workerGatewayCheck = body.checks.find((check: any) => check.name === 'worker-gateway-config');
+        const consistencyCheck = body.checks.find((check: any) => check.name === 'gateway-api-secret-consistency');
+        const workerGatewayCheck = body.checks.find((check: any) => check.name === 'worker-gateway-secret-mount');
 
         expect(consistencyCheck).toEqual(
           expect.objectContaining({
@@ -1032,7 +1033,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
             remediation: expect.stringContaining('Gateway test passed for the API container')
           })
         );
-        expect(workerGatewayCheck.remediation).toContain('worker containers also require LLM_GATEWAY_URL and a mounted llm_gateway_api_key');
+        expect(workerGatewayCheck.remediation).toContain('worker containers also require LLM_GATEWAY_URL, a mounted llm_gateway_api_key');
         expect(JSON.stringify(workerGatewayCheck)).not.toContain('inline-api-gateway-test-key');
       } finally {
         await cleanupTestApp(server, idempotencyStore);

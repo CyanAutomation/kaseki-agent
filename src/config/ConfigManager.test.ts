@@ -16,9 +16,14 @@ describe('ConfigManager', () => {
     originalCleanupEnv = snapshotEnv([
       'KASEKI_AUTO_LINT_CLEANUP',
       'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+      'KASEKI_PROVIDER',
     ]);
     clearEnv(INLINE_SECRET_ENV_VARS);
-    clearEnv(['KASEKI_AUTO_LINT_CLEANUP', 'KASEKI_AUTO_LINT_CLEANUP_COMMANDS']);
+    clearEnv([
+      'KASEKI_AUTO_LINT_CLEANUP',
+      'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+      'KASEKI_PROVIDER',
+    ]);
 
     configManager = new ConfigManager();
     // Load to initialize config with defaults
@@ -28,6 +33,23 @@ describe('ConfigManager', () => {
   afterEach(() => {
     restoreEnv(originalInlineSecretEnv);
     restoreEnv(originalCleanupEnv);
+  });
+
+  test('defaults provider to openrouter', () => {
+    expect(configManager.get('agent.provider')).toBe('openrouter');
+  });
+
+  test('honors explicit gateway provider from environment', async () => {
+    process.env.KASEKI_PROVIDER = 'gateway';
+
+    try {
+      const manager = new ConfigManager();
+      await manager.load();
+
+      expect(manager.get('agent.provider')).toBe('gateway');
+    } finally {
+      clearEnv(['KASEKI_PROVIDER']);
+    }
   });
 
   test('defaults automatic lint cleanup to enabled with no custom commands', () => {
@@ -50,7 +72,11 @@ describe('ConfigManager', () => {
         commands: ['npm run lint:fix', 'npm run format'],
       });
     } finally {
-      clearEnv(['KASEKI_AUTO_LINT_CLEANUP', 'KASEKI_AUTO_LINT_CLEANUP_COMMANDS']);
+      clearEnv([
+        'KASEKI_AUTO_LINT_CLEANUP',
+        'KASEKI_AUTO_LINT_CLEANUP_COMMANDS',
+        'KASEKI_PROVIDER',
+      ]);
     }
   });
 
