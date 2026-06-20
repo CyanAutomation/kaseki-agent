@@ -1003,6 +1003,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       process.env.KASEKI_PROVIDER = 'gateway';
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'inline-api-gateway-test-key';
+      delete process.env.LLM_GATEWAY_API_KEY_FILE;
       // Set to a non-existent path so the gateway secret file path doesn't exist
       process.env.KASEKI_SECRETS_DIR = '/tmp/kaseki-nonexistent-secrets-' + Math.random().toString(36).substring(7);
 
@@ -2604,6 +2605,95 @@ describe('kaseki-api-routes status artifact hints', () => {
         availableFiles: ['metadata.json', 'failure.json', 'stderr.log']
       });
       expect(body.diagnosticEntryPoint).toBe('failure.json');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('failed pre-agent validation status exposes failing test diagnostics', async () => {
+    const jobId = 'kaseki-pre-validation-failed';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobDir, 'metadata.json'),
+      JSON.stringify({
+        instance: jobId,
+        failed_command: 'pre-agent validation',
+        pre_validation_exit_code: 1,
+        exit_code: 1
+      })
+    );
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), '{"pre_validation_failure_reason":"pre_agent_validation_failed: npm run test (exit 1)"}');
+    fs.writeFileSync(
+      path.join(jobDir, 'pre-validation.log'),
+      [
+        'Summary of all failing tests',
+        'FAIL src/kaseki-api-routes.test.ts',
+        '  ● kaseki-api-routes preflight diagnostics › reports worker gateway launch config missing',
+        '    expect(received).toEqual(expected) // deep equality'
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(jobDir, 'test-baseline-comparison.json'),
+      JSON.stringify({
+        baseline_validation_exit_code: 127,
+        summary: {
+          total_newly_introduced: 1,
+          total_pre_existing: 0,
+          total_fixed: 0
+        }
+      })
+    );
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir } : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn()
+    } as any;
+
+    const config = {
+      port: 0,
+      apiKeys: ['test-key'],
+      resultsDir,
+      maxConcurrentRuns: 1,
+      defaultTaskMode: 'patch' as const,
+      maxDiffBytes: 400000,
+      agentTimeoutSeconds: 10800,
+      logLevel: 'info' as const
+    };
+
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/status`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.artifacts.availableFiles).toEqual(expect.arrayContaining([
+        'pre-validation.log',
+        'test-baseline-comparison.json'
+      ]));
+      expect(body.diagnosticEntryPoint).toBe('test-baseline-comparison.json');
+      expect(body.diagnosticSummary.testFailure).toMatchObject({
+        failedSuite: 'src/kaseki-api-routes.test.ts',
+        failedTest: 'kaseki-api-routes preflight diagnostics › reports worker gateway launch config missing',
+        assertionSummary: 'expect(received).toEqual(expected) // deep equality',
+        baselineComparison: {
+          totalNewlyIntroduced: 1,
+          baselineValidationExitCode: 127,
+          baselineComparisonReliable: false
+        }
+      });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();

@@ -365,6 +365,32 @@ function buildStatusResponseSchema(): Record<string, unknown> {
         type: 'object',
         description: 'Structured failure information (only if failed)',
       },
+      diagnosticSummary: {
+        type: 'object',
+        properties: {
+          primaryReason: { type: 'string' },
+          recommendedEntryPoint: { type: 'string' },
+          testFailure: {
+            type: 'object',
+            properties: {
+              failedSuite: { type: 'string' },
+              failedTest: { type: 'string' },
+              assertionSummary: { type: 'string' },
+              baselineComparison: {
+                type: 'object',
+                properties: {
+                  totalNewlyIntroduced: { type: 'number' },
+                  totalPreExisting: { type: 'number' },
+                  totalFixed: { type: 'number' },
+                  baselineValidationExitCode: { type: 'number' },
+                  baselineComparisonReliable: { type: 'boolean' },
+                  baselineComparisonWarning: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
       artifacts: {
         type: 'object',
         properties: {

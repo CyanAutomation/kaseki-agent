@@ -5,7 +5,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { testGatewayConnectivity, GatewayTestResult } from './kaseki-api-gateway-test';
+import { formatGatewayTestResponse, testGatewayConnectivity, GatewayTestResult } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
 global.fetch = jest.fn();
@@ -291,6 +291,24 @@ describe('LLM Gateway Test', () => {
       };
 
       expect(result.remediation).toBeDefined();
+    });
+
+    it('formats optional latency warnings', () => {
+      const result: GatewayTestResult = {
+        status: 'ok',
+        detail: 'Gateway is responsive',
+        gatewayUrl: 'https://example.com/v1/models',
+        responseTime: 9459,
+        timestamp: new Date().toISOString(),
+        authenticationValidated: true,
+        warning: 'Gateway responded slowly (9459ms; warning threshold 5000ms).',
+      };
+
+      expect(formatGatewayTestResponse(result)).toMatchObject({
+        status: 'ok',
+        responseTime: 9459,
+        warning: expect.stringContaining('responded slowly'),
+      });
     });
   });
 });
