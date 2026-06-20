@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.84.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.83.2...v1.84.0) (2026-06-20)
+
+
+### Bug Fixes
+
+* update LLM Gateway URL validation to accept base URL formats and improve error messaging ([1baf75f](https://github.com/CyanAutomation/kaseki-agent/commit/1baf75f150a80cf8b3473eff8adfa36bcdceaf9d))
+
+
+### Features
+
+* enhance LLM provider configuration and validation checks ([c507863](https://github.com/CyanAutomation/kaseki-agent/commit/c5078636ac381dbd39f77e99db0535a8901dd3e0))
+* implement goal-setting fallback logic and associated tests ([3026a74](https://github.com/CyanAutomation/kaseki-agent/commit/3026a74d03bad716e8a11f50d0d4d0e0ae3d396d))
+
 ## [1.83.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.83.1...v1.83.2) (2026-06-20)
 
 
