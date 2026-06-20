@@ -50,68 +50,14 @@ export function createSubdirs(
   return result;
 }
 
-/**
- * Pool of temporary directories for test reuse
- */
-class TempDirPool {
-  private dirs: Map<string, { tmpDir: string; inUse: boolean }> = new Map();
-  private prefix: string;
-
-  constructor(prefix = 'kaseki-test-pool-') {
-    this.prefix = prefix;
-  }
-
-  /**
-   * Get or create a temp directory from the pool
-   */
-  acquire(key: string): string {
-    if (this.dirs.has(key)) {
-      const entry = this.dirs.get(key)!;
-      if (!entry.inUse) {
-        entry.inUse = true;
-        return entry.tmpDir;
-      }
-    }
-
-    const { tmpDir } = createTempDir(this.prefix);
-    this.dirs.set(key, { tmpDir, inUse: true });
-    return tmpDir;
-  }
-
-  /**
-   * Release a temp directory back to the pool
-   */
-  release(key: string): void {
-    const entry = this.dirs.get(key);
-    if (entry) {
-      entry.inUse = false;
-    }
-  }
-
-  /**
-   * Clean up all directories in the pool
-   */
-  cleanup(): void {
-    for (const entry of this.dirs.values()) {
-      if (fs.existsSync(entry.tmpDir)) {
-        fs.rmSync(entry.tmpDir, { recursive: true, force: true });
-      }
-    }
-    this.dirs.clear();
-  }
-}
-
-// Global pool instance for test suites that want to share temps (internal use only)
-let globalPool: TempDirPool | null = null;
+// Global pool for future use: if temp reuse pattern is needed again, add this:
+// class TempDirPool { ... }
 
 /**
  * Clear the global temp directory pool (useful in afterAll hooks)
  */
 export function clearGlobalTempDirPool(): void {
-  if (globalPool) {
-    globalPool.cleanup();
-    globalPool = null;
-  }
+  // Placeholder for future pool cleanup logic
 }
 
 // ensureTempDirStructure() removed — use createSubdirs() instead, or fs.mkdirSync(..., { recursive: true })
