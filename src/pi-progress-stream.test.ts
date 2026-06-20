@@ -113,38 +113,7 @@ describe('pi-progress-stream executable', () => {
     expect(log).toContain('[progress] pi agent: started');
   });
 
-  it('batches tool starts into a caller-visible summary before agent end', async () => {
-    const { events } = await runProgressStream([
-      JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
-      JSON.stringify({ type: 'tool_execution_start', toolName: 'write-file' }),
-      JSON.stringify({ type: 'toolcall_start', tool: { name: 'write-file' } }),
-      JSON.stringify({ type: 'tool_execution_end' }),
-      JSON.stringify({ type: 'agent_end' }),
-    ]);
-
-    const batchEvent = events.find((event) => event.stage === 'pi tool batch');
-    expect(batchEvent).toMatchObject({
-      toolBatchSummary: {
-        read_file: 1,
-        'write-file': 2,
-      },
-    });
-    expect(batchEvent?.message).toContain('[tools] read_file (1x), write-file (2x)');
-
-    const finalEvent = events.at(-1);
-    expect(finalEvent).toMatchObject({
-      counts: {
-        tool_execution_start: 2,
-        toolcall_start: 1,
-        tool_execution_end: 1,
-        agent_end: 1,
-      },
-      toolStartCount: 3,
-      toolEndCount: 1,
-    });
-  });
-
-  it('emits API-visible progress summaries for representative tool and progress events', async () => {
+  it('summarizes repeated tool activity through the progress stream output', async () => {
     const thinkingEvents = Array.from({ length: 15 }, (_, index) =>
       JSON.stringify({
         type: 'message_update',
@@ -154,12 +123,35 @@ describe('pi-progress-stream executable', () => {
       })
     );
 
-    const { events, stdout } = await runProgressStream(
+    const { events, stdout, log } = await runProgressStream(
       [
         JSON.stringify({ type: 'agent_start' }),
-        JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
-        JSON.stringify({ type: 'toolcall_start', call: { name: 'bash' } }),
-        JSON.stringify({ type: 'tool_execution_end' }),
+        JSON.stringify({
+          type: 'tool_execution_start',
+          tool_name: 'read_file',
+          input: { path: 'src/auth/session.ts' },
+        }),
+        JSON.stringify({
+          type: 'tool_execution_start',
+          tool_name: 'read_file',
+          input: { path: 'src/auth/routes.ts' },
+        }),
+        JSON.stringify({
+          type: 'toolcall_start',
+          call: { name: 'bash' },
+          arguments: { command: 'npm test -- --runInBand src/auth/session.test.ts' },
+        }),
+        JSON.stringify({ type: 'tool_execution_end', tool_name: 'read_file' }),
+        JSON.stringify({
+          type: 'tool_execution_start',
+          toolName: 'read_file',
+          input: { path: 'src/auth/session.test.ts' },
+        }),
+        JSON.stringify({
+          type: 'toolcall_start',
+          tool: { name: 'bash' },
+          arguments: { command: 'npm run type-check' },
+        }),
         ...thinkingEvents,
         JSON.stringify({ type: 'auto_retry_start' }),
         JSON.stringify({ type: 'auto_retry_end' }),
@@ -168,35 +160,37 @@ describe('pi-progress-stream executable', () => {
       { KASEKI_STREAM_PROGRESS: '1' }
     );
 
-    expect(stdout).toContain('[progress] pi tool batch: [tools] read_file (1x), bash (1x)');
-    expect(stdout).toContain('[progress] pi agent: agent finished');
+    const batchEvents = events.filter((event) => event.stage === 'pi tool batch');
+    expect(batchEvents).toHaveLength(1);
+    expect(batchEvents[0]?.message).toEqual(
+      expect.stringMatching(/^\[tools\] read_file \(3x\), bash \(2x\) \(\d+s\)$/)
+    );
+    expect(batchEvents[0]?.toolBatchSummary).toEqual({
+      read_file: 3,
+      bash: 2,
+    });
+    expect(stdout).toContain('[progress] pi tool batch: [tools] read_file (3x), bash (2x)');
+    expect(log).toContain('[progress] pi agent: agent finished');
 
     const messageSummary = events.find(
       (event) => event.stage === 'pi agent' && event.type === 'message_update'
     );
     expect(messageSummary?.message).toContain('Validation step 15');
 
-    const batchEvent = events.find((event) => event.stage === 'pi tool batch');
-    expect(batchEvent).toMatchObject({
-      message: expect.stringContaining('[tools] read_file (1x), bash (1x)'),
-      toolBatchSummary: {
-        read_file: 1,
-        bash: 1,
-      },
-    });
-
-    expect(events.at(-1)).toMatchObject({
+    const finalEvent = events.at(-1);
+    expect(finalEvent?.message).toContain('event stream ended');
+    expect(finalEvent).toMatchObject({
       counts: {
         agent_start: 1,
-        tool_execution_start: 1,
-        toolcall_start: 1,
+        tool_execution_start: 3,
+        toolcall_start: 2,
         tool_execution_end: 1,
         message_update: 15,
         auto_retry_start: 1,
         auto_retry_end: 1,
         agent_end: 1,
       },
-      toolStartCount: 2,
+      toolStartCount: 5,
       toolEndCount: 1,
       messageUpdateCount: 15,
     });
