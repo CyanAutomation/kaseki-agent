@@ -67,7 +67,7 @@ if ! grep -Eiq '(^|[^[:alnum:]_-])gateway([^[:alnum:]_-]|$)' "$RUN_LOG"; then
   fail "pi --list-models did not report provider gateway"
 fi
 
-if ! grep -Eq 'pi|Pi' "$RUN_LOG"; then
+if ! grep -Eq '\bPi\b|\bpi\b' "$RUN_LOG"; then
   fail "output did not include Pi CLI version/banner, so the real pi executable may not have run"
 fi
 
