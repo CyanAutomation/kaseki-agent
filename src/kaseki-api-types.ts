@@ -223,6 +223,8 @@ export type DiagnosticEntryPoint =
   | 'result-summary.md'
   | 'stderr.log'
   | 'stdout.log'
+  | 'pre-validation.log'
+  | 'test-baseline-comparison.json'
   | 'goal-setting-validation-errors.jsonl'
   | 'goal-setting-stderr.log'
   | 'scouting-validation-errors.jsonl'
@@ -270,6 +272,19 @@ export interface StatusResponse {
       restored?: boolean;
       reinstallTriggered?: boolean;
       messages: string[];
+    };
+    testFailure?: {
+      failedSuite?: string;
+      failedTest?: string;
+      assertionSummary?: string;
+      baselineComparison?: {
+        totalNewlyIntroduced?: number;
+        totalPreExisting?: number;
+        totalFixed?: number;
+        baselineValidationExitCode?: number;
+        baselineComparisonReliable?: boolean;
+        baselineComparisonWarning?: string;
+      };
     };
   };
   error?: string;

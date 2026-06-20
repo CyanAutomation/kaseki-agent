@@ -21,6 +21,10 @@ import { DiagnosticExtractor } from './diagnostic-extractor';
 import { ArtifactContentLoader } from './artifact-content-loader';
 
 const STATUS_KEY_FILES = ['metadata.json', 'analysis.md', 'result-summary.md', 'failure.json', 'stderr.log', 'stdout.log'] as const;
+const PRE_VALIDATION_DIAGNOSTIC_FILES = [
+  'pre-validation.log',
+  'test-baseline-comparison.json',
+] as const;
 const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-validation-errors.jsonl',
   'goal-check-stderr.log',
@@ -226,6 +230,7 @@ export class StatusResponseBuilder {
 
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     const metadata = this.readMetadata(runDir);
+    const includePreValidationDiagnostics = job.status === 'failed' && this.shouldIncludePreValidationDiagnostics(metadata, runDir);
     const includeGoalCheckDiagnostics =
       job.status === 'failed' && response.goalCheckFailureReason === GOAL_CHECK_ARTIFACT_INVALID_REASON;
     const includeGoalSettingDiagnostics = job.status === 'failed' && this.shouldIncludePhaseDiagnostics(
@@ -242,6 +247,7 @@ export class StatusResponseBuilder {
     );
     const artifactFiles = [
       ...STATUS_KEY_FILES,
+      ...(includePreValidationDiagnostics ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
       ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
       ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
       ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
@@ -261,6 +267,7 @@ export class StatusResponseBuilder {
     const diagnosticFiles = [
       ...(includeGoalSettingDiagnostics ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
       ...(includeScoutingDiagnostics ? SCOUTING_DIAGNOSTIC_FILES : []),
+      ...(includePreValidationDiagnostics ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
       ...(includeGoalCheckDiagnostics ? GOAL_CHECK_DIAGNOSTIC_FILES : []),
     ].filter((fileName) => isAvailable(fileName));
 
@@ -312,6 +319,10 @@ export class StatusResponseBuilder {
 
     if (job.status === 'failed') {
       const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+        ...(includePreValidationDiagnostics ? [
+          'test-baseline-comparison.json',
+          'pre-validation.log',
+        ] as DiagnosticEntryPoint[] : []),
         ...(includeGoalSettingDiagnostics ? [
           'goal-setting-validation-errors.jsonl',
           'goal-setting-stderr.log',
@@ -336,6 +347,16 @@ export class StatusResponseBuilder {
 
       response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
     }
+  }
+
+  private shouldIncludePreValidationDiagnostics(metadata: any, runDir: string): boolean {
+    const failedCommand = String(metadata?.failed_command ?? '');
+    const preValidationExitCode = Number(metadata?.pre_validation_exit_code ?? 0);
+    return (
+      failedCommand.includes('pre-agent validation') ||
+      preValidationExitCode !== 0 ||
+      PRE_VALIDATION_DIAGNOSTIC_FILES.some((fileName) => fs.existsSync(path.join(runDir, fileName)))
+    );
   }
 
   private shouldIncludePhaseDiagnostics(
@@ -431,6 +452,70 @@ export class StatusResponseBuilder {
   private addDiagnosticSummary(response: StatusResponse, job: Job): void {
     const runDir = job.resultDir || path.join(this.config.resultsDir, job.id);
     this.diagnosticExtractor.extractDiagnosticSummary(response, runDir, (filePath: string) => this.readSmallTerminalArtifact(filePath));
+    if (job.status === 'failed') {
+      this.addTestFailureSummary(response, runDir);
+    }
+  }
+
+  private addTestFailureSummary(response: StatusResponse, runDir: string): void {
+    const comparisonContent = this.readSmallTerminalArtifact(path.join(runDir, 'test-baseline-comparison.json'));
+    const preValidationLog = this.readSmallTerminalArtifact(path.join(runDir, 'pre-validation.log'));
+    const summary = {
+      ...this.extractTestFailureFromLog(preValidationLog ?? ''),
+      ...(comparisonContent ? this.extractBaselineComparisonSummary(comparisonContent) : {}),
+    };
+    if (Object.keys(summary).length === 0) {
+      return;
+    }
+    response.diagnosticSummary = {
+      ...response.diagnosticSummary,
+      testFailure: summary,
+    };
+  }
+
+  private extractTestFailureFromLog(content: string): NonNullable<NonNullable<StatusResponse['diagnosticSummary']>['testFailure']> {
+    if (!content) {
+      return {};
+    }
+    const summaryStart = content.lastIndexOf('Summary of all failing tests');
+    const relevant = summaryStart >= 0 ? content.slice(summaryStart) : content;
+    const failedSuite = relevant.match(/^\s*FAIL\s+(.+)$/m)?.[1]?.trim();
+    const failedTest = relevant.match(/^\s*●\s+(.+)$/m)?.[1]?.trim();
+    const assertionSummary = relevant.match(/^\s*(expect\([^)]+\)\.[^\n]+)$/m)?.[1]?.trim();
+    return {
+      ...(failedSuite ? { failedSuite } : {}),
+      ...(failedTest ? { failedTest } : {}),
+      ...(assertionSummary ? { assertionSummary } : {}),
+    };
+  }
+
+  private extractBaselineComparisonSummary(content: string): NonNullable<NonNullable<StatusResponse['diagnosticSummary']>['testFailure']> {
+    try {
+      const parsed = JSON.parse(content) as any;
+      const baselineValidationExitCode = typeof parsed.baseline_validation_exit_code === 'number'
+        ? parsed.baseline_validation_exit_code
+        : undefined;
+      const baselineComparisonReliable = baselineValidationExitCode === undefined || baselineValidationExitCode === 0 || baselineValidationExitCode === 1;
+      const baselineComparisonWarning = baselineComparisonReliable
+        ? undefined
+        : `Baseline validation exited ${baselineValidationExitCode}; failure classification may be incomplete.`;
+      return {
+        baselineComparison: {
+          totalNewlyIntroduced: this.optionalNumber(parsed.summary?.total_newly_introduced),
+          totalPreExisting: this.optionalNumber(parsed.summary?.total_pre_existing),
+          totalFixed: this.optionalNumber(parsed.summary?.total_fixed),
+          ...(baselineValidationExitCode !== undefined ? { baselineValidationExitCode } : {}),
+          baselineComparisonReliable,
+          ...(baselineComparisonWarning ? { baselineComparisonWarning } : {}),
+        },
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  private optionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
   private readMetadata(runDir: string): any {

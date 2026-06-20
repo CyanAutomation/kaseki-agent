@@ -519,6 +519,7 @@ const controllerPage = String.raw`<!doctype html>
          .bad → failure (red)
          Applied to .summary-value, #state for flexible reuse. */
       .summary-value.ok { color: var(--color-ok); }
+      .summary-value.warning { color: var(--color-bad); }
       .summary-value.bad { color: var(--color-bad); }
       .summary-details {
         color: var(--color-text-muted);
@@ -1890,6 +1891,31 @@ const controllerPage = String.raw`<!doctype html>
                 items.push(['Dependency cache', stripControlSequences(cacheText).slice(0, 220), { warning: true, fullWidth: true }]);
               }
             }
+            if (summary.testFailure && typeof summary.testFailure === 'object') {
+              const testFailure = summary.testFailure;
+              const testParts = [
+                testFailure.failedSuite,
+                testFailure.failedTest,
+                testFailure.assertionSummary,
+              ].filter((value) => typeof value === 'string' && value.trim());
+              if (testParts.length > 0) {
+                items.push(['Failing test', stripControlSequences(testParts.join(' | ')).slice(0, 260), { warning: true, fullWidth: true }]);
+              }
+              const baseline = testFailure.baselineComparison;
+              if (baseline && typeof baseline === 'object') {
+                const counts = [
+                  typeof baseline.totalNewlyIntroduced === 'number' ? baseline.totalNewlyIntroduced + ' newly introduced' : '',
+                  typeof baseline.totalPreExisting === 'number' ? baseline.totalPreExisting + ' pre-existing' : '',
+                  typeof baseline.totalFixed === 'number' ? baseline.totalFixed + ' fixed' : '',
+                ].filter(Boolean).join(', ');
+                if (counts) {
+                  items.push(['Baseline comparison', counts, { warning: baseline.baselineComparisonReliable === false, fullWidth: true }]);
+                }
+                if (typeof baseline.baselineComparisonWarning === 'string') {
+                  items.push(['Baseline warning', stripControlSequences(baseline.baselineComparisonWarning).slice(0, 220), { warning: true, fullWidth: true }]);
+                }
+              }
+            }
             if (typeof summary.recommendedEntryPoint === 'string') {
               items.push(['Start debugging with', stripControlSequences(summary.recommendedEntryPoint)]);
             }
@@ -2292,8 +2318,11 @@ const controllerPage = String.raw`<!doctype html>
         }
         if (path === '/api/gateway-test') {
           const responseTime = payload.responseTime || 0;
-          const summary = payload.status === 'ok' ? responseTime + 'ms' : 'Failed';
-          setSummary('gateway', summary, payload.status === 'ok' ? 'ok' : 'bad');
+          const slow = payload.status === 'ok' && typeof payload.warning === 'string';
+          const summary = payload.status === 'ok'
+            ? responseTime + 'ms' + (slow ? ' slow' : '')
+            : 'Failed';
+          setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
         }
         if (path === '/api/preflight') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];

@@ -47,6 +47,8 @@ interface AnalysisResult {
     total_fixed: number;
     total_tests: number;
   };
+  baseline_comparison_reliable: boolean;
+  baseline_comparison_warning?: string;
   timestamp: string;
 }
 
@@ -281,6 +283,10 @@ async function main() {
     // Classify tests
     const classification = classifyTests(baselineResults, workingResults);
     const summary = generateSummary(classification);
+    const baselineComparisonReliable = baselineExitCode === 0 || baselineExitCode === 1;
+    const baselineComparisonWarning = baselineComparisonReliable
+      ? undefined
+      : `Baseline validation exited ${baselineExitCode}; test failure classification may be incomplete because baseline results were not produced normally.`;
 
     // Build result object
     const result: AnalysisResult = {
@@ -290,6 +296,8 @@ async function main() {
       working_test_results: workingResults,
       classification,
       summary,
+      baseline_comparison_reliable: baselineComparisonReliable,
+      ...(baselineComparisonWarning ? { baseline_comparison_warning: baselineComparisonWarning } : {}),
       timestamp: new Date().toISOString(),
     };
 
