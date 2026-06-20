@@ -395,6 +395,75 @@ fi
 : > "${KASEKI_RESULTS_DIR}"/goal-check-attempts.jsonl
 : > "${KASEKI_RESULTS_DIR}"/goal-check.json
 : > "${KASEKI_RESULTS_DIR}"/run-evaluation-events.jsonl
+
+check_gateway_provider_capability() {
+  if [ "$KASEKI_PROVIDER" != "gateway" ]; then
+    return 0
+  fi
+
+  local artifact="${KASEKI_RESULTS_DIR}/provider-capability.json"
+  local output_file pi_version extensions_dir home_extensions list_exit gateway_registered
+  output_file="$(mktemp)"
+  pi_version="$(pi --version 2>&1 || true)"
+  extensions_dir="${PI_EXTENSIONS_DIR:-}"
+  home_extensions="${HOME:-}/.pi/extensions"
+  list_exit=127
+  gateway_registered=0
+
+  if command -v pi >/dev/null 2>&1; then
+    set +e
+    LLM_GATEWAY_URL="$llm_gateway_url" LLM_GATEWAY_API_KEY="$llm_gateway_api_key" pi --list-models >"$output_file" 2>&1
+    list_exit=$?
+    set +e
+  else
+    printf 'pi executable not found in PATH\n' >"$output_file"
+  fi
+
+  if [ "$list_exit" -eq 0 ] && grep -Eiq '(^|[^[:alnum:]_-])gateway([^[:alnum:]_-]|$)' "$output_file"; then
+    gateway_registered=1
+  fi
+
+  node - "$artifact" "$pi_version" "$extensions_dir" "$home_extensions" "$list_exit" "$gateway_registered" "$output_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [artifact, piVersion, extensionsDir, homeExtensions, listExit, gatewayRegistered, outputFile] = process.argv.slice(2);
+const output = fs.existsSync(outputFile) ? fs.readFileSync(outputFile, 'utf8') : '';
+fs.writeFileSync(artifact, JSON.stringify({
+  check: 'gateway-provider-capability',
+  provider: 'gateway',
+  ok: gatewayRegistered === '1',
+  pi_version: piVersion || 'unavailable',
+  command: 'pi --list-models',
+  exit_code: Number(listExit),
+  extension_paths_checked: {
+    PI_EXTENSIONS_DIR: extensionsDir || null,
+    HOME_PI_EXTENSIONS: homeExtensions || null,
+  },
+  output_tail: output.slice(-4000),
+  remediation: gatewayRegistered === '1' ? null : 'The worker image/Pi extension did not register provider gateway. Rebuild the worker image with the gateway Pi extension installed or set PI_EXTENSIONS_DIR/$HOME/.pi/extensions so pi --list-models includes gateway before running Kaseki.',
+}, null, 2) + '\n');
+NODE
+  rm -f "$output_file"
+
+  if [ "$gateway_registered" -eq 1 ]; then
+    printf 'Pi provider capability check passed: gateway is registered.\n'
+    return 0
+  fi
+
+  set_current_stage "agent setup"
+  printf 'Provider capability check failed for KASEKI_PROVIDER=gateway.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'The worker image/Pi extension did not register gateway; failing during agent setup before goal-setting/scouting/coding.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'Pi version: %s\n' "${pi_version:-unavailable}" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'Extension paths checked: PI_EXTENSIONS_DIR=%s, HOME_PI_EXTENSIONS=%s\n' "${extensions_dir:-<unset>}" "${home_extensions:-<unknown>}" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  printf 'Diagnostic artifact: %s\n' "$artifact" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+  PI_EXIT=2
+  STATUS=2
+  FAILED_COMMAND="agent setup provider capability check"
+  emit_error_event "gateway_provider_not_registered" "The worker image/Pi extension did not register gateway; see provider-capability.json for Pi version and extension paths checked." "exit"
+  printf 'Skipped: Pi provider gateway is not registered; agent setup phase did not run\n' > "${KASEKI_RESULTS_DIR}"/quality.log
+  printf 'Skipped: Pi provider gateway is not registered; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
+  return 2
+}
+
 json_array() {
   if [ "$#" -eq 0 ]; then
     printf '[]\n'
@@ -8270,6 +8339,10 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
     printf 'Skipped: LLM Gateway API key is missing; agent did not run\n' > "${KASEKI_RESULTS_DIR}"/secret-scan.log
 
     # Finalize deterministically before any Pi-dependent agent phase can run with an empty key.
+    exit 0
+  fi
+
+  if ! check_gateway_provider_capability; then
     exit 0
   fi
 fi
