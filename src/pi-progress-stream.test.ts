@@ -1,207 +1,178 @@
 /**
- * Tests for pi-progress-stream
- * Tests the ToolBatchAggregator class and related functionality
+ * Tests for the pi-progress-stream executable behavior that callers depend on.
  */
 
 import { describe, it, expect } from '@jest/globals';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
-/**
- * ToolBatchAggregator: Batches tool calls by type and emits summaries
- */
-class ToolBatchAggregator {
-  private toolBuffer: Map<string, number> = new Map();
-  private lastFlushTime: number = Date.now();
-  private coalesceWindow: number = 3000; // 3 seconds
-
-  recordTool(tool: string): void {
-    const count = (this.toolBuffer.get(tool) || 0) + 1;
-    this.toolBuffer.set(tool, count);
-    this.lastFlushTime = Date.now();
-  }
-
-  shouldFlush(): boolean {
-    const elapsed = Date.now() - this.lastFlushTime;
-    return this.toolBuffer.size > 0 && elapsed > this.coalesceWindow;
-  }
-
-  flush(): { summary: string; data: Record<string, number> } | null {
-    if (this.toolBuffer.size === 0) {
-      return null;
-    }
-
-    const summary = Array.from(this.toolBuffer.entries())
-      .map(([tool, count]) => `${tool} (${count}x)`)
-      .join(', ');
-
-    const data = Object.fromEntries(this.toolBuffer);
-    this.toolBuffer.clear();
-
-    return { summary: `[tools] ${summary}`, data };
-  }
-
-  clear(): void {
-    this.toolBuffer.clear();
-  }
-
-  getBufferSize(): number {
-    return this.toolBuffer.size;
-  }
-
-  getToolCount(tool: string): number {
-    return this.toolBuffer.get(tool) || 0;
-  }
+interface ProgressEvent {
+  stage: string;
+  message: string;
+  type?: string;
+  counts?: Record<string, number>;
+  toolStartCount?: number;
+  toolEndCount?: number;
+  messageUpdateCount?: number;
+  toolBatchSummary?: Record<string, number>;
 }
 
-describe('ToolBatchAggregator', () => {
-  it('initializes with empty buffer', () => {
-    const aggregator = new ToolBatchAggregator();
-    expect(aggregator.getBufferSize()).toBe(0);
-  });
+const repoRoot = process.cwd();
+const streamScript = path.join(repoRoot, 'src', 'pi-progress-stream.ts');
 
-  it('records a single tool call', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    expect(aggregator.getToolCount('read_file')).toBe(1);
-  });
+function readJsonl(filePath: string): ProgressEvent[] {
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as ProgressEvent);
+}
 
-  it('counts multiple calls for the same tool', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    expect(aggregator.getToolCount('read_file')).toBe(3);
-  });
+async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = {}): Promise<{
+  events: ProgressEvent[];
+  log: string;
+}> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-progress-stream-'));
+  const progressJsonlPath = path.join(tmpDir, 'progress.jsonl');
+  const progressLogPath = path.join(tmpDir, 'progress.log');
 
-  it('tracks multiple different tools', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('write_file');
-    aggregator.recordTool('grep_search');
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', streamScript, progressJsonlPath, progressLogPath],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          KASEKI_STREAM_PROGRESS: '0',
+          ...env,
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
 
-    expect(aggregator.getToolCount('read_file')).toBe(2);
-    expect(aggregator.getToolCount('write_file')).toBe(1);
-    expect(aggregator.getToolCount('grep_search')).toBe(1);
-    expect(aggregator.getBufferSize()).toBe(3);
-  });
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
 
-  it('does not flush if not enough time elapsed', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    // shouldFlush should be false because coalesce window hasn't elapsed
-    expect(aggregator.shouldFlush()).toBe(false);
-  });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`pi-progress-stream exited with ${code}: ${stderr}`));
+      }
+    });
 
-  it('flushes with correct summary format', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('write_file');
-    aggregator.recordTool('write_file');
-
-    const result = aggregator.flush();
-    expect(result).toBeTruthy();
-    if (result) {
-      expect(result.summary).toContain('[tools]');
-      expect(result.summary).toContain('read_file (1x)');
-      expect(result.summary).toContain('write_file (2x)');
+    for (const line of inputLines) {
+      child.stdin.write(`${line}\n`);
     }
+    child.stdin.end();
   });
 
-  it('clears buffer after flush', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.flush();
-    expect(aggregator.getBufferSize()).toBe(0);
+  return {
+    events: readJsonl(progressJsonlPath),
+    log: fs.readFileSync(progressLogPath, 'utf8'),
+  };
+}
+
+describe('pi-progress-stream executable', () => {
+  it('writes start and final events when the input stream closes', async () => {
+    const { events, log } = await runProgressStream([]);
+
+    expect(events[0]).toMatchObject({
+      stage: 'pi agent',
+      message: 'started',
+    });
+    expect(events.at(-1)).toMatchObject({
+      stage: 'pi agent',
+      counts: {},
+      toolStartCount: 0,
+      toolEndCount: 0,
+      messageUpdateCount: 0,
+    });
+    expect(events.at(-1)?.message).toContain('event stream ended');
+    expect(log).toContain('[progress] pi agent: started');
   });
 
-  it('returns null when flushing empty buffer', () => {
-    const aggregator = new ToolBatchAggregator();
-    const result = aggregator.flush();
-    expect(result).toBeNull();
-  });
+  it('batches tool starts into a caller-visible summary before agent end', async () => {
+    const { events } = await runProgressStream([
+      JSON.stringify({ type: 'tool_execution_start', tool_name: 'read_file' }),
+      JSON.stringify({ type: 'tool_execution_start', toolName: 'write-file' }),
+      JSON.stringify({ type: 'toolcall_start', tool: { name: 'write-file' } }),
+      JSON.stringify({ type: 'tool_execution_end' }),
+      JSON.stringify({ type: 'agent_end' }),
+    ]);
 
-  it('can be cleared manually', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('write_file');
-    expect(aggregator.getBufferSize()).toBe(2);
-    aggregator.clear();
-    expect(aggregator.getBufferSize()).toBe(0);
-  });
+    const batchEvent = events.find((event) => event.stage === 'pi tool batch');
+    expect(batchEvent).toMatchObject({
+      toolBatchSummary: {
+        read_file: 1,
+        'write-file': 2,
+      },
+    });
+    expect(batchEvent?.message).toContain('[tools] read_file (1x), write-file (2x)');
 
-  it('handles tool names with underscores and hyphens', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('write_file');
-    aggregator.recordTool('grep_search');
-    aggregator.recordTool('semantic_search');
-
-    expect(aggregator.getToolCount('read_file')).toBe(1);
-    expect(aggregator.getToolCount('semantic_search')).toBe(1);
-
-    const result = aggregator.flush();
-    if (result) {
-      expect(result.summary).toContain('read_file');
-      expect(result.summary).toContain('semantic_search');
-    }
-  });
-
-  it('returns correct data structure on flush', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('bash');
-    aggregator.recordTool('bash');
-    aggregator.recordTool('grep');
-
-    const result = aggregator.flush();
-    expect(result?.data).toEqual({
-      bash: 2,
-      grep: 1,
+    const finalEvent = events.at(-1);
+    expect(finalEvent).toMatchObject({
+      counts: {
+        tool_execution_start: 2,
+        toolcall_start: 1,
+        tool_execution_end: 1,
+        agent_end: 1,
+      },
+      toolStartCount: 3,
+      toolEndCount: 1,
     });
   });
 
-  it('updates lastFlushTime on recordTool call', () => {
-    const aggregator = new ToolBatchAggregator();
-    aggregator.recordTool('read_file');
+  it('suppresses tool batch summaries when progress summarization is disabled', async () => {
+    const { events } = await runProgressStream(
+      [
+        JSON.stringify({ type: 'tool_execution_start', tool_name: 'bash' }),
+        JSON.stringify({ type: 'agent_end' }),
+      ],
+      { KASEKI_PROGRESS_SUMMARIZATION: '0' }
+    );
 
-    // After immediately recording, shouldFlush should be false
-    expect(aggregator.shouldFlush()).toBe(false);
-
-    // Wait a bit and record again
-    aggregator.recordTool('write_file');
-    // Still shouldn't flush immediately
-    expect(aggregator.shouldFlush()).toBe(false);
+    expect(events.some((event) => event.stage === 'pi tool batch')).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      counts: {
+        tool_execution_start: 1,
+        agent_end: 1,
+      },
+      toolStartCount: 1,
+    });
   });
 
-  it('aggregates many tool calls efficiently', () => {
-    const aggregator = new ToolBatchAggregator();
-    const toolNames = ['read_file', 'write_file', 'grep_search', 'bash', 'semantic_search'];
+  it('counts invalid JSON and continues processing subsequent events', async () => {
+    const { events } = await runProgressStream([
+      '{not json',
+      JSON.stringify({ type: 'agent_start' }),
+      JSON.stringify({ type: 'message_update', message: { content: 'short' } }),
+    ]);
 
-    // Record 100 calls in random distribution
-    for (let i = 0; i < 100; i++) {
-      const tool = toolNames[i % toolNames.length];
-      aggregator.recordTool(tool);
-    }
-
-    expect(aggregator.getBufferSize()).toBe(toolNames.length);
-
-    const result = aggregator.flush();
-    expect(result?.summary).toContain('[tools]');
-    // Should contain all tools, each appearing 20 times (100 / 5 tools)
-    expect(result?.summary).toContain('(20x)');
-  });
-
-  it('handles same tool recorded multiple times between flushes', () => {
-    const aggregator = new ToolBatchAggregator();
-
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    let result = aggregator.flush();
-    expect(result?.data.read_file).toBe(2);
-
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('read_file');
-    result = aggregator.flush();
-    expect(result?.data.read_file).toBe(3);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        stage: 'pi agent',
+        message: 'agent started',
+        type: 'agent_start',
+      })
+    );
+    expect(events.at(-1)).toMatchObject({
+      counts: {
+        invalid_json: 1,
+        agent_start: 1,
+        message_update: 1,
+      },
+      messageUpdateCount: 1,
+    });
   });
 });
