@@ -42,25 +42,29 @@ interface OrchestratorFeatureFlags {
  */
 function deriveFeatureFlags(job: Job, config: KasekiApiConfig): OrchestratorFeatureFlags {
   const request = job.request ?? ({} as Job['request']);
-  const taskMode = request.taskMode || config.defaultTaskMode;
+  const taskMode: 'patch' | 'inspect' = (request.taskMode ?? config.defaultTaskMode) as 'patch' | 'inspect';
   const publishMode = request.publishMode || 'pr';
   const startupCheck = request.startupCheck === true;
+
+  // Pre-compute comparisons to avoid TypeScript type narrowing issues
+  const isInspectMode = taskMode === 'inspect';
+  const isNotInspectMode = taskMode !== 'inspect';
 
   return {
     dryRun: startupCheck,
     githubAppEnabled: publishMode !== 'none',
-    preAgentValidation: taskMode !== 'inspect',
-    goalSettingEnabled: taskMode === 'inspect'
+    preAgentValidation: isNotInspectMode,
+    goalSettingEnabled: isInspectMode
       ? request.goalSetting?.enabled === true
       : request.goalSetting?.enabled ?? true,
-    scoutingEnabled: taskMode !== 'inspect',
-    goalCheckEnabled: taskMode === 'inspect'
+    scoutingEnabled: isNotInspectMode,
+    goalCheckEnabled: isInspectMode
       ? request.goalCheck?.enabled === true
-      : request.goalCheck?.enabled ?? (taskMode !== 'inspect'),
-    runEvaluationEnabled: taskMode === 'inspect'
+      : request.goalCheck?.enabled ?? isNotInspectMode,
+    runEvaluationEnabled: isInspectMode
       ? request.runEvaluation?.enabled === true
-      : request.runEvaluation?.enabled ?? ((publishMode === 'pr' || publishMode === 'draft_pr') && taskMode !== 'inspect' && !startupCheck),
-    autoLintCleanupEnabled: taskMode === 'inspect' && (request.autoLintCleanup ?? request.validation?.autoLintCleanup)?.enabled === undefined
+      : request.runEvaluation?.enabled ?? ((publishMode === 'pr' || publishMode === 'draft_pr') && isNotInspectMode && !startupCheck),
+    autoLintCleanupEnabled: isInspectMode && (request.autoLintCleanup ?? request.validation?.autoLintCleanup)?.enabled === undefined
       ? false
       : (request.autoLintCleanup ?? request.validation?.autoLintCleanup)?.enabled ?? true,
   };
