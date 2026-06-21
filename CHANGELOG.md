@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.87.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.86.0...v1.87.0) (2026-06-21)
+
+
+### Features
+
+* enhance secret path checks to avoid blocking errors for non-traversable directories ([fb07afa](https://github.com/CyanAutomation/kaseki-agent/commit/fb07afa05bd0de90e0fc9c34147979a96c735411))
+
 # [1.86.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.85.0...v1.86.0) (2026-06-21)
 
 
