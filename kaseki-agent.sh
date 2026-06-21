@@ -75,7 +75,21 @@ fi
   exit 1
 }
 
-INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
+KASEKI_DEPENDENCY_CACHE_HELPER="${KASEKI_DEPENDENCY_CACHE_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/dependency-cache-helpers.sh}"
+if [ ! -r "$KASEKI_DEPENDENCY_CACHE_HELPER" ] && [ -r /app/scripts/dependency-cache-helpers.sh ]; then
+  KASEKI_DEPENDENCY_CACHE_HELPER="/app/scripts/dependency-cache-helpers.sh"
+fi
+if [ ! -r "$KASEKI_DEPENDENCY_CACHE_HELPER" ]; then
+  printf 'ERROR: Dependency cache helper is not readable. Expected %s or /app/scripts/dependency-cache-helpers.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/dependency-cache-helpers.sh.\n' "$KASEKI_DEPENDENCY_CACHE_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_DEPENDENCY_CACHE_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_DEPENDENCY_CACHE_HELPER" $? >&2
+  exit 1
+}
+
+    if [[ -z "${KASEKI_DEPENDENCY_CACHE_KEY}" ]]; then
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
@@ -2862,14 +2876,6 @@ prune_dependency_cache() {
   write_dependency_cache_metrics "$cache_dir" "$metrics_file"
 }
 
-dependency_cache_flags_identity() {
-  printf 'omit_dev=%s\nignore_scripts=%s\n' "${KASEKI_NPM_OMIT_DEV:-0}" "${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}"
-}
-
-dependency_cache_flags_hash() {
-  dependency_cache_flags_identity | sha256sum | awk '{print $1}'
-}
-
 append_npm_install_flags() {
   local -n flags_ref="$1"
   flags_ref=()
@@ -2896,13 +2902,6 @@ render_npm_install_flags() {
     rendered+="$(printf '%q' "$flag")"
   done
   printf '%s' "$rendered"
-}
-
-dependency_cache_key() {
-  local lock_hash="$1"
-  local node_major="$2"
-  local flags_hash="$3"
-  printf 'npm/%s/node-%s/flags-%s' "$lock_hash" "$node_major" "$flags_hash"
 }
 
 npm_run_script_name() {
