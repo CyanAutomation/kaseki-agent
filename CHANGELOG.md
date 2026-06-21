@@ -4,6 +4,21 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.86.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.85.0...v1.86.0) (2026-06-21)
+
+
+### Bug Fixes
+
+* dependency cache key check and update date format in tests ([d7e32a7](https://github.com/CyanAutomation/kaseki-agent/commit/d7e32a7cb0e79e871ce8b906d093a0b8aa21acda))
+
+
+### Features
+
+* add agent-prompt.sh copy and enhance debug logging in goal-setting tests ([cd37faf](https://github.com/CyanAutomation/kaseki-agent/commit/cd37faff5b0b19eea1478ce1f062688fd48d89f9))
+* add INSTANCE_NAME variable for configurable instance naming ([66867c9](https://github.com/CyanAutomation/kaseki-agent/commit/66867c97cee361833f415d7c7ab318aa37158628))
+* enhance docker entrypoint with fallback for startup checks and update test to include dependency cache helpers ([78a0414](https://github.com/CyanAutomation/kaseki-agent/commit/78a0414cf97c966a5fa17a98dc50adbf4d886625))
+* read agent-prompt.sh directly for goal-check prompt tests ([892f520](https://github.com/CyanAutomation/kaseki-agent/commit/892f520c04793f0a6961e37a2df8fb362e60afe9))
+
 # [1.85.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.84.0...v1.85.0) (2026-06-20)
 
 
