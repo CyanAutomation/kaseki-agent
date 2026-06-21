@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.89.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.89.0...v1.89.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* address progress and log review feedback ([6d32999](https://github.com/CyanAutomation/kaseki-agent/commit/6d32999c1925dc2db9da66bc600d99abe6f4f376))
+* address progress and log review feedback ([#796](https://github.com/CyanAutomation/kaseki-agent/issues/796)) ([34c873d](https://github.com/CyanAutomation/kaseki-agent/commit/34c873dadb9d82ba17ea8428e80c25c888cb3707))
+* harden pi progress capture and diagnostics ([baee542](https://github.com/CyanAutomation/kaseki-agent/commit/baee54226dab190636bdcbb1eb35554380664da3))
+* harden Pi progress capture and diagnostics ([#794](https://github.com/CyanAutomation/kaseki-agent/issues/794)) ([a6801e7](https://github.com/CyanAutomation/kaseki-agent/commit/a6801e78f18be6a3a41c822e8dca465af11445b1))
+
 # [1.89.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.88.0...v1.89.0) (2026-06-21)
 
 
