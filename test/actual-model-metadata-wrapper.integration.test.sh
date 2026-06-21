@@ -9,7 +9,7 @@ if [[ "${KASEKI_RUN_WRAPPER_INTEGRATION_TESTS:-0}" != "1" ]]; then
   exit 0
 fi
 
-tmp_root=""
+tmp_root="$(mktemp -d)"
 cleanup() {
   if [[ "${KASEKI_KEEP_TEST_ARTIFACTS:-0}" != "1" && -n "$tmp_root" ]]; then
     rm -rf "$tmp_root"
@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 
 run_wrapper_smoke() {
-  tmp_root="$(mktemp -d)"
+  local results_dir="$tmp_root/results"
   local results_dir="$tmp_root/results"
   mkdir -p "$results_dir"
   local fake_bin="$tmp_root/bin"
