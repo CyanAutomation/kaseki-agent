@@ -4,7 +4,7 @@
  * Tests stage sequencing logic based on job configuration, task mode, and feature flags
  */
 
-import { deriveOrchestratorStages } from './orchestrator-stages';
+import { deriveOrchestratorStages, deriveFeatureFlags } from './orchestrator-stages';
 import { Job, JobStatus } from '../kaseki-api-types';
 import { KasekiApiConfig } from '../kaseki-api-config';
 
@@ -532,6 +532,119 @@ describe('orchestrator-stages', () => {
       expect(stages).not.toContain('run evaluation');
       expect(stages).not.toContain('auto lint cleanup');
       expect(stages).not.toContain('pi scouting agent');
+    });
+  });
+
+  describe('deriveFeatureFlags', () => {
+    it('should derive flags for fix task mode', () => {
+      const job = createJob({ request: { taskMode: 'fix' } });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.dryRun).toBe(false);
+      expect(flags.preAgentValidation).toBe(true);
+      expect(flags.goalSettingEnabled).toBe(true);
+      expect(flags.scoutingEnabled).toBe(true);
+      expect(flags.goalCheckEnabled).toBe(true);
+      expect(flags.githubAppEnabled).toBe(true);
+    });
+
+    it('should derive flags for inspect task mode', () => {
+      const job = createJob({ request: { taskMode: 'inspect' } });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.preAgentValidation).toBe(false);
+      expect(flags.scoutingEnabled).toBe(false);
+      expect(flags.goalSettingEnabled).toBe(false);
+    });
+
+    it('should set dryRun when startupCheck is enabled', () => {
+      const job = createJob({
+        request: { taskMode: 'fix', startupCheck: true },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.dryRun).toBe(true);
+    });
+
+    it('should disable githubAppEnabled for "none" publish mode', () => {
+      const job = createJob({
+        request: { taskMode: 'fix', publishMode: 'none' },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.githubAppEnabled).toBe(false);
+    });
+
+    it('should respect explicit feature enablement in inspect mode', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'inspect',
+          goalSetting: { enabled: true },
+          goalCheck: { enabled: true },
+          runEvaluation: { enabled: true },
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.goalSettingEnabled).toBe(true);
+      expect(flags.goalCheckEnabled).toBe(true);
+      expect(flags.runEvaluationEnabled).toBe(true);
+    });
+
+    it('should respect explicit feature disablement in fix mode', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          goalSetting: { enabled: false },
+          scoutingEnabled: false,
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.goalSettingEnabled).toBe(false);
+    });
+
+    it('should disable runEvaluation for inspect without explicit enablement', () => {
+      const job = createJob({ request: { taskMode: 'inspect' } });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.runEvaluationEnabled).toBe(false);
+    });
+
+    it('should include runEvaluation for PR publish mode in fix mode', () => {
+      const job = createJob({
+        request: { taskMode: 'fix', publishMode: 'pr' },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.runEvaluationEnabled).toBe(true);
+    });
+
+    it('should disable runEvaluation for dry runs', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          publishMode: 'pr',
+          startupCheck: true,
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.runEvaluationEnabled).toBe(false);
+    });
+
+    it('should handle autoLintCleanup under validation namespace', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'inspect',
+          validation: {
+            autoLintCleanup: { enabled: true },
+          },
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.autoLintCleanupEnabled).toBe(true);
     });
   });
 });

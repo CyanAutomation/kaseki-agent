@@ -2,6 +2,21 @@ import { ARTIFACT_METADATA_REGISTRY } from '../artifact-metadata';
 import { RunEvaluationRenderedResponse } from '../kaseki-api-types';
 
 /**
+ * Extract value from object using field name variant priority.
+ * Tries keys in order and returns the first truthy value.
+ * @internal exported for testing
+ */
+export function getFieldVariant(obj: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    const value = obj[key];
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Determine MIME content type for an artifact based on file name.
  * @internal exported for testing
  */
@@ -47,7 +62,7 @@ export function asObjectArray(value: unknown): Array<Record<string, unknown>> {
  * @internal exported for testing
  */
 export function extractOverallAssessment(parsed: Record<string, unknown>): Record<string, unknown> | undefined {
-  const assessment = parsed.overall ?? parsed.overall_assessment ?? parsed.overallAssessment;
+  const assessment = getFieldVariant(parsed, 'overall', 'overall_assessment', 'overallAssessment');
   return assessment ? { assessment } : undefined;
 }
 
@@ -57,7 +72,7 @@ export function extractOverallAssessment(parsed: Record<string, unknown>): Recor
  * @internal exported for testing
  */
 export function extractProblems(parsed: Record<string, unknown>): string[] {
-  return asStringArray(parsed.problem ?? parsed.issues ?? parsed.problems);
+  return asStringArray(getFieldVariant(parsed, 'problem', 'issues', 'problems'));
 }
 
 /**
@@ -66,7 +81,7 @@ export function extractProblems(parsed: Record<string, unknown>): string[] {
  * @internal exported for testing
  */
 export function extractSolutions(parsed: Record<string, unknown>): string[] {
-  return asStringArray(parsed.solution ?? parsed.what_was_fixed ?? parsed.whatWasFixed ?? parsed.fixes);
+  return asStringArray(getFieldVariant(parsed, 'solution', 'what_was_fixed', 'whatWasFixed', 'fixes'));
 }
 
 /**
@@ -75,7 +90,7 @@ export function extractSolutions(parsed: Record<string, unknown>): string[] {
  * @internal exported for testing
  */
 export function extractHumanReviewRecommendations(parsed: Record<string, unknown>): string[] {
-  return asStringArray(parsed.human_review_recommendations ?? parsed.humanReviewRecommendations ?? parsed.human_review_focus);
+  return asStringArray(getFieldVariant(parsed, 'human_review_recommendations', 'humanReviewRecommendations', 'human_review_focus'));
 }
 
 /**
@@ -85,7 +100,7 @@ export function extractHumanReviewRecommendations(parsed: Record<string, unknown
  */
 export function extractOpportunities(parsed: Record<string, unknown>): Array<Record<string, unknown>> {
   return asObjectArray(
-    parsed.opportunities ?? parsed.kaseki_improvement_opportunities ?? parsed.improvement_opportunities ?? parsed.improvementOpportunities
+    getFieldVariant(parsed, 'opportunities', 'kaseki_improvement_opportunities', 'improvement_opportunities', 'improvementOpportunities')
   );
 }
 
@@ -114,9 +129,9 @@ export function renderRunEvaluationPayload(parsed: Record<string, unknown>, incl
     problem: extractProblems(parsed),
     solution: extractSolutions(parsed),
     humanReview: extractHumanReviewRecommendations(parsed),
-    stages: asObjectArray(parsed.stages ?? parsed.stage_by_stage_evaluation ?? parsed.stageByStageEvaluation),
-    efficiency: asObjectArray(parsed.efficiency ?? parsed.efficiency_findings ?? parsed.efficiencyFindings),
-    validation: asObjectArray(parsed.validation ?? parsed.validation_outcome ?? parsed.validationOutcome),
+    stages: asObjectArray(getFieldVariant(parsed, 'stages', 'stage_by_stage_evaluation', 'stageByStageEvaluation')),
+    efficiency: asObjectArray(getFieldVariant(parsed, 'efficiency', 'efficiency_findings', 'efficiencyFindings')),
+    validation: asObjectArray(getFieldVariant(parsed, 'validation', 'validation_outcome', 'validationOutcome')),
     opportunities: extractOpportunities(parsed),
     warnings: asObjectArray(parsed.warnings),
     metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
