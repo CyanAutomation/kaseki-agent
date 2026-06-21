@@ -7,8 +7,10 @@
 
 import {
   GoalSettingOutput,
+  GoalSettingOutputSchema,
   getCriterionText,
   hasQualityWarnings,
+  parseGoalSettingOutput,
 } from '../../src/types/goal-setting';
 
 describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
@@ -94,20 +96,71 @@ describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
     expect(getCriterionText(goal.success_criteria[1] as any)).toBe('criterion 2');
   });
 
-  it('should validate measurable criteria contain quantifiable elements', () => {
-    const measurable = [
-      'add 10 new tests',  // specific number
-      'reduce latency by 50%',  // percentage
-      'pass type checking',  // binary outcome
-      'fix all 12 reported bugs',  // specific count
-    ];
-
-    measurable.forEach((criterion) => {
-      expect(criterion.length).toBeGreaterThanOrEqual(10);
-      // Measurable criteria contain either numbers, percentages, or binary keywords
-      const hasMeasurableIndicator = /\d+|%|pass|pass|complete|success/.test(criterion);
-      expect(hasMeasurableIndicator).toBe(true);
+  it('should preserve measurable SMART criteria and warn on vague criteria', () => {
+    const measurableGoal = parseGoalSettingOutput({
+      original_prompt: 'Improve test coverage',
+      upgraded_goal: 'Improve test coverage with quantifiable completion checks',
+      key_requirements: ['Add tests', 'Verify type safety'],
+      success_criteria: [
+        {
+          criterion: 'add 10 new tests',
+          smart_score: 'high',
+          reasoning: 'specific count',
+        },
+        {
+          criterion: 'pass type checking',
+          smart_score: 'high',
+          reasoning: 'binary outcome',
+        },
+      ],
+      anti_patterns: { do_not_break: ['existing tests'] },
+      constraints: { technical: ['keep public types compatible'] },
+      examples: { after: '10 new tests pass and type checking succeeds' },
+      reasoning: 'measurable criteria should not trigger SMART quality warnings',
+      confidence: 'high',
     });
+
+    expect(measurableGoal.success_criteria.map((c) => getCriterionText(c))).toEqual([
+      'add 10 new tests',
+      'pass type checking',
+    ]);
+    expect(measurableGoal.success_criteria).toEqual([
+      expect.objectContaining({ criterion: 'add 10 new tests', smart_score: 'high' }),
+      expect.objectContaining({ criterion: 'pass type checking', smart_score: 'high' }),
+    ]);
+    expect(hasQualityWarnings(measurableGoal)).not.toContain(
+      'Success criteria not measurable (low smart_score)'
+    );
+
+    const vagueResult = GoalSettingOutputSchema.safeParse({
+      original_prompt: 'Improve code',
+      upgraded_goal: 'Make the code better',
+      key_requirements: ['Improve code'],
+      success_criteria: [
+        {
+          criterion: 'make it better',
+          smart_score: 'low',
+          reasoning: 'vague and not measurable',
+        },
+      ],
+      anti_patterns: { do_not_modify: ['deployment scripts'] },
+      constraints: { technical: ['preserve APIs'] },
+      examples: { before: 'unclear behavior', after: 'better behavior' },
+      reasoning: 'vague criteria should trigger SMART quality warnings',
+      confidence: 'medium',
+    });
+
+    expect(vagueResult.success).toBe(true);
+    if (!vagueResult.success) {
+      throw new Error('Expected vague goal fixture to satisfy schema');
+    }
+
+    expect(hasQualityWarnings(vagueResult.data)).toContain(
+      'Success criteria not measurable (low smart_score)'
+    );
+    expect(vagueResult.data.success_criteria[0]).toEqual(
+      expect.objectContaining({ criterion: 'make it better', smart_score: 'low' })
+    );
   });
 
   it('should identify vague criteria lacking specificity', () => {
