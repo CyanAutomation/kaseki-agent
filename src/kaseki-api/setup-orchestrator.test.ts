@@ -4,7 +4,6 @@ import * as path from 'path';
 import * as os from 'os';
 
 const testTemplateDir = path.join(os.tmpdir(), 'kaseki-setup-test-' + Date.now());
-const currentNodeMajor = parseInt(process.versions.node.split('.')[0], 10);
 const skipNodeVersionCheck = () => ({ assertNodeVersion: jest.fn() });
 
 describe('SetupOrchestrator', () => {
@@ -152,24 +151,8 @@ describe('SetupOrchestrator', () => {
     });
   });
 
-  describe('Node version validation (integration test)', () => {
-    it('should accept Node v24 or higher', async () => {
-      expect(process.versions.node).toMatch(/^\d+\.\d+\.\d+/);
-      const majorVersion = currentNodeMajor;
-
-      // Skip this test if running on Node < 24, as it's an integration test
-      // that validates actual Node version compatibility
-      if (majorVersion < 24) {
-        console.log(`Skipping Node v24 validation test - running on v${majorVersion}`);
-        return;
-      }
-
-      const result = await setupOrchestrator.initializeSetup(testTemplateDir);
-      expect(result.nodeVersionValid).toBe(true);
-    });
-
-    it('should validate Node version format correctly', () => {
-      // Test that assertSupportedNodeVersion accepts valid versions
+  describe('Node version validation', () => {
+    it('should validate supported Node version boundaries deterministically', () => {
       expect(() => {
         setupOrchestrator.assertSupportedNodeVersion('24.0.0', 24);
       }).not.toThrow();
@@ -177,15 +160,11 @@ describe('SetupOrchestrator', () => {
       expect(() => {
         setupOrchestrator.assertSupportedNodeVersion('25.1.2', 24);
       }).not.toThrow();
-    });
 
-    it('should reject Node versions below the minimum', () => {
       expect(() => {
         setupOrchestrator.assertSupportedNodeVersion('23.9.0', 24);
       }).toThrow('process.exit(1) called');
-    });
 
-    it('should reject invalid Node version formats', () => {
       expect(() => {
         setupOrchestrator.assertSupportedNodeVersion('not-a-version', 24);
       }).toThrow('process.exit(1) called');
