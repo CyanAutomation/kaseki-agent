@@ -137,23 +137,18 @@ describe('SetupOrchestrator', () => {
       }
     });
 
-    it('should handle template init errors gracefully and continue', async () => {
-      const readOnlyDir = path.join(os.tmpdir(), 'kaseki-readonly-' + Date.now());
-      const templateInReadOnly = path.join(readOnlyDir, 'template');
-      try {
-        fs.mkdirSync(readOnlyDir, { recursive: true });
-        fs.chmodSync(readOnlyDir, 0o444);
-        const result = await setupOrchestrator.initializeSetup(templateInReadOnly, skipNodeVersionCheck());
-        expect(result.nodeVersionValid).toBe(true);
-      } catch (err) {
-        expect(err).toBeInstanceOf(Error);
-      } finally {
-        try {
-          fs.chmodSync(readOnlyDir, 0o755);
-          fs.rmSync(readOnlyDir, { recursive: true, force: true });
-        } catch {
-        }
-      }
+    it('should propagate injected template init errors', async () => {
+      const templateInitError = new Error('template initialization failed');
+      const ensureTemplate = jest.fn<Promise<void>, [string]>().mockRejectedValue(templateInitError);
+
+      await expect(
+        setupOrchestrator.initializeSetup(testTemplateDir, {
+          ...skipNodeVersionCheck(),
+          ensureTemplate,
+        }),
+      ).rejects.toThrow('template initialization failed');
+
+      expect(ensureTemplate).toHaveBeenCalledWith(testTemplateDir);
     });
   });
 
