@@ -14,7 +14,11 @@ import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-ev
 const VALID_LOG_TYPES = [
   'stdout',
   'stderr',
-  'validation',
+  const logPath = path.resolve(LOGS_DIR, logName);
+  
+  if (!logPath.startsWith(path.resolve(LOGS_DIR))) {
+    return res.status(400).json({ error: 'Invalid log file path' });
+  }
   'progress',
   'quality',
   'secret-scan',
