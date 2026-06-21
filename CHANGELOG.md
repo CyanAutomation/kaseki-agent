@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.87.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.87.0...v1.87.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* update entrypoint script path in Docker image build workflow ([59c76ad](https://github.com/CyanAutomation/kaseki-agent/commit/59c76ad1e5e9b13c7e630e737a36b280ea72c025))
+
 # [1.87.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.86.0...v1.87.0) (2026-06-21)
 
 
