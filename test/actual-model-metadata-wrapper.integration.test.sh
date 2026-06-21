@@ -104,8 +104,6 @@ GIT
 
   node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(m.actual_model!=="event-smoke-model")throw new Error(`expected event-smoke-model got ${m.actual_model}`);' "$results_dir/metadata.json"
   ! grep -q 'model_attribution_missing' "$results_dir/progress.jsonl"
-
-  rm -rf "$tmp_root"
 }
 
 run_wrapper_smoke
