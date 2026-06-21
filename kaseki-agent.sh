@@ -89,6 +89,15 @@ fi
   exit 1
 }
 
+KASEKI_AGENT_PROMPT_HELPER="${KASEKI_AGENT_PROMPT_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/agent-prompt.sh}"
+if [ ! -r "$KASEKI_AGENT_PROMPT_HELPER" ] && [ -r /app/scripts/agent-prompt.sh ]; then
+  KASEKI_AGENT_PROMPT_HELPER="/app/scripts/agent-prompt.sh"
+fi
+if [ ! -r "$KASEKI_AGENT_PROMPT_HELPER" ]; then
+  printf 'ERROR: Agent prompt helper is not readable. Expected %s or /app/scripts/agent-prompt.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/agent-prompt.sh.\n' "$KASEKI_AGENT_PROMPT_HELPER" >&2
+  exit 66
+fi
+
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
@@ -4190,8 +4199,11 @@ NODE
   emit_event "repo_memory_updated" "mode=$KASEKI_REPO_MEMORY_MODE" "repo_key=$REPO_MEMORY_KEY" "summary=$REPO_MEMORY_FILE" "max_bytes=$KASEKI_REPO_MEMORY_MAX_BYTES"
 }
 
-# shellcheck source=scripts/agent-prompt.sh
-. "${KASEKI_SCRIPT_DIR}/scripts/agent-prompt.sh"
+# shellcheck source=/dev/null
+. "$KASEKI_AGENT_PROMPT_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_AGENT_PROMPT_HELPER" $? >&2
+  exit 1
+}
 is_transient_goal_setting_failure() {
   local exit_code="$1"
   local stderr_content="$2"

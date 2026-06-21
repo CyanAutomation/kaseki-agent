@@ -329,9 +329,20 @@ describe('kaseki API web console behavior', () => {
 
     expect(document.querySelector('#full-results-modal')?.hasAttribute('hidden')).toBe(false);
     expect(document.querySelector('#modal-title-heading')?.textContent).toBe('Full Results — kaseki-301');
+    expect(document.querySelector('#tab-artifacts')?.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('false');
+    expect(document.querySelector('#tab-status')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('#tab-status')?.getAttribute('aria-hidden')).toBe('true');
     expect(document.querySelector('#artifacts-output .artifact-item-name')?.textContent).toBe('report.json');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('archive.tar');
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
+
+    click(document.querySelector('#modal-close-btn'));
+    click(document.querySelector('#full-results-btn'));
+    await waitFor(() => expect(document.querySelector('#tab-status')?.hasAttribute('hidden')).toBe(false));
+    expect(document.querySelector('#tab-status')?.getAttribute('aria-hidden')).toBe('false');
+    expect(document.querySelector('#tab-artifacts')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   test('renders artifact file content directly instead of the API wrapper', async () => {
