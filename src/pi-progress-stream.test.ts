@@ -45,7 +45,7 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
   const clockPreloadPath = path.join(tmpDir, 'fixed-clock.mjs');
   fs.writeFileSync(
     clockPreloadPath,
-    `Date.now = () => Date.parse('2026-06-20T00:00:00.000Z');\n`
+    'Date.now = () => Date.parse(\'2026-06-20T00:00:00.000Z\');\n'
   );
   let stdout = '';
 
