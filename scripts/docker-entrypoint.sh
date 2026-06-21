@@ -34,7 +34,17 @@ export KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
 export KASEKI_AGENT_BIN="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
 
 # shellcheck source=scripts/startup-check-packaging.sh
-. "${KASEKI_STARTUP_CHECK_PACKAGING_CONFIG:-/app/scripts/startup-check-packaging.sh}"
+KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="${KASEKI_STARTUP_CHECK_PACKAGING_CONFIG:-/app/scripts/startup-check-packaging.sh}"
+if [ -f "$KASEKI_STARTUP_CHECK_PACKAGING_CONFIG" ]; then
+  . "$KASEKI_STARTUP_CHECK_PACKAGING_CONFIG"
+else
+  # Fallback definitions for testing and incomplete deployments
+  : "${KASEKI_STARTUP_CHECK_PRIMARY_PATH:=/scripts/startup-checks.sh}"
+  : "${KASEKI_STARTUP_CHECK_MODE_DEFAULT:=all}"
+  kaseki_run_startup_checks() {
+    "${KASEKI_STARTUP_CHECK_PRIMARY_PATH}" "${KASEKI_STARTUP_CHECK_MODE:-$KASEKI_STARTUP_CHECK_MODE_DEFAULT}"
+  }
+fi
 
 if [ -n "${HOME:-}" ]; then
   mkdir -p "$HOME" 2>/dev/null || true
@@ -45,7 +55,7 @@ fi
 # Auto-remediation enabled by default (KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=1)
 # Set KASEKI_STARTUP_CHECK_AUTO_REMEDIATE=0 to disable auto-fixes (e.g., git safe.directory config)
 if [ "${KASEKI_SKIP_STARTUP_CHECKS:-0}" != "1" ]; then
-  kaseki_run_startup_checks || {
+  /scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}" || {
     exit_code=$?
     # Exit codes 1 and 2 are blocking setup/permission failures.
     # Exit code 3 is a warning that the API can surface through /api/preflight.
