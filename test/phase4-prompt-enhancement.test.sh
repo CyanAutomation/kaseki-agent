@@ -54,11 +54,11 @@ GOAL_CHECK_RETRY_PROMPT=''
 KASEKI_HASHLINE_EDITS='$hashline_edits'
 KASEKI_AGENT_GUARDRAILS='1'
 # shellcheck source=/dev/null
-. '$PROMPT_HELPER'
+. "$PROMPT_HELPER"
 build_agent_prompt
 EOF_HARNESS
 
-  bash "$harness"
+  PROMPT_HELPER="$PROMPT_HELPER" bash "$harness"
 }
 
 assert_contains() {
@@ -123,6 +123,31 @@ test_rendered_prompt_includes_task_prompt() {
   return "$result"
 }
 
+test_prompt_helper_has_no_legacy_prompt_file_reads() {
+  local result=0
+  local legacy_prompt_var="PROMPT_""FILE"
+
+  assert_not_contains "$(cat "$PROMPT_HELPER")" "$legacy_prompt_var" || result=1
+  assert_not_contains "$(cat "$PROMPT_HELPER")" "cat \$legacy_prompt_var" || result=1
+
+  test_result "prompt helper does not use legacy PROMPT_FILE reads" "$result"
+  return "$result"
+}
+
+test_prompt_test_has_no_legacy_setup_fixture() {
+  local result=0
+  local test_source
+  local legacy_create_fn="create_test_""prompt_file"
+  local legacy_prompt_var="TEST_PROMPT_""FILE"
+  test_source="$(cat "$0")"
+
+  assert_not_contains "$test_source" "$legacy_create_fn" || result=1
+  assert_not_contains "$test_source" "$legacy_prompt_var" || result=1
+
+  test_result "prompt test does not reference removed setup fixture helpers" "$result"
+  return "$result"
+}
+
 main() {
   printf '\n%s\n' "=== Phase 4: Task Prompt Enhancement Tests ==="
   printf 'Asserting generated build_agent_prompt output for stable prompt-contract markers\n\n'
@@ -130,6 +155,8 @@ main() {
   test_hashline_edit_guidance_enabled
   test_hashline_edit_guidance_disabled
   test_rendered_prompt_includes_task_prompt
+  test_prompt_helper_has_no_legacy_prompt_file_reads
+  test_prompt_test_has_no_legacy_setup_fixture
 
   printf '\n%s\n' "=== Test Summary ==="
   printf 'Tests run: %d\n' "$test_count"
