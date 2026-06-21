@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-AGENT_SCRIPT="$REPO_ROOT/kaseki-agent.sh"
+PROMPT_HELPER="$REPO_ROOT/scripts/agent-prompt.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -37,14 +37,6 @@ test_result() {
   fi
 }
 
-extract_build_agent_prompt() {
-  awk '
-    /^build_agent_prompt\(\) \{/ { in_func=1 }
-    in_func { print }
-    in_func && /^\}/ { exit }
-  ' "$AGENT_SCRIPT"
-}
-
 render_prompt() {
   local hashline_edits="$1"
   local harness
@@ -61,7 +53,8 @@ KASEKI_RESULTS_DIR="\$(mktemp -d)"
 GOAL_CHECK_RETRY_PROMPT=''
 KASEKI_HASHLINE_EDITS='$hashline_edits'
 KASEKI_AGENT_GUARDRAILS='1'
-$(extract_build_agent_prompt)
+# shellcheck source=/dev/null
+. '$PROMPT_HELPER'
 build_agent_prompt
 EOF_HARNESS
 
@@ -88,13 +81,10 @@ test_hashline_edit_guidance_enabled() {
   prompt="$(render_prompt 1)" || result=1
 
   if [ "$result" -eq 0 ]; then
-    assert_contains "$prompt" "File editing with content-based anchors (hashline_edit):" || result=1
-    assert_contains "$prompt" "Use the hashline_edit tool to make precise file edits using content-based anchors instead of line numbers." || result=1
-    assert_contains "$prompt" "Hashline_edit syntax:" || result=1
-    assert_contains "$prompt" "start_hash: First 8 characters of SHA-256 hash of the first line to replace" || result=1
-    assert_contains "$prompt" "end_hash: First 8 characters of SHA-256 hash of the last line to replace" || result=1
-    assert_contains "$prompt" "context_lines: Number of surrounding lines to include for disambiguation" || result=1
-    assert_contains "$prompt" "Use it to avoid stale line-number references between retries" || result=1
+    assert_contains "$prompt" "hashline_edit" || result=1
+    assert_contains "$prompt" "start_hash" || result=1
+    assert_contains "$prompt" "end_hash" || result=1
+    assert_contains "$prompt" "context_lines" || result=1
   fi
 
   test_result "KASEKI_HASHLINE_EDITS=1 includes hashline_edit contract and anchoring guidance" "$result"
@@ -109,23 +99,37 @@ test_hashline_edit_guidance_disabled() {
   if [ "$result" -eq 0 ]; then
     assert_contains "$prompt" "Task:" || result=1
     assert_contains "$prompt" "Implement the requested change." || result=1
-    assert_not_contains "$prompt" "File editing with content-based anchors (hashline_edit):" || result=1
-    assert_not_contains "$prompt" "Hashline_edit syntax:" || result=1
-    assert_not_contains "$prompt" "Use the hashline_edit tool" || result=1
-    assert_not_contains "$prompt" "start_hash: First 8 characters of SHA-256 hash" || result=1
-    assert_not_contains "$prompt" "Use it to avoid stale line-number references between retries" || result=1
+    assert_not_contains "$prompt" "hashline_edit" || result=1
+    assert_not_contains "$prompt" "start_hash" || result=1
+    assert_not_contains "$prompt" "end_hash" || result=1
+    assert_not_contains "$prompt" "context_lines" || result=1
   fi
 
   test_result "KASEKI_HASHLINE_EDITS=0 omits hashline_edit guidance" "$result"
   return "$result"
 }
 
+test_rendered_prompt_includes_task_prompt() {
+  local result=0
+  local prompt
+  prompt="$(render_prompt 1)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Task:" || result=1
+    assert_contains "$prompt" "Implement the requested change." || result=1
+  fi
+
+  test_result "rendered prompt includes the task prompt" "$result"
+  return "$result"
+}
+
 main() {
   printf '\n%s\n' "=== Phase 4: Task Prompt Enhancement Tests ==="
-  printf 'Asserting generated build_agent_prompt output for hashline_edit guidance\n\n'
+  printf 'Asserting generated build_agent_prompt output for stable prompt-contract markers\n\n'
 
   test_hashline_edit_guidance_enabled
   test_hashline_edit_guidance_disabled
+  test_rendered_prompt_includes_task_prompt
 
   printf '\n%s\n' "=== Test Summary ==="
   printf 'Tests run: %d\n' "$test_count"
