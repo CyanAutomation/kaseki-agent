@@ -346,6 +346,69 @@ describe('StatusResponseBuilder', () => {
       expect(response.diagnosticSummary?.phaseDiagnostics).toBeUndefined();
     });
 
+    it('points empty assistant turn failures at Pi agent diagnostics first', () => {
+      const job: Partial<Job> = {
+        id: 'job-empty-assistant-turn',
+        status: 'failed',
+        resultDir: '/results/job-empty-assistant-turn',
+      };
+      const metadata = {
+        failed_command: 'pi provider empty assistant turn',
+        provider_error_type: 'provider_empty_assistant_turn',
+        provider_error_phase: 'coding',
+        provider_error_provider: 'gateway',
+        provider_error_model: 'auto',
+        provider_error_message: 'Coding agent returned a successful Pi exit code but produced no assistant text and no tool calls.',
+      };
+      const diagnostic = {
+        reason_code: 'provider_empty_assistant_turn',
+        phase: 'coding',
+        assistant_messages: 1,
+        assistant_text_chars: 0,
+        tool_calls: 0,
+        severity: 'critical',
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json') ||
+          filePath.includes('pi-agent-diagnostics.jsonl') ||
+          filePath.includes('pi-events.jsonl') ||
+          filePath.includes('pi-summary.json') ||
+          filePath.includes('failure.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return JSON.stringify(metadata);
+        }
+        return '{}';
+      });
+      (artifactMetadataCache.getRunArtifactMetadata as jest.Mock).mockReturnValue({
+        'failure.json': { exists: true, size: 120 },
+        'pi-agent-diagnostics.jsonl': { exists: true, size: JSON.stringify(diagnostic).length + 1 },
+        'pi-events.jsonl': { exists: true, size: 400 },
+        'pi-summary.json': { exists: true, size: 80 },
+      });
+      mockCache.getOrLoad.mockImplementation((filePath: string) => {
+        if (filePath.includes('failure.json')) {
+          return JSON.stringify(metadata);
+        }
+        if (filePath.includes('pi-agent-diagnostics.jsonl')) {
+          return JSON.stringify(diagnostic) + '\n';
+        }
+        return null;
+      });
+
+      const response = builder.buildStatus(job as Job);
+
+      expect(response.diagnosticEntryPoint).toBe('pi-agent-diagnostics.jsonl');
+      expect(response.artifacts?.diagnosticFiles).toEqual([
+        'pi-agent-diagnostics.jsonl',
+        'pi-events.jsonl',
+        'pi-summary.json',
+      ]);
+      expect(response.diagnosticSummary?.primaryReason).toContain('provider_empty_assistant_turn');
+    });
+
     it('should derive terminal completedAt from metadata when scheduler job lacks it', () => {
       const job: Partial<Job> = {
         id: 'job-terminal-metadata',

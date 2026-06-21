@@ -911,6 +911,25 @@ const taskPrompt = process.env.TASK_PROMPT || '';
 const taskMode = process.env.KASEKI_TASK_MODE || 'patch';
 const isInspect = taskMode === 'inspect';
 const allowEmptyDiff = process.env.KASEKI_ALLOW_EMPTY_DIFF === '1';
+function extractPromptFiles(prompt) {
+  const matches = new Set();
+  const pattern = /(?:^|[\s`'":(])((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+)(?=$|[\s`'",:).;!?])/g;
+  let match;
+  while ((match = pattern.exec(prompt)) !== null) {
+    const candidate = match[1].replace(/^\/+/, '');
+    if (
+      candidate &&
+      !candidate.includes('..') &&
+      !candidate.endsWith('/') &&
+      !candidate.startsWith('http://') &&
+      !candidate.startsWith('https://')
+    ) {
+      matches.add(candidate);
+    }
+  }
+  return [...matches].slice(0, 10);
+}
+const promptFiles = extractPromptFiles(taskPrompt);
 const fallback = {
   task: isInspect
     ? 'Read-only inspect task; scouting agent did not produce a candidate artifact.'
@@ -926,7 +945,10 @@ const fallback = {
       'Keep changes tightly scoped to files directly needed for the task.',
       'Do not expose secrets, credentials, or mounted secret file contents.',
     ],
-  relevant_files: [],
+  relevant_files: promptFiles.map((file) => ({
+    path: file,
+    reason: 'Explicitly mentioned in the original task prompt',
+  })),
   observations: [
     isInspect
       ? 'Kaseki generated this fallback because inspect-mode scouting completed without writing scouting-candidate.json.'
@@ -956,12 +978,12 @@ const fallback = {
   ],
   test_impact: [],
   critical_change_expectations: {
-    required_files: [],
+    required_files: !isInspect ? promptFiles : [],
     required_search_strings: [],
     forbidden_empty_diff: !isInspect && !allowEmptyDiff,
   },
   suggested_allowlist: {
-    agent_patterns: [],
+    agent_patterns: !isInspect ? promptFiles : [],
     validation_patterns: [],
   },
   fallback: true,
@@ -2537,6 +2559,72 @@ run_pi_event_filter_export() {
   fi
   cp "$raw_events_file" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
   return "$filter_exit"
+}
+
+detect_empty_successful_agent_turn() {
+  local events_file="$1"
+  local diagnostics_file="$2"
+  local phase="${3:-coding}"
+
+  [ -s "$events_file" ] || return 1
+
+  node - "$events_file" "$diagnostics_file" "$phase" <<'NODE' 2>/dev/null
+const fs = require('node:fs');
+const [eventsPath, diagnosticsPath, phase] = process.argv.slice(2);
+const lines = fs.readFileSync(eventsPath, 'utf8').split(/\r?\n/).filter(Boolean);
+let assistantTextChars = 0;
+let assistantMessages = 0;
+let toolCalls = 0;
+let responseId = '';
+let stopReason = '';
+
+function textLengthFromContent(content) {
+  if (typeof content === 'string') return content.trim().length;
+  if (!Array.isArray(content)) return 0;
+  let total = 0;
+  for (const item of content) {
+    if (typeof item === 'string') total += item.trim().length;
+    else if (item && typeof item === 'object' && typeof item.text === 'string') total += item.text.trim().length;
+  }
+  return total;
+}
+
+for (const line of lines) {
+  let event;
+  try { event = JSON.parse(line); } catch { continue; }
+  if (!event || typeof event !== 'object') continue;
+  if (event.type === 'tool_call' || event.type === 'tool_start' || event.type === 'function_call') toolCalls += 1;
+  const toolResults = event.toolResults || event.message?.toolResults;
+  if (Array.isArray(toolResults) && toolResults.length > 0) toolCalls += toolResults.length;
+  const message = event.message;
+  if (message && typeof message === 'object' && message.role === 'assistant') {
+    assistantMessages += 1;
+    assistantTextChars += textLengthFromContent(message.content);
+    if (!responseId && typeof event.responseId === 'string') responseId = event.responseId;
+    if (!responseId && typeof message.responseId === 'string') responseId = message.responseId;
+    if (!stopReason && typeof event.stopReason === 'string') stopReason = event.stopReason;
+    if (!stopReason && typeof message.stopReason === 'string') stopReason = message.stopReason;
+  }
+}
+
+if (assistantMessages > 0 && assistantTextChars === 0 && toolCalls === 0) {
+  const diagnostic = {
+    timestamp: new Date().toISOString(),
+    reason_code: 'provider_empty_assistant_turn',
+    phase,
+    assistant_messages: assistantMessages,
+    assistant_text_chars: assistantTextChars,
+    tool_calls: toolCalls,
+    response_id: responseId,
+    stop_reason: stopReason,
+    severity: 'critical',
+    suggestion: 'Retry the agent once with explicit guidance; if it repeats, treat the provider response as an infrastructure failure instead of a completed coding attempt.',
+  };
+  fs.appendFileSync(diagnosticsPath, JSON.stringify(diagnostic) + '\n');
+  process.exit(0);
+}
+process.exit(1);
+NODE
 }
 
 run_pi_json_capture() {
@@ -9382,6 +9470,31 @@ NODE
       FAILED_COMMAND="pi provider error"
     fi
     emit_error_event "$PROVIDER_ERROR_TYPE" "Coding provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+  fi
+  if [ "$PI_EXIT" -eq 0 ] && detect_empty_successful_agent_turn "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "${KASEKI_RESULTS_DIR}/pi-agent-diagnostics.jsonl" "coding"; then
+    GOAL_CHECK_MET=false
+    GOAL_CHECK_FAILURE_REASON="provider_empty_assistant_turn: Coding agent returned a successful Pi exit code but produced no assistant text and no tool calls."
+    GOAL_CHECK_RETRY_PROMPT="The previous coding attempt returned an empty assistant turn: no assistant text, no tool calls, and no repository diff. Re-read the original task prompt, inspect the relevant files from ${SCOUTING_ARTIFACT} and ${CRITICAL_CHANGE_EXPECTATIONS_ARTIFACT}, then make the smallest repository change required by the task before finishing."
+    printf '%s\n' "$GOAL_CHECK_RETRY_PROMPT" | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log "${KASEKI_RESULTS_DIR}"/goal-check-stderr.log
+    emit_error_event "provider_empty_assistant_turn" "Coding agent returned a zero exit code with an empty assistant turn" "retry"
+    snapshot_attempt_artifacts "$coding_attempt"
+    if [ "$coding_attempt" -lt "$max_coding_attempts" ]; then
+      emit_progress "pi coding agent" "retrying after empty assistant turn (attempt $coding_attempt of $max_coding_attempts)"
+      coding_attempt=$((coding_attempt + 1))
+      continue
+    fi
+    PI_EXIT=88
+    if [ "$STATUS" -eq 0 ]; then
+      STATUS=88
+      FAILED_COMMAND="pi provider empty assistant turn"
+      PROVIDER_ERROR_TYPE="provider_empty_assistant_turn"
+      PROVIDER_ERROR_PHASE="coding"
+      PROVIDER_ERROR_PROVIDER="$KASEKI_PROVIDER"
+      PROVIDER_ERROR_API=""
+      PROVIDER_ERROR_MODEL="$KASEKI_MODEL"
+      PROVIDER_ERROR_MESSAGE="Coding agent returned a successful Pi exit code but produced no assistant text and no tool calls."
+    fi
+    emit_error_event "provider_empty_assistant_turn" "$PROVIDER_ERROR_MESSAGE" "exit"
   fi
 
   # Process hashline_edit events (non-fatal phase; failures don't block pipeline)
