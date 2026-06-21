@@ -6,10 +6,6 @@ import {
   getCachedScriptContent,
   extractBashFunctionWithCache,
 } from '../src/test-utils/bash-script-cache';
-
-import {
-  clearGlobalTempDirPool,
-} from '../src/test-utils/temp-dir-manager';
 import {
   createGoalCheckOrchestrationEnv,
   createRunEvaluationOrchestrationEnv,
@@ -71,10 +67,6 @@ describe('Evaluation Prompt Enhancements', () => {
       agentPromptContent.indexOf('build_agent_prompt()'),
       agentPromptContent.indexOf('build_agent_prompt()') + Math.max(agentPromptContent.length, 20000)
     );
-  });
-
-  afterAll(() => {
-    clearGlobalTempDirPool();
   });
 
   const writeJson = (filePath: string, value: unknown) => {

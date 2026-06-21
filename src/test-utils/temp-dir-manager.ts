@@ -50,14 +50,4 @@ export function createSubdirs(
   return result;
 }
 
-// Global pool for future use: if temp reuse pattern is needed again, add this:
-// class TempDirPool { ... }
-
-/**
- * Clear the global temp directory pool (useful in afterAll hooks)
- */
-export function clearGlobalTempDirPool(): void {
-  // Placeholder for future pool cleanup logic
-}
-
 // ensureTempDirStructure() removed — use createSubdirs() instead, or fs.mkdirSync(..., { recursive: true })
