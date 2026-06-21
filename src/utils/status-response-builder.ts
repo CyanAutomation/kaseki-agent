@@ -31,6 +31,11 @@ const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check.json',
   'goal-check-attempts.jsonl',
 ] as const;
+const PI_AGENT_DIAGNOSTIC_FILES = [
+  'pi-agent-diagnostics.jsonl',
+  'pi-events.jsonl',
+  'pi-summary.json',
+] as const;
 const GOAL_SETTING_DIAGNOSTIC_FILES = [
   'goal-setting-validation-errors.jsonl',
   'goal-setting-stderr.log',
@@ -193,12 +198,14 @@ export class StatusResponseBuilder {
     metadata: any,
     runDir: string
   ): {
+    includePiAgent: boolean;
     includePreValidation: boolean;
     includeGoalSetting: boolean;
     includeScouting: boolean;
     includeGoalCheck: boolean;
   } {
     return {
+      includePiAgent: job.status === 'failed' && this.shouldIncludePiAgentDiagnostics(metadata, runDir),
       includePreValidation: job.status === 'failed' && this.shouldIncludePreValidationDiagnostics(metadata, runDir),
       includeGoalSetting:
         job.status === 'failed' &&
@@ -211,6 +218,7 @@ export class StatusResponseBuilder {
   }
 
   private buildArtifactFileList(flags: {
+    includePiAgent: boolean;
     includePreValidation: boolean;
     includeGoalSetting: boolean;
     includeScouting: boolean;
@@ -218,6 +226,7 @@ export class StatusResponseBuilder {
   }): string[] {
     return [
       ...STATUS_KEY_FILES,
+      ...(flags.includePiAgent ? PI_AGENT_DIAGNOSTIC_FILES : []),
       ...(flags.includePreValidation ? PRE_VALIDATION_DIAGNOSTIC_FILES : []),
       ...(flags.includeGoalSetting ? GOAL_SETTING_DIAGNOSTIC_FILES : []),
       ...(flags.includeScouting ? SCOUTING_DIAGNOSTIC_FILES : []),
@@ -238,6 +247,7 @@ export class StatusResponseBuilder {
       {} as Record<(typeof STATUS_KEY_FILES)[number], boolean>
     );
     const diagnosticFiles = [
+      ...PI_AGENT_DIAGNOSTIC_FILES,
       ...GOAL_SETTING_DIAGNOSTIC_FILES,
       ...SCOUTING_DIAGNOSTIC_FILES,
       ...PRE_VALIDATION_DIAGNOSTIC_FILES,
@@ -260,7 +270,7 @@ export class StatusResponseBuilder {
     response: StatusResponse,
     job: Job,
     runDir: string,
-    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
     isSmallAvailable: (fileName: string) => boolean
   ): void {
     try {
@@ -297,7 +307,7 @@ export class StatusResponseBuilder {
   private inlinePhaseValidationErrors(
     response: StatusResponse,
     runDir: string,
-    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
     isSmallAvailable: (fileName: string) => boolean
   ): void {
     if (flags.includeGoalSetting) {
@@ -331,10 +341,13 @@ export class StatusResponseBuilder {
 
   private setDiagnosticEntryPoint(
     response: StatusResponse,
-    flags: { includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
+    flags: { includePiAgent: boolean; includePreValidation: boolean; includeGoalSetting: boolean; includeScouting: boolean; includeGoalCheck: boolean },
     isAvailable: (fileName: string) => boolean
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
+      ...(flags.includePiAgent
+        ? (['pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
+        : []),
       ...(flags.includePreValidation
         ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])
         : []),
@@ -358,6 +371,16 @@ export class StatusResponseBuilder {
     ];
 
     response.diagnosticEntryPoint = diagnosticEntryPointCandidates.find((fileName) => isAvailable(fileName));
+  }
+
+  private shouldIncludePiAgentDiagnostics(metadata: any, runDir: string): boolean {
+    const providerErrorType = String(metadata?.provider_error_type ?? '');
+    const failedCommand = String(metadata?.failed_command ?? '');
+    return (
+      providerErrorType === 'provider_empty_assistant_turn' ||
+      failedCommand.includes('pi provider empty assistant turn') ||
+      PI_AGENT_DIAGNOSTIC_FILES.some((fileName) => fs.existsSync(path.join(runDir, fileName)))
+    );
   }
 
   private shouldIncludePreValidationDiagnostics(metadata: any, runDir: string): boolean {

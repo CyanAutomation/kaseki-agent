@@ -69,6 +69,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'pi-agent-diagnostics.jsonl': {
+    name: 'pi-agent-diagnostics.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Structured diagnostics for anomalous coding-agent turns, including zero-exit empty assistant responses',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 3,
+    sizeHint: 'small',
+  },
+
   // Goal-setting (pre-scouting phase)
   'goal-setting.json': {
     name: 'goal-setting.json',
