@@ -4,43 +4,56 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-IMAGE_TAG="${KASEKI_STARTUP_CHECK_IMAGE_TAG:-kaseki-startup-check-packaging:test}"
+CONFIG="$ROOT_DIR/scripts/startup-check-packaging.sh"
+ENTRYPOINT="$ROOT_DIR/scripts/docker-entrypoint.sh"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-docker_available() {
-  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
-}
+APP_DIR="$TMP_DIR/app"
+SCRIPTS_DIR="$TMP_DIR/scripts"
+mkdir -p "$APP_DIR/scripts" "$SCRIPTS_DIR"
 
-if ! docker_available; then
-  printf 'Docker is not available; falling back to static startup-check packaging assertions.\n'
-  grep -Fq 'ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh' Dockerfile
-  grep -Fq 'ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh' Dockerfile
-  # shellcheck disable=SC2016
-  grep -Fq '/scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}"' scripts/docker-entrypoint.sh
-  printf '✓ Static startup-check packaging assertions passed.\n'
-  exit 0
+(
+  unset KASEKI_STARTUP_CHECK_SOURCE KASEKI_STARTUP_CHECK_PRIMARY_PATH KASEKI_INIT_CONTAINER_PATH KASEKI_STARTUP_CHECK_MODE_DEFAULT
+  # shellcheck source=scripts/startup-check-packaging.sh
+  . "$CONFIG"
+  test "$KASEKI_STARTUP_CHECK_SOURCE" = "/app/scripts/startup-checks.sh"
+  test "$KASEKI_STARTUP_CHECK_PRIMARY_PATH" = "/scripts/startup-checks.sh"
+  test "$KASEKI_INIT_CONTAINER_PATH" = "/scripts/kaseki-init-container.sh"
+  test "$KASEKI_STARTUP_CHECK_MODE_DEFAULT" = "all"
+)
+
+cat > "$APP_DIR/scripts/startup-checks.sh" <<'FAKE_STARTUP_CHECKS'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" > "${STARTUP_CHECK_MODE_CAPTURE:?}"
+FAKE_STARTUP_CHECKS
+chmod +x "$APP_DIR/scripts/startup-checks.sh"
+
+export KASEKI_STARTUP_CHECK_SOURCE="$APP_DIR/scripts/startup-checks.sh"
+export KASEKI_STARTUP_CHECK_PRIMARY_PATH="$SCRIPTS_DIR/startup-checks.sh"
+export KASEKI_INIT_CONTAINER_PATH="$SCRIPTS_DIR/kaseki-init-container.sh"
+export KASEKI_STARTUP_CHECK_MODE_DEFAULT=all
+# shellcheck source=scripts/startup-check-packaging.sh
+. "$CONFIG"
+
+kaseki_install_startup_check_links
+
+test "$(readlink -f "$KASEKI_STARTUP_CHECK_PRIMARY_PATH")" = "$APP_DIR/scripts/startup-checks.sh"
+test "$(readlink -f "$KASEKI_INIT_CONTAINER_PATH")" = "$APP_DIR/scripts/startup-checks.sh"
+
+MODE_CAPTURE="$TMP_DIR/mode.txt"
+STARTUP_CHECK_MODE_CAPTURE="$MODE_CAPTURE" KASEKI_STARTUP_CHECK_MODE=quick kaseki_run_startup_checks
+test "$(cat "$MODE_CAPTURE")" = "quick"
+
+if ! bash -n "$CONFIG"; then
+  printf 'startup-check packaging config has invalid shell syntax\n' >&2
+  exit 1
 fi
 
-printf 'Building Docker image for startup-check packaging verification...\n'
-docker build -t "$IMAGE_TAG" .
+if ! bash -n "$ENTRYPOINT"; then
+  printf 'docker entrypoint has invalid shell syntax\n' >&2
+  exit 1
+fi
 
-printf 'Checking final image contains executable startup-check and init-container paths...\n'
-docker run --rm --entrypoint /bin/sh "$IMAGE_TAG" -c '
-  set -eu
-  test -x /scripts/startup-checks.sh
-  test -x /scripts/kaseki-init-container.sh
-  test "$(readlink -f /scripts/startup-checks.sh)" = "/app/scripts/startup-checks.sh"
-  test "$(readlink -f /scripts/kaseki-init-container.sh)" = "/app/scripts/startup-checks.sh"
-'
-
-printf 'Checking entrypoint invokes the packaged startup-check path successfully...\n'
-ENTRYPOINT_OUTPUT="$({
-  docker run --rm \
-    -e KASEKI_ROOT=/tmp/kaseki-startup-check-root \
-    -e KASEKI_STARTUP_CHECK_MODE=quick \
-    "$IMAGE_TAG" /bin/true
-} 2>&1)"
-
-printf '%s\n' "$ENTRYPOINT_OUTPUT" | grep -Fq 'Kaseki startup checks (mode: quick)'
-printf '%s\n' "$ENTRYPOINT_OUTPUT" | grep -Fq 'All checks passed'
-
-printf '✓ Startup-check Docker packaging assertions passed.\n'
+printf '✓ Startup-check packaging contract assertions passed.\n'

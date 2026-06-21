@@ -117,13 +117,13 @@ RUN chmod +x \
       /app/scripts/kaseki-container-setup.sh \
       /app/scripts/kaseki-container-setup-remote.sh \
       /app/scripts/kaseki-container-entrypoint-wrapper.sh \
+      /app/scripts/startup-check-packaging.sh \
       /app/kaseki /app/run-kaseki.sh /app/kaseki-agent.sh \
     && mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
-    && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
-    && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \
+    && /app/scripts/startup-check-packaging.sh install \
     && mkdir -p /app/lib/lib /app/lib/secrets \
     && cp dist/pi-event-filter.js /app/lib/pi-event-filter.js \
     && cp dist/ansi-colors.js /app/lib/ansi-colors.js \
@@ -259,8 +259,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-setup.sh /scripts/kaseki-container-setup.sh \
     && ln -sf /app/scripts/kaseki-container-setup-remote.sh /scripts/kaseki-container-setup-remote.sh \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
-    && ln -sf /app/scripts/startup-checks.sh /scripts/startup-checks.sh \
-    && ln -sf /app/scripts/startup-checks.sh /scripts/kaseki-init-container.sh \
+    && /app/scripts/startup-check-packaging.sh install \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
     && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
