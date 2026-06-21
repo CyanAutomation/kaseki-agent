@@ -62,20 +62,68 @@ describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
   });
 
   it('should require at least one measurable criterion', () => {
-    const goalWithMeasurable: GoalSettingOutput = {
+    const measurableResult = GoalSettingOutputSchema.safeParse({
       original_prompt: 'Improve system',
       upgraded_goal: 'Improve system performance',
       key_requirements: ['Add caching', 'Optimize queries'],
       success_criteria: [
-        'response time < 100ms',
-        'improve user experience',
+        {
+          criterion: 'reduce p95 response time below 100ms',
+          smart_score: 'high',
+          reasoning: 'specific latency threshold',
+        },
+        {
+          criterion: 'improve user experience',
+          smart_score: 'medium',
+          reasoning: 'directional outcome supported by the measurable latency criterion',
+        },
       ],
+      anti_patterns: { do_not_break: ['existing public API behavior'] },
+      constraints: { technical: ['keep cache invalidation deterministic'] },
+      examples: { after: 'p95 response time is below 100ms' },
       reasoning: 'at least one measurable criterion present',
       confidence: 'high',
-    };
+    });
 
-    // Mixed quality criteria should still be allowed
-    expect(goalWithMeasurable.success_criteria).toHaveLength(2);
+    expect(measurableResult.success).toBe(true);
+    if (!measurableResult.success) {
+      throw new Error('Expected measurable goal fixture to satisfy schema');
+    }
+
+    expect(hasQualityWarnings(measurableResult.data)).not.toContain(
+      'Success criteria not measurable (low smart_score)'
+    );
+
+    const vagueResult = GoalSettingOutputSchema.safeParse({
+      original_prompt: 'Improve system',
+      upgraded_goal: 'Make the system better',
+      key_requirements: ['Improve performance'],
+      success_criteria: [
+        {
+          criterion: 'make it better',
+          smart_score: 'low',
+          reasoning: 'vague and not measurable',
+        },
+        {
+          criterion: 'improve user experience',
+          smart_score: 'low',
+          reasoning: 'no observable acceptance threshold',
+        },
+      ],
+      anti_patterns: { do_not_break: ['existing public API behavior'] },
+      constraints: { technical: ['keep cache invalidation deterministic'] },
+      examples: { after: 'better user experience' },
+      reasoning: 'only vague criteria present',
+      confidence: 'medium',
+    });
+
+    if (vagueResult.success) {
+      expect(hasQualityWarnings(vagueResult.data)).toContain(
+        'Success criteria not measurable (low smart_score)'
+      );
+    } else {
+      expect(vagueResult.error.issues.length).toBeGreaterThan(0);
+    }
   });
 
   it('should support legacy string format for backward compatibility', () => {
