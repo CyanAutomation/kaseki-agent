@@ -193,8 +193,17 @@ check_secret_paths() {
   local secrets_dir_found=false
   local exit_code=0
 
-  if ! check_path_components_traversable "$primary_secrets_dir"; then
-    return 2
+  # Only check traversability if the target directory actually exists or is reachable.
+  # If the directory doesn't exist (common in smoke tests with read-only containers),
+  # don't treat it as a blocking error—we'll fall through to the fallback/warning logic below.
+  # If the directory exists but is not traversable, that IS a blocking error (permission issue).
+  if [ -d "$primary_secrets_dir" ] || [ -e "$primary_secrets_dir" ]; then
+    if ! check_path_components_traversable "$primary_secrets_dir"; then
+      # Directory exists but path components aren't traversable (permission issue)
+      log_error "Secrets directory path is not traversable: $primary_secrets_dir"
+      log_info "  Fix host permissions so UID/GID $CONTAINER_UID:$CONTAINER_GID can traverse it, or set KASEKI_SECRETS_DIR to an accessible mounted path"
+      return 2
+    fi
   fi
 
   if [ -d "$primary_secrets_dir" ]; then
