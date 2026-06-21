@@ -164,19 +164,28 @@ describe('Goal-Setting: SMART Criteria Validation (#2)', () => {
   });
 
   it('should identify vague criteria lacking specificity', () => {
-    const vague = [
-      'improve code',
-      'make it better',
-      'fix issues',
-      'enhance system',
-    ];
+    const goal: GoalSettingOutput = {
+      original_prompt: 'Improve code',
+      upgraded_goal: 'Make the code better',
+      key_requirements: ['Improve maintainability'],
+      success_criteria: [
+        {
+          criterion: 'improve code',
+          smart_score: 'low',
+          reasoning: 'vague wording without a measurable outcome',
+        },
+        {
+          criterion: 'make it better',
+          smart_score: 'low',
+          reasoning: 'unclear target state and no acceptance metric',
+        },
+      ],
+      reasoning: 'vague success criteria should be surfaced by production validation',
+      confidence: 'medium',
+    };
 
-    vague.forEach((criterion) => {
-      const vagueKeywords = ['improve', 'better', 'enhance', 'good', 'fix', 'make'];
-      const matches = vagueKeywords.some(kw => criterion.toLowerCase().includes(kw));
-      expect(matches).toBe(true);
-      // Vague criteria lack specific metrics or counts
-      expect(/\d+|%|specific|exact/.test(criterion)).toBe(false);
-    });
+    const warnings = hasQualityWarnings(goal);
+
+    expect(warnings).toContain('Success criteria not measurable (low smart_score)');
   });
 });
