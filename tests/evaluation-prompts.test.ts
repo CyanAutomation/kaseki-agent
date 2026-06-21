@@ -60,9 +60,16 @@ describe('Evaluation Prompt Enhancements', () => {
       cachedScriptContent.indexOf('build_run_evaluation_prompt()'),
       cachedScriptContent.indexOf('build_run_evaluation_prompt()') + 20000
     );
-    cachedAgentSection = cachedScriptContent.substring(
-      cachedScriptContent.indexOf('build_agent_prompt()'),
-      cachedScriptContent.indexOf('is_transient_goal_setting_failure()')
+    
+    // agent-prompt.sh is sourced externally; read it directly
+    const agentPromptPath = path.join(projectRoot, 'scripts', 'agent-prompt.sh');
+    if (!fs.existsSync(agentPromptPath)) {
+      throw new Error(`agent-prompt.sh not found at ${agentPromptPath}`);
+    }
+    const agentPromptContent = fs.readFileSync(agentPromptPath, 'utf8');
+    cachedAgentSection = agentPromptContent.substring(
+      agentPromptContent.indexOf('build_agent_prompt()'),
+      agentPromptContent.indexOf('build_agent_prompt()') + Math.max(agentPromptContent.length, 20000)
     );
   });
 
