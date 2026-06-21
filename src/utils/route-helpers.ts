@@ -21,10 +21,20 @@ export function getJobOrRespond(
   jobId: string,
   res: Response
 ): Job | null {
-  const job = scheduler.getJob(jobId);
+  const job = scheduler.getJob(jobId) ?? findJobCaseInsensitive(scheduler, jobId);
   if (!job) {
-    sendErrorResponse(res, 404, 'Not Found', `Run not found: ${jobId}`);
+    const normalizedHint = jobId.toLowerCase();
+    const hint = normalizedHint !== jobId ? ` Did you mean: ${normalizedHint}?` : '';
+    sendErrorResponse(res, 404, 'Not Found', `Run not found: ${jobId}.${hint}`);
     return null;
   }
   return job;
+}
+
+function findJobCaseInsensitive(scheduler: JobScheduler, jobId: string): Job | undefined {
+  const lowerJobId = jobId.toLowerCase();
+  if (lowerJobId === jobId) {
+    return undefined;
+  }
+  return scheduler.listJobs().find((job) => job.id.toLowerCase() === lowerJobId);
 }
