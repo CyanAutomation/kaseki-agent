@@ -2300,6 +2300,86 @@ describe('kaseki-api-routes logs endpoint stderr fallback', () => {
     }
   });
 
+  test('phase stderr diagnostic logs are available through logs aliases', async () => {
+    const jobId = 'kaseki-phase-stderr';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'goal-setting-stderr.log'), 'goal-setting stderr\n');
+    fs.writeFileSync(path.join(jobDir, 'scouting-stderr.log'), 'scouting stderr\n');
+
+    const scheduler = createMockScheduler({
+      [jobId]: {
+        id: jobId,
+        status: 'failed',
+        createdAt: new Date(),
+        resultDir: jobDir,
+        exitCode: 1
+      } as any
+    });
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const goalResponse = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/goal-setting-stderr`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(goalResponse.status).toBe(200);
+      await expect(goalResponse.json()).resolves.toMatchObject({
+        logType: 'goal-setting-stderr',
+        content: 'goal-setting stderr\n'
+      });
+
+      const scoutingResponse = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/logs/scouting-stderr`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(scoutingResponse.status).toBe(200);
+      await expect(scoutingResponse.json()).resolves.toMatchObject({
+        logType: 'scouting-stderr',
+        content: 'scouting stderr\n'
+      });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
+  test('uppercase run ids resolve to lowercase retained jobs', async () => {
+    const jobId = 'kaseki-147';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'stdout.log'), 'stdout via uppercase id\n');
+
+    const job = {
+      id: jobId,
+      status: 'failed',
+      createdAt: new Date(),
+      resultDir: jobDir,
+      exitCode: 1
+    } as any;
+    const scheduler = {
+      ...createMockScheduler({ [jobId]: job }),
+      getJob: jest.fn((id: string) => id === jobId ? job : undefined),
+      listJobs: jest.fn(() => [job])
+    } as any;
+    const config = createTestConfig(resultsDir);
+    const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+
+    try {
+      const statusResponse = await fetch(`http://127.0.0.1:${port}/api/runs/KASEKI-147/status`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(statusResponse.status).toBe(200);
+      await expect(statusResponse.json()).resolves.toMatchObject({ id: jobId, status: 'failed' });
+
+      const logResponse = await fetch(`http://127.0.0.1:${port}/api/runs/KASEKI-147/logs/stdout`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(logResponse.status).toBe(200);
+      await expect(logResponse.json()).resolves.toMatchObject({ content: 'stdout via uppercase id\n' });
+    } finally {
+      await cleanupTestApp(server, idempotencyStore);
+    }
+  });
+
   test('combined logs concatenate available run logs with source metadata', async () => {
     const jobId = 'kaseki-combined-logs';
     const jobDir = path.join(resultsDir, jobId);

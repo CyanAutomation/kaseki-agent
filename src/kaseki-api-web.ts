@@ -3192,17 +3192,56 @@ const controllerPage = String.raw`<!doctype html>
             }
             showIssuesError(errorMessage);
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found</div>';
+            setOutputMetadata('failed');
+            setResponseSummary(null);
+            setOutputBody(JSON.stringify({
+              method: 'POST',
+              path: '/api/github-issues',
+              status: response.status,
+              error: stripControlSequences(errorMessage),
+            }, null, 2));
+            setState('Issue load failed.', 'bad');
             return;
           }
 
           const issues = await response.json();
           if (!Array.isArray(issues) || issues.length === 0) {
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "kaseki-agent"</div>';
+            setOutputMetadata('ok');
+            setResponseSummary({ status: 'ok' });
+            setOutputBody(JSON.stringify({
+              method: 'POST',
+              path: '/api/github-issues',
+              status: response.status,
+              response: {
+                repoUrl,
+                issueCount: 0,
+                issues: [],
+              },
+            }, null, 2));
+            setState('No matching issues found.', 'ok');
             return;
           }
 
           issuesList.replaceChildren();
           addRepoToRecent(repoUrl);
+          setOutputMetadata('ok');
+          setResponseSummary({ status: 'ok' });
+          setOutputBody(JSON.stringify({
+            method: 'POST',
+            path: '/api/github-issues',
+            status: response.status,
+            response: {
+              repoUrl,
+              issueCount: issues.length,
+              issues: issues.slice(0, 5).map((issue) => ({
+                number: issue.number,
+                title: issue.title,
+                url: issue.html_url,
+              })),
+            },
+          }, null, 2));
+          setState('Issues loaded.', 'ok');
           issues.forEach(issue => {
             const item = document.createElement('button');
             item.className = 'issues-list-item';
@@ -3248,6 +3287,10 @@ const controllerPage = String.raw`<!doctype html>
           const errorMsg = error instanceof Error ? error.message : String(error);
           showIssuesError('Error: ' + errorMsg);
           issuesList.innerHTML = '<div class="issues-list-empty">Failed to load issues</div>';
+          setOutputMetadata('failed');
+          setResponseSummary(null);
+          setOutputBody(sanitizeOutput('Issue load failed: ' + errorMsg));
+          setState('Issue load failed.', 'bad');
         } finally {
           loadIssuesBtn.disabled = false;
         }
