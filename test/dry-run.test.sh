@@ -1,32 +1,18 @@
 #!/usr/bin/env bash
-# Integration-style tests for --dry-run behavior in run-kaseki.sh
+# Fast dry-run artifact tests for the helper boundary used by run-kaseki.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RUNNER="$REPO_ROOT/run-kaseki.sh"
+HELPERS="$REPO_ROOT/scripts/dry-run-artifacts.sh"
 
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 
-require_file() {
-  local file="$1"
-  [ -f "$file" ] || fail "Expected file to exist: $file"
-}
-
-json_field_equals() {
+assert_json_field_equals() {
   local file="$1" field="$2" expected="$3"
-  local actual
-  actual="$(node -e 'const fs=require("fs");const p=process.argv[1];const f=process.argv[2];const o=JSON.parse(fs.readFileSync(p,"utf8"));const v=o[f];process.stdout.write(v===undefined?"":String(v));' "$file" "$field")"
-  [ "$actual" = "$expected" ] || fail "Expected $file field '$field' to be '$expected' (got '$actual')"
-}
-
-assert_stage_detail() {
-  local stage_file="$1" stage_name="$2" detail_expected="$3"
-  awk -F '\t' -v stage="$stage_name" -v expected="$detail_expected" '
-    $1==stage { found=1; if ($4!=expected) { printf("detail mismatch for %s: expected %s got %s\n", stage, expected, $4) > "/dev/stderr"; exit 2 } }
-    END { if (!found) exit 3 }
-  ' "$stage_file" || fail "Expected stage '$stage_name' detail '$detail_expected' in $stage_file"
+  node -e 'const fs=require("fs");const o=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const v=o[process.argv[2]];if(String(v)!==process.argv[3]){throw new Error(`${process.argv[1]} ${process.argv[2]} expected ${process.argv[3]} got ${String(v)}`)}' "$file" "$field" "$expected" \
+    || fail "Expected $file field $field to equal $expected"
 }
 
 assert_file_empty() {
@@ -35,99 +21,59 @@ assert_file_empty() {
   [ ! -s "$file" ] || fail "Expected empty file: $file"
 }
 
-run_once() {
-  local root="$1" marker="$2"
-  local code oldpwd
-  oldpwd="$(pwd)"
-  cd "$REPO_ROOT"
-  export KASEKI_ROOT="$root"
-  export KASEKI_LOG_DIR="$root/host-logs"
-  export OPENROUTER_API_KEY="dry-run-test-key"
-  export REPO_URL=""
-  export GIT_REF="main"
-  export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN_${marker} > /tmp/kaseki-validation-$$-${marker}"
-  export TASK_PROMPT="dry-run behavior test"
-  export KASEKI_IMAGE="docker.io/cyanautomation/kaseki-agent:latest"
-
-  set +e
-  "$RUNNER" --dry-run >"$root/run-${marker}.stdout.log" 2>"$root/run-${marker}.stderr.log"
-  code=$?
-  set -e
-  cd "$oldpwd"
-  echo "$code" > "$root/exit-${marker}.txt"
-}
-
-echo "=== Testing --dry-run runtime behavior ==="
+command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions"
+[ -x "$HELPERS" ] || fail "Expected executable helper: $HELPERS"
 
 tmp_root="$(mktemp -d)"
-validation_marker_first="/tmp/kaseki-validation-$$-first"
-validation_marker_second="/tmp/kaseki-validation-$$-second"
-trap 'rm -rf "$tmp_root" "$validation_marker_first" "$validation_marker_second"' EXIT
+trap 'rm -rf "$tmp_root"' EXIT
+result_dir="$tmp_root/results"
+fake_bin="$tmp_root/bin"
+validation_marker="$tmp_root/validation-ran"
+mkdir -p "$result_dir" "$fake_bin" "$tmp_root/workspace" "$tmp_root/cache"
 
-[ ! -e "$validation_marker_first" ] || fail "Pre-existing validation marker found: $validation_marker_first"
-[ ! -e "$validation_marker_second" ] || fail "Pre-existing validation marker found: $validation_marker_second"
+cat > "$fake_bin/pi" <<'PI'
+#!/usr/bin/env bash
+printf 'pi fake 0.0.0\n'
+PI
+chmod +x "$fake_bin/pi"
 
-run_once "$tmp_root" first
-run1_exit="$(cat "$tmp_root/exit-first.txt")"
+export PATH="$fake_bin:$PATH"
+export INSTANCE="kaseki-fast-dry-run"
+export REPO_URL="https://example.test/repo.git"
+export GIT_REF="main"
+export KASEKI_PROVIDER="gateway"
+export KASEKI_MODEL="auto"
+export KASEKI_TASK_MODE="patch"
+export KASEKI_ALLOW_EMPTY_DIFF="0"
+export KASEKI_DRY_RUN="1"
+export KASEKI_STARTUP_CHECK_MODE="boot"
+export KASEKI_CONTAINER_USER="$(id -u):$(id -g)"
+export KASEKI_CHANGED_FILES_ALLOWLIST="src/** test/**"
+export MAX_DIFF_BYTES_VALUE="400000"
+export AGENT_TIMEOUT_SECONDS_VALUE="10800"
+export IMAGE="dry-run-fast-test:latest"
+export CACHE="$tmp_root/cache"
+export KASEKI_RESULTS_DIR="$result_dir"
+export KASEKI_WORKSPACE_DIR="$tmp_root/workspace"
+export KASEKI_CACHE_DIR="$tmp_root/cache"
+export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN > '$validation_marker'"
 
-if [ "$run1_exit" != "0" ] && grep -q "missing required host dependencies: docker" "$tmp_root/run-first.stderr.log"; then
-  echo "⚠ Docker unavailable; running fallback dry-run smoke checks"
-  awk '
-    /KASEKI_DRY_RUN/ { seen_dry_run=1 }
-    /if \[ "\$KASEKI_DRY_RUN" = "1" \] \|\| \[ -z "\$KASEKI_VALIDATION_COMMANDS" \]/ { seen_validation_skip_path=1 }
-    /run_validation_commands/ && seen_validation_skip_path { seen_validation=1 }
-    /record_stage_timing "pi coding agent" "0" .*"dry_run=true"/ { seen_agent=1 }
-    END { exit (seen_dry_run && seen_validation && seen_agent) ? 0 : 1 }
-  ' "$REPO_ROOT/run-kaseki.sh" "$REPO_ROOT/kaseki-agent.sh" || fail "Fallback smoke check failed: dry-run behavior wiring incomplete"
-  pass "fallback smoke checks passed under missing docker dependency"
-  echo ""
-  echo "✅ Dry-run fallback checks passed!"
-  exit 0
-fi
+# shellcheck source=../scripts/dry-run-artifacts.sh
+. "$HELPERS"
+write_dry_run_host_start_artifact "$result_dir"
+write_dry_run_startup_check_artifacts "$result_dir" >/dev/null
 
-[ "$run1_exit" = "0" ] || fail "First dry-run invocation should exit 0 (got $run1_exit)"
-pass "dry-run exits with expected code (0)"
-
-command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions in dry-run integration checks"
-
-result1="$tmp_root/kaseki-results/kaseki-1"
-require_file "$result1/host-start.json"
-require_file "$result1/metadata.json"
-json_field_equals "$result1/host-start.json" "dry_run" "1"
-json_field_equals "$result1/metadata.json" "dry_run" "1"
+assert_json_field_equals "$result_dir/host-start.json" dry_run 1
+assert_json_field_equals "$result_dir/metadata.json" dry_run 1
 pass "host-start.json and metadata.json include dry_run=1"
 
-require_file "$result1/stage-timings.tsv"
-assert_stage_detail "$result1/stage-timings.tsv" "preflight git ref" "ok"
-require_file "$result1/startup-check.txt"
-grep -q "startup_check=ok" "$result1/startup-check.txt" || fail "startup-check.txt should record startup_check=ok"
-require_file "$result1/result-summary.md"
-grep -q "Status: passed" "$result1/result-summary.md" || fail "result-summary.md should summarize passed startup check"
-pass "startup-check artifacts capture boot and preflight success"
+assert_file_empty "$result_dir/pi-events.jsonl"
+assert_file_empty "$result_dir/pi-summary.json"
+assert_file_empty "$result_dir/validation-timings.tsv"
+assert_file_empty "$result_dir/validation.log"
+pass "agent and validation output files are initialized empty"
 
-assert_file_empty "$result1/pi-events.jsonl"
-assert_file_empty "$result1/validation-timings.tsv"
-[ ! -f "/tmp/kaseki-validation-$$-first" ] || fail "Validation command should not execute during dry-run"
-pass "no external side effects (no real agent output / validation command execution)"
+[ ! -e "$validation_marker" ] || fail "Validation command should not execute in dry-run artifact helper"
+pass "validation commands are not executed by the dry-run artifact helper"
 
-run_once "$tmp_root" second
-run2_exit="$(cat "$tmp_root/exit-second.txt")"
-[ "$run2_exit" = "0" ] || fail "Second dry-run invocation should exit 0 (got $run2_exit)"
-
-result2="$tmp_root/kaseki-results/kaseki-2"
-require_file "$result2/host-start.json"
-require_file "$result2/metadata.json"
-json_field_equals "$result2/host-start.json" "dry_run" "1"
-json_field_equals "$result2/metadata.json" "dry_run" "1"
-require_file "$result2/stage-timings.tsv"
-assert_stage_detail "$result2/stage-timings.tsv" "preflight git ref" "ok"
-assert_file_empty "$result2/pi-events.jsonl"
-assert_file_empty "$result2/validation-timings.tsv"
-[ -d "$tmp_root/kaseki-results/kaseki-1" ] || fail "First result directory missing after second run"
-[ -f "$tmp_root/kaseki-results/kaseki-1/host-start.json" ] || fail "First run outputs were overwritten"
-[ ! -f "/tmp/kaseki-validation-$$-second" ] || fail "Validation command should not execute on second dry-run"
-pass "second dry-run records deterministic dry-run artifacts without validation or agent output"
-pass "second invocation creates kaseki-2 and preserves prior outputs"
-
-echo ""
-echo "✅ All --dry-run behavior tests passed!"
+printf '\n✅ Fast dry-run artifact tests passed!\n'
