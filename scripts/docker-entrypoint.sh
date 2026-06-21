@@ -33,17 +33,10 @@ export KASEKI_APP_LIB_DIR="${KASEKI_APP_LIB_DIR:-/app/lib}"
 export KASEKI_CACHE_DIR="${KASEKI_CACHE_DIR:-/cache}"
 export KASEKI_AGENT_BIN="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
 
-# shellcheck source=scripts/startup-check-packaging.sh
 KASEKI_STARTUP_CHECK_PACKAGING_CONFIG="${KASEKI_STARTUP_CHECK_PACKAGING_CONFIG:-/app/scripts/startup-check-packaging.sh}"
 if [ -f "$KASEKI_STARTUP_CHECK_PACKAGING_CONFIG" ]; then
+  # shellcheck disable=SC1090
   . "$KASEKI_STARTUP_CHECK_PACKAGING_CONFIG"
-else
-  # Fallback definitions for testing and incomplete deployments
-  : "${KASEKI_STARTUP_CHECK_PRIMARY_PATH:=/scripts/startup-checks.sh}"
-  : "${KASEKI_STARTUP_CHECK_MODE_DEFAULT:=all}"
-  kaseki_run_startup_checks() {
-    "${KASEKI_STARTUP_CHECK_PRIMARY_PATH}" "${KASEKI_STARTUP_CHECK_MODE:-$KASEKI_STARTUP_CHECK_MODE_DEFAULT}"
-  }
 fi
 
 if [ -n "${HOME:-}" ]; then
