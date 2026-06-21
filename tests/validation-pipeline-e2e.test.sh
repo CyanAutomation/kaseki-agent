@@ -221,7 +221,7 @@ if ! grep -q 'raw event survived' "$tmp_dir/raw.jsonl"; then
   cat "$tmp_dir/raw.jsonl" 2>/dev/null || true
   exit 1
 fi
-if ! grep -q 'progress stream failed after Pi exit=0 progress_exit=9' "$tmp_dir/results/progress-stream-diagnostics.log"; then
+if ! grep -q 'progress stream failed pi_exit=0 progress_exit=9' "$tmp_dir/results/progress-stream-diagnostics.log"; then
   echo "  ✗ FAIL: progress stream failure was not diagnosed"
   cat "$tmp_dir/results/progress-stream-diagnostics.log" 2>/dev/null || true
   exit 1
@@ -230,6 +230,85 @@ rm -rf "$tmp_dir"
 trap - EXIT
 echo "  ✓ PASS: Pi raw event capture survives progress-stream failure"
 echo ""
+
+# Test 7: Verify Pi JSON capture cannot hang when progress FIFO has no reader
+echo "TEST 7: Pi JSON capture does not block when progress FIFO reader exits early"
+tmp_dir=$(mktemp -d)
+cleanup_pi_capture_test() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup_pi_capture_test EXIT
+fake_bin="$tmp_dir/bin"
+mkdir -p "$fake_bin" "$tmp_dir/results"
+helper_source="$tmp_dir/run-pi-json-capture.sh"
+awk '
+  /^run_pi_json_capture\(\) \{/ { capture=1 }
+  capture && /^if \[ "\$\{KASEKI_PI_EVENT_FILTER_HELPER_TEST:-0\}" = "1" \]; then/ { exit }
+  capture { print }
+' kaseki-agent.sh > "$helper_source"
+cat >> "$helper_source" <<'BASH'
+emit_error_event() {
+  printf 'emit_error_event %s\n' "$*" >> "${KASEKI_RESULTS_DIR}/events.log"
+}
+BASH
+cat > "$fake_bin/pi" <<'BASH'
+#!/usr/bin/env bash
+printf '{"type":"agent_start"}\n'
+printf '{"type":"message_update","message":{"content":"raw event survived no fifo reader"}}\n'
+printf '{"type":"agent_end"}\n'
+exit 0
+BASH
+chmod +x "$fake_bin/pi"
+cat > "$fake_bin/kaseki-pi-progress-stream" <<'BASH'
+#!/usr/bin/env bash
+exit 9
+BASH
+chmod +x "$fake_bin/kaseki-pi-progress-stream"
+cat > "$fake_bin/timeout" <<'BASH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--signal=SIGTERM" ]; then
+  shift
+fi
+shift
+exec "$@"
+BASH
+chmod +x "$fake_bin/timeout"
+set +e
+PATH="$fake_bin:$PATH" \
+KASEKI_RESULTS_DIR="$tmp_dir/results" \
+KASEKI_PROVIDER=gateway \
+llm_gateway_api_key=test \
+llm_gateway_url=https://example.invalid \
+python3 - "$helper_source" "$tmp_dir/raw.jsonl" <<'PY'
+import os
+import subprocess
+import sys
+
+helper_source, raw_path = sys.argv[1], sys.argv[2]
+cmd = f". {helper_source!r}; run_pi_json_capture {raw_path!r} 60 auto 'test prompt'"
+try:
+    completed = subprocess.run(['bash', '-c', cmd], timeout=5, env=os.environ.copy())
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+sys.exit(completed.returncode)
+PY
+capture_exit=$?
+set -e
+if [[ "$capture_exit" != "0" ]]; then
+  echo "  ✗ FAIL: run_pi_json_capture returned $capture_exit (expected Pi exit 0, no FIFO hang)"
+  cat "$tmp_dir/results/progress-stream-diagnostics.log" 2>/dev/null || true
+  exit 1
+fi
+if ! grep -q 'raw event survived no fifo reader' "$tmp_dir/raw.jsonl"; then
+  echo "  ✗ FAIL: raw Pi events were not preserved without a FIFO reader"
+  cat "$tmp_dir/raw.jsonl" 2>/dev/null || true
+  exit 1
+fi
+rm -rf "$tmp_dir"
+trap - EXIT
+echo "  ✓ PASS: Pi raw event capture does not hang without a FIFO reader"
+echo ""
+
 echo "✓ All E2E validation pipeline tests PASSED"
 echo ""
 echo "Summary: The SIGPIPE fix ensures that:"
