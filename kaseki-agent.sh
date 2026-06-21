@@ -2546,6 +2546,7 @@ run_pi_json_capture() {
   local prompt="$4"
   local stderr_target="${5:-}"
   local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit
+  local -a pipeline_statuses
 
   rm -f "$raw_events_file" 2>/dev/null || true
   : > "$raw_events_file"
@@ -2627,8 +2628,9 @@ if fifo_fd is not None:
     os.close(fifo_fd)
 ''' "$raw_events_file" "$progress_fifo"
     fi
-    pi_exit=${PIPESTATUS[0]}
-    splitter_exit=${PIPESTATUS[1]}
+    pipeline_statuses=("${PIPESTATUS[@]}")
+    pi_exit="${pipeline_statuses[0]:-1}"
+    splitter_exit="${pipeline_statuses[1]:-0}"
     wait "$progress_pid"
     progress_exit=$?
     rm -f "$progress_fifo" 2>/dev/null || true
