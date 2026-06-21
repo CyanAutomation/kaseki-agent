@@ -828,7 +828,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         if (existsSync(goalSettingCandidateFile)) {
           console.log('goal-setting-candidate.json content:', readFileSync(goalSettingCandidateFile, 'utf8'));
         }
-        
+
         // Debug: check pi debug log
         const piDebugFile = join(resultsDir, 'pi-debug.log');
         if (existsSync(piDebugFile)) {

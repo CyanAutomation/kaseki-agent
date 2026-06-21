@@ -60,7 +60,7 @@ describe('Evaluation Prompt Enhancements', () => {
       cachedScriptContent.indexOf('build_run_evaluation_prompt()'),
       cachedScriptContent.indexOf('build_run_evaluation_prompt()') + 20000
     );
-    
+
     // agent-prompt.sh is sourced externally; read it directly
     const agentPromptPath = path.join(projectRoot, 'scripts', 'agent-prompt.sh');
     if (!fs.existsSync(agentPromptPath)) {
