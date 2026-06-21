@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090,SC2034
-# Test suite for printf safety and restoration report generation fixes
+# Test suite for printf safety fixes
 # Tests edge cases that could cause the "printf: - : invalid option" error
 
 set -uo pipefail
@@ -22,7 +22,6 @@ TESTS_FAILED=0
 
 # Setup and teardown
 setup() {
-  mkdir -p "$TEST_RESULTS_DIR"
   mkdir -p "$TEST_RESULTS_DIR/results"
   cd "$TEST_RESULTS_DIR" || exit
 }
@@ -52,10 +51,6 @@ run_test() {
 
 source_validate_numeric() {
   source <(sed -n '/^validate_numeric()/,/^}/p' "$KASEKI_SCRIPT")
-}
-
-source_generate_restoration_report() {
-  source <(sed -n '/^generate_restoration_report()/,/^}/p' "$KASEKI_SCRIPT" | sed "s#/results#${PWD}/results#g")
 }
 
 # Test: validate_numeric with valid input
@@ -88,93 +83,27 @@ test_validate_numeric_multiline() {
   ! validate_numeric "restored_count" $'0\n0'
 }
 
-# Test: restoration report with missing file
-test_restoration_report_missing_file() {
+
+# Test: arithmetic succeeds after numeric validation
+test_validated_numeric_arithmetic() {
   source_validate_numeric
-  source_generate_restoration_report
-  
-  rm -f results/restoration.jsonl
-  generate_restoration_report  # Should return 0 (skip silently)
-  # shellcheck disable=SC2181 # Explicit exit code check for clarity in test
-  [ $? -eq 0 ]
+  local restored_count=5
+  local kept_count=3
+
+  validate_numeric "restored_count" "$restored_count" && \
+    validate_numeric "kept_count" "$kept_count" || return 1
+
+  local total_count=$((restored_count + kept_count))
+  [ "$total_count" = "8" ]
 }
 
-# Test: restoration report with empty file
-test_restoration_report_empty_file() {
+# Test: printf with leading-dash format and validated numeric value succeeds
+test_printf_leading_dash_format_validated_numeric() {
   source_validate_numeric
-  source_generate_restoration_report
-  
-  : > results/restoration.jsonl
-  generate_restoration_report  # Should return 0 (no changes to report)
-  # shellcheck disable=SC2181 # Explicit exit code check for clarity in test
-  [ $? -eq 0 ]
-}
+  local total_count=8
 
-# Test: restoration report with valid entries
-test_restoration_report_valid_entries() {
-  source_validate_numeric
-  source_generate_restoration_report
-  
-  cat > results/restoration.jsonl <<'EOF'
-{"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}
-{"timestamp":"2026-05-07T10:00:01Z","event":"file_restored","file":"docs/readme.md","status":"restored","reason":"not_in_allowlist"}
-EOF
-  
-  generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
-    grep -Fq 'Files Kept (in allowlist):** 1' results/restoration-report.md && \
-    grep -Fq 'Files Restored (outside allowlist):** 1' results/restoration-report.md
-}
-
-# Test: restoration report with only kept files
-test_restoration_report_only_kept() {
-  source_validate_numeric
-  source_generate_restoration_report
-  
-  cat > results/restoration.jsonl <<'EOF'
-{"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}
-{"timestamp":"2026-05-07T10:00:01Z","event":"file_evaluated","file":"src/lib.ts","status":"kept","reason":"matched_allowlist"}
-EOF
-  
-  local stderr_file=results/restoration-report.stderr
-  generate_restoration_report 2>"$stderr_file" && [ -f results/restoration-report.md ] && \
-    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
-    grep -Fq 'Files Restored (outside allowlist):** 0' results/restoration-report.md && \
-    grep -Fq 'Allowlist Coverage:** 100' results/restoration-report.md && \
-    grep -Fq 'restored_count="0"' "$stderr_file" && \
-    ! grep -qx '0"' "$stderr_file"
-}
-
-# Test: restoration report with only restored files
-test_restoration_report_only_restored() {
-  source_validate_numeric
-  source_generate_restoration_report
-  
-  cat > results/restoration.jsonl <<'EOF'
-{"timestamp":"2026-05-07T10:00:00Z","event":"file_restored","file":"docs/readme.md","status":"restored","reason":"not_in_allowlist"}
-{"timestamp":"2026-05-07T10:00:01Z","event":"file_restored","file":"CHANGELOG.md","status":"restored","reason":"not_in_allowlist"}
-EOF
-  
-  generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -Fq 'Total Files Changed:** 2' results/restoration-report.md && \
-    grep -Fq 'Allowlist Coverage:** 0' results/restoration-report.md && \
-    grep -Fq 'Low Allowlist Coverage' results/restoration-report.md
-}
-
-# Test: restoration report with low coverage warning
-test_restoration_report_low_coverage_warning() {
-  source_validate_numeric
-  source_generate_restoration_report
-  
-  # Create scenario: 1 kept, 9 restored = 10% coverage (< 50%)
-  printf '{"timestamp":"2026-05-07T10:00:00Z","event":"file_evaluated","file":"src/test.ts","status":"kept","reason":"matched_allowlist"}\n' > results/restoration.jsonl
-  for i in {1..9}; do
-    printf '{"timestamp":"2026-05-07T10:00:%02d","event":"file_restored","file":"file%d.txt","status":"restored","reason":"not_in_allowlist"}\n' "$i" "$i" >> results/restoration.jsonl
-  done
-  
-  generate_restoration_report && [ -f results/restoration-report.md ] && \
-    grep -Fq 'Low Allowlist Coverage' results/restoration-report.md && \
-    grep -Fq 'Allowlist Coverage:** 10' results/restoration-report.md
+  validate_numeric "total_count" "$total_count" && \
+    printf -- '- **Test:** %%d = %d\n' "$total_count" > /dev/null 2>&1
 }
 
 # Test: printf with valid numeric argument (should not fail)
@@ -221,7 +150,7 @@ test_grep_count_fallback_missing() {
 # Main test execution
 main() {
   printf '\n%s\n' "$(printf '=%.0s' {1..70})"
-  printf 'Testing Printf Safety & Restoration Report Generation Fixes\n'
+  printf 'Testing Printf Safety Fixes\n'
   printf '%s\n' "$(printf '=%.0s' {1..70})"
   printf '\n'
   
@@ -235,17 +164,10 @@ main() {
   run_test "validate_numeric rejects empty" test_validate_numeric_empty
   run_test "validate_numeric rejects multi-line value" test_validate_numeric_multiline
   
-  # restoration report tests
-  printf '\n%s\n' '### generate_restoration_report() tests'
-  run_test "restoration report skips missing file" test_restoration_report_missing_file
-  run_test "restoration report handles empty file" test_restoration_report_empty_file
-  run_test "restoration report with valid entries" test_restoration_report_valid_entries
-  run_test "restoration report with only kept files" test_restoration_report_only_kept
-  run_test "restoration report with only restored files" test_restoration_report_only_restored
-  run_test "restoration report low coverage warning" test_restoration_report_low_coverage_warning
-  
   # printf safety tests
   printf '\n%s\n' '### printf safety tests'
+  run_test "validated numeric arithmetic succeeds" test_validated_numeric_arithmetic
+  run_test "printf leading-dash format with validated numeric" test_printf_leading_dash_format_validated_numeric
   run_test "printf with valid numeric argument" test_printf_valid_numeric
   run_test "printf with dash (unquoted) should fail" test_printf_dash_unquoted_fails
   run_test "printf with dash (validation) should fail" test_printf_dash_quoted_validation

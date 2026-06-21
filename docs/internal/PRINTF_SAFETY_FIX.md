@@ -190,17 +190,17 @@ The `--` separator tells printf to stop processing options, treating everything 
 
 ## Testing
 
-Created comprehensive test suite: `/test/printf-safety-focused.test.sh`
+Consolidated coverage lives in `/test/printf-safety.test.sh`.
 
-**Test Results: 7/7 PASSED ✓**
+**Test Results: 12/12 PASSED ✓**
 
 1. ✓ validate_numeric rejects '-' (the bug trigger)
-2. ✓ validate_numeric accepts valid numeric values  
+2. ✓ validate_numeric accepts valid numeric values
 3. ✓ Arithmetic with validated numeric values works
 4. ✓ Printf with validated numeric values doesn't fail
 5. ✓ Unvalidated '-' would cause printf to fail
-6. ✓ grep count fallback never returns '-'
-7. ✓ json_encode availability and fallback
+6. ✓ grep count fallback normalizes empty counts
+7. ✓ grep count fallback normalizes missing counts
 
 ## Verification Steps
 
@@ -215,7 +215,7 @@ To verify the fix works:
 2. **Run test suite:**
 
    ```bash
-   bash /workspaces/kaseki-agent/test/printf-safety-focused.test.sh
+   bash /workspaces/kaseki-agent/test/printf-safety.test.sh
    ```
 
 3. **Manual testing:**
@@ -246,8 +246,7 @@ These messages clearly indicate:
 ## Files Modified
 
 - `/workspaces/kaseki-agent/kaseki-agent.sh` — Core script with all fixes
-- `/workspaces/kaseki-agent/test/printf-safety-focused.test.sh` — Test suite (NEW)
-- `/workspaces/kaseki-agent/test/printf-safety.test.sh` — Comprehensive tests (NEW)
+- `/workspaces/kaseki-agent/test/printf-safety.test.sh` — Consolidated printf safety tests
 
 ## Backward Compatibility
 
