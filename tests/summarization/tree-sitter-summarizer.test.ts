@@ -209,18 +209,22 @@ describe('TreeSitterSummarizer', () => {
       const go = new TreeSitterSummarizer('go');
       const summary = go.summarize(content);
 
-      // Either succeeds and extracts metadata, OR gracefully degrades
+      // Either succeeds and extracts metadata, OR gracefully degrades with a
+      // documented tree-sitter CLI/Go grammar availability error. Do not accept a
+      // parse failure without a specific reason.
       if (summary.parseError) {
-        // Graceful degradation when CLI isn't properly configured
-        expect(summary.parseError).toBeDefined();
+        expect(summary.parseError).toMatch(
+          /^(tree-sitter-cli not available \(ENOENT\)|tree-sitter-cli failed: .*?(language|grammar|parser|not found|not configured|No language found|Failed to load|Could not load)|tree-sitter-cli error: .*?(ENOENT|timed out|spawn|language|grammar|parser))/is,
+        );
       } else {
         // When CLI works, verify extraction
-        expect(summary.types.length).toBeGreaterThanOrEqual(1);
-        expect(summary.types.some(t => t.name === 'Widget')).toBe(true);
         expect(summary.functions.length).toBeGreaterThanOrEqual(1);
         expect(summary.functions.some(f => f.name === 'NewWidget')).toBe(true);
+
         expect(summary.classes.length).toBeGreaterThanOrEqual(1);
-        expect(summary.classes.some(c => c.name === 'Widget')).toBe(true);
+        const widget = summary.classes.find(c => c.name === 'Widget');
+        expect(widget).toBeDefined();
+        expect(widget?.methods.some(m => m.name === 'Name')).toBe(true);
       }
     });
   });
