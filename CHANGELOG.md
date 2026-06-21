@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.89.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.88.0...v1.89.0) (2026-06-21)
+
+
+### Features
+
+* Enhance validation diagnostics and error handling across multiple scripts ([b2e1d46](https://github.com/CyanAutomation/kaseki-agent/commit/b2e1d460c6e8a0d8d5f19a00508443c9b225681b))
+* Enhance validation output filter diagnostics and robustness ([40ce0be](https://github.com/CyanAutomation/kaseki-agent/commit/40ce0beb52df3fce0cee043eb54852126281e40d))
+* integrate Sentry for enhanced error tracking and reporting across CLI and scripts ([356a4d9](https://github.com/CyanAutomation/kaseki-agent/commit/356a4d93bc403c7aed2703fd43c01a9ac81f7fbe))
+* remove unused global temp directory pool and related cleanup function ([5e457be](https://github.com/CyanAutomation/kaseki-agent/commit/5e457be67ca2a7723aaf907e6b116d85022b4647))
+
 # [1.88.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.87.2...v1.88.0) (2026-06-21)
 
 
