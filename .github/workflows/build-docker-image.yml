@@ -385,7 +385,7 @@ jobs:
               test -d /agents/kaseki-runs
               test -d /results
               test -x /scripts/startup-checks.sh
-              test -x /scripts/docker-entrypoint.sh
+              test -x /usr/local/bin/kaseki-entrypoint
               test -x /usr/local/bin/kaseki-agent
               test -x /usr/local/bin/kaseki-report
               node --version
@@ -445,7 +445,7 @@ jobs:
               test -d /agents/kaseki-runs
               test -d /results
               test -x /scripts/startup-checks.sh
-              test -x /scripts/docker-entrypoint.sh
+              test -x /usr/local/bin/kaseki-entrypoint
               test -x /usr/local/bin/kaseki-agent
               test -x /usr/local/bin/kaseki-report
               node --version
