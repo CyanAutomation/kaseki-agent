@@ -503,7 +503,10 @@ describe('kaseki API web console behavior', () => {
     await waitFor(() => expect(document.querySelector<HTMLInputElement>('#run-id')?.value).toBe('kaseki-777'));
     expect(document.querySelector('#output-meta')?.textContent).toContain('Run ID: kaseki-777');
     expect(document.querySelector('#state')?.textContent).toBe('Run submitted.');
-    expect(calls.some((call) => call.path === '/api/runs' && call.init?.method === 'POST')).toBe(true);
+    const submitCall = calls.find((call) => call.path === '/api/runs' && call.init?.method === 'POST');
+    expect(submitCall).toBeDefined();
+    const submitBody = JSON.parse(String(submitCall?.init?.body || '{}')) as { idempotencyKey?: string };
+    expect(submitBody.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
   test('renders stdout modal content from structured log responses', async () => {
