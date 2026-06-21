@@ -15,7 +15,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // Use global describe, it, expect from Jest
@@ -721,6 +721,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
         const kasekiLogDir = join(tempDir, 'var-log-kaseki');
@@ -807,11 +808,31 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         // This no-diff fixture may skip goal-check; the goal-setting retry,
         // scouting, and coding order is the behavior under test.
         // Note: goal-check retries can occasionally add an extra iteration, so we allow up to 8 calls.
+        console.log('PI Call Order:', piCallOrder);
         expect(piCallOrder.length).toBeGreaterThanOrEqual(4);
         expect(piCallOrder.length).toBeLessThanOrEqual(8);
         expect(piCallOrder.slice(0, 4)).toEqual(['goal-setting', 'goal-setting', 'scouting', 'coding']);
         if (piCallOrder.length > 4) {
+          console.log('Remaining calls:', piCallOrder.slice(4));
           expect(piCallOrder.slice(4).every((stage) => stage === 'goal-check')).toBe(true);
+        }
+
+        // Debug: check what goal-setting artifacts exist
+        const goalSettingFinalFile = join(resultsDir, 'goal-setting.json');
+        const goalSettingCandidateFile = join(resultsDir, 'goal-setting-candidate.json');
+        console.log('goal-setting.json exists:', existsSync(goalSettingFinalFile));
+        if (existsSync(goalSettingFinalFile)) {
+          console.log('goal-setting.json content:', readFileSync(goalSettingFinalFile, 'utf8'));
+        }
+        console.log('goal-setting-candidate.json exists:', existsSync(goalSettingCandidateFile));
+        if (existsSync(goalSettingCandidateFile)) {
+          console.log('goal-setting-candidate.json content:', readFileSync(goalSettingCandidateFile, 'utf8'));
+        }
+        
+        // Debug: check pi debug log
+        const piDebugFile = join(resultsDir, 'pi-debug.log');
+        if (existsSync(piDebugFile)) {
+          console.log('pi-debug.log content:', readFileSync(piDebugFile, 'utf8'));
         }
 
         const metadata = JSON.parse(readFileSync(join(resultsDir, 'metadata.json'), 'utf8')) as {
