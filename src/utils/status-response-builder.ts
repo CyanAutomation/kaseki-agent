@@ -35,11 +35,13 @@ const GOAL_SETTING_DIAGNOSTIC_FILES = [
   'goal-setting-validation-errors.jsonl',
   'goal-setting-stderr.log',
   'goal-setting.json',
+  'progress-stream-diagnostics.log',
 ] as const;
 const SCOUTING_DIAGNOSTIC_FILES = [
   'scouting-validation-errors.jsonl',
   'scouting-stderr.log',
   'scouting.json',
+  'progress-stream-diagnostics.log',
 ] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
 const INLINE_ARTIFACT_LIMIT_BYTES = 65536;

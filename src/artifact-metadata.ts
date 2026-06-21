@@ -146,6 +146,14 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'medium',
   },
 
+  'progress-stream-diagnostics.log': {
+    name: 'progress-stream-diagnostics.log',
+    contentType: 'text/plain',
+    description: 'kaseki-pi-progress-stream startup/shutdown diagnostics and EPIPE crash details across all Pi phases',
+    availability: ArtifactAvailability.CONDITIONAL,
+    sizeHint: 'small',
+  },
+
   'scouting-validation-errors.jsonl': {
     name: 'scouting-validation-errors.jsonl',
     contentType: 'application/x-jsonl',

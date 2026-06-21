@@ -43,12 +43,16 @@ const progressLogPath = process.argv[3] || '/results/progress.log';
 const streamToStdout = process.env.KASEKI_STREAM_PROGRESS !== '0';
 const enableSummarization = process.env.KASEKI_PROGRESS_SUMMARIZATION !== '0';
 
+// Diagnostics log: sits alongside progress.jsonl for crash/EPIPE diagnosis
+const diagnosticsLogPath = progressJsonlPath.replace(/\/progress\.jsonl$/, '/progress-stream-diagnostics.log');
+
 const counts: EventCountMap = {};
 let toolStartCount = 0;
 let toolEndCount = 0;
 let messageUpdateCount = 0;
 let lastHeartbeat = 0;
 let streamOpen = true;
+let stdoutWritable = true; // set false on EPIPE to prevent crash cascade
 const startTime = Date.now();
 
 // Sample 1 in every 15 message_update events
@@ -163,6 +167,21 @@ function sanitizeToolLabel(value: string): string {
   return sanitizeToolName(value);
 }
 
+function appendDiagnostic(msg: string): void {
+  const now = new Date().toISOString();
+  const line = `${now} [pi-progress-stream] ${msg}\n`;
+  try {
+    fs.appendFileSync(diagnosticsLogPath, line);
+  } catch {
+    // Best-effort: ignore if diagnostics path is not writable
+  }
+  try {
+    process.stderr.write(line);
+  } catch {
+    // Ignore stderr errors
+  }
+}
+
 function emit(stage: string, message: string, extra: Record<string, any> = {}): void {
   const now = new Date().toISOString();
   const payload: ProgressPayload = {
@@ -180,8 +199,14 @@ function emit(stage: string, message: string, extra: Record<string, any> = {}): 
   append(progressJsonlPath, `${JSON.stringify(cleanPayload)}\n`);
   const line = `[progress] ${stage}: ${message}\n`;
   append(progressLogPath, line);
-  if (streamToStdout) {
-    process.stdout.write(line);
+  if (streamToStdout && stdoutWritable) {
+    try {
+      process.stdout.write(line);
+    } catch (err) {
+      stdoutWritable = false;
+      const code = (err as NodeJS.ErrnoException).code ?? 'unknown';
+      appendDiagnostic(`stdout write failed (${code}); disabling stdout streaming`);
+    }
   }
 }
 
@@ -232,6 +257,24 @@ function emitMessageSummary(event: PiEvent): void {
 }
 
 function main(): void {
+  appendDiagnostic(
+    `starting pid=${process.pid} args=${process.argv.slice(2).join(' ')} ` +
+    `KASEKI_STREAM_PROGRESS=${process.env.KASEKI_STREAM_PROGRESS ?? '(unset)'} ` +
+    `stdout_fd=${(process.stdout as any).fd ?? 'unknown'} ` +
+    `stdout_tty=${process.stdout.isTTY ?? false}`
+  );
+
+  // Catch stdout EPIPE (downstream pipe closed) and stderr errors gracefully.
+  // Without these handlers Node.js emits an unhandled 'error' event and crashes
+  // the process, which in turn breaks the tee → Pi pipeline and causes EPIPE in Pi.
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    stdoutWritable = false;
+    appendDiagnostic(`stdout error event: code=${err.code} message=${err.message}`);
+  });
+  process.stderr.on('error', () => {
+    // Ignore stderr errors to avoid secondary crash
+  });
+
   emit('pi agent', 'started');
   const heartbeatTimer = setInterval(() => {
     if (streamOpen) {
@@ -311,6 +354,10 @@ function main(): void {
     maybeHeartbeat(true);
 
     const finalElapsed = formatElapsed(startTime);
+    appendDiagnostic(
+      `exiting normally elapsed=${finalElapsed} stdout_writable=${stdoutWritable} ` +
+      `events=${JSON.stringify(counts)}`
+    );
     emit(
       'pi agent',
       `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`,

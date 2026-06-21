@@ -230,7 +230,8 @@ export type DiagnosticEntryPoint =
   | 'scouting-validation-errors.jsonl'
   | 'scouting-stderr.log'
   | 'goal-check-validation-errors.jsonl'
-  | 'goal-check-stderr.log';
+  | 'goal-check-stderr.log'
+  | 'progress-stream-diagnostics.log';
 
 export interface StructuredProgress {
   stage: string; // Required: current stage name
