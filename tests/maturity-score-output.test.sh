@@ -55,6 +55,11 @@ agent_maturity_block="$(
   ' "$ROOT_DIR/kaseki-agent.sh"
 )"
 
+if [ -z "$agent_maturity_block" ]; then
+  printf 'Failed to extract maturity block from kaseki-agent.sh\n' >&2
+  exit 1
+fi
+
 workspace_dir="$TMP_DIR/workspace"
 results_dir="$TMP_DIR/results"
 mkdir -p "$workspace_dir/repo" "$results_dir"
