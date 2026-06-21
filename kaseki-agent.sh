@@ -3198,6 +3198,61 @@ npm_run_script_name() {
   return 1
 }
 
+
+command_matches_extra_allowlist() {
+  local command="$1"
+  local allowed
+  while IFS= read -r allowed; do
+    [ -z "$allowed" ] && continue
+    [ "$command" = "$allowed" ] && return 0
+  done <<< "${KASEKI_COMMAND_ALLOWLIST_EXTRA:-}"
+  return 1
+}
+
+is_allowed_kaseki_command() {
+  local command="$1"
+
+  case "$command" in
+    ""|*';'*|*'|'*|*'&'*|*'<'*|*'>'*|*'`'*|*'$('*|*'${'*)
+      return 1
+      ;;
+  esac
+
+  case "$command" in
+    ':'|'true'|'false'|'__kaseki_trailing_whitespace_cleanup__')
+      return 0
+      ;;
+  esac
+
+  if [[ "$command" =~ ^npm[[:space:]]+run[[:space:]]+[A-Za-z0-9:_-]+([[:space:]]+--([[:space:]]+[A-Za-z0-9_./:=@%+,~-]+)*)?$ ]]; then
+    return 0
+  fi
+
+  if [[ "$command" =~ ^npm[[:space:]]+(test|ci|install)([[:space:]]+--)?([[:space:]]+[A-Za-z0-9_./:=@%+,~-]+)*$ ]]; then
+    return 0
+  fi
+
+  if [[ "$command" =~ ^npx[[:space:]]+tsc[[:space:]]+--noEmit([[:space:]]+-p[[:space:]]+[A-Za-z0-9_./-]+)?$ ]] || [ "$command" = "tsc --noEmit" ]; then
+    return 0
+  fi
+
+  command_matches_extra_allowlist "$command"
+}
+
+reject_disallowed_kaseki_command() {
+  local stage_label="$1"
+  local command="$2"
+  local log_file="${3:-}"
+  local message
+  message="ERROR: Refusing to run disallowed $stage_label command: $command"
+  if [ -n "$log_file" ]; then
+    printf '%s\n' "$message" | tee -a "$log_file" >&2
+  else
+    printf '%s\n' "$message" >&2
+  fi
+  return 64
+}
+
 package_json_has_npm_script() {
   local script_name="$1"
   [ -f package.json ] || return 1
@@ -3431,7 +3486,14 @@ run_typescript_precheck() {
   {
     printf '\n==> TypeScript pre-check\n'
     printf 'Command: %s\n' "$KASEKI_TS_CHECK_COMMAND"
-    eval "cd "${KASEKI_WORKSPACE_DIR}"/repo && $KASEKI_TS_CHECK_COMMAND" 2>&1
+    if ! is_allowed_kaseki_command "$KASEKI_TS_CHECK_COMMAND"; then
+      reject_disallowed_kaseki_command "typescript precheck" "$KASEKI_TS_CHECK_COMMAND" "${KASEKI_RESULTS_DIR}/pre-validation-ts-check.log"
+      ts_check_exit=$?
+    else
+      (cd "${KASEKI_WORKSPACE_DIR}/repo" && bash -c "$KASEKI_TS_CHECK_COMMAND") 2>&1
+      ts_check_exit=$?
+    fi
+    exit "$ts_check_exit"
   } 2>&1 | tee -a "${KASEKI_RESULTS_DIR}"/pre-validation-ts-check.log
   ts_check_exit="${PIPESTATUS[0]}"
   
@@ -3774,8 +3836,13 @@ run_auto_lint_cleanup() {
         run_trailing_whitespace_cleanup_for_changed_tracked_text_files
         command_exit=$?
       else
-        bash -c "$trimmed"
-        command_exit=$?
+        if ! is_allowed_kaseki_command "$trimmed"; then
+          reject_disallowed_kaseki_command "$stage_label" "$trimmed" "$AUTO_LINT_CLEANUP_LOG"
+          command_exit=$?
+        else
+          bash -c "$trimmed"
+          command_exit=$?
+        fi
       fi
       printf 'exit_code=%s\n' "$command_exit"
       exit "$command_exit"
@@ -4226,8 +4293,13 @@ run_validation_commands() {
           # Use non-login shell (bash -c) to avoid initialization issues in --read-only containers.
           # Login shell (bash -l) sources /etc/profile and ~/.bashrc, which can fail with getcwd()
           # errors when running in constrained filesystem environments (read-only root, etc.).
-          bash -c "$trimmed"
-          command_exit=$?
+          if ! is_allowed_kaseki_command "$trimmed"; then
+            reject_disallowed_kaseki_command "$stage_label" "$trimmed" "$log_file"
+            command_exit=$?
+          else
+            bash -c "$trimmed"
+            command_exit=$?
+          fi
           printf 'exit_code=%s\n' "$command_exit"
           exit "$command_exit"
         } 2>&1 |
