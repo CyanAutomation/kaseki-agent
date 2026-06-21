@@ -152,7 +152,7 @@ RUN chmod +x \
     && cp -r dist/lib/* /app/lib/lib/ \
     && chmod 0755 /app/dist/*.js \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
@@ -174,6 +174,11 @@ RUN chmod +x \
     && install -m 0755 /app/lib/lib/validation-causality-analysis.js /usr/local/bin/validation-causality-analysis \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
+    && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
+    && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
+    && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && mkdir -p /usr/local/bin/scripts/lib \
+    && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
@@ -267,7 +272,7 @@ RUN mkdir -p /scripts \
     && ln -sf /app/scripts/kaseki-container-entrypoint-wrapper.sh /scripts/kaseki-container-entrypoint-wrapper.sh \
     && /app/scripts/startup-check-packaging.sh install \
     && github_app_helper_dependencies="github-app-private-key.js github-utils.js logger.js secrets/host-secrets-reader.js" \
-    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets \
+    && mkdir -p /usr/local/bin/lib /usr/local/bin/secrets /usr/local/bin/scripts \
     && cp -r /app/lib/lib/* /usr/local/bin/lib/ \
     && for dependency in $github_app_helper_dependencies; do install -m 0755 "/app/lib/$dependency" "/usr/local/bin/$dependency"; done \
     && install -m 0755 /app/lib/pi-event-filter.js /usr/local/bin/kaseki-pi-event-filter \
@@ -289,6 +294,11 @@ RUN mkdir -p /scripts \
     && ln -sf github-app-token /usr/local/bin/github-app-token.js \
     && install -m 0755 /app/kaseki-agent.sh /usr/local/bin/kaseki-agent \
     && install -m 0755 /app/scripts/docker-entrypoint.sh /usr/local/bin/kaseki-entrypoint \
+    && install -m 0755 /app/scripts/agent-prompt.sh /usr/local/bin/scripts/agent-prompt.sh \
+    && install -m 0755 /app/scripts/allowlist-helper.sh /usr/local/bin/scripts/allowlist-helper.sh \
+    && install -m 0755 /app/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/dependency-cache-helpers.sh \
+    && mkdir -p /usr/local/bin/scripts/lib \
+    && install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh \
     && chmod 0755 \
       /usr/local/bin/kaseki-entrypoint \
       /usr/local/bin/kaseki-pi-event-filter \
