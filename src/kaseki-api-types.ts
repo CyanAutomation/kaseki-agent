@@ -231,6 +231,9 @@ export type DiagnosticEntryPoint =
   | 'scouting-stderr.log'
   | 'goal-check-validation-errors.jsonl'
   | 'goal-check-stderr.log'
+  | 'pi-agent-diagnostics.jsonl'
+  | 'pi-events.jsonl'
+  | 'pi-summary.json'
   | 'progress-stream-diagnostics.log';
 
 export interface StructuredProgress {
