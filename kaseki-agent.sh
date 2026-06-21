@@ -89,7 +89,7 @@ fi
   exit 1
 }
 
-INSTANCE_NAME="${KASEKI_INSTANCE:-kaseki-unknown}"
+    if [[ -z "${KASEKI_DEPENDENCY_CACHE_KEY}" ]]; then
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
