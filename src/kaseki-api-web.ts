@@ -1521,13 +1521,13 @@ const controllerPage = String.raw`<!doctype html>
             <div class="tab-content active" id="tab-status" data-tab="status">
               <pre class="modal-output" id="status-output"></pre>
             </div>
-            <div class="tab-content" id="tab-events" data-tab="events">
+            <div class="tab-content" id="tab-events" data-tab="events" hidden aria-hidden="true">
               <pre class="modal-output" id="events-output"></pre>
             </div>
-            <div class="tab-content" id="tab-stdout" data-tab="stdout">
+            <div class="tab-content" id="tab-stdout" data-tab="stdout" hidden aria-hidden="true">
               <pre class="modal-output" id="stdout-output"></pre>
             </div>
-            <div class="tab-content" id="tab-artifacts" data-tab="artifacts">
+            <div class="tab-content" id="tab-artifacts" data-tab="artifacts" hidden aria-hidden="true">
               <div class="artifacts-content" id="artifacts-output"></div>
             </div>
           </div>
@@ -2662,12 +2662,28 @@ const controllerPage = String.raw`<!doctype html>
         if (modalOpener) { modalOpener.focus(); modalOpener = null; }
       }
 
+      function setModalActiveTab(tabName) {
+        tabButtons.forEach(btn => {
+          const active = btn.dataset.tab === tabName;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+
+        document.querySelectorAll('.modal-tabs-container .tab-content').forEach(tab => {
+          const active = tab.id === 'tab-' + tabName;
+          tab.classList.toggle('active', active);
+          tab.hidden = !active;
+          tab.setAttribute('aria-hidden', active ? 'false' : 'true');
+        });
+      }
+
       function openModal() {
         modalOpener = document.activeElement;
         const runId = runIdInput.value.trim();
         modalTitleEl.textContent = runId ? 'Full Results — ' + runId : 'Full Results';
         fullResultsModal.hidden = false;
         modalBackdrop.hidden = false;
+        setModalActiveTab('status');
         modalCloseBtn.focus();
         loadModalTab('status');
       }
@@ -3049,17 +3065,7 @@ const controllerPage = String.raw`<!doctype html>
       tabButtons.forEach((button) => {
         button.addEventListener('click', (event) => {
           const tabName = event.currentTarget.dataset.tab;
-          
-          // Update active button
-          tabButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === tabName);
-          });
-          
-          // Update active tab content
-          document.querySelectorAll('.modal-tabs-container .tab-content').forEach(tab => {
-            tab.classList.toggle('active', tab.id === 'tab-' + tabName);
-          });
-          
+          setModalActiveTab(tabName);
           // Load tab content
           loadModalTab(tabName);
         });

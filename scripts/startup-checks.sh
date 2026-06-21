@@ -754,6 +754,41 @@ check_unused_secrets() {
   return 0
 }
 
+check_packaged_agent_helpers() {
+  local agent_bin="${KASEKI_AGENT_BIN:-/usr/local/bin/kaseki-agent}"
+  local helper_root="${KASEKI_AGENT_HELPER_ROOT:-/usr/local/bin/scripts}"
+  local missing=()
+  local helper
+  local required_helpers=(
+    "agent-prompt.sh"
+    "allowlist-helper.sh"
+    "dependency-cache-helpers.sh"
+    "lib/json.sh"
+  )
+
+  if [ ! -x "$agent_bin" ]; then
+    log_error "Packaged agent command is missing or not executable: $agent_bin"
+    log_info "  Rebuild the worker image so kaseki-agent.sh is installed at $agent_bin."
+    return 2
+  fi
+
+  for helper in "${required_helpers[@]}"; do
+    if [ ! -r "$helper_root/$helper" ]; then
+      missing+=("$helper_root/$helper")
+    fi
+  done
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    log_error "Packaged agent helper files are missing or unreadable:"
+    printf '  - %s\n' "${missing[@]}" >&2
+    log_info "  Rebuild the worker image so sourced scripts are installed beside $agent_bin."
+    return 2
+  fi
+
+  log_pass "Packaged agent helpers are readable under $helper_root"
+  return 0
+}
+
 # --- Main execution ---
 
 main() {
@@ -813,6 +848,7 @@ main() {
     worker)
       # Worker container setup checks
       log_info "Checking worker container mounts..."
+      check_packaged_agent_helpers || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_worker_mounts || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_results_writable || overall_exit=$(merge_startup_status "$overall_exit" "$?")
       check_secret_paths || overall_exit=$(merge_startup_status "$overall_exit" "$?")
