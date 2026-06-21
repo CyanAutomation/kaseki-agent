@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.88.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.87.2...v1.88.0) (2026-06-21)
+
+
+### Features
+
+* add progress-stream-diagnostics.log for enhanced error tracking and diagnostics ([8a1fd7f](https://github.com/CyanAutomation/kaseki-agent/commit/8a1fd7f22a4c8d42c83b94ae34c22d2939b24e8f))
+
 ## [1.87.2](https://github.com/CyanAutomation/kaseki-agent/compare/v1.87.1...v1.87.2) (2026-06-21)
 
 
