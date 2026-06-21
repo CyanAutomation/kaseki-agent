@@ -33,7 +33,7 @@ describe('orchestrator-stages', () => {
 
       expect(stages).toContain('clone repository');
       expect(stages).toContain('prepare node dependencies');
-      expect(stages).toContain('TypeScript pre-check');
+      expect(stages).toContain('typescript precheck');
       expect(stages).toContain('pi coding agent');
       expect(stages).toContain('collect agent diff');
       expect(stages).toContain('quality checks');
@@ -48,7 +48,7 @@ describe('orchestrator-stages', () => {
 
       const cloneIdx = stages.indexOf('clone repository');
       const dependIdx = stages.indexOf('prepare node dependencies');
-      const checkIdx = stages.indexOf('TypeScript pre-check');
+      const checkIdx = stages.indexOf('typescript precheck');
       const agentIdx = stages.indexOf('pi coding agent');
       const collectIdx = stages.indexOf('collect agent diff');
 
@@ -176,7 +176,7 @@ describe('orchestrator-stages', () => {
       });
       const stages = deriveOrchestratorStages(job, mockConfig);
 
-      expect(stages).not.toContain('scouting prerequisites check');
+      expect(stages).not.toContain('scouting prerequisites validation');
       expect(stages).not.toContain('pi scouting agent');
       expect(stages).not.toContain('derive allowlist from scouting');
     });
@@ -187,7 +187,7 @@ describe('orchestrator-stages', () => {
       });
       const stages = deriveOrchestratorStages(job, mockConfig);
 
-      expect(stages).toContain('scouting prerequisites check');
+      expect(stages).toContain('scouting prerequisites validation');
       expect(stages).toContain('pi scouting agent');
       expect(stages).toContain('derive allowlist from scouting');
     });
@@ -198,7 +198,7 @@ describe('orchestrator-stages', () => {
       });
       const stages = deriveOrchestratorStages(job, mockConfig);
 
-      const preIdx = stages.indexOf('scouting prerequisites check');
+      const preIdx = stages.indexOf('scouting prerequisites validation');
       const agentIdx = stages.indexOf('pi scouting agent');
       const deriveIdx = stages.indexOf('derive allowlist from scouting');
 
