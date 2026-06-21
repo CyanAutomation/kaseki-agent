@@ -2347,13 +2347,26 @@ const controllerPage = String.raw`<!doctype html>
         setRunDetails(payload.progress);
       }
 
-      function requestBody() {
+      function createRequestId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+          return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+          const value = Math.floor(Math.random() * 16);
+          return (char === 'x' ? value : (value & 0x3) | 0x8).toString(16);
+        });
+      }
+
+      function requestBody(idempotencyKey) {
         const data = new FormData(form);
         const body = {
           repoUrl: String(data.get('repoUrl') || '').trim(),
           taskPrompt: String(data.get('taskPrompt') || '').trim(),
           taskMode: String(data.get('taskMode') || 'patch'),
         };
+        if (idempotencyKey) {
+          body.idempotencyKey = idempotencyKey;
+        }
         return body;
       }
 
@@ -3160,8 +3173,9 @@ const controllerPage = String.raw`<!doctype html>
         setResponseSummary(null);
         setOutputBody('Submitting run request...');
         setState('Contacting the controller...');
-        const submittedAt = Date.now();
-        apiRequest('/api/runs', { method: 'POST', auth: true, body: requestBody(), timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
+        const idempotencyKey = createRequestId();
+        const submittedBody = requestBody(idempotencyKey);
+        apiRequest('/api/runs', { method: 'POST', auth: true, body: submittedBody, timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
               activateSubmittedRun(payload, response.status, false);
@@ -3169,7 +3183,7 @@ const controllerPage = String.raw`<!doctype html>
           })
           .catch(async (error) => {
             if (error instanceof RequestTimeoutError) {
-              const recovered = await recoverSubmittedRunAfterTimeout(submittedAt);
+              const recovered = await recoverSubmittedRunAfterTimeout(submittedBody);
               if (recovered) return;
             }
             setOutputMetadata('failed');
@@ -3195,17 +3209,17 @@ const controllerPage = String.raw`<!doctype html>
         pollRun(payload.id, { preserveFirstOutput: true });
       }
 
-      async function recoverSubmittedRunAfterTimeout(submittedAt) {
+      async function recoverSubmittedRunAfterTimeout(submittedBody) {
         try {
-          const result = await apiRequest('/api/runs?limit=1', {
+          const result = await apiRequest('/api/runs', {
+            method: 'POST',
             auth: true,
+            body: submittedBody,
             preserveOutput: true,
             timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
           });
-          const latest = result.payload && Array.isArray(result.payload.runs) ? result.payload.runs[0] : null;
-          const createdAt = latest && typeof latest.createdAt === 'string' ? Date.parse(latest.createdAt) : NaN;
-          if (latest && typeof latest.id === 'string' && Number.isFinite(createdAt) && createdAt >= submittedAt - 5000) {
-            activateSubmittedRun(latest, result.response.status, true);
+          if (result.response.ok && result.payload && typeof result.payload.id === 'string') {
+            activateSubmittedRun(result.payload, result.response.status, true);
             return true;
           }
         } catch {
