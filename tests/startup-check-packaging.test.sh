@@ -56,4 +56,20 @@ if ! bash -n "$ENTRYPOINT"; then
   exit 1
 fi
 
+for helper in \
+  instance-status-derivation.js \
+  instance-stage-derivation.js \
+  instance-failure-extraction.js
+do
+  if ! grep -q "cp dist/$helper /app/lib/$helper" Dockerfile; then
+    printf 'Dockerfile does not copy transitive instance-state helper: %s\n' "$helper" >&2
+    exit 1
+  fi
+
+  if ! grep -q "install -m 0755 /app/lib/$helper /usr/local/bin/$helper" Dockerfile; then
+    printf 'Dockerfile does not install transitive instance-state helper: %s\n' "$helper" >&2
+    exit 1
+  fi
+done
+
 printf '✓ Startup-check packaging contract assertions passed.\n'
