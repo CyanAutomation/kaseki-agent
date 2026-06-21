@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import readline from 'readline';
+import { basename } from 'path';
 import { sanitizeToolName } from './progress-stream-utils.js';
 import {
   EventSampler,
@@ -53,25 +54,53 @@ const startTime = Date.now();
 // Sample 1 in every 15 message_update events
 const messageSampler = new EventSampler(15);
 
+export interface ProgressClock {
+  now(): number;
+}
+
+export interface ToolBatchAggregatorOptions {
+  clock?: ProgressClock;
+  coalesceWindowMs?: number;
+  emitProgress?: (stage: string, message: string, extra?: Record<string, any>) => void;
+  startTime?: number;
+}
+
 /**
  * ToolBatchAggregator: Batches tool calls by type and emits summaries
  * Reduces noise by aggregating rapid tool sequences
  */
-class ToolBatchAggregator {
+export class ToolBatchAggregator {
   private toolBuffer: Map<string, number> = new Map(); // tool name -> count
-  private lastFlushTime: number = Date.now();
-  private coalesceWindow: number = 3000; // 3 seconds
+  private lastFlushTime: number;
+  private coalesceWindow: number;
+  private clock: ProgressClock;
+  private emitProgress: (stage: string, message: string, extra?: Record<string, any>) => void;
+  private startTime: number;
+
+  constructor(options: ToolBatchAggregatorOptions = {}) {
+    this.clock = options.clock ?? { now: () => Date.now() };
+    this.coalesceWindow = options.coalesceWindowMs ?? 3000;
+    this.emitProgress = options.emitProgress ?? emit;
+    this.startTime = options.startTime ?? startTime;
+    this.lastFlushTime = this.clock.now();
+  }
 
   recordTool(tool: string): void {
     const count = (this.toolBuffer.get(tool) || 0) + 1;
     this.toolBuffer.set(tool, count);
-    this.lastFlushTime = Date.now();
+    this.lastFlushTime = this.clock.now();
   }
 
   shouldFlush(): boolean {
-    const elapsed = Date.now() - this.lastFlushTime;
+    const elapsed = this.clock.now() - this.lastFlushTime;
     // Flush if buffer is full or coalesce window elapsed
     return this.toolBuffer.size > 0 && elapsed > this.coalesceWindow;
+  }
+
+  flushIfReady(): void {
+    if (this.shouldFlush()) {
+      this.flush();
+    }
   }
 
   flush(): void {
@@ -84,9 +113,9 @@ class ToolBatchAggregator {
       .map(([tool, count]) => `${tool} (${count}x)`)
       .join(', ');
 
-    const elapsed = formatElapsed(startTime);
+    const elapsed = formatElapsed(this.startTime);
     const message = `[tools] ${summary} (${elapsed})`;
-    emit('pi tool batch', stripAnsi(message), {
+    this.emitProgress('pi tool batch', stripAnsi(message), {
       toolBatchSummary: Object.fromEntries(this.toolBuffer),
     });
 
@@ -164,9 +193,7 @@ function maybeHeartbeat(force: boolean = false): void {
   lastHeartbeat = now;
 
   // Flush any pending tool batches
-  if (toolBatchAggregator.shouldFlush()) {
-    toolBatchAggregator.flush();
-  }
+  toolBatchAggregator.flushIfReady();
 }
 
 /**
@@ -204,89 +231,101 @@ function emitMessageSummary(event: PiEvent): void {
   }
 }
 
-emit('pi agent', 'started');
-const heartbeatTimer = setInterval(() => {
-  if (streamOpen) {
-    maybeHeartbeat(true);
-  }
-}, 30000);
+function main(): void {
+  emit('pi agent', 'started');
+  const heartbeatTimer = setInterval(() => {
+    if (streamOpen) {
+      maybeHeartbeat(true);
+    }
+  }, 30000);
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  crlfDelay: Infinity,
-});
+  const rl = readline.createInterface({
+    input: process.stdin,
+    crlfDelay: Infinity,
+  });
 
-rl.on('line', (line: string) => {
-  if (line.trim().length === 0) {
-    return;
-  }
+  rl.on('line', (line: string) => {
+    if (line.trim().length === 0) {
+      return;
+    }
 
-  let event: any;
-  try {
-    event = JSON.parse(line);
-  } catch {
-    counts.invalid_json = (counts.invalid_json || 0) + 1;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      counts.invalid_json = (counts.invalid_json || 0) + 1;
+      maybeHeartbeat();
+      return;
+    }
+
+    const type = eventType(event);
+    counts[type] = (counts[type] || 0) + 1;
+
+    if (type === 'tool_execution_start' || type === 'toolcall_start') {
+      const tool = toolName(event);
+      toolStartCount += 1;
+
+      // Aggregate tool calls instead of emitting individual start messages
+      if (enableSummarization) {
+        toolBatchAggregator.recordTool(tool);
+      }
+    } else if (type === 'tool_execution_end' || type === 'toolcall_end') {
+      toolEndCount += 1;
+
+      // Tool end is batched; suppress individual emission
+    } else if (type === 'message_update') {
+      messageUpdateCount += 1;
+
+      if (enableSummarization) {
+        emitMessageSummary(event);
+      }
+    } else if (type === 'agent_start') {
+      messageSampler.reset();
+      toolBatchAggregator.clear();
+      emit('pi agent', 'agent started', { type });
+    } else if (type === 'agent_end') {
+      // Flush any pending tool batches before agent ends
+      toolBatchAggregator.flush();
+      emit('pi agent', 'agent finished', { type });
+    } else if (type === 'auto_retry_start') {
+      // Flush pending batches before retry
+      toolBatchAggregator.flush();
+      emit(
+        'pi agent',
+        `${ANSI_COLORS.YELLOW}auto retry started${ANSI_COLORS.RESET}`,
+        { type }
+      );
+    } else if (type === 'auto_retry_end') {
+      emit('pi agent', 'auto retry finished', { type });
+    }
+
     maybeHeartbeat();
-    return;
-  }
+  });
 
-  const type = eventType(event);
-  counts[type] = (counts[type] || 0) + 1;
+  rl.on('close', () => {
+    streamOpen = false;
+    clearInterval(heartbeatTimer);
 
-  if (type === 'tool_execution_start' || type === 'toolcall_start') {
-    const tool = toolName(event);
-    toolStartCount += 1;
-
-    // Aggregate tool calls instead of emitting individual start messages
-    if (enableSummarization) {
-      toolBatchAggregator.recordTool(tool);
-    }
-  } else if (type === 'tool_execution_end' || type === 'toolcall_end') {
-    toolEndCount += 1;
-
-    // Tool end is batched; suppress individual emission
-  } else if (type === 'message_update') {
-    messageUpdateCount += 1;
-
-    if (enableSummarization) {
-      emitMessageSummary(event);
-    }
-  } else if (type === 'agent_start') {
-    messageSampler.reset();
-    toolBatchAggregator.clear();
-    emit('pi agent', 'agent started', { type });
-  } else if (type === 'agent_end') {
-    // Flush any pending tool batches before agent ends
+    // Flush any pending tool batches
     toolBatchAggregator.flush();
-    emit('pi agent', 'agent finished', { type });
-  } else if (type === 'auto_retry_start') {
-    // Flush pending batches before retry
-    toolBatchAggregator.flush();
+    maybeHeartbeat(true);
+
+    const finalElapsed = formatElapsed(startTime);
     emit(
       'pi agent',
-      `${ANSI_COLORS.YELLOW}auto retry started${ANSI_COLORS.RESET}`,
-      { type }
+      `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`,
+      {
+        counts,
+        toolStartCount,
+        toolEndCount,
+        messageUpdateCount,
+      }
     );
-  } else if (type === 'auto_retry_end') {
-    emit('pi agent', 'auto retry finished', { type });
-  }
-
-  maybeHeartbeat();
-});
-
-rl.on('close', () => {
-  streamOpen = false;
-  clearInterval(heartbeatTimer);
-
-  // Flush any pending tool batches
-  toolBatchAggregator.flush();
-  maybeHeartbeat(true);
-
-  const finalElapsed = formatElapsed(startTime);
-  emit('pi agent', `event stream ended | ${ANSI_COLORS.DIM}${finalElapsed} total${ANSI_COLORS.RESET}`, {
-    counts,
-    toolStartCount,
-    toolEndCount,
-    messageUpdateCount,
   });
-});
+}
+
+const entrypoint = process.argv[1] ? basename(process.argv[1]) : '';
+
+if (entrypoint === 'pi-progress-stream.js' || entrypoint === 'pi-progress-stream.ts') {
+  main();
+}
