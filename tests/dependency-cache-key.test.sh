@@ -6,12 +6,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Load only the pure dependency-cache key helpers from kaseki-agent.sh.
-eval "$(awk '
-  /^dependency_cache_flags_identity\(\)/ { emit=1 }
-  /^build_agent_prompt\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh")"
+# Source the pure dependency-cache key helpers directly.
+# shellcheck source=../scripts/dependency-cache-helpers.sh
+. "$ROOT_DIR/scripts/dependency-cache-helpers.sh"
 
 cat > "$TMP_DIR/package-lock.json" <<'LOCK'
 {"lockfileVersion":3,"packages":{}}
