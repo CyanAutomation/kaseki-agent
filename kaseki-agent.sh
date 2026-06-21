@@ -2598,20 +2598,22 @@ try {
 } catch {
   fifo = undefined;
 }
-process.stdin.on("data", (chunk) => {
-  fs.writeSync(raw, chunk);
-  if (fifo !== undefined) {
-    try {
-      fs.writeSync(fifo, chunk);
-    } catch (error) {
-      if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
-        try { fs.closeSync(fifo); } catch {}
-        fifo = undefined;
-      } else {
-        throw error;
-      }
+function writeProgressChunk(chunk) {
+  if (fifo === undefined) return;
+  try {
+    fs.writeSync(fifo, chunk);
+  } catch (error) {
+    if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+      try { fs.closeSync(fifo); } catch {}
+      fifo = undefined;
+    } else if (!(error && error.code === "EAGAIN")) {
+      throw error;
     }
   }
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  writeProgressChunk(chunk);
 });
 process.stdin.on("end", () => {
   if (fifo !== undefined) fs.closeSync(fifo);
@@ -2633,20 +2635,22 @@ try {
 } catch {
   fifo = undefined;
 }
-process.stdin.on("data", (chunk) => {
-  fs.writeSync(raw, chunk);
-  if (fifo !== undefined) {
-    try {
-      fs.writeSync(fifo, chunk);
-    } catch (error) {
-      if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
-        try { fs.closeSync(fifo); } catch {}
-        fifo = undefined;
-      } else {
-        throw error;
-      }
+function writeProgressChunk(chunk) {
+  if (fifo === undefined) return;
+  try {
+    fs.writeSync(fifo, chunk);
+  } catch (error) {
+    if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+      try { fs.closeSync(fifo); } catch {}
+      fifo = undefined;
+    } else if (!(error && error.code === "EAGAIN")) {
+      throw error;
     }
   }
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  writeProgressChunk(chunk);
 });
 process.stdin.on("end", () => {
   if (fifo !== undefined) fs.closeSync(fifo);
