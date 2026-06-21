@@ -190,11 +190,27 @@ func broken(( {
 }
 `;
       fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
+      let summary: ReturnType<GoCliSummarizer['summarize']> | undefined;
+      expect(() => {
+        summary = summarizer.summarize(filePath);
+      }).not.toThrow();
 
       expect(summary).toBeDefined();
-      expect(summary.language).toBe('go');
-      // Should not throw
+      expect(summary?.language).toBe('go');
+
+      if (summary?.parseError) {
+        expect(summary.parseError).toEqual(expect.any(String));
+      } else {
+        // Tree-sitter can recover a syntax tree from malformed Go, but this input
+        // has no valid declarations to summarize. Do not treat a no-error parse as
+        // a success unless the recovered collections reflect that partial/empty state.
+        expect(summary?.imports).toEqual([]);
+        expect(summary?.exports).toEqual([]);
+        expect(summary?.classes).toEqual([]);
+        expect(summary?.functions).toEqual([]);
+        expect(summary?.types).toEqual([]);
+        expect(summary?.interfaces).toEqual([]);
+      }
     });
 
     it('should return metadata', () => {
