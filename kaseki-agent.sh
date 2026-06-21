@@ -1423,7 +1423,7 @@ build_stages_array() {
   fi
 
   if [[ "$KASEKI_TS_PRE_CHECK" == "1" ]]; then
-    stages+=("TypeScript pre-check")
+    stages+=("typescript precheck")
   fi
 
   if [[ "$KASEKI_GOAL_SETTING" == "1" ]]; then
@@ -1431,7 +1431,7 @@ build_stages_array() {
   fi
   
   if [[ "$KASEKI_SCOUTING" == "1" ]]; then
-    stages+=("scouting prerequisites check")
+    stages+=("scouting prerequisites validation")
     stages+=("pi scouting agent")
     stages+=("derive allowlist from scouting")
   fi
@@ -2545,37 +2545,128 @@ run_pi_json_capture() {
   local model="$3"
   local prompt="$4"
   local stderr_target="${5:-}"
-  local pi_exit progress_exit progress_stderr
+  local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit
 
   rm -f "$raw_events_file" 2>/dev/null || true
   : > "$raw_events_file"
   progress_stderr="${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
+  progress_fifo="${KASEKI_RESULTS_DIR}/pi-progress-stream.$$.$RANDOM.fifo"
+  rm -f "$progress_fifo" 2>/dev/null || true
+
+  if ! mkfifo "$progress_fifo" 2>>"$progress_stderr"; then
+    printf '%s [kaseki-agent] failed to create progress fifo; falling back to post-run progress processing\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$progress_stderr" 2>/dev/null || true
+  fi
 
   set +e
-  if [ -n "$stderr_target" ]; then
-    LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-      LLM_GATEWAY_URL="$llm_gateway_url" \
-      timeout --signal=SIGTERM "$timeout_seconds" \
-      pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
-      > "$raw_events_file" \
-      2> >(tee -a "$stderr_target" >&2)
-  else
-    LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-      LLM_GATEWAY_URL="$llm_gateway_url" \
-      timeout --signal=SIGTERM "$timeout_seconds" \
-      pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
-      > "$raw_events_file"
-  fi
-  pi_exit=$?
+  if [ -p "$progress_fifo" ]; then
+    KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
+      < "$progress_fifo" \
+      2>>"$progress_stderr" &
+    progress_pid=$!
 
-  KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-    < "$raw_events_file" \
-    2>>"$progress_stderr"
-  progress_exit=$?
+    if [ -n "$stderr_target" ]; then
+      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        2> >(tee -a "$stderr_target" >&2) \
+        | python3 -c '''import errno, os, sys
+raw_path, fifo_path = sys.argv[1], sys.argv[2]
+fifo_fd = None
+try:
+    fifo_fd = os.open(fifo_path, os.O_WRONLY)
+except OSError:
+    fifo_fd = None
+with open(raw_path, "ab", buffering=0) as raw:
+    while True:
+        chunk = sys.stdin.buffer.read(65536)
+        if not chunk:
+            break
+        raw.write(chunk)
+        if fifo_fd is not None:
+            try:
+                os.write(fifo_fd, chunk)
+            except OSError as exc:
+                if exc.errno in (errno.EPIPE, errno.ENXIO):
+                    os.close(fifo_fd)
+                    fifo_fd = None
+                else:
+                    raise
+if fifo_fd is not None:
+    os.close(fifo_fd)
+''' "$raw_events_file" "$progress_fifo"
+    else
+      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        | python3 -c '''import errno, os, sys
+raw_path, fifo_path = sys.argv[1], sys.argv[2]
+fifo_fd = None
+try:
+    fifo_fd = os.open(fifo_path, os.O_WRONLY)
+except OSError:
+    fifo_fd = None
+with open(raw_path, "ab", buffering=0) as raw:
+    while True:
+        chunk = sys.stdin.buffer.read(65536)
+        if not chunk:
+            break
+        raw.write(chunk)
+        if fifo_fd is not None:
+            try:
+                os.write(fifo_fd, chunk)
+            except OSError as exc:
+                if exc.errno in (errno.EPIPE, errno.ENXIO):
+                    os.close(fifo_fd)
+                    fifo_fd = None
+                else:
+                    raise
+if fifo_fd is not None:
+    os.close(fifo_fd)
+''' "$raw_events_file" "$progress_fifo"
+    fi
+    pi_exit=${PIPESTATUS[0]}
+    splitter_exit=${PIPESTATUS[1]}
+    wait "$progress_pid"
+    progress_exit=$?
+    rm -f "$progress_fifo" 2>/dev/null || true
+
+    if [ "$splitter_exit" -ne 0 ]; then
+      printf '%s [kaseki-agent] raw event splitter failed pi_exit=%s splitter_exit=%s raw_events=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$splitter_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+      if [ "$pi_exit" -eq 0 ]; then
+        pi_exit="$splitter_exit"
+      fi
+    fi
+  else
+    if [ -n "$stderr_target" ]; then
+      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        > "$raw_events_file" \
+        2> >(tee -a "$stderr_target" >&2)
+    else
+      LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+        LLM_GATEWAY_URL="$llm_gateway_url" \
+        timeout --signal=SIGTERM "$timeout_seconds" \
+        pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+        > "$raw_events_file"
+    fi
+    pi_exit=$?
+
+    KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
+      < "$raw_events_file" \
+      2>>"$progress_stderr"
+    progress_exit=$?
+  fi
+
   if [ "$progress_exit" -ne 0 ]; then
-    printf '%s [kaseki-agent] progress stream failed after Pi exit=%s progress_exit=%s raw_events=%s\n' \
+    printf '%s [kaseki-agent] progress stream failed pi_exit=%s progress_exit=%s raw_events=%s\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$progress_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
-    emit_error_event "pi_progress_stream_failed" "Progress stream failed after Pi completed: $progress_exit" "continue"
+    emit_error_event "pi_progress_stream_failed" "Progress stream failed while processing Pi output: $progress_exit" "continue"
   fi
   set +e
 

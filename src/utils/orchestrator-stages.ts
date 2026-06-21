@@ -11,7 +11,7 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 const BASE_ORCHESTRATOR_STAGES = [
   'clone repository',
   'prepare node dependencies',
-  'TypeScript pre-check',
+  'typescript precheck',
   'pi coding agent',
   'collect agent diff',
   'quality checks',
@@ -82,12 +82,12 @@ export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): str
     }
     stages.push('pre-agent validation');
   }
-  stages.push('TypeScript pre-check');
+  stages.push('typescript precheck');
   if (flags.goalSettingEnabled) {
     stages.push('pi goal-setting agent');
   }
   if (flags.scoutingEnabled) {
-    stages.push('scouting prerequisites check');
+    stages.push('scouting prerequisites validation');
     stages.push('pi scouting agent', 'derive allowlist from scouting');
   }
   if (flags.goalCheckEnabled) {
