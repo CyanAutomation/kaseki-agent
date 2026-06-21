@@ -223,12 +223,49 @@ function main(): void {
   let linesProcessed = 0;
   let linesOutput = 0;
   let errorsEncountered: string[] = [];
+  let backpressureEvents = 0;
+  let memoryWarningsTriggered = 0;
+
+  // RPi 4 memory management: 4GB total, warn at 2.5GB (62% of container allocation)
+  // Assumes container gets ~3.5-4GB limit
+  const MEMORY_WARN_BYTES = 2.5 * 1024 * 1024 * 1024; // 2.5GB
+  const MEMORY_CRITICAL_BYTES = 3.2 * 1024 * 1024 * 1024; // 3.2GB
+  const LINE_COUNT_WARN_THRESHOLD = 100000;
 
   function logDiagnostic(message: string): void {
     try {
       appendFileSync(diagnosticsLogFile, `[${new Date().toISOString()}] ${message}\n`);
-    } catch {
-      // Silent fail if diagnostics log is unavailable
+    } catch (err) {
+      // Fallback to stderr if file write fails (e.g., /tmp full)
+      const fallbackMsg = `[${new Date().toISOString()}] ${message}`;
+      try {
+        console.error(`[filter-fallback-log] ${fallbackMsg}`);
+      } catch {
+        // Last resort: silent fail to prevent cascade
+      }
+    }
+  }
+
+  function checkMemoryPressure(): void {
+    try {
+      const usage = process.memoryUsage();
+      const heapUsedPercent = (usage.heapUsed / usage.heapTotal) * 100;
+
+      if (usage.heapUsed > MEMORY_CRITICAL_BYTES) {
+        memoryWarningsTriggered++;
+        logDiagnostic(
+          `filter-warning: critical_memory: heap_used=${Math.round(usage.heapUsed / 1024 / 1024)}mb ` +
+          `heap_total=${Math.round(usage.heapTotal / 1024 / 1024)}mb heap_usage=${heapUsedPercent.toFixed(1)}%`
+        );
+      } else if (usage.heapUsed > MEMORY_WARN_BYTES) {
+        memoryWarningsTriggered++;
+        logDiagnostic(
+          `filter-warning: elevated_memory: heap_used=${Math.round(usage.heapUsed / 1024 / 1024)}mb ` +
+          `heap_total=${Math.round(usage.heapTotal / 1024 / 1024)}mb heap_usage=${heapUsedPercent.toFixed(1)}%`
+        );
+      }
+    } catch (err) {
+      // Fail silently; memory check is diagnostic
     }
   }
 
@@ -239,6 +276,10 @@ function main(): void {
   logDiagnostic(`filter-startup: argv=${process.argv.join(' ')}`);
   logDiagnostic(`filter-startup: diagnostics_log_file=${diagnosticsLogFile}`);
   logDiagnostic(`filter-startup: stdin_is_tty=${process.stdin.isTTY || false}`);
+  logDiagnostic(
+    `filter-startup: memory_thresholds: warn=${Math.round(MEMORY_WARN_BYTES / 1024 / 1024 / 1024)}gb ` +
+    `critical=${Math.round(MEMORY_CRITICAL_BYTES / 1024 / 1024 / 1024)}gb`
+  );
 
   // Set exit code to 0 IMMEDIATELY as default.
   // This ensures we always exit with 0, even if something crashes before 'close' fires.
@@ -247,14 +288,25 @@ function main(): void {
 
   const state = createInitialState();
 
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: false,
-  });
+  // Wrap createInterface() with explicit error boundary (Step 1.1)
+  let rl: any;
+  try {
+    rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: false,
+    });
+  } catch (err: unknown) {
+    const errMsg = `createInterface_error: ${err instanceof Error ? err.message : String(err)}`;
+    console.error(`[validation-output-filter] FATAL: ${errMsg}`);
+    logDiagnostic(`filter-error: ${errMsg}`);
+    logDiagnostic('filter-error: createInterface failed; exiting gracefully');
+    process.exitCode = 0;
+    return;
+  }
 
   // Handle readline errors (e.g., stdin closed prematurely, encoding issues)
-  rl.on('error', (err) => {
+  rl.on('error', (err: Error) => {
     const msg = `readline_error: ${err.message}`;
     // Log to stderr but don't crash - allow graceful shutdown
     console.error(`[validation-output-filter] ${msg}`);
@@ -269,6 +321,8 @@ function main(): void {
     logDiagnostic('filter-close: stdin_closed');
     logDiagnostic(`filter-close: lines_processed=${linesProcessed}`);
     logDiagnostic(`filter-close: lines_output=${linesOutput}`);
+    logDiagnostic(`filter-close: backpressure_events=${backpressureEvents}`);
+    logDiagnostic(`filter-close: memory_warnings=${memoryWarningsTriggered}`);
     logDiagnostic(`filter-close: errors_encountered=${errorsEncountered.length}`);
     if (errorsEncountered.length > 0) {
       logDiagnostic(`filter-close: errors=${errorsEncountered.join('; ')}`);
@@ -281,17 +335,33 @@ function main(): void {
 
   rl.on('line', (line: string) => {
     linesProcessed++;
+
+    // Check memory pressure every 1000 lines (Step 1.3)
+    if (linesProcessed % 1000 === 0) {
+      checkMemoryPressure();
+
+      // Warn if processing excessive number of lines (Step 1.3)
+      if (linesProcessed > LINE_COUNT_WARN_THRESHOLD && linesProcessed % 10000 === 0) {
+        logDiagnostic(
+          `filter-warning: excessive_output: lines_processed=${linesProcessed} ` +
+          `lines_output=${linesOutput} ratio=${(linesOutput / linesProcessed * 100).toFixed(1)}%`
+        );
+      }
+    }
+
     try {
       const outputLine = processLine(line, state);
 
       if (outputLine !== null) {
         linesOutput++;
         // Catch any write errors to stdout (e.g., broken pipe from downstream process)
+        // Step 1.2: Detect backpressure
         try {
           console.log(outputLine);
         } catch {
           // If console.log fails, continue gracefully (stream may have closed downstream)
-          // Note: In pipe context, EPIPE errors might not throw
+          backpressureEvents++;
+          logDiagnostic('filter-event: console_write_failed (backpressure)');
         }
       }
     } catch (lineErr) {

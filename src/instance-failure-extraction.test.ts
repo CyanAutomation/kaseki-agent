@@ -277,6 +277,73 @@ describe('instance-failure-extraction', () => {
       expect(classifyFailure(metadata, 1)).toBe('provider-error');
     });
 
+    // Defensive tests for model-unavailable pattern variations
+    test('should classify "model unavailable" (without "is") as model-unavailable', () => {
+      const metadata: Metadata = {
+        provider_error_message: 'Model unavailable at this time',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify "not a valid model" as model-unavailable', () => {
+      const metadata: Metadata = {
+        provider_error_message: 'Error: not a valid model',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify "model_not_found" as model-unavailable', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'model_not_found',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify model-unavailable pattern in diagnostic_reason', () => {
+      const metadata: Metadata = {
+        diagnostic_reason: 'model is unavailable for this region',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify model-unavailable patterns case-insensitively', () => {
+      const metadata: Metadata = {
+        provider_error_message: 'MODEL UNAVAILABLE',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify "not a valid model" case-insensitively', () => {
+      const metadata: Metadata = {
+        provider_error_message: 'NOT A VALID MODEL',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should classify model-unavailable when combined with other fields', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'api_error',
+        provider_error_message: 'Invalid request',
+        diagnostic_reason: 'The model is unavailable',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
+    test('should handle multiple model-unavailable patterns in same message', () => {
+      const metadata: Metadata = {
+        provider_error_message: 'Model unavailable: not a valid model for this region',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 1)).toBe('model-unavailable');
+    });
+
     // Generic failed command
     test('should convert failed command to kebab-case for unknown commands', () => {
       expect(classifyFailure({ failed_command: 'custom task with spaces' }, null)).toBe(

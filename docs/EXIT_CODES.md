@@ -457,67 +457,94 @@ receives SIGPIPE (signal 13 = exit code 128 + 13 = 141).
 
 **Common causes:**
 
+- **Large validation output** — npm test/build produced 100k+ lines (common on large projects)
+- **Memory pressure** — Filter process ran out of heap memory (RPi 4 has 4GB total)
+- **Encoding issue** — Validation output contained non-UTF8 characters
 - `validation-output-filter` encountered an error while
   processing output (e.g., readline error, encoding issue)
-- Underlying npm/test/build command produced output that
-  triggered an unhandled exception in the filter
-- System resource constraint (memory, file descriptors) caused
+- System resource constraint (memory, file descriptors, disk) caused
   filter process to abort
 - Filter received a signal that caused abnormal termination
 
-**Diagnosis:**
+**Diagnosis (Enhanced in v1.88+):**
 
-1. Check the validation log for error messages from the
-   filter:
+Three new diagnostic artifacts are now generated to help diagnose SIGPIPE failures:
 
-   ```bash
-   grep -i "validation-output-filter" /agents/kaseki-results/
-     <instance-id>/validation.log
-   cat /agents/kaseki-results/<instance-id>/validation.log
-   ```
+1. **`validation-startup-diagnostics.log`** — System state captured BEFORE validation starts
+   - Memory usage (free -h output)
+   - Disk space (df -h output)
+   - Open file descriptors count
+   - Process memory usage (VmRSS from /proc/self/status)
 
-2. Check stderr for detailed error information:
+2. **`filter-diagnostics.log`** — Detailed filter process events
+   - Filter startup (pid, node version, memory thresholds)
+   - Per-1000-lines memory checks
+   - Backpressure events (when downstream pipe stalled)
+   - Errors and warnings during processing
+   - Final shutdown stats (lines processed, output, errors)
 
-   ```bash
-   tail -50 /agents/kaseki-results/<instance-id>/stderr.log
-   ```
+3. **`validation-infrastructure-diagnostics.md`** — Human-readable report
+   - Summary of likely causes
+   - Pre-failure system state
+   - Filter process diagnostics
+   - Specific remediation steps
 
-3. Look for filter-specific errors in quality diagnostics:
+**To review diagnostics after SIGPIPE failure:**
 
-   ```bash
-   grep "DIAGNOSTICS" -A 10 /agents/kaseki-results/
-     <instance-id>/quality.log
-   ```
+```bash
+# Check pre-failure system state
+cat /agents/kaseki-results/<instance-id>/validation-startup-diagnostics.log
+
+# View detailed filter events
+cat /agents/kaseki-results/<instance-id>/filter-diagnostics.log
+
+# Read human-friendly diagnostics report
+cat /agents/kaseki-results/<instance-id>/validation-infrastructure-diagnostics.md
+
+# Check metadata for infrastructure failure flag
+jq '.validation_infrastructure_diagnostics' /agents/kaseki-results/<instance-id>/metadata.json
+
+# Check filter diagnostics in metadata
+jq '.validation_infrastructure_diagnostics | keys' /agents/kaseki-results/<instance-id>/metadata.json
+```
 
 **Action:**
 
-1. **First attempt:** Re-run the same command to see if it was
-   a transient error:
+1. **Review the diagnostics report** — Read `validation-infrastructure-diagnostics.md` for specific remediation:
 
    ```bash
-   kaseki-agent run --retry
+   cat /agents/kaseki-results/<instance-id>/validation-infrastructure-diagnostics.md
    ```
 
-2. **If persists:** Disable the validation output filter
-   temporarily:
+2. **Increase container memory** if running on memory-constrained system (RPi 4):
 
    ```bash
-   KASEKI_VALIDATION_NO_FILTER=1 kaseki-agent run <repo> 
-     <ref> <task>
+   docker run --memory=4g kaseki-agent
    ```
 
-3. **Investigate:** If disabling the filter helps, report the
-   issue with:
-   - Full validation.log output
-   - Details about what validation command was running
-   - Output size (check `wc -l /agents/kaseki-results/
-     <instance-id>/validation.log`)
+3. **Reduce validation output verbosity**:
 
-4. **Review the task:** Large or unusual validation output may
-   trigger edge cases:
-   - Simplify validation commands if possible
-   - Consider splitting large test suites
-   - Check if validation commands are producing unusually
+   ```bash
+   # Pass --silent or --quiet to npm test/build
+   export KASEKI_VALIDATION_COMMANDS="npm run test -- --silent"
+   ```
+
+4. **Split large test suites** across multiple validation commands:
+
+   ```bash
+   export KASEKI_VALIDATION_COMMANDS="npm run test:unit;npm run test:integration"
+   ```
+
+5. **Re-run** to verify the fix:
+
+   ```bash
+   kaseki-agent run <repo> <ref> <task>
+   ```
+
+6. **If persists:** Collect and review:
+   - `validation-raw.log` (unfiltered validation output)
+   - `filter-diagnostics.log` (detailed filter events)
+   - `validation-startup-diagnostics.log` (pre-failure state)
      large output
 
 ---
