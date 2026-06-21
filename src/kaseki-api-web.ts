@@ -1563,6 +1563,9 @@ const controllerPage = String.raw`<!doctype html>
       
       let pollTimer = null;
       let activeRunView = 'status';
+      const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+      const LONG_REQUEST_TIMEOUT_MS = 90000;
+      const ISSUE_REQUEST_TIMEOUT_MS = 20000;
       
       // Validation state
       let validationState = { isValid: false, lastValidated: null, checks: [] };
@@ -2354,6 +2357,36 @@ const controllerPage = String.raw`<!doctype html>
         return body;
       }
 
+      class RequestTimeoutError extends Error {
+        constructor(path, timeoutMs) {
+          super('Request timed out after ' + String(Math.round(timeoutMs / 1000)) + 's: ' + path);
+          this.name = 'RequestTimeoutError';
+          this.path = path;
+          this.timeoutMs = timeoutMs;
+        }
+      }
+
+      function requestTimeoutFor(path, options) {
+        if (options && typeof options.timeoutMs === 'number') return options.timeoutMs;
+        if (path === '/api/preflight') return LONG_REQUEST_TIMEOUT_MS;
+        return DEFAULT_REQUEST_TIMEOUT_MS;
+      }
+
+      async function fetchWithTimeout(path, fetchOptions, timeoutMs) {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          return await fetch(path, { ...fetchOptions, signal: controller.signal });
+        } catch (error) {
+          if (error && error.name === 'AbortError') {
+            throw new RequestTimeoutError(path, timeoutMs);
+          }
+          throw error;
+        } finally {
+          window.clearTimeout(timer);
+        }
+      }
+
       async function apiRequest(path, options) {
         const token = getApiToken();
         const needsAuth = options && options.auth;
@@ -2363,15 +2396,18 @@ const controllerPage = String.raw`<!doctype html>
         }
         let response;
         try {
-          response = await fetch(path, {
+          response = await fetchWithTimeout(path, {
             method: options && options.method || 'GET',
             headers: {
               ...(needsAuth ? { Authorization: 'Bearer ' + token } : {}),
               ...(options && options.body ? { 'Content-Type': 'application/json' } : {}),
             },
             body: options && options.body ? JSON.stringify(options.body) : undefined,
-          });
+          }, requestTimeoutFor(path, options));
         } catch (error) {
+          if (error instanceof RequestTimeoutError) {
+            throw error;
+          }
           throw new Error('Network request failed before the controller responded: ' + (error instanceof Error ? error.message : String(error)));
         }
         const contentType = response.headers.get('content-type') || '';
@@ -3124,22 +3160,18 @@ const controllerPage = String.raw`<!doctype html>
         setResponseSummary(null);
         setOutputBody('Submitting run request...');
         setState('Contacting the controller...');
-        apiRequest('/api/runs', { method: 'POST', auth: true, body: requestBody() })
+        const submittedAt = Date.now();
+        apiRequest('/api/runs', { method: 'POST', auth: true, body: requestBody(), timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS })
           .then(({ payload, response }) => {
             if (response.ok && payload && typeof payload.id === 'string') {
-              runIdInput.value = payload.id;
-              setOutputMetadata(payload.status || 'queued', payload.id);
-              setResponseSummary(payload);
-              setOutputBody(summarizedResponseBody('/api/runs', 'POST', response.status, payload));
-              setState('Run submitted.', 'ok');
-              updateCancelRunButtonState();
-              showRunLinks(payload.id);
-              activeRunView = 'status';
-              loadRunsList({ preserveOutput: true });
-              pollRun(payload.id, { preserveFirstOutput: true });
+              activateSubmittedRun(payload, response.status, false);
             }
           })
-          .catch((error) => {
+          .catch(async (error) => {
+            if (error instanceof RequestTimeoutError) {
+              const recovered = await recoverSubmittedRunAfterTimeout(submittedAt);
+              if (recovered) return;
+            }
             setOutputMetadata('failed');
             setResponseSummary(null);
             setOutputBody(sanitizeOutput(error instanceof Error ? error.message : String(error)));
@@ -3149,6 +3181,38 @@ const controllerPage = String.raw`<!doctype html>
             button.disabled = false;
           });
       });
+
+      function activateSubmittedRun(payload, responseStatus, recovered) {
+        runIdInput.value = payload.id;
+        setOutputMetadata(payload.status || 'queued', payload.id);
+        setResponseSummary(payload);
+        setOutputBody(summarizedResponseBody('/api/runs', 'POST', responseStatus, payload));
+        setState(recovered ? 'Run submitted; recovered run id after request timeout.' : 'Run submitted.', 'ok');
+        updateCancelRunButtonState();
+        showRunLinks(payload.id);
+        activeRunView = 'status';
+        loadRunsList({ preserveOutput: true });
+        pollRun(payload.id, { preserveFirstOutput: true });
+      }
+
+      async function recoverSubmittedRunAfterTimeout(submittedAt) {
+        try {
+          const result = await apiRequest('/api/runs?limit=1', {
+            auth: true,
+            preserveOutput: true,
+            timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+          });
+          const latest = result.payload && Array.isArray(result.payload.runs) ? result.payload.runs[0] : null;
+          const createdAt = latest && typeof latest.createdAt === 'string' ? Date.parse(latest.createdAt) : NaN;
+          if (latest && typeof latest.id === 'string' && Number.isFinite(createdAt) && createdAt >= submittedAt - 5000) {
+            activateSubmittedRun(latest, result.response.status, true);
+            return true;
+          }
+        } catch {
+          // Keep the original timeout as the user-visible error.
+        }
+        return false;
+      }
       
       // Issues tab handlers
       const loadIssuesBtn = document.querySelector('#load-issues-btn');
@@ -3171,24 +3235,22 @@ const controllerPage = String.raw`<!doctype html>
         issuesError.hidden = true;
 
         try {
-          const token = getApiToken();
-          const response = await fetch('/api/github-issues', {
+          const result = await apiRequest('/api/github-issues', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
-            },
-            body: JSON.stringify({ repoUrl }),
+            auth: true,
+            body: { repoUrl },
+            timeoutMs: ISSUE_REQUEST_TIMEOUT_MS,
+            preserveOutput: true,
           });
+          const response = result.response;
+          const payload = result.payload;
 
           if (!response.ok) {
-            const errorData = await response.text();
             let errorMessage = 'Failed to fetch issues';
-            try {
-              const jsonError = JSON.parse(errorData);
-              if (jsonError.error) errorMessage = jsonError.error;
-            } catch {
-              errorMessage = errorData || 'HTTP ' + response.status;
+            if (payload && typeof payload === 'object') {
+              errorMessage = payload.detail || payload.error || payload.title || errorMessage;
+            } else if (payload) {
+              errorMessage = String(payload);
             }
             showIssuesError(errorMessage);
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found</div>';
@@ -3204,7 +3266,7 @@ const controllerPage = String.raw`<!doctype html>
             return;
           }
 
-          const issues = await response.json();
+          const issues = payload;
           if (!Array.isArray(issues) || issues.length === 0) {
             issuesList.innerHTML = '<div class="issues-list-empty">No issues found with label "kaseki-agent"</div>';
             setOutputMetadata('ok');

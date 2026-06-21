@@ -19,6 +19,11 @@ type ProgressEventLike = {
 };
 
 const PI_STREAM_ONLY_STAGES = new Set(['pi agent', 'pi tool batch']);
+const STAGE_ALIASES = new Map<string, string>([
+  ['typescript pre-check', 'typescript precheck'],
+  ['dependency install', 'prepare node dependencies'],
+  ['scouting prerequisites check', 'scouting prerequisites validation'],
+]);
 
 export class TaskProgressCalculator {
   constructor(
@@ -77,7 +82,12 @@ export class TaskProgressCalculator {
    * Normalize stage name (trim whitespace)
    */
   private normalizeStageName(stage: unknown): string | undefined {
-    return typeof stage === 'string' && stage.trim().length > 0 ? stage.trim() : undefined;
+    if (typeof stage !== 'string' || stage.trim().length === 0) {
+      return undefined;
+    }
+
+    const trimmed = stage.trim();
+    return STAGE_ALIASES.get(trimmed.toLowerCase()) ?? trimmed;
   }
 
   /**
