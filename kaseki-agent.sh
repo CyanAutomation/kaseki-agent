@@ -1416,9 +1416,14 @@ set_current_stage() {
 build_stages_array() {
   local stages=()
   stages+=("clone repository")
+  stages+=("prepare node dependencies")
   
   if [[ "$KASEKI_PRE_AGENT_VALIDATION" == "1" ]]; then
     stages+=("pre-agent validation")
+  fi
+
+  if [[ "$KASEKI_TS_PRE_CHECK" == "1" ]]; then
+    stages+=("TypeScript pre-check")
   fi
 
   if [[ "$KASEKI_GOAL_SETTING" == "1" ]]; then
@@ -1426,6 +1431,7 @@ build_stages_array() {
   fi
   
   if [[ "$KASEKI_SCOUTING" == "1" ]]; then
+    stages+=("scouting prerequisites check")
     stages+=("pi scouting agent")
     stages+=("derive allowlist from scouting")
   fi
@@ -1438,7 +1444,6 @@ build_stages_array() {
     stages+=("run evaluation")
   fi
   
-  stages+=("agent setup")
   stages+=("pi coding agent")
   if [[ "$KASEKI_AUTO_LINT_CLEANUP" == "1" ]]; then
     stages+=("auto lint cleanup")
@@ -2532,6 +2537,49 @@ run_pi_event_filter_export() {
   fi
   cp "$raw_events_file" "${KASEKI_RESULTS_DIR}"/pi-events.raw.jsonl 2>/dev/null || true
   return "$filter_exit"
+}
+
+run_pi_json_capture() {
+  local raw_events_file="$1"
+  local timeout_seconds="$2"
+  local model="$3"
+  local prompt="$4"
+  local stderr_target="${5:-}"
+  local pi_exit progress_exit progress_stderr
+
+  rm -f "$raw_events_file" 2>/dev/null || true
+  : > "$raw_events_file"
+  progress_stderr="${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
+
+  set +e
+  if [ -n "$stderr_target" ]; then
+    LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      LLM_GATEWAY_URL="$llm_gateway_url" \
+      timeout --signal=SIGTERM "$timeout_seconds" \
+      pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+      > "$raw_events_file" \
+      2> >(tee -a "$stderr_target" >&2)
+  else
+    LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
+      LLM_GATEWAY_URL="$llm_gateway_url" \
+      timeout --signal=SIGTERM "$timeout_seconds" \
+      pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
+      > "$raw_events_file"
+  fi
+  pi_exit=$?
+
+  KASEKI_STREAM_PROGRESS=0 kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
+    < "$raw_events_file" \
+    2>>"$progress_stderr"
+  progress_exit=$?
+  if [ "$progress_exit" -ne 0 ]; then
+    printf '%s [kaseki-agent] progress stream failed after Pi exit=%s progress_exit=%s raw_events=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$pi_exit" "$progress_exit" "$raw_events_file" >> "$progress_stderr" 2>/dev/null || true
+    emit_error_event "pi_progress_stream_failed" "Progress stream failed after Pi completed: $progress_exit" "continue"
+  fi
+  set +e
+
+  return "$pi_exit"
 }
 
 if [ "${KASEKI_PI_EVENT_FILTER_HELPER_TEST:-0}" = "1" ]; then
@@ -5017,14 +5065,8 @@ run_goal_setting_agent() {
   goal_setting_start="$(date +%s)"
   
   set +e
-  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-    LLM_GATEWAY_URL="$llm_gateway_url" \
-    timeout --signal=SIGTERM "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" \
-    | tee "$GOAL_SETTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-      2>>"${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
-  GOAL_SETTING_EXIT="${PIPESTATUS[0]}"
+  run_pi_json_capture "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt"
+  GOAL_SETTING_EXIT="$?"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
   unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
@@ -5555,14 +5597,8 @@ run_scouting_agent() {
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-    LLM_GATEWAY_URL="$llm_gateway_url" \
-    timeout --signal=SIGTERM "$KASEKI_SCOUTING_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" \
-    | tee "$SCOUTING_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-      2>>"${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
-  SCOUTING_EXIT="${PIPESTATUS[0]}"
+  run_pi_json_capture "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt"
+  SCOUTING_EXIT="$?"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
   unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   set +e
@@ -6157,14 +6193,8 @@ run_goal_check() {
   goal_prompt="$(build_goal_check_prompt)"
   goal_start="$(date +%s)"
   set +e
-  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-    LLM_GATEWAY_URL="$llm_gateway_url" \
-    timeout --signal=SIGTERM "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" \
-    | tee "$GOAL_CHECK_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-      2>>"${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
-  GOAL_CHECK_EXIT="${PIPESTATUS[0]}"
+  run_pi_json_capture "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt"
+  GOAL_CHECK_EXIT="$?"
   unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
   set +e
@@ -6627,14 +6657,8 @@ run_run_evaluation() {
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-    LLM_GATEWAY_URL="$llm_gateway_url" \
-    timeout --signal=SIGTERM "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" \
-    | tee "$RUN_EVALUATION_RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-      2>>"${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
-  RUN_EVALUATION_EXIT="${PIPESTATUS[0]}"
+  run_pi_json_capture "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt"
+  RUN_EVALUATION_EXIT="$?"
   unset evaluation_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
@@ -9179,15 +9203,8 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
-  LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
-    LLM_GATEWAY_URL="$llm_gateway_url" \
-    timeout --signal=SIGTERM "$KASEKI_AGENT_TIMEOUT_SECONDS" \
-    pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$KASEKI_MODEL" "$agent_prompt" \
-    2> >(tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2) \
-    | tee "$RAW_EVENTS" \
-    | kaseki-pi-progress-stream "${KASEKI_RESULTS_DIR}"/progress.jsonl /dev/null \
-      2>>"${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
-  PI_EXIT="${PIPESTATUS[0]}"
+  run_pi_json_capture "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "${KASEKI_RESULTS_DIR}/pi-stderr.log"
+  PI_EXIT="$?"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))
   unset LLM_GATEWAY_API_KEY LLM_GATEWAY_URL

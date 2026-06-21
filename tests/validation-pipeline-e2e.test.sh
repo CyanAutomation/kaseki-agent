@@ -80,6 +80,10 @@ filter_stderr="$tmp_dir/filter-stderr.log"
 : > "$raw_log"
 : > "$filter_diagnostics"
 : > "$filter_stderr"
+tee_command=(tee)
+if tee --output-error=warn /dev/null >/dev/null 2>&1 </dev/null; then
+  tee_command+=(--output-error=warn)
+fi
 
 long_running_command='for i in 1 2 3 4; do echo "stdout tick $i"; echo "stderr tick $i" >&2; sleep 0.6; done; echo "POST_TIMEOUT_STDOUT marker"; echo "POST_TIMEOUT_STDERR marker" >&2; exit 7'
 
@@ -91,7 +95,7 @@ set +e
   printf 'exit_code=%s\n' "$command_exit"
   exit "$command_exit"
 } 2>&1 \
-  | tee --output-error=warn \
+  | "${tee_command[@]}" \
       >(cat >> "$validation_log") \
       >(cat >> "$raw_log") \
       2> >(sed 's/^/[validation-tee] /' >> "$filter_stderr") \
@@ -152,6 +156,79 @@ done
 rm -rf "$tmp_dir"
 trap - EXIT
 echo "  ✓ PASS: Long-running pipeline preserved exit 7 with post-watchdog output in both logs"
+echo ""
+
+# Test 6: Verify Pi JSON capture does not pipe Pi stdout through the progress stream
+echo "TEST 6: Pi JSON capture preserves raw events when progress stream fails"
+tmp_dir=$(mktemp -d)
+cleanup_pi_capture_test() {
+  rm -rf "$tmp_dir"
+}
+trap cleanup_pi_capture_test EXIT
+fake_bin="$tmp_dir/bin"
+mkdir -p "$fake_bin" "$tmp_dir/results"
+helper_source="$tmp_dir/run-pi-json-capture.sh"
+awk '
+  /^run_pi_json_capture\(\) \{/ { capture=1 }
+  capture && /^if \[ "\$\{KASEKI_PI_EVENT_FILTER_HELPER_TEST:-0\}" = "1" \]; then/ { exit }
+  capture { print }
+' kaseki-agent.sh > "$helper_source"
+cat >> "$helper_source" <<'BASH'
+emit_error_event() {
+  printf 'emit_error_event %s\n' "$*" >> "${KASEKI_RESULTS_DIR}/events.log"
+}
+BASH
+cat > "$fake_bin/pi" <<'BASH'
+#!/usr/bin/env bash
+printf '{"type":"agent_start"}\n'
+printf '{"type":"message_update","message":{"content":"raw event survived"}}\n'
+printf '{"type":"agent_end"}\n'
+exit 0
+BASH
+chmod +x "$fake_bin/pi"
+cat > "$fake_bin/kaseki-pi-progress-stream" <<'BASH'
+#!/usr/bin/env bash
+cat >/dev/null
+printf 'simulated progress stream failure\n' >&2
+exit 9
+BASH
+chmod +x "$fake_bin/kaseki-pi-progress-stream"
+cat > "$fake_bin/timeout" <<'BASH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--signal=SIGTERM" ]; then
+  shift
+fi
+shift
+exec "$@"
+BASH
+chmod +x "$fake_bin/timeout"
+set +e
+PATH="$fake_bin:$PATH" \
+KASEKI_RESULTS_DIR="$tmp_dir/results" \
+KASEKI_PROVIDER=gateway \
+llm_gateway_api_key=test \
+llm_gateway_url=https://example.invalid \
+bash -c ". '$helper_source'; run_pi_json_capture '$tmp_dir/raw.jsonl' 60 auto 'test prompt'"
+capture_exit=$?
+set -e
+if [[ "$capture_exit" != "0" ]]; then
+  echo "  ✗ FAIL: run_pi_json_capture returned $capture_exit (expected Pi exit 0)"
+  cat "$tmp_dir/results/progress-stream-diagnostics.log" 2>/dev/null || true
+  exit 1
+fi
+if ! grep -q 'raw event survived' "$tmp_dir/raw.jsonl"; then
+  echo "  ✗ FAIL: raw Pi events were not preserved"
+  cat "$tmp_dir/raw.jsonl" 2>/dev/null || true
+  exit 1
+fi
+if ! grep -q 'progress stream failed after Pi exit=0 progress_exit=9' "$tmp_dir/results/progress-stream-diagnostics.log"; then
+  echo "  ✗ FAIL: progress stream failure was not diagnosed"
+  cat "$tmp_dir/results/progress-stream-diagnostics.log" 2>/dev/null || true
+  exit 1
+fi
+rm -rf "$tmp_dir"
+trap - EXIT
+echo "  ✓ PASS: Pi raw event capture survives progress-stream failure"
 echo ""
 echo "✓ All E2E validation pipeline tests PASSED"
 echo ""
