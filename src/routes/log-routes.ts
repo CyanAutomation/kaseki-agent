@@ -46,6 +46,13 @@ function logFileForType(runDir: string, logType: string): string {
   return path.join(runDir, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
 }
 
+function isPathInsideDirectory(filePath: string, directory: string): boolean {
+  const resolvedFile = path.resolve(filePath);
+  const resolvedDirectory = path.resolve(directory);
+  const relative = path.relative(resolvedDirectory, resolvedFile);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function readLogContent(logFile: string, req: Request): { content: string; size: number } {
   const stat = fs.statSync(logFile);
   const size = stat.size;
@@ -384,6 +391,10 @@ export function createLogRoutes(scheduler: JobScheduler, config: KasekiApiConfig
       }
 
       const logFile = logFileForType(runDir, logType);
+
+      if (!isPathInsideDirectory(logFile, runDir)) {
+        return sendErrorResponse(res, 400, 'Bad Request', 'Invalid log file path');
+      }
 
       if (!fs.existsSync(logFile)) {
         if (
