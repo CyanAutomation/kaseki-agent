@@ -5,8 +5,11 @@ json_string_fallback() {
   local value="${1-}"
   if declare -F json_string >/dev/null 2>&1; then
     json_string "$value"
-  else
+  elif command -v node >/dev/null 2>&1; then
     node -e 'process.stdout.write(JSON.stringify(process.argv[1] ?? ""))' "$value"
+  else
+    printf 'Error: json_string_fallback requires either json_string function or node\n' >&2
+    return 1
   fi
 }
 
