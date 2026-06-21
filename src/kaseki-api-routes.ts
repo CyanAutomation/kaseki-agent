@@ -1261,9 +1261,10 @@ function checkWorkerSmokeTest(
         '-v',
         `${hostSecretsDir}:/run/secrets/kaseki:ro`,
         '--entrypoint',
-        '/scripts/startup-checks.sh',
+        '/bin/sh',
         image,
-        'worker',
+        '-c',
+        'for file in /usr/local/bin/kaseki-agent /usr/local/bin/scripts/agent-prompt.sh /usr/local/bin/scripts/allowlist-helper.sh /usr/local/bin/scripts/dependency-cache-helpers.sh /usr/local/bin/scripts/lib/json.sh; do if [ ! -r "$file" ]; then echo "missing packaged worker helper: $file" >&2; exit 66; fi; done; if [ ! -x /usr/local/bin/kaseki-agent ]; then echo "packaged worker agent is not executable: /usr/local/bin/kaseki-agent" >&2; exit 66; fi; exec /scripts/startup-checks.sh worker',
       ],
       30000,
     );
@@ -1273,7 +1274,7 @@ function checkWorkerSmokeTest(
         name: 'worker-smoke',
         ok: true,
         detail:
-          'Worker container can start with workspace, results, cache, OpenRouter, LLM Gateway secret mounts, and a worker TMPDIR path that may need runtime creation.',
+          'Worker container can start with workspace, results, cache, LLM secret mounts, packaged agent helpers, and a worker TMPDIR path that may need runtime creation.',
       };
     }
 
@@ -1286,7 +1287,7 @@ function checkWorkerSmokeTest(
     const classified = result.classification || {
       detail: result.detail || 'Worker container smoke test failed.',
       remediation:
-        'Check worker bind mounts, file ownership, Docker socket access, and the OpenRouter secret file.',
+        'Check worker bind mounts, file ownership, Docker socket access, the LLM secret files, and packaged /usr/local/bin/scripts helper files.',
     };
     return {
       name: 'worker-smoke',

@@ -74,6 +74,24 @@ build_allowlist_regex() {
     expect(dockerfile).toContain('CMD ["agent"]');
   });
 
+  test('image installs shared shell helpers beside the packaged agent command', () => {
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
+
+    expect(dockerfile).toContain('/usr/local/bin/scripts');
+    for (const helper of [
+      'agent-prompt.sh',
+      'allowlist-helper.sh',
+      'dependency-cache-helpers.sh',
+    ]) {
+      expect(dockerfile).toContain(
+        `install -m 0755 /app/scripts/${helper} /usr/local/bin/scripts/${helper}`,
+      );
+    }
+    expect(dockerfile).toContain(
+      'install -m 0644 /app/scripts/lib/json.sh /usr/local/bin/scripts/lib/json.sh',
+    );
+  });
+
   test('root-level Dockerfile COPY sources are included by the dockerignore allowlist', () => {
     const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf-8');
     const dockerignore = fs.readFileSync(path.join(repoRoot, '.dockerignore'), 'utf-8');
@@ -280,6 +298,16 @@ kill -TERM "$$"
     expect(entrypoint).toContain('KASEKI_SKIP_STARTUP_CHECKS:-0');
     expect(entrypoint).toContain('/scripts/startup-checks.sh "${KASEKI_STARTUP_CHECK_MODE:-all}"');
     expect(entrypoint).toContain('Startup checks failed: blocking startup issue detected');
+  });
+
+  test('worker startup checks validate packaged agent helper files', () => {
+    const startupChecks = fs.readFileSync(path.join(repoRoot, 'scripts/startup-checks.sh'), 'utf-8');
+
+    expect(startupChecks).toContain('check_packaged_agent_helpers');
+    expect(startupChecks).toContain('agent-prompt.sh');
+    expect(startupChecks).toContain('allowlist-helper.sh');
+    expect(startupChecks).toContain('dependency-cache-helpers.sh');
+    expect(startupChecks).toContain('lib/json.sh');
   });
 
   test('entrypoint permission-validation configuration can be skipped for testing', () => {
