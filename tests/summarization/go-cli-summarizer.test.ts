@@ -30,32 +30,6 @@ describe('GoCliSummarizer', () => {
     // These tests assume Go grammar is available (CI/Docker with proper setup)
     // If grammar is missing, tests skip gracefully
 
-    it('should extract function declarations when grammar available', () => {
-      const filePath = path.join(tmpDir, 'test.go');
-      const code = `package main
-
-func greet(name string) string {
-    return "Hello, " + name
-}
-`;
-      fs.writeFileSync(filePath, code);
-      const summary = summarizer.summarize(filePath);
-
-      expect(summary).toBeDefined();
-      expect(summary.language).toBe('go');
-      // Either extracts functions OR has a parseError (graceful degradation)
-      if (summary.parseError) {
-        const isExpectedError = summary.parseError.includes('language') ||
-                               summary.parseError.includes('not available') ||
-                               summary.parseError.includes('failed') ||
-                               summary.parseError.includes('error');
-        expect(isExpectedError).toBe(true);
-      } else {
-        expect(summary.functions.length).toBeGreaterThanOrEqual(1);
-        expect(summary.functions.some(f => f.name === 'greet')).toBe(true);
-      }
-    });
-
     it('should extract struct declarations when grammar available', () => {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main
@@ -217,13 +191,22 @@ func broken(( {
       const filePath = path.join(tmpDir, 'test.go');
       const code = `package main
 
-func test() {}
+func greet(name string) string {
+    return "Hello, " + name
+}
 `;
       fs.writeFileSync(filePath, code);
       const summary = summarizer.summarize(filePath);
 
-      expect(summary.summaryTimeMs).toBeGreaterThanOrEqual(0);
+      expect(summary.originalSizeBytes).toBe(Buffer.byteLength(code, 'utf-8'));
       expect(summary.language).toBe('go');
+      expect(summary.summaryTimeMs).toEqual(expect.any(Number));
+
+      if (summary.parseError) {
+        expect(summary.parseError).toMatch(/^tree-sitter-cli (?:not available \(ENOENT\)|failed: [\s\S]+|error: [\s\S]+)$/);
+      } else {
+        expect(summary.functions.map(f => f.name)).toContain('greet');
+      }
     });
   });
 
