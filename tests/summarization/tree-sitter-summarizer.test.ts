@@ -172,13 +172,20 @@ describe('TreeSitterSummarizer', () => {
       const file = path.join(fixturesDir, 'handler.go');
       const content = fs.readFileSync(file, 'utf-8');
 
+      expect(content).toContain('func NewUserHandler(store UserStore) *UserHandler');
+
       const go = new TreeSitterSummarizer('go');
       const summary = go.summarize(content);
-      expect(summary).toBeDefined();
-      // Either extracts functions OR gracefully degrades with parseError
-      // (if tree-sitter-cli doesn't have Go grammar configured)
-      if (!summary.parseError) {
-        expect(summary.functions.length).toBeGreaterThan(0);
+
+      // Either extracts the known fixture function OR gracefully degrades with a
+      // documented tree-sitter CLI/grammar availability error. Do not accept a
+      // merely-defined summary with no successful extraction or specific error.
+      if (summary.parseError) {
+        expect(summary.parseError).toMatch(
+          /^(tree-sitter-cli not available \(ENOENT\)|tree-sitter-cli failed: .*?(language|grammar|parser|not found|not configured|No language found|Failed to load|Could not load)|tree-sitter-cli error: .*?(ENOENT|timed out|spawn|language|grammar|parser))/is,
+        );
+      } else {
+        expect(summary.functions.map(f => f.name)).toContain('NewUserHandler');
       }
     });
 
