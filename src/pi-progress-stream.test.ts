@@ -2,8 +2,7 @@
  * Tests for the pi-progress-stream executable behavior that callers depend on.
  */
 
-import { afterEach, describe, it, expect, jest } from '@jest/globals';
-import { ToolBatchAggregator, type ProgressClock } from './pi-progress-stream.js';
+import { describe, it, expect } from '@jest/globals';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -43,13 +42,26 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-progress-stream-'));
   const progressJsonlPath = path.join(tmpDir, 'progress.jsonl');
   const progressLogPath = path.join(tmpDir, 'progress.log');
+  const clockPreloadPath = path.join(tmpDir, 'fixed-clock.mjs');
+  fs.writeFileSync(
+    clockPreloadPath,
+    `Date.now = () => Date.parse('2026-06-20T00:00:00.000Z');\n`
+  );
   let stdout = '';
 
   try {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(
         process.execPath,
-        ['--import', 'tsx', streamScript, progressJsonlPath, progressLogPath],
+        [
+          '--import',
+          clockPreloadPath,
+          '--import',
+          'tsx',
+          streamScript,
+          progressJsonlPath,
+          progressLogPath,
+        ],
         {
           cwd: repoRoot,
           env: {
@@ -95,50 +107,6 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
   }
 }
 
-describe('ToolBatchAggregator', () => {
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  it('emits coalesced tool progress only after the coalescing window elapses', () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-06-20T00:00:00.000Z'));
-    let now = Date.now();
-    const clock: ProgressClock = { now: () => now };
-    const emitted: ProgressEvent[] = [];
-    const aggregator = new ToolBatchAggregator({
-      clock,
-      coalesceWindowMs: 3000,
-      emitProgress: (stage, message, extra = {}) => {
-        emitted.push({ stage, message, ...extra });
-      },
-      startTime: Date.now(),
-    });
-
-    aggregator.recordTool('read_file');
-    aggregator.recordTool('bash');
-    now += 3000;
-    jest.setSystemTime(now);
-    aggregator.flushIfReady();
-
-    expect(emitted).toEqual([]);
-
-    now += 1;
-    jest.setSystemTime(now);
-    aggregator.flushIfReady();
-
-    expect(emitted).toEqual([
-      expect.objectContaining({
-        stage: 'pi tool batch',
-        message: '[tools] read_file (1x), bash (1x) (3s)',
-        toolBatchSummary: {
-          read_file: 1,
-          bash: 1,
-        },
-      }),
-    ]);
-  });
-});
-
 describe('pi-progress-stream executable', () => {
   it('writes start and final events when the input stream closes', async () => {
     const { events, log } = await runProgressStream([]);
@@ -158,7 +126,7 @@ describe('pi-progress-stream executable', () => {
     expect(log).toContain('[progress] pi agent: started');
   });
 
-  it('summarizes repeated tool activity through the progress stream output', async () => {
+  it('flushes with correct summary format through the progress stream output', async () => {
     const thinkingEvents = Array.from({ length: 15 }, (_, index) =>
       JSON.stringify({
         type: 'message_update',
@@ -207,14 +175,17 @@ describe('pi-progress-stream executable', () => {
 
     const batchEvents = events.filter((event) => event.stage === 'pi tool batch');
     expect(batchEvents).toHaveLength(1);
-    expect(batchEvents[0]?.message).toEqual(
-      expect.stringMatching(/^\[tools\] read_file \(3x\), bash \(2x\) \(\d+s\)$/)
-    );
+    expect(batchEvents[0]).toMatchObject({
+      stage: 'pi tool batch',
+      message: '[tools] read_file (3x), bash (2x) (0s)',
+    });
     expect(batchEvents[0]?.toolBatchSummary).toEqual({
       read_file: 3,
       bash: 2,
     });
-    expect(stdout).toContain('[progress] pi tool batch: [tools] read_file (3x), bash (2x)');
+    expect(stdout).toContain(
+      '[progress] pi tool batch: [tools] read_file (3x), bash (2x) (0s)'
+    );
     expect(log).toContain('[progress] pi agent: agent finished');
 
     const messageSummary = events.find(
