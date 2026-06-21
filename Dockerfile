@@ -136,6 +136,9 @@ RUN chmod +x \
     && cp dist/kaseki-report.js /app/lib/kaseki-report.js \
     && cp dist/analyze-test-failures.js /app/lib/analyze-test-failures.js \
     && cp dist/instance-state-derivation.js /app/lib/instance-state-derivation.js \
+    && cp dist/instance-status-derivation.js /app/lib/instance-status-derivation.js \
+    && cp dist/instance-stage-derivation.js /app/lib/instance-stage-derivation.js \
+    && cp dist/instance-failure-extraction.js /app/lib/instance-failure-extraction.js \
     && cp dist/instance-metadata-reader.js /app/lib/instance-metadata-reader.js \
     && cp dist/validation-output-filter.js /app/lib/validation-output-filter.js \
     && cp dist/kaseki-cli.js /app/kaseki-cli.js \
@@ -162,6 +165,9 @@ RUN chmod +x \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
+    && install -m 0755 /app/lib/instance-status-derivation.js /usr/local/bin/instance-status-derivation.js \
+    && install -m 0755 /app/lib/instance-stage-derivation.js /usr/local/bin/instance-stage-derivation.js \
+    && install -m 0755 /app/lib/instance-failure-extraction.js /usr/local/bin/instance-failure-extraction.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/analyze-test-failures.js /usr/local/bin/analyze-test-failures \
@@ -274,6 +280,9 @@ RUN mkdir -p /scripts \
     && install -m 0755 /app/lib/timestamp-tracker.js /usr/local/bin/timestamp-tracker.js \
     && install -m 0755 /app/lib/progress-stream-utils.js /usr/local/bin/progress-stream-utils.js \
     && install -m 0755 /app/lib/instance-state-derivation.js /usr/local/bin/instance-state-derivation.js \
+    && install -m 0755 /app/lib/instance-status-derivation.js /usr/local/bin/instance-status-derivation.js \
+    && install -m 0755 /app/lib/instance-stage-derivation.js /usr/local/bin/instance-stage-derivation.js \
+    && install -m 0755 /app/lib/instance-failure-extraction.js /usr/local/bin/instance-failure-extraction.js \
     && install -m 0755 /app/lib/instance-metadata-reader.js /usr/local/bin/instance-metadata-reader.js \
     && install -m 0755 /app/lib/kaseki-report.js /usr/local/bin/kaseki-report \
     && install -m 0755 /app/lib/github-app-token.js /usr/local/bin/github-app-token \
