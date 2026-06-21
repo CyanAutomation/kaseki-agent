@@ -128,7 +128,7 @@ test_prompt_helper_has_no_legacy_prompt_file_reads() {
   local legacy_prompt_var="PROMPT_""FILE"
 
   assert_not_contains "$(cat "$PROMPT_HELPER")" "$legacy_prompt_var" || result=1
-  assert_not_contains "$(cat "$PROMPT_HELPER")" "cat \$$legacy_prompt_var" || result=1
+  assert_not_contains "$(cat "$PROMPT_HELPER")" "cat \$legacy_prompt_var" || result=1
 
   test_result "prompt helper does not use legacy PROMPT_FILE reads" "$result"
   return "$result"
