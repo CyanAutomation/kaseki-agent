@@ -70,6 +70,10 @@ KASEKI_WORKSPACE_DIR="$workspace_dir" \
 KASEKI_RESULTS_DIR="$results_dir" \
 bash -c "$agent_maturity_block"
 
+if [ ! -e "$TMP_DIR/invocation-env" ]; then
+  printf 'invocation-env file not created - script may not have run\n' >&2
+  exit 1
+fi
 test "$(cat "$TMP_DIR/invocation-env")" = "0"
 test -s "$results_dir/maturity-score.json"
 grep -Fq "maturity-score: wrote $results_dir/maturity-score.json" "$results_dir/maturity-score.log"
