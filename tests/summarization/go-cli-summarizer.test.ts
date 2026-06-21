@@ -160,11 +160,13 @@ type Writer interface {
       const summary = summarizer.summarize(filePath);
 
       expect(summary).toBeDefined();
-      // Interfaces may be in types or interfaces depending on implementation
-      // The important thing is that the file is processed (has originalSizeBytes from file)
-      // Even if parsing fails due to missing CLI config, we capture file size
-      expect(summary.originalSizeBytes).toBeGreaterThanOrEqual(0); // Size is at least 0
-      expect(Buffer.byteLength(code, 'utf-8')).toBeGreaterThan(0); // Verify test code has content
+      if (summary.parseError) {
+        expect(summary.parseError).toMatch(/^tree-sitter-cli (?:not available \(ENOENT\)|failed: [\s\S]+|error: [\s\S]+)$/);
+      } else {
+        const hasWriterInterface = summary.interfaces.some(i => i.name === 'Writer') ||
+          summary.types.some(t => t.name === 'Writer');
+        expect(hasWriterInterface).toBe(true);
+      }
     });
   });
 
