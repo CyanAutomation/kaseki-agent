@@ -288,6 +288,7 @@ FILTER_STDERR_FILE="/tmp/kaseki-filter-stderr.log"
 AUTO_LINT_CLEANUP_LOG="${KASEKI_RESULTS_DIR}/auto-lint-cleanup.log"
 AUTO_LINT_CLEANUP_TIMINGS_FILE="${KASEKI_RESULTS_DIR}/auto-lint-cleanup-timings.tsv"
 FILTER_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/filter-diagnostics.log"
+VALIDATION_STARTUP_DIAGNOSTICS_LOG="${KASEKI_RESULTS_DIR}/validation-startup-diagnostics.log"
 DIFF_NONEMPTY=false
 FILESYSTEM_CHECK_STATUS="not_tested"
 FILESYSTEM_READONLY_REASON=""
@@ -1368,6 +1369,13 @@ write_metadata() {
   "github_api_http_status": $(printf '%s' "$GITHUB_API_HTTP_STATUS" | json_encode),
   "validation_filter_stderr_tail": $(printf '%s' "$FILTER_STDERR_TAIL" | json_encode),
   "validation_filter_exit_code": 0,
+  "validation_infrastructure_diagnostics": {
+    "startup_diagnostics_log": "validation-startup-diagnostics.log",
+    "filter_diagnostics_log": "filter-diagnostics.log",
+    "has_memory_pressure_events": $([ -f "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" ] && grep -q "memory" "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" && printf 'true' || printf 'false'),
+    "has_backpressure_events": $([ -f "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" ] && grep -q "backpressure" "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" && printf 'true' || printf 'false'),
+    "infrastructure_failure": $([[ "$VALIDATION_EXIT" == "141" ]] && printf 'true' || printf 'false')
+  },
   "baseline_validation_enabled": $([[ "$KASEKI_BASELINE_VALIDATION_ENABLED" == "1" ]] && printf 'true' || printf 'false'),
   "baseline_cache_status": $(printf '%s' "$BASELINE_CACHE_STATUS" | json_encode),
   "baseline_validation_exit_code": $BASELINE_VALIDATION_EXIT,
@@ -1710,6 +1718,113 @@ SUMMARY
       fi
     fi
   fi
+}
+
+write_validation_infrastructure_diagnostics() {
+  # Generate diagnostic report when validation infrastructure failure (SIGPIPE, memory, etc.) detected
+  local diagnostics_file="${KASEKI_RESULTS_DIR}/validation-infrastructure-diagnostics.md"
+  local validation_exit="$VALIDATION_EXIT"
+  
+  # Only generate if infrastructure failure (SIGPIPE exit code 141)
+  [ "$validation_exit" -ne 141 ] && return 0
+  
+  {
+    printf '# Validation Infrastructure Failure Diagnostics\n\n'
+    printf '**Instance**: %s\n\n' "$INSTANCE_NAME"
+    printf '## Summary\n\n'
+    printf 'The validation pipeline encountered an infrastructure failure (exit code 141 — SIGPIPE).\n'
+    printf 'This indicates the validation-output-filter process crashed or exited unexpectedly while processing command output.\n\n'
+    
+    printf '## Likely Causes\n\n'
+    printf '1. **Large validation output** — The npm test/build command produced 100k+ lines of output\n'
+    printf '2. **Memory pressure** — The filter process ran out of heap memory (RPi 4 has 4GB total)\n'
+    printf '3. **Encoding issue** — Validation output contained non-UTF8 characters\n'
+    printf '4. **Resource exhaustion** — Disk full, file descriptor limit, or network issue\n\n'
+    
+    printf '## System State Before Failure\n\n'
+    if [ -f "${KASEKI_RESULTS_DIR}/validation-startup-diagnostics.log" ]; then
+      printf '```\n'
+      cat "${KASEKI_RESULTS_DIR}/validation-startup-diagnostics.log"
+      printf '\n```\n\n'
+    else
+      printf '*(No startup diagnostics captured)*\n\n'
+    fi
+    
+    printf '## Filter Process Diagnostics\n\n'
+    if [ -f "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" ]; then
+      local filter_startup filter_close
+      filter_startup="$(grep '^\\[.*\\] filter-startup:' "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" | head -10)"
+      filter_close="$(grep '^\\[.*\\] filter-close:' "${KASEKI_RESULTS_DIR}/filter-diagnostics.log")"
+      
+      printf '### Filter Startup\n\n'
+      if [ -n "$filter_startup" ]; then
+        printf '```\n%s\n```\n\n' "$filter_startup"
+      else
+        printf '*(No startup events captured)*\n\n'
+      fi
+      
+      printf '### Filter Shutdown\n\n'
+      if [ -n "$filter_close" ]; then
+        printf '```\n%s\n```\n\n' "$filter_close"
+      else
+        printf '*(No shutdown events captured)*\n\n'
+      fi
+      
+      # Check for specific issues
+      if grep -q 'memory' "${KASEKI_RESULTS_DIR}/filter-diagnostics.log"; then
+        printf '### Memory Pressure Detected\n\n'
+        grep 'memory' "${KASEKI_RESULTS_DIR}/filter-diagnostics.log" | sed 's/^/- /' | head -10
+        printf '\n\n'
+      fi
+      
+      if grep -q 'backpressure' "${KASEKI_RESULTS_DIR}/filter-diagnostics.log"; then
+        printf '### Backpressure Events Detected\n\n'
+        printf 'The downstream pipe (tee) was unable to consume data as fast as the filter produced it.\n'
+        printf 'This can cause readline buffers to accumulate and exhaust memory.\n\n'
+      fi
+    else
+      printf '*(No filter diagnostics captured)*\n\n'
+    fi
+    
+    printf '## Remediation Steps\n\n'
+    printf '### Immediate (Try First)\n\n'
+    printf '1. **Increase container memory** if possible:\n'
+    printf '   ```bash\n'
+    printf '   docker run --memory=4g kaseki-agent  # Allocate 4GB instead of default\n'
+    printf '   ```\n\n'
+    
+    printf '2. **Reduce validation output verbosity** (in task-prompt or configuration):\n'
+    printf '   ```bash\n'
+    printf '   # Pass --silent or --quiet to npm test/build\n'
+    printf '   export KASEKI_VALIDATION_COMMANDS="npm run test -- --silent"\n'
+    printf '   ```\n\n'
+    
+    printf '3. **Split large test suites** across multiple validation commands:\n'
+    printf '   ```bash\n'
+    printf '   export KASEKI_VALIDATION_COMMANDS="npm run test:unit;npm run test:integration"\n'
+    printf '   ```\n\n'
+    
+    printf '### Advanced\n\n'
+    printf '1. **Enable filter idle watchdog** to catch stalled pipes early:\n'
+    printf '   ```bash\n'
+    printf '   export FILTER_IDLE_WATCHDOG_SECONDS=30\n'
+    printf '   ```\n\n'
+    
+    printf '2. **Review validation command output** to identify noisy commands:\n'
+    printf '   - Check `validation-raw.log` for lines that can be suppressed\n'
+    printf '   - Filter patterns already exclude npm notices/progress bars\n'
+    printf '   - Consider disabling verbose test reporters\n\n'
+    
+    printf '3. **Check system resources** during run:\n'
+    printf '   ```bash\n'
+    printf '   watch "free -h && df -h /tmp"\n'
+    printf '   ```\n\n'
+    
+    printf '## References\n\n'
+    printf '- **Exit Code 141**: SIGPIPE (signal 13) — Broken pipe, upstream process crashed\n'
+    printf '- **Validation Log**: `validation.log` (filtered) and `validation-raw.log` (unfiltered)\n'
+    printf '- **Filter Diagnostics**: `filter-diagnostics.log` (detailed process events)\n'
+  } > "$diagnostics_file"
 }
 
 write_failure_json() {
@@ -2518,6 +2633,8 @@ finish() {
   fi
   
   maybe_call_finish_helper write_result_summary
+  # Phase 3: Generate infrastructure diagnostics report if validation had SIGPIPE failure
+  maybe_call_finish_helper write_validation_infrastructure_diagnostics
   
   # Generate inspect-report.md for inspect mode on success
   if [ "$KASEKI_TASK_MODE" = "inspect" ] && [ "$STATUS" -eq 0 ]; then
@@ -3057,6 +3174,37 @@ record_skipped_validation_command() {
   record_skipped_npm_script_command "$1" "$2" "$3" "${4:-${KASEKI_RESULTS_DIR}/validation.log}" "${5:-$VALIDATION_TIMINGS_FILE}" "skipped"
   # Phase 2C: Emit skipped validation result to JSON
   append_validation_result "${KASEKI_RESULTS_DIR}"/validation-results.json "$1" "127" "$3" "skipped"
+}
+
+capture_validation_startup_diagnostics() {
+  # Phase 2: Capture system state before validation filter starts
+  # This helps diagnose SIGPIPE failures on memory-constrained systems (RPi 4 with 4GB)
+  local diagnostics_file="${1:-$VALIDATION_STARTUP_DIAGNOSTICS_LOG}"
+  
+  {
+    printf '[validation-startup] timestamp=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    printf '[validation-startup] pid=%s\n' "$$"
+    
+    # Memory state
+    if command -v free &>/dev/null; then
+      printf '[validation-startup] memory_state=%s\n' "$(free -h | head -2 | tail -1)"
+    fi
+    
+    # Disk state
+    if command -v df &>/dev/null; then
+      printf '[validation-startup] disk_results=%s\n' "$(df -h "${KASEKI_RESULTS_DIR}" 2>/dev/null | tail -1)"
+    fi
+    
+    # File descriptor count (indicator of resource exhaustion)
+    if [ -d "/proc/self/fd" ]; then
+      printf '[validation-startup] open_file_descriptors=%d\n' "$(ls -1 /proc/self/fd 2>/dev/null | wc -l || echo 0)"
+    fi
+    
+    # Process memory usage
+    if [ -f "/proc/self/status" ]; then
+      printf '[validation-startup] process_vm_rss=%s\n' "$(grep '^VmRSS' /proc/self/status | awk '{print $2 " " $3}' || echo 'unknown')"
+    fi
+  } | tee -a "$diagnostics_file"
 }
 
 has_typescript_project() {
@@ -3868,6 +4016,9 @@ run_validation_commands() {
   set_current_stage "$stage_label"
   emit_progress "$stage_label" "started"
   stage_start="$(date +%s)"
+  
+  # Phase 2: Capture pre-filter startup diagnostics for infrastructure failure diagnosis
+  capture_validation_startup_diagnostics "$VALIDATION_STARTUP_DIAGNOSTICS_LOG"
 
   if [ "$KASEKI_DRY_RUN" = "1" ] && [ "$execute_during_dry_run" != "true" ]; then
     printf '🔄 DRY-RUN MODE: Validation commands would be executed (not running in dry-run mode):\n' | tee -a "$log_file"
