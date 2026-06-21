@@ -158,6 +158,11 @@ function main() {
     { source: 'pi-event-filter.ts', output: 'pi-event-filter.js', name: 'kaseki-pi-event-filter' },
     { source: 'pi-progress-stream.ts', output: 'pi-progress-stream.js', name: 'kaseki-pi-progress-stream' },
     { source: 'kaseki-report.ts', output: 'kaseki-report.js', name: 'kaseki-report' },
+    {
+      source: 'instance-state-derivation.ts',
+      output: 'instance-state-derivation.js',
+      name: 'instance-state-derivation',
+    },
     { source: 'github-app-token.ts', output: 'github-app-token.js', name: 'github-app-token' },
   ];
 
@@ -228,6 +233,9 @@ function main() {
     'progress-stream-utils.js',
     'pi-progress-summarizer.js',
     'instance-state-derivation.js',
+    'instance-status-derivation.js',
+    'instance-stage-derivation.js',
+    'instance-failure-extraction.js',
     'instance-metadata-reader.js',
     'github-app-token.js',
     'github-utils.js',
