@@ -6,6 +6,7 @@
 
 import { createLogger } from '../logger';
 import { ConfigManager } from '../config/ConfigManager';
+import { captureCLIError } from './cli-error-handler';
 
 const logger = createLogger('kaseki-cli');
 
@@ -214,11 +215,14 @@ export class KasekiCLI {
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`Command failed: ${error.message}`);
+        // Capture to Sentry with command context
+        captureCLIError(error, subcommand, { args });
         if (process.env.DEBUG === '1') {
           console.error(error.stack);
         }
       } else {
         logger.error('Unknown error in command execution');
+        captureCLIError(error, subcommand, { args });
       }
       return 1;
     }

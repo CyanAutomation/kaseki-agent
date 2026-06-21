@@ -79,6 +79,14 @@ KASEKI_JSON_LOG_COMPONENT="run-kaseki"
 # shellcheck source=scripts/dry-run-artifacts.sh
 . "$SCRIPT_DIR/scripts/dry-run-artifacts.sh"
 
+# Source Sentry shell client for error event reporting (optional)
+if [ -r "$SCRIPT_DIR/scripts/sentry-shell-client.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$SCRIPT_DIR/scripts/sentry-shell-client.sh" || {
+    printf 'Warning: Failed to source Sentry shell client; continuing without Sentry integration\n' >&2
+  }
+fi
+
 json_escape() {
   local value="${1-}"
   value="${value//\\/\\\\}"
@@ -114,9 +122,14 @@ run_preflight() {
   preflight_script="$SCRIPT_DIR/scripts/kaseki-preflight.sh"
   if [ ! -x "$preflight_script" ]; then
     printf 'Error: preflight script not found or not executable: %s\n' "$preflight_script" >&2
+    sentry_error "Preflight script not found or not executable: $preflight_script" "preflight" "1" "" 2>/dev/null || true
     exit 1
   fi
-  "$preflight_script" "$mode"
+  "$preflight_script" "$mode" || {
+    local exit_code=$?
+    sentry_error "Preflight check failed with exit code $exit_code" "preflight" "$exit_code" "" 2>/dev/null || true
+    exit "$exit_code"
+  }
 }
 
 setup_host_logging() {
@@ -363,6 +376,9 @@ fail_host() {
   
   # Log the error
   emit_json_log "preflight" "error" "Host-side validation failed: $category - $detail"
+  
+  # Report to Sentry if available
+  sentry_error "Host-side validation failed: $category - $detail" "host-setup" "$code" "" 2>/dev/null || true
   
   # Print human-readable error
   {

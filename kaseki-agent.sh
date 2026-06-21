@@ -98,6 +98,21 @@ if [ ! -r "$KASEKI_AGENT_PROMPT_HELPER" ]; then
   exit 66
 fi
 
+# Source Sentry shell client for error event reporting
+KASEKI_SENTRY_SHELL_CLIENT="${KASEKI_SENTRY_SHELL_CLIENT:-${KASEKI_SCRIPT_DIR}/scripts/sentry-shell-client.sh}"
+if [ ! -r "$KASEKI_SENTRY_SHELL_CLIENT" ] && [ -r /app/scripts/sentry-shell-client.sh ]; then
+  KASEKI_SENTRY_SHELL_CLIENT="/app/scripts/sentry-shell-client.sh"
+fi
+if [ -r "$KASEKI_SENTRY_SHELL_CLIENT" ]; then
+  # shellcheck source=/dev/null
+  . "$KASEKI_SENTRY_SHELL_CLIENT" || {
+    printf 'Warning: Failed to source Sentry shell client %s (exit code: %d); continuing without Sentry integration\n' "$KASEKI_SENTRY_SHELL_CLIENT" $? >&2
+  }
+else
+  # Sentry integration is optional; warn but continue
+  printf 'Warning: Sentry shell client not found at %s; Sentry error reporting will be unavailable\n' "$KASEKI_SENTRY_SHELL_CLIENT" >&2
+fi
+
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
@@ -2724,6 +2739,8 @@ run_clone_repository() {
   if [ "$code" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     STATUS="$code"
     FAILED_COMMAND="clone repository"
+    # Report to Sentry if available
+    sentry_error "Git clone failed with exit code $code (strategy=$GIT_CLONE_STRATEGY)" "git-clone" "$code" "$GIT_CLONE_DURATION_SECONDS" 2>/dev/null || true
   fi
   return "$code"
 }
@@ -8550,6 +8567,8 @@ prepare_dependencies() {
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then
       exec {cache_lock_fd}>&-
+      # Report to Sentry if available
+      sentry_error "npm ci failed with exit code $?" "npm-ci" "1" "$(($(date +%s) - install_start))" 2>/dev/null || true
       return 1
     fi
     install_elapsed="$(($(date +%s) - install_start))"
@@ -9113,11 +9132,15 @@ if [ "$KASEKI_DRY_RUN" != "1" ]; then
       STATUS=124
       FAILED_COMMAND="pi coding agent timeout"
       emit_error_event "pi_timeout" "Coding agent exceeded timeout of $KASEKI_AGENT_TIMEOUT_SECONDS seconds" "exit"
+      # Report to Sentry if available
+      sentry_error "Pi coding agent timeout exceeded $KASEKI_AGENT_TIMEOUT_SECONDS seconds" "pi-invocation" "124" "$KASEKI_AGENT_TIMEOUT_SECONDS" 2>/dev/null || true
     fi
   elif [ "$PI_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
     STATUS="$PI_EXIT"
     FAILED_COMMAND="pi coding agent"
     emit_error_event "pi_agent_failed" "Coding agent exited with non-zero code: $PI_EXIT" "exit"
+    # Report to Sentry if available
+    sentry_error "Pi coding agent failed with exit code $PI_EXIT" "pi-invocation" "$PI_EXIT" "$PI_DURATION_SECONDS" 2>/dev/null || true
   fi
 fi
 
@@ -9508,8 +9531,12 @@ if [ "$VALIDATION_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   FAILED_COMMAND="validation"
   if [ -n "$VALIDATION_FAILED_COMMAND_DETAIL" ]; then
     emit_error_event "validation_failed" "Validation failed: $VALIDATION_FAILED_COMMAND_DETAIL" "exit"
+    # Report to Sentry if available
+    sentry_error "Validation failed: $VALIDATION_FAILED_COMMAND_DETAIL" "validation" "$VALIDATION_EXIT" "" 2>/dev/null || true
   else
     emit_error_event "validation_failed" "Validation command exited with code $VALIDATION_EXIT" "exit"
+    # Report to Sentry if available
+    sentry_error "Validation command failed with exit code $VALIDATION_EXIT" "validation" "$VALIDATION_EXIT" "" 2>/dev/null || true
   fi
 fi
 
@@ -9517,12 +9544,16 @@ if [ "$QUALITY_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$QUALITY_EXIT"
   FAILED_COMMAND="quality checks"
   emit_error_event "quality_gate_failed" "Quality gate rule failed (exit code $QUALITY_EXIT)" "exit"
+  # Report to Sentry if available
+  sentry_error "Quality gate failed with exit code $QUALITY_EXIT" "quality-gates" "$QUALITY_EXIT" "" 2>/dev/null || true
 fi
 
 if [ "$SECRET_SCAN_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then
   STATUS="$SECRET_SCAN_EXIT"
   FAILED_COMMAND="secret scan"
   emit_error_event "secret_scan_failed" "Secret scan detected potential credential leak" "exit"
+  # Report to Sentry if available
+  sentry_error "Secret scan detected potential credential leak" "secret-scan" "$SECRET_SCAN_EXIT" "" 2>/dev/null || true
 fi
 
 if [ "$GITHUB_PUSH_EXIT" -ne 0 ] && [ "$STATUS" -eq 0 ]; then

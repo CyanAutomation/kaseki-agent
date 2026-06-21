@@ -14,6 +14,8 @@ import { fileURLToPath } from 'url';
 import { createLogger } from './logger';
 import { ConfigManager } from './config/ConfigManager';
 import { KasekiCLI } from './cli/KasekiCLI';
+import { captureCLIError, wrapCLIExecution } from './cli/cli-error-handler';
+import { flushSentry } from './sentry-integration';
 
 const logger = createLogger('kaseki-cli');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,12 +50,20 @@ async function main() {
     // Get subcommand (first non-flag argument)
     const subcommand = args[0];
 
-    // Dispatch to appropriate command handler
-    const exitCode = await cli.dispatch(subcommand, args.slice(1));
+    // Dispatch to appropriate command handler with error capture
+    const exitCode = await wrapCLIExecution(
+      subcommand || 'unknown',
+      () => cli.dispatch(subcommand, args.slice(1)),
+      { args }
+    );
+
+    // Flush Sentry before exit
+    await flushSentry(2000);
     process.exit(exitCode);
   } catch (error) {
     if (error instanceof Error) {
       logger.error(error.message);
+      captureCLIError(error, 'main', { args: process.argv.slice(2) });
       if (process.env.DEBUG === '1') {
         console.error(error);
       }
@@ -61,6 +71,8 @@ async function main() {
       logger.error('Unknown error occurred');
       console.error(error);
     }
+    // Flush Sentry before exit
+    await flushSentry(2000);
     process.exit(1);
   }
 }

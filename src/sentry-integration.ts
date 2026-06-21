@@ -22,7 +22,7 @@ import { expressIntegration } from '@sentry/node';
 import { spawnSync } from 'child_process';
 import { Request, Response, NextFunction } from 'express';
 
-interface SentryConfig {
+export interface SentryConfig {
   dsn?: string;
   environment?: string;
   release?: string;
