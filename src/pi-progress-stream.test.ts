@@ -2,7 +2,8 @@
  * Tests for the pi-progress-stream executable behavior that callers depend on.
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { afterEach, describe, it, expect, jest } from '@jest/globals';
+import { ToolBatchAggregator, type ProgressClock } from './pi-progress-stream.js';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -93,6 +94,50 @@ async function runProgressStream(inputLines: string[], env: NodeJS.ProcessEnv = 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
+
+describe('ToolBatchAggregator', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('emits coalesced tool progress only after the coalescing window elapses', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-20T00:00:00.000Z'));
+    let now = Date.now();
+    const clock: ProgressClock = { now: () => now };
+    const emitted: ProgressEvent[] = [];
+    const aggregator = new ToolBatchAggregator({
+      clock,
+      coalesceWindowMs: 3000,
+      emitProgress: (stage, message, extra = {}) => {
+        emitted.push({ stage, message, ...extra });
+      },
+      startTime: Date.now(),
+    });
+
+    aggregator.recordTool('read_file');
+    aggregator.recordTool('bash');
+    now += 3000;
+    jest.setSystemTime(now);
+    aggregator.flushIfReady();
+
+    expect(emitted).toEqual([]);
+
+    now += 1;
+    jest.setSystemTime(now);
+    aggregator.flushIfReady();
+
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        stage: 'pi tool batch',
+        message: '[tools] read_file (1x), bash (1x) (3s)',
+        toolBatchSummary: {
+          read_file: 1,
+          bash: 1,
+        },
+      }),
+    ]);
+  });
+});
 
 describe('pi-progress-stream executable', () => {
   it('writes start and final events when the input stream closes', async () => {
