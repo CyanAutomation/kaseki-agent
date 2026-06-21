@@ -11,7 +11,19 @@ import { getJobOrRespond } from '../utils/route-helpers';
 import { normalizeProgressEvent } from '../utils/progress-normalizer';
 import { progressEventsFromDockerLogTail } from '../utils/docker-log-progress-events';
 
-const VALID_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan', 'combined'] as const;
+const VALID_LOG_TYPES = [
+  'stdout',
+  'stderr',
+  'validation',
+  'progress',
+  'quality',
+  'secret-scan',
+  'combined',
+  'goal-setting-stderr',
+  'scouting-stderr',
+  'goal-check-stderr',
+  'run-evaluation-stderr',
+] as const;
 const COMBINED_LOG_TYPES = ['stdout', 'stderr', 'validation', 'progress', 'quality', 'secret-scan'] as const;
 const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
   'goal-setting-validation-errors.jsonl',
@@ -29,6 +41,9 @@ const DIAGNOSTIC_FILE_CANDIDATES: DiagnosticEntryPoint[] = [
 const DIAGNOSTIC_INLINE_LIMIT_BYTES = 65536;
 
 function logFileForType(runDir: string, logType: string): string {
+  if (logType.endsWith('-stderr')) {
+    return path.join(runDir, `${logType}.log`);
+  }
   return path.join(runDir, logType === 'stdout' ? 'stdout.log' : `${logType}.log`);
 }
 

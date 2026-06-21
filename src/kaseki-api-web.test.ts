@@ -410,6 +410,9 @@ describe('kaseki API web console behavior', () => {
     click(document.querySelector('#load-issues-btn'));
     await waitFor(() => expect(document.querySelector('#issues-list')?.textContent).toContain('Stage names drift'));
     expect(document.querySelector('.issues-list-item')?.tagName).toBe('BUTTON');
+    expect(document.querySelector('#state')?.textContent).toBe('Issues loaded.');
+    expect(document.querySelector('#output-meta')?.textContent).toBe('Status: ok');
+    expect(document.querySelector('#output')?.textContent).toContain('"issueCount": 1');
 
     click(document.querySelector('.issues-list-item'));
     expect(document.querySelector('#submit-tab')?.getAttribute('aria-hidden')).toBe('false');

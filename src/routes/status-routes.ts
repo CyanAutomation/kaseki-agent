@@ -70,9 +70,13 @@ export function createStatusRoutes(
    * POST /api/runs/:id/cancel - Cancel a queued or running run.
    */
   router.post('/runs/:id/cancel', (req: Request, res: Response) => {
-    const job = scheduler.cancelJob(req.params.id);
+    const requestedId = req.params.id;
+    const resolvedJob = scheduler.getJob(requestedId) ??
+      scheduler.listJobs().find((job) => job.id.toLowerCase() === requestedId.toLowerCase());
+    const job = resolvedJob ? scheduler.cancelJob(resolvedJob.id) : undefined;
     if (!job) {
-      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${req.params.id}`);
+      const hint = requestedId.toLowerCase() !== requestedId ? ` Did you mean: ${requestedId.toLowerCase()}?` : '';
+      return sendErrorResponse(res, 404, 'Not Found', `Run not found: ${requestedId}.${hint}`);
     }
 
     const response = statusBuilder.buildStatus(job);

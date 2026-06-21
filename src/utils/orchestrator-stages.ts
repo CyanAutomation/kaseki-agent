@@ -11,7 +11,6 @@ import { KasekiApiConfig } from '../kaseki-api-config';
 const BASE_ORCHESTRATOR_STAGES = [
   'clone repository',
   'prepare node dependencies',
-  'agent setup',
   'TypeScript pre-check',
   'pi coding agent',
   'collect agent diff',
@@ -97,7 +96,7 @@ export function deriveOrchestratorStages(job: Job, config: KasekiApiConfig): str
   if (flags.runEvaluationEnabled) {
     stages.push('run evaluation');
   }
-  stages.push('agent setup', 'pi coding agent');
+  stages.push('pi coding agent');
   if (flags.autoLintCleanupEnabled && !flags.dryRun) {
     stages.push('auto lint cleanup');
   }

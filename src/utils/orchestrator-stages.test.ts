@@ -34,7 +34,6 @@ describe('orchestrator-stages', () => {
       expect(stages).toContain('clone repository');
       expect(stages).toContain('prepare node dependencies');
       expect(stages).toContain('TypeScript pre-check');
-      expect(stages).toContain('agent setup');
       expect(stages).toContain('pi coding agent');
       expect(stages).toContain('collect agent diff');
       expect(stages).toContain('quality checks');
