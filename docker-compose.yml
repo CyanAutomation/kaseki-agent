@@ -37,6 +37,9 @@ services:
       KASEKI_API_LOG_LEVEL: "${KASEKI_API_LOG_LEVEL:-warn}"
       KASEKI_STREAM_PROGRESS: "${KASEKI_STREAM_PROGRESS:-1}"
       KASEKI_API_MAX_CONCURRENT_RUNS: "${KASEKI_API_MAX_CONCURRENT_RUNS:-3}"
+      # Sentry error tracking (optional; leave empty to disable)
+      SENTRY_DSN: "${SENTRY_DSN:-}"
+      SENTRY_ENVIRONMENT: "${SENTRY_ENVIRONMENT:-production}"
       KASEKI_RESULTS_DIR: /agents/kaseki-results
       KASEKI_SECRETS_DIR: "${KASEKI_SECRETS_DIR:-/run/secrets/kaseki}"
       KASEKI_CONTAINER_USER: "${KASEKI_CONTAINER_USER:-10000:10000}"

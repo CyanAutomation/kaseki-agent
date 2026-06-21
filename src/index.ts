@@ -98,3 +98,33 @@ export { createStatusRoutes } from './routes/status-routes';
 export { createLogRoutes } from './routes/log-routes';
 export { createArtifactRoutes, readArtifactContent } from './routes/artifact-routes';
 export { createWebhookRoutes } from './routes/webhook-routes';
+
+// Monitoring & Error Tracking
+export {
+  initSentry,
+  captureException,
+  flushSentry,
+  type SentryConfig,
+} from './sentry-integration';
+
+// Context Enrichment
+export {
+  setRunContext,
+  getRunContext,
+  clearRunContext,
+  enrichErrorContext,
+  sanitizeUrl,
+  createTimer,
+  updatePhase,
+  recordFailedGate,
+  type RunContext,
+} from './context/run-context';
+
+// CLI Error Handling
+export {
+  wrapCLIExecution,
+  captureCLIError,
+  startCLIPhase,
+  enrichCLIErrorContext,
+  type CLIErrorContext,
+} from './cli/cli-error-handler';
