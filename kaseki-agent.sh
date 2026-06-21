@@ -3197,7 +3197,7 @@ capture_validation_startup_diagnostics() {
     
     # File descriptor count (indicator of resource exhaustion)
     if [ -d "/proc/self/fd" ]; then
-      printf '[validation-startup] open_file_descriptors=%d\n' "$(ls -1 /proc/self/fd 2>/dev/null | wc -l || echo 0)"
+      printf '[validation-startup] open_file_descriptors=%d\n' "$(find /proc/self/fd -maxdepth 1 2>/dev/null | wc -l)"
     fi
     
     # Process memory usage

@@ -40,7 +40,7 @@ interface OrchestratorFeatureFlags {
  * Derive feature flags based on job request and config.
  * Encapsulates complex ternary logic for condition derivation.
  */
-function deriveFeatureFlags(job: Job, config: KasekiApiConfig): OrchestratorFeatureFlags {
+export function deriveFeatureFlags(job: Job, config: KasekiApiConfig): OrchestratorFeatureFlags {
   const request = job.request ?? ({} as Job['request']);
   const taskMode: 'patch' | 'inspect' = (request.taskMode ?? config.defaultTaskMode) as 'patch' | 'inspect';
   const publishMode = request.publishMode || 'pr';

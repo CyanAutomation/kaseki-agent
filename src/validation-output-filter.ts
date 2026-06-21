@@ -235,7 +235,7 @@ function main(): void {
   function logDiagnostic(message: string): void {
     try {
       appendFileSync(diagnosticsLogFile, `[${new Date().toISOString()}] ${message}\n`);
-    } catch (err) {
+    } catch (_err) { // eslint-disable-line unused-imports/no-unused-vars
       // Fallback to stderr if file write fails (e.g., /tmp full)
       const fallbackMsg = `[${new Date().toISOString()}] ${message}`;
       try {
@@ -264,7 +264,7 @@ function main(): void {
           `heap_total=${Math.round(usage.heapTotal / 1024 / 1024)}mb heap_usage=${heapUsedPercent.toFixed(1)}%`
         );
       }
-    } catch (err) {
+    } catch (_err) { // eslint-disable-line unused-imports/no-unused-vars
       // Fail silently; memory check is diagnostic
     }
   }
