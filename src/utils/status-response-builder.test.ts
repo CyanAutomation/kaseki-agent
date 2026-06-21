@@ -865,6 +865,46 @@ describe('StatusResponseBuilder', () => {
       expect(percentAfterLateEvent).toBeGreaterThanOrEqual(percentAtQualityChecks);
     });
 
+    it('should normalize live progress stage aliases before calculating taskProgressPercent', () => {
+      const job: Partial<Job> = {
+        id: 'job-live-stage-alias',
+        status: 'running',
+        resultDir: '/results/job-live-stage-alias',
+      };
+
+      (fs.existsSync as jest.Mock).mockImplementation((filePath: string) => {
+        return filePath.includes('metadata.json');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((filePath: string) => {
+        if (filePath.includes('metadata.json')) {
+          return JSON.stringify({
+            stages: [
+              'clone repository',
+              'prepare node dependencies',
+              'typescript precheck',
+              'pi goal-setting agent',
+              'complete',
+            ],
+          });
+        }
+        return '';
+      });
+
+      const response: StatusResponse = {
+        id: 'job-live-stage-alias',
+        status: 'running',
+        progress: {
+          stage: 'TypeScript pre-check',
+          message: 'started',
+          updatedAt: '2026-06-21T20:07:37.710Z',
+        },
+      };
+
+      builder['addTaskProgressInfo'](response, job as Job);
+
+      expect(response.taskProgressPercent).toBeGreaterThan(0);
+    });
+
     it('should handle malformed JSON in progress.jsonl gracefully', () => {
       const job: Partial<Job> = {
         id: 'job-1',

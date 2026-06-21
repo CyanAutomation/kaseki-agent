@@ -2548,6 +2548,22 @@ run_pi_json_capture() {
   local pi_exit progress_exit progress_stderr progress_fifo progress_pid splitter_exit
   local -a pipeline_statuses
 
+  wait_for_progress_stream() {
+    local pid="$1"
+    local waited=0
+    local max_wait=50
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$waited" -ge "$max_wait" ]; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        return 124
+      fi
+      sleep 0.1
+      waited=$((waited + 1))
+    done
+    wait "$pid"
+  }
+
   rm -f "$raw_events_file" 2>/dev/null || true
   : > "$raw_events_file"
   progress_stderr="${KASEKI_RESULTS_DIR}/progress-stream-diagnostics.log"
@@ -2572,66 +2588,76 @@ run_pi_json_capture() {
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
         2> >(tee -a "$stderr_target" >&2) \
-        | python3 -c '''import errno, os, sys
-raw_path, fifo_path = sys.argv[1], sys.argv[2]
-fifo_fd = None
-try:
-    fifo_fd = os.open(fifo_path, os.O_WRONLY)
-except OSError:
-    fifo_fd = None
-with open(raw_path, "ab", buffering=0) as raw:
-    while True:
-        chunk = sys.stdin.buffer.read(65536)
-        if not chunk:
-            break
-        raw.write(chunk)
-        if fifo_fd is not None:
-            try:
-                os.write(fifo_fd, chunk)
-            except OSError as exc:
-                if exc.errno in (errno.EPIPE, errno.ENXIO):
-                    os.close(fifo_fd)
-                    fifo_fd = None
-                else:
-                    raise
-if fifo_fd is not None:
-    os.close(fifo_fd)
-''' "$raw_events_file" "$progress_fifo"
+        | node -e '
+const fs = require("fs");
+const [rawPath, fifoPath] = process.argv.slice(1);
+const raw = fs.openSync(rawPath, "a");
+let fifo;
+try {
+  fifo = fs.openSync(fifoPath, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
+} catch {
+  fifo = undefined;
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  if (fifo !== undefined) {
+    try {
+      fs.writeSync(fifo, chunk);
+    } catch (error) {
+      if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+        try { fs.closeSync(fifo); } catch {}
+        fifo = undefined;
+      } else {
+        throw error;
+      }
+    }
+  }
+});
+process.stdin.on("end", () => {
+  if (fifo !== undefined) fs.closeSync(fifo);
+  fs.closeSync(raw);
+});
+' "$raw_events_file" "$progress_fifo"
     else
       LLM_GATEWAY_API_KEY="$llm_gateway_api_key" \
         LLM_GATEWAY_URL="$llm_gateway_url" \
         timeout --signal=SIGTERM "$timeout_seconds" \
         pi --mode json --no-session --provider "$KASEKI_PROVIDER" --model "$model" "$prompt" \
-        | python3 -c '''import errno, os, sys
-raw_path, fifo_path = sys.argv[1], sys.argv[2]
-fifo_fd = None
-try:
-    fifo_fd = os.open(fifo_path, os.O_WRONLY)
-except OSError:
-    fifo_fd = None
-with open(raw_path, "ab", buffering=0) as raw:
-    while True:
-        chunk = sys.stdin.buffer.read(65536)
-        if not chunk:
-            break
-        raw.write(chunk)
-        if fifo_fd is not None:
-            try:
-                os.write(fifo_fd, chunk)
-            except OSError as exc:
-                if exc.errno in (errno.EPIPE, errno.ENXIO):
-                    os.close(fifo_fd)
-                    fifo_fd = None
-                else:
-                    raise
-if fifo_fd is not None:
-    os.close(fifo_fd)
-''' "$raw_events_file" "$progress_fifo"
+        | node -e '
+const fs = require("fs");
+const [rawPath, fifoPath] = process.argv.slice(1);
+const raw = fs.openSync(rawPath, "a");
+let fifo;
+try {
+  fifo = fs.openSync(fifoPath, fs.constants.O_WRONLY | fs.constants.O_NONBLOCK);
+} catch {
+  fifo = undefined;
+}
+process.stdin.on("data", (chunk) => {
+  fs.writeSync(raw, chunk);
+  if (fifo !== undefined) {
+    try {
+      fs.writeSync(fifo, chunk);
+    } catch (error) {
+      if (error && (error.code === "EPIPE" || error.code === "ENXIO")) {
+        try { fs.closeSync(fifo); } catch {}
+        fifo = undefined;
+      } else {
+        throw error;
+      }
+    }
+  }
+});
+process.stdin.on("end", () => {
+  if (fifo !== undefined) fs.closeSync(fifo);
+  fs.closeSync(raw);
+});
+' "$raw_events_file" "$progress_fifo"
     fi
     pipeline_statuses=("${PIPESTATUS[@]}")
     pi_exit="${pipeline_statuses[0]:-1}"
     splitter_exit="${pipeline_statuses[1]:-0}"
-    wait "$progress_pid"
+    wait_for_progress_stream "$progress_pid"
     progress_exit=$?
     rm -f "$progress_fifo" 2>/dev/null || true
 

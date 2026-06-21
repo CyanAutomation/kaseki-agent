@@ -14,6 +14,7 @@ import { readHostSecret } from './secrets/host-secrets-reader';
 import { createLogger } from './logger';
 
 const logger = createLogger('github-utils');
+const GITHUB_API_TIMEOUT_MS = 15000;
 
 interface JWTHeader {
   alg: string;
@@ -200,12 +201,20 @@ async function getInstallationId(jwt: string, owner: string, repo: string): Prom
       },
     };
 
+    let settled = false;
+    const failOnce = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const req = request(options, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;
       });
       res.on('end', () => {
+        if (settled) return;
+        settled = true;
         if (res.statusCode !== 200) {
           reject(
             new Error(
@@ -229,7 +238,10 @@ async function getInstallationId(jwt: string, owner: string, repo: string): Prom
       });
     });
 
-    req.on('error', reject);
+    req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
+      req.destroy(new Error(`GitHub API request timed out after ${GITHUB_API_TIMEOUT_MS}ms while resolving installation`));
+    });
+    req.on('error', failOnce);
     req.end();
   });
 }
@@ -254,12 +266,20 @@ async function getAccessToken(
       },
     };
 
+    let settled = false;
+    const failOnce = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const req = request(options, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;
       });
       res.on('end', () => {
+        if (settled) return;
+        settled = true;
         if (res.statusCode !== 201) {
           reject(
             new Error(`Failed to get access token: ${res.statusCode} ${data}`)
@@ -284,7 +304,10 @@ async function getAccessToken(
       });
     });
 
-    req.on('error', reject);
+    req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
+      req.destroy(new Error(`GitHub API request timed out after ${GITHUB_API_TIMEOUT_MS}ms while creating access token`));
+    });
+    req.on('error', failOnce);
     req.end();
   });
 }
@@ -386,12 +409,20 @@ export async function fetchGitHubIssues(
       },
     };
 
+    let settled = false;
+    const failOnce = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const req = request(options_https, (res) => {
       let data = '';
       res.on('data', (chunk: Buffer) => {
         data += chunk;
       });
       res.on('end', () => {
+        if (settled) return;
+        settled = true;
         if (res.statusCode !== 200) {
           const errorMsg = `GitHub API error: ${res.statusCode}`;
           logger.error(errorMsg);
@@ -416,7 +447,10 @@ export async function fetchGitHubIssues(
 
     req.on('error', (err) => {
       logger.error(`GitHub API request failed: ${err.message}`);
-      reject(err);
+      failOnce(err);
+    });
+    req.setTimeout(GITHUB_API_TIMEOUT_MS, () => {
+      req.destroy(new Error(`GitHub API request timed out after ${GITHUB_API_TIMEOUT_MS}ms while fetching issues`));
     });
     req.end();
   });
