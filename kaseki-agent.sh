@@ -4666,44 +4666,52 @@ is_transient_goal_setting_failure() {
     esac
   fi
 
-  # Exit code 124 = timeout (transient, retryable)
-  if [ "$exit_code" -eq 124 ]; then
-    return 0
-  fi
-
-  # Exit code 86 = local validation failure (deterministic, not retryable)
-  if [ "$exit_code" -eq 86 ]; then
-    return 1
-  fi
-
-  # Exit code 88 = provider/model error (deterministic until model/config changes)
-  if [ "$exit_code" -eq 88 ]; then
-    return 1
-  fi
-
-  # Exit code 2 = missing config/API key (not retryable)
-  if [ "$exit_code" -eq 2 ]; then
-    return 1
-  fi
-
-  # Check for clear Pi/API transient errors before generic validation words.
-  # Captured stderr can include surrounding Kaseki validation diagnostics even
-  # when the root cause is an upstream timeout or API error.
-  if echo "$stderr_content" | grep -qi -E "error|failed|connection|timeout|rate.?limit|api.?error" 2>/dev/null; then
-    return 0  # Transient (retry)
-  fi
-
-  # Check for deterministic schema/validation errors.
-  if echo "$stderr_content" | grep -qi -E "schema|validation|invalid.?json|malformed" 2>/dev/null; then
-    return 1  # Deterministic (do not retry)
-  fi
-
-  # Pi non-zero exit (transient, could be model unavailability)
-  if [ "$exit_code" -ne 0 ]; then
-    return 0  # Transient (retry)
-  fi
-
-  # Exit code 0 but validation failed = deterministic
+  # EXPLICIT EXIT CODE MAPPING (do not treat unknown codes as transient)
+  case "$exit_code" in
+    # Success cases (should not reach here, but handle for safety)
+    0)
+      return 1  # Not transient, unexpected here
+      ;;
+    # Timeout = transient, should retry
+    124)
+      return 0
+      ;;
+    # Local validation failures = deterministic, do not retry
+    86)
+      return 1
+      ;;
+    # Provider/model errors = deterministic until model/config changes
+    88)
+      return 1
+      ;;
+    # Missing config/API key = deterministic, not retryable
+    2)
+      return 1
+      ;;
+    # Exit code 1 = generic agent error - check stderr for transient indicators
+    # Do NOT assume transient without evidence
+    1)
+      # Only retry if stderr contains transient indicators
+      if echo "$stderr_content" | grep -qi -E "(timeout|ETIMEDOUT|rate.?limit|429|503|temporary|transient|try.?again|connection.?reset|ECONNRESET|EPIPE)" 2>/dev/null; then
+        return 0  # Transient (retry)
+      fi
+      # Otherwise treat as deterministic error
+      return 1
+      ;;
+    # Any other non-zero exit code not explicitly mapped
+    # Require strong evidence of transient condition before retrying
+    *)
+      # Check for clear transient error patterns in stderr
+      if echo "$stderr_content" | grep -qi -E "(timeout|connection.*error|ECONNREFUSED|ECONNRESET|ETIMEDOUT|network.*error|try.?again|rate.?limit|temporarily.*unavailable)" 2>/dev/null; then
+        return 0  # Transient (retry)
+      fi
+      # Default to deterministic for unknown exit codes
+      return 1
+      ;;
+  esac
+  
+  # Should not reach here (all cases above return)
+  # shellcheck disable=SC2317
   return 1
 }
 
@@ -5551,6 +5559,7 @@ classify_goal_setting_error() {
 run_goal_setting_agent_with_retry() {
   local attempt goal_setting_stderr_capture max_attempts goal_setting_last_exit goal_setting_last_stderr
   local pre_goal_setting_status pre_goal_setting_failed_command goal_setting_phase_start_time
+  local attempt_start_time attempt_end_time attempt_duration_sec
 
   max_attempts=2
   attempt=1
@@ -5565,7 +5574,8 @@ run_goal_setting_agent_with_retry() {
   export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
 
   while [ "$attempt" -le "$max_attempts" ]; do
-    printf '[Goal-Setting Phase] Attempt %d/%d\n' "$attempt" "$max_attempts"
+    attempt_start_time="$(date +%s.%N)"
+    printf '[Goal-Setting Phase] Attempt %d/%d (timeout: %ds)\n' "$attempt" "$max_attempts" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS"
     rm -f "${KASEKI_RESULTS_DIR}"/goal-setting-validation-reason.txt 2>/dev/null || true
 
     # Capture stderr for failure classification
@@ -5574,12 +5584,18 @@ run_goal_setting_agent_with_retry() {
     run_goal_setting_agent 2>"$goal_setting_stderr_capture"
     goal_setting_last_exit=$?
     set -e
+    attempt_end_time="$(date +%s.%N)"
+    attempt_duration_sec=$(printf '%.1f' "$(echo \"$attempt_end_time - $attempt_start_time\" | bc -l 2>/dev/null || echo 0)")
 
     goal_setting_last_stderr="$(cat "$goal_setting_stderr_capture" 2>/dev/null || true)"
-    if [ -n "$goal_setting_last_stderr" ]; then
+    if [ -n "$goal_setting_last_stderr" ] || [ "$goal_setting_last_exit" -ne 0 ]; then
       {
-        printf '[attempt %d exit %d]\n' "$attempt" "$goal_setting_last_exit"
-        printf '%s\n' "$goal_setting_last_stderr"
+        printf '[attempt %d exit %d duration %.1fs timestamp %s]\n' "$attempt" "$goal_setting_last_exit" "$attempt_duration_sec" "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+        if [ -n "$goal_setting_last_stderr" ]; then
+          printf '%s\n' "$goal_setting_last_stderr"
+        else
+          printf '(no stderr captured)\n'
+        fi
       } >> "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log"
       capture_provider_error_from_log "${KASEKI_RESULTS_DIR}/goal-setting-stderr.log" "goal-setting" || true
     fi
@@ -5614,7 +5630,11 @@ run_goal_setting_agent_with_retry() {
     # Check if this is a transient failure worth retrying
     if is_transient_goal_setting_failure "$goal_setting_last_exit" "$goal_setting_last_stderr"; then
       if [ "$attempt" -lt "$max_attempts" ]; then
-        printf '[Goal-Setting Phase] Transient failure detected (exit %d), retrying immediately...\n' "$goal_setting_last_exit"
+        printf '[Goal-Setting Phase] Transient failure detected (exit %d, %.1fs elapsed), retrying immediately...\n' "$goal_setting_last_exit" "$attempt_duration_sec"
+        # Log retry decision with stderr snippet for debugging
+        if [ -n "$goal_setting_last_stderr" ]; then
+          printf '[Goal-Setting Phase] Retry reason: %s\n' "$(echo "$goal_setting_last_stderr" | head -1)" | head -c 200
+        fi
         attempt=$((attempt + 1))
         # Reset goal-setting artifacts for retry
         rm -f "$GOAL_SETTING_ARTIFACT" "$GOAL_SETTING_RAW_EVENTS" 2>/dev/null || true
@@ -5623,7 +5643,9 @@ run_goal_setting_agent_with_retry() {
       fi
     else
       # Deterministic failure - do not retry
-      printf '[Goal-Setting Phase] Deterministic failure (exit %d), not retrying\n' "$goal_setting_last_exit"
+      local failure_reason
+      failure_reason="$(classify_goal_setting_error "$goal_setting_last_exit" "$goal_setting_last_stderr")"
+      printf '[Goal-Setting Phase] Deterministic failure (exit %d: %s), not retrying\n' "$goal_setting_last_exit" "$failure_reason"
       export KASEKI_GOAL_SETTING_ATTEMPTS=$attempt
       export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
       # Fall through to use original TASK_PROMPT without letting optional failures
@@ -5640,7 +5662,29 @@ run_goal_setting_agent_with_retry() {
   # Max attempts exhausted - use original TASK_PROMPT
   export KASEKI_GOAL_SETTING_ATTEMPTS=$max_attempts
   export KASEKI_GOAL_SETTING_SUCCEEDED_ON_ATTEMPT=""
-  printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d), using original TASK_PROMPT\n' "$goal_setting_last_exit"
+  local total_goal_setting_duration=$(($(date +%s) - goal_setting_phase_start_time))
+  printf '[Goal-Setting Phase] Max retry attempts exhausted (exit %d after %ds), using original TASK_PROMPT\n' "$goal_setting_last_exit" "$total_goal_setting_duration"
+  
+  # Write structured failure diagnostics to goal-setting-validation-errors.jsonl
+  node -e "{
+    const fs = require('fs');
+    const entry = {
+      timestamp: new Date().toISOString(),
+      phase: 'goal-setting',
+      exit_code: $goal_setting_last_exit,
+      attempts: $max_attempts,
+      total_duration_seconds: $total_goal_setting_duration,
+      timeout_seconds: ${KASEKI_GOAL_SETTING_TIMEOUT_SECONDS:-300},
+      model: '${GOAL_SETTING_ACTUAL_MODEL:-unknown}',
+      reason: 'max_retry_attempts_exhausted',
+      stderr_tail: \"$(echo \"$goal_setting_last_stderr\" | tail -c 400 | sed 's/\"/\\\\\"/g')\",
+      fallback_to_original_prompt: true
+    };
+    const path = '${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl';
+    const content = (fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '') + JSON.stringify(entry) + '\\n';
+    fs.writeFileSync(path, content);
+  }" 2>/dev/null || true
+  
   STATUS="$pre_goal_setting_status"
   FAILED_COMMAND="$pre_goal_setting_failed_command"
   clear_provider_error
