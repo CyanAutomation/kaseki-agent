@@ -255,7 +255,7 @@ build_run_evaluation_prompt
     // Build_scouting_prompt depends on is_complex_change_task, so we need both
     const isComplexFunctionText = extractBashFunctionWithCache('is_complex_change_task', 'build_scouting_prompt');
     const buildScoutingFunctionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
-    
+
     // Combine both functions: is_complex_change_task first, then build_scouting_prompt
     const functionText = isComplexFunctionText + '\n\n' + buildScoutingFunctionText;
 
