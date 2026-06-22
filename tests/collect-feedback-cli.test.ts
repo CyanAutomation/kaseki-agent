@@ -53,7 +53,7 @@ describe('collect-feedback.js CLI', () => {
 
     // Run CLI
     const output = execSync(
-      `node scripts/collect-feedback.js goal-check kaseki-1 ${goalSettingPath} ${goalCheckPath} ${metadataPath}`,
+      `node dist/collect-feedback.js goal-check kaseki-1 ${goalSettingPath} ${goalCheckPath} ${metadataPath}`,
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -93,7 +93,7 @@ describe('collect-feedback.js CLI', () => {
 
     // Run CLI
     const output = execSync(
-      `node scripts/collect-feedback.js run-evaluation kaseki-1 ${runEvaluationPath} ${metadataPath}`,
+      `node dist/collect-feedback.js run-evaluation kaseki-1 ${runEvaluationPath} ${metadataPath}`,
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -110,7 +110,7 @@ describe('collect-feedback.js CLI', () => {
   test('should handle missing files gracefully', () => {
     // Run CLI with non-existent files - should return empty objects for missing files
     const output = execSync(
-      'node scripts/collect-feedback.js goal-check kaseki-1 /nonexistent/1.json /nonexistent/2.json /nonexistent/3.json',
+      'node dist/collect-feedback.js goal-check kaseki-1 /nonexistent/1.json /nonexistent/2.json /nonexistent/3.json',
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -122,7 +122,7 @@ describe('collect-feedback.js CLI', () => {
 
   test('should show usage on invalid arguments', () => {
     expect(() => {
-      execSync('node scripts/collect-feedback.js', {
+      execSync('node dist/collect-feedback.js', {
         encoding: 'utf-8',
         cwd: process.cwd(),
         stdio: 'pipe',
