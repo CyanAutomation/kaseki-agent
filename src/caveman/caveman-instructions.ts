@@ -16,7 +16,7 @@
  * Caveman lite intensity instruction text.
  * Professional but tight: drop articles/filler, keep full sentences.
  */
-const CAVEMAN_INSTRUCTION_LITE = `Terse, professional communication. Drop articles, filler, pleasantries. Keep full sentences. Short synonyms (big not extensive, fix not implement). No tool narration, tables, emoji. Standard acronyms only (DB/API/HTTP). Technical terms exact, code blocks unchanged. Pattern: [thing] [action] [reason]. [next step]. Example: "Bug in auth middleware. Expiry check uses < not <=. Fix:" Substance stays. Fluff dies.`;
+const CAVEMAN_INSTRUCTION_LITE = 'Terse, professional communication. Drop articles, filler, pleasantries. Keep full sentences. Short synonyms (big not extensive, fix not implement). No tool narration, tables, emoji. Standard acronyms only (DB/API/HTTP). Technical terms exact, code blocks unchanged. Pattern: [thing] [action] [reason]. [next step]. Example: "Bug in auth middleware. Expiry check uses < not <=. Fix:" Substance stays. Fluff dies.';
 
 /**
  * Get Caveman instruction text for kaseki-agent phases.

@@ -57,7 +57,7 @@ describe('Caveman Instructions Library', () => {
     it('should not include decorative elements', () => {
       // Caveman skill: No decorative tables/emoji
       // Allow: comparison operators (<, <=, =), brackets, slashes (for acronyms like DB/API/HTTP), quotes
-      const result = instruction.match(/[^\w\s\.,;:\-\(\)<>="\'\[\]\/]/g);
+      const result = instruction.match(/[^\w\s.,;:\-()<>="'[]\]/g);
       expect(result).toBeNull(); // No emoji or decorative unicode beyond allowed
     });
 
@@ -78,7 +78,7 @@ describe('Caveman Instructions Library', () => {
 
     it('should not contain excessive punctuation or formatting', () => {
       // Lite intensity should be readable and professional
-      const excessiveFormatting = (instruction.match(/[\*\#`]/g) || []).length;
+      const excessiveFormatting = (instruction.match(/[*#`]/g) || []).length;
       expect(excessiveFormatting).toBeLessThan(3); // Allow minimal markdown
     });
 

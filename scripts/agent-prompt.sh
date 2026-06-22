@@ -86,6 +86,11 @@ Fallback behavior:
     return 0
   fi
 
+  # Print caveman instruction before guardrails prompt (if enabled)
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+
   cat <<EOF
 You are editing inside a Kaseki-managed ephemeral workspace.
 
