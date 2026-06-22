@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2031
+# Note: Variables modified across subshells and sourced scopes; this is intentional
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,13 +32,9 @@ printf '%s\n' "$1" > "${STARTUP_CHECK_MODE_CAPTURE:?}"
 FAKE_STARTUP_CHECKS
 chmod +x "$APP_DIR/scripts/startup-checks.sh"
 
-# shellcheck disable=SC2031
 export KASEKI_STARTUP_CHECK_SOURCE="$APP_DIR/scripts/startup-checks.sh"
-# shellcheck disable=SC2031
 export KASEKI_STARTUP_CHECK_PRIMARY_PATH="$SCRIPTS_DIR/startup-checks.sh"
-# shellcheck disable=SC2031
 export KASEKI_INIT_CONTAINER_PATH="$SCRIPTS_DIR/kaseki-init-container.sh"
-# shellcheck disable=SC2031
 export KASEKI_STARTUP_CHECK_MODE_DEFAULT=all
 # shellcheck source=scripts/startup-check-packaging.sh
 . "$CONFIG"

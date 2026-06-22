@@ -2,6 +2,8 @@
 # kaseki-preflight-docker-compose.sh
 # Pre-deployment validation for Docker Compose setup
 # Detects common permission and configuration issues before running docker-compose up -d
+# shellcheck disable=SC2034
+# Note: Exit code constants defined below for external reference
 
 set -o errexit
 
@@ -13,11 +15,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Exit codes
-# shellcheck disable=SC2034
 EXIT_OK=0
-# shellcheck disable=SC2034
 EXIT_ERRORS=1
-# shellcheck disable=SC2034
 EXIT_WARNINGS=0  # Warnings are non-blocking
 
 # Counters

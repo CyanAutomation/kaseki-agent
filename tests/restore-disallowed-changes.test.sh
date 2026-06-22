@@ -59,7 +59,6 @@ printf 'allowed.txt\n' > "$TMP_DIR/results/changed-files.txt"
 : > "$TMP_DIR/results/quality.log"
 : > "$TMP_DIR/results/events.log"
 
-# shellcheck disable=SC2034
 KASEKI_RESTORE_DISALLOWED_CHANGES=1
 KASEKI_CHANGED_FILES_ALLOWLIST='allowed.txt'
 

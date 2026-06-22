@@ -201,7 +201,7 @@ normalize_private_key_pem() {
     cat
     return 0
   fi
-  # shellcheck disable=SC2016
+  # shellcheck disable=SC2016  # Single quotes intentional: variables expand in host context before container
   node -e 'const fs = require('"'"'node:fs'"'"');
 let value = fs.readFileSync(0, '"'"'utf8'"'"').trim();
 if (!value) process.exit(0);

@@ -38,12 +38,14 @@
 #
 ###############################################################################
 
+# shellcheck disable=SC2034
+# Reference UID/GID constants defined below for Docker user configuration
+
 set -euo pipefail
 
 # Configuration
 DOCKER_SECRETS_DIR="/home/pi/secrets"
 LOCAL_SECRETS_DIR="$HOME/.kaseki/secrets"
-# shellcheck disable=SC2034
 KASEKI_UID=10000
 KASEKI_GID=10000
 KASEKI_GROUP="kaseki"
