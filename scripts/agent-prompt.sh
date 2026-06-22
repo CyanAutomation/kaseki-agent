@@ -2,7 +2,11 @@
 # Shared prompt rendering helpers for kaseki-agent.sh and tests.
 
 build_agent_prompt() {
-  local memory_section scouting_section retry_section hashline_edits_section summarization_section
+  local memory_section scouting_section retry_section hashline_edits_section summarization_section caveman_instruction
+  
+  # Get caveman instruction if enabled
+  caveman_instruction="$(get_caveman_instruction)"
+  
   memory_section="$(read_repo_memory_section)"
   scouting_section=""
   retry_section=""
@@ -66,6 +70,12 @@ Fallback behavior:
 - You can always use bash commands (write, sed, etc.) as a fallback
 - The system prefers hashline_edit but gracefully degrades to bash-based editing"
   fi
+  
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+  
   if [ "$KASEKI_AGENT_GUARDRAILS" != "1" ]; then
     printf '%s' "$TASK_PROMPT"
     printf '%s' "$memory_section"
