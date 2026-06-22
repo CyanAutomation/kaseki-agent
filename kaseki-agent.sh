@@ -350,6 +350,9 @@ REPO_MEMORY_FILE=""
 REPO_MEMORY_STATUS="disabled"
 REPO_MEMORY_COMMIT_SHA="unknown"
 
+# Caveman communication mode (enabled by default)
+KASEKI_CAVEMAN="${KASEKI_CAVEMAN:-1}"
+
 # Track last executed command for better error reporting
 LAST_COMMAND=""
 LAST_COMMAND_LOG="${KASEKI_RESULTS_DIR}/last-command.log"
@@ -371,6 +374,24 @@ trap 'handle_termination SIGINT' SIGINT
 
 # DEBUG trap: capture last command before execution for better error diagnostics
 trap 'LAST_COMMAND="$BASH_COMMAND"' DEBUG
+
+# ========================================
+# Caveman Communication Mode Helper
+# ========================================
+# Get terse communication instruction from TypeScript library
+# Returns: Caveman lite instruction string for prompt injection
+get_caveman_instruction() {
+  if [ "$KASEKI_CAVEMAN" != "1" ]; then
+    return 0
+  fi
+  # Call TypeScript library via Node.js to retrieve the instruction
+  node -e "const m = require('./src/caveman/caveman-instructions.ts'); console.log(m.getCavemanInstruction());" 2>/dev/null || {
+    # Fallback inline instruction if TypeScript library is unavailable
+    cat <<'CAVEMAN'
+Terse, professional communication. Drop articles, filler, pleasantries. Keep full sentences. Short synonyms (big not extensive, fix not implement). No tool narration, tables, emoji. Standard acronyms only (DB/API/HTTP). Technical terms exact, code blocks unchanged. Pattern: [thing] [action] [reason]. [next step]. Example: "Bug in auth middleware. Expiry check uses < not <=. Fix:" Substance stays. Fluff dies.
+CAVEMAN
+  }
+}
 
 
 require_or_warn_binary() {
@@ -4716,8 +4737,13 @@ is_transient_goal_setting_failure() {
 }
 
 build_goal_setting_prompt() {
+  local caveman_instruction
+  caveman_instruction="$(get_caveman_instruction)"
+  
   cat <<EOF
-You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
+${caveman_instruction:+$caveman_instruction
+
+}You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt into a mature, specific goal that maximizes downstream agent success.
 
 - Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT.
 
@@ -5731,10 +5757,17 @@ is_complex_change_task() {
 build_scouting_prompt() {
   local task_text="$TASK_PROMPT"
   local use_detailed_guidance=0
+  local caveman_instruction
+  caveman_instruction="$(get_caveman_instruction)"
   
   # Phase 2.1: Conditionally include detailed guidance only for complex tasks
   if is_complex_change_task "$task_text"; then
     use_detailed_guidance=1
+  fi
+  
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
   fi
   
   # Build base prompt (always included)
