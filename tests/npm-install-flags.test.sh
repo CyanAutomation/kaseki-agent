@@ -23,7 +23,6 @@ assert_flags() {
   local -a expected_flags=("$@")
   local -a install_flags=("stale")
 
-  # shellcheck disable=SC2034
   KASEKI_NPM_OMIT_DEV="$omit_dev"
   KASEKI_INSTALL_IGNORE_SCRIPTS="$ignore_scripts"
   append_npm_install_flags install_flags

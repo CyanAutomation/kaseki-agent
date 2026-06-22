@@ -112,7 +112,7 @@ main() {
   
   # Step 2: Create secrets directory
   print_header "Creating Secrets Directory on Remote Host"
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # Variables like $REMOTE_SECRETS_DIR must expand locally, not on remote
   if ssh "$REMOTE_HOST" "
     mkdir -p '$REMOTE_SECRETS_DIR'
     chmod 700 '$REMOTE_SECRETS_DIR'
@@ -133,7 +133,7 @@ main() {
   echo ""
   
   # Use stdin to pipe key to remote host (avoids exposing in process list)
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # $API_KEY and $REMOTE_API_KEY_FILE must expand locally before transmission to remote
   if echo "$API_KEY" | ssh "$REMOTE_HOST" "
     cat > '$REMOTE_API_KEY_FILE'
     chmod 600 '$REMOTE_API_KEY_FILE'
@@ -152,7 +152,7 @@ main() {
   echo ""
   
   # Bootstrap via remote kaseki-install.sh if it exists, else via curl
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # $REMOTE_KASEKI_INSTALL_SCRIPT must expand locally before ssh transmission
   BOOTSTRAP_CMD='
     if [ -f '"$REMOTE_KASEKI_INSTALL_SCRIPT"' ]; then
       KASEKI_CONTROLLER_MODE=1 KASEKI_REPLACE_STALE=1 '"$REMOTE_KASEKI_INSTALL_SCRIPT"'
@@ -163,7 +163,7 @@ main() {
     fi
   '
   
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # Command variables must be expanded locally before ssh transmission
   if ssh "$REMOTE_HOST" "${BOOTSTRAP_CMD}" 2>&1 | tail -20; then
     print_success "Bootstrap completed"
   else
@@ -174,13 +174,13 @@ main() {
   
   # Step 5: Verify readiness with health check
   print_header "Verifying Readiness (Running --doctor)"
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # $REMOTE_API_KEY_FILE and $REMOTE_KASEKI_TEMPLATE must expand locally
   HEALTH_CHECK_CMD="
     export OPENROUTER_API_KEY_FILE=$REMOTE_API_KEY_FILE
     $REMOTE_KASEKI_TEMPLATE/run-kaseki.sh --doctor
   "
   
-  # shellcheck disable=SC2029
+  # shellcheck disable=SC2029  # Command variables and paths must expand locally before ssh execution
   if ssh "$REMOTE_HOST" "${HEALTH_CHECK_CMD}" 2>&1 | tail -15; then
     print_success "Health check passed"
   else

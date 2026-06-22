@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2317,SC1091
+# shellcheck disable=SC2317,SC1091,SC2034
 # Integration tests for the production validation command runner.
+# SC2034: Test setup variables assigned for use via namerefs in validation helpers
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,33 +57,20 @@ use_workspace_repo_fixture() {
 }
 
 reset_validation_state() {
-  # shellcheck disable=SC2034
+  # Test setup variables assigned for use via namerefs in validation helpers
   VALIDATION_EXIT=0
-  # shellcheck disable=SC2034
   VALIDATION_FAILED_COMMAND_DETAIL=""
-  # shellcheck disable=SC2034
   VALIDATION_FAILURE_REASON=""
-  # shellcheck disable=SC2034
   VALIDATION_STOPPED_EARLY=false
-  # shellcheck disable=SC2034
   VALIDATION_COMMANDS_ATTEMPTED=0
-  # shellcheck disable=SC2034
   PRE_VALIDATION_EXIT=0
-  # shellcheck disable=SC2034
   PRE_VALIDATION_FAILED_COMMAND_DETAIL=""
-  # shellcheck disable=SC2034
   PRE_VALIDATION_FAILURE_REASON=""
-  # shellcheck disable=SC2034
   PRE_VALIDATION_STOPPED_EARLY=false
-  # shellcheck disable=SC2034
   PRE_VALIDATION_COMMANDS_ATTEMPTED=0
-  # shellcheck disable=SC2034
   KASEKI_BASELINE_VALIDATION_DRY_RUN=0
-  # shellcheck disable=SC2034
   KASEKI_DRY_RUN=0
-  # shellcheck disable=SC2034
   KASEKI_VALIDATION_FAIL_FAST=1
-  # shellcheck disable=SC2034
   KASEKI_VALIDATION_RUN_ALL_COMMANDS=0
 }
 
