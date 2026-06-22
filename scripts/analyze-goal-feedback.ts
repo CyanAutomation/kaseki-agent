@@ -15,7 +15,6 @@
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
 
 interface FeedbackEntry {
   phase?: string;
@@ -375,10 +374,12 @@ function main(): void {
 const isCliMode = process.argv[1]?.includes('analyze-goal-feedback');
 if (isCliMode && typeof (globalThis as any).jest === 'undefined') {
   // Only run main if we're definitely in CLI mode and NOT in Jest test environment
-  main().catch((err) => {
+  try {
+    main();
+  } catch (err) {
     console.error('Fatal error:', err);
     process.exit(1);
-  });
+  }
 }
 
 // Export for testing and programmatic use
