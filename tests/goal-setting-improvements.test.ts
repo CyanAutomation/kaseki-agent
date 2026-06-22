@@ -717,7 +717,7 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         writeFileSync(join(appLib, 'timestamp-tracker.js'), '');
         writeFileSync(join(appLib, 'progress-stream-utils.js'), '');
         copyFileSync(join(repoRoot, 'scripts', 'allowlist-helper.sh'), join(scriptsDir, 'allowlist-helper.sh'));
-        copyFileSync(join(repoRoot, 'scripts', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
+        copyFileSync(join(repoRoot, 'dist', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));

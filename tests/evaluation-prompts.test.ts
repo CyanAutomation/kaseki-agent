@@ -622,19 +622,20 @@ build_scouting_prompt
     });
 
     test('should enforce test impact in scouting artifact validation', () => {
-      const scoutingHelperPath = path.join(projectRoot, 'scripts', 'scouting-allowlist.js');
+      const scoutingHelperPath = path.join(projectRoot, 'scripts', 'scouting-allowlist.ts');
       const scriptContent = fs.readFileSync(scoutingHelperPath, 'utf8');
-      const validationSection = scriptContent.substring(
-        scriptContent.indexOf('function validateScoutingArtifactObject(artifact) {'),
-        scriptContent.indexOf('function validateScoutingArtifact(inputPath, outputPath, options = {}) {')
-      );
+
+      // Find the validation function content (between validateScoutingArtifactObject and next major function)
+      const validateStart = scriptContent.indexOf('function validateScoutingArtifactObject(');
+      const validateEnd = scriptContent.indexOf('\nfunction ', validateStart + 1);
+      const validationSection = scriptContent.substring(validateStart, validateEnd >= 0 ? validateEnd : scriptContent.length);
 
       // Verify that test_impact is included in validation
       expect(validationSection).toMatch(/['"]test_impact['"]/);
       // Verify that array validation is enforced
       expect(validationSection).toContain('Array.isArray');
       // Verify that the test_impact specific validation function is called
-      expect(validationSection).toContain('validateTestImpactArray(art.test_impact');
+      expect(validationSection).toContain('validateTestImpactArray(');
       // Verify that critical severity errors are used in validation
       expect(validationSection).toMatch(/['"]critical['"]/);
     });
@@ -643,7 +644,7 @@ build_scouting_prompt
   describe('Feedback Collection Integration', () => {
     jest.setTimeout(30000);
 
-    const collectFeedbackPath = path.join(projectRoot, 'scripts', 'collect-feedback.js');
+    const collectFeedbackPath = path.join(projectRoot, 'dist', 'collect-feedback.js');
 
     const writeJson = (filePath: string, value: unknown) => {
       fs.writeFileSync(filePath, JSON.stringify(value));
