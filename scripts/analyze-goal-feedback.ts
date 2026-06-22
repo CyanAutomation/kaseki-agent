@@ -15,7 +15,6 @@
  */
 
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 interface FeedbackEntry {
@@ -371,11 +370,16 @@ function main(): void {
   console.log('✅ Analysis complete\n');
 }
 
-// Run main only when executed directly
-const thisFile = fileURLToPath(import.meta.url);
-if (process.argv[1] && path.resolve(process.argv[1]) === thisFile) {
-  main();
+// Automatic execution when run directly (CommonJS-safe approach)
+// This check avoids using import.meta.url which breaks in CommonJS transpilation
+const isCliMode = process.argv[1]?.includes('analyze-goal-feedback');
+if (isCliMode && typeof (globalThis as any).jest === 'undefined') {
+  // Only run main if we're definitely in CLI mode and NOT in Jest test environment
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
 }
 
-// Export for testing
-export { readFeedbackFile, analyzeGoalFeedback, analyzeCorrelations, analyzeSmartDimensions, generateRecommendations };
+// Export for testing and programmatic use
+export { readFeedbackFile, analyzeGoalFeedback, analyzeCorrelations, analyzeSmartDimensions, generateRecommendations, main };
