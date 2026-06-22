@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090,SC2317,SC2064,SC2002
+# shellcheck disable=SC1090,SC2317,SC2064,SC2002,SC1091
 # Helper-focused tests for JSON encoding utilities sourced from scripts/lib/json.sh.
 
 set -uo pipefail
