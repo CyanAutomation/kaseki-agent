@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2155,SC1091,SC2015
 # Fast dry-run artifact tests for the helper boundary used by run-kaseki.sh.
 set -euo pipefail
 

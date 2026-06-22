@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016,SC2015
 # Optional Docker-backed integration test for run-kaseki.sh --dry-run.
 set -euo pipefail
 

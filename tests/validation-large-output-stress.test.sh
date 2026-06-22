@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317
 #
 # Test: Validation output filter handles large output without crashing
 # 
