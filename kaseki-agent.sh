@@ -5755,7 +5755,12 @@ build_scouting_prompt() {
   cat <<EOF
 You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
 
-Research the task before a separate coding agent starts:
+## [ROLE]
+
+Research the task before a separate coding agent starts. Your job is to analyze the repository, understand the task scope, and produce a structured JSON artifact that helps a downstream coding agent execute the task efficiently and correctly.
+
+## [OPERATIONAL CONSTRAINTS - Read-Only Phase]
+
 - Inspect the repository and relevant files needed to understand the task.
 - Do not edit source files, tests, lockfiles, or git state.
 - Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
@@ -5779,6 +5784,43 @@ Output rules for the JSON artifact:
 - Every string must be concrete to the task.
 - Use empty arrays for optional unknown fields.
 - Omit critical_change_expectations or leave its arrays empty unless concrete required files/search strings are certain.
+
+## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
+
+Before proceeding with repository inspection, validate that the task is concrete and scoping is possible:
+
+**Valid tasks** (proceed with scouting):
+- ✓ "Fix null-safety in parseRole() function in src/lib/role.ts"
+- ✓ "Add TypeScript type annotations to src/config/loader.ts"
+- ✓ "Implement JWT authentication in src/auth/middleware.ts and update tests"
+- ✓ "Rename parseConfig to loadConfigFromFile across src/lib and tests"
+
+**Ambiguous/Invalid tasks** (ask clarifying questions):
+- ✗ "Make the code better" → Too vague. Ask: Which file(s)? What specific improvement?
+- ✗ "Fix bugs" → No scope. Ask: Which bugs? Which files contain them?
+- ✗ "Refactor everything" → Unbounded. Ask: Which components? What metrics define success?
+
+**Success Criteria for Scouting**:
+Your scouting artifact is successful when:
+1. The task field clearly restates the original request in concrete, actionable language
+2. requirements list 3-8 specific, testable requirements
+3. relevant_files includes 5-20 files with clear rationales
+4. plan has 5-15 distinct coding steps (no step is "finish")
+5. test_impact identifies 80%+ of files that will be affected by code changes
+6. critical_change_expectations, when present, includes concrete search strings
+7. JSON size is <50 KB and completes scouting within 2 minutes
+
+**When to Ask Clarifying Questions**:
+If the task is ambiguous or lacks sufficient scope information, do NOT proceed with scouting. Instead, write a minimal JSON artifact with:
+- task: "[UNCLEAR - needs clarification]"
+- requirements: ["Clarify which files are in scope", "Specify concrete acceptance criteria", "Define what done means"]
+- relevant_files: []
+- observations: ["Task prompt was: <original prompt>", "Unable to scope repository changes without more context"]
+- plan: ["Await clarification from user"]
+- validation: []
+- risks: ["Task scope is undefined; scouting may make incorrect assumptions"]
+- test_impact: []
+- suggested_allowlist: {agent_patterns: [], validation_patterns: []}
 
 Guidelines for test_impact:
 - Always include test_impact. Use an empty array only when no likely affected tests or expectation strings can be identified.
@@ -5837,7 +5879,25 @@ Guidelines for suggested_allowlist:
 - Both arrays can be empty if the task scope is unclear; the coding agent will work without allowlist constraints.
 - Prefer accurate scope over convenience: too-broad patterns defeat the purpose; too-narrow patterns will require restoration.
 
-Raw task prompt:
+## [EXECUTION CONTEXT - Optimize for Efficiency]
+
+**Timeouts**:
+- Scouting should complete within 2 minutes total.
+- Avoid deep directory recursion (git log, file enumeration across 1000+ files, slow regex searches).
+- Use fast commands: find, grep, head (instead of cat for large files).
+
+**Artifact Size Constraints**:
+- Maximum JSON size: 50 KB.
+- If observations or relevant_files grow large, prioritize the most important ones.
+- Truncate observations with "(...truncated for brevity)" if approaching size limit.
+
+**Error Handling**:
+- If repository inspection fails (unreadable files, malformed code), report the error in observations and proceed with limited scope.
+- Example: "Unable to parse src/config.json due to syntax error; focusing on src/lib instead."
+- Do not fail the entire scouting phase due to isolated file read errors; adapt and continue.
+
+## [RAW TASK PROMPT]
+
 $TASK_PROMPT
 EOF
 }
