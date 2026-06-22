@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2317,SC2016
+# shellcheck disable=SC2317,SC2016,SC2002,SC2155,SC2064
 # Integration tests for goal-setting fallback logic
 # Tests the kaseki-agent.sh fallback mechanism when goal-setting fails
 
