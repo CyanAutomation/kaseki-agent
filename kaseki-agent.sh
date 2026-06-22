@@ -6447,7 +6447,10 @@ collect_run_evaluation_feedback() {
 
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary
+  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary caveman_instruction
+  
+  # Get caveman instruction if enabled
+  caveman_instruction="$(get_caveman_instruction)"
   
   # Build validation summary instead of raw tail (reduce from ~400 tokens to ~50)
   if [ -f "${KASEKI_RESULTS_DIR}"/validation-timings.tsv ]; then
@@ -6544,6 +6547,11 @@ process.stdin.on("end", () => {
 "
   else
     causality_context=""
+  fi
+
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
   fi
 
   cat <<EOF
@@ -6798,7 +6806,11 @@ if (valid.size === 1) {
 }
 
 build_run_evaluation_prompt() {
-  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context
+  local validation_tail progress_tail stage_timings dependency_cache restoration_report draft_pr_body metadata_text goal_setting_context test_impact_context caveman_instruction
+  
+  # Get caveman instruction if enabled
+  caveman_instruction="$(get_caveman_instruction)"
+  
   validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
   progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
   stage_timings="$(tail -80 "${KASEKI_RESULTS_DIR}"/stage-timings.tsv 2>/dev/null || true)"
