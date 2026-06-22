@@ -4,6 +4,33 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.90.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.89.1...v1.90.0) (2026-06-22)
+
+
+### Bug Fixes
+
+* Refactor goal-setting error handling and logging for improved diagnostics and performance ([7a2d2ab](https://github.com/CyanAutomation/kaseki-agent/commit/7a2d2ab14bf5e74984e758e08ad2f3a71a2bec86))
+* update script paths in tests and documentation for consistency ([0fd514b](https://github.com/CyanAutomation/kaseki-agent/commit/0fd514bcee12454f07c7900e13fc66f45d7ef712))
+* update shellcheck directives for additional linting checks in test scripts ([6340ee7](https://github.com/CyanAutomation/kaseki-agent/commit/6340ee77aa10ced4df1dc662e4ba4279ab215162))
+* update shellcheck directives for clarity and performance considerations across multiple scripts ([af5fdb8](https://github.com/CyanAutomation/kaseki-agent/commit/af5fdb841a32079c6dc34758719e5ec974499621))
+* update shellcheck directives for consistency across test scripts ([d87daa2](https://github.com/CyanAutomation/kaseki-agent/commit/d87daa2d1f0eec48b0eb9afd2ce24c43a59e85d8))
+
+
+### Features
+
+* Add Caveman communication mode and integration tests ([f12b21d](https://github.com/CyanAutomation/kaseki-agent/commit/f12b21da41eb6e0a1eaeeb2951d8cb8369d6c732))
+* Add complexity detection for task guidance in scouting prompt ([289e5b6](https://github.com/CyanAutomation/kaseki-agent/commit/289e5b694eaea76ec3dc6c41826b0ae32492ff67))
+* Add comprehensive tests for analyze-test-failures and kaseki-summarizer modules ([799f809](https://github.com/CyanAutomation/kaseki-agent/commit/799f8091ba919b79f836a453a74ca12cee00f97f))
+* add module import validation script for Kaseki Agent ([99290a6](https://github.com/CyanAutomation/kaseki-agent/commit/99290a60e91323102b272d93e4f0f53485a68a35))
+* Add support for caveman instruction in goal check prompt ([ab16ffc](https://github.com/CyanAutomation/kaseki-agent/commit/ab16ffcab5337e8c4edef9ba1db298615a540e27))
+* Add support for caveman instruction retrieval and display in agent prompt ([111807d](https://github.com/CyanAutomation/kaseki-agent/commit/111807d67a5a2274446d7545a312d29d78598174))
+* Enhance scouting prompt with task validation and execution context guidelines ([38dfeda](https://github.com/CyanAutomation/kaseki-agent/commit/38dfeda2ff0d0f9cc2b5745ff6284f9c72a84409))
+* Implement Caveman instruction library and corresponding tests ([ec115e5](https://github.com/CyanAutomation/kaseki-agent/commit/ec115e58f08c83893849dca6884a89738e880324))
+* Print caveman instruction before guardrails prompt if enabled ([6a6e3a3](https://github.com/CyanAutomation/kaseki-agent/commit/6a6e3a3ca75b150d20ae20ce3145ff93aceca96c))
+* refactor analyze-goal-feedback script for improved CLI execution and module imports ([fce23d7](https://github.com/CyanAutomation/kaseki-agent/commit/fce23d7e67e1a42ca72a537e32e1b5204b72ded8))
+* Refine goal-setting prompt and evaluation criteria for clarity and conciseness ([42cc9df](https://github.com/CyanAutomation/kaseki-agent/commit/42cc9dfeea811598a6d5868bbe32815befcc1abb))
+* Update scouting prompt design and output schema with Phase 4 enhancements ([9ba6fdc](https://github.com/CyanAutomation/kaseki-agent/commit/9ba6fdcf692c169be26981c0a96ff527b7d17b8c))
+
 ## [1.89.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.89.0...v1.89.1) (2026-06-21)
 
 
