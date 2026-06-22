@@ -19,7 +19,7 @@ describe('analyze-test-failures', () => {
         ✓ test 3 (100ms)
       `;
       const result = parseTestResults(log, 1);
-      
+
       expect(result['test 1']).toEqual({ status: 'passed' });
       expect(result['test 2']).toEqual({ status: 'failed' });
       expect(result['test 3']).toEqual({ status: 'passed' });
@@ -32,7 +32,7 @@ describe('analyze-test-failures', () => {
         PASS test 3
       `;
       const result = parseTestResults(log, 1);
-      
+
       expect(result['test 1']).toEqual({ status: 'passed' });
       expect(result['test 2']).toEqual({ status: 'failed' });
       expect(result['test 3']).toEqual({ status: 'passed' });
@@ -45,7 +45,7 @@ describe('analyze-test-failures', () => {
         [PASS] test 3
       `;
       const result = parseTestResults(log, 0);
-      
+
       expect(result['test 1']).toEqual({ status: 'passed' });
       expect(result['test 2']).toEqual({ status: 'failed' });
       expect(result['test 3']).toEqual({ status: 'passed' });
@@ -57,7 +57,7 @@ describe('analyze-test-failures', () => {
         ✗ test 1
       `;
       const result = parseTestResults(log, 1);
-      
+
       expect(Object.keys(result)).toHaveLength(1);
       expect(result['test 1']).toEqual({ status: 'passed' });
     });
@@ -69,7 +69,7 @@ describe('analyze-test-failures', () => {
         [PASS] test 3
       `;
       const result = parseTestResults(log, 0);
-      
+
       expect(result['test 1']).toEqual({ status: 'passed' });
       expect(result['test 2']).toEqual({ status: 'failed' });
       expect(result['test 3']).toEqual({ status: 'passed' });
@@ -77,10 +77,10 @@ describe('analyze-test-failures', () => {
 
     it('should infer overall status from exit code when no individual tests found', () => {
       const log = 'Some output without test patterns';
-      
+
       const resultPass = parseTestResults(log, 0);
       expect(resultPass['overall']).toEqual({ status: 'passed' });
-      
+
       const resultFail = parseTestResults(log, 1);
       expect(resultFail['overall']).toEqual({ status: 'failed' });
     });
@@ -89,12 +89,12 @@ describe('analyze-test-failures', () => {
       const log = `
         Test Results:
         PASS test: foo
-        
+
         Files: 1
         ✓ test 1
       `;
       const result = parseTestResults(log, 0);
-      
+
       expect(result['test: foo']).toEqual({ status: 'passed' });
       expect(result['test 1']).toEqual({ status: 'passed' });
       expect(result['Test Results']).toBeUndefined();
@@ -106,7 +106,7 @@ describe('analyze-test-failures', () => {
         ✗ test[with](brackets)
       `;
       const result = parseTestResults(log, 1);
-      
+
       expect(result['my-test/with.special(chars)']).toEqual({ status: 'passed' });
       expect(result['test[with](brackets)']).toEqual({ status: 'failed' });
     });
@@ -116,9 +116,9 @@ describe('analyze-test-failures', () => {
     it('should classify test as pre-existing (failed in both)', () => {
       const baseline = { 'test 1': { status: 'failed' as const } };
       const working = { 'test 1': { status: 'failed' as const } };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1']).toEqual({
         baseline_status: 'failed',
         working_status: 'failed',
@@ -129,9 +129,9 @@ describe('analyze-test-failures', () => {
     it('should classify test as newly-introduced (passed baseline, failed working)', () => {
       const baseline = { 'test 1': { status: 'passed' as const } };
       const working = { 'test 1': { status: 'failed' as const } };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1']).toEqual({
         baseline_status: 'passed',
         working_status: 'failed',
@@ -142,9 +142,9 @@ describe('analyze-test-failures', () => {
     it('should classify test as newly-introduced (skipped baseline, failed working)', () => {
       const baseline = {};
       const working = { 'test 1': { status: 'failed' as const } };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1']).toEqual({
         baseline_status: 'skipped',
         working_status: 'failed',
@@ -155,9 +155,9 @@ describe('analyze-test-failures', () => {
     it('should classify test as fixed (failed baseline, passed working)', () => {
       const baseline = { 'test 1': { status: 'failed' as const } };
       const working = { 'test 1': { status: 'passed' as const } };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1']).toEqual({
         baseline_status: 'failed',
         working_status: 'passed',
@@ -168,9 +168,9 @@ describe('analyze-test-failures', () => {
     it('should skip new passing tests (passed in baseline, skipped in working)', () => {
       const baseline = {};
       const working = { 'test 1': { status: 'passed' as const } };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1']).toBeUndefined();
     });
 
@@ -185,9 +185,9 @@ describe('analyze-test-failures', () => {
         'test 2': { status: 'failed' as const },
         'test 3': { status: 'passed' as const },
       };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       expect(result['test 1'].category).toBe('pre-existing');
       expect(result['test 2'].category).toBe('newly-introduced');
       expect(result['test 3'].category).toBe('fixed');
@@ -201,9 +201,9 @@ describe('analyze-test-failures', () => {
       const working = {
         'test 3': { status: 'passed' as const },
       };
-      
+
       const result = classifyTests(baseline, working);
-      
+
       // Only tests with failed status should be included
       expect(Object.keys(result).length).toBe(0);
     });
@@ -223,9 +223,9 @@ describe('analyze-test-failures', () => {
           category: 'pre-existing' as const,
         },
       };
-      
+
       const summary = generateSummary(classification);
-      
+
       expect(summary.total_pre_existing).toBe(2);
       expect(summary.total_newly_introduced).toBe(0);
       expect(summary.total_fixed).toBe(0);
@@ -245,9 +245,9 @@ describe('analyze-test-failures', () => {
           category: 'newly-introduced' as const,
         },
       };
-      
+
       const summary = generateSummary(classification);
-      
+
       expect(summary.total_pre_existing).toBe(0);
       expect(summary.total_newly_introduced).toBe(2);
       expect(summary.total_fixed).toBe(0);
@@ -262,9 +262,9 @@ describe('analyze-test-failures', () => {
           category: 'fixed' as const,
         },
       };
-      
+
       const summary = generateSummary(classification);
-      
+
       expect(summary.total_pre_existing).toBe(0);
       expect(summary.total_newly_introduced).toBe(0);
       expect(summary.total_fixed).toBe(1);
@@ -289,9 +289,9 @@ describe('analyze-test-failures', () => {
           category: 'fixed' as const,
         },
       };
-      
+
       const summary = generateSummary(classification);
-      
+
       expect(summary.total_pre_existing).toBe(1);
       expect(summary.total_newly_introduced).toBe(1);
       expect(summary.total_fixed).toBe(1);
@@ -303,49 +303,49 @@ describe('analyze-test-failures', () => {
     it('should extract exit code with equals sign', () => {
       const log = 'Some output\nexit_code=42\nMore output';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(42);
     });
 
     it('should extract exit code with colon', () => {
       const log = 'exit-code: 1';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(1);
     });
 
     it('should extract exit code case-insensitive', () => {
       const log = 'Exit-Code=5';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(5);
     });
 
     it('should infer 1 from FAIL keyword', () => {
       const log = 'FAIL: some tests failed';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(1);
     });
 
     it('should infer 1 from "failed" keyword', () => {
       const log = 'Some tests failed';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(1);
     });
 
     it('should default to 0 when no exit code found', () => {
       const log = 'Everything is fine';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(0);
     });
 
     it('should prioritize explicit exit code over FAIL keyword', () => {
       const log = 'exit_code=0\nFAIL: test failed';
       const exitCode = extractExitCode(log);
-      
+
       expect(exitCode).toBe(0);
     });
   });
@@ -373,13 +373,13 @@ describe('analyze-test-failures', () => {
 
       // test 1: passed baseline, passed working - should not be in classification
       expect(classification['test 1']).toBeUndefined();
-      
+
       // test 2: passed baseline, failed working - newly-introduced
       expect(classification['test 2'].category).toBe('newly-introduced');
-      
+
       // test 3: failed baseline, failed working - pre-existing
       expect(classification['test 3'].category).toBe('pre-existing');
-      
+
       // test 4: new test, passing - should not be in classification
       expect(classification['test 4']).toBeUndefined();
 

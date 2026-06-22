@@ -6797,6 +6797,11 @@ $(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
     goal_setting_context=""
   fi
 
+  # Prepend caveman instruction if enabled
+  if [ -n "$caveman_instruction" ]; then
+    printf '%s\n\n' "$caveman_instruction"
+  fi
+  
   cat <<EOF
 You are a read-only run-evaluation Pi agent inside a Kaseki-managed ephemeral workspace.
 

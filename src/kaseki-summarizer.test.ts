@@ -7,7 +7,7 @@
  * - getChangedFiles: git diff integration
  */
 
-import { summarizeFiles, generateTaskPromptAnnotation } from './kaseki-summarizer';
+import { generateTaskPromptAnnotation } from './kaseki-summarizer';
 
 describe('kaseki-summarizer', () => {
   describe('generateTaskPromptAnnotation', () => {
@@ -182,7 +182,7 @@ describe('kaseki-summarizer', () => {
       // This test validates that summarizeFiles returns properly structured stats
       // We're testing the stats object structure, not the actual file reading
       // (which requires mocking the readFileWithSummaryAndMetrics function)
-      
+
       const stats = {
         files_processed: 0,
         total_bytes_full: 0,
@@ -236,7 +236,7 @@ describe('kaseki-summarizer', () => {
 
     it('should track files by strategy correctly', () => {
       const files_by_strategy: Record<string, number> = {};
-      
+
       // Simulate adding strategies
       files_by_strategy['summary'] = (files_by_strategy['summary'] || 0) + 1;
       files_by_strategy['summary'] = (files_by_strategy['summary'] || 0) + 1;
@@ -248,7 +248,7 @@ describe('kaseki-summarizer', () => {
 
     it('should track files by language correctly', () => {
       const files_by_language: Record<string, number> = {};
-      
+
       // Simulate adding languages
       files_by_language['typescript'] = (files_by_language['typescript'] || 0) + 1;
       files_by_language['typescript'] = (files_by_language['typescript'] || 0) + 1;
@@ -261,7 +261,7 @@ describe('kaseki-summarizer', () => {
     it('should handle maxFiles parameter to limit processing', () => {
       const filePaths = ['file1.ts', 'file2.ts', 'file3.ts', 'file4.ts', 'file5.ts'];
       const maxFiles = 3;
-      
+
       const filesToProcess = maxFiles ? filePaths.slice(0, maxFiles) : filePaths;
 
       expect(filesToProcess).toHaveLength(3);
@@ -271,7 +271,7 @@ describe('kaseki-summarizer', () => {
     it('should not process more files than provided', () => {
       const filePaths = ['file1.ts', 'file2.ts', 'file3.ts'];
       const maxFiles = 10;
-      
+
       const filesToProcess = maxFiles ? filePaths.slice(0, maxFiles) : filePaths;
 
       expect(filesToProcess).toHaveLength(3);
@@ -298,8 +298,8 @@ describe('kaseki-summarizer', () => {
 
       // Calculate derived metrics
       if (stats.files_processed > 0) {
-        stats.total_compression_ratio = stats.total_bytes_full > 0 
-          ? stats.total_bytes_returned / stats.total_bytes_full 
+        stats.total_compression_ratio = stats.total_bytes_full > 0
+          ? stats.total_bytes_returned / stats.total_bytes_full
           : 1;
       }
 
