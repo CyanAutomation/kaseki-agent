@@ -708,6 +708,10 @@ const controllerPage = String.raw`<!doctype html>
         background: color-mix(in srgb, var(--color-bad) 8%, transparent);
         padding: var(--space-1);
       }
+      .response-summary-item.critical {
+        border-color: var(--color-bad);
+        background: color-mix(in srgb, var(--color-bad) 14%, transparent);
+      }
       .response-log {
         align-self: start;
         color: var(--color-text);
@@ -1190,16 +1194,18 @@ const controllerPage = String.raw`<!doctype html>
       .artifacts-list {
         display: grid;
         gap: var(--space-2);
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       }
       .artifact-item {
         padding: var(--space-2);
         background: var(--color-surface-low);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
-        text-align: center;
+        text-align: left;
         cursor: pointer;
         transition: all var(--transition-fast) var(--transition-easing);
+        display: grid;
+        gap: var(--space-1);
       }
       .artifact-item:hover {
         background: var(--color-surface-high);
@@ -1215,7 +1221,26 @@ const controllerPage = String.raw`<!doctype html>
         color: var(--color-text-muted);
         font-family: var(--font-mono);
         font-size: var(--font-size-xs);
-        margin-top: var(--space-1);
+      }
+      .artifact-item-description {
+        color: var(--color-text-muted);
+        font-size: var(--font-size-xs);
+        line-height: var(--line-height-normal);
+      }
+      .artifact-item-badge {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-muted);
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        justify-self: start;
+        padding: 1px var(--space-1);
+        text-transform: uppercase;
+      }
+      .artifact-item-badge.recommended {
+        border-color: var(--color-accent);
+        color: var(--color-accent);
       }
       .artifact-content {
         display: flex;
@@ -1563,6 +1588,7 @@ const controllerPage = String.raw`<!doctype html>
       
       let pollTimer = null;
       let activeRunView = 'status';
+      let runProgressHighWater = {};
       const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
       const LONG_REQUEST_TIMEOUT_MS = 90000;
       const ISSUE_REQUEST_TIMEOUT_MS = 20000;
@@ -1822,7 +1848,7 @@ const controllerPage = String.raw`<!doctype html>
       function appendSummaryItem(label, value, options) {
         if (!responseSummary || !value) return;
         const item = document.createElement('div');
-        item.className = 'response-summary-item' + (options && options.warning ? ' warning' : '') + (options && options.fullWidth ? ' full-width' : '');
+        item.className = 'response-summary-item' + (options && options.warning ? ' warning' : '') + (options && options.critical ? ' critical' : '') + (options && options.fullWidth ? ' full-width' : '');
         const labelEl = document.createElement('span');
         labelEl.className = 'response-summary-label';
         labelEl.textContent = label;
@@ -1838,6 +1864,14 @@ const controllerPage = String.raw`<!doctype html>
         responseSummary.replaceChildren();
         const items = [];
         if (payload && typeof payload === 'object') {
+          const providerEmptyTurn = isProviderEmptyAssistantTurn(payload);
+          if (providerEmptyTurn) {
+            items.push([
+              'Provider returned empty coding response',
+              'The coding agent produced no assistant text, no tool calls, and no repository diff. Retry the run or switch model/provider before treating this as a task failure.',
+              { warning: true, critical: true, fullWidth: true },
+            ]);
+          }
           if (typeof payload.status === 'string') {
             items.push(['Response status', stripControlSequences(payload.status)]);
           }
@@ -1866,7 +1900,7 @@ const controllerPage = String.raw`<!doctype html>
           }
           if (payload.diagnosticSummary && typeof payload.diagnosticSummary === 'object') {
             const summary = payload.diagnosticSummary;
-            if (typeof summary.primaryReason === 'string' && !payload.failureClass && !payload.error) {
+            if (typeof summary.primaryReason === 'string' && !payload.failureClass && !payload.error && !providerEmptyTurn) {
               items.push(['Failure reason', stripControlSequences(summary.primaryReason).slice(0, 180), { warning: true, fullWidth: true }]);
             }
             if (Array.isArray(summary.phaseDiagnostics) && summary.phaseDiagnostics.length > 0) {
@@ -1940,6 +1974,24 @@ const controllerPage = String.raw`<!doctype html>
         if (progressMessage) {
           appendSummaryItem('Progress message', progressMessage, { fullWidth: true });
         }
+      }
+
+      function isProviderEmptyAssistantTurn(payload) {
+        if (!payload || typeof payload !== 'object') return false;
+        const failureJson = payload.failureJsonContent && typeof payload.failureJsonContent === 'object'
+          ? payload.failureJsonContent
+          : {};
+        const fields = [
+          payload.goalCheckFailureReason,
+          payload.error,
+          payload.diagnosticEntryPoint,
+          payload.diagnosticSummary && payload.diagnosticSummary.primaryReason,
+          failureJson.provider_error_type,
+          failureJson.failed_command,
+          failureJson.goal_check_failure_reason,
+          failureJson.provider_error_message,
+        ];
+        return fields.some((value) => typeof value === 'string' && value.includes('provider_empty_assistant_turn'));
       }
 
       function responseStatusLabel(response, payload) {
@@ -2347,6 +2399,24 @@ const controllerPage = String.raw`<!doctype html>
         setRunDetails(payload.progress);
       }
 
+      function applyProgressHighWater(payload) {
+        if (!payload || typeof payload !== 'object' || typeof payload.id !== 'string') return payload;
+        if (typeof payload.taskProgressPercent !== 'number') return payload;
+        const current = payload.taskProgressPercent;
+        const previous = runProgressHighWater[payload.id];
+        if (typeof previous === 'number' && current < previous) {
+          if (isTerminalStatus(payload.status)) {
+            delete runProgressHighWater[payload.id];
+          }
+          return { ...payload, taskProgressPercent: previous };
+        }
+        runProgressHighWater[payload.id] = Math.max(typeof previous === 'number' ? previous : 0, current);
+        if (isTerminalStatus(payload.status)) {
+          delete runProgressHighWater[payload.id];
+        }
+        return payload;
+      }
+
       function createRequestId() {
         if (window.crypto && typeof window.crypto.randomUUID === 'function') {
           return window.crypto.randomUUID();
@@ -2424,7 +2494,8 @@ const controllerPage = String.raw`<!doctype html>
           throw new Error('Network request failed before the controller responded: ' + (error instanceof Error ? error.message : String(error)));
         }
         const contentType = response.headers.get('content-type') || '';
-        const payload = contentType.includes('json') ? await response.json() : await response.text();
+        let payload = contentType.includes('json') ? await response.json() : await response.text();
+        payload = applyProgressHighWater(payload);
         if (needsAuth && response.ok) sessionStorage.setItem('kasekiApiToken', token);
         const runId = payload && typeof payload.id === 'string'
           ? payload.id
@@ -3066,6 +3137,11 @@ const controllerPage = String.raw`<!doctype html>
         
         const listDiv = document.createElement('div');
         listDiv.className = 'artifacts-list';
+        const recommended = new Set(
+          artifactsResponse && Array.isArray(artifactsResponse.recommended)
+            ? artifactsResponse.recommended
+            : []
+        );
         
         textArtifacts.forEach((artifact) => {
           const item = document.createElement('button');
@@ -3078,10 +3154,21 @@ const controllerPage = String.raw`<!doctype html>
           
           const sizeSpan = document.createElement('div');
           sizeSpan.className = 'artifact-item-size';
-          sizeSpan.textContent = artifact.size ? '(' + artifact.size + ')' : '';
+          sizeSpan.textContent = artifact.size ? formatBytes(artifact.size) : '';
+
+          const badge = document.createElement('span');
+          badge.className = 'artifact-item-badge' + (recommended.has(artifact.name) ? ' recommended' : '');
+          badge.textContent = recommended.has(artifact.name) ? 'Recommended' : artifact.availability || 'Available';
+
+          const description = document.createElement('div');
+          description.className = 'artifact-item-description';
+          description.textContent = artifact.description
+            ? stripControlSequences(String(artifact.description)).slice(0, 150)
+            : artifact.contentType || '';
           
-          item.appendChild(nameSpan);
+          item.append(nameSpan, badge);
           if (artifact.size) item.appendChild(sizeSpan);
+          if (description.textContent) item.appendChild(description);
           
           item.addEventListener('click', async () => {
             await openArtifact(runId, artifact.name);
@@ -3091,6 +3178,14 @@ const controllerPage = String.raw`<!doctype html>
         });
         
         artifactsOutputEl.appendChild(listDiv);
+      }
+
+      function formatBytes(value) {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes <= 0) return '';
+        if (bytes < 1024) return String(bytes) + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1).replace(/\.0$/, '') + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, '') + ' MB';
       }
 
       fullResultsBtn.addEventListener('click', () => {
@@ -3355,6 +3450,7 @@ const controllerPage = String.raw`<!doctype html>
               submitTab.click();
               // Scroll to task prompt
               taskPrompt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              setState('Issue #' + issue.number + ' copied into the task prompt.', 'ok');
             });
             
             issuesList.appendChild(item);

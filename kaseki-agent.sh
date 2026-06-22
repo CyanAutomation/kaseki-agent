@@ -584,12 +584,23 @@ append_cache_metric() {
   local metric_name="$2"
   local value="$3"
   local unit="${4:-bytes}"
+  local elapsed_seconds="${5:-0}"
+  local reason="${6:-}"
   
   jq \
     --arg name "$metric_name" \
     --arg val "$value" \
     --arg unit "$unit" \
-    '. += [{"name": $name, "value": (if $val == "true" then 1 elif $val == "false" then 0 else ($val | tonumber) end), "unit": $unit, "timestamp": (now | todate)}]' \
+    --arg elapsed "$elapsed_seconds" \
+    --arg reason "$reason" \
+    '. += [{
+      "name": $name,
+      "value": (if $val == "true" then 1 elif $val == "false" then 0 else ($val | tonumber) end),
+      "unit": $unit,
+      "elapsed_seconds": (if $elapsed == "" then 0 else ($elapsed | tonumber) end),
+      "reason": $reason,
+      "timestamp": (now | todate)
+    }]' \
     "$output_file" > "${output_file}.tmp" && mv "${output_file}.tmp" "$output_file"
 }
 
@@ -8905,7 +8916,7 @@ prepare_dependencies() {
       set_dependency_cache_status "workspace-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_workspace_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$workspace_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "false" "workspace" "0" "npm_ls_failed"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "workspace_cache_invalid" "true" "workspace" "0" "npm_ls_failed"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -8931,7 +8942,7 @@ prepare_dependencies() {
       set_dependency_cache_status "image-cache-invalid" "$cache_detail restore_method=$restore_method reason=npm_ls_failed"
       emit_event "dependency_cache_decision" "strategy=invalidate_image_cache" "restore_mode=$restore_mode" "restore_method=$restore_method" "reason=npm_ls_failed" "location=$image_cache_dir" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
       # Phase 2D: Emit cache metric to JSON (validation failure)
-      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "false" "image" "0" "npm_ls_failed"
+      append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "image_cache_invalid" "true" "image" "0" "npm_ls_failed"
       rm -rf node_modules
       cache_reused="false"
       cache_source="none"
@@ -8948,7 +8959,7 @@ prepare_dependencies() {
     set_dependency_cache_status "cache-install-required" "$cache_detail reason=$install_reason"
     emit_event "dependency_cache_decision" "strategy=fresh_install" "restore_mode=$restore_mode" "restore_method=none" "reason=$install_reason" "location=none" "lock_hash=$lock_hash" "cache_key=$cache_key" "repo_ref_key=$repo_ref_key" "repo_url=$REPO_URL" "git_ref=$GIT_REF" "node_major=$node_major" "flags_hash=$flags_hash"
     # Phase 2D: Emit cache metric to JSON (cache miss)
-    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "false" "none" "0" "$install_reason"
+    append_cache_metric "${KASEKI_RESULTS_DIR}"/cache-metrics.json "fresh_install" "true" "none" "0" "$install_reason"
     emit_progress "dependency install" "started cache_hit=false restore_mode=$restore_mode restore_method=none lockfile=$lock_source lock_hash=$lock_hash repo_ref_key=$repo_ref_key node_major=$node_major flags_hash=$flags_hash flags=$install_flags_display"
     install_start="$(date +%s)"
     if ! npm ci --prefer-offline "${install_flags[@]}"; then
