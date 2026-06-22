@@ -1,79 +1,106 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
 /**
- * @private
+ * Resolve Actual Model Attribution
+ *
+ * Attempts to determine the actual model used by a kaseki run via a 3-tier fallback chain:
+ * 1. Event stream (pi-events.jsonl) - look for first model event
+ * 2. Summary counters - if exactly 1 model used, extract from counters
+ * 3. Summary metadata - if selected_model or model field exists
+ *
+ * Returns 'unknown' if all tiers fail.
+ *
+ * CLI Usage: npx ts-node scripts/resolve-actual-model.ts <summaryPath> <eventsPath>
+ */
+import fs from 'node:fs';
+/**
+ * Normalize and validate a model string
+ * @internal
  */
 function clean(value) {
-  if (value === undefined || value === null) return '';
-  const model = String(value).trim();
-  if (!model) return '';
-  const lower = model.toLowerCase();
-  if (lower === 'unknown' || lower === 'null' || lower === 'undefined') return '';
-  if (/[\r\n\0]/.test(model)) return '';
-  return model;
+    if (value === undefined || value === null)
+        return '';
+    const model = String(value).trim();
+    if (!model)
+        return '';
+    const lower = model.toLowerCase();
+    if (lower === 'unknown' || lower === 'null' || lower === 'undefined')
+        return '';
+    if (/[\r\n\0]/.test(model))
+        return '';
+    return model;
 }
-
 /**
- * @private
+ * Extract model from event stream (JSONL)
+ * Scans lines sequentially; returns first valid model found
+ * @internal
  */
 function modelFromEventStream(eventsPath) {
-  if (!eventsPath) return '';
-  let content;
-  try {
-    content = fs.readFileSync(eventsPath, 'utf8');
-  } catch {
-    return '';
-  }
-
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!eventsPath)
+        return '';
+    let content;
     try {
-      const event = JSON.parse(trimmed);
-      const model = clean(event && event.model);
-      if (model) return model;
-    } catch {
-      // Ignore malformed event lines; attribution is best-effort metadata.
+        content = fs.readFileSync(eventsPath, 'utf8');
     }
-  }
-  return '';
+    catch {
+        return '';
+    }
+    for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed)
+            continue;
+        try {
+            const event = JSON.parse(trimmed);
+            const model = clean(event && event.model);
+            if (model)
+                return model;
+        }
+        catch {
+            // Ignore malformed event lines; attribution is best-effort metadata.
+        }
+    }
+    return '';
 }
-
-function modelFromSummaryCounters(summary) {
-  const counters = summary && summary.counters && summary.counters.models;
-  if (!counters || typeof counters !== 'object' || Array.isArray(counters)) return '';
-
-  const entries = Object.entries(counters).filter(([model, count]) => clean(model) && Number(count) > 0);
-  if (entries.length !== 1) return '';
-  return clean(entries[0][0]);
-}
-
 /**
- * @private
+ * Extract model from summary counters
+ * Returns the model only if exactly 1 unique model was counted (no ambiguity)
+ * @internal
+ */
+function modelFromSummaryCounters(summary) {
+    const counters = summary && summary.counters && summary.counters;
+    const models = (counters && typeof counters === 'object' && !Array.isArray(counters) ? counters.models : undefined);
+    if (!models || typeof models !== 'object' || Array.isArray(models))
+        return '';
+    const entries = Object.entries(models).filter(([model, count]) => clean(model) && Number(count) > 0);
+    if (entries.length !== 1)
+        return '';
+    return clean(entries[0][0]);
+}
+/**
+ * Extract model from summary JSON
+ * Tries selected_model, then model, then falls back to counters
+ * @internal
  */
 function modelFromSummary(summaryPath) {
-  if (!summaryPath) return '';
-  let summary;
-  try {
-    summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-  } catch {
-    return '';
-  }
-
-  return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
+    if (!summaryPath)
+        return '';
+    let summary;
+    try {
+        summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    }
+    catch {
+        return '';
+    }
+    return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
 }
-
+/**
+ * Resolve the actual model used in a kaseki run
+ * Uses 3-tier fallback: event stream → summary → 'unknown'
+ *
+ * @param summaryPath - Path to pi-summary.json
+ * @param eventsPath - Path to pi-events.jsonl
+ * @returns Model string or 'unknown'
+ */
 export function resolveActualModel({ summaryPath, eventsPath } = {}) {
-  return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
+    return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
 }
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [summaryPath, eventsPath] = process.argv.slice(2);
-  if (!summaryPath || !eventsPath) {
-    console.error('Usage: resolve-actual-model.js <summaryPath> <eventsPath>');
-    process.exit(1);
-  }
-  process.stdout.write(`${resolveActualModel({ summaryPath, eventsPath })}\n`);
-}
+//# sourceMappingURL=resolve-actual-model.js.map

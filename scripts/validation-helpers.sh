@@ -233,6 +233,7 @@ run_validation_commands() {
       elif [ "$command_exit" -ne 0 ] && [ "$validation_exit_ref" -eq 0 ]; then
         validation_exit_ref="$command_exit"
         validation_detail_ref="first failing command was \"$trimmed\" with exit $command_exit"
+        # shellcheck disable=SC2034
         validation_reason_ref="$failure_reason_prefix: $trimmed (exit $command_exit)"
         append_validation_failure_tail "$raw_log" "$log_file" "${KASEKI_RESULTS_DIR}/quality.log"
         if grep -q 'getcwd\|No such file or directory\|cannot access parent directories' "$log_file"; then
@@ -249,6 +250,7 @@ run_validation_commands() {
           } | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
         fi
         if [ "${KASEKI_VALIDATION_FAIL_FAST:-1}" -eq 1 ]; then
+          # shellcheck disable=SC2034
           validation_stopped_ref=true
           printf 'Validation stopped at first failure (fail-fast mode enabled).\n' | tee -a "$log_file"
           break
