@@ -57,7 +57,7 @@ async function getChangedFiles(repoDir: string): Promise<string[]> {
   }
 }
 
-async function summarizeFiles(
+export async function summarizeFiles(
   repoDir: string,
   filePaths: string[],
   maxFiles?: number
@@ -137,7 +137,7 @@ async function summarizeFiles(
   return stats;
 }
 
-function generateTaskPromptAnnotation(stats: SummarizationStats): string {
+export function generateTaskPromptAnnotation(stats: SummarizationStats): string {
   const lines = [
     'Code Summary Metadata:',
     `- Files analyzed: ${stats.files_processed}`,
@@ -283,7 +283,10 @@ Options:
   }
 }
 
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+// Only run main if this is being executed directly (not imported as a module)
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}
