@@ -5717,8 +5717,28 @@ is_transient_scouting_failure() {
   return 1
 }
 
+# Phase 2.1: Detect if task requires detailed guidance (parser, events, serialization, etc.)
+# Returns 0 if complex task, 1 if simple task
+is_complex_change_task() {
+  local task_text="$1"
+  # Check for keywords indicating complex changes that need detailed test_impact guidance
+  if printf '%s\n' "$task_text" | grep -qiE '(parser|regex|serializ|event|listen|emit|field|schema|format|type.*change|response|construct|enum|constant|rename|refactor.*[a-z]{3,})' 2>/dev/null; then
+    return 0  # Complex task
+  fi
+  return 1  # Simple task (bug fix, documentation, etc.)
+}
+
 build_scouting_prompt() {
-  cat <<EOF
+  local task_text="$TASK_PROMPT"
+  local use_detailed_guidance=0
+  
+  # Phase 2.1: Conditionally include detailed guidance only for complex tasks
+  if is_complex_change_task "$task_text"; then
+    use_detailed_guidance=1
+  fi
+  
+  # Build base prompt (always included)
+  cat <<'SCOUTING_BASE'
 You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
 
 ## [ROLE]
@@ -5849,6 +5869,11 @@ Guidelines for test_impact:
 - **pattern**: Short name of the pattern (e.g., "Null-coalescing assertion", "Event field presence")
 - **description**: 1-2 sentences explaining why this change matters
 - Max 5 test_examples per file (keep focused on key patterns; avoid exhaustive lists)
+SCOUTING_BASE
+
+  # Conditionally include detailed guidance for complex tasks
+  if [ $use_detailed_guidance -eq 1 ]; then
+    cat <<'SCOUTING_DETAILED'
 
 **Enhanced Guidelines by Change Type** (with 5+ concrete patterns each):
 
@@ -5925,6 +5950,21 @@ Guidelines for test_impact:
      ✓ Config schema: {"type": "added_assertion", "before": "config = loadConfig(); expect(config.timeout).toBeDefined()", "after": "config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.retries).toBeDefined()", "pattern": "Config schema expansion", "description": "New required config fields must be validated"}
      ✓ Multi-file: {"type": "added_test_case", "before": "// Only single file tested", "after": "// Test mocking across src/a.ts, src/b.ts, tests/mock-factory.ts", "pattern": "Integration mocking", "description": "Mock strategy now affects multiple test files"}
 
+SCOUTING_DETAILED
+  else
+    # For simple tasks, include minimal guidance
+    cat <<'SCOUTING_MINIMAL'
+
+**Minimal test_impact Guidelines** (for simple bug fixes and documentation):
+- Include test_impact for any code changes affecting behavior, especially: null/undefined handling, error cases, field names, timing
+- Empty test_impact is acceptable only for pure documentation, build config, or dependency updates with no behavioral changes
+- Max 2-3 test_examples per file; keep focused on key changes
+SCOUTING_MINIMAL
+  fi
+  
+  # Common section included for all complexity levels
+  cat <<EOF
+
 **Examples of Strong test_impact Entries**:
 ✓ Parser change:
   {"path": "tests/parser.test.ts", "reason": "parseRole() function now handles null with fallback", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow(NullReferenceError)", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed', level: 0 })", "description": "Null now treated as valid input with sensible defaults"}]}
@@ -5968,8 +6008,11 @@ Guidelines for suggested_allowlist:
 - Example: "Unable to parse src/config.json due to syntax error; focusing on src/lib instead."
 - Do not fail the entire scouting phase due to isolated file read errors; adapt and continue.
 
-## [RAW TASK PROMPT]
+## [ORIGINAL TASK PROMPT FOR REFERENCE]
 
+See goal-setting artifact ($GOAL_SETTING_ARTIFACT) if available for upgraded goal with SMART criteria, anti-patterns, and constraints. Otherwise, use the original task prompt below.
+
+Original task (before goal-setting upgrade):
 $TASK_PROMPT
 EOF
 }
