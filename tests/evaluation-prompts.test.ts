@@ -634,7 +634,7 @@ build_scouting_prompt
       // Verify that array validation is enforced
       expect(validationSection).toContain('Array.isArray');
       // Verify that the test_impact specific validation function is called
-      expect(validationSection).toContain('validateTestImpactArray(artifact.test_impact');
+      expect(validationSection).toContain('validateTestImpactArray(art.test_impact');
       // Verify that critical severity errors are used in validation
       expect(validationSection).toMatch(/['"]critical['"]/);
     });

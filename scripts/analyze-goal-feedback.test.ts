@@ -13,9 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-// Dynamically require the actual script (CommonJS)
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const script = require('./analyze-goal-feedback.js');
+// Import directly from the TypeScript source file (ts-jest will compile it)
+import type { FeedbackEntry } from './analyze-goal-feedback';
+import * as scriptModule from './analyze-goal-feedback';
 
 const {
   readFeedbackFile,
@@ -23,7 +23,7 @@ const {
   analyzeCorrelations,
   analyzeSmartDimensions,
   generateRecommendations,
-} = script;
+} = scriptModule as any;
 
 // Type definitions for test clarity
 interface SmartCriterion {
