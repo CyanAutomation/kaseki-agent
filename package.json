@@ -44,8 +44,8 @@
   },
   "homepage": "https://github.com/CyanAutomation/kaseki-agent#readme",
   "scripts": {
-    "generate:openapi": "node scripts/generate-openapi-spec.js",
-    "build": "tsc && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
+    "generate:openapi": "node dist/generate-openapi-spec.js",
+    "build": "tsc && tsc -p tsconfig.scripts.json && node dist/add-js-extensions.js && npm run generate:openapi && npm run check:dist-dynamic-imports && chmod 0755 dist/*.js",
     "prepublishOnly": "npm run build",
     "type-check": "tsc --noEmit -p tsconfig.json",
     "check": "npm run type-check && npm run lint",
@@ -75,7 +75,7 @@
     "release": "semantic-release",
     "release:dry": "semantic-release --dry-run",
     "check:dist-dynamic-imports": "node dist/check-dist-dynamic-imports.js",
-    "validate-module-imports": "node scripts/validate-module-imports.js",
+    "validate-module-imports": "node dist/validate-module-imports.js",
     "test:pack-artifact": "npm run build && bash scripts/check-packed-artifact.sh",
     "type-check:type-tests": "tsc -p tsconfig.type-tests.json",
     "test:tree-sitter:functional": "node test-tree-sitter-functional.cjs"

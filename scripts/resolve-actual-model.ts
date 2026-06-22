@@ -63,8 +63,8 @@ function modelFromEventStream(eventsPath: string | undefined): string {
  * @internal
  */
 function modelFromSummaryCounters(summary: Record<string, unknown> | undefined): string {
-  const counters = summary && summary.counters && summary.counters;
-  const models = (counters && typeof counters === 'object' && !Array.isArray(counters) ? counters.models : undefined) as Record<string, unknown> | undefined;
+  const counters = (summary && (summary as Record<string, unknown>).counters) as Record<string, unknown> | undefined;
+  const models = (counters && typeof counters === 'object' && !Array.isArray(counters) ? (counters as Record<string, unknown>).models : undefined) as Record<string, unknown> | undefined;
   if (!models || typeof models !== 'object' || Array.isArray(models)) return '';
 
   const entries = Object.entries(models).filter(([model, count]) => clean(model) && Number(count) > 0);
