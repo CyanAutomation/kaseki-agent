@@ -43,6 +43,49 @@ This skill provides comprehensive reference for all kaseki-agent environment var
 | `TASK_PROMPT` | (code fix) | Agent instruction | Natural language prompt |
 | `KASEKI_MODEL` | `openrouter/free` | LLM model to use | Model identifier or `openrouter/free` |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `10800` | Agent execution timeout | Seconds (typical: 10800–14400) |
+| `KASEKI_CAVEMAN` | `1` | Enable terse communication mode (Caveman skill) | `0` (disable) or `1` (enable, default) |
+
+---
+
+## Agent Communication Modes
+
+### Caveman Mode (Token Efficiency)
+
+**What it does**: Activates the Caveman skill to reduce prompt token usage ~75% across all Pi phases (goal-setting, scouting, coding, goal-check, evaluation) while preserving technical accuracy.
+
+**How it works**: 
+- Drop articles (a/an/the), filler (just, really, basically), pleasantries (sure, certainly)
+- Keep full sentences; use fragments when clear
+- Use short synonyms (big not extensive, fix not implement)
+- No tool narration, decorative tables, or emoji
+- Technical terms exact; code blocks unchanged
+- Pattern: `[thing] [action] [reason]. [next step].`
+
+**Usage**:
+```bash
+# Enable (default)
+KASEKI_CAVEMAN=1 ./run-kaseki.sh
+
+# Disable (verbose mode)
+KASEKI_CAVEMAN=0 ./run-kaseki.sh
+```
+
+**When to use**:
+- Cost-sensitive runs (OpenRouter/OpenAI token billing)
+- Long multi-step tasks where prompt length impacts quality
+- Large codebases requiring detailed exploration
+- Limited context window for complex tasks
+
+**When to disable** (`KASEKI_CAVEMAN=0`):
+- Prefer verbose, detailed guidance
+- Complex ambiguous tasks where clarity matters more than efficiency
+- Initial setup/testing where extra detail helps
+
+**Impact**:
+- Prompt token usage: ~75% reduction
+- Response quality: Maintained (technical substance preserved)
+- Processing time: No impact (token reduction only affects input)
+- Model behavior: No difference (same instructions, just more concise)
 
 ---
 
