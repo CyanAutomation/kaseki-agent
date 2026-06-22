@@ -4721,56 +4721,22 @@ You are a goal-setting Pi agent. Your task is to upgrade a user's task prompt in
 
 - Write exactly one JSON object to $GOAL_SETTING_CANDIDATE_ARTIFACT.
 
-Reference: https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex
+=== GOAL-SETTING BEST PRACTICES ===
 
-=== OPENAI BEST PRACTICES FOR WELL-FORMED GOALS ===
-
-1. **EXPLICIT ANTI-PATTERNS ("DO NOT" CLAUSES)**
-   - Extract hard boundaries: what the agent MUST NOT modify, break, or change
-   - Distinguish from soft constraints (nice-to-have guardrails)
-   - Examples of strong anti-patterns:
-     ✓ "Do not modify generated files (src/generated/**)"
-     ✓ "Do not break existing API contracts"
-     ✓ "Do not change configuration file structure"
-
-2. **SMART SUCCESS CRITERIA** (not vague descriptions)
-   - Specific: "Fix parseRole() null-safety" (not "improve parseRole()")
-   - Measurable: "Add 5 edge-case tests" (not "better test coverage")
-   - Achievable: "2-3 files max" (not "refactor whole system")
-   - Relevant: Tied to task goal (not scope creep)
-   - Time-bound: Implicit in single-run batch (not "eventually")
-   
-3. **CONSTRAINT CATEGORIZATION**
-   - Separate constraints by type: Operational, Architectural, Technical, Business
-   - Prioritize them (critical vs. optional)
-   - Help agents sequence work correctly
-
-4. **CODEBASE CONTEXT SIGNALS**
-   - Tech stack hints (Node.js, TypeScript, test framework)
-   - Folder structure patterns (what goes where)
-   - Existing conventions and patterns observed in repo
-
-5. **EXAMPLE-DRIVEN GOALS**
-   - Include input/output examples if inferrable
-   - Show "before" and "after" for clarity
-   - Helps agents ground their understanding
-
-6. **REASONING TRANSPARENCY**
-   - Explain WHY constraints exist (not just list them)
-   - Help downstream agents make intelligent trade-offs
-   - Clarify scope boundaries with business context
+Well-formed goals have:
+- **Explicit anti-patterns**: Concrete "do not" constraints (e.g., "Do not modify src/generated/**")
+- **SMART criteria**: Specific (name function), Measurable (test count), Achievable (file count), Relevant (task scope), Time-bound (single run)
+- **Typed constraints**: Separate Operational, Architectural, Technical, and Business constraints
+- **Codebase context**: Tech stack, folder patterns, naming conventions
+- **Examples**: Input/output before/after if inferrable
+- **Reasoning**: Explain why constraints exist
 
 === INPUT ANALYSIS ===
 
 User task prompt:
 $ORIGINAL_TASK_PROMPT
 
-Analyze this prompt for:
-- Implicit success criteria and constraints
-- Scope boundaries (what's IN scope vs. OUT of scope)
-- Anti-patterns (explicit "do NOT" rules)
-- Codebase conventions to preserve (if inferrable from prompt)
-- Technical vs. business drivers
+Analyze for: success criteria, scope boundaries, anti-patterns, conventions, drivers
 
 === OUTPUT SCHEMA ===
 
@@ -6405,14 +6371,36 @@ collect_run_evaluation_feedback() {
 
 
 build_goal_check_prompt() {
-  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context
-  validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"
-  if [ -n "$(printf '%s' "$validation_tail" | tr -d '[:space:]')" ]; then
-    validation_context="Validation log tail (last 80 lines):
-$validation_tail"
+  local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary
+  
+  # Build validation summary instead of raw tail (reduce from ~400 tokens to ~50)
+  if [ -f "${KASEKI_RESULTS_DIR}"/validation-timings.tsv ]; then
+    validation_summary="$(node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(process.env.KASEKI_RESULTS_DIR + "/validation-timings.tsv", "utf8").trim().split(/\r?\n/).slice(1);
+const passed = lines.filter(l => l.includes("\t0$")).length;
+const failed = lines.filter(l => !l.includes("\t0$")).length;
+const exitCodes = lines.map(l => l.split("\t")[2]).filter(Boolean).sort(String);
+console.log(`Commands: ${passed} passed, ${failed} failed`);
+if (exitCodes.length) console.log(`Exit codes: ${[...new Set(exitCodes)].join(", ")}`);
+if (failed > 0) {
+  const failedCmd = lines.find(l => !l.includes("\t0$"));
+  console.log(`First failure: ${failedCmd ? failedCmd.split("\t")[0] : "unknown"}`);
+}
+' 2>/dev/null || true)"
   else
-    validation_context="Validation log: "${KASEKI_RESULTS_DIR}"/validation.log is empty or has not been produced yet. Treat validation logs as optional evidence for this pre-validation check; rely on the goal-setting output, scouting output, changed files, and git diff to determine whether the goal requirements are satisfied."
+    validation_summary="Validation log: validation-timings.tsv not yet available (optional evidence for pre-validation checks)"
   fi
+  
+  if [ -n "$validation_summary" ]; then
+    validation_context="Validation summary:
+$validation_summary
+
+Full logs available in ${KASEKI_RESULTS_DIR}/validation.log (optional for detailed debugging)"
+  else
+    validation_context="Validation log: not yet available. Rely on goal-setting output, scouting output, changed files, and git diff to determine requirement completion."
+  fi
+  
   progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"
   if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then
     test_impact_context="Static test-impact warnings artifact ($TEST_IMPACT_WARNINGS_ARTIFACT):
@@ -6429,8 +6417,8 @@ $(cat "$TEST_IMPACT_WARNINGS_ARTIFACT" 2>/dev/null)
   
   # Include goal-setting output if available (provides SMART criteria, quality metrics, anti-patterns)
   if [ -f "$GOAL_SETTING_ARTIFACT" ]; then
-    goal_setting_context="GOAL-SETTING OUTPUT (use this to validate SMART criteria and anti-patterns):
-$(head -n 200 "$GOAL_SETTING_ARTIFACT" 2>/dev/null)
+    goal_setting_context="GOAL-SETTING ARTIFACT: $GOAL_SETTING_ARTIFACT
+(Use to validate SMART criteria, anti-patterns, and constraints)
 
 ---
 "
@@ -6489,80 +6477,43 @@ Evaluate whether the coding agent's current repository changes realized the obje
 
 ## Your Task
 
-Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style. Use SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound) to validate success.
+Determine if the agent successfully met the requirements specified in the goal-setting output. This is NOT a code review—focus on requirement completion, not code style.
 
 ## Inputs to Inspect
 
-**Goal-Setting Context** (use to validate SMART dimensions and anti-patterns):
-- Goal-setting artifact: $GOAL_SETTING_ARTIFACT
-- Quality metrics, SMART criteria, anti-patterns, constraints
-
-**Agent Artifacts** (use to verify requirements were met):
+- Goal-setting artifact: $GOAL_SETTING_ARTIFACT (SMART criteria, anti-patterns, constraints)
 - Scouting report: $SCOUTING_ARTIFACT
 - Changed files: "${KASEKI_RESULTS_DIR}"/changed-files.txt
 - Git diff: "${KASEKI_RESULTS_DIR}"/git.diff
-- Validation outcomes (optional evidence; may be absent during pre-validation checks): "${KASEKI_RESULTS_DIR}"/validation-timings.tsv and ${KASEKI_RESULTS_DIR}/validation.log
-- Static test-impact warnings (non-blocking): $TEST_IMPACT_WARNINGS_ARTIFACT
-- Coding-agent events: "${KASEKI_RESULTS_DIR}"/pi-summary.json and ${KASEKI_RESULTS_DIR}/pi-events.jsonl
+- Agent summary: "${KASEKI_RESULTS_DIR}"/pi-summary.json
+- Optional validation evidence: "${KASEKI_RESULTS_DIR}"/validation.log
 
-## Evaluation Framework: SMART Criteria Check
+## Evaluation: SMART Criteria Check
 
-1. **Specific**: Did agent address the specific functions/modules mentioned in the goal? (not generic improvements)
-2. **Measurable**: Are requirements verifiable via test results, diff inspection, validation logs, or (when validation has not run yet) goal-setting/scouting context plus changed files and git diff?
-3. **Achievable**: Were requirements completed (no indication of timeout, incomplete attempts)?
-4. **Relevant**: Do changes map directly to the goal (not scope creep or unrelated changes)?
-5. **Time-bound**: Completed in this single run (not postponed to future attempts)?
+For each requirement from goal-setting, verify:
+- **Specific**: Did agent address the specific function/module/file mentioned? (not generic improvements)
+- **Measurable**: Can you verify via tests, diff, or goal-setting/scouting context?
+- **Achievable**: Completed in this run? (not timeout or incomplete)
+- **Relevant**: Maps directly to goal? (not scope creep)
+- **Time-bound**: Completed in single run?
 
-For each dimension, provide evidence by citing specific file locations, test names, or validation results.
+Cite specific evidence: file paths, line numbers, test names, validation results.
 
-## Success Criteria Assessment Contract
+✅ Good evidence: "parseRole() now handles null at lines 45-52 in src/parser.ts"
+❌ Poor evidence: "The parser was fixed"
 
-Use this contract when reading the goal-setting artifact:
+## Confidence Mapping
 
-- GOAL_CHECK_CONTRACT_PER_CRITERION_SMART: Assess each success criterion or acceptance criterion independently against all five SMART dimensions (Specific, Measurable, Achievable, Relevant, Time-bound), not just the overall goal.
-- GOAL_CHECK_CONTRACT_EVIDENCE_REQUIRED: For every met or unmet criterion assessment, cite concrete evidence from the diff, changed files, tests, validation results, or other listed artifacts.
-- GOAL_CHECK_CONTRACT_MEASURABLE_ACCEPTANCE_CRITERIA: Treat measurable acceptance criteria as observable pass/fail conditions; flag vague goals or intent statements as insufficient unless the implementation evidence maps them to concrete, verifiable outcomes.
+- **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met
+- **medium**: 2-3 evidence items + 3-4 SMART dimensions  
+- **low**: <2 evidence items OR <3 SMART dimensions
 
-## Evidence Requirements
+## Retry Guidance
 
-Evidence must be SPECIFIC and VERIFIABLE. Reference concrete artifacts:
-
-✅ Good evidence:
-- "parseRole() now handles null input at line 45-52 in src/parser.ts (changed from throwing TypeError to returning 'Unnamed Role')"
-- "5 new tests added: tests/parser.test.ts lines 120-175 covering null, undefined, empty, long, and special-char inputs"
-- "All 127 tests pass in validation.log (previously 125)"
-
-❌ Poor evidence:
-- "The parser was fixed"
-- "Tests were added"
-- "Code looks good"
-
-## Confidence Grounding
-
-Map your confidence to evidence strength:
-
-- **high**: ≥3 specific evidence items + ≥4/5 SMART dimensions met (or ≥2 clear unmet dimensions with actionable fix)
-- **medium**: 2-3 evidence items + 3-4 SMART dimensions + some uncertainty
-- **low**: <2 evidence items OR <3 SMART dimensions OR unclear path to fix
-
-## Retry Prompt Guidance (if met=false)
-
-If goal is not met, your retry_prompt MUST:
+If goal not met, your retry_prompt must:
 1. Name the specific unmet SMART dimension(s)
-2. Reference what the agent did accomplish (so it doesn't re-do work)
-3. Provide actionable next steps (not just "try again")
-
-Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test coverage is incomplete. Add tests for the 2 missing cases: unicode symbols and 100+ char names. Then run npm test to verify all 127 tests pass."
-
-## Rules
-
-- Do not edit files, git state, dependencies, or generated artifacts except writing exactly one JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT.
-- You MUST write the final verdict JSON object to $GOAL_CHECK_CANDIDATE_ARTIFACT before exiting; a chat response, streamed assistant message, or printed JSON alone is not sufficient.
-- Do not run git add, git commit, git push, gh, hub, package installation, or commands that modify files.
-- Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
-- Decide whether the goal requirements were realized. Do not evaluate code style, architecture, or elegance.
-- If anti-patterns were specified in goal-setting (do_not_modify, do_not_break), verify they were respected.
-- Validation logs are optional evidence. If "${KASEKI_RESULTS_DIR}"/validation.log is empty or absent, do not fail solely because validation evidence is unavailable; rely on goal-setting output, scouting output, changed files, and git diff.
+2. Reference what agent already did (avoid re-doing work)
+3. Provide actionable next steps
 
 ## Required JSON artifact
 
@@ -6570,24 +6521,13 @@ Example: "Null handling is done (parseRole returns 'Unnamed Role'), but test cov
   "met": true or false,
   "confidence": "high", "medium", or "low",
   "summary": "1-2 sentence verdict with key finding",
-  "evidence": [
-    "specific, verifiable evidence item 1 with file/line references",
-    "specific, verifiable evidence item 2",
-    "... (3+ items for high confidence)"
-  ],
-  "missing": [
-    "unmet requirement 1 (empty array if met=true)",
-    "unmet requirement 2"
-  ],
+  "evidence": ["specific, verifiable evidence item 1 with file/line references", "..."],
+  "missing": ["unmet requirement 1 (empty if met=true)", "..."],
   "retry_prompt": "actionable repair instructions; empty if met=true",
-  "validation_notes": [
-    "validation command 1: outcome",
-    "validation command 2: outcome"
-  ]
+  "validation_notes": ["validation command 1: outcome", "..."]
 }
 
 ## Context
-
 $goal_setting_context
 $causality_context
 $test_impact_context

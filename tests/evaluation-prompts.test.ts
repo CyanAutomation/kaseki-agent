@@ -79,8 +79,9 @@ describe('Evaluation Prompt Enhancements', () => {
 
     const expectedMarkers = [
       'build_goal_check_prompt() {',
-      'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context',
-      'validation_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/validation.log 2>/dev/null || true)"',
+      'local validation_tail progress_tail goal_setting_context validation_context test_impact_context causality_context validation_summary',
+      'validation_summary="$(node -e',
+      'validation-timings.tsv',
       'progress_tail="$(tail -80 "${KASEKI_RESULTS_DIR}"/progress.jsonl 2>/dev/null || true)"',
       'if [ -s "$TEST_IMPACT_WARNINGS_ARTIFACT" ]; then',
       'if [ -f "$GOAL_SETTING_ARTIFACT" ]; then',
@@ -257,7 +258,7 @@ build_run_evaluation_prompt
       'build_scouting_prompt() {',
       'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
       'Guidelines for test_impact:',
-      'Enhanced Guidelines by Change Type:',
+      '**Enhanced Guidelines by Change Type**',
       'Guidelines for critical_change_expectations:',
       '$TASK_PROMPT',
       'EOF',
@@ -344,19 +345,19 @@ build_scouting_prompt
     const testImpactGuidanceSection = extractSection(
       prompt,
       'Guidelines for test_impact:',
-      'Examples of strong test_impact entries with test_examples:'
+      '**Examples of Strong test_impact Entries**'
     );
     const changeTypeGuidanceSection = extractSection(
       prompt,
-      'Enhanced Guidelines by Change Type:',
+      '**Enhanced Guidelines by Change Type**',
       'Guidelines for critical_change_expectations:'
     );
     const topLevelFields = [...schemaSection.matchAll(/^- ([^:]+):/gm)].map(match => match[1]);
     const testImpactLine = schemaSection.match(/^- test_impact: ([^\n]+)/m)?.[1] ?? '';
     const testImpactFields = ['path', 'reason'].filter(field => testImpactLine.includes(field));
     const testExampleFields = [...testImpactGuidanceSection.matchAll(/- \*\*([^*]+)\*\*:/g)].map(match => match[1]);
-    const requiresImpactedTests = (section: string) => /Typical test_impact:/i.test(section)
-      && /Tests?|assertions?|expectations?|Files to check:/i.test(section);
+    const requiresImpactedTests = (section: string) => /Common test_impact patterns:/i.test(section)
+      && /Test files to check:/i.test(section);
 
     return {
       schema: {
@@ -365,17 +366,17 @@ build_scouting_prompt
       },
       testImpactGuidance: {
         requiresAlwaysIncludedField: /Always include test_impact/i.test(testImpactGuidanceSection),
-        allowsEmptyOnlyWhenNoAffectedTests: /empty array only when no likely affected tests/i.test(testImpactGuidanceSection),
-        mapsExpectationStringsToImpactedTests: /identify likely affected test files/i.test(testImpactGuidanceSection)
-          && /expectation strings or snapshots\/assertions/i.test(testImpactGuidanceSection)
-          && /trigger related test updates/i.test(testImpactGuidanceSection),
+        allowsEmptyOnlyWhenNoAffectedTests: /When test_impact Can Be Empty/i.test(testImpactGuidanceSection)
+          && /In all other cases.*provide at least 1 test_impact entry/i.test(testImpactGuidanceSection),
+        mapsExpectationStringsToImpactedTests: /Example test_examples/i.test(testImpactGuidanceSection)
+          && /test files to check/i.test(testImpactGuidanceSection),
         testExampleFields,
       },
       changeMappings: {
-        parserLogic: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '1. **Parser & Regex Changes**')),
+        parserLogic: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '1. **Parser & Validation Changes**')),
         progressEventFields: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '2. **Event Handling & Progress Changes**')),
-        outputFormat: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '3. **Response Construction & Serialization**')),
-        namingConventions: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '4. **Naming Conventions & Constants**')),
+        outputFormat: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '3. **Response Construction & Serialization Changes**')),
+        namingConventions: requiresImpactedTests(extractNumberedSection(changeTypeGuidanceSection, '4. **Naming Conventions & Constants Changes**')),
       },
     };
   };
@@ -447,15 +448,16 @@ build_scouting_prompt
 
         const prompt = renderGoalCheckPrompt(goalSettingPath);
 
-        expect(prompt).toContain('## Success Criteria Assessment Contract');
-        expect(prompt).toContain('GOAL_CHECK_CONTRACT_PER_CRITERION_SMART');
-        expect(prompt).toContain('GOAL_CHECK_CONTRACT_EVIDENCE_REQUIRED');
-        expect(prompt).toContain('GOAL_CHECK_CONTRACT_MEASURABLE_ACCEPTANCE_CRITERIA');
-        expect(prompt).toMatch(/each success criterion[\s\S]*all five SMART dimensions/i);
-        expect(prompt).toMatch(/For every met or unmet criterion assessment[\s\S]*cite concrete evidence/i);
-        expect(prompt).toMatch(/measurable acceptance criteria[\s\S]*observable pass\/fail conditions/i);
-        expect(prompt).toMatch(/vague goals or intent statements[\s\S]*insufficient/i);
-        expect(prompt).toContain('Make pagination better.');
+        // Updated expectations for optimized goal-check prompt (Phase 1 token reduction)
+        expect(prompt).toContain('## Evaluation: SMART Criteria Check');
+        expect(prompt).toContain('## Confidence Mapping');
+        expect(prompt).toContain('## Retry Guidance');
+        expect(prompt).toContain('Cite specific evidence: file paths, line numbers, test names, validation results');
+        expect(prompt).toMatch(/✅ Good evidence/);
+        expect(prompt).toMatch(/❌ Poor evidence/);
+        // Verify goal-setting artifact is referenced in context (even if contents are not fully inlined)
+        expect(prompt).toContain('GOAL-SETTING ARTIFACT:');
+        expect(prompt).toContain('Use to validate SMART criteria, anti-patterns, and constraints');
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
