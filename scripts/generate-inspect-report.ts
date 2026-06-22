@@ -15,7 +15,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 interface PiEvent {
   content?: string;
@@ -213,6 +212,16 @@ function main(): void {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main();
+// Automatic execution when run directly (CommonJS-safe approach)
+const isCliMode = process.argv[1]?.includes('generate-inspect-report');
+if (isCliMode && typeof (globalThis as any).jest === 'undefined') {
+  try {
+    main();
+  } catch (err) {
+    console.error('Fatal error:', err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
+
+// Export for testing and programmatic use
+export { readFile, readJsonl, readJson, extractFindings, generateReport, main };

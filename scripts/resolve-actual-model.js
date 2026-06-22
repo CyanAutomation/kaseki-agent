@@ -17,17 +17,17 @@ import fs from 'node:fs';
  * @internal
  */
 function clean(value) {
-    if (value === undefined || value === null)
-        return '';
-    const model = String(value).trim();
-    if (!model)
-        return '';
-    const lower = model.toLowerCase();
-    if (lower === 'unknown' || lower === 'null' || lower === 'undefined')
-        return '';
-    if (/[\r\n\0]/.test(model))
-        return '';
-    return model;
+  if (value === undefined || value === null)
+    return '';
+  const model = String(value).trim();
+  if (!model)
+    return '';
+  const lower = model.toLowerCase();
+  if (lower === 'unknown' || lower === 'null' || lower === 'undefined')
+    return '';
+  if (/[\r\n\0]/.test(model))
+    return '';
+  return model;
 }
 /**
  * Extract model from event stream (JSONL)
@@ -35,30 +35,30 @@ function clean(value) {
  * @internal
  */
 function modelFromEventStream(eventsPath) {
-    if (!eventsPath)
-        return '';
-    let content;
+  if (!eventsPath)
+    return '';
+  let content;
+  try {
+    content = fs.readFileSync(eventsPath, 'utf8');
+  }
+  catch {
+    return '';
+  }
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed)
+      continue;
     try {
-        content = fs.readFileSync(eventsPath, 'utf8');
+      const event = JSON.parse(trimmed);
+      const model = clean(event && event.model);
+      if (model)
+        return model;
     }
     catch {
-        return '';
+      // Ignore malformed event lines; attribution is best-effort metadata.
     }
-    for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed)
-            continue;
-        try {
-            const event = JSON.parse(trimmed);
-            const model = clean(event && event.model);
-            if (model)
-                return model;
-        }
-        catch {
-            // Ignore malformed event lines; attribution is best-effort metadata.
-        }
-    }
-    return '';
+  }
+  return '';
 }
 /**
  * Extract model from summary counters
@@ -66,14 +66,14 @@ function modelFromEventStream(eventsPath) {
  * @internal
  */
 function modelFromSummaryCounters(summary) {
-    const counters = summary && summary.counters && summary.counters;
-    const models = (counters && typeof counters === 'object' && !Array.isArray(counters) ? counters.models : undefined);
-    if (!models || typeof models !== 'object' || Array.isArray(models))
-        return '';
-    const entries = Object.entries(models).filter(([model, count]) => clean(model) && Number(count) > 0);
-    if (entries.length !== 1)
-        return '';
-    return clean(entries[0][0]);
+  const counters = summary && summary.counters && summary.counters;
+  const models = (counters && typeof counters === 'object' && !Array.isArray(counters) ? counters.models : undefined);
+  if (!models || typeof models !== 'object' || Array.isArray(models))
+    return '';
+  const entries = Object.entries(models).filter(([model, count]) => clean(model) && Number(count) > 0);
+  if (entries.length !== 1)
+    return '';
+  return clean(entries[0][0]);
 }
 /**
  * Extract model from summary JSON
@@ -81,16 +81,16 @@ function modelFromSummaryCounters(summary) {
  * @internal
  */
 function modelFromSummary(summaryPath) {
-    if (!summaryPath)
-        return '';
-    let summary;
-    try {
-        summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-    }
-    catch {
-        return '';
-    }
-    return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
+  if (!summaryPath)
+    return '';
+  let summary;
+  try {
+    summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  }
+  catch {
+    return '';
+  }
+  return clean(summary.selected_model) || clean(summary.model) || modelFromSummaryCounters(summary);
 }
 /**
  * Resolve the actual model used in a kaseki run
@@ -101,6 +101,6 @@ function modelFromSummary(summaryPath) {
  * @returns Model string or 'unknown'
  */
 export function resolveActualModel({ summaryPath, eventsPath } = {}) {
-    return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
+  return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
 }
 //# sourceMappingURL=resolve-actual-model.js.map
