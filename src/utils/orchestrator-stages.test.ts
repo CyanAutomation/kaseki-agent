@@ -646,4 +646,129 @@ describe('orchestrator-stages', () => {
       expect(flags.autoLintCleanupEnabled).toBe(true);
     });
   });
+
+  describe('deriveFeatureFlags - comprehensive coverage', () => {
+    it('should derive all flags correctly for patch mode (fix)', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          publishMode: 'pr',
+          startupCheck: false,
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.dryRun).toBe(false);
+      expect(flags.preAgentValidation).toBe(true);
+      expect(flags.goalSettingEnabled).toBe(true);
+      expect(flags.scoutingEnabled).toBe(true);
+      expect(flags.goalCheckEnabled).toBe(true);
+      expect(flags.runEvaluationEnabled).toBe(true);
+      expect(flags.autoLintCleanupEnabled).toBe(true);
+      expect(flags.githubAppEnabled).toBe(true);
+    });
+
+    it('should derive all flags correctly for inspect mode', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'inspect',
+          publishMode: 'pr',
+          startupCheck: false,
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.dryRun).toBe(false);
+      expect(flags.preAgentValidation).toBe(false);
+      expect(flags.goalSettingEnabled).toBe(false);
+      expect(flags.scoutingEnabled).toBe(false);
+      expect(flags.goalCheckEnabled).toBe(false);
+      expect(flags.runEvaluationEnabled).toBe(false);
+      expect(flags.autoLintCleanupEnabled).toBe(false);
+      expect(flags.githubAppEnabled).toBe(true);
+    });
+
+    it('should set dryRun=true for startup check', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          startupCheck: true,
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.dryRun).toBe(true);
+    });
+
+    it('should disable githubAppEnabled for "none" publish mode', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          publishMode: 'none',
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.githubAppEnabled).toBe(false);
+    });
+
+    it('should disable scoutingEnabled for inspect mode', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'inspect',
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.scoutingEnabled).toBe(false);
+    });
+
+    it('should handle nested validation namespace for autoLintCleanup', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          validation: {
+            autoLintCleanup: { enabled: false },
+          },
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.autoLintCleanupEnabled).toBe(false);
+    });
+
+    it('should prioritize direct autoLintCleanup over validation.autoLintCleanup', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+          autoLintCleanup: { enabled: true },
+          validation: {
+            autoLintCleanup: { enabled: false },
+          },
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(flags.autoLintCleanupEnabled).toBe(true);
+    });
+
+    it('should return correct type with all required properties', () => {
+      const job = createJob({
+        request: {
+          taskMode: 'fix',
+        },
+      });
+      const flags = deriveFeatureFlags(job, mockConfig);
+
+      expect(typeof flags).toBe('object');
+      expect(flags).toHaveProperty('dryRun');
+      expect(flags).toHaveProperty('preAgentValidation');
+      expect(flags).toHaveProperty('goalSettingEnabled');
+      expect(flags).toHaveProperty('scoutingEnabled');
+      expect(flags).toHaveProperty('goalCheckEnabled');
+      expect(flags).toHaveProperty('runEvaluationEnabled');
+      expect(flags).toHaveProperty('autoLintCleanupEnabled');
+      expect(flags).toHaveProperty('githubAppEnabled');
+    });
+  });
 });

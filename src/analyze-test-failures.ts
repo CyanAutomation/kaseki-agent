@@ -55,7 +55,7 @@ interface AnalysisResult {
 /**
  * Parse test results from validation log using common patterns
  */
-function parseTestResults(logContent: string, exitCode: number): Record<string, TestResult> {
+export function parseTestResults(logContent: string, exitCode: number): Record<string, TestResult> {
   const results: Record<string, TestResult> = {};
 
   // Split into lines for processing
@@ -84,7 +84,7 @@ function parseTestResults(logContent: string, exitCode: number): Record<string, 
     match = line.match(/^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/);
     if (match) {
       const testName = match[1].trim();
-      if (testName) {
+      if (testName && !seenTests.has(testName)) {
         results[testName] = { status: 'failed' };
         seenTests.add(testName);
         continue;
@@ -105,7 +105,7 @@ function parseTestResults(logContent: string, exitCode: number): Record<string, 
     match = line.match(/^\s*FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/);
     if (match) {
       const testName = match[1].trim();
-      if (testName) {
+      if (testName && !seenTests.has(testName)) {
         results[testName] = { status: 'failed' };
         seenTests.add(testName);
         continue;
@@ -126,7 +126,7 @@ function parseTestResults(logContent: string, exitCode: number): Record<string, 
     match = line.match(/^\s*\[FAIL\]\s+(.+?)$/);
     if (match) {
       const testName = match[1].trim();
-      if (testName) {
+      if (testName && !seenTests.has(testName)) {
         results[testName] = { status: 'failed' };
         seenTests.add(testName);
         continue;
@@ -145,7 +145,7 @@ function parseTestResults(logContent: string, exitCode: number): Record<string, 
 /**
  * Classify test results by comparing baseline and working
  */
-function classifyTests(
+export function classifyTests(
   baselineResults: Record<string, TestResult>,
   workingResults: Record<string, TestResult>
 ): Record<string, TestClassification> {
@@ -206,7 +206,7 @@ function classifyTests(
 /**
  * Generate summary statistics
  */
-function generateSummary(classification: Record<string, TestClassification>) {
+export function generateSummary(classification: Record<string, TestClassification>) {
   const summary = {
     total_pre_existing: 0,
     total_newly_introduced: 0,
@@ -238,7 +238,7 @@ function generateSummary(classification: Record<string, TestClassification>) {
 /**
  * Extract exit codes from validation logs (if present)
  */
-function extractExitCode(logContent: string): number {
+export function extractExitCode(logContent: string): number {
   const exitMatch = logContent.match(/exit[_-]?code[=:]\s*(\d+)/i);
   if (exitMatch) {
     return parseInt(exitMatch[1], 10);
@@ -318,4 +318,7 @@ async function main() {
   }
 }
 
-main();
+// Only run main if this is being executed directly (not imported as a module)
+if (require.main === module) {
+  main();
+}
