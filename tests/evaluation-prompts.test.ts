@@ -252,9 +252,15 @@ build_run_evaluation_prompt
 
   const extractScoutingPromptFunction = () => {
     // Use cached extraction from utility (avoids re-reading and re-parsing file)
-    const functionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
+    // Build_scouting_prompt depends on is_complex_change_task, so we need both
+    const isComplexFunctionText = extractBashFunctionWithCache('is_complex_change_task', 'build_scouting_prompt');
+    const buildScoutingFunctionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
+    
+    // Combine both functions: is_complex_change_task first, then build_scouting_prompt
+    const functionText = isComplexFunctionText + '\n\n' + buildScoutingFunctionText;
 
     const expectedMarkers = [
+      'is_complex_change_task() {',
       'build_scouting_prompt() {',
       'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
       'Guidelines for test_impact:',
@@ -292,6 +298,7 @@ set -euo pipefail
 
 FUNCTION_SOURCE="$1"
 SCOUTING_CANDIDATE_ARTIFACT="$2/scouting-candidate.json"
+GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
 TASK_PROMPT="Refactor parser output naming and progress event fields while keeping tests aligned."
 
 # shellcheck source=/dev/null

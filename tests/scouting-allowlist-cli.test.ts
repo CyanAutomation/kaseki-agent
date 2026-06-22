@@ -22,11 +22,34 @@ const PROMPT_SHAPE_PLACEHOLDERS = [
 ];
 
 function extractScoutingPrompt(scriptText: string): string {
-  const match = scriptText.match(/build_scouting_prompt\(\) \{\n {2}cat <<EOF\n([\s\S]*?)\nEOF\n\}/);
-  if (!match) {
-    throw new Error('Unable to locate build_scouting_prompt heredoc in kaseki-agent.sh');
+  // Extract build_scouting_prompt function body (everything from { to matching })
+  const functionMatch = scriptText.match(/build_scouting_prompt\(\) \{([\s\S]*?)\n\}/);
+  if (!functionMatch) {
+    throw new Error('Unable to locate build_scouting_prompt function in kaseki-agent.sh');
   }
-  return match[1];
+  
+  const functionBody = functionMatch[1];
+  const heredocs: string[] = [];
+  
+  // Match quoted heredocs: cat <<'LABEL' ... LABEL
+  const quotedHeredocPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+  let match;
+  while ((match = quotedHeredocPattern.exec(functionBody)) !== null) {
+    heredocs.push(match[2]);
+  }
+  
+  // Match unquoted heredocs: cat <<EOF ... EOF (can end with EOF or EOF\n or EOF$)
+  const unquotedHeredocPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF(?:\n|$)/g;
+  while ((match = unquotedHeredocPattern.exec(functionBody)) !== null) {
+    heredocs.push(match[1]);
+  }
+  
+  if (heredocs.length === 0) {
+    throw new Error('Unable to locate any heredocs in build_scouting_prompt function');
+  }
+  
+  // Combine all heredoc contents
+  return heredocs.join('\n');
 }
 
 describe('scouting-allowlist.js CLI', () => {

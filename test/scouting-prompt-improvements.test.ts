@@ -25,9 +25,28 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
     const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
     const content = fs.readFileSync(agentScript, 'utf-8');
 
-    // Extract the scouting prompt (between build_scouting_prompt() and run_scouting_agent())
-    const match = content.match(/build_scouting_prompt\(\)\s*\{\s*cat\s*<<EOF\n([\s\S]*?)\nEOF\n\}/);
-    promptContent = match?.[1] ?? '';
+    // Extract all heredocs from the scouting-related functions
+    const scoutingSection = content.substring(
+      content.indexOf('is_complex_change_task() {'),
+      content.indexOf('run_scouting_agent() {')
+    );
+    
+    const heredocs: string[] = [];
+    
+    // Find quoted heredocs in scouting section
+    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    let match;
+    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[2]);
+    }
+    
+    // Find unquoted heredocs in scouting section
+    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[1]);
+    }
+    
+    promptContent = heredocs.join('\n');
   });
 
   test('should contain all required sections', () => {
@@ -40,7 +59,7 @@ describe('Phase 1 & 2 & 3: Scouting Prompt Structure with Task Validation and Ex
       'test_impact',
       'critical_change_expectations',
       'suggested_allowlist',
-      '## [RAW TASK PROMPT]'
+      '## [ORIGINAL TASK PROMPT FOR REFERENCE]'
     ];
 
     requiredSections.forEach(section => {
@@ -97,8 +116,29 @@ describe('Phase 2: Task Validation & Ambiguity', () => {
   beforeAll(() => {
     const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
     const content = fs.readFileSync(agentScript, 'utf-8');
-    const match = content.match(/build_scouting_prompt\(\)\s*\{\s*cat\s*<<EOF\n([\s\S]*?)\nEOF\n\}/);
-    promptContent = match?.[1] ?? '';
+
+    // Extract all heredocs from the scouting-related functions
+    const scoutingSection = content.substring(
+      content.indexOf('is_complex_change_task() {'),
+      content.indexOf('run_scouting_agent() {')
+    );
+    
+    const heredocs: string[] = [];
+    
+    // Find quoted heredocs in scouting section
+    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    let match;
+    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[2]);
+    }
+    
+    // Find unquoted heredocs in scouting section
+    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[1]);
+    }
+    
+    promptContent = heredocs.join('\n');
   });
 
   test('should mention task validation', () => {
@@ -134,8 +174,29 @@ describe('Phase 3: Provider & Error Context', () => {
   beforeAll(() => {
     const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
     const content = fs.readFileSync(agentScript, 'utf-8');
-    const match = content.match(/build_scouting_prompt\(\)\s*\{\s*cat\s*<<EOF\n([\s\S]*?)\nEOF\n\}/);
-    promptContent = match?.[1] ?? '';
+
+    // Extract all heredocs from the scouting-related functions
+    const scoutingSection = content.substring(
+      content.indexOf('is_complex_change_task() {'),
+      content.indexOf('run_scouting_agent() {')
+    );
+    
+    const heredocs: string[] = [];
+    
+    // Find quoted heredocs in scouting section
+    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    let match;
+    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[2]);
+    }
+    
+    // Find unquoted heredocs in scouting section
+    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[1]);
+    }
+    
+    promptContent = heredocs.join('\n');
   });
 
   test('should mention execution context and efficiency optimization', () => {
@@ -177,8 +238,29 @@ describe('Phase 4: Output Schema Refinement', () => {
   beforeAll(() => {
     const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
     const content = fs.readFileSync(agentScript, 'utf-8');
-    const match = content.match(/build_scouting_prompt\(\)\s*\{\s*cat\s*<<EOF\n([\s\S]*?)\nEOF\n\}/);
-    promptContent = match?.[1] ?? '';
+    
+    // Extract all heredocs from the scouting-related functions
+    const scoutingSection = content.substring(
+      content.indexOf('is_complex_change_task() {'),
+      content.indexOf('run_scouting_agent() {')
+    );
+    
+    const heredocs: string[] = [];
+    
+    // Find quoted heredocs in scouting section
+    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    let match;
+    while ((match = quotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[2]);
+    }
+    
+    // Find unquoted heredocs in scouting section
+    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedPattern.exec(scoutingSection)) !== null) {
+      heredocs.push(match[1]);
+    }
+    
+    promptContent = heredocs.join('\n');
   });
 
   test('should have field constraints documented', () => {
@@ -357,8 +439,46 @@ describe('Prompt Quality Metrics', () => {
   beforeAll(() => {
     const agentScript = path.join(__dirname, '..', 'kaseki-agent.sh');
     const content = fs.readFileSync(agentScript, 'utf-8');
-    const match = content.match(/build_scouting_prompt\(\)\s*\{\s*cat\s*<<EOF\n([\s\S]*?)\nEOF\n\}/);
-    promptContent = match?.[1] ?? '';
+    
+    // Extract heredocs from kaseki-agent.sh by finding patterns directly
+    const heredocs: string[] = [];
+    
+    // Find all quoted heredocs (cat <<'LABEL' ... LABEL\n)
+    const quotedPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    let match;
+    while ((match = quotedPattern.exec(content)) !== null) {
+      heredocs.push(match[2]);
+    }
+    
+    // Find all unquoted heredocs (cat <<EOF ... EOF)
+    const unquotedPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedPattern.exec(content)) !== null) {
+      heredocs.push(match[1]);
+    }
+    
+    // Combine - but filter to only get heredocs from build_scouting_prompt region
+    // (search for a large chunk containing both marker sections from scouting prompt)
+    const scoutingSection = content.substring(
+      content.indexOf('is_complex_change_task() {'),
+      content.indexOf('run_scouting_agent() {')
+    );
+    
+    const scoutingHeredocs: string[] = [];
+    
+    // Find quoted heredocs in scouting section
+    const quotedScoutingPattern = /cat\s*<<'([A-Z_]+)'\n([\s\S]*?)\n\1\n/g;
+    while ((match = quotedScoutingPattern.exec(scoutingSection)) !== null) {
+      scoutingHeredocs.push(match[2]);
+    }
+    
+    // Find unquoted heredocs in scouting section
+    const unquotedScoutingPattern = /cat\s*<<EOF\n([\s\S]*?)\nEOF/g;
+    while ((match = unquotedScoutingPattern.exec(scoutingSection)) !== null) {
+      scoutingHeredocs.push(match[1]);
+    }
+    
+    // Combine all heredoc contents from scouting section
+    promptContent = scoutingHeredocs.join('\n');
   });
 
   test('prompt should be human-readable', () => {
