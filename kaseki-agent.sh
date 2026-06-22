@@ -5768,22 +5768,61 @@ Research the task before a separate coding agent starts. Your job is to analyze 
 - The repository tree is read-only during scouting. Write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT.
 
 The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
-- task: string; a concrete interpretation of the requested task.
-- requirements: array of strings; concrete requirements and constraints from the task.
-- relevant_files: array of objects with path and reason strings; repo-relative files and why each matters.
-- observations: array of strings; concrete facts learned from repository inspection.
-- plan: array of strings; ordered, task-specific coding steps.
-- validation: array of strings; focused commands or checks appropriate for this task.
-- risks: array of strings; concrete unknowns, boundary conditions, or task assumptions.
-- test_impact: array of objects with path, reason, and optional test_examples.
-- critical_change_expectations: optional object with required_files, required_search_strings, and forbidden_empty_diff.
+- task: string (max 200 characters); a concrete interpretation of the requested task.
+  - Examples: "Fix null-safety in parseRole()", "Add JWT auth to src/auth/middleware.ts"
+  - Constraint: Restate original request concisely; must be actionable by a developer
+  - Too vague: "Make it better", "Improve code quality"
+- requirements: array of 3-8 strings; concrete, testable requirements derived from the task.
+  - Example: ["Handle null role parameter without throwing", "Maintain backward compatibility", "Pass all existing tests"]
+  - Constraint: Each must be independently verifiable; avoid generic items like "code quality"
+  - Min items: 3 (too few suggests incomplete analysis)
+  - Max items: 8 (too many suggests scope creep or lack of prioritization)
+- relevant_files: array of 5-20 objects with path and reason strings; repo-relative files and why each matters.
+  - Example: {"path": "src/lib/role.ts", "reason": "Contains parseRole() function being modified"}
+  - Constraint: Include source files, test files, and config files affected by changes
+  - Min items: 5 (suggests incomplete file discovery)
+  - Max items: 20 (keeps focus on high-impact files; truncate if >20 with "(...X more files)"
+  - Prioritize: files the agent will modify first, then affected tests, then supporting config
+- observations: array of strings; concrete facts learned from repository inspection (git structure, build config, test framework, etc.).
+  - Helps coding agent understand project structure without re-scanning
+  - Truncate with "(...truncated for brevity)" if approaching size limit
+- plan: array of 5-15 strings; ordered, task-specific coding steps.
+  - Example step: "Add null check at start of parseRole() function"
+  - Constraint: No "finish" or "verify" steps; steps should be concrete code changes only
+  - Min items: 5 (too few suggests incomplete breakdown)
+  - Max items: 15 (too many suggests lack of higher-level grouping)
+  - Each step should be independently reviewable
+- validation: array of 2-10 strings; focused commands or checks appropriate for this task.
+  - Examples: "npm run test tests/role.test.ts", "npm run lint -- src/lib/role.ts"
+  - Constraint: Commands must exist in package.json or run without modification
+  - Min items: 2 (suggests incomplete validation strategy)
+  - Max items: 10 (avoid over-testing; focus on core validation)
+  - Avoid: generic "npm test" if specific tests are known
+- risks: array of 0-10 strings; concrete unknowns, boundary conditions, or task assumptions.
+  - Example: "Unclear whether null should be treated as fallback or error"
+  - Empty array is acceptable if no known risks
+  - Constraint: Each risk should suggest remediation or investigation
+- test_impact: array of objects with path, reason, and optional test_examples; describes test coverage implications.
+  - Constraint: MUST include entries for files affected by task (no empty array unless task is pure inspection)
+  - Max per file: 5 test_examples (keep focused on key patterns)
+  - See detailed guidelines below for comprehensive patterns by change type
+- critical_change_expectations: optional object with required_files, required_search_strings, forbidden_empty_diff.
+  - Only include if concrete expected changes can be identified
+  - required_files: array of repo-relative paths that MUST appear in git diff
+  - required_search_strings: array of literal strings expected in git diff (e.g., function name, config key)
+  - forbidden_empty_diff: boolean; true if task is a change request, false if read-only inspection
+  - Constraint: Omit if uncertain; this is enforced before goal-check evaluation
 - suggested_allowlist: object with agent_patterns and validation_patterns arrays.
+  - agent_patterns: glob patterns narrowing which files coding agent can modify (e.g., "src/**/*.ts")
+  - validation_patterns: glob patterns for files validation commands may modify (often same as agent_patterns)
+  - Constraint: Empty arrays acceptable if task scope is unclear; prefer specificity over convenience
 
 Output rules for the JSON artifact:
-- Do not copy the example text.
-- Every string must be concrete to the task.
-- Use empty arrays for optional unknown fields.
-- Omit critical_change_expectations or leave its arrays empty unless concrete required files/search strings are certain.
+- Do not copy the example text or this field description.
+- Every string must be concrete to the task (no generic guidance).
+- Use empty arrays only for optional fields (risks, test_impact) when genuinely no items apply.
+- Prioritize: task clarity > requirement specificity > relevant_files accuracy
+- Total JSON size must not exceed 50 KB (truncate observations or relevant_files if necessary).
 
 ## [TASK VALIDATION - Ensure Task is Valid Before Scouting]
 
@@ -5823,48 +5862,115 @@ If the task is ambiguous or lacks sufficient scope information, do NOT proceed w
 - suggested_allowlist: {agent_patterns: [], validation_patterns: []}
 
 Guidelines for test_impact:
-- Always include test_impact. Use an empty array only when no likely affected tests or expectation strings can be identified.
-- When the task touches parsing logic, output format, naming conventions, serializers, or progress/event fields, identify likely affected test files and the expectation strings or snapshots/assertions they contain so parser/output/naming changes trigger related test updates.
-- For each test file identified, provide concrete test_examples showing before/after assertion patterns. This helps the coding agent understand exactly what assertions need updating.
-- test_examples should include:
-  - **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
-  - **before**: The current or expected-to-fail assertion/test code
-  - **after**: The corrected/new assertion/test code
-  - **pattern**: Short name of the pattern (e.g., "Null-coalescing assertion", "Event field presence")
-  - **description**: 1-2 sentences explaining why this change matters
 
-Examples of strong test_impact entries with test_examples:
+**When to Include test_impact**:
+- ALWAYS include test_impact entries for code that affects parsing, validation, output formatting, naming, event structure, or serialization
+- Include entries for files with test cases that assert on concrete implementation details (field names, value types, timing)
+- Include entries when task modifies constants, enum values, API method names, or data structures
+
+**When test_impact Can Be Empty**:
+- ✓ Pure documentation updates (README, comments) with no code changes
+- ✓ Build configuration changes that don't affect runtime behavior
+- ✓ Dependency upgrades where public API is unchanged
+- ✓ File reorganization (move/rename) without behavioral changes
+- ✓ Infrastructure changes (Docker, CI/CD) unrelated to application code
+- In all other cases: provide at least 1 test_impact entry with concrete examples
+
+**test_examples Field Structure**:
+- **type**: "added_assertion", "modified_assertion", "added_test_case", or "added_pattern"
+- **before**: Current or expected-to-fail assertion/test code (1-2 lines max)
+- **after**: Corrected/new assertion/test code (1-2 lines max)
+- **pattern**: Short name of the pattern (e.g., "Null-coalescing assertion", "Event field presence")
+- **description**: 1-2 sentences explaining why this change matters
+- Max 5 test_examples per file (keep focused on key patterns; avoid exhaustive lists)
+
+**Enhanced Guidelines by Change Type** (with 5+ concrete patterns each):
+
+1. **Parser & Validation Changes** (keywords: parse, validate, input, null safety, type checking)
+   - Detection keywords: parse, parser, regex, validation, sanitize, decode, input handling, edge cases
+   - Test files to check: tests/parser.test.ts, tests/validation.test.ts, tests/sanitization.test.ts
+   - Common test_impact patterns:
+     a) Null/undefined handling: expect().toThrow() → expect().toEqual() or vice versa
+     b) Empty string/whitespace: test edge cases like "", "   ", "\\n\\t"
+     c) Type coercion: number-to-string, boolean-to-string conversions in parsing
+     d) Regex pattern changes: test cases that should now match or no longer match
+     e) Error message changes: expect(error.message).toContain("old") → .toContain("new")
+     f) Boundary value testing: min/max values, overflow conditions
+   - Example test_examples:
+     ✓ Null safety: {"type": "modified_assertion", "before": "expect(parse(null)).toThrow()", "after": "expect(parse(null)).toEqual(defaults())", "pattern": "Null-safe fallback", "description": "Function now handles null as valid input with sensible defaults"}
+     ✓ Whitespace: {"type": "added_assertion", "before": "N/A", "after": "expect(parse('  \\t  ')).toEqual(parse(''))", "pattern": "Whitespace normalization", "description": "Input parsing now treats whitespace as empty"}
+     ✓ Type coercion: {"type": "modified_assertion", "before": "expect(parseNumber('42px')).toThrow()", "after": "expect(parseNumber('42px')).toBe(42)", "pattern": "Unit stripping", "description": "Parser now extracts numeric portion"}
+
+2. **Event Handling & Progress Changes** (keywords: event, emit, listener, signal, progress, field)
+   - Detection keywords: event, emit, listener, on, once, signal, progress, stage, timing, field name
+   - Test files to check: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
+   - Common test_impact patterns:
+     a) Event structure changes: new/removed/renamed fields in emitted event objects
+     b) Timing expectations: synchronous → async or vice versa, timeout thresholds
+     c) Field presence: assert listener receives expected event properties
+     d) Event ordering: sequence of event emissions, promises/callbacks
+     e) Listener registration: changes to addEventListener, on, once API
+     f) Error event handling: error events now emitted for certain conditions
+   - Example test_examples:
+     ✓ Event field: {"type": "added_assertion", "before": "listener(event); expect(event.stage).toBeDefined()", "after": "listener(event); expect(event.stage).toContain('SCOUTING')", "pattern": "Event field presence", "description": "New stage field now always present in event"}
+     ✓ Async timing: {"type": "modified_assertion", "before": "await done; // within 50ms", "after": "await done; // within 500ms", "pattern": "Async emission delay", "description": "Event emission now batches async; increased timeout"}
+     ✓ Error event: {"type": "added_test_case", "before": "// No error event handling", "after": "emitter.on('error', handler); trigger(); expect(handler).toHaveBeenCalled()", "pattern": "Error event emission", "description": "New error events emitted for recoverable failures"}
+
+3. **Response Construction & Serialization Changes** (keywords: serialize, format, response, construct, transform, payload)
+   - Detection keywords: response, serialize, serialize, format, construct, map, transform, output, payload, toJSON, stringify
+   - Test files to check: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
+   - Common test_impact patterns:
+     a) Field name changes: response.old_field → response.newField
+     b) Field type changes: string → object, number → string, array → map
+     c) Nested structure changes: flat response → nested, vice versa
+     d) Omit/include behavior: fields now optional or always present
+     e) Serialization format: JSON, JSONL, CSV, binary encoding changes
+     f) Round-trip assertions: serialize/deserialize preserves values
+   - Example test_examples:
+     ✓ Field rename: {"type": "modified_assertion", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "pattern": "camelCase migration", "description": "Response fields now use camelCase convention"}
+     ✓ Type change: {"type": "modified_assertion", "before": "expect(typeof response.metadata).toBe('string')", "after": "expect(typeof response.metadata).toBe('object')", "pattern": "Structured metadata", "description": "Metadata now structured object instead of serialized string"}
+     ✓ Round-trip: {"type": "added_assertion", "before": "N/A", "after": "const original = {...}; const restored = deserialize(serialize(original)); expect(restored).toEqual(original)", "pattern": "Serialization round-trip", "description": "Serialize/deserialize cycle must preserve all fields"}
+
+4. **Naming Conventions & Constants Changes** (keywords: rename, constant, enum, field name, identifier)
+   - Detection keywords: rename, constant, enum, identifier, symbol, property name, method name, migrate naming
+   - Test files to check: tests/**/*.test.ts (grep for old constants/names)
+   - Common test_impact patterns:
+     a) Constant value changes: OLD_VALUE = "x" → NEW_VALUE = "y"
+     b) Enum migrations: Color.RED → Color.PRIMARY_RED
+     c) API method renames: .oldMethod() → .newMethod()
+     d) Export name changes: export MyClass → export MyClassV2
+     e) Configuration key changes: config.old_key → config.newKey
+     f) String literal assertions: ".toContain('oldName')" → ".toContain('newName')"
+   - Example test_examples:
+     ✓ Constant rename: {"type": "modified_assertion", "before": "expect(TIMEOUT_MS).toBe(5000)", "after": "expect(SCOUTING_TIMEOUT_MS).toBe(120000)", "pattern": "Constant renaming & value change", "description": "Timeout constant renamed and value updated"}
+     ✓ Enum value: {"type": "modified_assertion", "before": "expect(phase).toBe('PARSE')", "after": "expect(phase).toBe('SCOUTING')", "pattern": "Enum value rename", "description": "Phase name updated to match new phase names"}
+     ✓ API method: {"type": "modified_assertion", "before": "instance.configure(); expect(result).toBe(true)", "after": "instance.setup(); expect(result).toBe(true)", "pattern": "Method rename", "description": "API method renamed for clarity"}
+
+5. **Configuration & Multi-file Patterns** (keywords: config, multi-file, cross-module, integration)
+   - Detection keywords: config, configuration, settings, environment, multi-file changes, cross-repo coordination
+   - Test files to check: tests/integration.test.ts, tests/config.test.ts, tests/e2e.test.ts
+   - Common test_impact patterns:
+     a) Configuration schema changes: new required fields, deprecated fields
+     b) Multi-file coordination: one change requires updates in 3+ test files
+     c) Integration points: mocking changes, stub contracts
+     d) Allowlist/blocklist changes: file patterns affect test file discovery
+     e) Build-time vs runtime: constants vs environment variable changes
+   - Example test_examples:
+     ✓ Config schema: {"type": "added_assertion", "before": "config = loadConfig(); expect(config.timeout).toBeDefined()", "after": "config = loadConfig(); expect(config.timeout).toBeGreaterThan(0); expect(config.retries).toBeDefined()", "pattern": "Config schema expansion", "description": "New required config fields must be validated"}
+     ✓ Multi-file: {"type": "added_test_case", "before": "// Only single file tested", "after": "// Test mocking across src/a.ts, src/b.ts, tests/mock-factory.ts", "pattern": "Integration mocking", "description": "Mock strategy now affects multiple test files"}
+
+**Examples of Strong test_impact Entries**:
 ✓ Parser change:
-  {"path": "tests/parser.test.ts", "reason": "null/empty role handling", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow()", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed' })", "description": "Updated spec treats null as fallback, not error"}]}
+  {"path": "tests/parser.test.ts", "reason": "parseRole() function now handles null with fallback", "test_examples": [{"type": "added_assertion", "pattern": "Null-coalescing", "before": "expect(parseRole(null)).toThrow(NullReferenceError)", "after": "expect(parseRole(null)).toEqual({ name: 'Unnamed', level: 0 })", "description": "Null now treated as valid input with sensible defaults"}]}
 
 ✓ Event change:
-  {"path": "tests/event-handler.test.ts", "reason": "new async timing for events", "test_examples": [{"type": "modified_assertion", "pattern": "Event timing", "before": "await eventPromise; // within 10ms", "after": "await eventPromise; // within 50ms", "description": "Event emission is now async"}]}
+  {"path": "tests/event-handler.test.ts", "reason": "Event emission now async with new timing", "test_examples": [{"type": "modified_assertion", "pattern": "Async timing", "before": "await eventPromise; // resolves within 10ms", "after": "await eventPromise; // resolves within 100ms (now batched)", "description": "Async batching adds latency; timeout increased"}]}
 
-Enhanced Guidelines by Change Type:
+✓ Serialization change:
+  {"path": "tests/response.test.ts", "reason": "Response fields now use camelCase", "test_examples": [{"type": "modified_assertion", "pattern": "camelCase fields", "before": "expect(response.status_code).toBe(200)", "after": "expect(response.statusCode).toBe(200)", "description": "All response field names migrated to camelCase"}]}
 
-1. **Parser & Regex Changes**
-   - Detection keywords: parse, parser, regex, validation, input handling, null safety, type coercion
-   - Typical test_impact: Tests for edge cases (null, empty, undefined, type mismatches)
-   - Example test_examples: Null-coalescing assertions, type validation, whitespace handling, special character input tests
-   - Files to check: tests/parser.test.ts, tests/validation.test.ts, tests/input.test.ts
-
-2. **Event Handling & Progress Changes**
-   - Detection keywords: event, emit, listener, on, once, signal, progress, stage, field names
-   - Typical test_impact: Event structure, timing expectations, field presence, listener callbacks
-   - Example test_examples: Field presence assertions, timing expectations, event ordering, listener verification
-   - Files to check: tests/event-handler.test.ts, tests/progress.test.ts, tests/listeners.test.ts
-
-3. **Response Construction & Serialization**
-   - Detection keywords: response, serialize, serialize, format, construct, map, transform, output, payload, schema
-   - Typical test_impact: Response field mapping, serialization format, type preservation, backward compatibility
-   - Example test_examples: Round-trip serialization, field mapping, type coercion, format compliance
-   - Files to check: tests/response.test.ts, tests/serialization.test.ts, tests/format.test.ts
-
-4. **Naming Conventions & Constants**
-   - Detection keywords: rename, constant, enum, field name, method name, identifier, migrate naming
-   - Typical test_impact: String literal assertions, constant references, API contract changes
-   - Example test_examples: Field name assertions, constant value matches, deprecation handling
-   - Files to check: tests/**/*.test.ts (search for exact string matches and constants)
+✓ Config change:
+  {"path": "tests/config.test.ts", "reason": "New required config fields added", "test_examples": [{"type": "added_assertion", "pattern": "Schema validation", "before": "expect(config).toHaveProperty('timeout')", "after": "expect(config).toHaveProperty('timeout'); expect(config).toHaveProperty('maxRetries'); expect(config).toHaveProperty('backoffMs')", "description": "Three new retry-related fields now required"}]}
 
 Guidelines for critical_change_expectations:
 - Include critical_change_expectations when scouting can identify concrete files or literal diff evidence that must change for the goal to be real.
