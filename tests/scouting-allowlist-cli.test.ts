@@ -83,7 +83,7 @@ describe('scouting-allowlist.js CLI', () => {
 
     // Run validate command
     const output = execSync(
-      `node scripts/scouting-allowlist.js validate ${artifactPath} ${outputPath}`,
+      `node dist/scouting-allowlist.js validate ${artifactPath} ${outputPath}`,
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -106,7 +106,7 @@ describe('scouting-allowlist.js CLI', () => {
     let output: string;
     let result: any;
     try {
-      output = execSync(`node scripts/scouting-allowlist.js validate ${artifactPath}`, {
+      output = execSync(`node dist/scouting-allowlist.js validate ${artifactPath}`, {
         encoding: 'utf-8',
         cwd: process.cwd(),
       });
@@ -162,7 +162,7 @@ describe('scouting-allowlist.js CLI', () => {
 
     let result: any;
     try {
-      execSync(`node scripts/scouting-allowlist.js validate ${artifactPath}`, {
+      execSync(`node dist/scouting-allowlist.js validate ${artifactPath}`, {
         encoding: 'utf-8',
         cwd: process.cwd(),
       });
@@ -204,7 +204,7 @@ describe('scouting-allowlist.js CLI', () => {
     fs.writeFileSync(artifactPath, JSON.stringify(artifact));
 
     // Run derive command
-    const output = execSync(`node scripts/scouting-allowlist.js derive ${artifactPath}`, {
+    const output = execSync(`node dist/scouting-allowlist.js derive ${artifactPath}`, {
       encoding: 'utf-8',
       cwd: process.cwd(),
     });
@@ -227,7 +227,7 @@ describe('scouting-allowlist.js CLI', () => {
 
     // Run orchestrate command with defaults
     const output = execSync(
-      `node scripts/scouting-allowlist.js orchestrate ${artifactPath}`,
+      `node dist/scouting-allowlist.js orchestrate ${artifactPath}`,
       { encoding: 'utf-8', cwd: process.cwd() }
     );
 
@@ -240,7 +240,7 @@ describe('scouting-allowlist.js CLI', () => {
 
   test('should show usage on invalid command', () => {
     expect(() => {
-      execSync('node scripts/scouting-allowlist.js invalid-command', {
+      execSync('node dist/scouting-allowlist.js invalid-command', {
         encoding: 'utf-8',
         cwd: process.cwd(),
         stdio: 'pipe',

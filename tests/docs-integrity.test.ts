@@ -50,7 +50,7 @@ describe('Documentation integrity', () => {
     },
     {
       fileName: 'FEEDBACK_LOOP_INTEGRATION.md',
-      requiredLinks: ['../src/lib/goal-setting-feedback.ts', '../scripts/analyze-goal-feedback.js'],
+      requiredLinks: ['../src/lib/goal-setting-feedback.ts', '../scripts/analyze-goal-feedback.ts'],
       stableAnchors: [
         'feedback-loop-integration-for-kaseki-agent-evaluations',
         'feedback-path-1-goal-quality-scoring',

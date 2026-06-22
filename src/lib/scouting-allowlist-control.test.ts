@@ -24,7 +24,7 @@ type ScoutingAllowlistOrchestrationResult = {
 
 const DEFAULT_CHANGED_FILES_ALLOWLIST = 'src/lib/parser.ts tests/parser.validation.ts';
 const DEFAULT_VALIDATION_ALLOWLIST = '';
-const scoutingAllowlistEntryPoint = path.resolve('scripts/scouting-allowlist.js');
+const scoutingAllowlistEntryPoint = path.resolve('dist/scouting-allowlist.js');
 
 const runProductionScoutingAllowlistOrchestration = (inputPath: string): ScoutingAllowlistOrchestrationResult => {
   const output = execFileSync('node', [

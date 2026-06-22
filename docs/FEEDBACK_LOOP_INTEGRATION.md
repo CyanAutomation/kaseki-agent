@@ -189,7 +189,7 @@ Each suggestion includes `priority: high|medium|low`:
 
 ### Where Feedback Is Analyzed
 
-1. **Analysis script**: [scripts/analyze-goal-feedback.js](../scripts/analyze-goal-feedback.js) (created Phase 3)
+1. **Analysis script**: [scripts/analyze-goal-feedback.ts](../scripts/analyze-goal-feedback.ts) (created Phase 3)
    - Aggregates feedback from multiple runs
    - Computes correlations
    - Generates recommendations report
