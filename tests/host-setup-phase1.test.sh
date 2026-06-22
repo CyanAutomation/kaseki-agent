@@ -172,6 +172,7 @@ test_help_output_contract() {
   else
     fail "--help documents --check-only"
   fi
+  # shellcheck disable=SC2088 # Intentionally matching literal tilde in help text
   if printf '%s' "$output" | grep -q '~/.kaseki/host-state.json'; then
     pass "--help documents state output"
   else

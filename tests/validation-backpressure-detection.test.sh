@@ -59,14 +59,12 @@ fi
 
 # Test 4: Rapid burst
 echo -e "${BLUE}→ Rapid output burst (mixed patterns)${NC}"
-{
+if {
   for i in {1..2000}; do
     echo "[PASS] test $i"
     echo "[DEBUG] details $i"
   done
-} | timeout 5 env FILTER_DIAGNOSTICS_LOG=/tmp/bp-test-4.log node "$FILTER_BIN" > /tmp/bp-out-4.log 2>/dev/null
-
-if [ $? -eq 0 ]; then
+} | timeout 5 env FILTER_DIAGNOSTICS_LOG=/tmp/bp-test-4.log node "$FILTER_BIN" > /tmp/bp-out-4.log 2>/dev/null; then
   echo -e "${GREEN}✓ PASS${NC}: Rapid burst handled"
   ((PASSED++))
 else

@@ -73,7 +73,7 @@ test_large_output() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -122,7 +122,7 @@ test_large_single_line() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -159,7 +159,7 @@ test_rapid_burst() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -190,7 +190,7 @@ test_stdin_closure() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -221,7 +221,7 @@ test_memory_bounds() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"

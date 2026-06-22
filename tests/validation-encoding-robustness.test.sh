@@ -42,7 +42,7 @@ test_latin1_input() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   
@@ -71,7 +71,7 @@ test_mixed_encoding() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -105,7 +105,7 @@ test_unicode_stress() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   
@@ -130,7 +130,7 @@ test_special_chars_in_patterns() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   local output_log="$tmpdir/output.log"
@@ -164,7 +164,7 @@ test_stdin_error_handling() {
   
   local tmpdir
   tmpdir=$(mktemp -d)
-  trap "rm -rf $tmpdir" RETURN
+  trap 'rm -rf "$tmpdir"' RETURN
   
   local filter_diagnostics="$tmpdir/filter-diagnostics.log"
   
