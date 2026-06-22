@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016
 # Integration test for Caveman mode injection into kaseki-agent
 
 set -u

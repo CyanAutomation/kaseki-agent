@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2317
 # E2E test: Verify validation pipeline preserves command exit codes (no 141 SIGPIPE)
 
 set -euo pipefail

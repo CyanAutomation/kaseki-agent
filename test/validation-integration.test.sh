@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317,SC1091
 # Integration tests for the production validation command runner.
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 TEST_NAME="actual-model-metadata-wrapper.integration.test"

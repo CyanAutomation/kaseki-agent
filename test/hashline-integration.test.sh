@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2317,SC2016,SC2015
 # test/hashline-integration.test.sh
 #
 # Thin CLI smoke test for hashline event handler argument wiring and artifact paths.

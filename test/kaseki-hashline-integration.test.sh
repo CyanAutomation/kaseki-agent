@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016
+# shellcheck disable=SC2016,SC2317,SC2064
 set -euo pipefail
 
 TEST_NAME="kaseki-hashline-integration.test"

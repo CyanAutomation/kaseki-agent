@@ -7,7 +7,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # Source the pure dependency-cache key helpers directly.
-# shellcheck source=../scripts/dependency-cache-helpers.sh
+# shellcheck source=/dev/null
 . "$ROOT_DIR/scripts/dependency-cache-helpers.sh"
 
 cat > "$TMP_DIR/package-lock.json" <<'LOCK'
