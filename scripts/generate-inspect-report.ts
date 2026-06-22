@@ -166,17 +166,29 @@ function generateReport(resultsDir: string): string {
     lines.push('');
   }
 
-  // Changed Files
+  // Files Analyzed
   if (changedFiles.length > 0) {
-    lines.push('## Modified Files');
+    lines.push('## Files Analyzed');
     lines.push('');
     changedFiles.forEach((file) => {
       if (file.trim()) {
-        lines.push(`- ${file.trim()}`);
+        lines.push(`- \`${file.trim()}\``);
       }
     });
     lines.push('');
   }
+
+  // Recommendations
+  lines.push('## Recommendations');
+  lines.push('');
+  if (findings.length === 0) {
+    lines.push('- Analysis complete with no issues identified');
+    lines.push('- Repository appears to be in good health');
+  } else {
+    lines.push('- Review the findings listed above');
+    lines.push('- Consider addressing critical findings first');
+  }
+  lines.push('');
 
   lines.push('---');
   lines.push('');
