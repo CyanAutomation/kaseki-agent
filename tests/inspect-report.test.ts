@@ -28,7 +28,7 @@ describe('inspect-report generation', () => {
   });
 
   function runGenerateScript(resultsDir: string): string {
-    const scriptPath = path.join(__dirname, '../scripts/generate-inspect-report.js');
+    const scriptPath = path.join(__dirname, '../dist/generate-inspect-report.js');
     execSync(`node "${scriptPath}" "${resultsDir}"`);
     return fs.readFileSync(path.join(resultsDir, 'inspect-report.md'), 'utf8');
   }
