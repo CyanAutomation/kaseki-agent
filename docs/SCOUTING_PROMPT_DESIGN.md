@@ -1,6 +1,6 @@
 # Scouting Prompt Design & Architecture
 
-**Version**: 2.0 (Improved Structure with Task Validation)  
+**Version**: 2.1 (Output Schema Refinement - Phase 4 Complete)  
 **Last Updated**: June 2026
 
 ## Overview
@@ -15,7 +15,7 @@ The scouting phase addresses two core problems:
 
 2. **Missing Context**: A fresh coding agent has no idea which files matter, which tests to update, or where changes might ripple. Scouting gathers this intelligence in advance.
 
-## Prompt Structure (Phase 1-3 Improvements)
+## Prompt Structure (Phases 1-4 Complete)
 
 The scouting prompt has been restructured into clearly-marked sections for maintainability and clarity:
 
@@ -110,20 +110,28 @@ The scouting prompt has been restructured into clearly-marked sections for maint
 - Forces prioritization of relevant files
 - Keeps artifact within token/rate limits for downstream agents
 
-## Field Constraints (Phase 4 Implementation)
+## Field Constraints (Phase 4 ✅ Complete)
 
-When fully refined, the output schema includes field-level constraints:
+The output schema now includes comprehensive field-level constraints that the scouting agent must follow:
 
 | Field | Min | Max | Notes |
 |-------|-----|-----|-------|
-| `task` | 20 chars | 200 chars | Concrete verb + file/scope |
-| `requirements` | 3 items | 8 items | Atomic, testable items |
-| `relevant_files` | 5 items | 20 items | Path + reason pairs |
-| `plan` | 5 steps | 15 steps | No "finish" step |
-| `validation` | 2 cmds | 10 cmds | Specific, focused |
-| `risks` | 0 items | 10 items | Concrete unknowns |
-| `test_impact` | 0 items | ∞ items | Always include; examples in each |
-| **JSON size** | — | **50 KB** | Truncate observations if needed |
+| `task` | 20 chars | 200 chars | Concrete verb + file/scope; restate original request |
+| `requirements` | 3 items | 8 items | Atomic, testable items; min 3 suggests incomplete analysis |
+| `relevant_files` | 5 items | 20 items | Path + reason pairs; prioritize source → tests → config |
+| `plan` | 5 steps | 15 steps | No "finish" step; each step independently reviewable |
+| `validation` | 2 cmds | 10 cmds | Specific, focused commands (no generic "npm test") |
+| `risks` | 0 items | 10 items | Concrete unknowns; empty array OK if no risks |
+| `test_impact` | See guidelines | — | 5 change type categories with 30+ concrete patterns |
+| **JSON size** | — | **50 KB** | Truncate observations if needed; 2-minute timeout |
+
+**Phase 4 Enhancements**:
+- Added max character constraint to task field (200 chars)
+- Added min/max item counts for each array field
+- Documented when empty arrays are acceptable (documentation changes, pure refactoring)
+- Expanded test_impact guidelines to 5 organized change type categories
+- Provided 30+ concrete before/after patterns across all change types
+- Added field prioritization rules (what to include when space is limited)
 
 ## How to Extend the Prompt
 
@@ -224,7 +232,15 @@ A well-designed scouting prompt produces artifacts that:
 
 ## Version History
 
-### v2.0 (June 2026) - Structural Improvements
+### v2.1 (June 2026) - Output Schema Refinement (Phase 4 Complete) ✅
+- Added field-level size/count constraints (task: 200 chars, requirements: 3-8 items, etc.)
+- Expanded test_impact guidelines to 5 organized change type categories (Parser, Events, Serialization, Naming, Config)
+- Provided 30+ concrete before/after pattern examples across all change types
+- Documented when test_impact can be empty (documentation changes, pure config, dependency upgrades)
+- Added field prioritization rules for space-constrained artifacts
+- Updated 28 tests to validate new constraints and patterns
+
+### v2.0 (June 2026) - Structural Improvements (Phases 1-3)
 - Added `## [SECTION]` markers for clarity and maintainability
 - Introduced Phase 2: Task Validation with examples and escalation template
 - Introduced Phase 3: Provider-agnostic Execution Context guidance
