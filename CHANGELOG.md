@@ -4,6 +4,19 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.94.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.93.0...v1.94.0) (2026-06-23)
+
+
+### Bug Fixes
+
+* increase timeout for gateway tests to accommodate LLM inference ([e6e4a11](https://github.com/CyanAutomation/kaseki-agent/commit/e6e4a118cfbb4b430679ee1e57131790f7d1eb8a))
+
+
+### Features
+
+* implement fallback handling for empty assistant turns in goal-setting and scouting ([6202814](https://github.com/CyanAutomation/kaseki-agent/commit/62028143ed5d482298333eb32400472d7a60f848))
+* implement provider error retry logic and associated tests ([4f18b53](https://github.com/CyanAutomation/kaseki-agent/commit/4f18b53fbff6252d37d8790702a1a6f8b9bb0498))
+
 # [1.93.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.92.0...v1.93.0) (2026-06-23)
 
 
