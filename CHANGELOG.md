@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.97.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.96.0...v1.97.0) (2026-06-23)
+
+
+### Features
+
+* Implement gateway request normalization with diagnostics and tests for undici and fetch transports ([aaecd92](https://github.com/CyanAutomation/kaseki-agent/commit/aaecd9289edbcf91e6010ebfc8ec14d74db81235))
+* Refactor preflight response handling and extract logic into a dedicated module ([4b93515](https://github.com/CyanAutomation/kaseki-agent/commit/4b935157d418e29609488b692d60dc6b7a5d2d39))
+
 # [1.96.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.95.0...v1.96.0) (2026-06-23)
 
 
