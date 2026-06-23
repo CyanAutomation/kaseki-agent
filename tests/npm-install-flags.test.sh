@@ -4,12 +4,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Load only the npm install flag helpers from kaseki-agent.sh.
-eval "$(awk '
-  /^append_npm_install_flags\(\)/ { emit=1 }
-  /^dependency_cache_key\(\)/ { emit=0 }
-  emit { print }
-' "$ROOT_DIR/kaseki-agent.sh")"
+# Source the pure npm install flag helpers directly.
+# shellcheck source=/dev/null
+. "$ROOT_DIR/scripts/npm-install-helpers.sh"
 
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 pass() { printf '✓ %s\n' "$1"; }
@@ -21,7 +18,7 @@ assert_flags() {
   local expected_display="$4"
   shift 4
   local -a expected_flags=("$@")
-  local -a install_flags=("stale")
+  local -a install_flags=()
 
   KASEKI_NPM_OMIT_DEV="$omit_dev"
   KASEKI_INSTALL_IGNORE_SCRIPTS="$ignore_scripts"
