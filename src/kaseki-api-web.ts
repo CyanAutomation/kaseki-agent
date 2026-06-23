@@ -2478,6 +2478,8 @@ const controllerPage = String.raw`<!doctype html>
       function requestTimeoutFor(path, options) {
         if (options && typeof options.timeoutMs === 'number') return options.timeoutMs;
         if (path === '/api/preflight') return LONG_REQUEST_TIMEOUT_MS;
+        // Gateway tests (especially Stage 2 LLM inference) need more time (~15-20s for LLM response)
+        if (path.startsWith('/api/gateway-test')) return LONG_REQUEST_TIMEOUT_MS;
         return DEFAULT_REQUEST_TIMEOUT_MS;
       }
 
