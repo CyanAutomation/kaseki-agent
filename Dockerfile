@@ -83,7 +83,7 @@ RUN mkdir -p /usr/local/bin && printf '%s\n' \
 
 # Build kaseki application (cache-optimal: dependencies first, then source code)
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.json ./
+COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json ./
 COPY src ./src
 COPY scripts ./scripts
 RUN npm ci --no-audit --prefer-offline --ignore-scripts && npm run build

@@ -58,6 +58,16 @@ if ! bash -n "$ENTRYPOINT"; then
   exit 1
 fi
 
+if ! grep -q "COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json ./" Dockerfile; then
+  printf 'Dockerfile does not copy tsconfig.scripts.json before npm run build\n' >&2
+  exit 1
+fi
+
+if ! grep -q '^!tsconfig\.scripts\.json$' .dockerignore; then
+  printf '.dockerignore does not allow tsconfig.scripts.json into the Docker build context\n' >&2
+  exit 1
+fi
+
 for helper in \
   instance-status-derivation.js \
   instance-stage-derivation.js \
