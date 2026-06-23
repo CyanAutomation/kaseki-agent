@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.98.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.97.0...v1.98.0) (2026-06-23)
+
+
+### Features
+
+* add comprehensive test suite for kaseki-api-health-checks module ([e20f0f0](https://github.com/CyanAutomation/kaseki-agent/commit/e20f0f0328020e61ab00346794e824ffa8ea809d))
+* extract health check functions to kaseki-api-health-checks.ts to resolve circular dependency ([a5762b0](https://github.com/CyanAutomation/kaseki-agent/commit/a5762b0d10a26626eb15608f66304f7091cd14f8))
+
 # [1.97.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.96.0...v1.97.0) (2026-06-23)
 
 
