@@ -40,6 +40,7 @@ setup_case() {
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$CASE_DIR/scripts/allowlist-helper.sh" || fail "failed to copy allowlist helper"
   cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$CASE_DIR/scripts/scouting-allowlist.js" || fail "failed to copy scouting allowlist"
   cp "$REPO_ROOT/scripts/lib/json.sh" "$CASE_DIR/scripts/lib/json.sh" || fail "failed to copy json helper"
+  cp "$REPO_ROOT/scripts/lib/json-events.sh" "$CASE_DIR/scripts/lib/json-events.sh" || fail "failed to copy json events helper"
   touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js" || fail "failed to create app stubs"
   : > "$PI_CALLS" || fail "failed to initialize Pi calls"
 

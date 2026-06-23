@@ -77,6 +77,20 @@ fi
   exit 1
 }
 
+KASEKI_JSON_EVENTS_HELPER="${KASEKI_JSON_EVENTS_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/lib/json-events.sh}"
+if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ] && [ -r /app/scripts/lib/json-events.sh ]; then
+  KASEKI_JSON_EVENTS_HELPER="/app/scripts/lib/json-events.sh"
+fi
+if [ ! -r "$KASEKI_JSON_EVENTS_HELPER" ]; then
+  printf 'ERROR: JSON events helper is not readable. Expected %s or /app/scripts/lib/json-events.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/lib/json-events.sh.\n' "$KASEKI_JSON_EVENTS_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_JSON_EVENTS_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_JSON_EVENTS_HELPER" $? >&2
+  exit 1
+}
+
 KASEKI_DEPENDENCY_CACHE_HELPER="${KASEKI_DEPENDENCY_CACHE_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/dependency-cache-helpers.sh}"
 if [ ! -r "$KASEKI_DEPENDENCY_CACHE_HELPER" ] && [ -r /app/scripts/dependency-cache-helpers.sh ]; then
   KASEKI_DEPENDENCY_CACHE_HELPER="/app/scripts/dependency-cache-helpers.sh"
@@ -546,18 +560,6 @@ github_skip_reasons_json() {
     return 0
   fi
   json_array "${GITHUB_SKIP_REASONS[@]}"
-}
-
-json_object_from_pairs() {
-  jq -cn '$ARGS.positional
-    | map(capture("^(?<key>[^=]*)=(?<value>(.|\n)*)$"))
-    | reduce .[] as $item ({}; if $item.key == "" then . else .[$item.key] = $item.value end)' --args "$@"
-}
-
-append_jsonl_object() {
-  local output_file="$1"
-  shift
-  json_object_from_pairs "$@" >> "$output_file"
 }
 
 # Phase 2: JSON Artifact Output Helpers
@@ -1189,31 +1191,6 @@ validate_goal_check_artifact() {
   # [goal-check-validation removed - errors go to goal-check-validation-errors.jsonl]
   rm -f "$validation_error_file" 2>/dev/null || true
   [ "$reason_code" = "valid" ]
-}
-
-emit_progress() {
-  local stage="$1"
-  local detail="$2"
-  local status="${3:-info}"
-  append_jsonl_object "${KASEKI_RESULTS_DIR}"/progress.jsonl \
-    "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "component=kaseki-agent" \
-    "stage=$stage" \
-    "status=$status" \
-    "instance=$INSTANCE_NAME" \
-    "detail=$detail"
-  :
-}
-
-emit_event() {
-  local event_type="$1"
-  shift
-  append_jsonl_object "${KASEKI_RESULTS_DIR}"/progress.jsonl \
-    "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "component=kaseki-agent" \
-    "event_type=$event_type" \
-    "instance=$INSTANCE_NAME" \
-    "$@"
 }
 
 emit_error_event() {
