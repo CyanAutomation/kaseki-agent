@@ -8,9 +8,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT_UNDER_TEST="$REPO_ROOT/kaseki-agent.sh"
 TMP_DIR="$(mktemp -d)"
 RESULTS_DIR="$TMP_DIR/results"
-WORKSPACE_DIR="$TMP_DIR/workspace"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
-MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent.sh"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -37,14 +35,12 @@ assert_file_contains() {
   fi
 }
 
-mkdir -p "$RESULTS_DIR" "$WORKSPACE_DIR"
-cp -a "$REPO_ROOT/scripts" "$TMP_DIR/scripts"
+mkdir -p "$RESULTS_DIR"
 
 # Redirect container-default paths to a writable temp directory while leaving
 # KASEKI_RESULTS_DIR and KASEKI_WORKSPACE_BASELINE_DIR unset for the invocation.
-sed "s#/results#$RESULTS_DIR#g; s#/workspace#$WORKSPACE_DIR#g; s#/app/lib#$TMP_DIR/app-lib#g" \
-  "$SCRIPT_UNDER_TEST" > "$MODIFIED_SCRIPT"
-chmod +x "$MODIFIED_SCRIPT"
+# This uses the script's documented test-only default path hook instead of
+# rewriting the script body, so the test still executes the real entrypoint.
 
 set +e
 env \
@@ -53,10 +49,11 @@ env \
   -u LLM_GATEWAY_API_KEY \
   -u LLM_GATEWAY_URL \
   KASEKI_DRY_RUN=1 \
+  KASEKI_TEST_DEFAULT_PATH_ROOT="$TMP_DIR" \
   KASEKI_STARTUP_CHECK_MODE=boot \
   GITHUB_APP_ENABLED=0 \
   LLM_GATEWAY_API_KEY_FILE="$TMP_DIR/missing-gateway-key" \
-  bash "$MODIFIED_SCRIPT" > "$RUN_LOG" 2>&1
+  bash "$SCRIPT_UNDER_TEST" > "$RUN_LOG" 2>&1
 run_exit=$?
 set -e
 
