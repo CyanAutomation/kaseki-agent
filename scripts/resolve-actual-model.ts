@@ -100,3 +100,32 @@ function modelFromSummary(summaryPath: string | undefined): string {
 export function resolveActualModel({ summaryPath, eventsPath }: { summaryPath?: string; eventsPath?: string } = {}): string {
   return modelFromEventStream(eventsPath) || modelFromSummary(summaryPath) || 'unknown';
 }
+
+export const CLI_USAGE = 'Usage: resolve-actual-model.js <summaryPath> <eventsPath>';
+
+export type ResolveActualModelCliIO = {
+  stdout?: (message: string) => void;
+  stderr?: (message: string) => void;
+};
+
+/**
+ * Run the resolver CLI contract.
+ *
+ * @param args - CLI arguments excluding node and script path
+ * @param io - Optional output hooks for tests
+ * @returns Process-style exit code
+ */
+export function runCli(args: string[] = process.argv.slice(2), io: ResolveActualModelCliIO = {}): number {
+  const [summaryPath, eventsPath, ...extraArgs] = args;
+  if (!summaryPath || !eventsPath || extraArgs.length > 0) {
+    (io.stderr || console.error)(CLI_USAGE);
+    return 1;
+  }
+
+  (io.stdout || console.log)(resolveActualModel({ summaryPath, eventsPath }));
+  return 0;
+}
+
+if (/resolve-actual-model\.(?:js|ts)$/.test(process.argv[1] || '')) {
+  process.exitCode = runCli();
+}
