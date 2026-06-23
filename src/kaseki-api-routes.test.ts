@@ -981,6 +981,98 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/gateway-test enables response smoke with query override', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-route-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+    let externalFetchCount = 0;
+
+    try {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '0';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        externalFetchCount += 1;
+        if (url.endsWith('/models')) {
+          return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'resp_route_smoke',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 5 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?responseSmoke=1`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(200);
+        expect(body.responseSmokeValidated).toBe(true);
+        expect(body.responseId).toBe('resp_route_smoke');
+        expect(externalFetchCount).toBe(2);
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/gateway-test disables response smoke with query override', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-route-light-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+    let externalFetchCount = 0;
+
+    try {
+      delete process.env.JEST_WORKER_ID;
+      delete process.env.NODE_ENV;
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        externalFetchCount += 1;
+        return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?responseSmoke=0`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(200);
+        expect(body.responseSmokeValidated).toBe(false);
+        expect(externalFetchCount).toBe(1);
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
     const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {

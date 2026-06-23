@@ -1621,9 +1621,19 @@ export function createApiRouter(
    * GET /api/gateway-test - Test LLM gateway connectivity and responsiveness
    * Validates that the configured gateway is reachable and authenticated.
    */
-  router.get('/gateway-test', async (_req: Request, res: Response) => {
+  router.get('/gateway-test', async (req: Request, res: Response) => {
     try {
-      const result = await testGatewayConnectivity();
+      const smokeParam = typeof req.query.responseSmoke === 'string'
+        ? req.query.responseSmoke.trim().toLowerCase()
+        : '';
+      const responseSmoke = ['1', 'true', 'on', 'yes'].includes(smokeParam)
+        ? true
+        : ['0', 'false', 'off', 'no'].includes(smokeParam)
+          ? false
+          : undefined;
+      const result = await testGatewayConnectivity(
+        typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined,
+      );
       const status = result.status === 'ok' ? 200 : 503;
       res.status(status).json(formatGatewayTestResponse(result));
     } catch (error) {

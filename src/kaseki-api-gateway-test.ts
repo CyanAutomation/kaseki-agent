@@ -24,6 +24,13 @@ export interface GatewayTestResult {
   remediation?: string;
   httpStatus?: number;
   warning?: string;
+  responseSmokeValidated?: boolean;
+  responseId?: string;
+  outputTokens?: number;
+}
+
+export interface GatewayTestOptions {
+  responseSmoke?: boolean;
 }
 
 const GATEWAY_LATENCY_WARNING_MS = 5000;
@@ -61,12 +68,32 @@ export function resolveGatewayApiKey(): GatewayApiKeyResolution {
   };
 }
 
+function parseBooleanOverride(value: unknown): boolean | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes'].includes(normalized)) return true;
+  if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
+  return undefined;
+}
+
+export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}): boolean {
+  if (typeof options.responseSmoke === 'boolean') return options.responseSmoke;
+
+  const envOverride = parseBooleanOverride(process.env.KASEKI_GATEWAY_RESPONSE_SMOKE);
+  if (typeof envOverride === 'boolean') return envOverride;
+
+  if (process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test') return false;
+  if (process.env.NODE_ENV === 'development' || process.env.KASEKI_ENV === 'development') return false;
+
+  return true;
+}
+
 /**
  * Test LLM gateway responsiveness
  *
  * @returns Gateway test result with status and diagnostics
  */
-export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
+export async function testGatewayConnectivity(options: GatewayTestOptions = {}): Promise<GatewayTestResult> {
   const startTime = performance.now();
   const timestamp = new Date().toISOString();
 
@@ -162,6 +189,20 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       };
     }
 
+    if (shouldRunGatewayResponseSmoke(options)) {
+      const smokeResult = await testGatewayResponseSmoke(gatewayUrl, apiKey, timestamp, startTime);
+      if (smokeResult.status === 'error') return smokeResult;
+
+      const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
+        ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
+        : undefined;
+      return {
+        ...smokeResult,
+        detail: `Gateway is responsive and returned usable Responses API content (${smokeResult.responseTime}ms)`,
+        warning,
+      };
+    }
+
     // Successful response
     const warning = responseTime >= GATEWAY_LATENCY_WARNING_MS
       ? `Gateway responded slowly (${responseTime}ms; warning threshold ${GATEWAY_LATENCY_WARNING_MS}ms).`
@@ -173,6 +214,7 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
       responseTime,
       timestamp,
       authenticationValidated: true,
+      responseSmokeValidated: false,
       ...(warning ? { warning } : {}),
     };
   } catch (error) {
@@ -199,6 +241,114 @@ export async function testGatewayConnectivity(): Promise<GatewayTestResult> {
   }
 }
 
+async function testGatewayResponseSmoke(
+  gatewayUrl: string,
+  apiKey: string,
+  timestamp: string,
+  startTime: number,
+): Promise<GatewayTestResult> {
+  const responseEndpoint = buildResponsesEndpoint(gatewayUrl);
+  const fetchStartTime = performance.now();
+  try {
+    const response = await fetchWithTimeout(responseEndpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'auto',
+        input: 'Reply with exactly: kaseki gateway smoke ok',
+        max_output_tokens: 32,
+      }),
+    }, 15000);
+
+    const responseTime = Math.round(performance.now() - fetchStartTime);
+    const bodyText = await response.text();
+    if (!response.ok) {
+      const authError = response.status === 401 || response.status === 403;
+      return {
+        status: 'error',
+        detail: `Gateway Responses API smoke test returned HTTP ${response.status}: ${bodyText.substring(0, 160)}`,
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: !authError,
+        responseSmokeValidated: false,
+        httpStatus: response.status,
+        remediation: authError
+          ? 'Authentication failed for the Responses API smoke test. Check that LLM_GATEWAY_API_KEY is valid for response generation.'
+          : 'Gateway /responses path is unhealthy or incompatible. Verify the gateway supports OpenAI Responses API requests with model=auto.',
+      };
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(bodyText);
+    } catch {
+      return {
+        status: 'error',
+        detail: `Gateway Responses API smoke test returned non-JSON content: ${bodyText.substring(0, 160)}`,
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: true,
+        responseSmokeValidated: false,
+        remediation: 'Gateway /responses should return OpenAI Responses-compatible JSON for model=auto.',
+      };
+    }
+
+    const text = extractResponseText(body);
+    const outputTokens = extractOutputTokens(body);
+    const responseId = typeof (body as any)?.id === 'string' ? (body as any).id : undefined;
+    if (!text.trim()) {
+      const detailParts = [
+        'Gateway Responses API smoke test returned no assistant text.',
+        responseId ? `response_id=${responseId}` : '',
+        outputTokens !== undefined ? `output_tokens=${outputTokens}` : '',
+      ].filter(Boolean);
+      return {
+        status: 'error',
+        detail: detailParts.join(' '),
+        gatewayUrl,
+        responseTime,
+        timestamp,
+        authenticationValidated: true,
+        responseSmokeValidated: false,
+        responseId,
+        outputTokens,
+        remediation: 'Gateway accepted model=auto but returned an empty assistant response. Check Responses API payload mapping and gateway model routing.',
+      };
+    }
+
+    return {
+      status: 'ok',
+      detail: `Gateway Responses API smoke test returned assistant text (${responseTime}ms)`,
+      gatewayUrl,
+      responseTime,
+      timestamp,
+      authenticationValidated: true,
+      responseSmokeValidated: true,
+      responseId,
+      outputTokens,
+    };
+  } catch (error) {
+    const responseTime = Math.round(performance.now() - startTime);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      status: 'error',
+      detail: `Gateway Responses API smoke test failed: ${errorMessage}`,
+      gatewayUrl,
+      responseTime,
+      timestamp,
+      authenticationValidated: false,
+      responseSmokeValidated: false,
+      remediation: 'Cannot complete a model=auto Responses API request. Check gateway health, routing, and network access.',
+    };
+  }
+}
+
 /**
  * Build the appropriate models endpoint for the gateway
  * Handles both base URLs (/v1) and full paths (/v1/responses or /v1/chat/completions)
@@ -217,6 +367,42 @@ function buildModelsEndpoint(baseUrl: string): string {
 
   // Default to OpenAI-compatible path (shouldn't reach here if validation works)
   return `${url}/v1/models`;
+}
+
+function buildResponsesEndpoint(baseUrl: string): string {
+  const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  if (/\/responses$/.test(url)) return url;
+  return `${url}/responses`;
+}
+
+function extractResponseText(value: unknown): string {
+  if (!value || typeof value !== 'object') return '';
+  const response = value as any;
+  if (typeof response.output_text === 'string') return response.output_text;
+  if (typeof response.text === 'string') return response.text;
+  if (Array.isArray(response.output)) {
+    return response.output.map((item: any) => {
+      if (!item || typeof item !== 'object') return '';
+      if (typeof item.text === 'string') return item.text;
+      if (!Array.isArray(item.content)) return '';
+      return item.content.map((part: any) => {
+        if (!part || typeof part !== 'object') return '';
+        if (typeof part.text === 'string') return part.text;
+        if (typeof part.output_text === 'string') return part.output_text;
+        return '';
+      }).join('');
+    }).join('');
+  }
+  return '';
+}
+
+function extractOutputTokens(value: unknown): number | undefined {
+  const usage = (value as any)?.usage;
+  if (!usage || typeof usage !== 'object') return undefined;
+  for (const key of ['output_tokens', 'output', 'completion_tokens']) {
+    if (typeof usage[key] === 'number' && Number.isFinite(usage[key])) return usage[key];
+  }
+  return undefined;
 }
 
 export function isResponsesEndpoint(url: URL): boolean {
@@ -258,5 +444,8 @@ export function formatGatewayTestResponse(result: GatewayTestResult): object {
     remediation: result.remediation,
     httpStatus: result.httpStatus,
     warning: result.warning,
+    responseSmokeValidated: result.responseSmokeValidated,
+    responseId: result.responseId,
+    outputTokens: result.outputTokens,
   };
 }
