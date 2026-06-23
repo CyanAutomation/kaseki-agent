@@ -237,6 +237,26 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
   });
 
+  test('shows smoke validation in the gateway health summary', async () => {
+    const { document, calls } = await renderConsole({
+      storedToken: 'token12345',
+      fetchHandler: (path) => {
+        if (path === '/api/gateway-test') {
+          return createJsonResponse({
+            status: 'ok',
+            responseTime: 123,
+            responseSmokeValidated: true,
+          });
+        }
+        return createJsonResponse({ status: 'ok' });
+      },
+    });
+
+    click(document.querySelector('[data-probe="/api/gateway-test"]'));
+    await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('123ms smoke ok'));
+    expect(calls[0]).toMatchObject({ path: '/api/gateway-test' });
+  });
+
   test('shows failure reasons and progress context in recent runs', async () => {
     const { document } = await renderConsole({
       storedToken: 'token12345',

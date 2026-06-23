@@ -2381,8 +2381,9 @@ const controllerPage = String.raw`<!doctype html>
         if (path === '/api/gateway-test') {
           const responseTime = payload.responseTime || 0;
           const slow = payload.status === 'ok' && typeof payload.warning === 'string';
+          const smoke = payload.responseSmokeValidated === true;
           const summary = payload.status === 'ok'
-            ? responseTime + 'ms' + (slow ? ' slow' : '')
+            ? responseTime + 'ms' + (smoke ? ' smoke ok' : '') + (slow ? ' slow' : '')
             : 'Failed';
           setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
         }

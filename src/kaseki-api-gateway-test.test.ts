@@ -5,7 +5,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { formatGatewayTestResponse, testGatewayConnectivity, GatewayTestResult } from './kaseki-api-gateway-test';
+import {
+  formatGatewayTestResponse,
+  shouldRunGatewayResponseSmoke,
+  testGatewayConnectivity,
+  GatewayTestResult,
+} from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
 global.fetch = jest.fn();
@@ -29,6 +34,72 @@ describe('LLM Gateway Test', () => {
   });
 
   describe('testGatewayConnectivity', () => {
+    it('should default to response smoke in production-like runtime', async () => {
+      delete process.env.JEST_WORKER_ID;
+      delete process.env.NODE_ENV;
+      delete process.env.KASEKI_ENV;
+      delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_default_smoke',
+            output_text: 'kaseki gateway smoke ok',
+            usage: { output_tokens: 5 },
+          }),
+        });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.responseSmokeValidated).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should default to lightweight connectivity under Jest', async () => {
+      process.env.JEST_WORKER_ID = '1';
+      delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{"models": []}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.responseSmokeValidated).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should resolve smoke defaults and explicit overrides', () => {
+      delete process.env.JEST_WORKER_ID;
+      delete process.env.NODE_ENV;
+      delete process.env.KASEKI_ENV;
+      delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+      expect(shouldRunGatewayResponseSmoke()).toBe(true);
+      process.env.NODE_ENV = 'development';
+      expect(shouldRunGatewayResponseSmoke()).toBe(false);
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
+      expect(shouldRunGatewayResponseSmoke()).toBe(true);
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = 'off';
+      expect(shouldRunGatewayResponseSmoke()).toBe(false);
+      expect(shouldRunGatewayResponseSmoke({ responseSmoke: true })).toBe(true);
+      expect(shouldRunGatewayResponseSmoke({ responseSmoke: false })).toBe(false);
+    });
+
     it('should fail when LLM_GATEWAY_URL is not configured', async () => {
       delete process.env.LLM_GATEWAY_URL;
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
@@ -290,6 +361,100 @@ describe('LLM Gateway Test', () => {
 
       expect(result.status).toBe('ok');
       expect(result.authenticationValidated).toBe(true);
+    });
+
+    it('should validate Responses API smoke output with model auto when enabled', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_smoke_ok',
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: 'kaseki gateway smoke ok' }],
+              },
+            ],
+            usage: { output_tokens: 5 },
+          }),
+        });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.responseSmokeValidated).toBe(true);
+      expect(result.responseId).toBe('resp_smoke_ok');
+      expect(result.outputTokens).toBe(5);
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://llmgateway.local.xyz/v1/responses',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"model":"auto"'),
+        }),
+      );
+    });
+
+    it('should skip Responses API smoke output when explicitly disabled', async () => {
+      delete process.env.JEST_WORKER_ID;
+      delete process.env.NODE_ENV;
+      delete process.env.KASEKI_ENV;
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '0';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{"models": []}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.responseSmokeValidated).toBe(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fail Responses API smoke output when gateway returns tokens but no assistant text', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+      process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = 'true';
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_empty',
+            output: [],
+            usage: { output_tokens: 128 },
+          }),
+        });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('error');
+      expect(result.detail).toContain('no assistant text');
+      expect(result.detail).toContain('response_id=resp_empty');
+      expect(result.detail).toContain('output_tokens=128');
+      expect(result.responseSmokeValidated).toBe(false);
+      expect(result.remediation).toContain('model=auto');
     });
 
     it('should accept different API versions (/v2, /v3, etc.)', async () => {
