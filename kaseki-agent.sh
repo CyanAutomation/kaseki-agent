@@ -643,6 +643,106 @@ append_secret_scan_result() {
     "$(printf '%s' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" | jq -Rs .)" >> "$temp_secret_scan_file"
 }
 
+run_quality_checks() {
+  local stage_start diff_size allowlist_regex changed_file
+
+  printf '\n==> quality checks\n'
+  set_current_stage "quality checks"
+  emit_progress "quality checks" "started"
+  stage_start="$(date +%s)"
+  diff_size="$(wc -c < "${KASEKI_RESULTS_DIR}"/git.diff | tr -d ' ')"
+  if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
+    QUALITY_EXIT=4
+    QUALITY_FAILURE_REASON="max_diff_bytes: $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes"
+    printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+    emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
+    # Phase 2C: Emit quality violation to JSON
+    append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "max_diff_bytes_exceeded" "Diff size $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes" "error"
+  else
+    emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=true" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
+  fi
+  emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
+
+  # Build a safe regex from glob-style repo-relative allowlist patterns.
+  allowlist_regex="$(build_allowlist_regex)"
+  if [ -n "$allowlist_regex" ]; then
+    while IFS= read -r changed_file || [ -n "$changed_file" ]; do
+      [ -z "$changed_file" ] && continue
+      if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
+        QUALITY_EXIT=5
+        QUALITY_FAILURE_REASON="allowlist_check: file '$changed_file' not in allowlist"
+        printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
+        emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=false" "file=$changed_file"
+      else
+        emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=true" "file=$changed_file"
+      fi
+    done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
+  fi
+
+  if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['format:check'] ? 0 : 1)" 2>/dev/null; then
+    : # format-check-command.txt artifact removed (Phase 1: low-value artifacts deletion)
+  fi
+  record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
+}
+
+run_secret_scan() {
+  local stage_start allowlist_file unallowlisted_count allowlisted_count match_line file_path pattern
+
+  printf '\n==> secret scan\n'
+  set_current_stage "secret scan"
+  emit_progress "secret scan" "started"
+  stage_start="$(date +%s)"
+  # secret-scan.json consolidated into metadata.json.phases.secret_scan
+  if [ "$KASEKI_DRY_RUN" = "1" ]; then
+    emit_progress "secret scan" "skipped_dry_run"
+    SECRET_SCAN_EXIT=0
+    record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
+  else
+    # Run secret scan inline with JSON-only output (no .log file)
+    allowlist_file="${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist"
+    unallowlisted_count=0
+    allowlisted_count=0
+
+    if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
+      # Matches found - process against allowlist
+      while IFS= read -r match_line || [ -n "$match_line" ]; do
+        [ -z "$match_line" ] && continue
+        file_path=""
+        pattern=""
+        file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
+        pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
+        [ -z "$pattern" ] && continue
+        file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
+        file_path="${file_path#repo/}"
+        file_path="${file_path#./}"
+
+        if [ -f "$allowlist_file" ] && grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
+          allowlisted_count=$((allowlisted_count + 1))
+          append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "allowlisted"
+          emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
+        else
+          unallowlisted_count=$((unallowlisted_count + 1))
+          append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
+          emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
+        fi
+      done < /tmp/secret-scan-matches.tmp
+      rm -f /tmp/secret-scan-matches.tmp
+
+      if [ "$unallowlisted_count" -gt 0 ]; then
+        SECRET_SCAN_EXIT=6
+      else
+        SECRET_SCAN_EXIT=0
+      fi
+    else
+      # No matches found
+      SECRET_SCAN_EXIT=0
+    fi
+
+    record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
+  fi
+  emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
+}
+
 # Append a phase summary to all-phase-summaries.json consolidation artifact
 append_phase_summary() {
   local output_file="$1"
@@ -9824,43 +9924,7 @@ collect_git_artifacts
 record_stage_timing "collect agent diff" 0 "$(($(date +%s) - stage_start))" "diff_nonempty=$DIFF_NONEMPTY"
 emit_progress "collect agent diff" "finished"
 
-printf '\n==> quality checks\n'
-set_current_stage "quality checks"
-emit_progress "quality checks" "started"
-stage_start="$(date +%s)"
-diff_size="$(wc -c < "${KASEKI_RESULTS_DIR}"/git.diff | tr -d ' ')"
-if [ "$diff_size" -gt "$KASEKI_MAX_DIFF_BYTES" ]; then
-  QUALITY_EXIT=4
-  QUALITY_FAILURE_REASON="max_diff_bytes: $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes"
-  printf 'git.diff is too large: %s bytes > %s bytes\n' "$diff_size" "$KASEKI_MAX_DIFF_BYTES" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
-  emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=false" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
-  # Phase 2C: Emit quality violation to JSON
-  append_quality_violation "${KASEKI_RESULTS_DIR}"/quality-gates.json "max_diff_bytes_exceeded" "Diff size $diff_size bytes exceeds limit of $KASEKI_MAX_DIFF_BYTES bytes" "error"
-else
-  emit_event "quality_gate_rule_evaluated" "rule=max_diff_bytes" "passed=true" "actual=$diff_size" "limit=$KASEKI_MAX_DIFF_BYTES"
-fi
-emit_progress "quality checks" "finished with exit $QUALITY_EXIT"
-
-# Build a safe regex from glob-style repo-relative allowlist patterns.
-allowlist_regex="$(build_allowlist_regex)"
-if [ -n "$allowlist_regex" ]; then
-  while IFS= read -r changed_file || [ -n "$changed_file" ]; do
-    [ -z "$changed_file" ] && continue
-    if ! printf '%s\n' "$changed_file" | grep -Eq "^(${allowlist_regex})$"; then
-      QUALITY_EXIT=5
-      QUALITY_FAILURE_REASON="allowlist_check: file '$changed_file' not in allowlist"
-      printf 'changed file outside allowlist: %s\n' "$changed_file" | tee -a "${KASEKI_RESULTS_DIR}"/quality.log
-      emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=false" "file=$changed_file"
-    else
-      emit_event "quality_gate_rule_evaluated" "rule=allowlist_check" "passed=true" "file=$changed_file"
-    fi
-  done < "${KASEKI_RESULTS_DIR}"/changed-files.txt
-fi
-
-if [ -f package.json ] && node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['format:check'] ? 0 : 1)" 2>/dev/null; then
-  : # format-check-command.txt artifact removed (Phase 1: low-value artifacts deletion)
-fi
-record_stage_timing "quality checks" "$QUALITY_EXIT" "$(($(date +%s) - stage_start))" "diff_size_bytes=$diff_size"
+run_quality_checks
 
 run_static_test_impact_check
 run_expectation_mismatch_detector
@@ -10058,59 +10122,7 @@ fi
 break
 done
 
-printf '\n==> secret scan\n'
-set_current_stage "secret scan"
-emit_progress "secret scan" "started"
-stage_start="$(date +%s)"
-# secret-scan.json consolidated into metadata.json.phases.secret_scan
-if [ "$KASEKI_DRY_RUN" = "1" ]; then
-  emit_progress "secret scan" "skipped_dry_run"
-  SECRET_SCAN_EXIT=0
-  record_stage_timing "secret scan" "0" "$(($(date +%s) - stage_start))" "dry_run=true"
-else
-  # Run secret scan inline with JSON-only output (no .log file)
-  allowlist_file="${KASEKI_WORKSPACE_DIR}/repo/.kaseki-secret-allowlist"
-  unallowlisted_count=0
-  allowlisted_count=0
-  
-  if grep -R -n -E 'sk-or-[A-Za-z0-9_-]{20,}' "${KASEKI_RESULTS_DIR}" "${KASEKI_WORKSPACE_DIR}"/repo/.git "${KASEKI_WORKSPACE_DIR}"/repo/src "${KASEKI_WORKSPACE_DIR}"/repo/tests 2>/dev/null | grep -v '/secret-scan.json:' > /tmp/secret-scan-matches.tmp 2>&1; then
-    # Matches found - process against allowlist
-    while IFS= read -r match_line || [ -n "$match_line" ]; do
-      [ -z "$match_line" ] && continue
-      file_path=""
-      pattern=""
-      file_path=$(printf '%s\n' "$match_line" | cut -d: -f1)
-      pattern=$(printf '%s\n' "$match_line" | sed 's/^[^:]*:[^:]*://' | grep -oE 'sk-or-[A-Za-z0-9_-]{20,}|sk-test-[A-Za-z0-9_-]*' | head -n1)
-      [ -z "$pattern" ] && continue
-      file_path="${file_path#"${KASEKI_WORKSPACE_DIR}"/repo/}"
-      file_path="${file_path#repo/}"
-      file_path="${file_path#./}"
-      
-      if [ -f "$allowlist_file" ] && grep -q "^${file_path}:${pattern}$" "$allowlist_file" 2>/dev/null; then
-        allowlisted_count=$((allowlisted_count + 1))
-        append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "allowlisted"
-        emit_event "secret_scan_result" "status=allowlisted" "file=$file_path" "pattern=$pattern"
-      else
-        unallowlisted_count=$((unallowlisted_count + 1))
-        append_secret_scan_result "${KASEKI_RESULTS_DIR}"/secret-scan.json "$file_path" "$pattern" "real_leak"
-        emit_event "secret_scan_result" "status=real_leak" "file=$file_path" "pattern=$pattern"
-      fi
-    done < /tmp/secret-scan-matches.tmp
-    rm -f /tmp/secret-scan-matches.tmp
-    
-    if [ "$unallowlisted_count" -gt 0 ]; then
-      SECRET_SCAN_EXIT=6
-    else
-      SECRET_SCAN_EXIT=0
-    fi
-  else
-    # No matches found
-    SECRET_SCAN_EXIT=0
-  fi
-  
-  record_stage_timing "secret scan" "$SECRET_SCAN_EXIT" "$(($(date +%s) - stage_start))" ""
-fi
-emit_progress "secret scan" "finished with exit $SECRET_SCAN_EXIT"
+run_secret_scan
 
 run_run_evaluation
 
