@@ -19,8 +19,8 @@ import { execDockerCommand } from './lib/subprocess-helpers';
 import { readFirstLine, commandOutput } from './utils/file-helpers';
 
 /**
- * Imported check functions from main routes file.
- * These are exported by kaseki-api-routes for internal use by preflight builder.
+ * Imported check functions from health checks module.
+ * These are exported by kaseki-api-health-checks for preflight response building.
  */
 import {
   checkDeletedBindMounts,
@@ -33,7 +33,7 @@ import {
   buildTemplateHealthStatus,
   resolveCheckoutFreshness,
   checkTemplateActivatorParity,
-} from './kaseki-api-routes';
+} from './kaseki-api-health-checks';
 
 /**
  * Builds a comprehensive preflight response by collecting health checks for:
