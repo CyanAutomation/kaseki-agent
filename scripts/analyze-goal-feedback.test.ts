@@ -15,7 +15,7 @@ import * as os from 'os';
 
 // Import directly from the TypeScript source file (ts-jest will compile it)
 import type { FeedbackEntry } from './analyze-goal-feedback';
-import * as scriptModule from './analyze-goal-feedback';
+import { testHarness } from './analyze-goal-feedback';
 
 const {
   readFeedbackFile,
@@ -23,7 +23,7 @@ const {
   analyzeCorrelations,
   analyzeSmartDimensions,
   generateRecommendations,
-} = scriptModule as any;
+} = testHarness;
 
 // Type definitions for test clarity
 interface SmartCriterion {

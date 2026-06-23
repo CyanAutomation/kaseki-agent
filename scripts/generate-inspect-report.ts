@@ -235,5 +235,16 @@ if (isCliMode && typeof (globalThis as any).jest === 'undefined') {
   }
 }
 
-// Export for testing and programmatic use
-export { readFile, readJsonl, readJson, extractFindings, generateReport, main };
+// Internal test harness - consolidates helper functions used only by tests
+// These are not part of the public API; tests should import via testHarness only
+const testHarness = {
+  readFile,
+  readJsonl,
+  readJson,
+  extractFindings,
+  generateReport,
+};
+
+// Public API: main() for CLI execution
+// Test imports: use testHarness from module exports
+export { testHarness, main };
