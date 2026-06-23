@@ -508,17 +508,16 @@ line 2`;
   return 43;
 }`);
 
-      const eventResults = fs
-        .readFileSync(outputJsonlPath, 'utf-8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as {
-          eventId: string;
-          file: string;
-          status: string;
-          reason: string;
-          linesModified?: number;
-        });
+      const fileContent = fs.readFileSync(outputJsonlPath, 'utf-8').trim();
+      const eventResults = fileContent
+        ? fileContent.split('\n').map((line) => JSON.parse(line) as {
+            eventId: string;
+            file: string;
+            status: string;
+            reason: string;
+            linesModified?: number;
+          })
+        : [];
 
       expect(eventResults).toHaveLength(2);
       expect(eventResults[0]).toMatchObject({
