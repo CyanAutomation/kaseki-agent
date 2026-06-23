@@ -85,17 +85,17 @@ describe('LLM Gateway Test', () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
-        mockFetch
-          .mockResolvedValueOnce({
-            ok: true,
-            status: 200,
-            text: async () => '{"models": []}',
-          })
-        mockSuccessfulStage2Responses({
-          id: 'resp_default_smoke',
-          output_text: 'kaseki gateway smoke ok',
-          usage: { output_tokens: 5 },
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
         });
+      mockSuccessfulStage2Responses({
+        id: 'resp_default_smoke',
+        output_text: 'kaseki gateway smoke ok',
+        usage: { output_tokens: 5 },
+      });
 
       const result = await testGatewayConnectivity();
 
