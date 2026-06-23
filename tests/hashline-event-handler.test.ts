@@ -431,6 +431,125 @@ line 2`;
   });
 
   describe('hashline-event-handler CLI', () => {
+    it('writes final event artifacts for applied and rejected edits using temp workspace paths', () => {
+      const workspaceDir = path.join(tempDir, 'workspace');
+      const repoDir = path.join(workspaceDir, 'repo');
+      const artifactsDir = path.join(tempDir, 'artifacts');
+      fs.mkdirSync(repoDir, { recursive: true });
+      fs.mkdirSync(artifactsDir);
+
+      const sourcePath = path.join(repoDir, 'src.js');
+      const originalContent = `function answer() {
+  return 42;
+}`;
+      fs.writeFileSync(sourcePath, originalContent, 'utf-8');
+      const lines = originalContent.split('\n');
+
+      const eventsPath = path.join(artifactsDir, 'pi-events.jsonl');
+      const outputJsonlPath = path.join(artifactsDir, 'hashline-events.jsonl');
+      const outputSummaryPath = path.join(artifactsDir, 'hashline-summary.json');
+      const events = [
+        {
+          type: 'assistantMessage',
+          assistantMessageEvent: {
+            type: 'message',
+            partial: { content: [{ type: 'text', text: 'Applying hashline edit' }] },
+          },
+        },
+        {
+          type: 'tool_call',
+          tool_name: 'hashline_edit',
+          call: {
+            file: 'repo/src.js',
+            anchor: {
+              start_hash: lineHash(lines[1]),
+              end_hash: lineHash(lines[1]),
+              context_lines: 2,
+            },
+            replacement: '  return 43;',
+          },
+        },
+        {
+          type: 'tool_call',
+          tool_name: 'hashline_edit',
+          call: {
+            file: 'repo/src.js',
+            anchor: {
+              start_hash: 'deadbeef',
+              end_hash: 'cafebabe',
+              context_lines: 2,
+            },
+            replacement: '  return 44;',
+          },
+        },
+      ];
+      fs.writeFileSync(eventsPath, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`, 'utf-8');
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          'src/hashline-event-handler-cli.ts',
+          eventsPath,
+          workspaceDir,
+          outputJsonlPath,
+          outputSummaryPath,
+        ],
+        {
+          cwd: path.resolve(__dirname, '..'),
+          encoding: 'utf-8',
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(fs.readFileSync(sourcePath, 'utf-8')).toBe(`function answer() {
+  return 43;
+}`);
+
+      const eventResults = fs
+        .readFileSync(outputJsonlPath, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as {
+          eventId: string;
+          file: string;
+          status: string;
+          reason: string;
+          linesModified?: number;
+        });
+
+      expect(eventResults).toHaveLength(2);
+      expect(eventResults[0]).toMatchObject({
+        eventId: 'hashline_2',
+        file: 'repo/src.js',
+        status: 'applied',
+        reason: 'Successfully applied',
+        linesModified: 1,
+      });
+      expect(eventResults[1]).toMatchObject({
+        eventId: 'hashline_3',
+        file: 'repo/src.js',
+        status: 'rejected',
+      });
+      expect(eventResults[1].reason).toContain('not found');
+
+      const summary = readJson<{
+        applied: number;
+        rejected: number;
+        errors: number;
+        totalLinesModified: number;
+      }>(outputSummaryPath);
+
+      expect(summary).toMatchObject({
+        applied: 1,
+        rejected: 1,
+        errors: 0,
+        totalLinesModified: 1,
+      });
+    });
+
     it('writes empty artifacts and zero-count summary for a no-edit event', () => {
       const workspaceDir = path.join(tempDir, 'workspace');
       const artifactsDir = path.join(tempDir, 'artifacts');
