@@ -8,33 +8,28 @@
  * - Robustness: malformed JSON, missing files, empty files
  */
 
-import { resolveActualModel } from './resolve-actual-model';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-
-let tmpDir: string;
-
-function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'resolve-model-test-'));
-}
-
-/**
- * Tests for scripts/resolve-actual-model.ts
- *
- * Coverage targets:
- * - Model extraction from event stream (JSONL)
- * - Model extraction from summary.json (selected_model, model, counters)
- * - Fallback chain: events → summary.selected_model → summary.model → counters → "unknown"
- * - Robustness: malformed JSON, missing files, empty files
- */
-
-import { resolveActualModel } from './resolve-actual-model';
+import { resolveActualModel, runCli } from './resolve-actual-model';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
 describe('resolve-actual-model', () => {
+
+  describe('CLI contract', () => {
+    it('fails with usage text when required arguments are missing', () => {
+      const stderr: string[] = [];
+      const stdout: string[] = [];
+
+      const exitCode = runCli([], {
+        stderr: message => stderr.push(message),
+        stdout: message => stdout.push(message),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toEqual([]);
+      expect(stderr.join('\n')).toContain('Usage: resolve-actual-model.js <summaryPath> <eventsPath>');
+    });
+  });
   let tmpDir: string;
 
   beforeEach(() => {
