@@ -9,7 +9,12 @@ import {
   formatGatewayTestResponse,
   shouldRunGatewayResponseSmoke,
   testGatewayConnectivity,
+  testGatewayConnectivity_Stage1,
+  testGatewayResponseSmoke_Stage2,
+  detectGatewayTestEnvironment,
   GatewayTestResult,
+  ConnectivityTestResult,
+  ResponseSmokeTestResult,
 } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
@@ -543,6 +548,322 @@ describe('LLM Gateway Test', () => {
         status: 'ok',
         responseTime: 9459,
         warning: expect.stringContaining('responded slowly'),
+      });
+    });
+  });
+
+  describe('Two-Stage Gateway Test', () => {
+    describe('detectGatewayTestEnvironment', () => {
+      it('should return "test" when JEST_WORKER_ID is set', () => {
+        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
+        process.env.JEST_WORKER_ID = '1';
+        delete process.env.NODE_ENV;
+        delete process.env.KASEKI_ENV;
+        
+        expect(detectGatewayTestEnvironment()).toBe('test');
+      });
+
+      it('should return "test" when NODE_ENV=test', () => {
+        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
+        delete process.env.JEST_WORKER_ID;
+        process.env.NODE_ENV = 'test';
+        delete process.env.KASEKI_ENV;
+        
+        expect(detectGatewayTestEnvironment()).toBe('test');
+      });
+
+      it('should return "development" when NODE_ENV=development', () => {
+        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
+        delete process.env.JEST_WORKER_ID;
+        process.env.NODE_ENV = 'development';
+        delete process.env.KASEKI_ENV;
+        
+        expect(detectGatewayTestEnvironment()).toBe('development');
+      });
+
+      it('should return "development" when KASEKI_ENV=development', () => {
+        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
+        delete process.env.JEST_WORKER_ID;
+        delete process.env.NODE_ENV;
+        process.env.KASEKI_ENV = 'development';
+        
+        expect(detectGatewayTestEnvironment()).toBe('development');
+      });
+
+      it('should return "production" as default', () => {
+        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
+        delete process.env.JEST_WORKER_ID;
+        delete process.env.NODE_ENV;
+        delete process.env.KASEKI_ENV;
+        
+        expect(detectGatewayTestEnvironment()).toBe('production');
+      });
+    });
+
+    describe('shouldRunGatewayResponseSmoke with environment detection', () => {
+      it('should return true in production by default', () => {
+        delete process.env.JEST_WORKER_ID;
+        delete process.env.NODE_ENV;
+        delete process.env.KASEKI_ENV;
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke()).toBe(true);
+      });
+
+      it('should return false in test environment by default', () => {
+        process.env.JEST_WORKER_ID = '1';
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke()).toBe(false);
+      });
+
+      it('should return false in development environment by default', () => {
+        delete process.env.JEST_WORKER_ID;
+        process.env.NODE_ENV = 'development';
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke()).toBe(false);
+      });
+
+      it('should respect forceStage2 option to run in development', () => {
+        process.env.NODE_ENV = 'development';
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke({ forceStage2: true })).toBe(true);
+      });
+
+      it('should respect forceStage2 option to run in test', () => {
+        process.env.JEST_WORKER_ID = '1';
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke({ forceStage2: true })).toBe(true);
+      });
+
+      it('should prefer explicit responseSmoke option over forceStage2', () => {
+        delete process.env.JEST_WORKER_ID;
+        delete process.env.NODE_ENV;
+        delete process.env.KASEKI_GATEWAY_RESPONSE_SMOKE;
+
+        expect(shouldRunGatewayResponseSmoke({ forceStage2: true, responseSmoke: false })).toBe(false);
+      });
+
+      it('should respect environment variable override over forceStage2', () => {
+        delete process.env.JEST_WORKER_ID;
+        delete process.env.NODE_ENV;
+        process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = 'false';
+
+        expect(shouldRunGatewayResponseSmoke({ forceStage2: true })).toBe(false);
+      });
+    });
+
+    describe('testGatewayConnectivity_Stage1', () => {
+      it('should return ConnectivityTestResult interface (not ResponseSmoke)', async () => {
+        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
+        process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+        process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        });
+
+        const result = await testGatewayConnectivity_Stage1();
+
+        // Should NOT have responseSmokeValidated field
+        expect(result).not.toHaveProperty('responseSmokeValidated');
+        expect(result).not.toHaveProperty('responseId');
+        expect(result).not.toHaveProperty('outputTokens');
+        
+        // Should have connectivity fields
+        expect(result.status).toBe('ok');
+        expect(result.gatewayUrl).toBeDefined();
+        expect(result.responseTime).toBeDefined();
+        expect(result.authenticationValidated).toBe(true);
+      });
+
+      it('should only call /models endpoint, never /responses', async () => {
+        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
+        process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+        process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        });
+
+        await testGatewayConnectivity_Stage1();
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining('/models'),
+          expect.any(Object)
+        );
+        expect(mockFetch).not.toHaveBeenCalledWith(
+          expect.stringContaining('/responses'),
+          expect.any(Object)
+        );
+      });
+
+      it('should validate API key via /models endpoint', async () => {
+        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
+        process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+        process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        });
+
+        const result = await testGatewayConnectivity_Stage1();
+
+        expect(result.authenticationValidated).toBe(true);
+        expect(result.status).toBe('ok');
+      });
+
+      it('should return authenticationValidated=false on 401', async () => {
+        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
+        process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+        process.env.LLM_GATEWAY_API_KEY = 'invalid-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          text: async () => 'Unauthorized',
+        });
+
+        const result = await testGatewayConnectivity_Stage1();
+
+        expect(result.status).toBe('error');
+        expect(result.authenticationValidated).toBe(false);
+      });
+    });
+
+    describe('testGatewayResponseSmoke_Stage2', () => {
+      it('should return ResponseSmokeTestResult interface with inference details', async () => {
+        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
+        
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_12345',
+            output_text: 'kaseki gateway smoke ok',
+            usage: { output_tokens: 32 },
+          }),
+        });
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        // Should have response-specific fields
+        expect(result).toHaveProperty('responseId');
+        expect(result).toHaveProperty('outputTokens');
+        
+        // Should NOT have legacy responseSmokeValidated
+        expect(result).not.toHaveProperty('responseSmokeValidated');
+        
+        expect(result.status).toBe('ok');
+        expect(result.responseId).toBe('resp_12345');
+        expect(result.outputTokens).toBe(32);
+      });
+
+      it('should only call /responses endpoint', async () => {
+        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_xyz',
+            output_text: 'ok',
+            usage: { output_tokens: 1 },
+          }),
+        });
+
+        await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.stringContaining('/responses'),
+          expect.objectContaining({ method: 'POST' })
+        );
+      });
+
+      it('should consume tokens (model=auto inference)', async () => {
+        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_inference',
+            output_text: 'response text',
+            usage: { output_tokens: 42 },
+          }),
+        });
+
+        await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        // Verify model=auto request was sent
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            body: expect.stringContaining('"model":"auto"'),
+          })
+        );
+      });
+
+      it('should return error on 401 (auth failure)', async () => {
+        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
+
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          text: async () => 'Unauthorized',
+        });
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'invalid-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.authenticationValidated).toBe(false);
+      });
+
+      it('should return error on timeout', async () => {
+        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
+
+        mockFetch.mockRejectedValueOnce(new Error('This operation was aborted'));
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.detail).toContain('aborted');
       });
     });
   });

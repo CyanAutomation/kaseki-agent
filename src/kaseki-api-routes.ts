@@ -39,7 +39,7 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
-import { testGatewayConnectivity, formatGatewayTestResponse, resolveGatewayApiKey, isResponsesEndpoint } from './kaseki-api-gateway-test';
+import { testGatewayConnectivity_Stage1, testGatewayResponseSmoke_Stage2, resolveGatewayApiKey, isResponsesEndpoint, shouldRunGatewayResponseSmoke } from './kaseki-api-gateway-test';
 
 // Re-export UTF-8 helpers for backward compatibility
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
@@ -1618,24 +1618,61 @@ export function createApiRouter(
   });
 
   /**
-   * GET /api/gateway-test - Test LLM gateway connectivity and responsiveness
-   * Validates that the configured gateway is reachable and authenticated.
+   * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2)
+   * Runs both connectivity and response validation tests
+   * Stage 2 runs by default in production, skipped in dev/test (no token consumption in dev)
+   * Query param: ?responseSmoke=true/false to override stage 2 decision
    */
-  router.get('/gateway-test', async (req: Request, res: Response) => {
+  router.get('/gateway-test', async (_req: Request, res: Response) => {
     try {
-      const smokeParam = typeof req.query.responseSmoke === 'string'
-        ? req.query.responseSmoke.trim().toLowerCase()
+      const smokeParam = typeof _req.query.responseSmoke === 'string'
+        ? _req.query.responseSmoke.trim().toLowerCase()
         : '';
       const responseSmoke = ['1', 'true', 'on', 'yes'].includes(smokeParam)
         ? true
         : ['0', 'false', 'off', 'no'].includes(smokeParam)
           ? false
           : undefined;
-      const result = await testGatewayConnectivity(
-        typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined,
-      );
-      const status = result.status === 'ok' ? 200 : 503;
-      res.status(status).json(formatGatewayTestResponse(result));
+      const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
+      
+      const stage1Result = await testGatewayConnectivity_Stage1();
+      
+      // Determine if we should run stage 2
+      const runStage2 = shouldRunGatewayResponseSmoke(options);
+      
+      let stage2Result: any = null;
+      
+      if (stage1Result.status !== 'ok') {
+        // Skip stage 2: Stage 1 failed - connectivity check did not pass
+      } else if (!runStage2) {
+        // Skip stage 2: environment does not require it
+      } else {
+        // Run stage 2
+        const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
+        const apiKey = resolveGatewayApiKey().value || '';
+        const timestamp = new Date().toISOString();
+        const startTime = performance.now();
+        stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
+      }
+      
+      // Build response in old format for backward compatibility
+      const result: any = {
+        status: stage1Result.status,
+        detail: stage1Result.detail,
+        responseTime: stage1Result.responseTime,
+        timestamp: new Date().toISOString(),
+        authenticationValidated: stage1Result.authenticationValidated,
+        responseSmokeValidated: stage2Result?.status === 'ok',
+      };
+      
+      if (stage2Result) {
+        result.responseId = stage2Result.responseId;
+        result.outputTokens = stage2Result.outputTokens;
+        result.modelUsed = stage2Result.modelUsed;
+      }
+      
+      const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
+      res.status(httpStatus).json(result);
     } catch (error) {
       logger.error('Gateway test error', {
         error: error instanceof Error ? error.message : String(error),
@@ -1643,6 +1680,31 @@ export function createApiRouter(
       res.status(500).json({
         status: 'error',
         detail: 'Unexpected error during gateway test',
+        responseTime: 0,
+        timestamp: new Date().toISOString(),
+        authenticationValidated: false,
+      });
+    }
+  });
+
+  /**
+   * GET /api/gateway-test/stage1 - Stage 1 only: Lightweight LLM gateway connectivity test
+   * Tests reachability and authentication via /models endpoint
+   * Does NOT consume inference tokens - fast (<2s), runs by default
+   */
+  router.get('/gateway-test/stage1', async (_req: Request, res: Response) => {
+    try {
+      const result = await testGatewayConnectivity_Stage1();
+      const status = result.status === 'ok' ? 200 : 503;
+      res.status(status).json(result);
+    } catch (error) {
+      logger.error('Gateway test (stage 1) error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        status: 'error',
+        detail: 'Unexpected error during gateway connectivity test',
+        gatewayUrl: '',
         responseTime: 0,
         timestamp: new Date().toISOString(),
         authenticationValidated: false,
