@@ -37,6 +37,18 @@ const GATEWAY_LATENCY_WARNING_MS = 5000;
 // Accept both base URLs (/v1) and full response paths (/v1/responses)
 // Pi CLI automatically appends /responses, so either format is valid
 const GATEWAY_VALID_PATH_PATTERN = /\/v\d+(\/responses)?\/?$/;
+// Timeout for /models endpoint (lightweight check)
+const GATEWAY_MODELS_TIMEOUT_MS = 10000;
+// Timeout for /responses endpoint (includes model inference)
+// Default 45s allows for model selection, routing, and inference
+const GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS = (() => {
+  const envValue = process.env.KASEKI_GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS;
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 45000; // 45 second default
+})();
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -167,7 +179,7 @@ export async function testGatewayConnectivity(options: GatewayTestOptions = {}):
         Authorization: `Bearer ${apiKey}`,
         Accept: 'application/json',
       },
-    }, 10000); // 10 second timeout
+    }, GATEWAY_MODELS_TIMEOUT_MS);
 
     const responseTime = Math.round(performance.now() - fetchStartTime);
 
@@ -262,7 +274,7 @@ async function testGatewayResponseSmoke(
         input: 'Reply with exactly: kaseki gateway smoke ok',
         max_output_tokens: 32,
       }),
-    }, 15000);
+    }, GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS);
 
     const responseTime = Math.round(performance.now() - fetchStartTime);
     const bodyText = await response.text();
