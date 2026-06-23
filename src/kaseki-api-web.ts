@@ -2395,8 +2395,14 @@ const controllerPage = String.raw`<!doctype html>
           if (path.includes('stage=2')) {
             // Stage 2 (LLM inference test)
             const outputTokens = payload.outputTokens || 0;
+            const streamOk = payload.streamSmokeValidated === true;
+            const largeOk = payload.largePromptSmokeValidated === true;
+            const coverage = [
+              streamOk ? 'stream ok' : '',
+              largeOk ? 'large ok' : '',
+            ].filter(Boolean).join(', ');
             const llmSummary = payload.status === 'ok'
-              ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '')
+              ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
           } else {

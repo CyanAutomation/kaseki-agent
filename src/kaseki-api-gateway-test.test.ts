@@ -23,6 +23,46 @@ describe('LLM Gateway Test', () => {
   const mockFetch = global.fetch as jest.Mock;
   let secretsDir: string;
 
+  function mockSuccessfulStage2Responses(
+    jsonResponse: Record<string, unknown> = {
+      id: 'resp_json',
+      output_text: 'kaseki gateway smoke ok',
+      usage: { output_tokens: 5 },
+    },
+    streamResponse = [
+      'event: response.created',
+      'data: {"type":"response.created","response":{"id":"resp_stream","output":[]}}',
+      '',
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","delta":"kaseki gateway smoke ok"}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n'),
+    largeResponse: Record<string, unknown> = {
+      id: 'resp_large',
+      output_text: 'kaseki gateway smoke ok',
+      usage: { output_tokens: 6 },
+    },
+  ) {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(jsonResponse),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => streamResponse,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(largeResponse),
+      });
+  }
+
   beforeEach(() => {
     process.env = { ...originalEnv };
     secretsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kaseki-gateway-test-secrets-'));
@@ -45,27 +85,23 @@ describe('LLM Gateway Test', () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
-      mockFetch
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => '{"models": []}',
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_default_smoke',
-            output_text: 'kaseki gateway smoke ok',
-            usage: { output_tokens: 5 },
-          }),
+        mockFetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => '{"models": []}',
+          })
+        mockSuccessfulStage2Responses({
+          id: 'resp_default_smoke',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 5 },
         });
 
       const result = await testGatewayConnectivity();
 
       expect(result.status).toBe('ok');
       expect(result.responseSmokeValidated).toBe(true);
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
     it('should default to lightweight connectivity under Jest', async () => {
@@ -376,28 +412,24 @@ describe('LLM Gateway Test', () => {
           ok: true,
           status: 200,
           text: async () => '{"models": []}',
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_smoke_ok',
-            output: [
-              {
-                type: 'message',
-                content: [{ type: 'output_text', text: 'kaseki gateway smoke ok' }],
-              },
-            ],
-            usage: { output_tokens: 5 },
-          }),
         });
+      mockSuccessfulStage2Responses({
+        id: 'resp_smoke_ok',
+        output: [
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: 'kaseki gateway smoke ok' }],
+          },
+        ],
+        usage: { output_tokens: 5 },
+      });
 
       const result = await testGatewayConnectivity();
 
       expect(result.status).toBe('ok');
       expect(result.responseSmokeValidated).toBe(true);
-      expect(result.responseId).toBe('resp_smoke_ok');
-      expect(result.outputTokens).toBe(5);
+      expect(result.streamSmokeValidated).toBe(true);
+      expect(result.largePromptSmokeValidated).toBe(true);
       expect(mockFetch).toHaveBeenNthCalledWith(
         2,
         'https://llmgateway.local.xyz/v1/responses',
@@ -734,14 +766,10 @@ describe('LLM Gateway Test', () => {
 
     describe('testGatewayResponseSmoke_Stage2', () => {
       it('should return ResponseSmokeTestResult interface with inference details', async () => {
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_12345',
-            output_text: 'kaseki gateway smoke ok',
-            usage: { output_tokens: 32 },
-          }),
+        mockSuccessfulStage2Responses({
+          id: 'resp_12345',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 32 },
         });
 
         const result = await testGatewayResponseSmoke_Stage2(
@@ -755,23 +783,17 @@ describe('LLM Gateway Test', () => {
         expect(result).toHaveProperty('responseId');
         expect(result).toHaveProperty('outputTokens');
 
-        // Should NOT have legacy responseSmokeValidated
-        expect(result).not.toHaveProperty('responseSmokeValidated');
-
         expect(result.status).toBe('ok');
-        expect(result.responseId).toBe('resp_12345');
-        expect(result.outputTokens).toBe(32);
+        expect(result.streamSmokeValidated).toBe(true);
+        expect(result.largePromptSmokeValidated).toBe(true);
+        expect(result.checks).toHaveLength(3);
       });
 
-      it('should only call /responses endpoint', async () => {
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_xyz',
-            output_text: 'ok',
-            usage: { output_tokens: 1 },
-          }),
+      it('should only call /responses endpoint for Stage 2 subchecks', async () => {
+        mockSuccessfulStage2Responses({
+          id: 'resp_xyz',
+          output_text: 'ok',
+          usage: { output_tokens: 1 },
         });
 
         await testGatewayResponseSmoke_Stage2(
@@ -781,22 +803,18 @@ describe('LLM Gateway Test', () => {
           performance.now()
         );
 
-        expect(mockFetch).toHaveBeenCalledTimes(1);
-        expect(mockFetch).toHaveBeenCalledWith(
-          expect.stringContaining('/responses'),
-          expect.objectContaining({ method: 'POST' })
-        );
+        expect(mockFetch).toHaveBeenCalledTimes(3);
+        for (const call of mockFetch.mock.calls) {
+          expect(call[0]).toEqual(expect.stringContaining('/responses'));
+          expect(call[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+        }
       });
 
       it('should consume tokens (model=auto inference)', async () => {
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_inference',
-            output_text: 'response text',
-            usage: { output_tokens: 42 },
-          }),
+        mockSuccessfulStage2Responses({
+          id: 'resp_inference',
+          output_text: 'response text',
+          usage: { output_tokens: 42 },
         });
 
         await testGatewayResponseSmoke_Stage2(
@@ -816,14 +834,10 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should use an artifact-shaped prompt that catches empty assistant turns from complex agent prompts', async () => {
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({
-            id: 'resp_agent_shape',
-            output_text: '{"status":"ok","summary":"kaseki gateway smoke ok"}',
-            usage: { output_tokens: 18 },
-          }),
+        mockSuccessfulStage2Responses({
+          id: 'resp_agent_shape',
+          output_text: '{"status":"ok","summary":"kaseki gateway smoke ok"}',
+          usage: { output_tokens: 18 },
         });
 
         await testGatewayResponseSmoke_Stage2(
@@ -839,6 +853,49 @@ describe('LLM Gateway Test', () => {
         expect(requestBody.input).toContain('Return exactly one JSON object');
         expect(requestBody.input).toContain('kaseki gateway smoke ok');
         expect(requestBody.input).toContain('"status"');
+        const streamBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+        expect(streamBody.stream).toBe(true);
+        const largeBody = JSON.parse(String(mockFetch.mock.calls[2][1]?.body));
+        expect(largeBody.input.length).toBeGreaterThan(requestBody.input.length);
+      });
+
+      it('should detect streaming responses with usage but no assistant text deltas', async () => {
+        mockFetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+              id: 'resp_json_ok',
+              output_text: 'kaseki gateway smoke ok',
+              usage: { output_tokens: 7 },
+            }),
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => [
+              ': OPENROUTER PROCESSING',
+              '',
+              'event: response.completed',
+              'data: {"type":"response.completed","response":{"id":"resp_empty_stream","status":"completed","output":[],"usage":{"output_tokens":121}}}',
+              '',
+              'data: [DONE]',
+              '',
+            ].join('\n'),
+          });
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.streamSmokeValidated).toBe(false);
+        expect(result.detail).toContain('no assistant text deltas');
+        expect(result.responseId).toBe('resp_empty_stream');
+        expect(result.outputTokens).toBe(121);
       });
 
       it('should return error on 401 (auth failure)', async () => {

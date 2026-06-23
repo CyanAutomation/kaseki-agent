@@ -1004,6 +1004,16 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         if (url.endsWith('/models')) {
           return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
         }
+        const requestBody = JSON.parse(String(init?.body ?? '{}'));
+        if (requestBody.stream === true) {
+          return Promise.resolve(new Response([
+            'event: response.output_text.delta',
+            'data: {"type":"response.output_text.delta","delta":"kaseki gateway smoke ok"}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'), { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+        }
         return Promise.resolve(new Response(JSON.stringify({
           id: 'resp_route_smoke',
           output_text: 'kaseki gateway smoke ok',
@@ -1018,8 +1028,9 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         const body = (await res.json()) as any;
         expect(res.status).toBe(200);
         expect(body.responseSmokeValidated).toBe(true);
-        expect(body.responseId).toBe('resp_route_smoke');
-        expect(externalFetchCount).toBe(2);
+        expect(body.streamSmokeValidated).toBe(true);
+        expect(body.largePromptSmokeValidated).toBe(true);
+        expect(externalFetchCount).toBe(4);
       } finally {
         fetchSpy.mockRestore();
         await cleanupTestApp(server, idempotencyStore);
@@ -1142,8 +1153,18 @@ describe('kaseki-api-routes preflight diagnostics', () => {
           stage1Called = true;
           return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
         }
-        // Stage 2 call (inference)
+        // Stage 2 calls (standard, streaming, large prompt)
         stage2Called = true;
+        const requestBody = JSON.parse(String(init?.body ?? '{}'));
+        if (requestBody.stream === true) {
+          return Promise.resolve(new Response([
+            'event: response.output_text.delta',
+            'data: {"type":"response.output_text.delta","delta":"kaseki gateway smoke ok"}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'), { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+        }
         return Promise.resolve(new Response(JSON.stringify({
           id: 'resp_stage2_test',
           output_text: 'kaseki gateway smoke ok',
@@ -1158,7 +1179,9 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         const body = (await res.json()) as any;
         expect(res.status).toBe(200);
         expect(body.responseSmokeValidated).toBe(true); // Stage 2 ran
-        expect(body.responseId).toBe('resp_stage2_test');
+        expect(body.streamSmokeValidated).toBe(true);
+        expect(body.largePromptSmokeValidated).toBe(true);
+        expect(body.checks).toHaveLength(3);
         expect(stage1Called).toBe(false); // Stage 1 should NOT be called
         expect(stage2Called).toBe(true); // Stage 2 should be called
       } finally {

@@ -200,6 +200,8 @@ KASEKI_GOAL_CHECK_EXPLICIT="${KASEKI_GOAL_CHECK+x}"
 KASEKI_SCOUTING="${KASEKI_SCOUTING:-1}"
 KASEKI_SCOUTING_MODEL="${KASEKI_SCOUTING_MODEL:-$KASEKI_MODEL}"
 KASEKI_SCOUTING_TIMEOUT_SECONDS="${KASEKI_SCOUTING_TIMEOUT_SECONDS:-$KASEKI_AGENT_TIMEOUT_SECONDS}"
+KASEKI_SCOUTING_MAX_OUTPUT_TOKENS="${KASEKI_SCOUTING_MAX_OUTPUT_TOKENS:-3072}"
+KASEKI_SCOUTING_PROMPT_DETAIL="${KASEKI_SCOUTING_PROMPT_DETAIL:-compact}"
 KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-1}"
 KASEKI_GOAL_SETTING="${KASEKI_GOAL_SETTING:-1}"
 KASEKI_GOAL_SETTING_MODEL="${KASEKI_GOAL_SETTING_MODEL:-$KASEKI_SCOUTING_MODEL}"
@@ -1166,6 +1168,47 @@ NODE
   fi
 }
 
+mark_scouting_fallback_recovered() {
+  local reason_code="${1:-patch_fallback_recovered}"
+  local error_file="${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl"
+
+  node - "$error_file" "$reason_code" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [file, reasonCode] = process.argv.slice(2);
+let lines = [];
+try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean); } catch {}
+const fallbackCodes = new Set(['patch_fallback', 'inspect_fallback', 'provider_empty_assistant_turn']);
+let alreadyMarked = false;
+const updated = lines.map((line) => {
+  try {
+    const entry = JSON.parse(line);
+    if (entry && entry.reason_code === reasonCode) alreadyMarked = true;
+    if (
+      entry &&
+      (entry.severity === 'critical' && entry.reason_code === 'missing_file' && entry.field === 'scouting-candidate.json' ||
+        fallbackCodes.has(entry.reason_code))
+    ) {
+      return JSON.stringify({ ...entry, recovered: true, recovery_reason_code: reasonCode });
+    }
+  } catch {}
+  return line;
+});
+if (!alreadyMarked) {
+  updated.push(JSON.stringify({
+    timestamp: new Date().toISOString(),
+    reason_code: reasonCode,
+    field: 'scouting-candidate.json',
+    expected: 'valid fallback scouting artifact',
+    actual: 'fallback artifact validated successfully',
+    severity: 'info',
+    recovered: true,
+    suggestion: 'ignore earlier missing_file or fallback diagnostics for the recovered scouting phase',
+  }));
+}
+fs.writeFileSync(file, updated.join('\n') + '\n');
+NODE
+}
+
 
 validate_goal_check_artifact_with_node() {
   local candidate_artifact="$1"
@@ -1424,7 +1467,9 @@ write_metadata() {
   "goal_check_model": $(printf '%s' "$KASEKI_GOAL_CHECK_MODEL" | json_encode),
   "goal_check_max_retries": $KASEKI_GOAL_CHECK_MAX_RETRIES,
   "scouting_validation": {
-    "validation_errors_log": "scouting-validation-errors.jsonl"
+    "validation_errors_log": "scouting-validation-errors.jsonl",
+    "prompt_diagnostics_log": "prompt-diagnostics.jsonl",
+    "max_output_tokens": $KASEKI_SCOUTING_MAX_OUTPUT_TOKENS
   },
   "filesystem_diagnostics": {
     "check_status": $(printf '%s' "$FILESYSTEM_CHECK_STATUS" | json_encode),
@@ -6043,14 +6088,55 @@ is_complex_change_task() {
   return 1  # Simple task (bug fix, documentation, etc.)
 }
 
+is_docs_only_task() {
+  local task_text="$1"
+  if printf '%s\n' "$task_text" | grep -qiE '(docs?/|README|CHANGELOG|documentation|markdown|\\.md|index\\.md)' 2>/dev/null &&
+     ! printf '%s\n' "$task_text" | grep -qiE '(parser|api|endpoint|runtime|code|test|typescript|javascript|schema|event|provider|gateway|auth|database|server|client)' 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+record_prompt_diagnostics() {
+  local phase="$1"
+  local prompt="$2"
+  local model="$3"
+  local max_output_tokens="${4:-}"
+  local prompt_file
+
+  prompt_file="$(mktemp 2>/dev/null || printf '/tmp/kaseki-prompt-diagnostics-%s.txt' "$$")"
+  printf '%s' "$prompt" > "$prompt_file" 2>/dev/null || return 0
+  node - "$KASEKI_RESULTS_DIR/prompt-diagnostics.jsonl" "$phase" "$model" "$max_output_tokens" "$prompt_file" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [file, phase, model, maxOutputTokens, promptFile] = process.argv.slice(2);
+const prompt = fs.readFileSync(promptFile, 'utf8');
+const entry = {
+  timestamp: new Date().toISOString(),
+  phase,
+  model,
+  prompt_chars: prompt.length,
+  prompt_bytes: Buffer.byteLength(prompt, 'utf8'),
+  estimated_prompt_tokens: Math.ceil(prompt.length / 4),
+  max_output_tokens: maxOutputTokens ? Number(maxOutputTokens) : null,
+  stream: true,
+  tool_count: 4,
+};
+fs.appendFileSync(file, JSON.stringify(entry) + '\n');
+NODE
+  rm -f "$prompt_file" 2>/dev/null || true
+}
+
 build_scouting_prompt() {
   local task_text="$TASK_PROMPT"
   local use_detailed_guidance=0
+  local use_compact_guidance=1
   local caveman_instruction
   caveman_instruction="$(get_caveman_instruction)"
   
-  # Phase 2.1: Conditionally include detailed guidance only for complex tasks
-  if is_complex_change_task "$task_text"; then
+  # Keep scouting prompts compact by default. Verbose guidance is opt-in for
+  # local debugging or hard tasks where prompt size is less important.
+  if [ "$KASEKI_SCOUTING_PROMPT_DETAIL" = "verbose" ] && is_complex_change_task "$task_text"; then
+    use_compact_guidance=0
     use_detailed_guidance=1
   fi
   
@@ -6059,8 +6145,33 @@ build_scouting_prompt() {
     printf '%s\n\n' "$caveman_instruction"
   fi
   
-  # Build base prompt (always included)
-  cat <<'SCOUTING_BASE'
+  if [ "$use_compact_guidance" -eq 1 ]; then
+    cat <<'SCOUTING_COMPACT'
+You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
+
+Inspect only files needed to scope the task. Do not edit files, tests, lockfiles, git state, secrets, or environment variables.
+
+Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
+
+JSON fields:
+- task: concise actionable task string
+- requirements: 3-8 concrete requirements
+- relevant_files: 2-10 repo-relative files with reasons
+- observations: concrete facts from inspection
+- plan: 3-8 coding steps for the downstream agent
+- validation: 1-5 focused checks
+- risks: known risks or empty array
+- test_impact: empty for pure documentation-only changes, otherwise affected tests
+- critical_change_expectations: include required_files and forbidden_empty_diff when concrete
+- suggested_allowlist: agent_patterns and validation_patterns arrays
+
+For code behavior changes, include impacted tests in test_impact. For renames, parser/output changes, events, schemas, or API fields, include concrete test files and expected assertion patterns. For documentation-only changes, test_impact may be [].
+
+Keep JSON under 20 KB. Prefer accuracy over exhaustiveness.
+SCOUTING_COMPACT
+  else
+    # Build base prompt (always included)
+    cat <<'SCOUTING_BASE'
 You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.
 
 ## [ROLE]
@@ -6073,7 +6184,7 @@ Research the task before a separate coding agent starts. Your job is to analyze 
 - Do not edit source files, tests, lockfiles, or git state.
 - Do not run git add, git commit, git push, gh, hub, package installation, or validation commands that modify files.
 - Do not print, inspect, or expose environment variables, secrets, credentials, API keys, or mounted secret files.
-- The repository tree is read-only during scouting. Write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT.
+- The repository tree is read-only during scouting. Use the write tool to write exactly one JSON object to $SCOUTING_CANDIDATE_ARTIFACT. Do not rely on final assistant text for the artifact.
 
 The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):
 - task: string (max 200 characters); a concrete interpretation of the requested task.
@@ -6192,6 +6303,7 @@ Guidelines for test_impact:
 - **description**: 1-2 sentences explaining why this change matters
 - Max 5 test_examples per file (keep focused on key patterns; avoid exhaustive lists)
 SCOUTING_BASE
+  fi
 
   # Conditionally include detailed guidance for complex tasks
   if [ $use_detailed_guidance -eq 1 ]; then
@@ -6273,7 +6385,7 @@ SCOUTING_BASE
      ✓ Multi-file: {"type": "added_test_case", "before": "// Only single file tested", "after": "// Test mocking across src/a.ts, src/b.ts, tests/mock-factory.ts", "pattern": "Integration mocking", "description": "Mock strategy now affects multiple test files"}
 
 SCOUTING_DETAILED
-  else
+  elif [ "$use_compact_guidance" -eq 0 ]; then
     # For simple tasks, include minimal guidance
     cat <<'SCOUTING_MINIMAL'
 
@@ -6285,7 +6397,8 @@ SCOUTING_MINIMAL
   fi
   
   # Common section included for all complexity levels
-  cat <<EOF
+  if [ "$use_compact_guidance" -eq 0 ]; then
+    cat <<EOF
 
 **Examples of Strong test_impact Entries**:
 ✓ Parser change:
@@ -6337,6 +6450,14 @@ See goal-setting artifact ($GOAL_SETTING_ARTIFACT) if available for upgraded goa
 Original task (before goal-setting upgrade):
 $TASK_PROMPT
 EOF
+  else
+    cat <<EOF
+
+## [ORIGINAL TASK PROMPT]
+
+$TASK_PROMPT
+EOF
+  fi
 }
 
 run_scouting_agent() {
@@ -6356,14 +6477,17 @@ run_scouting_agent() {
   fi
 
   scouting_prompt="$(build_scouting_prompt)"
+  record_prompt_diagnostics "scouting" "$scouting_prompt" "$KASEKI_SCOUTING_MODEL" "$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
   scouting_start="$(date +%s)"
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
+  LLM_GATEWAY_MAX_OUTPUT_TOKENS="$KASEKI_SCOUTING_MAX_OUTPUT_TOKENS"
+  export LLM_GATEWAY_MAX_OUTPUT_TOKENS
   run_pi_with_retry "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" "scouting-summary" "" "scouting"
   SCOUTING_EXIT="$?"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
-  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
+  unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL LLM_GATEWAY_MAX_OUTPUT_TOKENS
   set +e
   chmod -R u+w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
 
@@ -6535,12 +6659,14 @@ NODE
   fi
 
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
+  SCOUTING_FALLBACK_USED=0
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
     if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ]; then
       emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider returned an empty assistant turn; continuing with conservative fallback" "continue"
       append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "fallback_scouting_artifact" "$SCOUTING_ARTIFACT"
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      SCOUTING_FALLBACK_USED=1
       SCOUTING_EXIT=0
     else
       SCOUTING_EXIT=88
@@ -6550,43 +6676,20 @@ NODE
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
     write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+    SCOUTING_FALLBACK_USED=1
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
     if [ "$KASEKI_TASK_MODE" = "patch" ]; then
       rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
       write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      SCOUTING_FALLBACK_USED=1
       if ! validate_scouting_artifact "$SCOUTING_CANDIDATE_ARTIFACT" "$SCOUTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/scouting-validation-reason.txt"; then
         SCOUTING_EXIT=86
         scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
         emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid after fallback: $scouting_validation_error (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "exit"
       else
-        node - "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" <<'NODE' 2>/dev/null || true
-const fs = require('node:fs');
-const file = process.argv[2];
-let lines = [];
-try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean); } catch {}
-const updated = lines.map((line) => {
-  try {
-    const entry = JSON.parse(line);
-    if (entry && entry.severity === 'critical' && entry.reason_code === 'missing_file' && entry.field === 'scouting-candidate.json') {
-      return JSON.stringify({ ...entry, recovered: true, recovery_reason_code: 'patch_fallback_recovered' });
-    }
-  } catch {}
-  return line;
-});
-updated.push(JSON.stringify({
-  timestamp: new Date().toISOString(),
-  reason_code: 'patch_fallback_recovered',
-  field: 'scouting-candidate.json',
-  expected: 'valid patch fallback scouting artifact',
-  actual: 'fallback artifact validated successfully',
-  severity: 'info',
-  recovered: true,
-  suggestion: 'ignore earlier missing_file diagnostics for the recovered scouting phase',
-}));
-fs.writeFileSync(file, updated.join('\n') + '\n');
-NODE
+        mark_scouting_fallback_recovered "patch_fallback_recovered"
         emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid; continuing with conservative patch fallback (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "continue"
       fi
     else
@@ -6594,6 +6697,9 @@ NODE
       scouting_validation_error="$(tail -1 "${KASEKI_RESULTS_DIR}"/scouting-validation-errors.jsonl 2>/dev/null | jq -r '.details // .reason_code // "validation failed"' 2>/dev/null || printf 'scouting artifact validation failed')"
       emit_error_event "pi_scouting_artifact_invalid" "Pi scouting handoff invalid: $scouting_validation_error (full details: ${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl)" "exit"
     fi
+  fi
+  if [ "$SCOUTING_EXIT" -eq 0 ] && [ "${SCOUTING_FALLBACK_USED:-0}" -eq 1 ]; then
+    mark_scouting_fallback_recovered "${KASEKI_TASK_MODE}_fallback_recovered"
   fi
   scout_dirty_after="$(git status --porcelain 2>/dev/null || true)"
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$scout_dirty_before" != "$scout_dirty_after" ]; then
