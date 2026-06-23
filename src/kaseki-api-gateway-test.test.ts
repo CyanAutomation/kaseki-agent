@@ -9,12 +9,7 @@ import {
   formatGatewayTestResponse,
   shouldRunGatewayResponseSmoke,
   testGatewayConnectivity,
-  testGatewayConnectivity_Stage1,
-  testGatewayResponseSmoke_Stage2,
-  detectGatewayTestEnvironment,
   GatewayTestResult,
-  ConnectivityTestResult,
-  ResponseSmokeTestResult,
 } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
@@ -559,7 +554,7 @@ describe('LLM Gateway Test', () => {
         process.env.JEST_WORKER_ID = '1';
         delete process.env.NODE_ENV;
         delete process.env.KASEKI_ENV;
-        
+
         expect(detectGatewayTestEnvironment()).toBe('test');
       });
 
@@ -568,7 +563,7 @@ describe('LLM Gateway Test', () => {
         delete process.env.JEST_WORKER_ID;
         process.env.NODE_ENV = 'test';
         delete process.env.KASEKI_ENV;
-        
+
         expect(detectGatewayTestEnvironment()).toBe('test');
       });
 
@@ -577,7 +572,7 @@ describe('LLM Gateway Test', () => {
         delete process.env.JEST_WORKER_ID;
         process.env.NODE_ENV = 'development';
         delete process.env.KASEKI_ENV;
-        
+
         expect(detectGatewayTestEnvironment()).toBe('development');
       });
 
@@ -586,7 +581,7 @@ describe('LLM Gateway Test', () => {
         delete process.env.JEST_WORKER_ID;
         delete process.env.NODE_ENV;
         process.env.KASEKI_ENV = 'development';
-        
+
         expect(detectGatewayTestEnvironment()).toBe('development');
       });
 
@@ -595,7 +590,7 @@ describe('LLM Gateway Test', () => {
         delete process.env.JEST_WORKER_ID;
         delete process.env.NODE_ENV;
         delete process.env.KASEKI_ENV;
-        
+
         expect(detectGatewayTestEnvironment()).toBe('production');
       });
     });
@@ -674,7 +669,7 @@ describe('LLM Gateway Test', () => {
         expect(result).not.toHaveProperty('responseSmokeValidated');
         expect(result).not.toHaveProperty('responseId');
         expect(result).not.toHaveProperty('outputTokens');
-        
+
         // Should have connectivity fields
         expect(result.status).toBe('ok');
         expect(result.gatewayUrl).toBeDefined();
@@ -744,7 +739,7 @@ describe('LLM Gateway Test', () => {
     describe('testGatewayResponseSmoke_Stage2', () => {
       it('should return ResponseSmokeTestResult interface with inference details', async () => {
         const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-        
+
         mockFetch.mockResolvedValueOnce({
           ok: true,
           status: 200,
@@ -765,10 +760,10 @@ describe('LLM Gateway Test', () => {
         // Should have response-specific fields
         expect(result).toHaveProperty('responseId');
         expect(result).toHaveProperty('outputTokens');
-        
+
         // Should NOT have legacy responseSmokeValidated
         expect(result).not.toHaveProperty('responseSmokeValidated');
-        
+
         expect(result.status).toBe('ok');
         expect(result.responseId).toBe('resp_12345');
         expect(result.outputTokens).toBe(32);

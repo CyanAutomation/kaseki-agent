@@ -1634,14 +1634,14 @@ export function createApiRouter(
           ? false
           : undefined;
       const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
-      
+
       const stage1Result = await testGatewayConnectivity_Stage1();
-      
+
       // Determine if we should run stage 2
       const runStage2 = shouldRunGatewayResponseSmoke(options);
-      
+
       let stage2Result: any = null;
-      
+
       if (stage1Result.status !== 'ok') {
         // Skip stage 2: Stage 1 failed - connectivity check did not pass
       } else if (!runStage2) {
@@ -1654,7 +1654,7 @@ export function createApiRouter(
         const startTime = performance.now();
         stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
       }
-      
+
       // Build response in old format for backward compatibility
       const result: any = {
         status: stage1Result.status,
@@ -1664,13 +1664,13 @@ export function createApiRouter(
         authenticationValidated: stage1Result.authenticationValidated,
         responseSmokeValidated: stage2Result?.status === 'ok',
       };
-      
+
       if (stage2Result) {
         result.responseId = stage2Result.responseId;
         result.outputTokens = stage2Result.outputTokens;
         result.modelUsed = stage2Result.modelUsed;
       }
-      
+
       const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
       res.status(httpStatus).json(result);
     } catch (error) {
