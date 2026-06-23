@@ -720,7 +720,9 @@ validate_goal_setting_artifact "$1" "$2" "$3"
         copyFileSync(join(repoRoot, 'dist', 'scouting-allowlist.js'), join(scriptsDir, 'scouting-allowlist.js'));
         mkdirSync(join(scriptsDir, 'lib'), { recursive: true });
         copyFileSync(join(repoRoot, 'scripts', 'lib', 'json.sh'), join(scriptsDir, 'lib', 'json.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'lib', 'json-events.sh'), join(scriptsDir, 'lib', 'json-events.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'dependency-cache-helpers.sh'), join(scriptsDir, 'dependency-cache-helpers.sh'));
+        copyFileSync(join(repoRoot, 'scripts', 'npm-install-helpers.sh'), join(scriptsDir, 'npm-install-helpers.sh'));
         copyFileSync(join(repoRoot, 'scripts', 'agent-prompt.sh'), join(scriptsDir, 'agent-prompt.sh'));
 
         const workspaceBaseline = join(tempDir, 'workspace-baseline');
