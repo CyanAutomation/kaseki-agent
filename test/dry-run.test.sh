@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016,SC2155,SC1091,SC2015
+# shellcheck disable=SC2016,SC1091
 # Fast dry-run artifact tests for the helper boundary used by run-kaseki.sh.
 set -euo pipefail
 
@@ -22,59 +22,106 @@ assert_file_empty() {
   [ ! -s "$file" ] || fail "Expected empty file: $file"
 }
 
+assert_file_contains() {
+  local file="$1" expected="$2"
+  [ -f "$file" ] || fail "Expected file to exist: $file"
+  rg --fixed-strings --quiet "$expected" "$file" || fail "Expected $file to contain: $expected"
+}
+
+command -v rg >/dev/null 2>&1 || fail "ripgrep is required for file content assertions"
+
 command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions"
 [ -x "$HELPERS" ] || fail "Expected executable helper: $HELPERS"
 
 tmp_root="$(mktemp -d)"
 trap 'rm -rf "$tmp_root"' EXIT
-result_dir="$tmp_root/results"
-fake_bin="$tmp_root/bin"
-validation_marker="$tmp_root/validation-ran"
-mkdir -p "$result_dir" "$fake_bin" "$tmp_root/workspace" "$tmp_root/cache"
 
-cat > "$fake_bin/pi" <<'PI'
+case_host_start_sets_dry_run() (
+  set -euo pipefail
+  # shellcheck source=../scripts/dry-run-artifacts.sh
+  . "$HELPERS"
+
+  local result_dir="$tmp_root/host-start"
+  mkdir -p "$result_dir"
+  KASEKI_DRY_RUN=1 write_dry_run_host_start_artifact "$result_dir"
+
+  assert_json_field_equals "$result_dir/host-start.json" dry_run 1
+)
+
+case_startup_check_initializes_artifacts() (
+  set -euo pipefail
+  # shellcheck source=../scripts/dry-run-artifacts.sh
+  . "$HELPERS"
+
+  local result_dir="$tmp_root/startup/results"
+  local fake_bin="$tmp_root/startup/bin"
+  local workspace_dir="$tmp_root/startup/workspace"
+  local cache_dir="$tmp_root/startup/cache"
+  mkdir -p "$fake_bin" "$workspace_dir" "$cache_dir"
+
+  cat > "$fake_bin/pi" <<'PI'
 #!/usr/bin/env bash
 printf 'pi fake 0.0.0\n'
 PI
-chmod +x "$fake_bin/pi"
+  chmod +x "$fake_bin/pi"
 
-export PATH="$fake_bin:$PATH"
-export INSTANCE="kaseki-fast-dry-run"
-export REPO_URL="https://example.test/repo.git"
-export GIT_REF="main"
-export KASEKI_PROVIDER="gateway"
-export KASEKI_MODEL="auto"
-export KASEKI_TASK_MODE="patch"
-export KASEKI_ALLOW_EMPTY_DIFF="0"
-export KASEKI_DRY_RUN="1"
-export KASEKI_STARTUP_CHECK_MODE="boot"
-export KASEKI_CONTAINER_USER="$(id -u):$(id -g)"
-export KASEKI_CHANGED_FILES_ALLOWLIST="src/** test/**"
-export MAX_DIFF_BYTES_VALUE="400000"
-export AGENT_TIMEOUT_SECONDS_VALUE="10800"
-export IMAGE="dry-run-fast-test:latest"
-export CACHE="$tmp_root/cache"
-export KASEKI_RESULTS_DIR="$result_dir"
-export KASEKI_WORKSPACE_DIR="$tmp_root/workspace"
-export KASEKI_CACHE_DIR="$tmp_root/cache"
-export KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN > '$validation_marker'"
+  PATH="$fake_bin:$PATH" \
+    KASEKI_DRY_RUN=1 \
+    KASEKI_WORKSPACE_DIR="$workspace_dir" \
+    KASEKI_CACHE_DIR="$cache_dir" \
+    write_dry_run_startup_check_artifacts "$result_dir" >/dev/null
 
-# shellcheck source=../scripts/dry-run-artifacts.sh
-. "$HELPERS"
-write_dry_run_host_start_artifact "$result_dir"
-write_dry_run_startup_check_artifacts "$result_dir" >/dev/null
+  assert_json_field_equals "$result_dir/metadata.json" startupCheck true
+  assert_json_field_equals "$result_dir/metadata.json" startup_check true
+  assert_json_field_equals "$result_dir/metadata.json" dryRun true
+  assert_json_field_equals "$result_dir/metadata.json" dry_run 1
+  assert_json_field_equals "$result_dir/metadata.json" exit_code 0
+  assert_json_field_equals "$result_dir/metadata.json" current_stage "startup check"
+  assert_json_field_equals "$result_dir/metadata.json" pi_version "pi fake 0.0.0"
+  assert_file_contains "$result_dir/startup-check.txt" "startup_check=ok"
+  assert_file_empty "$result_dir/pi-events.jsonl"
+  assert_file_empty "$result_dir/pi-summary.json"
+  assert_file_empty "$result_dir/validation-timings.tsv"
+  assert_file_empty "$result_dir/validation.log"
+)
 
-assert_json_field_equals "$result_dir/host-start.json" dry_run 1
-assert_json_field_equals "$result_dir/metadata.json" dry_run 1
-pass "host-start.json and metadata.json include dry_run=1"
+case_validation_commands_are_not_executed() (
+  set -euo pipefail
+  # shellcheck source=../scripts/dry-run-artifacts.sh
+  . "$HELPERS"
 
-assert_file_empty "$result_dir/pi-events.jsonl"
-assert_file_empty "$result_dir/pi-summary.json"
-assert_file_empty "$result_dir/validation-timings.tsv"
-assert_file_empty "$result_dir/validation.log"
-pass "agent and validation output files are initialized empty"
+  local result_dir="$tmp_root/no-validation/results"
+  local fake_bin="$tmp_root/no-validation/bin"
+  local validation_marker="$tmp_root/no-validation/validation-ran"
+  mkdir -p "$fake_bin" "$tmp_root/no-validation/workspace" "$tmp_root/no-validation/cache"
 
-[ ! -e "$validation_marker" ] || fail "Validation command should not execute in dry-run artifact helper"
-pass "validation commands are not executed by the dry-run artifact helper"
+  cat > "$fake_bin/pi" <<'PI'
+#!/usr/bin/env bash
+printf 'pi fake 0.0.0\n'
+PI
+  chmod +x "$fake_bin/pi"
+
+  KASEKI_DRY_RUN=1 \
+    KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN > '$validation_marker'" \
+    write_dry_run_host_start_artifact "$result_dir"
+
+  PATH="$fake_bin:$PATH" \
+    KASEKI_DRY_RUN=1 \
+    KASEKI_VALIDATION_COMMANDS="printf SHOULD_NOT_RUN > '$validation_marker'" \
+    KASEKI_WORKSPACE_DIR="$tmp_root/no-validation/workspace" \
+    KASEKI_CACHE_DIR="$tmp_root/no-validation/cache" \
+    write_dry_run_startup_check_artifacts "$result_dir" >/dev/null
+
+  [ ! -e "$validation_marker" ] || fail "Validation command should not execute in dry-run helper paths"
+)
+
+case_host_start_sets_dry_run
+pass "write_dry_run_host_start_artifact writes host-start.json with dry_run=1"
+
+case_startup_check_initializes_artifacts
+pass "write_dry_run_startup_check_artifacts initializes startup artifacts"
+
+case_validation_commands_are_not_executed
+pass "validation commands are not executed by dry-run helper paths"
 
 printf '\n✅ Fast dry-run artifact tests passed!\n'
