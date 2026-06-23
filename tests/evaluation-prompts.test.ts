@@ -260,16 +260,18 @@ build_run_evaluation_prompt
 
   const extractScoutingPromptFunction = () => {
     // Use cached extraction from utility (avoids re-reading and re-parsing file)
-    // build_scouting_prompt depends on is_complex_change_task and get_caveman_instruction, so we need all three
+    // build_scouting_prompt depends on task classifiers and get_caveman_instruction, so include them.
     const getCavemanFunctionText = extractBashFunctionWithCache('get_caveman_instruction', 'require_or_warn_binary');
-    const isComplexFunctionText = extractBashFunctionWithCache('is_complex_change_task', 'build_scouting_prompt');
+    const isComplexFunctionText = extractBashFunctionWithCache('is_complex_change_task', 'is_docs_only_task');
+    const isDocsOnlyFunctionText = extractBashFunctionWithCache('is_docs_only_task', 'record_prompt_diagnostics');
     const buildScoutingFunctionText = extractBashFunctionWithCache('build_scouting_prompt', 'run_scouting_agent');
 
-    // Combine all functions: get_caveman_instruction first, then is_complex_change_task, then build_scouting_prompt
-    const functionText = getCavemanFunctionText + '\n\n' + isComplexFunctionText + '\n\n' + buildScoutingFunctionText;
+    // Combine all functions in dependency order.
+    const functionText = getCavemanFunctionText + '\n\n' + isComplexFunctionText + '\n\n' + isDocsOnlyFunctionText + '\n\n' + buildScoutingFunctionText;
 
     const expectedMarkers = [
       'is_complex_change_task() {',
+      'is_docs_only_task() {',
       'build_scouting_prompt() {',
       'The JSON object must be concise and useful to the coding agent. Use this schema-style shape (field descriptions only; do not copy this text as output):',
       'Guidelines for test_impact:',
@@ -289,7 +291,10 @@ build_run_evaluation_prompt
     return functionText;
   };
 
-  const renderScoutingPrompt = () => {
+  const renderScoutingPrompt = (
+    taskPrompt = 'Refactor parser output naming and progress event fields while keeping tests aligned.',
+    promptDetail = 'compact',
+  ) => {
     let tmpDir: string | undefined;
 
     try {
@@ -308,9 +313,11 @@ set -euo pipefail
 FUNCTION_SOURCE="$1"
 SCOUTING_CANDIDATE_ARTIFACT="$2/scouting-candidate.json"
 GOAL_SETTING_ARTIFACT="$2/goal-setting.json"
-TASK_PROMPT="Refactor parser output naming and progress event fields while keeping tests aligned."
+TASK_PROMPT=${JSON.stringify(taskPrompt)}
 KASEKI_CAVEMAN=0
+KASEKI_SCOUTING_PROMPT_DETAIL=${JSON.stringify(promptDetail)}
 export KASEKI_CAVEMAN
+export KASEKI_SCOUTING_PROMPT_DETAIL
 
 # shellcheck source=/dev/null
 source "$FUNCTION_SOURCE"
@@ -592,24 +599,41 @@ build_scouting_prompt
   });
 
   describe('Scouting and Coding Prompt Test Impact Guidance', () => {
-    test('should define a structured scouting test impact contract for parser and output contract changes', () => {
+    test('should keep default scouting prompt compact while preserving required handoff fields', () => {
       const prompt = renderScoutingPrompt();
+
+      expect(prompt).toContain('Use the write tool to write exactly one JSON object');
+      expect(prompt).toContain('- test_impact: empty for pure documentation-only changes, otherwise affected tests');
+      expect(prompt).toContain('For code behavior changes, include impacted tests in test_impact.');
+      expect(prompt).toContain('- critical_change_expectations: include required_files and forbidden_empty_diff when concrete');
+      expect(prompt).not.toContain('**Enhanced Guidelines by Change Type**');
+      expect(prompt.length).toBeLessThan(5000);
+    });
+
+    test('should keep verbose scouting guidance available behind explicit opt-in', () => {
+      const prompt = renderScoutingPrompt(
+        'Refactor parser output naming and progress event fields while keeping tests aligned.',
+        'verbose',
+      );
       const contract = extractScoutingTestImpactContract(prompt);
 
+      expect(prompt).toContain('**Enhanced Guidelines by Change Type**');
       expect(contract.schema.topLevelFields).toContain('test_impact');
-      expect(contract.schema.testImpactFields).toEqual(['path', 'reason']);
-      expect(contract.testImpactGuidance).toEqual({
-        requiresAlwaysIncludedField: true,
-        allowsEmptyOnlyWhenNoAffectedTests: true,
-        mapsExpectationStringsToImpactedTests: true,
-        testExampleFields: ['type', 'before', 'after', 'pattern', 'description'],
-      });
       expect(contract.changeMappings).toEqual({
         parserLogic: true,
         progressEventFields: true,
         outputFormat: true,
         namingConventions: true,
       });
+    });
+
+    test('should render docs tasks through the same compact scouting prompt path', () => {
+      const prompt = renderScoutingPrompt('Improve content, structure and formatting of docs/INDEX.md');
+
+      expect(prompt).toContain('docs/INDEX.md');
+      expect(prompt).toContain('Keep JSON under 20 KB');
+      expect(prompt).not.toContain('**Examples of Strong test_impact Entries**');
+      expect(prompt.length).toBeLessThan(5000);
     });
 
     test('should instruct the coding agent to update impacted tests for parser output and naming behavior changes', () => {
