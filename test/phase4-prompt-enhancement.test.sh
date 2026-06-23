@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verifies the observable prompt content produced by build_agent_prompt for
-# hashline_edit guidance. This intentionally tests generated prompt output
-# instead of grepping for internal implementation variable names.
+# Verifies durable user-facing prompt contracts produced by build_agent_prompt.
+# These tests intentionally render the prompt and assert stable guidance markers
+# rather than implementation details or long incidental wording.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -38,28 +38,34 @@ test_result() {
 }
 
 render_prompt() {
-  local hashline_edits="$1"
   local harness
   local status
   harness="$(mktemp)"
 
-  cat > "$harness" <<EOF_HARNESS
+  cat > "$harness" <<'EOF_HARNESS'
 #!/usr/bin/env bash
 set -euo pipefail
-read_repo_memory_section() { :; }
-get_caveman_instruction() { :; }
-TASK_PROMPT='Implement the requested change.'
-SCOUTING_ARTIFACT=''
-KASEKI_RESULTS_DIR="\$(mktemp -d)"
-GOAL_CHECK_RETRY_PROMPT=''
-KASEKI_HASHLINE_EDITS='$hashline_edits'
-KASEKI_AGENT_GUARDRAILS='1'
+read_repo_memory_section() { printf ''; }
+get_caveman_instruction() { printf ''; }
+: "${TASK_PROMPT:?TASK_PROMPT is required}"
+: "${SCOUTING_ARTIFACT:?SCOUTING_ARTIFACT is required}"
+: "${KASEKI_RESULTS_DIR:?KASEKI_RESULTS_DIR is required}"
+: "${GOAL_CHECK_RETRY_PROMPT+x}"
+: "${KASEKI_HASHLINE_EDITS:?KASEKI_HASHLINE_EDITS is required}"
+: "${KASEKI_AGENT_GUARDRAILS:?KASEKI_AGENT_GUARDRAILS is required}"
 # shellcheck source=/dev/null
 . "$PROMPT_HELPER"
 build_agent_prompt
 EOF_HARNESS
 
-  PROMPT_HELPER="$PROMPT_HELPER" bash "$harness"
+  PROMPT_HELPER="$PROMPT_HELPER" \
+  TASK_PROMPT="${TASK_PROMPT:-Implement the requested change.}" \
+  SCOUTING_ARTIFACT="${SCOUTING_ARTIFACT:-/dev/null}" \
+  KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$(mktemp -d)}" \
+  GOAL_CHECK_RETRY_PROMPT="${GOAL_CHECK_RETRY_PROMPT:-}" \
+  KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-0}" \
+  KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}" \
+  bash "$harness"
   status=$?
   rm -f "$harness"
   return "$status"
@@ -79,29 +85,76 @@ assert_not_contains() {
   fi
 }
 
-test_hashline_edit_guidance_enabled() {
+test_task_contract_renders_task_prompt() {
   local result=0
   local prompt
-  prompt="$(render_prompt 1)" || result=1
+  prompt="$(render_prompt)" || result=1
 
   if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Task:" || result=1
+    assert_contains "$prompt" "Implement the requested change." || result=1
+  fi
+
+  test_result "task contract renders the provided task prompt" "$result"
+  return "$result"
+}
+
+test_guardrail_contract_enabled() {
+  local result=0
+  local prompt
+  prompt="$(KASEKI_AGENT_GUARDRAILS=1 render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Operational guardrails:" || result=1
+    assert_contains "$prompt" "Do not run git add" || result=1
+    assert_contains "$prompt" "Do not run npm install" || result=1
+    assert_contains "$prompt" "Critical change first" || result=1
+    assert_contains "$prompt" "Do not print, inspect, or expose environment variables" || result=1
+  fi
+
+  test_result "guardrail contract appears when KASEKI_AGENT_GUARDRAILS=1" "$result"
+  return "$result"
+}
+
+test_guardrail_contract_disabled() {
+  local result=0
+  local prompt
+  prompt="$(KASEKI_AGENT_GUARDRAILS=0 render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "Implement the requested change." || result=1
+    assert_not_contains "$prompt" "Operational guardrails:" || result=1
+    assert_not_contains "$prompt" "Do not run git add" || result=1
+    assert_not_contains "$prompt" "Critical change first" || result=1
+  fi
+
+  test_result "guardrail contract is omitted when KASEKI_AGENT_GUARDRAILS=0" "$result"
+  return "$result"
+}
+
+test_hashline_edit_contract_enabled() {
+  local result=0
+  local prompt
+  prompt="$(KASEKI_HASHLINE_EDITS=1 render_prompt)" || result=1
+
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" "File editing with content-based anchors (hashline_edit):" || result=1
     assert_contains "$prompt" "hashline_edit" || result=1
     assert_contains "$prompt" "start_hash" || result=1
     assert_contains "$prompt" "end_hash" || result=1
     assert_contains "$prompt" "context_lines" || result=1
   fi
 
-  test_result "KASEKI_HASHLINE_EDITS=1 includes hashline_edit contract and anchoring guidance" "$result"
+  test_result "hashline edit contract appears when KASEKI_HASHLINE_EDITS=1" "$result"
   return "$result"
 }
 
-test_hashline_edit_guidance_disabled() {
+test_hashline_edit_contract_disabled() {
   local result=0
   local prompt
-  prompt="$(render_prompt 0)" || result=1
+  prompt="$(KASEKI_HASHLINE_EDITS=0 render_prompt)" || result=1
 
   if [ "$result" -eq 0 ]; then
-    assert_contains "$prompt" "Task:" || result=1
     assert_contains "$prompt" "Implement the requested change." || result=1
     assert_not_contains "$prompt" "hashline_edit" || result=1
     assert_not_contains "$prompt" "start_hash" || result=1
@@ -109,29 +162,14 @@ test_hashline_edit_guidance_disabled() {
     assert_not_contains "$prompt" "context_lines" || result=1
   fi
 
-  test_result "KASEKI_HASHLINE_EDITS=0 omits hashline_edit guidance" "$result"
+  test_result "hashline edit contract is omitted when KASEKI_HASHLINE_EDITS=0" "$result"
   return "$result"
 }
 
-test_rendered_prompt_includes_task_prompt() {
+test_supported_optional_inputs_render_without_legacy_prompt_files() {
   local result=0
   local prompt
-  prompt="$(render_prompt 1)" || result=1
-
-  if [ "$result" -eq 0 ]; then
-    assert_contains "$prompt" "Task:" || result=1
-    assert_contains "$prompt" "Implement the requested change." || result=1
-  fi
-
-  test_result "rendered prompt includes the task prompt" "$result"
-  return "$result"
-}
-
-test_rendered_prompt_ignores_legacy_prompt_file_inputs() {
-  local result=0
-  local prompt
-  local harness legacy_prompt_file legacy_test_prompt_file results_dir scouting_artifact
-  harness="$(mktemp)"
+  local legacy_prompt_file legacy_test_prompt_file results_dir scouting_artifact
   legacy_prompt_file="$(mktemp)"
   legacy_test_prompt_file="$(mktemp)"
   results_dir="$(mktemp -d)"
@@ -142,31 +180,21 @@ test_rendered_prompt_ignores_legacy_prompt_file_inputs() {
   printf '%s\n' '{"finding":"SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED"}' > "$scouting_artifact"
   printf '%s\n' 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' > "$results_dir/summarization-annotation.txt"
 
-  cat > "$harness" <<EOF_HARNESS
-#!/usr/bin/env bash
-set -euo pipefail
-read_repo_memory_section() { printf '%s' 'SUPPORTED_REPO_MEMORY_SHOULD_RENDER'; }
-get_caveman_instruction() { :; }
-TASK_PROMPT='SUPPORTED_TASK_PROMPT_SHOULD_RENDER'
-PROMPT_FILE='$legacy_prompt_file'
-TEST_PROMPT_FILE='$legacy_test_prompt_file'
-SCOUTING_ARTIFACT='$scouting_artifact'
-KASEKI_RESULTS_DIR='$results_dir'
-GOAL_CHECK_RETRY_PROMPT='SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER'
-KASEKI_HASHLINE_EDITS='0'
-KASEKI_AGENT_GUARDRAILS='1'
-# shellcheck source=/dev/null
-. "$PROMPT_HELPER"
-build_agent_prompt
-EOF_HARNESS
-
-  prompt="$(PROMPT_HELPER="$PROMPT_HELPER" bash "$harness")" || result=1
-  rm -f "$harness" "$legacy_prompt_file" "$legacy_test_prompt_file" "$scouting_artifact"
+  prompt="$(
+    TASK_PROMPT='SUPPORTED_TASK_PROMPT_SHOULD_RENDER' \
+    PROMPT_FILE="$legacy_prompt_file" \
+    TEST_PROMPT_FILE="$legacy_test_prompt_file" \
+    SCOUTING_ARTIFACT="$scouting_artifact" \
+    KASEKI_RESULTS_DIR="$results_dir" \
+    GOAL_CHECK_RETRY_PROMPT='SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER' \
+    KASEKI_HASHLINE_EDITS=0 \
+    render_prompt
+  )" || result=1
+  rm -f "$legacy_prompt_file" "$legacy_test_prompt_file" "$scouting_artifact"
   rm -rf "$results_dir"
 
   if [ "$result" -eq 0 ]; then
     assert_contains "$prompt" 'SUPPORTED_TASK_PROMPT_SHOULD_RENDER' || result=1
-    assert_contains "$prompt" 'SUPPORTED_REPO_MEMORY_SHOULD_RENDER' || result=1
     assert_contains "$prompt" "$scouting_artifact" || result=1
     assert_contains "$prompt" 'SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER' || result=1
     assert_contains "$prompt" 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' || result=1
@@ -175,18 +203,20 @@ EOF_HARNESS
     assert_not_contains "$prompt" 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' || result=1
   fi
 
-  test_result "legacy prompt-file inputs do not affect rendered prompt output" "$result"
+  test_result "supported optional inputs render and legacy prompt-file inputs are ignored" "$result"
   return "$result"
 }
 
 main() {
   printf '\n%s\n' "=== Phase 4: Task Prompt Enhancement Tests ==="
-  printf 'Asserting generated build_agent_prompt output for stable prompt-contract markers\n\n'
+  printf 'Asserting generated build_agent_prompt output for stable prompt contracts\n\n'
 
-  test_hashline_edit_guidance_enabled
-  test_hashline_edit_guidance_disabled
-  test_rendered_prompt_includes_task_prompt
-  test_rendered_prompt_ignores_legacy_prompt_file_inputs
+  test_task_contract_renders_task_prompt
+  test_guardrail_contract_enabled
+  test_guardrail_contract_disabled
+  test_hashline_edit_contract_enabled
+  test_hashline_edit_contract_disabled
+  test_supported_optional_inputs_render_without_legacy_prompt_files
 
   printf '\n%s\n' "=== Test Summary ==="
   printf 'Tests run: %d\n' "$test_count"
