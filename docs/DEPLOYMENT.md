@@ -1258,8 +1258,10 @@ Expected response:
 - If logs show EXDEV/cross-device link failures during restore, switch to
   `auto`/`copy` and confirm recovery via dependency cache status events in
   `progress.log`/`progress.jsonl` and `dependency-cache.log`.
-- Cache key is deterministic: `sha256(repo_url) + lockfile sha256 +
-  Node major version`.
+- Cache key is deterministic from dependency-shaping inputs: lockfile SHA-256,
+  Node major version, and npm install flags. It intentionally excludes Git
+  branch/ref names so feature branches with identical dependency inputs can
+  share dependency cache entries.
 - Progress + timing artifacts include install/cache signals:
   - `progress.jsonl` / `progress.log`: dependency install stage,
     cache hit/miss, elapsed seconds.
