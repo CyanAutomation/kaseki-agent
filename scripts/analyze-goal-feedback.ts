@@ -382,5 +382,16 @@ if (isCliMode && typeof (globalThis as any).jest === 'undefined') {
   }
 }
 
-// Export for testing and programmatic use
-export { readFeedbackFile, analyzeGoalFeedback, analyzeCorrelations, analyzeSmartDimensions, generateRecommendations, main };
+// Internal test harness - consolidates helper functions used only by tests
+// These are not part of the public API; tests should import via testHarness only
+const testHarness = {
+  readFeedbackFile,
+  analyzeGoalFeedback,
+  analyzeCorrelations,
+  analyzeSmartDimensions,
+  generateRecommendations,
+};
+
+// Public API: main() for CLI execution
+// Test imports: use testHarness from module exports
+export { testHarness, main };
