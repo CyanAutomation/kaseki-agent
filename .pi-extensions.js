@@ -11,6 +11,10 @@
  * - LLM_GATEWAY_API_KEY: API key literal (optional, prefer file)
  * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
+ *
+ * NOTE: This extension patches global.fetch to normalize multi-message array prompts
+ * to the OpenAI Responses API format before sending to gateway.
+ * Diagnostic events are emitted to .gateway-diagnostics.jsonl for monitoring.
  */
 
 import fs from 'node:fs';
@@ -48,7 +52,7 @@ function resolveGatewayMaxTokens() {
  * - {input: "string"} → {input: "string"} (unchanged)
  *
  * @param {Record<string, any>} request - Request payload
- * @returns {Record<string, any>} Normalized request
+ * @returns {{normalized: Record<string, any>, wasNormalized: boolean}} Normalized request and flag
  */
 function normalizeGatewayRequest(request) {
   const { input, ...rest } = request;
@@ -67,15 +71,37 @@ function normalizeGatewayRequest(request) {
     // Convert multi-message array to messages field
     // This is required for OpenAI Responses API when sending conversation history
     return {
-      ...rest,
-      messages: input,
+      normalized: {
+        ...rest,
+        messages: input,
+      },
+      wasNormalized: true,
     };
   }
 
   // Keep input field as-is (string or invalid format)
   // String inputs are passed through unchanged for simple prompts
   // Malformed arrays will be caught by the gateway error handling
-  return { input, ...rest };
+  return { normalized: { input, ...rest }, wasNormalized: false };
+}
+
+/**
+ * Extract and parse JSON body from request options or Buffer
+ *
+ * @param {string | Buffer | undefined} body - Request body
+ * @returns {{parsed: Record<string, any> | null}} Parsed body
+ */
+function parseRequestBody(body) {
+  if (!body) {
+    return { parsed: null };
+  }
+
+  try {
+    const bodyStr = typeof body === 'string' ? body : body.toString('utf8');
+    return { parsed: JSON.parse(bodyStr) };
+  } catch {
+    return { parsed: null };
+  }
 }
 
 /**
@@ -91,15 +117,21 @@ function createNormalizedFetch(originalFetch) {
     if (typeof url === 'string' && url.includes('/responses')) {
       try {
         const opts = { ...options };
-        if (opts.body && typeof opts.body === 'string') {
-          const body = JSON.parse(opts.body);
-          const normalized = normalizeGatewayRequest(body);
-          opts.body = JSON.stringify(normalized);
+        const { parsed } = parseRequestBody(opts.body);
+
+        if (parsed) {
+          const { normalized, wasNormalized } = normalizeGatewayRequest(parsed);
+          if (wasNormalized) {
+            opts.body = JSON.stringify(normalized);
+            recordGatewayDiagnostic('fetch', 'normalized', { from: 'array', to: 'messages' });
+          } else {
+            recordGatewayDiagnostic('fetch', 'passthrough', { format: typeof parsed.input });
+          }
         }
         return originalFetch(url, opts);
-      } catch {
-        // If normalization fails, proceed with original request
-        // This ensures we don't break anything if there are parsing issues
+      } catch (error) {
+        // If normalization fails, log and proceed with original request
+        recordGatewayDiagnostic('fetch', 'error', { reason: error?.message || 'unknown' });
         return originalFetch(url, options);
       }
     }
@@ -109,13 +141,100 @@ function createNormalizedFetch(originalFetch) {
   };
 }
 
+/**
+ * Create an undici request wrapper that normalizes request payloads
+ * Note: Reserved for future use if Pi CLI transitions to using global.fetch
+ * or if extension hooks become available. Currently, we rely on fetch wrapper.
+ *
+ * @param {Function} originalRequest - The original undici.request function
+ * @returns {Function} Wrapped request function that normalizes payloads
+ */
+// eslint-disable-next-line no-unused-vars
+function _createNormalizedUndiciRequest(originalRequest) {
+  return async function normalizedRequest(options, factory) {
+    // Only normalize requests to /responses endpoints
+    if (
+      typeof options === 'object' &&
+      options.path &&
+      typeof options.path === 'string' &&
+      options.path.includes('/responses')
+    ) {
+      try {
+        const opts = { ...options };
+        const { parsed } = parseRequestBody(opts.body);
+
+        if (parsed) {
+          const { normalized, wasNormalized } = normalizeGatewayRequest(parsed);
+          if (wasNormalized) {
+            opts.body = JSON.stringify(normalized);
+            recordGatewayDiagnostic('undici', 'normalized', { from: 'array', to: 'messages' });
+          } else {
+            recordGatewayDiagnostic('undici', 'passthrough', { format: typeof parsed.input });
+          }
+        }
+        return originalRequest(opts, factory);
+      } catch (error) {
+        // If normalization fails, log and proceed with original request
+        recordGatewayDiagnostic('undici', 'error', { reason: error?.message || 'unknown' });
+        return originalRequest(options, factory);
+      }
+    }
+
+    // Pass through all other requests unchanged
+    return originalRequest(options, factory);
+  };
+}
+
+/**
+ * Record diagnostic events for gateway request normalization
+ * Stores in global for access by monitoring/logging subsystems
+ * Also writes to file if /results directory exists for artifact collection
+ *
+ * @param {string} transport - 'fetch' or 'undici'
+ * @param {string} action - 'normalized', 'passthrough', 'error'
+ * @param {Record<string, any>} details - Diagnostic details
+ */
+function recordGatewayDiagnostic(transport, action, details) {
+  if (!global.__kasekiGatewayDiagnostics) {
+    global.__kasekiGatewayDiagnostics = [];
+  }
+
+  const event = {
+    timestamp: new Date().toISOString(),
+    transport,
+    action,
+    details,
+  };
+
+  global.__kasekiGatewayDiagnostics.push(event);
+
+  // Also try to write to /results/.gateway-diagnostics.jsonl if available
+  // This ensures diagnostics are captured even if process is killed
+  try {
+    if (fs.existsSync('/results')) {
+      const diagnosticsFile = '/results/.gateway-diagnostics.jsonl';
+      fs.appendFileSync(diagnosticsFile, JSON.stringify(event) + '\n', 'utf8');
+    }
+  } catch {
+    // Silently ignore file write errors (directory might not be writable or available)
+  }
+}
+
 // Store original fetch before patching
 const originalFetch = global.fetch;
 
-// Patch global fetch with normalization wrapper
+// Patch global fetch with normalization wrapper (if not already patched)
 if (originalFetch && !process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED) {
   global.fetch = createNormalizedFetch(originalFetch);
   process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED = 'true';
+}
+
+// Note: Undici patching is deferred to Pi CLI extension hooks if available
+// The fetch wrapper above will catch requests made through fetch API
+// Diagnostic events are still recorded to .gateway-diagnostics.jsonl file
+// for visibility into all request normalization attempts
+if (!process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE) {
+  process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE = 'true';
 }
 
 export default function registerGatewayProvider(pi) {
