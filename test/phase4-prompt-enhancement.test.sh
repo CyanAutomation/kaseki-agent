@@ -40,8 +40,8 @@ test_result() {
 render_prompt() {
   local hashline_edits="$1"
   local harness
+  local status
   harness="$(mktemp)"
-  trap "rm -f '$harness'" RETURN
 
   cat > "$harness" <<EOF_HARNESS
 #!/usr/bin/env bash
@@ -60,6 +60,9 @@ build_agent_prompt
 EOF_HARNESS
 
   PROMPT_HELPER="$PROMPT_HELPER" bash "$harness"
+  status=$?
+  rm -f "$harness"
+  return "$status"
 }
 
 assert_contains() {
@@ -133,7 +136,6 @@ test_rendered_prompt_ignores_legacy_prompt_file_inputs() {
   legacy_test_prompt_file="$(mktemp)"
   results_dir="$(mktemp -d)"
   scouting_artifact="$(mktemp)"
-  trap "rm -f '$harness' '$legacy_prompt_file' '$legacy_test_prompt_file' '$scouting_artifact'; rm -rf '$results_dir'" RETURN
 
   printf '%s\n' 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_prompt_file"
   printf '%s\n' 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_test_prompt_file"
@@ -159,6 +161,8 @@ build_agent_prompt
 EOF_HARNESS
 
   prompt="$(PROMPT_HELPER="$PROMPT_HELPER" bash "$harness")" || result=1
+  rm -f "$harness" "$legacy_prompt_file" "$legacy_test_prompt_file" "$scouting_artifact"
+  rm -rf "$results_dir"
 
   if [ "$result" -eq 0 ]; then
     assert_contains "$prompt" 'SUPPORTED_TASK_PROMPT_SHOULD_RENDER' || result=1
