@@ -1621,10 +1621,18 @@ export function createApiRouter(
    * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2)
    * Runs both connectivity and response validation tests
    * Stage 2 runs by default in production, skipped in dev/test (no token consumption in dev)
-   * Query param: ?responseSmoke=true/false to override stage 2 decision
+   * Query params:
+   *   ?stage=1          - Run Stage 1 only (connectivity check)
+   *   ?stage=2          - Run Stage 2 only (inference test)
+   *   ?responseSmoke=true/false - Override stage 2 decision
    */
   router.get('/gateway-test', async (_req: Request, res: Response) => {
     try {
+      const stageParam = typeof _req.query.stage === 'string'
+        ? _req.query.stage.trim().toLowerCase()
+        : '';
+      const requestedStage = stageParam === '1' ? 1 : stageParam === '2' ? 2 : 0; // 0 = both
+
       const smokeParam = typeof _req.query.responseSmoke === 'string'
         ? _req.query.responseSmoke.trim().toLowerCase()
         : '';
@@ -1635,44 +1643,80 @@ export function createApiRouter(
           : undefined;
       const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
 
-      const stage1Result = await testGatewayConnectivity_Stage1();
-
-      // Determine if we should run stage 2
-      const runStage2 = shouldRunGatewayResponseSmoke(options);
-
+      let stage1Result: any = null;
       let stage2Result: any = null;
 
-      if (stage1Result.status !== 'ok') {
-        // Skip stage 2: Stage 1 failed - connectivity check did not pass
-      } else if (!runStage2) {
-        // Skip stage 2: environment does not require it
+      // Run Stage 1 if requested (or if running both)
+      if (requestedStage === 0 || requestedStage === 1) {
+        stage1Result = await testGatewayConnectivity_Stage1();
+      }
+
+      // Run Stage 2 if requested (or if running both and Stage 1 passed)
+      if (requestedStage === 2 || (requestedStage === 0 && stage1Result && stage1Result.status === 'ok')) {
+        // Determine if we should run stage 2
+        const runStage2 = shouldRunGatewayResponseSmoke(options);
+
+        if (runStage2 || requestedStage === 2) {
+          // Run stage 2
+          const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
+          const apiKey = resolveGatewayApiKey().value || '';
+          const timestamp = new Date().toISOString();
+          const startTime = performance.now();
+          stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
+        }
+      }
+
+      // Build response - handle both single-stage and dual-stage responses
+      if (requestedStage === 1) {
+        // Stage 1 only response
+        const result = {
+          ...stage1Result,
+          responseSmokeValidated: false, // Stage 2 was not run
+        };
+        const httpStatus = stage1Result.status === 'ok' ? 200 : 503;
+        res.status(httpStatus).json(result);
+      } else if (requestedStage === 2) {
+        // Stage 2 only response
+        const result: any = {
+          status: stage2Result?.status === 'ok' ? 'ok' : 'error',
+          detail: stage2Result?.detail || 'LLM inference test failed',
+          responseTime: stage2Result?.responseTime || 0,
+          timestamp: new Date().toISOString(),
+          responseSmokeValidated: stage2Result?.status === 'ok',
+        };
+
+        if (stage2Result?.responseId) {
+          result.responseId = stage2Result.responseId;
+        }
+        if (stage2Result?.outputTokens) {
+          result.outputTokens = stage2Result.outputTokens;
+        }
+        if (stage2Result?.modelUsed) {
+          result.modelUsed = stage2Result.modelUsed;
+        }
+
+        const httpStatus = stage2Result?.status === 'ok' ? 200 : 503;
+        res.status(httpStatus).json(result);
       } else {
-        // Run stage 2
-        const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
-        const apiKey = resolveGatewayApiKey().value || '';
-        const timestamp = new Date().toISOString();
-        const startTime = performance.now();
-        stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
+        // Both stages response (backward compatible format)
+        const result: any = {
+          status: stage1Result.status,
+          detail: stage1Result.detail,
+          responseTime: stage1Result.responseTime,
+          timestamp: new Date().toISOString(),
+          authenticationValidated: stage1Result.authenticationValidated,
+          responseSmokeValidated: stage2Result?.status === 'ok',
+        };
+
+        if (stage2Result) {
+          result.responseId = stage2Result.responseId;
+          result.outputTokens = stage2Result.outputTokens;
+          result.modelUsed = stage2Result.modelUsed;
+        }
+
+        const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
+        res.status(httpStatus).json(result);
       }
-
-      // Build response in old format for backward compatibility
-      const result: any = {
-        status: stage1Result.status,
-        detail: stage1Result.detail,
-        responseTime: stage1Result.responseTime,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: stage1Result.authenticationValidated,
-        responseSmokeValidated: stage2Result?.status === 'ok',
-      };
-
-      if (stage2Result) {
-        result.responseId = stage2Result.responseId;
-        result.outputTokens = stage2Result.outputTokens;
-        result.modelUsed = stage2Result.modelUsed;
-      }
-
-      const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
-      res.status(httpStatus).json(result);
     } catch (error) {
       logger.error('Gateway test error', {
         error: error instanceof Error ? error.message : String(error),

@@ -1396,10 +1396,9 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test" data-auth="true" type="button"><span class="hc-label">Gateway Test</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test/responses?forceRun=true" data-auth="true" type="button" title="Test LLM model inference (consumes tokens)"><span class="hc-label">LLM Test</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity (no token consumption)"><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test LLM inference (consumes tokens)"><span class="hc-label">Test LLM</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
-            <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
             <div class="summary-card">
@@ -2383,14 +2382,27 @@ const controllerPage = String.raw`<!doctype html>
         if (path === '/ready') {
           setSummary('controller', payload.status || 'Ready', 'ok');
         }
-        if (path === '/api/gateway-test') {
+        if (path.startsWith('/api/gateway-test')) {
+          // Handle both /api/gateway-test (full test), /api/gateway-test?stage=1 (connectivity), and /api/gateway-test?stage=2 (inference)
           const responseTime = payload.responseTime || 0;
           const slow = payload.status === 'ok' && typeof payload.warning === 'string';
           const smoke = payload.responseSmokeValidated === true;
           const summary = payload.status === 'ok'
             ? responseTime + 'ms' + (smoke ? ' smoke ok' : '') + (slow ? ' slow' : '')
             : 'Failed';
-          setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
+          
+          // Determine which summary to update based on the path
+          if (path.includes('stage=2')) {
+            // Stage 2 (LLM inference test)
+            const outputTokens = payload.outputTokens || 0;
+            const llmSummary = payload.status === 'ok'
+              ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '')
+              : 'Failed';
+            setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
+          } else {
+            // Stage 1 or full test (gateway connectivity)
+            setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
+          }
         }
         if (path === '/api/gateway-test/responses') {
           const responseTime = payload.responseTime || 0;
@@ -2773,19 +2785,6 @@ const controllerPage = String.raw`<!doctype html>
           .finally(() => {
             button.disabled = false;
           });
-      });
-
-      document.querySelector('#status-check').addEventListener('click', (event) => {
-        const runId = runIdInput.value.trim();
-        if (!runId) {
-          setOutputMetadata('idle');
-          setResponseSummary(null);
-          setOutputBody('Submit a run or enter a run ID first.');
-          setState('Run status needs a run ID.', 'bad');
-          return;
-        }
-        showRunLinks(runId);
-        run(event.currentTarget, runUrl(runId, '/status'), { auth: true });
       });
 
       function closeModal() {

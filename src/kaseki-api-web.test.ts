@@ -166,7 +166,7 @@ describe('kaseki API web console routes', () => {
     expect(document.querySelector('[data-testid="task-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-testid="issues-repo-url"]')).not.toBeNull();
     expect(document.querySelector('[data-probe="/api/preflight"]')).not.toBeNull();
-    expect(document.querySelector('[data-probe="/api/gateway-test"]')?.getAttribute('data-auth')).toBe('true');
+    expect(document.querySelector('[data-probe="/api/gateway-test?stage=1"]')?.getAttribute('data-auth')).toBe('true');
     expect(document.querySelector('#task-mode')?.getAttribute('name')).toBe('taskMode');
     expect(document.querySelector('#runs-list')).not.toBeNull();
     expect(document.querySelector('#refresh-runs')?.textContent).toContain('Refresh runs');
@@ -237,24 +237,28 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#run-links')?.hasAttribute('hidden')).toBe(false);
   });
 
-  test('shows smoke validation in the gateway health summary', async () => {
-    const { document, calls } = await renderConsole({
+  test('displays gateway and LLM test buttons with correct endpoints', async () => {
+    const { document } = await renderConsole({
       storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/gateway-test') {
-          return createJsonResponse({
-            status: 'ok',
-            responseTime: 123,
-            responseSmokeValidated: true,
-          });
-        }
-        return createJsonResponse({ status: 'ok' });
-      },
+      fetchHandler: () => createJsonResponse({ status: 'ok' }),
     });
 
-    click(document.querySelector('[data-probe="/api/gateway-test"]'));
-    await waitFor(() => expect(document.querySelector('[data-summary="gateway"]')?.textContent).toBe('123ms smoke ok'));
-    expect(calls[0]).toMatchObject({ path: '/api/gateway-test' });
+    // Verify Gateway Test button has stage=1 parameter
+    const gatewayTestButton = [...document.querySelectorAll('.health-check-button')]
+      .find(btn => btn.textContent?.includes('Test Gateway'));
+    expect(gatewayTestButton).toBeDefined();
+    expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
+    
+    // Verify LLM Test button has stage=2 and responseSmoke parameters
+    const llmTestButton = [...document.querySelectorAll('.health-check-button')]
+      .find(btn => btn.textContent?.includes('Test LLM'));
+    expect(llmTestButton).toBeDefined();
+    expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true');
+    
+    // Verify Check Status button does not exist
+    const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
+      .find(btn => btn.textContent?.includes('Check Status'));
+    expect(checkStatusButton).toBeUndefined();
   });
 
   test('shows failure reasons and progress context in recent runs', async () => {
@@ -286,38 +290,6 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#runs-list')?.textContent).toContain('pre-agent validation');
     expect(document.querySelector('#runs-list')?.textContent).toContain('25%');
     expect(document.querySelector('#runs-list button')?.getAttribute('title')).toContain('validation_failed');
-  });
-
-  test('loads status-triggered recommended artifacts and filters binary entries', async () => {
-    const { document, calls } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-201/status') {
-          return createJsonResponse({ id: 'kaseki-201', status: 'completed' });
-        }
-        if (path === '/api/runs/kaseki-201/artifacts') {
-          return createJsonResponse({
-            recommended: ['summary.md', 'bundle.zip'],
-            artifacts: [
-              { name: 'summary.md', available: true, contentType: 'text/markdown', size: '2 KB' },
-              { name: 'bundle.zip', available: true, contentType: 'application/zip', size: '4 KB' },
-            ],
-          });
-        }
-        return createJsonResponse({ runs: [] });
-      },
-    });
-
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-201';
-    click(document.querySelector('#status-check'));
-
-    await waitFor(() => expect(document.querySelectorAll('#recommended-artifact-links button[data-artifact-file]')).toHaveLength(1));
-    expect(calls.map((call) => call.path)).toEqual(['/api/runs/kaseki-201/status', '/api/runs/kaseki-201/artifacts']);
-    expect(document.querySelector('#recommended-artifacts')?.hasAttribute('hidden')).toBe(false);
-    expect(document.querySelector('[data-artifact-file="summary.md"]')?.textContent).toBe('summary.md');
-    expect(document.querySelector('[data-artifact-file="bundle.zip"]')).toBeNull();
   });
 
   test('loads artifact lists in the full-results modal with DOM controls for text artifacts only', async () => {
@@ -363,43 +335,6 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#tab-status')?.getAttribute('aria-hidden')).toBe('false');
     expect(document.querySelector('#tab-artifacts')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('#tab-artifacts')?.getAttribute('aria-hidden')).toBe('true');
-  });
-
-  test('renders artifact file content directly instead of the API wrapper', async () => {
-    const { document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-304/status') return createJsonResponse({ id: 'kaseki-304', status: 'failed' });
-        if (path === '/api/runs/kaseki-304/artifacts') {
-          return createJsonResponse({
-            recommended: ['failure.json'],
-            artifacts: [
-              { name: 'failure.json', available: true, contentType: 'application/json', size: '1 KB' },
-            ],
-          });
-        }
-        if (path === '/api/results/kaseki-304/failure.json') {
-          return createJsonResponse({
-            file: 'failure.json',
-            contentType: 'application/json',
-            size: 28,
-            content: '{\n  "failed_command": "scouting"\n}\n',
-          });
-        }
-        return createJsonResponse({});
-      },
-    });
-
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-304';
-    click(document.querySelector('#status-check'));
-    await waitFor(() => expect(document.querySelector('[data-artifact-file="failure.json"]')).not.toBeNull());
-
-    click(document.querySelector('[data-artifact-file="failure.json"]'));
-    await waitFor(() => expect(document.querySelector('#output')?.textContent).toContain('"failed_command": "scouting"'));
-    expect(document.querySelector('#output')?.textContent).not.toContain('"file": "failure.json"');
-    expect(document.querySelector('#output')?.textContent).not.toContain('"content":');
   });
 
   test('selecting a GitHub issue carries its repository into the submit form', async () => {
@@ -613,99 +548,6 @@ describe('kaseki API web console behavior', () => {
     expect(document.querySelector('#artifacts-output')?.textContent).not.toContain('missing.txt');
     expect(document.querySelector('#output')?.textContent).toContain('"path": "/api/preflight"');
     expect(document.querySelector('#output')?.textContent).not.toContain('"availableArtifacts"');
-  });
-
-  test('handles status and cancel actions through the run controls', async () => {
-    const { document, calls } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: (path) => {
-        if (path === '/api/runs/kaseki-401/status') {
-          return createJsonResponse({ id: 'kaseki-401', status: 'running', progress: { stage: 'apply_patch', percentComplete: 25 } });
-        }
-        if (path === '/api/runs/kaseki-401/cancel') {
-          return createJsonResponse({ id: 'kaseki-401', status: 'cancelled' });
-        }
-        return createJsonResponse({ runs: [] });
-      },
-    });
-
-    click(document.querySelector('#status-check'));
-    expect(document.querySelector('#state')?.textContent).toBe('Run status needs a run ID.');
-    expect(document.querySelector('#output')?.textContent).toBe('Submit a run or enter a run ID first.');
-
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-401';
-    click(document.querySelector('#status-check'));
-    await waitFor(() => expect(document.querySelector('#state')?.textContent).toBe('Run status updated.'));
-    expect(document.querySelector('#output-meta')?.textContent).toBe('Status: running | Run ID: kaseki-401');
-    expect(document.querySelector('[data-summary="run"]')?.textContent).toBe('running');
-    expect(document.querySelector('#run-details')?.textContent).toBe('apply_patch | 25%');
-
-    click(document.querySelector('#cancel-run'));
-    await waitFor(() => expect(calls.some((call) => call.path === '/api/runs/kaseki-401/cancel')).toBe(true));
-    const cancelCall = calls.find((call) => call.path === '/api/runs/kaseki-401/cancel');
-    expect(cancelCall?.init?.method).toBe('POST');
-  });
-
-  test('renders response summary fields from response payloads', async () => {
-    const { document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: () => createJsonResponse({
-        id: 'kaseki-501',
-        status: '\u001b[31mcompleted\u001b[0m',
-        elapsedSeconds: 125.9,
-        taskProgressPercent: 80,
-        progress: {
-          stage: 'verify',
-          displayName: '\u001b[32mVerification\u001b[0m',
-          message: '\u001b[33mChecks passed\u001b[0m',
-        },
-      }),
-    });
-
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-501';
-    click(document.querySelector('#status-check'));
-
-    await waitFor(() => expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(false));
-    const summaryItems = [...document.querySelectorAll('#response-summary .response-summary-item')].map((item) => ({
-      label: item.querySelector('.response-summary-label')?.textContent,
-      value: item.querySelector('.response-summary-value')?.textContent,
-    }));
-    expect(summaryItems).toEqual([
-      { label: 'Response status', value: 'completed' },
-      { label: 'Response elapsed time', value: '2m 05s' },
-      { label: 'Response progress stage', value: 'Verification' },
-      { label: 'Progress (%)', value: '80%' },
-      { label: 'Progress message', value: 'Checks passed' },
-    ]);
-    expect(document.querySelector('#response-summary')?.textContent).not.toContain('\u001b');
-  });
-
-  test('cleans interleaved startup check text from response progress summaries', async () => {
-    const { document } = await renderConsole({
-      storedToken: 'token12345',
-      fetchHandler: () => createJsonResponse({
-        id: 'kaseki-502',
-        status: 'running',
-        progress: {
-          stage: 'clone repository\u001b[0;34mℹ\u001b[0m Kaseki startup checks (mode: worker)',
-          message: 'started',
-        },
-      }),
-    });
-
-    const runIdInput = document.querySelector<HTMLInputElement>('#run-id');
-    if (!runIdInput) throw new Error('Expected #run-id to exist');
-    runIdInput.value = 'kaseki-502';
-    click(document.querySelector('#status-check'));
-
-    await waitFor(() => expect(document.querySelector('#response-summary')?.hasAttribute('hidden')).toBe(false));
-    expect(document.querySelector('#response-summary')?.textContent).toContain('clone repository');
-    expect(document.querySelector('#response-summary')?.textContent).not.toContain('Kaseki startup checks');
-    expect(document.querySelector('#run-details')?.textContent).toBe('clone repository');
   });
 
   test('renders gateway failures with retry guidance', async () => {

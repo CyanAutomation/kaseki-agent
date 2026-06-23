@@ -1073,6 +1073,104 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/gateway-test?stage=1 runs Stage 1 only (connectivity check)', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-stage1-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+    let externalFetchCount = 0;
+
+    try {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        externalFetchCount += 1;
+        // Only Stage 1 should be called (connectivity check)
+        if (url.endsWith('/models')) {
+          return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+        }
+        // If Stage 2 is reached, fail the test
+        throw new Error('Stage 2 should not be called when stage=1 is specified');
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=1`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(200);
+        expect(body.status).toBe('ok');
+        expect(body.responseSmokeValidated).toBe(false); // Stage 2 not run
+        expect(externalFetchCount).toBe(1); // Only connectivity check
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
+  test('GET /api/gateway-test?stage=2&responseSmoke=true runs Stage 2 only (inference test)', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-stage2-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+    let stage1Called = false;
+    let stage2Called = false;
+
+    try {
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        if (url.endsWith('/models')) {
+          stage1Called = true;
+          return Promise.resolve(new Response('{"models":[]}', { status: 200, headers: { 'content-type': 'application/json' } }));
+        }
+        // Stage 2 call (inference)
+        stage2Called = true;
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'resp_stage2_test',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 5 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(200);
+        expect(body.responseSmokeValidated).toBe(true); // Stage 2 ran
+        expect(body.responseId).toBe('resp_stage2_test');
+        expect(stage1Called).toBe(false); // Stage 1 should NOT be called
+        expect(stage2Called).toBe(true); // Stage 2 should be called
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
     const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
