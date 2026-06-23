@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2034
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Load only dependency restore/cache helper functions from kaseki-agent.sh.
+# Source the pure key helpers and load only dependency restore/cache helper functions from kaseki-agent.sh.
+# shellcheck source=/dev/null
+. "$ROOT_DIR/scripts/dependency-cache-helpers.sh"
+
 eval "$(awk '
   /^set_dependency_cache_status\(\)/ { emit=1 }
-  /^dependency_cache_flags_identity\(\)/ { emit=0 }
+  /^npm_run_script_name\(\)/ { emit=0 }
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh")"
 
@@ -21,6 +25,38 @@ DEPENDENCY_CACHE_LOG="$TMP_DIR/dependency-cache.log"
 export KASEKI_DEPENDENCY_CACHE_PRUNE=1
 export KASEKI_DEPENDENCY_CACHE_MAX_BYTES=1024
 export KASEKI_DEPENDENCY_CACHE_MAX_AGE_DAYS=30
+
+
+# Documentation-driven dependency cache strategy contract: docs/DEPLOYMENT.md
+# describes dependency cache keys as deterministic from dependency inputs. Keep
+# branch/ref names out of helper-generated keys so feature branches sharing the
+# same lockfile, Node major version, and install flags can reuse cache entries.
+cat > "$TMP_DIR/package-lock.json" <<'LOCK'
+{"lockfileVersion":3,"packages":{}}
+LOCK
+
+lock_hash="$(sha256sum "$TMP_DIR/package-lock.json" | awk '{print $1}')"
+node_major="24"
+
+KASEKI_NPM_OMIT_DEV=0
+KASEKI_INSTALL_IGNORE_SCRIPTS=1
+flags_hash="$(dependency_cache_flags_hash)"
+
+REPO_URL="https://example.com/project.git" GIT_REF="feature-a"
+key_a="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash")"
+REPO_URL="https://example.com/project.git" GIT_REF="feature-b"
+key_b="$(dependency_cache_key "$lock_hash" "$node_major" "$flags_hash")"
+
+[ "$key_a" = "$key_b" ] || fail "Dependency cache key must be stable across Git refs when dependency inputs are unchanged"
+if printf '%s\n' "$key_a" | grep -Fq "feature-"; then
+  fail "Dependency cache key must not embed branch/ref names such as feature-*: $key_a"
+fi
+
+KASEKI_NPM_OMIT_DEV=1
+omit_dev_flags_hash="$(dependency_cache_flags_hash)"
+omit_dev_key="$(dependency_cache_key "$lock_hash" "$node_major" "$omit_dev_flags_hash")"
+[ "$key_a" != "$omit_dev_key" ] || fail "Dependency cache install flags hash must produce a distinct key"
+pass "dependency cache strategy/spec key contract ignores Git refs and varies by install flags"
 
 mkdir -p "$TMP_DIR/cache/node_modules/pkg" "$TMP_DIR/workspace"
 printf 'cached package\n' > "$TMP_DIR/cache/node_modules/pkg/index.js"
