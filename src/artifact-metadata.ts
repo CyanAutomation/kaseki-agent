@@ -163,6 +163,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  'prompt-diagnostics.jsonl': {
+    name: 'prompt-diagnostics.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'Per-phase prompt telemetry: character/byte size, approximate token count, model, tool count, stream mode, and output token limit',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 8,
+    sizeHint: 'small',
+  },
+
   'scouting-validation-errors.jsonl': {
     name: 'scouting-validation-errors.jsonl',
     contentType: 'application/x-jsonl',

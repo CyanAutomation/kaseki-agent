@@ -33,9 +33,17 @@ function resolveGatewayApiKey() {
   return '';
 }
 
+function resolveGatewayMaxTokens() {
+  const raw = process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS;
+  if (!raw) return 4096;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4096;
+}
+
 export default function registerGatewayProvider(pi) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const gatewayApiKey = resolveGatewayApiKey();
+  const maxTokens = resolveGatewayMaxTokens();
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
@@ -52,7 +60,7 @@ export default function registerGatewayProvider(pi) {
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 128000,
-          maxTokens: 4096
+          maxTokens
         }
       ]
     });

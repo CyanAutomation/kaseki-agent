@@ -1694,6 +1694,15 @@ export function createApiRouter(
         if (stage2Result?.modelUsed) {
           result.modelUsed = stage2Result.modelUsed;
         }
+        if (typeof stage2Result?.streamSmokeValidated === 'boolean') {
+          result.streamSmokeValidated = stage2Result.streamSmokeValidated;
+        }
+        if (typeof stage2Result?.largePromptSmokeValidated === 'boolean') {
+          result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
+        }
+        if (stage2Result?.checks) {
+          result.checks = stage2Result.checks;
+        }
 
         const httpStatus = stage2Result?.status === 'ok' ? 200 : 503;
         res.status(httpStatus).json(result);
@@ -1712,6 +1721,9 @@ export function createApiRouter(
           result.responseId = stage2Result.responseId;
           result.outputTokens = stage2Result.outputTokens;
           result.modelUsed = stage2Result.modelUsed;
+          result.streamSmokeValidated = stage2Result.streamSmokeValidated;
+          result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
+          result.checks = stage2Result.checks;
         }
 
         const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
