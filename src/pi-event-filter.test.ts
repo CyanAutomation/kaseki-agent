@@ -238,6 +238,46 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.provider_errors).toHaveLength(1);
   });
 
+  test('should summarize empty gateway assistant turns with output token usage', async () => {
+    const fixture = [
+      JSON.stringify({
+        type: 'message_end',
+        timestamp: '2026-06-23T10:32:20.000Z',
+        message: {
+          role: 'assistant',
+          content: [],
+          api: 'openai-responses',
+          provider: 'gateway',
+          model: 'auto',
+          usage: {
+            input: 13130,
+            output: 128,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 13258,
+          },
+          stopReason: 'stop',
+          responseId: 'resp_a1fe7b35ddb4479d83fcf572f25829d9',
+        },
+      }),
+    ];
+
+    const result = await runFilter(fixture);
+    expect(result.exitCode).toBe(0);
+    expect(result.summary.primary_provider_error).toMatchObject({
+      type: 'provider_empty_assistant_turn',
+      provider: 'gateway',
+      api: 'openai-responses',
+      model: 'auto',
+      stop_reason: 'stop',
+      response_id: 'resp_a1fe7b35ddb4479d83fcf572f25829d9',
+      input_tokens: 13130,
+      output_tokens: 128,
+      total_tokens: 13258,
+    });
+    expect(result.summary.primary_provider_error.message).toContain('output tokens but no assistant text or tool calls');
+  });
+
   test('should track tool reliability metrics in summary', async () => {
     // Spec: Summary must include tool start/end counts and match counts
     // Behavioral intent: Paired tool_execution_start/end are counted; unmatched starts tracked separately
