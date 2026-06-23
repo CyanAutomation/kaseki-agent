@@ -554,7 +554,7 @@ export async function testGatewayResponseSmoke_Stage2(
         authenticationValidated: true,
         responseId,
         outputTokens,
-        remediation: 'Gateway accepted model=auto but returned an empty assistant response. Check Responses API payload mapping and gateway model routing.',
+        remediation: 'Gateway accepted model=auto for routing but returned an empty assistant response. Keep model=auto enabled; fix the Responses API adapter to surface routed model output as output_text or assistant message content.',
       };
     }
 
@@ -660,7 +660,7 @@ async function testGatewayResponseSmoke(
         responseSmokeValidated: false,
         responseId,
         outputTokens,
-        remediation: 'Gateway accepted model=auto but returned an empty assistant response. Check Responses API payload mapping and gateway model routing.',
+        remediation: 'Gateway accepted model=auto for routing but returned an empty assistant response. Keep model=auto enabled; fix the Responses API adapter to surface routed model output as output_text or assistant message content.',
       };
     }
 
