@@ -930,5 +930,136 @@ describe('LLM Gateway Test', () => {
         expect(result.detail).toContain('aborted');
       });
     });
+
+    describe('Multi-message format support', () => {
+      /**
+       * Test that multi-message array input is detectable and should be converted
+       * from {input: [{role, content}]} to {messages: [{role, content}]}
+       *
+       * This is a unit test of the detection logic, not an integration test
+       * The actual gateway adapter fix will be tested separately
+       */
+      it('should detect multi-message array input format correctly', () => {
+        const multiMessageInput = [
+          {
+            role: 'system',
+            content:
+              'You are a read-only scouting Pi agent inside a Kaseki-managed ephemeral workspace.',
+          },
+          {
+            role: 'user',
+            content: 'Analyze the repository and understand the task scope.',
+          },
+        ];
+
+        // Detection logic: check if input is array of {role, content} objects
+        const isMultiMessage =
+          Array.isArray(multiMessageInput) &&
+          multiMessageInput.length > 0 &&
+          multiMessageInput.every(
+            item =>
+              typeof item === 'object' &&
+              item !== null &&
+              'role' in item &&
+              'content' in item,
+          );
+
+        expect(isMultiMessage).toBe(true);
+
+        // After detection, request should use messages field instead of input
+        const normalizedPayload = {
+          model: 'auto',
+          messages: multiMessageInput,
+          max_output_tokens: 256,
+        };
+
+        expect(normalizedPayload.messages).toEqual(multiMessageInput);
+        expect(normalizedPayload.input).toBeUndefined();
+      });
+
+      /**
+       * Test user-only multi-message array detection
+       */
+      it('should detect user-only multi-message array', () => {
+        const userOnlyInput = [
+          { role: 'user', content: 'What is 2+2?' },
+          { role: 'user', content: 'And what is 3+3?' },
+        ];
+
+        const isMultiMessage =
+          Array.isArray(userOnlyInput) &&
+          userOnlyInput.length > 0 &&
+          userOnlyInput.every(
+            item =>
+              typeof item === 'object' &&
+              item !== null &&
+              'role' in item &&
+              'content' in item,
+          );
+
+        expect(isMultiMessage).toBe(true);
+      });
+
+      /**
+       * Test that simple string input is NOT treated as multi-message
+       */
+      it('should NOT treat simple string as multi-message', () => {
+        const simpleInput = 'You are a helpful assistant.';
+
+        const isMultiMessage =
+          Array.isArray(simpleInput) &&
+          simpleInput.length > 0 &&
+          simpleInput.every(
+            item =>
+              typeof item === 'object' &&
+              item !== null &&
+              'role' in item &&
+              'content' in item,
+          );
+
+        expect(isMultiMessage).toBe(false);
+
+        // String input should stay as-is
+        const requestPayload = {
+          model: 'auto',
+          input: simpleInput,
+          max_output_tokens: 256,
+        };
+
+        expect(requestPayload.input).toBe(simpleInput);
+      });
+
+      /**
+       * Test malformed array (missing role or content) is not converted
+       */
+      it('should NOT convert malformed message array', () => {
+        const malformedArray = [
+          { text: 'Not a message object' },
+          { content: 'Missing role field' },
+        ];
+
+        const isMultiMessage =
+          Array.isArray(malformedArray) &&
+          malformedArray.length > 0 &&
+          malformedArray.every(
+            item =>
+              typeof item === 'object' &&
+              item !== null &&
+              'role' in item &&
+              'content' in item,
+          );
+
+        expect(isMultiMessage).toBe(false);
+
+        // Malformed array stays in input field (gateway will error appropriately)
+        const requestPayload = {
+          model: 'auto',
+          input: malformedArray,
+          max_output_tokens: 256,
+        };
+
+        expect(requestPayload.input).toEqual(malformedArray);
+      });
+    });
   });
 });

@@ -14,16 +14,136 @@
  */
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import fs from 'node:fs';
+
+function resolveGatewayApiKey(): string {
+  if (process.env.LLM_GATEWAY_API_KEY) {
+    return process.env.LLM_GATEWAY_API_KEY;
+  }
+
+  const filePath = process.env.LLM_GATEWAY_API_KEY_FILE;
+  if (filePath) {
+    try {
+      const value = fs.readFileSync(filePath, 'utf8').trim();
+      if (value) return value;
+    } catch {
+      // Extension initialization will surface the failure
+    }
+  }
+
+  return '';
+}
+
+function resolveGatewayMaxTokens(): number {
+  const raw = process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS;
+  if (!raw) return 4096;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 4096;
+}
+
+/**
+ * Normalize request payload for OpenAI Responses API compatibility
+ *
+ * Converts multi-message array input to messages field:
+ * - {input: [{role, content}]} → {messages: [{role, content}]}
+ * - {input: "string"} → {input: "string"} (unchanged)
+ *
+ * @param request - Request payload
+ * @returns Normalized request
+ */
+function normalizeGatewayRequest(
+  request: Record<string, unknown>,
+): Record<string, unknown> {
+  const { input, ...rest } = request;
+
+  // Check if input is a multi-message array (array of {role, content} objects)
+  if (
+    Array.isArray(input) &&
+    input.length > 0 &&
+    input.every(
+      item =>
+        typeof item === 'object' &&
+        item !== null &&
+        'role' in item &&
+        'content' in item,
+    )
+  ) {
+    // Convert multi-message array to messages field
+    // This is required for OpenAI Responses API when sending conversation history
+    return {
+      ...rest,
+      messages: input,
+    };
+  }
+
+  // Keep input field as-is (string or invalid format)
+  // String inputs are passed through unchanged for simple prompts
+  // Malformed arrays will be caught by the gateway error handling
+  return { input, ...rest };
+}
+
+/**
+ * Create a fetch wrapper that normalizes request payloads
+ * This intercepts fetch calls to apply normalization before sending to gateway
+ *
+ * @param originalFetch - The original fetch function
+ * @returns Wrapped fetch function that normalizes requests
+ */
+function createNormalizedFetch(
+  originalFetch: typeof globalThis.fetch,
+): typeof globalThis.fetch {
+  return async function normalizedFetch(
+    url: string | URL,
+    options?: Record<string, unknown>,
+  ): Promise<Response> {
+    // Only normalize requests to /responses endpoints
+    if (
+      (typeof url === 'string' || url instanceof URL) &&
+      String(url).includes('/responses')
+    ) {
+      try {
+        const opts = { ...options };
+        if (opts.body && typeof opts.body === 'string') {
+          const body = JSON.parse(opts.body);
+          const normalized = normalizeGatewayRequest(body);
+          opts.body = JSON.stringify(normalized);
+        }
+        return originalFetch(url, opts);
+      } catch {
+        // If normalization fails, proceed with original request
+        // This ensures we don't break anything if there are parsing issues
+        return originalFetch(url, options);
+      }
+    }
+
+    // Pass through all other requests unchanged
+    return originalFetch(url, options);
+  };
+}
+
+// Store original fetch before patching
+const originalFetch = globalThis.fetch;
+
+// Patch global fetch with normalization wrapper
+if (
+  originalFetch &&
+  !process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED
+) {
+  globalThis.fetch = createNormalizedFetch(originalFetch);
+  process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED = 'true';
+}
 
 export default function (pi: ExtensionAPI) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const gatewayApiKey = resolveGatewayApiKey();
+  const maxTokens = resolveGatewayMaxTokens();
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
     pi.registerProvider('gateway', {
       name: 'LLM Gateway',
       baseUrl: gatewayUrl,
-      apiKey: '$LLM_GATEWAY_API_KEY', // Env var interpolation
+      apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
       api: 'openai-responses', // Manifest gateway is OpenAI Responses API compatible
       models: [
         {
@@ -33,9 +153,9 @@ export default function (pi: ExtensionAPI) {
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 128000,
-          maxTokens: 4096
-        }
-      ]
+          maxTokens,
+        },
+      ],
     });
   }
 }
