@@ -69,4 +69,8 @@ assert_file_contains "$RUN_LOG" 'Missing LLM Gateway configuration'
 assert_file_contains "$RESULTS_DIR/result-summary.md" 'missing LLM_GATEWAY_URL'
 assert_file_contains "$RESULTS_DIR/failure.json" '"failed_command": "missing LLM_GATEWAY_URL"'
 
+if grep -qE 'AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=["'\'']?[A-Za-z0-9/+=]{16,}' "$SCRIPT_UNDER_TEST"; then
+  fail "entrypoint must not hardcode AWS credentials"
+fi
+
 printf '✓ %s\n' "$TEST_NAME"
