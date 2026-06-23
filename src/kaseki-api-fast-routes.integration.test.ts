@@ -70,6 +70,89 @@ describe('kaseki API fast route/service integration', () => {
     expect(harness.scheduler.submitJob).not.toHaveBeenCalled();
   });
 
+  test('returns the run submission contract and persists fulfilled idempotency state', async () => {
+    process.env.KASEKI_SKIP_BOOTSTRAP_CHECK = '1';
+    const scheduler = createMockScheduler();
+    scheduler.submitJob.mockImplementation(async (request) => ({
+      id: 'kaseki-1',
+      status: 'queued',
+      request,
+      createdAt: new Date('2026-06-18T02:00:00Z'),
+      resultDir: path.join(os.tmpdir(), 'kaseki-1'),
+      correlationId: 'corr-route-contract',
+      requestId: 'req-route-contract',
+    }));
+    const harness = await createFastRouteHarness(scheduler);
+    cleanup.push(() => close(harness.server, harness.idempotencyStore));
+    cleanup.push(() => fs.rmSync(harness.resultsDir, { recursive: true, force: true }));
+
+    const response = await fetch(`${harness.baseUrl}/runs`, {
+      method: 'POST',
+      headers: {
+        ...auth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        repoUrl: 'https://github.com/example/repo',
+        publishMode: 'none',
+        idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(202);
+    expect(payload).toEqual({
+      id: 'kaseki-1',
+      status: 'queued',
+      createdAt: '2026-06-18T02:00:00.000Z',
+      correlationId: 'corr-route-contract',
+      requestId: 'req-route-contract',
+    });
+    expect(scheduler.submitJob).toHaveBeenCalledWith(expect.objectContaining({
+      repoUrl: 'https://github.com/example/repo',
+      publishMode: 'none',
+    }));
+    expect(scheduler.submitJob).toHaveBeenCalledTimes(1);
+
+    const persistedLines = fs.readFileSync(
+      path.join(harness.resultsDir, '.kaseki-api-idempotency.jsonl'),
+      'utf-8'
+    ).trim().split('\n').map((line) => JSON.parse(line));
+    expect(persistedLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        idempotencyKey: '11111111-1111-4111-8111-111111111111',
+        state: 'fulfilled',
+        jobId: 'kaseki-1',
+        responsePayload: expect.objectContaining({
+          id: 'kaseki-1',
+          status: 'queued',
+        }),
+      }),
+    ]));
+  });
+
+  test('reports deterministic not-ready health response without submitting work', async () => {
+    const scheduler = createMockScheduler();
+    scheduler.getReadiness.mockReturnValue({
+      ready: false,
+      reasons: ['results_dir_unwritable:EACCES'],
+    });
+    const harness = await createFastRouteHarness(scheduler);
+    cleanup.push(() => close(harness.server, harness.idempotencyStore));
+    cleanup.push(() => fs.rmSync(harness.resultsDir, { recursive: true, force: true }));
+
+    const response = await fetch(`${harness.baseUrl}/ready`);
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({
+      status: 'not_ready',
+      timestamp: expect.any(String),
+      reasons: ['results_dir_unwritable:EACCES'],
+    });
+    expect(scheduler.submitJob).not.toHaveBeenCalled();
+  });
+
   test('requires valid bearer auth for protected routes while leaving readiness public', async () => {
     const harness = await createFastRouteHarness();
     cleanup.push(() => close(harness.server, harness.idempotencyStore));
