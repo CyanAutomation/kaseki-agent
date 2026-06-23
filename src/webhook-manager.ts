@@ -38,6 +38,17 @@ interface PersistedWebhookQueueEntry {
   nextRetryTime?: number;
 }
 
+export interface WebhookManagerOptions {
+  now?: () => number;
+}
+
+export interface WebhookQueueSnapshotEntry {
+  jobId: string;
+  deliveryAttempts: number;
+  nextRetryTime?: number;
+  lastAttemptStatus?: WebhookDeliveryAttempt['status'];
+}
+
 /**
  * Webhook manager handles async delivery of webhook events with retry logic.
  */
@@ -48,11 +59,13 @@ export class WebhookManager extends EventEmitter {
   private processInterval: NodeJS.Timeout | null = null;
   private maxConcurrentDeliveries = 5;
   private activeDeliveries = 0;
+  private readonly now: () => number;
 
-  constructor(resultsDir: string) {
+  constructor(resultsDir: string, options: WebhookManagerOptions = {}) {
     super();
     this.logger = createEventLogger('webhook-manager');
     this.deliveryLogPath = path.join(resultsDir, '.kaseki-webhook-delivery.log');
+    this.now = options.now ?? Date.now;
     this.loadDeliveryLog();
     this.startProcessing();
   }
@@ -74,11 +87,11 @@ export class WebhookManager extends EventEmitter {
       deliveryAttempts: 0,
       attempts: [
         {
-          timestamp: new Date().toISOString(),
+          timestamp: this.nowIso(),
           status: 'pending',
         },
       ],
-      nextRetryTime: Date.now(),
+      nextRetryTime: this.now(),
     };
 
     this.deliveryQueue.push(entry);
@@ -123,17 +136,17 @@ export class WebhookManager extends EventEmitter {
   /**
    * Process the delivery queue.
    */
-  private async processQueue(): Promise<void> {
+  private async processQueue(): Promise<boolean> {
     // Limit concurrent deliveries
     if (this.activeDeliveries >= this.maxConcurrentDeliveries) {
-      return;
+      return false;
     }
 
     // Find next entry to deliver (exclude entries already in flight)
-    const now = Date.now();
+    const now = this.now();
     const entry = this.deliveryQueue.find((e) => {
       const lastAttempt = e.attempts[e.attempts.length - 1];
-      const isCompleted = lastAttempt.status === 'success';
+      const isCompleted = lastAttempt?.status === 'success';
       const shouldRetry = e.nextRetryTime && e.nextRetryTime <= now;
       const exceedsMaxAttempts = e.deliveryAttempts >= (e.config.retryPolicy?.maxAttempts || 5);
       const isInFlight = e.inFlight === true;
@@ -141,7 +154,7 @@ export class WebhookManager extends EventEmitter {
     });
 
     if (!entry) {
-      return;
+      return false;
     }
 
     // Mark entry as in-flight before starting delivery
@@ -158,6 +171,8 @@ export class WebhookManager extends EventEmitter {
       }
       this.activeDeliveries--;
     }
+
+    return true;
   }
 
   /**
@@ -167,7 +182,7 @@ export class WebhookManager extends EventEmitter {
     // Note: inFlight flag is set in processQueue() before this method is called
     const { config, payload, jobId } = entry;
     const signature = this.generateSignature(payload, config);
-    const startTime = Date.now();
+    const startTime = this.now();
 
     try {
       entry.deliveryAttempts++;
@@ -183,7 +198,7 @@ export class WebhookManager extends EventEmitter {
         signal: AbortSignal.timeout(10000), // 10s timeout
       });
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = this.now() - startTime;
 
       // Drain the response body to release the HTTP connection
       await response.text().catch(() => {});
@@ -191,7 +206,7 @@ export class WebhookManager extends EventEmitter {
       if (response.ok) {
         // Success
         entry.attempts.push({
-          timestamp: new Date().toISOString(),
+          timestamp: this.nowIso(),
           status: 'success',
           statusCode: response.status,
           durationMs,
@@ -223,7 +238,7 @@ export class WebhookManager extends EventEmitter {
         const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
 
         entry.attempts.push({
-          timestamp: new Date().toISOString(),
+          timestamp: this.nowIso(),
           status: hasRemainingAttempts ? 'retry' : 'failed',
           statusCode: response.status,
           durationMs,
@@ -231,7 +246,7 @@ export class WebhookManager extends EventEmitter {
         });
 
         if (hasRemainingAttempts) {
-          entry.nextRetryTime = Date.now() + backoffMs;
+          entry.nextRetryTime = this.now() + backoffMs;
 
           this.logger.event('webhook_retry_scheduled', {
             jobId,
@@ -255,7 +270,7 @@ export class WebhookManager extends EventEmitter {
         this.persistDeliveryLog();
       }
     } catch (error) {
-      const durationMs = Date.now() - startTime;
+      const durationMs = this.now() - startTime;
       const errorMsg = error instanceof Error ? error.message : String(error);
       const retryPolicy = config.retryPolicy || {
         maxAttempts: 5,
@@ -270,14 +285,14 @@ export class WebhookManager extends EventEmitter {
       const hasRemainingAttempts = entry.deliveryAttempts < retryPolicy.maxAttempts;
 
       entry.attempts.push({
-        timestamp: new Date().toISOString(),
+        timestamp: this.nowIso(),
         status: hasRemainingAttempts ? 'retry' : 'failed',
         error: errorMsg,
         durationMs,
       });
 
       if (hasRemainingAttempts) {
-        entry.nextRetryTime = Date.now() + backoffMs;
+        entry.nextRetryTime = this.now() + backoffMs;
 
         this.logger.event('webhook_delivery_error', {
           jobId,
@@ -353,7 +368,7 @@ export class WebhookManager extends EventEmitter {
       const content = fs.readFileSync(this.deliveryLogPath, 'utf-8');
       const lines = content.split('\n').filter((line) => line.trim());
 
-      const now = Date.now();
+      const now = this.now();
       for (const line of lines) {
         let parsed: unknown;
         try {
@@ -432,6 +447,36 @@ export class WebhookManager extends EventEmitter {
   }
 
   /**
+   * Return a read-only queue snapshot for deterministic tests.
+   */
+  getQueuedDeliveriesForTest(): WebhookQueueSnapshotEntry[] {
+    return this.deliveryQueue.map((entry) => ({
+      jobId: entry.jobId,
+      deliveryAttempts: entry.deliveryAttempts,
+      nextRetryTime: entry.nextRetryTime,
+      lastAttemptStatus: entry.attempts[entry.attempts.length - 1]?.status,
+    }));
+  }
+
+  /**
+   * Drain ready webhook deliveries without relying on the background interval.
+   */
+  async drainQueueForTest(): Promise<number> {
+    this.stopProcessing();
+
+    let processedCount = 0;
+    while (await this.processQueue()) {
+      processedCount++;
+    }
+
+    return processedCount;
+  }
+
+  private nowIso(): string {
+    return new Date(this.now()).toISOString();
+  }
+
+  /**
    * Gracefully shutdown the webhook manager.
    */
   async shutdown(): Promise<void> {
@@ -439,10 +484,10 @@ export class WebhookManager extends EventEmitter {
 
     // Wait for active deliveries to complete (with timeout)
     const shutdownTimeout = 5000;
-    const startTime = Date.now();
+    const startTime = this.now();
 
     while (this.activeDeliveries > 0) {
-      if (Date.now() - startTime > shutdownTimeout) {
+      if (this.now() - startTime > shutdownTimeout) {
         this.logger.warn('Webhook manager shutdown timeout reached', {
           activeDeliveries: this.activeDeliveries,
         });
