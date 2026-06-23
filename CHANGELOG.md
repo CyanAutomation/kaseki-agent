@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.91.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.90.1...v1.91.0) (2026-06-23)
+
+
+### Features
+
+* add handling for empty assistant turns in provider error summaries ([8cfb214](https://github.com/CyanAutomation/kaseki-agent/commit/8cfb2145eadf151418f9fc30755ad521badb7efc))
+* implement gateway response smoke test functionality and update related tests ([62d21b9](https://github.com/CyanAutomation/kaseki-agent/commit/62d21b9b1dfbe4564315f78dd902ac11444897e1))
+
 ## [1.90.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.90.0...v1.90.1) (2026-06-23)
 
 
