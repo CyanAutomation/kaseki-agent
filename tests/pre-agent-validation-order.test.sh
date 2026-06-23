@@ -49,6 +49,7 @@ mkdir -p "$RESULTS_DIR" "$FAKE_REPO" "$FAKE_BIN" "$WORKSPACE_REPO" "$APP_LIB" "$
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
 cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
+cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
 
 # Create a temporary version of the script with paths redirected to $TMP_DIR
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
