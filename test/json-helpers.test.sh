@@ -36,15 +36,23 @@ with_temp_json_helper_path_with_spaces() {
   return "$source_status"
 }
 
-assert_valid_nonempty_json() {
+assert_json_string_decodes_to() {
   local output="$1"
+  local expected="$2"
 
   [ -n "$output" ] || return 1
-  if ! command -v jq >/dev/null 2>&1; then
-    printf 'ERROR: jq is required but not installed\n' >&2
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'ERROR: Node.js is required for JSON assertions\n' >&2
     return 1
   fi
-  printf '%s' "$output" | jq -e . >/dev/null
+
+  node -e '
+const actual = JSON.parse(process.argv[1]);
+const expected = process.argv[2];
+if (actual !== expected) {
+  throw new Error(`expected ${JSON.stringify(expected)} got ${JSON.stringify(actual)}`);
+}
+' "$output" "$expected"
 }
 
 run_test() {
@@ -74,7 +82,7 @@ test_json_encode_quotes() {
   local output
   output=$(printf 'hello "world"' | json_encode)
 
-  assert_valid_nonempty_json "$output" && [ "$output" = '"hello \"world\""' ]
+  assert_json_string_decodes_to "$output" 'hello "world"' && [ "$output" = '"hello \"world\""' ]
 }
 
 test_json_encode_control_characters() {
@@ -83,7 +91,25 @@ test_json_encode_control_characters() {
   local output
   output=$(printf 'line1\nline2\tctrl:\001' | json_encode)
 
-  assert_valid_nonempty_json "$output" && [ "$output" = '"line1\nline2\tctrl:\u0001"' ]
+  assert_json_string_decodes_to "$output" $'line1\nline2\tctrl:\001' && [ "$output" = '"line1\nline2\tctrl:\u0001"' ]
+}
+
+test_json_encode_empty_value() {
+  source_json_encode
+
+  local output
+  output=$(printf '' | json_encode)
+
+  assert_json_string_decodes_to "$output" '' && [ "$output" = '""' ]
+}
+
+test_json_encode_nonempty_value() {
+  source_json_encode
+
+  local output
+  output=$(printf 'plain value' | json_encode)
+
+  assert_json_string_decodes_to "$output" 'plain value' && [ "$output" = '"plain value"' ]
 }
 
 test_json_helper_sources_from_path_with_spaces() {
@@ -92,7 +118,7 @@ test_json_helper_sources_from_path_with_spaces() {
   local output
   output=$(printf 'space path' | json_encode)
 
-  assert_valid_nonempty_json "$output" && [ "$output" = '"space path"' ]
+  assert_json_string_decodes_to "$output" 'space path' && [ "$output" = '"space path"' ]
 }
 
 main() {
@@ -100,6 +126,8 @@ main() {
 
   run_test 'json_encode escapes quotes exactly' test_json_encode_quotes
   run_test 'json_encode escapes newline/tab/control characters exactly' test_json_encode_control_characters
+  run_test 'json_encode preserves an empty value' test_json_encode_empty_value
+  run_test 'json_encode preserves a non-empty value' test_json_encode_nonempty_value
   run_test 'json helper sources from paths containing spaces' test_json_helper_sources_from_path_with_spaces
 
   printf '\nTest Results: %d/%d passed, %d failed\n' "$TESTS_PASSED" "$TESTS_RUN" "$TESTS_FAILED"
