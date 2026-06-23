@@ -42,6 +42,7 @@ case_host_start_sets_dry_run() (
   . "$HELPERS"
 
   local result_dir="$tmp_root/host-start"
+  mkdir -p "$result_dir"
   KASEKI_DRY_RUN=1 write_dry_run_host_start_artifact "$result_dir"
 
   assert_json_field_equals "$result_dir/host-start.json" dry_run 1
