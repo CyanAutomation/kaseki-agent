@@ -21,8 +21,16 @@ eval "$(awk '
   emit { print }
 ' "$ROOT_DIR/kaseki-agent.sh")"
 
-pass() { printf '✓ %s\n' "$1"; }
-fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
+pass() {
+  local message="${1:?pass message required}"
+  printf '✓ %s\n' "$message"
+}
+
+fail() {
+  local message="${1:?failure message required}"
+  printf '✗ %s\n' "$message" >&2
+  exit 1
+}
 
 set_current_stage() { :; }
 emit_progress() { :; }
@@ -37,6 +45,8 @@ reset_results() {
   : > "$TMP_DIR/results/.secret-scan-temp.jsonl"
   : > "$TMP_DIR/results/git.diff"
   : > "$TMP_DIR/results/changed-files.txt"
+  : > "$TMP_DIR/results/events.log"
+  : > "$TMP_DIR/results/stage-timings.tsv"
   export KASEKI_RESULTS_DIR="$TMP_DIR/results"
   QUALITY_EXIT=0
   QUALITY_FAILURE_REASON=""
