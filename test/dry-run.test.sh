@@ -57,7 +57,7 @@ case_startup_check_initializes_artifacts() (
   local fake_bin="$tmp_root/startup/bin"
   local workspace_dir="$tmp_root/startup/workspace"
   local cache_dir="$tmp_root/startup/cache"
-  mkdir -p "$fake_bin" "$workspace_dir" "$cache_dir"
+  mkdir -p "$result_dir" "$fake_bin" "$workspace_dir" "$cache_dir"
 
   cat > "$fake_bin/pi" <<'PI'
 #!/usr/bin/env bash
@@ -93,7 +93,7 @@ case_validation_commands_are_not_executed() (
   local result_dir="$tmp_root/no-validation/results"
   local fake_bin="$tmp_root/no-validation/bin"
   local validation_marker="$tmp_root/no-validation/validation-ran"
-  mkdir -p "$fake_bin" "$tmp_root/no-validation/workspace" "$tmp_root/no-validation/cache"
+  mkdir -p "$result_dir" "$fake_bin" "$tmp_root/no-validation/workspace" "$tmp_root/no-validation/cache"
 
   cat > "$fake_bin/pi" <<'PI'
 #!/usr/bin/env bash
