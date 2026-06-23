@@ -63,6 +63,11 @@ run_test() {
   fi
 }
 
+# Contract: scripts/lib/json.sh::json_encode must produce stable JSON string
+# escaping for shell-provided values. User-visible consumers depend on this
+# behavior when generating JSONL events and artifact records, so exact escaping
+# for quotes, control characters, and values from paths containing spaces must
+# remain traceable and unchanged.
 test_json_encode_quotes() {
   source_json_encode
 
