@@ -300,6 +300,9 @@ PROVIDER_ERROR_PROVIDER=""
 PROVIDER_ERROR_API=""
 PROVIDER_ERROR_MODEL=""
 PROVIDER_ERROR_MESSAGE=""
+PROVIDER_ERROR_RETRYABLE=""
+PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
+PROVIDER_ERROR_RETRY_RESULT="none"
 VALIDATION_EXIT=0
 VALIDATION_FAILED_COMMAND_DETAIL=""
 VALIDATION_FAILURE_REASON=""
@@ -1475,6 +1478,9 @@ write_metadata() {
   "provider_error_api": $(printf '%s' "$PROVIDER_ERROR_API" | json_encode),
   "provider_error_model": $(printf '%s' "$PROVIDER_ERROR_MODEL" | json_encode),
   "provider_error_message": $(printf '%s' "$PROVIDER_ERROR_MESSAGE" | json_encode),
+  "provider_error_retryable": $(printf '%s' "$PROVIDER_ERROR_RETRYABLE" | json_encode),
+  "provider_error_retry_attempt_count": $PROVIDER_ERROR_RETRY_ATTEMPT_COUNT,
+  "provider_error_retry_result": $(printf '%s' "$PROVIDER_ERROR_RETRY_RESULT" | json_encode),
   "pi_exit_code": $PI_EXIT,
   "scouting_exit_code": $SCOUTING_EXIT,
   "goal_setting_exit_code": $GOAL_SETTING_EXIT,
@@ -1808,6 +1814,135 @@ clear_provider_error() {
   PROVIDER_ERROR_API=""
   PROVIDER_ERROR_MODEL=""
   PROVIDER_ERROR_MESSAGE=""
+  PROVIDER_ERROR_RETRYABLE=""
+  PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
+  PROVIDER_ERROR_RETRY_RESULT="none"
+}
+
+check_if_provider_error_retryable() {
+  # Check if the most recent provider error (from summary file) is retryable
+  # Sets PROVIDER_ERROR_RETRYABLE variable and returns 0 if retryable, 1 if not
+  local summary_file="$1"
+  
+  PROVIDER_ERROR_RETRYABLE="false"
+  [ -s "$summary_file" ] || return 1
+  
+  # Check if primary_provider_error.retryable is true
+  if node -e "
+const fs = require('node:fs');
+const summary = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const error = summary && typeof summary === 'object'
+  ? summary.primary_provider_error || (Array.isArray(summary.provider_errors) ? summary.provider_errors[0] : null)
+  : null;
+if (error && typeof error === 'object' && error.retryable === true) {
+  process.exit(0);  // Retryable
+}
+process.exit(1);  // Not retryable or no error
+" "$summary_file" 2>/dev/null; then
+    PROVIDER_ERROR_RETRYABLE="true"
+    return 0
+  fi
+  return 1
+}
+
+run_pi_with_retry() {
+  # Wrapper around run_pi_json_capture that implements automatic single retry for transient provider errors.
+  # 
+  # Arguments:
+  #   $1: raw_events_file    - Path to write raw event JSONL
+  #   $2: timeout_seconds    - Timeout for Pi invocation
+  #   $3: model              - Model to use
+  #   $4: prompt             - Task prompt
+  #   $5: summary_file_base  - Base path for summary files (without .json extension, e.g., "pi-summary")
+  #   $6: stderr_target      - Optional: stderr file path
+  #   $7: phase_name         - Phase name for logging (e.g., "coding", "scouting")
+  #
+  # Returns:
+  #   Exit code from Pi invocation (after retry logic applied)
+  #
+  # Sets global variables:
+  #   PROVIDER_ERROR_RETRY_ATTEMPT_COUNT - 0 if no retry, 1-2 if retried
+  #   PROVIDER_ERROR_RETRY_RESULT - "none" (no error), "success" (retry succeeded), "failed" (retry failed)
+  #
+  # Behavior:
+  # - Calls run_pi_json_capture to invoke Pi
+  # - If exit 88: runs event filter and checks if error is retryable
+  # - If retryable: sleep 3s, clears raw events, retries once
+  # - Caller is responsible for running event filter after this function returns
+  # - Max 2 total invocations (initial + 1 retry)
+  
+  local raw_events_file="$1"
+  local timeout_seconds="$2"
+  local model="$3"
+  local prompt="$4"
+  local summary_file_base="$5"
+  local stderr_target="${6:-}"
+  local phase_name="${7:-unknown}"
+  local pi_exit summary_file attempt=1
+  
+  # Reset retry tracking
+  PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=0
+  PROVIDER_ERROR_RETRY_RESULT="none"
+  
+  invoke_pi() {
+    if [ -n "$stderr_target" ]; then
+      run_pi_json_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt" "$stderr_target"
+    else
+      run_pi_json_capture "$raw_events_file" "$timeout_seconds" "$model" "$prompt"
+    fi
+  }
+  
+  # First attempt
+  invoke_pi
+  pi_exit=$?
+  
+  # For phase-specific retries, we need to check provider errors
+  # Only retry if we got exit 88 (provider error) on first attempt
+  if [ "$pi_exit" -eq 88 ] && [ "$attempt" -eq 1 ]; then
+    # Determine summary file path
+    summary_file="${KASEKI_RESULTS_DIR}/${summary_file_base}.json"
+    
+    # Run event filter to get summary for this phase
+    if [ "$summary_file_base" = "pi-summary" ]; then
+      kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/pi-events.jsonl" "$summary_file" 2>/dev/null || true
+    elif [ "$summary_file_base" = "scouting-summary" ]; then
+      kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/scouting-events.jsonl" "$summary_file" 2>/dev/null || true
+    elif [ "$summary_file_base" = "goal-setting-summary" ]; then
+      kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/goal-setting-events.jsonl" "$summary_file" 2>/dev/null || true
+    elif [ "$summary_file_base" = "goal-check-summary" ]; then
+      kaseki-pi-event-filter "$raw_events_file" "${KASEKI_RESULTS_DIR}/goal-check-events.jsonl" "$summary_file" 2>/dev/null || true
+    else
+      # Generic case: just copy
+      cp "$raw_events_file" "${summary_file_base}.jsonl" 2>/dev/null || true
+    fi
+    
+    # Check if error is retryable
+    if check_if_provider_error_retryable "$summary_file"; then
+      printf '[RETRY] Provider error is retryable in %s phase; attempting second invocation after 3s delay (model: %s)\n' \
+        "$phase_name" "$model" >&2
+      
+      PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=1
+      sleep 3
+      rm -f "$raw_events_file" 2>/dev/null || true
+      : > "$raw_events_file"
+      
+      attempt=2
+      invoke_pi
+      pi_exit=$?
+      
+      if [ "$pi_exit" -eq 0 ]; then
+        PROVIDER_ERROR_RETRY_RESULT="success"
+        printf '[RETRY SUCCESS] Provider error resolved on retry in %s phase\n' "$phase_name" >&2
+      elif [ "$pi_exit" -eq 88 ]; then
+        PROVIDER_ERROR_RETRY_ATTEMPT_COUNT=2
+        PROVIDER_ERROR_RETRY_RESULT="failed"
+        printf '[RETRY EXHAUSTED] Provider error persisted after retry in %s phase; exiting with code 88\n' \
+          "$phase_name" >&2
+      fi
+    fi
+  fi
+  
+  return "$pi_exit"
 }
 
 append_pre_coding_provider_fallback_error() {
@@ -5409,7 +5544,7 @@ run_goal_setting_agent() {
   goal_setting_start="$(date +%s)"
   
   set +e
-  run_pi_json_capture "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt"
+  run_pi_with_retry "$GOAL_SETTING_RAW_EVENTS" "$KASEKI_GOAL_SETTING_TIMEOUT_SECONDS" "$KASEKI_GOAL_SETTING_MODEL" "$goal_setting_prompt" "goal-setting-summary" "" "goal-setting"
   GOAL_SETTING_EXIT="$?"
   GOAL_SETTING_DURATION_SECONDS=$(($(date +%s) - goal_setting_start))
   unset goal_setting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
@@ -6225,7 +6360,7 @@ run_scouting_agent() {
   scout_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  run_pi_json_capture "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt"
+  run_pi_with_retry "$SCOUTING_RAW_EVENTS" "$KASEKI_SCOUTING_TIMEOUT_SECONDS" "$KASEKI_SCOUTING_MODEL" "$scouting_prompt" "scouting-summary" "" "scouting"
   SCOUTING_EXIT="$?"
   SCOUTING_DURATION_SECONDS=$(($(date +%s) - scouting_start))
   unset scouting_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
@@ -6812,7 +6947,7 @@ run_goal_check() {
   goal_prompt="$(build_goal_check_prompt)"
   goal_start="$(date +%s)"
   set +e
-  run_pi_json_capture "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt"
+  run_pi_with_retry "$GOAL_CHECK_RAW_EVENTS" "$KASEKI_GOAL_CHECK_TIMEOUT_SECONDS" "$KASEKI_GOAL_CHECK_MODEL" "$goal_prompt" "goal-check-summary" "" "goal-check"
   GOAL_CHECK_EXIT="$?"
   unset goal_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   GOAL_CHECK_DURATION_SECONDS=$((GOAL_CHECK_DURATION_SECONDS + $(date +%s) - goal_start))
@@ -7285,7 +7420,7 @@ run_run_evaluation() {
   eval_dirty_before="$(git status --porcelain 2>/dev/null || true)"
   chmod -R a-w "${KASEKI_WORKSPACE_DIR}"/repo 2>/dev/null || true
   set +e
-  run_pi_json_capture "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt"
+  run_pi_with_retry "$RUN_EVALUATION_RAW_EVENTS" "$KASEKI_RUN_EVALUATION_TIMEOUT_SECONDS" "$KASEKI_RUN_EVALUATION_MODEL" "$evaluation_prompt" "run-evaluation-summary" "" "run-evaluation"
   RUN_EVALUATION_EXIT="$?"
   unset evaluation_prompt LLM_GATEWAY_API_KEY LLM_GATEWAY_URL
   RUN_EVALUATION_DURATION_SECONDS=$((RUN_EVALUATION_DURATION_SECONDS + $(date +%s) - evaluation_start))
@@ -9834,7 +9969,7 @@ NODE
   
   agent_prompt="$(build_agent_prompt)"
   PI_START_EPOCH="$(date +%s)"
-  run_pi_json_capture "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "${KASEKI_RESULTS_DIR}/pi-stderr.log"
+  run_pi_with_retry "$RAW_EVENTS" "$KASEKI_AGENT_TIMEOUT_SECONDS" "$KASEKI_MODEL" "$agent_prompt" "pi-summary" "${KASEKI_RESULTS_DIR}/pi-stderr.log" "pi coding"
   PI_EXIT="$?"
   unset agent_prompt
   PI_DURATION_SECONDS=$(($(date +%s) - PI_START_EPOCH))

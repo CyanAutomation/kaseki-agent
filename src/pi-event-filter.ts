@@ -629,6 +629,7 @@ interface ProviderErrorSummary {
   output_tokens?: number;
   total_tokens?: number;
   message: string;
+  retryable?: boolean; // true if error appears transient (503, 429, connection), false if permanent (404, deprecated)
 }
 
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
@@ -781,8 +782,49 @@ function extractUsage(event: PiEvent): any {
   return null;
 }
 
-function classifyProviderError(message: string): ProviderErrorSummary['type'] {
+/**
+ * Determine if a provider error should be retried.
+ * Retryable errors: transient issues like 503, 429, connection errors, temporary unavailability
+ * Non-retryable errors: permanent issues like 404 (not found), deprecated models
+ */
+function isProviderErrorRetryable(message: string): boolean {
   const lower = message.toLowerCase();
+
+  // Non-retryable: permanent errors (check for 404 or "not found" without other retryable indicators)
+  if (lower.includes('404') || lower.includes('deprecated')) {
+    return false; // 404s and deprecated models are permanent
+  }
+
+  // Retryable: transient errors
+  if (
+    lower.includes('503') || // Service Unavailable
+    lower.includes('429') || // Rate Limited / Too Many Requests
+    lower.includes('timeout') || // Connection timeout
+    lower.includes('econnreset') || // Connection reset
+    lower.includes('econnrefused') || // Connection refused
+    lower.includes('etimedout') || // Network timeout
+    lower.includes('ehostunreach') || // No route to host
+    lower.includes('enetunreach') || // Network unreachable
+    lower.includes('unavailable') || // Model/service temporarily unavailable
+    lower.includes('offline') || // Service is temporarily offline
+    lower.includes('service is down') // Service is down
+  ) {
+    return true;
+  }
+
+  // Default: non-retryable (unknown error, assume permanent unless we detect transience)
+  return false;
+}
+
+function classifyProviderError(
+  message: string
+): {
+  type: ProviderErrorSummary['type'];
+  retryable: boolean;
+} {
+  const lower = message.toLowerCase();
+  let type: ProviderErrorSummary['type'] = 'provider_error';
+
   if (
     lower.includes('model is unavailable') ||
     lower.includes('model unavailable') ||
@@ -790,9 +832,12 @@ function classifyProviderError(message: string): ProviderErrorSummary['type'] {
     lower.includes('not a valid model') ||
     lower.includes('model_not_found')
   ) {
-    return 'model_unavailable';
+    type = 'model_unavailable';
   }
-  return 'provider_error';
+
+  const retryable = isProviderErrorRetryable(message);
+
+  return { type, retryable };
 }
 
 function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
@@ -802,8 +847,11 @@ function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
   const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
   if (!errorMessage || stopReason !== 'error') return null;
 
+  const { type, retryable } = classifyProviderError(errorMessage);
+
   return {
-    type: classifyProviderError(errorMessage),
+    type,
+    retryable,
     provider: typeof message.provider === 'string' ? message.provider : undefined,
     api: typeof message.api === 'string' ? message.api : undefined,
     model: typeof message.model === 'string' ? message.model : undefined,
