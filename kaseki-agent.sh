@@ -91,6 +91,20 @@ fi
   exit 1
 }
 
+KASEKI_NPM_INSTALL_HELPER="${KASEKI_NPM_INSTALL_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/npm-install-helpers.sh}"
+if [ ! -r "$KASEKI_NPM_INSTALL_HELPER" ] && [ -r /app/scripts/npm-install-helpers.sh ]; then
+  KASEKI_NPM_INSTALL_HELPER="/app/scripts/npm-install-helpers.sh"
+fi
+if [ ! -r "$KASEKI_NPM_INSTALL_HELPER" ]; then
+  printf 'ERROR: npm install helper is not readable. Expected %s or /app/scripts/npm-install-helpers.sh. This worker image or mounted template is incomplete; rebuild the image or restore scripts/npm-install-helpers.sh.\n' "$KASEKI_NPM_INSTALL_HELPER" >&2
+  exit 66
+fi
+# shellcheck source=/dev/null
+. "$KASEKI_NPM_INSTALL_HELPER" || {
+  printf 'ERROR: Failed to source %s (exit code: %d)\n' "$KASEKI_NPM_INSTALL_HELPER" $? >&2
+  exit 1
+}
+
 KASEKI_AGENT_PROMPT_HELPER="${KASEKI_AGENT_PROMPT_HELPER:-${KASEKI_SCRIPT_DIR}/scripts/agent-prompt.sh}"
 if [ ! -r "$KASEKI_AGENT_PROMPT_HELPER" ] && [ -r /app/scripts/agent-prompt.sh ]; then
   KASEKI_AGENT_PROMPT_HELPER="/app/scripts/agent-prompt.sh"
@@ -3310,34 +3324,6 @@ prune_dependency_cache() {
   fi
 
   write_dependency_cache_metrics "$cache_dir" "$metrics_file"
-}
-
-append_npm_install_flags() {
-  local -n flags_ref="$1"
-  flags_ref=()
-  if [ "${KASEKI_NPM_OMIT_DEV:-0}" = "1" ]; then
-    flags_ref+=("--omit=dev")
-  fi
-  if [ "${KASEKI_INSTALL_IGNORE_SCRIPTS:-1}" = "1" ]; then
-    flags_ref+=("--ignore-scripts")
-  fi
-}
-
-render_npm_install_flags() {
-  if [ "$#" -eq 0 ]; then
-    printf 'none'
-    return 0
-  fi
-
-  local rendered=""
-  local flag
-  for flag in "$@"; do
-    if [ -n "$rendered" ]; then
-      rendered+=" "
-    fi
-    rendered+="$(printf '%q' "$flag")"
-  done
-  printf '%s' "$rendered"
 }
 
 npm_run_script_name() {
