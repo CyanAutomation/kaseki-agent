@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.95.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.94.0...v1.95.0) (2026-06-23)
+
+
+### Features
+
+* enhance gateway response smoke tests with artifact-shaped prompt and increased output tokens ([639be66](https://github.com/CyanAutomation/kaseki-agent/commit/639be66c46607c271ce91d1acf44570266ede14c))
+
 # [1.94.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.93.0...v1.94.0) (2026-06-23)
 
 
