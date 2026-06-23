@@ -10,6 +10,7 @@
 !package.json
 !package-lock.json
 !tsconfig.json
+!tsconfig.scripts.json
 !jest.config.js
 !src/
 !src/**
