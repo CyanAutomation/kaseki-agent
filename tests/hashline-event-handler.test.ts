@@ -502,11 +502,11 @@ line 2`;
         },
       );
 
-      expect(result.status).toBe(0);
-      if (result.status !== 0) {
+      if (result.status !== 0 || result.stderr) {
         console.error('CLI stderr:', result.stderr);
         console.error('CLI stdout:', result.stdout);
       }
+      expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
       expect(fs.readFileSync(sourcePath, 'utf-8')).toBe(`function answer() {
   return 43;
