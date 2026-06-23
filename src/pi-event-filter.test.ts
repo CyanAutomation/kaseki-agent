@@ -659,5 +659,110 @@ describe('pi-event-filter fast correctness tests', () => {
       expect(result.summary.primary_provider_error).toBeDefined();
       expect(result.summary.primary_provider_error?.retryable).toBe(true);
     });
+
+    test('should NOT flag streaming response as empty when content is in fallback sources (message.text)', async () => {
+      // Spec: Streaming responses may have deltas accumulated in message.text instead of message.content[]
+      // Scenario: openai-responses handler receives SSE deltas but populates message.text instead of building message.content[]
+      // Expected: Should NOT detect as provider_empty_assistant_turn since message.text has content
+      // Regression: GH#STREAMING-001 — Empty assistant turn incorrectly detected for streaming responses
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-06-23T10:32:20.000Z',
+          message: {
+            role: 'assistant',
+            content: [],  // Empty content array (delta accumulation incomplete)
+            text: '{"response": "streaming response accumulated here"}',  // Fallback: content in text field
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            usage: {
+              input: 1000,
+              output: 128,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 1128,
+            },
+            stopReason: 'stop',
+            responseId: 'resp_test123',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      // Should NOT have a provider_empty_assistant_turn error
+      expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+    });
+
+    test('should NOT flag streaming response as empty when content is in fallback sources (message.output_text)', async () => {
+      // Spec: Alternative fallback for streaming responses
+      // Scenario: message.output_text contains accumulated content instead of message.content[]
+      // Expected: Should NOT detect as provider_empty_assistant_turn
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-06-23T10:32:21.000Z',
+          message: {
+            role: 'assistant',
+            content: [],  // Empty (delta accumulation incomplete)
+            output_text: 'Assistant response content accumulated via streaming deltas',  // Fallback source
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            usage: {
+              input: 1500,
+              output: 256,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 1756,
+            },
+            stopReason: 'stop',
+            responseId: 'resp_test456',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      // Should NOT have a provider_empty_assistant_turn error
+      expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+    });
+
+    test('should STILL flag empty response when ALL sources are empty (true empty turn)', async () => {
+      // Spec: Verify that legitimate empty responses are still caught
+      // Scenario: message.content empty AND message.text empty AND message.output_text missing → true empty
+      // Expected: SHOULD detect as provider_empty_assistant_turn (all fallbacks exhausted)
+      // Regression: Ensure defensive fix doesn't mask real empty responses
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-06-23T10:32:22.000Z',
+          message: {
+            role: 'assistant',
+            content: [],  // Empty
+            text: '',      // Empty
+            // output_text is missing entirely
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            usage: {
+              input: 2000,
+              output: 128,  // Tokens produced but no content
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2128,
+            },
+            stopReason: 'stop',
+            responseId: 'resp_empty123',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      // SHOULD have provider_empty_assistant_turn error (legitimate empty response)
+      expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
+    });
   });
 });

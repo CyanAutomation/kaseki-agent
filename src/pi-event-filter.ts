@@ -870,20 +870,56 @@ function numericUsageValue(usage: any, keys: string[]): number | undefined {
 }
 
 function extractMessageTextLength(message: any): number {
+  // Primary path: accumulate text from message.content array
   const content = message?.content;
   if (typeof content === 'string') return content.trim().length;
-  if (!Array.isArray(content)) return 0;
+  if (Array.isArray(content)) {
+    const contentLength = content.reduce((sum, part) => {
+      if (typeof part === 'string') return sum + part.trim().length;
+      if (!part || typeof part !== 'object') return sum;
+      const text = typeof part.text === 'string'
+        ? part.text
+        : typeof part.output_text === 'string'
+          ? part.output_text
+          : '';
+      return sum + text.trim().length;
+    }, 0);
+    if (contentLength > 0) return contentLength;
+  }
 
-  return content.reduce((sum, part) => {
-    if (typeof part === 'string') return sum + part.trim().length;
-    if (!part || typeof part !== 'object') return sum;
-    const text = typeof part.text === 'string'
-      ? part.text
-      : typeof part.output_text === 'string'
-        ? part.output_text
-        : '';
-    return sum + text.trim().length;
-  }, 0);
+  // Fallback paths for streaming responses where deltas weren't accumulated into message.content[]
+  // This handles cases where Pi CLI's streaming handler or the gateway provider populates
+  // alternative fields instead of (or in addition to) the standard message.content array.
+
+  // Fallback 1: message.text (used by some streaming implementations)
+  if (typeof message?.text === 'string') {
+    const textLength = message.text.trim().length;
+    if (textLength > 0) return textLength;
+  }
+
+  // Fallback 2: message.output_text (gateway/OpenRouter alternative)
+  if (typeof message?.output_text === 'string') {
+    const outputTextLength = message.output_text.trim().length;
+    if (outputTextLength > 0) return outputTextLength;
+  }
+
+  // Fallback 3: nested body.output[].content[].text (OpenRouter-specific format)
+  if (Array.isArray(message?.body?.output)) {
+    const nestedLength = message.body.output.reduce((sum: number, item: any) => {
+      if (!item || typeof item !== 'object') return sum;
+      if (Array.isArray(item.content)) {
+        return sum + item.content.reduce((itemSum: number, part: any) => {
+          const text = typeof part?.text === 'string' ? part.text : '';
+          return itemSum + text.trim().length;
+        }, 0);
+      }
+      return sum;
+    }, 0);
+    if (nestedLength > 0) return nestedLength;
+  }
+
+  // No content found in any source
+  return 0;
 }
 
 function extractToolResultCount(event: PiEvent): number {
