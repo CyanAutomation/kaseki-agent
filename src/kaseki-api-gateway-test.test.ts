@@ -9,6 +9,9 @@ import {
   formatGatewayTestResponse,
   shouldRunGatewayResponseSmoke,
   testGatewayConnectivity,
+  detectGatewayTestEnvironment,
+  testGatewayConnectivity_Stage1,
+  testGatewayResponseSmoke_Stage2,
   GatewayTestResult,
 } from './kaseki-api-gateway-test';
 
@@ -550,7 +553,6 @@ describe('LLM Gateway Test', () => {
   describe('Two-Stage Gateway Test', () => {
     describe('detectGatewayTestEnvironment', () => {
       it('should return "test" when JEST_WORKER_ID is set', () => {
-        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
         process.env.JEST_WORKER_ID = '1';
         delete process.env.NODE_ENV;
         delete process.env.KASEKI_ENV;
@@ -559,7 +561,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return "test" when NODE_ENV=test', () => {
-        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
         delete process.env.JEST_WORKER_ID;
         process.env.NODE_ENV = 'test';
         delete process.env.KASEKI_ENV;
@@ -568,7 +569,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return "development" when NODE_ENV=development', () => {
-        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
         delete process.env.JEST_WORKER_ID;
         process.env.NODE_ENV = 'development';
         delete process.env.KASEKI_ENV;
@@ -577,7 +577,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return "development" when KASEKI_ENV=development', () => {
-        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
         delete process.env.JEST_WORKER_ID;
         delete process.env.NODE_ENV;
         process.env.KASEKI_ENV = 'development';
@@ -586,7 +585,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return "production" as default', () => {
-        const { detectGatewayTestEnvironment } = require('./kaseki-api-gateway-test');
         delete process.env.JEST_WORKER_ID;
         delete process.env.NODE_ENV;
         delete process.env.KASEKI_ENV;
@@ -653,7 +651,6 @@ describe('LLM Gateway Test', () => {
 
     describe('testGatewayConnectivity_Stage1', () => {
       it('should return ConnectivityTestResult interface (not ResponseSmoke)', async () => {
-        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
         process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
         process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
@@ -678,7 +675,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should only call /models endpoint, never /responses', async () => {
-        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
         process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
         process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
@@ -702,7 +698,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should validate API key via /models endpoint', async () => {
-        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
         process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
         process.env.LLM_GATEWAY_API_KEY = 'test-key';
 
@@ -719,7 +714,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return authenticationValidated=false on 401', async () => {
-        const { testGatewayConnectivity_Stage1 } = require('./kaseki-api-gateway-test');
         process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
         process.env.LLM_GATEWAY_API_KEY = 'invalid-key';
 
@@ -738,8 +732,6 @@ describe('LLM Gateway Test', () => {
 
     describe('testGatewayResponseSmoke_Stage2', () => {
       it('should return ResponseSmokeTestResult interface with inference details', async () => {
-        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-
         mockFetch.mockResolvedValueOnce({
           ok: true,
           status: 200,
@@ -770,8 +762,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should only call /responses endpoint', async () => {
-        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-
         mockFetch.mockResolvedValueOnce({
           ok: true,
           status: 200,
@@ -797,8 +787,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should consume tokens (model=auto inference)', async () => {
-        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-
         mockFetch.mockResolvedValueOnce({
           ok: true,
           status: 200,
@@ -826,8 +814,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return error on 401 (auth failure)', async () => {
-        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-
         mockFetch.mockResolvedValueOnce({
           ok: false,
           status: 401,
@@ -846,8 +832,6 @@ describe('LLM Gateway Test', () => {
       });
 
       it('should return error on timeout', async () => {
-        const { testGatewayResponseSmoke_Stage2 } = require('./kaseki-api-gateway-test');
-
         mockFetch.mockRejectedValueOnce(new Error('This operation was aborted'));
 
         const result = await testGatewayResponseSmoke_Stage2(

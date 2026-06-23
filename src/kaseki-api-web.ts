@@ -1397,6 +1397,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test" data-auth="true" type="button"><span class="hc-label">Gateway Test</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test/responses?forceRun=true" data-auth="true" type="button" title="Test LLM model inference (consumes tokens)"><span class="hc-label">LLM Test</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
             <button class="health-check-button" id="status-check" type="button"><span class="hc-label">Check Status</span><span class="health-check-status" data-status="status"></span></button>
           </div>
@@ -1416,6 +1417,10 @@ const controllerPage = String.raw`<!doctype html>
             <div class="summary-card">
               <span class="summary-label">Gateway</span>
               <span class="summary-value" data-summary="gateway">Not checked</span>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">LLM Test</span>
+              <span class="summary-value" data-summary="llm-test">Not checked</span>
             </div>
             <div class="summary-card">
               <span class="summary-label">Run</span>
@@ -2386,6 +2391,14 @@ const controllerPage = String.raw`<!doctype html>
             ? responseTime + 'ms' + (smoke ? ' smoke ok' : '') + (slow ? ' slow' : '')
             : 'Failed';
           setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
+        }
+        if (path === '/api/gateway-test/responses') {
+          const responseTime = payload.responseTime || 0;
+          const outputTokens = payload.outputTokens || 0;
+          const summary = payload.status === 'ok'
+            ? responseTime + 'ms ' + outputTokens + ' tokens'
+            : 'Failed';
+          setSummary('llm-test', summary, payload.status === 'ok' ? 'ok' : 'bad');
         }
         if (path === '/api/preflight') {
           const checks = Array.isArray(payload.checks) ? payload.checks : [];
