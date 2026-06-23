@@ -39,8 +39,14 @@ test_result() {
 
 render_prompt() {
   local harness
+  local results_dir
   local status
   harness="$(mktemp)"
+  results_dir="${KASEKI_RESULTS_DIR:-}"
+
+  if [ -z "$results_dir" ]; then
+    results_dir="$(mktemp -d)"
+  fi
 
   cat > "$harness" <<'EOF_HARNESS'
 #!/usr/bin/env bash
@@ -61,13 +67,16 @@ EOF_HARNESS
   PROMPT_HELPER="$PROMPT_HELPER" \
   TASK_PROMPT="${TASK_PROMPT:-Implement the requested change.}" \
   SCOUTING_ARTIFACT="${SCOUTING_ARTIFACT:-/dev/null}" \
-  KASEKI_RESULTS_DIR="${KASEKI_RESULTS_DIR:-$(mktemp -d)}" \
+  KASEKI_RESULTS_DIR="$results_dir" \
   GOAL_CHECK_RETRY_PROMPT="${GOAL_CHECK_RETRY_PROMPT:-}" \
   KASEKI_HASHLINE_EDITS="${KASEKI_HASHLINE_EDITS:-0}" \
   KASEKI_AGENT_GUARDRAILS="${KASEKI_AGENT_GUARDRAILS:-1}" \
-  bash "$harness"
-  status=$?
+  bash "$harness" || status=$?
+  status="${status:-0}"
   rm -f "$harness"
+  if [ -z "${KASEKI_RESULTS_DIR:-}" ]; then
+    rm -rf "$results_dir"
+  fi
   return "$status"
 }
 
