@@ -28,6 +28,8 @@ assert_file_contains() {
   rg --fixed-strings --quiet "$expected" "$file" || fail "Expected $file to contain: $expected"
 }
 
+command -v rg >/dev/null 2>&1 || fail "ripgrep is required for file content assertions"
+
 command -v node >/dev/null 2>&1 || fail "Node.js is required for JSON assertions"
 [ -x "$HELPERS" ] || fail "Expected executable helper: $HELPERS"
 
