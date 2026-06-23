@@ -148,14 +148,14 @@ function parseBooleanOverride(value: unknown): boolean | undefined {
 export function detectGatewayTestEnvironment(): 'production' | 'development' | 'test' {
   // Test environment: Jest runner
   if (process.env.JEST_WORKER_ID) return 'test';
-  
+
   // Test/development environment: NODE_ENV
   if (process.env.NODE_ENV === 'test') return 'test';
   if (process.env.NODE_ENV === 'development') return 'development';
-  
+
   // Development environment: KASEKI_ENV
   if (process.env.KASEKI_ENV === 'development') return 'development';
-  
+
   // Default to production for safety
   return 'production';
 }
@@ -180,7 +180,7 @@ export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}):
  * Stage 1: Lightweight gateway connectivity test
  * Tests reachability and authentication via /models endpoint
  * Does NOT consume inference tokens
- * 
+ *
  * @returns ConnectivityTestResult with status and diagnostics
  */
 export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTestResult> {
