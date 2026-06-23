@@ -10,6 +10,7 @@ IMAGE_TAG="${KASEKI_RUNTIME_IMAGE:-kaseki-agent:pi-gateway-provider-discovery}"
 TMP_DIR="$(mktemp -d)"
 RUN_LOG="$TMP_DIR/pi-gateway-provider-discovery.log"
 KEY_FILE="$TMP_DIR/llm_gateway_api_key"
+EXTENSION_COPY="$TMP_DIR/pi-extensions.mjs"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -26,18 +27,50 @@ fail() {
   exit 1
 }
 
+printf '%s\n' 'file-backed-gateway-key' > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
+cp "$REPO_ROOT/.pi-extensions.js" "$EXTENSION_COPY"
+
+echo "Verifying gateway extension resolves API key from LLM_GATEWAY_API_KEY_FILE"
+LLM_GATEWAY_URL="https://gateway.example.invalid/v1" \
+LLM_GATEWAY_API_KEY_FILE="$KEY_FILE" \
+node - "$EXTENSION_COPY" <<'NODE'
+const extensionPath = process.argv[2];
+delete process.env.LLM_GATEWAY_API_KEY;
+
+let registered;
+const pi = {
+  registerProvider(name, config) {
+    registered = { name, config };
+  },
+};
+
+const extension = await import(`file://${extensionPath}`);
+extension.default(pi);
+
+if (!registered) {
+  console.error('gateway provider was not registered');
+  process.exit(1);
+}
+if (registered.name !== 'gateway') {
+  console.error(`unexpected provider name: ${registered.name}`);
+  process.exit(1);
+}
+if (registered.config.apiKey !== 'file-backed-gateway-key') {
+  console.error(`gateway apiKey did not come from file: ${registered.config.apiKey}`);
+  process.exit(1);
+}
+NODE
+
 if ! command -v docker >/dev/null 2>&1; then
-  echo "⚠ SKIP: $TEST_NAME requires docker in PATH"
+  echo "⚠ SKIP: $TEST_NAME runtime image check requires docker in PATH"
   exit 0
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "⚠ SKIP: $TEST_NAME requires a running Docker daemon"
+  echo "⚠ SKIP: $TEST_NAME runtime image check requires a running Docker daemon"
   exit 0
 fi
-
-printf '%s\n' 'test-gateway-api-key-not-used' > "$KEY_FILE"
-chmod 600 "$KEY_FILE"
 
 if [ -z "${KASEKI_RUNTIME_IMAGE:-}" ]; then
   echo "Building runtime image under test: $IMAGE_TAG"
