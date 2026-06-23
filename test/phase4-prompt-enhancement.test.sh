@@ -41,12 +41,13 @@ render_prompt() {
   local hashline_edits="$1"
   local harness
   harness="$(mktemp)"
-  trap 'rm -f "$harness"' RETURN
+  trap "rm -f '$harness'" RETURN
 
   cat > "$harness" <<EOF_HARNESS
 #!/usr/bin/env bash
 set -euo pipefail
 read_repo_memory_section() { :; }
+get_caveman_instruction() { :; }
 TASK_PROMPT='Implement the requested change.'
 SCOUTING_ARTIFACT=''
 KASEKI_RESULTS_DIR="\$(mktemp -d)"
@@ -123,28 +124,54 @@ test_rendered_prompt_includes_task_prompt() {
   return "$result"
 }
 
-test_prompt_helper_has_no_legacy_prompt_file_reads() {
+test_rendered_prompt_ignores_legacy_prompt_file_inputs() {
   local result=0
-  local legacy_prompt_var="PROMPT_""FILE"
+  local prompt
+  local harness legacy_prompt_file legacy_test_prompt_file results_dir scouting_artifact
+  harness="$(mktemp)"
+  legacy_prompt_file="$(mktemp)"
+  legacy_test_prompt_file="$(mktemp)"
+  results_dir="$(mktemp -d)"
+  scouting_artifact="$(mktemp)"
+  trap "rm -f '$harness' '$legacy_prompt_file' '$legacy_test_prompt_file' '$scouting_artifact'; rm -rf '$results_dir'" RETURN
 
-  assert_not_contains "$(cat "$PROMPT_HELPER")" "$legacy_prompt_var" || result=1
-  assert_not_contains "$(cat "$PROMPT_HELPER")" "cat \$legacy_prompt_var" || result=1
+  printf '%s\n' 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_prompt_file"
+  printf '%s\n' 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' > "$legacy_test_prompt_file"
+  printf '%s\n' '{"finding":"SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED"}' > "$scouting_artifact"
+  printf '%s\n' 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' > "$results_dir/summarization-annotation.txt"
 
-  test_result "prompt helper does not use legacy PROMPT_FILE reads" "$result"
-  return "$result"
-}
+  cat > "$harness" <<EOF_HARNESS
+#!/usr/bin/env bash
+set -euo pipefail
+read_repo_memory_section() { printf '%s' 'SUPPORTED_REPO_MEMORY_SHOULD_RENDER'; }
+get_caveman_instruction() { :; }
+TASK_PROMPT='SUPPORTED_TASK_PROMPT_SHOULD_RENDER'
+PROMPT_FILE='$legacy_prompt_file'
+TEST_PROMPT_FILE='$legacy_test_prompt_file'
+SCOUTING_ARTIFACT='$scouting_artifact'
+KASEKI_RESULTS_DIR='$results_dir'
+GOAL_CHECK_RETRY_PROMPT='SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER'
+KASEKI_HASHLINE_EDITS='0'
+KASEKI_AGENT_GUARDRAILS='1'
+# shellcheck source=/dev/null
+. "$PROMPT_HELPER"
+build_agent_prompt
+EOF_HARNESS
 
-test_prompt_test_has_no_legacy_setup_fixture() {
-  local result=0
-  local test_source
-  local legacy_create_fn="create_test_""prompt_file"
-  local legacy_prompt_var="TEST_PROMPT_""FILE"
-  test_source="$(cat "$0")"
+  prompt="$(PROMPT_HELPER="$PROMPT_HELPER" bash "$harness")" || result=1
 
-  assert_not_contains "$test_source" "$legacy_create_fn" || result=1
-  assert_not_contains "$test_source" "$legacy_prompt_var" || result=1
+  if [ "$result" -eq 0 ]; then
+    assert_contains "$prompt" 'SUPPORTED_TASK_PROMPT_SHOULD_RENDER' || result=1
+    assert_contains "$prompt" 'SUPPORTED_REPO_MEMORY_SHOULD_RENDER' || result=1
+    assert_contains "$prompt" "$scouting_artifact" || result=1
+    assert_contains "$prompt" 'SUPPORTED_GOAL_CHECK_RETRY_SHOULD_RENDER' || result=1
+    assert_contains "$prompt" 'SUPPORTED_SUMMARIZATION_ANNOTATION_SHOULD_RENDER' || result=1
+    assert_not_contains "$prompt" 'SCOUTING_ARTIFACT_CONTENT_IS_NOT_INLINED' || result=1
+    assert_not_contains "$prompt" 'LEGACY_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' || result=1
+    assert_not_contains "$prompt" 'LEGACY_TEST_PROMPT_FILE_CONTENT_SHOULD_NOT_RENDER' || result=1
+  fi
 
-  test_result "prompt test does not reference removed setup fixture helpers" "$result"
+  test_result "legacy prompt-file inputs do not affect rendered prompt output" "$result"
   return "$result"
 }
 
@@ -155,8 +182,7 @@ main() {
   test_hashline_edit_guidance_enabled
   test_hashline_edit_guidance_disabled
   test_rendered_prompt_includes_task_prompt
-  test_prompt_helper_has_no_legacy_prompt_file_reads
-  test_prompt_test_has_no_legacy_setup_fixture
+  test_rendered_prompt_ignores_legacy_prompt_file_inputs
 
   printf '\n%s\n' "=== Test Summary ==="
   printf 'Tests run: %d\n' "$test_count"
