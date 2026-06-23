@@ -46,6 +46,7 @@ const SCOUTING_DIAGNOSTIC_FILES = [
   'scouting-validation-errors.jsonl',
   'scouting-stderr.log',
   'scouting.json',
+  'prompt-diagnostics.jsonl',
   'progress-stream-diagnostics.log',
 ] as const;
 const GOAL_CHECK_ARTIFACT_INVALID_REASON = 'goal_check_artifact_invalid';
