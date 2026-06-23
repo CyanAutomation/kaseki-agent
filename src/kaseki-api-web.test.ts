@@ -248,13 +248,13 @@ describe('kaseki API web console behavior', () => {
       .find(btn => btn.textContent?.includes('Test Gateway'));
     expect(gatewayTestButton).toBeDefined();
     expect(gatewayTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=1');
-    
+
     // Verify LLM Test button has stage=2 and responseSmoke parameters
     const llmTestButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => btn.textContent?.includes('Test LLM'));
     expect(llmTestButton).toBeDefined();
     expect(llmTestButton?.getAttribute('data-probe')).toBe('/api/gateway-test?stage=2&responseSmoke=true');
-    
+
     // Verify Check Status button does not exist
     const checkStatusButton = [...document.querySelectorAll('.health-check-button')]
       .find(btn => btn.textContent?.includes('Check Status'));
