@@ -38,15 +38,11 @@
 #
 ###############################################################################
 
-# shellcheck disable=SC2034
-# Reference UID/GID constants defined below for Docker user configuration
-
 set -euo pipefail
 
 # Configuration
 DOCKER_SECRETS_DIR="/home/pi/secrets"
 LOCAL_SECRETS_DIR="$HOME/.kaseki/secrets"
-KASEKI_UID=10000
 KASEKI_GID=10000
 KASEKI_GROUP="kaseki"
 
@@ -92,39 +88,6 @@ print_help() {
 ###############################################################################
 # Validation Functions
 ###############################################################################
-
-# shellcheck disable=SC2317
-check_permissions() {
-  local path=$1
-  local expected_mode=$2
-  local expected_owner=$3
-
-  if [ ! -d "$path" ]; then
-    log_error "Directory does not exist: $path"
-    return 1
-  fi
-
-  local actual_mode
-  actual_mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%OLp' "$path" 2>/dev/null | sed 's/^.*\([0-9]\{3\}\)$/\1/')
-
-  if [ "$actual_mode" != "$expected_mode" ]; then
-    log_error "Permission mismatch for $path: expected $expected_mode, got $actual_mode"
-    return 1
-  fi
-
-  if [ -n "$expected_owner" ]; then
-    local actual_owner
-    actual_owner=$(stat -c '%U:%G' "$path" 2>/dev/null || stat -f '%Su:%Sg' "$path" 2>/dev/null)
-
-    if [ "$actual_owner" != "$expected_owner" ]; then
-      log_warn "Owner mismatch for $path: expected $expected_owner, got $actual_owner"
-      return 1
-    fi
-  fi
-
-  log_debug "Permissions OK: $path ($expected_mode, $expected_owner)"
-  return 0
-}
 
 ###############################################################################
 # Setup Functions
