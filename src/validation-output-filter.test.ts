@@ -3,12 +3,60 @@
  */
 
 import { filterValidationOutput } from './validation-output-filter.js';
+import { spawnSync } from 'child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 /**
  * Helper to run the filter with input and capture output
  */
 function runFilter(input: string): Promise<string> {
   return Promise.resolve(filterValidationOutput(input));
+}
+
+function representativeLargeValidationOutput(): string {
+  const lines = ['==> npm run validation'];
+
+  for (let index = 1; index <= 2500; index++) {
+    lines.push(`[DEBUG] dependency resolver noise ${index}`);
+    lines.push(`[INFO] worker heartbeat ${index}`);
+
+    if (index % 500 === 0) {
+      lines.push(`PASS: validation shard ${index / 500}`);
+    }
+  }
+
+  lines.push('WARNING: deprecated fixture detected');
+  lines.push('FAIL: validation shard 6');
+  lines.push('ERROR: expected report artifact was not created');
+  lines.push('7 tests passed, 1 test failed');
+  lines.push('exit_code=1');
+
+  return `${lines.join('\n')}\n`;
+}
+
+function runFilterEntrypoint(input: string, diagnosticsLog: string): { stdout: string; stderr: string; status: number | null } {
+  const result = spawnSync(
+    process.execPath,
+    ['--loader', 'ts-node/esm', 'src/validation-output-filter.ts'],
+    {
+      cwd: join(__dirname, '..'),
+      input,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FILTER_DIAGNOSTICS_LOG: diagnosticsLog,
+      },
+      maxBuffer: 10 * 1024 * 1024,
+    }
+  );
+
+  return {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    status: result.status,
+  };
 }
 
 describe('validation-output-filter', () => {
@@ -217,6 +265,46 @@ exit_code=0`;
       const output = await runFilter(input);
       expect(output).toContain('All tests passed');
       expect(output).not.toContain('% complete');
+    });
+  });
+
+  describe('Large validation output contracts', () => {
+    it('preserves semantic validation results while filtering representative large noise', async () => {
+      const output = await runFilter(representativeLargeValidationOutput());
+
+      expect(output).toContain('==> npm run validation');
+      expect(output).toContain('PASS: validation shard 1');
+      expect(output).toContain('PASS: validation shard 5');
+      expect(output).toContain('WARNING: deprecated fixture detected');
+      expect(output).toContain('FAIL: validation shard 6');
+      expect(output).toContain('ERROR: expected report artifact was not created');
+      expect(output).toContain('7 tests passed, 1 test failed');
+      expect(output).toContain('exit_code=1');
+      expect(output).not.toContain('[DEBUG] dependency resolver noise');
+      expect(output).not.toContain('[INFO] worker heartbeat');
+    });
+
+    it('creates diagnostics and reports processed/output counts when configured', () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'validation-output-filter-'));
+      const diagnosticsLog = join(tempDir, 'filter-diagnostics.log');
+
+      try {
+        const result = runFilterEntrypoint(representativeLargeValidationOutput(), diagnosticsLog);
+        const diagnostics = readFileSync(diagnosticsLog, 'utf8');
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).not.toContain('[validation-output-filter] FATAL');
+        expect(result.stdout).toContain('PASS: validation shard 1');
+        expect(result.stdout).toContain('FAIL: validation shard 6');
+        expect(result.stdout).not.toContain('[DEBUG] dependency resolver noise');
+        expect(diagnostics).toContain('filter-startup: process started');
+        expect(diagnostics).toContain('filter-close: stdin_closed');
+        expect(diagnostics).toContain('filter-close: lines_processed=');
+        expect(diagnostics).toContain('filter-close: lines_output=');
+        expect(diagnostics).toContain('filter-close: exit_code=0');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
