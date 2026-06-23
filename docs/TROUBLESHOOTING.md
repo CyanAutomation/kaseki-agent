@@ -967,6 +967,157 @@ grep -r "sk-or-" /agents/kaseki-results/kaseki-N/  # Search result artifacts
 
 ---
 
+## Provider/Model Errors (Exit Code 88)
+
+### Problem: LLM Provider Error (Non-Retryable)
+
+**Symptom:** Run exits with code 88. Error may say:
+
+- "This model is unavailable"
+- "404 Not Found"
+- "Model is deprecated"
+- "Service Unavailable" (after retry)
+- "Rate limited" (after retry)
+- Connection timeout (after retry)
+
+**What happened:** The LLM provider (OpenRouter, etc.) returned an error. Kaseki-agent automatically retries transient errors once (503, 429, connection issues). Exit code 88 means either:
+
+- The error was non-retryable (404, deprecated, auth failure)
+- The automatic retry also failed
+
+### Diagnosis
+
+```bash
+# Check provider error details
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_*'
+
+# What was the original error message?
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '.provider_error_message'
+
+# Was it retryable? Did retry succeed?
+cat /agents/kaseki-results/kaseki-N/metadata.json | jq '{retryable: .provider_error_retryable, attempts: .provider_error_retry_attempt_count, result: .provider_error_retry_result}'
+
+# Check provider error log
+cat /agents/kaseki-results/kaseki-N/quality.log | grep -A5 "provider error"
+```
+
+### Common Scenarios & Fixes
+
+**Scenario 1: Transient error with failed retry (503, 429, timeout)**
+
+```
+provider_error_retryable: "true"
+provider_error_retry_attempt_count: 2
+provider_error_retry_result: "failed"
+provider_error_message: "503 Service Unavailable"
+```
+
+**Fix:** The provider is having issues. Wait 5-10 minutes and retry:
+
+```bash
+# Verify provider status
+curl -s https://status.openrouter.io | grep -i status
+
+# Retry the run
+kaseki-agent run <repo> <ref> <task>
+```
+
+If it persists, contact provider support or switch providers.
+
+**Scenario 2: Permanent error (404 model not found)**
+
+```
+provider_error_type: "model_not_found"
+provider_error_message: "404 Model 'gpt-4-turbo' not found"
+provider_error_retryable: "false"
+```
+
+**Fix:** Model is no longer available. Switch to a working model:
+
+```bash
+# List available models
+kaseki-agent models list
+
+# Update your config
+kaseki-agent config set model openrouter/free
+
+# Or set via environment
+export KASEKI_MODEL=openrouter/free
+kaseki-agent run <repo> <ref> <task>
+```
+
+**Scenario 3: Deprecated model**
+
+```
+provider_error_message: "This model is deprecated as of 2024-01-01"
+provider_error_retryable: "false"
+```
+
+**Fix:** Switch to a newer model:
+
+```bash
+export KASEKI_MODEL=openrouter/free  # Current free model
+kaseki-agent run <repo> <ref> <task>
+```
+
+Check provider's model list for recommended replacements.
+
+**Scenario 4: Authentication failure (invalid API key)**
+
+```
+provider_error_type: "auth_error"
+provider_error_message: "401 Unauthorized: Invalid API key"
+```
+
+**Fix:**
+
+```bash
+# Check if API key is set
+echo $OPENROUTER_API_KEY
+
+# Verify it's valid (check at https://openrouter.ai)
+# Regenerate if needed
+
+# Update credential
+kaseki-agent setup  # Interactive wizard
+
+# Or set directly
+export OPENROUTER_API_KEY=sk-or-...
+kaseki-agent run <repo> <ref> <task>
+```
+
+**Scenario 5: Quota exceeded (out of credits)**
+
+```
+provider_error_message: "429 Quota exceeded for your account"
+provider_error_retry_attempt_count: 2
+```
+
+**Fix:** Add credits to your account or wait for quota reset:
+
+```bash
+# Check account status at provider's dashboard
+# Add more credits or wait for monthly reset
+
+# Retry after quota is available
+kaseki-agent run <repo> <ref> <task>
+```
+
+### Prevention
+
+- **Use stable models:** Prefer `openrouter/free` or pinned versions
+- **Monitor credits:** Check provider account regularly
+- **Enable alerts:** Set up budget/quota alerts in provider dashboard
+- **Increase timeout:** Some providers are slow; allow more time:
+
+  ```bash
+  export KASEKI_AGENT_TIMEOUT_SECONDS=1800  # 30 minutes
+  ```
+
+- **Handle retry metadata:** Your integration can check `provider_error_retry_result` in metadata to distinguish transient failures from permanent errors
+
+---
+
 ## API Service Issues
 
 ### API Won't Start

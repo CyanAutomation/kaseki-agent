@@ -18,6 +18,7 @@ This document describes the exit codes returned by kaseki-agent commands and wha
 | **7** | Quality Gate | Validation Allowlist Violation | Files changed during validation are outside allowlist |
 | **8** | Goal Check | Goal Unmet | Goal-check evaluator determined the scouting objective was not met after retries |
 | **86** | Scouting | Scouting Validation Failed | Scouting artifact missing or invalid (check Docker volume mounts) |
+| **88** | Provider | Provider/Model Error (Non-Retryable) | LLM provider error that could not be recovered after automatic retry |
 | **124** | Timeout | Agent Timeout | Agent invocation exceeded `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | **127** | Docker | Docker Init Failed | Docker container initialization failed (missing entrypoint script) |
 | **141** | Validation | SIGPIPE | Validation output filter crashed or exited unexpectedly (broken pipe) |
@@ -368,6 +369,99 @@ The scouting phase failed because the scouting artifact file (`/results/scouting
      ```bash
      KASEKI_DEBUG_RAW_EVENTS=1 kaseki-agent run ...
      ```
+
+---
+
+### 88 — Provider/Model Error (Non-Retryable)
+
+The LLM provider returned an error that could not be recovered after an automatic retry attempt. Kaseki-agent automatically detects transient provider errors and retries once; exit code 88 indicates the retry also failed.
+
+**What triggered the automatic retry:**
+
+Kaseki-agent automatically retries once on certain transient provider/model errors:
+
+- **HTTP 503** (Service Unavailable)
+- **HTTP 429** (Rate Limited)
+- **Connection errors** (ECONNRESET, ETIMEDOUT, etc.)
+- **Model unavailable** (temporary service issue)
+
+**Why this run failed:**
+
+The error occurred but was not retryable, OR the automatic retry also failed. Examples of non-retryable errors:
+
+- **HTTP 404** (Model not found - permanent)
+- **Deprecated model** (permanently removed from service)
+- **Authentication error** (invalid or expired API key)
+- **Invalid configuration** (malformed request parameters)
+
+**Diagnosis:**
+
+1. Check the provider error details in metadata:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/metadata.json | jq '.provider_error_*'
+   ```
+
+   Look for:
+   - `.provider_error_type` — Error classification
+   - `.provider_error_message` — Full error text
+   - `.provider_error_retryable` — Whether automatic retry was attempted
+   - `.provider_error_retry_attempt_count` — Number of attempts (0, 1, or 2)
+   - `.provider_error_retry_result` — Result of retry (none/success/failed)
+
+2. Check the provider error log:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/quality.log | grep -i provider
+   ```
+
+3. Review the raw Pi events:
+
+   ```bash
+   cat /agents/kaseki-results/<instance-id>/pi-events.jsonl | grep -i error
+   ```
+
+**Action:**
+
+**If the error is transient (503, 429, connection timeout):**
+
+- The error was retried automatically. If it failed again, this indicates the provider is experiencing prolonged issues.
+- **Wait a few minutes** and retry the run.
+- Check OpenRouter status: https://status.openrouter.io or contact their support.
+
+**If the error is permanent (404, deprecated, auth failure):**
+
+1. **For 404 (model not found):**
+
+   - The specified model is no longer available
+   - Check the model name in your config: `kaseki-agent config get model`
+   - List available models: `kaseki-agent models list` or check [OpenRouter](https://openrouter.ai)
+   - Update the model: `kaseki-agent config set model openrouter/free` (or another available model)
+
+2. **For deprecated model:**
+
+   - The model was discontinued by the provider
+   - Switch to a current model: `kaseki-agent config set model openrouter/free`
+   - Refer to the provider's migration guide if available
+
+3. **For authentication error:**
+
+   - Verify your OpenRouter API key is valid and has not expired
+   - Check your account credits/quota at https://openrouter.ai
+   - Refresh your credentials: `kaseki-agent setup` (interactive wizard)
+
+4. **For invalid configuration:**
+
+   - Review the error message for details on which parameter is malformed
+   - Run health check: `kaseki-agent doctor`
+   - Use `kaseki-agent doctor --fix` to auto-correct common issues
+
+**Prevention:**
+
+- Use a reliable, up-to-date model: `KASEKI_MODEL=openrouter/free` (default, recommended)
+- Monitor provider status before running tasks
+- Set up budget alerts in your provider account to catch quota issues early
+- Consider increasing timeout for slow/rate-limited providers: `KASEKI_AGENT_TIMEOUT_SECONDS=1800`
 
 ---
 

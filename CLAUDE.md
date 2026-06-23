@@ -306,10 +306,54 @@ Quality gates run after the agent completes, before reporting success:
 | Empty git diff | 3 | — |
 | Diff exceeds max bytes | 4 | `KASEKI_MAX_DIFF_BYTES` |
 | Changed file outside allowlist | 5 | `KASEKI_CHANGED_FILES_ALLOWLIST` |
-| Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
 | Secret scan hit (sk-or-* leak NOT in allowlist) | 6 | `.kaseki-secret-allowlist` |
+| Validation phase files outside allowlist | 7 | `KASEKI_VALIDATION_ALLOWLIST` |
+| Provider/model error (non-retryable after retry) | 88 | — |
 | Pi agent timeout | 124 | `KASEKI_AGENT_TIMEOUT_SECONDS` |
 | Validation command failure | propagated | `KASEKI_VALIDATION_COMMANDS` |
+
+## Provider Resilience & Automatic Retry
+
+**Exit Code 88** — LLM Provider Error (Non-Retryable)
+
+Kaseki-agent implements automatic retry logic for transient provider/model errors to improve reliability when interacting with LLM gateways (OpenRouter, etc.):
+
+**Automatic retry triggers on:**
+- HTTP 503 (Service Unavailable)
+- HTTP 429 (Rate Limited)
+- Connection errors (ECONNRESET, ETIMEDOUT, etc.)
+- "Model is unavailable" (temporary service issue)
+
+**Non-retryable errors** (exit 88 immediately):
+- HTTP 404 (Model not found — permanent)
+- "Deprecated" or "discontinued" model (permanent removal)
+- Authentication errors (invalid API key)
+- Malformed requests
+
+**How retry works:**
+1. Pi CLI invocation fails with transient error
+2. Error classification in `pi-event-filter.ts` detects retryable pattern
+3. Bash wrapper `run_pi_with_retry()` retries the same invocation once after 3-second delay
+4. Retry result tracked in metadata: `provider_error_retry_result` (success/failed) and `provider_error_retry_attempt_count` (0/1/2)
+5. If retry succeeds, run continues normally (exit 0)
+6. If retry also fails, exit code 88
+
+**Metadata fields for provider errors:**
+- `provider_error_type` — Classification (model_unavailable, auth_error, etc.)
+- `provider_error_message` — Full error text from provider
+- `provider_error_retryable` — Whether transient (true/false, "true"/"false" string)
+- `provider_error_retry_attempt_count` — Number of attempts (0=no retry, 1=first attempt failed, 2=retry also failed)
+- `provider_error_retry_result` — Outcome (none/success/failed)
+
+**Troubleshooting exit 88:**
+
+See [docs/EXIT_CODES.md](docs/EXIT_CODES.md#88--provider-model-error-non-retryable) for detailed scenarios and fixes. Quick reference:
+
+- **Transient (503, 429):** Wait and retry; check provider status
+- **404 model not found:** Update `KASEKI_MODEL` to available model
+- **Deprecated model:** Switch to current model version
+- **Auth failure:** Verify API key and account credits
+- **Quota exceeded:** Add credits or wait for reset
 
 ## Result Artifacts
 

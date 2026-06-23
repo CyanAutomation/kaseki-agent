@@ -491,4 +491,173 @@ describe('pi-event-filter fast correctness tests', () => {
     expect(result.summary.model_token_stats?.['gemini-pro'].input_tokens).toBe(50);
     expect(result.summary.model_token_stats?.['gemini-pro'].output_tokens).toBe(25);
   });
+
+  // ====================================================================
+  // Provider Error Retryability Classification Tests (Phase 1)
+  // ====================================================================
+  describe('provider error retryability classification', () => {
+    test('should classify 404 model_unavailable as non-retryable', async () => {
+      // Spec: 404 errors indicate permanent model unavailability
+      // Expected: retryable = false (do not retry)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'z-ai/glm-4.5-air:free',
+            stopReason: 'error',
+            errorMessage: '404 This model is unavailable for free.',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
+      expect(result.summary.primary_provider_error?.retryable).toBe(false);
+      expect(result.summary.primary_provider_error?.message).toContain('404');
+    });
+
+    test('should classify 503 provider_error as retryable', async () => {
+      // Spec: 503 Service Unavailable indicates transient provider issue
+      // Expected: retryable = true (retry should help)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'openai/gpt-4',
+            stopReason: 'error',
+            errorMessage: '503 Service Unavailable',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.retryable).toBe(true);
+    });
+
+    test('should classify 429 rate limit as retryable', async () => {
+      // Spec: 429 Too Many Requests indicates quota exhaustion (transient)
+      // Expected: retryable = true (retry after backoff should help)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'anthropic/claude-opus',
+            stopReason: 'error',
+            errorMessage: '429 Rate Limited',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.retryable).toBe(true);
+    });
+
+    test('should classify connection errors as retryable', async () => {
+      // Spec: Connection errors (ECONNRESET, timeout, etc.) indicate transient network issue
+      // Expected: retryable = true (retry should help as connection may recover)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'openai/gpt-4',
+            stopReason: 'error',
+            errorMessage: 'ECONNRESET',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.retryable).toBe(true);
+    });
+
+    test('should classify model_unavailable text pattern as retryable', async () => {
+      // Spec: "model is unavailable" pattern from provider indicates potential transience
+      // Expected: retryable = true (model might become available shortly)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'mistral/mistral-medium',
+            stopReason: 'error',
+            errorMessage: 'The model is unavailable',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.type).toBe('model_unavailable');
+      expect(result.summary.primary_provider_error?.retryable).toBe(true);
+    });
+
+    test('should classify deprecated model (404) as non-retryable even with model_unavailable text', async () => {
+      // Spec: When 404 appears with "deprecated", it's permanent unavailability
+      // Expected: retryable = false (no point in retrying)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'openai/gpt-3.5-turbo',
+            stopReason: 'error',
+            errorMessage: '404 Model has been deprecated and is unavailable.',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.retryable).toBe(false);
+    });
+
+    test('should classify timeout errors as retryable', async () => {
+      // Spec: Timeouts indicate transient issues with provider responsiveness
+      // Expected: retryable = true (retry might succeed if provider recovers)
+      const fixture = [
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-01-01T00:00:00.000Z',
+          message: {
+            provider: 'openrouter',
+            api: 'responses',
+            model: 'openai/gpt-4',
+            stopReason: 'error',
+            errorMessage: 'timeout connecting to provider',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error).toBeDefined();
+      expect(result.summary.primary_provider_error?.retryable).toBe(true);
+    });
+  });
 });

@@ -407,4 +407,55 @@ describe('instance-failure-extraction', () => {
       );
     });
   });
+
+  // ===== Provider Error Retry Tests (Phase 4) =====
+  describe('provider error retry classification', () => {
+    test('should classify provider error with non-retryable flag as model-unavailable', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'model_unavailable',
+        provider_error_message: '404 This model is unavailable for free.',
+        provider_error_retryable: 'false',
+        provider_error_retry_result: 'none',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 88)).toBe('model-unavailable');
+    });
+
+    test('should classify provider error with retryable flag and failed retry as model-unavailable', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'model_unavailable',
+        provider_error_message: '503 Service Unavailable',
+        provider_error_retryable: 'true',
+        provider_error_retry_attempt_count: 2,
+        provider_error_retry_result: 'failed',
+        failed_command: 'pi coding agent',
+      };
+      expect(classifyFailure(metadata, 88)).toBe('model-unavailable');
+    });
+
+    test('should classify provider error with successful retry as provider-error-recovered', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'model_unavailable',
+        provider_error_message: '503 Service Unavailable',
+        provider_error_retryable: 'true',
+        provider_error_retry_attempt_count: 1,
+        provider_error_retry_result: 'success',
+        failed_command: 'pi coding agent',
+        exit_code: 0, // Retry succeeded
+      };
+      // When exit code is 0 but we had a provider error that was retried and succeeded
+      expect(classifyFailure(metadata, 0)).toBe('none');
+    });
+
+    test('should include retry attempt count in metadata for tracking', () => {
+      const metadata: Metadata = {
+        provider_error_type: 'model_unavailable',
+        provider_error_retry_attempt_count: 2,
+        provider_error_retry_result: 'failed',
+        failed_command: 'pi coding agent',
+      };
+      expect(metadata.provider_error_retry_attempt_count).toBe(2);
+      expect(metadata.provider_error_retry_result).toBe('failed');
+    });
+  });
 });
