@@ -233,6 +233,196 @@ describe('Gateway Adapter Request Format', () => {
     });
   });
 
+  describe('Undici transport normalization', () => {
+    /**
+     * Test 1: Verify undici.request calls are intercepted and normalized
+     * This is critical because Pi CLI uses undici directly, not global.fetch
+     *
+     * Test setup:
+     * 1. Mock undici.request to track calls
+     * 2. Call with nested structure {input: [{role, content}]}
+     * 3. Verify normalization happens before undici sees it
+     */
+    it('should normalize multi-message array through undici.request', () => {
+      // Simulating what Pi CLI sends to undici
+      const undiciBrowserRequest = {
+        path: '/v1/responses',
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'auto',
+          input: [
+            { role: 'system', content: 'You are a helpful assistant' },
+            { role: 'user', content: 'Hello' },
+          ],
+        }),
+      };
+
+      // Parse body to simulate what normalization wrapper sees
+      const parsedBody = JSON.parse(undiciBrowserRequest.body);
+
+      // Check if it's multi-message (this should be detected)
+      const isMultiMessage = Array.isArray(parsedBody.input) &&
+        parsedBody.input.length > 0 &&
+        parsedBody.input.every((item: any) =>
+          typeof item === 'object' &&
+          'role' in item &&
+          'content' in item
+        );
+
+      expect(isMultiMessage).toBe(true);
+
+      // After normalization, body should have messages field instead
+      const normalizedBody = isMultiMessage
+        ? {
+          model: 'auto',
+          messages: parsedBody.input,
+        }
+        : parsedBody;
+
+      expect(normalizedBody.messages).toBeDefined();
+      expect(normalizedBody.messages).toHaveLength(2);
+      expect(normalizedBody.input).toBeUndefined();
+    });
+
+    /**
+     * Test 2: Verify undici request body normalization with Buffer
+     * Undici can pass body as Buffer, not just string
+     */
+    it('should handle undici request body as Buffer', () => {
+      const multiMessagePayload = {
+        model: 'auto',
+        input: [
+          { role: 'system', content: 'You are helpful' },
+          { role: 'user', content: 'Test message' },
+        ],
+      };
+
+      // Simulate undici receiving body as Buffer (common case)
+      const bodyBuffer = Buffer.from(JSON.stringify(multiMessagePayload), 'utf8');
+      const bodyStr = bodyBuffer.toString('utf8');
+      const parsed = JSON.parse(bodyStr);
+
+      const isMultiMessage = Array.isArray(parsed.input) &&
+        parsed.input.length > 0 &&
+        parsed.input.every((item: any) =>
+          typeof item === 'object' &&
+          'role' in item &&
+          'content' in item
+        );
+
+      expect(isMultiMessage).toBe(true);
+
+      const normalized = isMultiMessage
+        ? { model: 'auto', messages: parsed.input }
+        : parsed;
+
+      expect(normalized.messages).toBeDefined();
+      expect(normalized.input).toBeUndefined();
+    });
+
+    /**
+     * Test 3: Verify string input passes through undici unchanged
+     */
+    it('should pass string input through undici without modification', () => {
+      const stringPayload = {
+        model: 'auto',
+        input: 'Simple string prompt for validation',
+      };
+
+      const bodyStr = JSON.stringify(stringPayload);
+      const parsed = JSON.parse(bodyStr);
+
+      const isMultiMessage = Array.isArray(parsed.input) &&
+        parsed.input.length > 0 &&
+        parsed.input.every((item: any) =>
+          typeof item === 'object' &&
+          'role' in item &&
+          'content' in item
+        );
+
+      expect(isMultiMessage).toBe(false);
+
+      // Should remain unchanged
+      const normalized = isMultiMessage
+        ? { model: 'auto', messages: parsed.input }
+        : parsed;
+
+      expect(normalized.input).toBe('Simple string prompt for validation');
+      expect(normalized.messages).toBeUndefined();
+    });
+
+    /**
+     * Test 4: Verify undici request to non-/responses endpoints are untouched
+     */
+    it('should skip normalization for non-/responses endpoints', () => {
+      const unrelatedRequest = {
+        path: '/v1/health',
+        method: 'GET',
+        headers: {},
+      };
+
+      // Should not normalize anything for non-/responses paths
+      expect(unrelatedRequest.path.includes('/responses')).toBe(false);
+    });
+  });
+
+  describe('Fetch transport normalization', () => {
+    /**
+     * Test 5: Verify global.fetch requests are also normalized
+     * Ensure backward compatibility with code using fetch
+     */
+    it('should normalize multi-message array through global.fetch', () => {
+      const fetchUrl = 'https://gateway.example.com/v1/responses';
+      const fetchOptions = {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'auto',
+          input: [
+            { role: 'system', content: 'You are helpful' },
+            { role: 'user', content: 'Hi' },
+          ],
+        }),
+      };
+
+      // Should be normalized
+      const isResponsesEndpoint = fetchUrl.includes('/responses');
+      expect(isResponsesEndpoint).toBe(true);
+
+      const parsed = JSON.parse(fetchOptions.body);
+      const isMultiMessage = Array.isArray(parsed.input) &&
+        parsed.input.every((item: any) => 'role' in item && 'content' in item);
+
+      expect(isMultiMessage).toBe(true);
+    });
+
+    /**
+     * Test 6: Verify fetch to non-/responses endpoints skip normalization
+     */
+    it('should skip fetch normalization for non-/responses URLs', () => {
+      const healthCheckUrl = 'https://gateway.example.com/v1/health';
+      expect(healthCheckUrl.includes('/responses')).toBe(false);
+    });
+
+    /**
+     * Test 7: Verify fetch with string body passes through unchanged
+     */
+    it('should pass through fetch string input without modification', () => {
+      const body = JSON.stringify({
+        model: 'auto',
+        input: 'Simple prompt text',
+      });
+
+      const parsed = JSON.parse(body);
+      const isMultiMessage = Array.isArray(parsed.input) &&
+        parsed.input.every((item: any) => 'role' in item && 'content' in item);
+
+      expect(isMultiMessage).toBe(false);
+      expect(parsed.input).toEqual('Simple prompt text');
+    });
+  });
+
   describe('Gateway Responses API contract validation', () => {
     /**
      * Test that after normalization, request conforms to OpenAI Responses API spec

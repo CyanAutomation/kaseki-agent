@@ -1614,6 +1614,10 @@ write_metadata() {
     "secret_scan": {
       "exit_code": $SECRET_SCAN_EXIT,
       "matches": $(consolidate_phase_file "${KASEKI_RESULTS_DIR}"/.secret-scan-temp.jsonl)
+    },
+    "gateway_normalization": {
+      "diagnostics_file": ".gateway-diagnostics.jsonl",
+      "events": $(consolidate_phase_file "${KASEKI_RESULTS_DIR}"/.gateway-diagnostics.jsonl)
     }
   }
 }
