@@ -619,11 +619,15 @@ interface Summary {
 }
 
 interface ProviderErrorSummary {
-  type: 'model_unavailable' | 'provider_error';
+  type: 'model_unavailable' | 'provider_error' | 'provider_empty_assistant_turn';
   provider?: string;
   api?: string;
   model?: string;
   stop_reason?: string;
+  response_id?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
   message: string;
 }
 
@@ -808,6 +812,83 @@ function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
   };
 }
 
+function numericUsageValue(usage: any, keys: string[]): number | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function extractMessageTextLength(message: any): number {
+  const content = message?.content;
+  if (typeof content === 'string') return content.trim().length;
+  if (!Array.isArray(content)) return 0;
+
+  return content.reduce((sum, part) => {
+    if (typeof part === 'string') return sum + part.trim().length;
+    if (!part || typeof part !== 'object') return sum;
+    const text = typeof part.text === 'string'
+      ? part.text
+      : typeof part.output_text === 'string'
+        ? part.output_text
+        : '';
+    return sum + text.trim().length;
+  }, 0);
+}
+
+function extractToolResultCount(event: PiEvent): number {
+  const toolResults = (event as any).toolResults;
+  if (Array.isArray(toolResults)) return toolResults.length;
+  const messageToolCalls = (event as any).message?.toolCalls ?? (event as any).message?.tool_calls;
+  if (Array.isArray(messageToolCalls)) return messageToolCalls.length;
+  return 0;
+}
+
+function extractEmptyAssistantTurn(event: PiEvent): ProviderErrorSummary | null {
+  const message = (event as any).message;
+  if (!message || typeof message !== 'object' || message.role !== 'assistant') return null;
+
+  const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
+  if (stopReason !== 'stop') return null;
+
+  const usage = extractUsage(event);
+  const outputTokens = numericUsageValue(usage, ['output', 'output_tokens', 'completion_tokens']);
+  if (!outputTokens || outputTokens <= 0) return null;
+
+  if (extractMessageTextLength(message) > 0 || extractToolResultCount(event) > 0) return null;
+
+  const inputTokens = numericUsageValue(usage, ['input', 'input_tokens', 'prompt_tokens']);
+  const totalTokens = numericUsageValue(usage, ['totalTokens', 'total_tokens', 'total']);
+  const provider = typeof message.provider === 'string' ? message.provider : undefined;
+  const api = typeof message.api === 'string' ? message.api : undefined;
+  const model = typeof message.model === 'string' ? message.model : undefined;
+  const responseId = typeof message.responseId === 'string' ? message.responseId : undefined;
+  const details = [
+    provider ? `provider=${provider}` : '',
+    api ? `api=${api}` : '',
+    model ? `model=${model}` : '',
+    responseId ? `response_id=${responseId}` : '',
+    inputTokens !== undefined ? `input_tokens=${inputTokens}` : '',
+    `output_tokens=${outputTokens}`,
+    totalTokens !== undefined ? `total_tokens=${totalTokens}` : '',
+  ].filter(Boolean).join(' ');
+
+  return {
+    type: 'provider_empty_assistant_turn',
+    provider,
+    api,
+    model,
+    stop_reason: stopReason,
+    response_id: responseId,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: totalTokens,
+    message: `Provider returned a successful stop response with output tokens but no assistant text or tool calls. ${details}`.trim(),
+  };
+}
+
 /**
  * Extract model name from event (for token usage association).
  */
@@ -871,6 +952,10 @@ async function main(): Promise<void> {
     const providerError = extractProviderError(event);
     if (providerError) {
       providerErrors.push(providerError);
+    }
+    const emptyAssistantTurn = extractEmptyAssistantTurn(event);
+    if (emptyAssistantTurn) {
+      providerErrors.push(emptyAssistantTurn);
     }
 
     // Track agent timing (API invocation time)
