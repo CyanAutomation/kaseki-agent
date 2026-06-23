@@ -40,28 +40,6 @@
     "concerns": []
   },
   {
-    "id": "test/hashline-integration.test.sh",
-    "file": "/workspaces/kaseki-agent/test/hashline-integration.test.sh",
-    "testName": "!/bin/bash",
-    "language": "shell",
-    "lineCount": 307,
-    "intentClarity": 0,
-    "behavioralRelevance": 0,
-    "assertionQuality": 0,
-    "isolationRobustness": 2,
-    "costCoverage": 0,
-    "total": 2,
-    "segment": "Remove",
-    "summary": "0 | 0 | 0 | 2 | 0",
-    "assertionTypes": [],
-    "hasSnapshots": false,
-    "hasMocking": false,
-    "hasAsyncWaits": false,
-    "concerns": [
-      "overly-long"
-    ]
-  },
-  {
     "id": "test/json-helpers.test.sh",
     "file": "/workspaces/kaseki-agent/test/json-helpers.test.sh",
     "testName": "!/usr/bin/env bash",

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { processHashlineEventsFromFile } from '../src/hashline-event-handler';
 
 describe('hashline-event-handler', () => {
@@ -426,6 +427,57 @@ line 2`;
       expect(results).toHaveLength(3); // 2 valid + 1 error
       expect(summary.applied).toBe(2);
       expect(summary.errors).toBe(1);
+    });
+  });
+
+  describe('hashline-event-handler CLI', () => {
+    it('writes empty artifacts and zero-count summary for a no-edit event', () => {
+      const workspaceDir = path.join(tempDir, 'workspace');
+      const artifactsDir = path.join(tempDir, 'artifacts');
+      fs.mkdirSync(workspaceDir);
+      fs.mkdirSync(artifactsDir);
+
+      const eventsPath = path.join(artifactsDir, 'pi-events.raw.jsonl');
+      const outputJsonlPath = path.join(artifactsDir, 'hashline-events.jsonl');
+      const outputSummaryPath = path.join(artifactsDir, 'hashline-summary.json');
+      fs.writeFileSync(eventsPath, `${JSON.stringify({ type: 'message', content: 'No edits needed' })}\n`, 'utf-8');
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          'src/hashline-event-handler-cli.ts',
+          eventsPath,
+          workspaceDir,
+          outputJsonlPath,
+          outputSummaryPath,
+        ],
+        {
+          cwd: path.resolve(__dirname, '..'),
+          encoding: 'utf-8',
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(fs.existsSync(outputJsonlPath)).toBe(true);
+      expect(fs.readFileSync(outputJsonlPath, 'utf-8')).toBe('');
+      expect(fs.existsSync(outputSummaryPath)).toBe(true);
+
+      const summary = readJson<{
+        applied: number;
+        rejected: number;
+        errors: number;
+        totalLinesModified: number;
+      }>(outputSummaryPath);
+
+      expect(summary).toMatchObject({
+        applied: 0,
+        rejected: 0,
+        errors: 0,
+        totalLinesModified: 0,
+      });
     });
   });
 
