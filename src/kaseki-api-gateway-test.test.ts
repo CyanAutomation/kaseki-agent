@@ -458,6 +458,8 @@ describe('LLM Gateway Test', () => {
       expect(result.detail).toContain('output_tokens=128');
       expect(result.responseSmokeValidated).toBe(false);
       expect(result.remediation).toContain('model=auto');
+      expect(result.remediation).toContain('Responses API adapter');
+      expect(result.remediation).toContain('output_text');
     });
 
     it('should accept different API versions (/v2, /v3, etc.)', async () => {

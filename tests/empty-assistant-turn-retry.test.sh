@@ -23,8 +23,13 @@ fail() {
 
 mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_REPO/docs" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
-cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
+  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+else
+  cp "$REPO_ROOT/dist/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+fi
 cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
+cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-helpers.sh"
 cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
@@ -108,7 +113,7 @@ actual_calls="$(cat "$PI_CALLS" 2>/dev/null || true)"
 [ -s "$RESULTS_DIR/pi-agent-diagnostics.jsonl" ] || fail "missing empty-turn diagnostics"
 grep -q 'provider_empty_assistant_turn' "$RESULTS_DIR/pi-agent-diagnostics.jsonl" || fail "diagnostics did not classify empty assistant turn"
 grep -q 'empty assistant turn' "$RESULTS_DIR/pi-stderr.log" || fail "retry guidance did not mention empty assistant turn"
-grep -q '"required_files": \\[' "$RESULTS_DIR/critical-change-expectations.json" || fail "critical expectations missing required_files"
+grep -Fq '"required_files": [' "$RESULTS_DIR/critical-change-expectations.json" || fail "critical expectations missing required_files"
 grep -q '"docs/INDEX.md"' "$RESULTS_DIR/critical-change-expectations.json" || fail "fallback did not infer docs/INDEX.md as required file"
 grep -q '^docs/INDEX.md$' "$RESULTS_DIR/changed-files.txt" || fail "docs/INDEX.md should be changed after retry"
 grep -q '### Monitoring & Observability' "$RESULTS_DIR/git.diff" || fail "expected recovered docs formatting diff"

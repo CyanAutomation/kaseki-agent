@@ -1810,6 +1810,46 @@ clear_provider_error() {
   PROVIDER_ERROR_MESSAGE=""
 }
 
+append_pre_coding_provider_fallback_error() {
+  local log_file="$1"
+  local phase="$2"
+  local recovery_action="$3"
+  local artifact="$4"
+
+  node - "$log_file" "$phase" "$recovery_action" "$artifact" \
+    "$PROVIDER_ERROR_TYPE" "$PROVIDER_ERROR_PROVIDER" "$PROVIDER_ERROR_API" "$PROVIDER_ERROR_MODEL" "$PROVIDER_ERROR_MESSAGE" <<'NODE' 2>/dev/null || true
+const fs = require('node:fs');
+const [
+  logFile,
+  phase,
+  recoveryAction,
+  artifact,
+  type,
+  provider,
+  api,
+  model,
+  message,
+] = process.argv.slice(2);
+const entry = {
+  timestamp: new Date().toISOString(),
+  reason_code: type || 'provider_error',
+  phase,
+  field: 'assistant.content',
+  expected: 'assistant text, tool calls, or a valid JSON artifact',
+  actual: message || 'provider returned no usable assistant output',
+  severity: 'warning',
+  provider: provider || '',
+  api: api || '',
+  model: model || '',
+  recovered: true,
+  recovery_action: recoveryAction,
+  fallback_artifact: artifact || '',
+  suggestion: 'Gateway model=auto must continue routing, but the Responses API adapter should return assistant output_text/message content instead of an empty assistant turn.',
+};
+fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+NODE
+}
+
 write_result_summary() {
   # Generate a human-readable markdown summary of the run
   local metadata_file="${KASEKI_RESULTS_DIR}/metadata.json"
@@ -5477,11 +5517,26 @@ NODE
 
   kaseki-pi-event-filter "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.jsonl "${KASEKI_RESULTS_DIR}"/goal-setting-summary.json 2>/dev/null || cp "$GOAL_SETTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/goal-setting-events.raw.jsonl 2>/dev/null || true
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/goal-setting-summary.json" "goal-setting"; then
-    GOAL_SETTING_EXIT=88
-    emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider error: $PROVIDER_ERROR_MESSAGE" "continue"
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ]; then
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider returned an empty assistant turn; using fallback goal-setting artifact" "continue"
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl" "goal-setting" "fallback_goal_setting_artifact" "$GOAL_SETTING_ARTIFACT"
+      printf '\n==> Creating fallback goal-setting artifact after empty assistant turn (degraded mode)\n'
+      if create_fallback_goal_setting_artifact "$ORIGINAL_TASK_PROMPT" "$GOAL_SETTING_ARTIFACT"; then
+        printf 'Fallback artifact created successfully. Run will proceed with confidence=low goal-setting.\n'
+        GOAL_SETTING_EXIT=0
+        GOAL_SETTING_FALLBACK_USED=1
+        GOAL_SETTING_FALLBACK_MODE="provider_empty_assistant_turn"
+      else
+        printf 'Failed to create fallback artifact. Run will fail.\n'
+        GOAL_SETTING_EXIT=88
+      fi
+    else
+      GOAL_SETTING_EXIT=88
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Goal-setting provider error: $PROVIDER_ERROR_MESSAGE" "continue"
+    fi
   fi
 
-  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
+  if [ "$GOAL_SETTING_EXIT" -eq 0 ] && [ "$GOAL_SETTING_FALLBACK_USED" != "1" ] && ! validate_goal_setting_artifact "$GOAL_SETTING_CANDIDATE_ARTIFACT" "$GOAL_SETTING_ARTIFACT" "${KASEKI_RESULTS_DIR}/goal-setting-validation-reason.txt"; then
     GOAL_SETTING_EXIT=86
     goal_setting_validation_summary="$(cat "${KASEKI_RESULTS_DIR}"/goal-setting-validation-summary.txt 2>/dev/null || printf 'goal-setting artifact validation failed')"
     emit_error_event "pi_goal_setting_artifact_invalid" "Pi goal-setting artifact invalid: $goal_setting_validation_summary (full details: ${KASEKI_RESULTS_DIR}/goal-setting-validation-errors.jsonl)" "continue"
@@ -6346,8 +6401,16 @@ NODE
 
   kaseki-pi-event-filter "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.jsonl "${KASEKI_RESULTS_DIR}"/scouting-summary.json 2>/dev/null || cp "$SCOUTING_RAW_EVENTS" "${KASEKI_RESULTS_DIR}"/scouting-events.raw.jsonl 2>/dev/null || true
   if capture_provider_error_from_summary "${KASEKI_RESULTS_DIR}/scouting-summary.json" "scouting"; then
-    SCOUTING_EXIT=88
-    emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+    if [ "$PROVIDER_ERROR_TYPE" = "provider_empty_assistant_turn" ]; then
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider returned an empty assistant turn; continuing with conservative fallback" "continue"
+      append_pre_coding_provider_fallback_error "${KASEKI_RESULTS_DIR}/scouting-validation-errors.jsonl" "scouting" "fallback_scouting_artifact" "$SCOUTING_ARTIFACT"
+      rm -f "$SCOUTING_CANDIDATE_ARTIFACT" 2>/dev/null || true
+      write_scouting_fallback_artifact "$SCOUTING_CANDIDATE_ARTIFACT"
+      SCOUTING_EXIT=0
+    else
+      SCOUTING_EXIT=88
+      emit_error_event "$PROVIDER_ERROR_TYPE" "Scouting provider error: $PROVIDER_ERROR_MESSAGE" "exit"
+    fi
   fi
 
   if [ "$SCOUTING_EXIT" -eq 0 ] && [ "$KASEKI_TASK_MODE" = "inspect" ] && [ ! -f "$SCOUTING_CANDIDATE_ARTIFACT" ]; then
