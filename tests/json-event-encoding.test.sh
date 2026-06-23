@@ -11,30 +11,11 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 pass() { printf '✓ %s\n' "$1"; }
 fail() { printf '✗ %s\n' "$1" >&2; exit 1; }
 
-extract_function() {
-  local name="$1"
-  awk -v fn="$name" '
-    $0 ~ "^" fn "\\(\\) [{]" { capture=1; depth=0 }
-    capture {
-      print
-      for (i = 1; i <= length($0); i++) {
-        ch = substr($0, i, 1)
-        if (ch == "{") depth++
-        if (ch == "}") depth--
-      }
-      if (capture && depth == 0) exit
-    }
-  ' "$ROOT_DIR/kaseki-agent.sh" | sed "s#/results#$TMP_DIR/results#g"
-}
-
 mkdir -p "$TMP_DIR/results"
 KASEKI_RESULTS_DIR="$TMP_DIR/results"
 INSTANCE_NAME='instance "quoted"'
 
-eval "$(extract_function json_object_from_pairs)"
-eval "$(extract_function append_jsonl_object)"
-eval "$(extract_function emit_event)"
-eval "$(extract_function emit_progress)"
+. "$ROOT_DIR/scripts/lib/json-events.sh"
 
 emit_event 'quoted_event' 'detail=value with "quotes", comma, and = sign' 'path=src/a b.ts' '=ignored-empty-key'
 emit_progress 'stage "one"' $'line one\nline two' 'ok,status'
