@@ -2,6 +2,20 @@ import * as fs from 'fs';
 import { WebhookManager } from './webhook-manager';
 import { WebhookConfig, WebhookEventType, WebhookPayload } from './kaseki-api-types';
 
+class FakeClock {
+  private currentTime: number;
+
+  constructor(initialTime: number) {
+    this.currentTime = initialTime;
+  }
+
+  now = (): number => this.currentTime;
+
+  advanceTo(time: number): void {
+    this.currentTime = time;
+  }
+}
+
 /**
  * WebhookManager Tests
  *
@@ -46,19 +60,20 @@ describe('WebhookManager retry attempts', () => {
     // Behavioral intent: Failed webhook (500 status) should be retried exactly maxAttempts times, then removed from queue
     // Expected outcome: fetchMock.calls.length === expectedSends; queue is empty after max retries exhausted
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-test-');
-    const manager = new WebhookManager(resultsDir);
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
+    const manager = new WebhookManager(resultsDir, { now: clock.now });
     manager.stopProcessing();
 
-    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 500, text: async () => '' });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     manager.enqueueWebhook('job-123', basePayload, createConfig(maxAttempts));
 
     for (let i = 0; i < expectedSends + 2; i++) {
-      await (manager as any).processQueue();
-      const queueEntry = (manager as any).deliveryQueue[0];
-      if (queueEntry) {
-        queueEntry.nextRetryTime = Date.now() - 1;
+      await manager.drainQueueForTest();
+      const [queueEntry] = manager.getQueuedDeliveriesForTest();
+      if (queueEntry?.nextRetryTime !== undefined) {
+        clock.advanceTo(queueEntry.nextRetryTime);
       }
     }
 
@@ -83,6 +98,7 @@ describe('WebhookManager delivery log recovery', () => {
     // Expected outcome: Queue size > 0; nextRetryTime updated to current time (stale retry marked as ready)
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-recovery-test-');
     const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
 
     fs.writeFileSync(
       deliveryLogPath,
@@ -101,19 +117,19 @@ describe('WebhookManager delivery log recovery', () => {
           },
           deliveryAttempts: 1,
           attempts: [{ timestamp: new Date().toISOString(), status: 'retry' }],
-          nextRetryTime: Date.now() - 60_000,
+          nextRetryTime: clock.now() - 60_000,
         }),
       ].join('\n'),
       'utf-8'
     );
 
-    const manager = new WebhookManager(resultsDir);
+    const manager = new WebhookManager(resultsDir, { now: clock.now });
     manager.stopProcessing();
 
     try {
       expect(manager.getQueueSize()).toBe(1);
-      const queueEntry = (manager as any).deliveryQueue[0];
-      expect(queueEntry.nextRetryTime).toBeGreaterThanOrEqual(Date.now() - 1000);
+      const [queueEntry] = manager.getQueuedDeliveriesForTest();
+      expect(queueEntry?.nextRetryTime).toBe(clock.now());
     } finally {
       await manager.shutdown();
       fs.rmSync(resultsDir, { recursive: true, force: true });
@@ -127,6 +143,7 @@ describe('WebhookManager delivery log recovery', () => {
     // Regression: GH#2567 — Do not crash on malformed JSON; log skipped entries
     const resultsDir = fs.mkdtempSync('/tmp/kaseki-webhook-manager-malformed-test-');
     const deliveryLogPath = `${resultsDir}/.kaseki-webhook-delivery.log`;
+    const clock = new FakeClock(Date.UTC(2026, 0, 1));
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
     fs.writeFileSync(
@@ -144,7 +161,7 @@ describe('WebhookManager delivery log recovery', () => {
           config: { url: 'https://example.com/webhook', retryPolicy: { maxAttempts: 5, initialDelayMs: 100, maxDelayMs: 500 } },
           deliveryAttempts: 1,
           attempts: [{ timestamp: new Date().toISOString(), status: 'success' }],
-          nextRetryTime: Date.now() + 10_000,
+          nextRetryTime: clock.now() + 10_000,
         }),
         JSON.stringify({
           jobId: 'job-maxed',
@@ -152,7 +169,7 @@ describe('WebhookManager delivery log recovery', () => {
           config: { url: 'https://example.com/webhook', retryPolicy: { maxAttempts: 1, initialDelayMs: 100, maxDelayMs: 500 } },
           deliveryAttempts: 1,
           attempts: [{ timestamp: new Date().toISOString(), status: 'failed' }],
-          nextRetryTime: Date.now() + 10_000,
+          nextRetryTime: clock.now() + 10_000,
         }),
         JSON.stringify({
           jobId: 'job-valid',
@@ -160,18 +177,18 @@ describe('WebhookManager delivery log recovery', () => {
           config: { url: 'https://example.com/webhook', retryPolicy: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 500 } },
           deliveryAttempts: 0,
           attempts: [{ timestamp: new Date().toISOString(), status: 'pending' }],
-          nextRetryTime: Date.now() + 10_000,
+          nextRetryTime: clock.now() + 10_000,
         }),
       ].join('\n'),
       'utf-8'
     );
 
-    const manager = new WebhookManager(resultsDir);
+    const manager = new WebhookManager(resultsDir, { now: clock.now });
     manager.stopProcessing();
 
     try {
       expect(manager.getQueueSize()).toBe(1);
-      expect((manager as any).deliveryQueue[0].jobId).toBe('job-valid');
+      expect(manager.getQueuedDeliveriesForTest()[0]?.jobId).toBe('job-valid');
       expect(logSpy).toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();
