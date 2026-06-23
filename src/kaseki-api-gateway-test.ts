@@ -102,6 +102,12 @@ const GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS = (() => {
   }
   return 45000; // 45 second default
 })();
+const GATEWAY_RESPONSE_SMOKE_PROMPT = [
+  'You are validating an OpenAI Responses API gateway for Kaseki agent prompts.',
+  'Return exactly one JSON object with no markdown and no surrounding text.',
+  'The JSON object must be: {"status":"ok","summary":"kaseki gateway smoke ok"}',
+].join('\n');
+const GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS = 256;
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -498,8 +504,8 @@ export async function testGatewayResponseSmoke_Stage2(
       },
       body: JSON.stringify({
         model: 'auto',
-        input: 'Reply with exactly: kaseki gateway smoke ok',
-        max_output_tokens: 32,
+        input: GATEWAY_RESPONSE_SMOKE_PROMPT,
+        max_output_tokens: GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS,
       }),
     }, GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS);
 
@@ -601,8 +607,8 @@ async function testGatewayResponseSmoke(
       },
       body: JSON.stringify({
         model: 'auto',
-        input: 'Reply with exactly: kaseki gateway smoke ok',
-        max_output_tokens: 32,
+        input: GATEWAY_RESPONSE_SMOKE_PROMPT,
+        max_output_tokens: GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS,
       }),
     }, GATEWAY_RESPONSE_SMOKE_TIMEOUT_MS);
 

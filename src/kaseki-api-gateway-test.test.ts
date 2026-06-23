@@ -815,6 +815,32 @@ describe('LLM Gateway Test', () => {
         );
       });
 
+      it('should use an artifact-shaped prompt that catches empty assistant turns from complex agent prompts', async () => {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            id: 'resp_agent_shape',
+            output_text: '{"status":"ok","summary":"kaseki gateway smoke ok"}',
+            usage: { output_tokens: 18 },
+          }),
+        });
+
+        await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        const requestBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+        expect(requestBody.model).toBe('auto');
+        expect(requestBody.max_output_tokens).toBeGreaterThanOrEqual(128);
+        expect(requestBody.input).toContain('Return exactly one JSON object');
+        expect(requestBody.input).toContain('kaseki gateway smoke ok');
+        expect(requestBody.input).toContain('"status"');
+      });
+
       it('should return error on 401 (auth failure)', async () => {
         mockFetch.mockResolvedValueOnce({
           ok: false,

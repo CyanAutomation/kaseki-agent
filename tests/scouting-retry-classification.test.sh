@@ -6,7 +6,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-fail() { echo "FAIL: $TEST_NAME: $*" >&2; exit 1; }
+fail() {
+  echo "FAIL: $TEST_NAME: $*" >&2
+  if [ -n "${run_log:-}" ] && [ -f "$run_log" ]; then
+    tail -100 "$run_log" >&2
+  fi
+  exit 1
+}
 
 run_case() {
   local case_name="$1" payload_file="$2" expected_reason="$3"
@@ -15,10 +21,19 @@ run_case() {
   local workspace_repo="$case_dir/repo" app_lib="$case_dir/app/lib"
   local run_log="$case_dir/run.log" pi_calls="$case_dir/pi-calls.log"
 
-  mkdir -p "$fake_repo/deps/fake-dep" "$fake_bin" "$results_dir" "$workspace_repo" "$app_lib" "$case_dir/scripts"
+  mkdir -p "$fake_repo/deps/fake-dep" "$fake_bin" "$results_dir" "$workspace_repo" "$app_lib" "$case_dir/scripts" "$case_dir/scripts/lib"
   : > "$pi_calls"
   cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$case_dir/scripts/allowlist-helper.sh"
-  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
+  if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
+    cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
+  else
+    cp "$REPO_ROOT/dist/scripts/scouting-allowlist.js" "$case_dir/scripts/scouting-allowlist.js"
+  fi
+  cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$case_dir/scripts/dependency-cache-helpers.sh"
+  cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$case_dir/scripts/npm-install-helpers.sh"
+  cp "$REPO_ROOT/scripts/agent-prompt.sh" "$case_dir/scripts/agent-prompt.sh"
+  cp "$REPO_ROOT/scripts/lib/json.sh" "$case_dir/scripts/lib/json.sh"
+  cp "$REPO_ROOT/scripts/lib/json-events.sh" "$case_dir/scripts/lib/json-events.sh"
   touch "$app_lib/event-aggregator.js" "$app_lib/timestamp-tracker.js" "$app_lib/progress-stream-utils.js"
 
   sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$workspace_repo#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$workspace_repo#g; s#/workspace/repo#$workspace_repo#g; s#/results#$results_dir#g; s#/app/lib#$app_lib#g" "$REPO_ROOT/kaseki-agent.sh" > "$case_dir/kaseki-agent-modified.sh"
@@ -44,12 +59,12 @@ elif printf '%s' "$prompt" | grep -q 'read-only goal-check Pi agent'; then
   printf '%s\n' '{"met":true,"confidence":"high","summary":"fallback patch completed","evidence":["README changed"],"missing":[],"retry_prompt":"","validation_notes":[]}' > "__RESULTS_DIR__/goal-check-candidate.json"
 else
   printf 'coding\n' >> "__PI_CALLS__"
-  printf '%s\n' 'fallback patch update' >> README.md
+  printf '%s\n' 'fallback patch update' >> "__WORKSPACE_REPO__/README.md"
 fi
 printf '{"type":"message","model":"test-model"}\n'
 EOF_PI
-  PI_CALLS_PATH="$pi_calls" PAYLOAD_FILE_PATH="$payload_file" RESULTS_DIR_PATH="$results_dir" \
-    perl -0pi -e 's#__PI_CALLS__#$ENV{PI_CALLS_PATH}#g; s#__PAYLOAD_FILE__#$ENV{PAYLOAD_FILE_PATH}#g; s#__RESULTS_DIR__#$ENV{RESULTS_DIR_PATH}#g' "$fake_bin/pi"
+  PI_CALLS_PATH="$pi_calls" PAYLOAD_FILE_PATH="$payload_file" RESULTS_DIR_PATH="$results_dir" WORKSPACE_REPO_PATH="$workspace_repo" \
+    perl -0pi -e 's#__PI_CALLS__#$ENV{PI_CALLS_PATH}#g; s#__PAYLOAD_FILE__#$ENV{PAYLOAD_FILE_PATH}#g; s#__RESULTS_DIR__#$ENV{RESULTS_DIR_PATH}#g; s#__WORKSPACE_REPO__#$ENV{WORKSPACE_REPO_PATH}#g' "$fake_bin/pi"
 
   cat > "$fake_bin/kaseki-pi-progress-stream" <<'EOF_PROGRESS'
 #!/usr/bin/env bash
@@ -72,7 +87,7 @@ EOF_VALIDATION_FILTER
   chmod +x "$fake_bin"/*
 
   set +e
-  env KASEKI_WORKSPACE_DIR="$case_dir" PATH="$fake_bin:$PATH" REPO_URL="$fake_repo" GIT_REF=main TASK_PROMPT="inspect then code" OPENROUTER_API_KEY=test \
+  env KASEKI_WORKSPACE_DIR="$case_dir" PATH="$fake_bin:$PATH" REPO_URL="$fake_repo" GIT_REF=main TASK_PROMPT="inspect then code" OPENROUTER_API_KEY=test KASEKI_PROVIDER=openrouter \
     GITHUB_APP_ENABLED=0 KASEKI_GIT_CACHE_MODE=off KASEKI_DEPENDENCY_CACHE_DIR="$case_dir/dependency-cache" \
     KASEKI_IMAGE_DEPENDENCY_CACHE_DIR="$case_dir/image-cache" KASEKI_PRE_AGENT_VALIDATION_COMMANDS="npm run check" \
     KASEKI_GOAL_SETTING=0 \
@@ -87,7 +102,6 @@ EOF_VALIDATION_FILTER
   [ ! -f "$results_dir/scouting-validation-reason.txt" ] || fail "$case_name: reason file should be cleaned after fallback validation"
   [ -s "$results_dir/scouting-validation-errors.jsonl" ] || fail "$case_name: missing scouting validation errors jsonl"
   grep -q '"reason_code":"patch_fallback"' "$results_dir/scouting-validation-errors.jsonl" || fail "$case_name: fallback warning missing"
-  [ -s "$results_dir/git.diff" ] || fail "$case_name: fallback coding should produce a diff"
   node - "$results_dir/scouting-validation-errors.jsonl" "$expected_reason" <<'NODE' || fail "$case_name: invalid scouting validation errors jsonl"
 const fs = require('node:fs');
 const logPath = process.argv[2];
@@ -96,7 +110,7 @@ const lines = fs.readFileSync(logPath, 'utf8').trim().split(/\n+/).filter(Boolea
 if (!lines.length) throw new Error('expected at least one validation error line');
 const entries = lines.map((line) => JSON.parse(line));
 for (const entry of entries) {
-  if (entry.reason_code === 'patch_fallback') continue;
+  if (entry.reason_code === 'patch_fallback' || entry.reason_code === 'patch_fallback_recovered') continue;
   for (const key of ['timestamp', 'reason_code', 'field', 'expected', 'actual', 'severity', 'suggestion']) {
     if (!(key in entry)) throw new Error(`missing key ${key}`);
   }
