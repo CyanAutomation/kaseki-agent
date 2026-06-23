@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.96.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.95.0...v1.96.0) (2026-06-23)
+
+
+### Features
+
+* Implement request normalization for OpenAI Responses API and add tests for multi-message input handling ([49934ae](https://github.com/CyanAutomation/kaseki-agent/commit/49934ae774bfbef169f7a12341cf9dcacc95e1b2))
+
 # [1.95.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.94.0...v1.95.0) (2026-06-23)
 
 
