@@ -8,4 +8,4 @@ external-sources=true
 shell=bash
 
 # Exclude patterns
-exclude=SC2086,SC2181
+exclude=SC2181
