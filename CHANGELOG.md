@@ -4,6 +4,15 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.92.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.91.0...v1.92.0) (2026-06-23)
+
+
+### Features
+
+* add configurable timeout for gateway response smoke test ([8329444](https://github.com/CyanAutomation/kaseki-agent/commit/8329444e4d130c97ef6e8748c6087439884061cd))
+* add LLM test button and summary to health check page ([6204934](https://github.com/CyanAutomation/kaseki-agent/commit/6204934a998ef9efd70c9288590c9da9a64f9c1c))
+* implement two-stage gateway test with connectivity and response validation ([e41b90d](https://github.com/CyanAutomation/kaseki-agent/commit/e41b90d10464edc426dcb306505e4cf570b01c14))
+
 # [1.91.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.90.1...v1.91.0) (2026-06-23)
 
 
