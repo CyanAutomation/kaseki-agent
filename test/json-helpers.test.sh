@@ -40,7 +40,7 @@ assert_json_string_decodes_to() {
   local output="$1"
   local expected="$2"
 
-  [ -n "$output" ] || return 1
+  [ -z "$output" ] && return 1
   if ! command -v node >/dev/null 2>&1; then
     printf 'ERROR: Node.js is required for JSON assertions\n' >&2
     return 1
