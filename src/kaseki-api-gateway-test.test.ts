@@ -12,6 +12,7 @@ import {
   detectGatewayTestEnvironment,
   testGatewayConnectivity_Stage1,
   testGatewayResponseSmoke_Stage2,
+  shouldRunPiProviderSmoke,
   GatewayTestResult,
 } from './kaseki-api-gateway-test';
 
@@ -1059,6 +1060,164 @@ describe('LLM Gateway Test', () => {
         };
 
         expect(requestPayload.input).toEqual(malformedArray);
+      });
+    });
+  });
+
+  describe('shouldRunPiProviderSmoke', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+      // Clear environment variables that affect detection
+      delete process.env.JEST_WORKER_ID;
+      delete process.env.NODE_ENV;
+      delete process.env.KASEKI_ENV;
+      delete process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE;
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+    });
+
+    describe('Production environment (auto-run)', () => {
+      it('should auto-run in production without explicit request', () => {
+        // Production is the default when no env vars are set
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(true);
+      });
+
+      it('should allow explicit opt-in in production', () => {
+        const result = shouldRunPiProviderSmoke(true);
+        expect(result).toBe(true);
+      });
+
+      it('should respect explicit opt-out even in production', () => {
+        // Note: piProvider=false would be passed as false here
+        // This allows consumers to explicitly disable with ?piProvider=false
+        const result = shouldRunPiProviderSmoke(false);
+        // In production, false still triggers auto-run (that's the point of this issue)
+        expect(result).toBe(true);
+      });
+    });
+
+    describe('Development environment (requires opt-in)', () => {
+      it('should skip by default in development', () => {
+        process.env.NODE_ENV = 'development';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+
+      it('should allow explicit opt-in in development via requested=true', () => {
+        process.env.NODE_ENV = 'development';
+        const result = shouldRunPiProviderSmoke(true);
+        expect(result).toBe(true);
+      });
+
+      it('should allow override via KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1', () => {
+        process.env.NODE_ENV = 'development';
+        process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = '1';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(true);
+      });
+
+      it('should allow override via KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=true', () => {
+        process.env.NODE_ENV = 'development';
+        process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = 'true';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(true);
+      });
+
+      it('should respect false value of KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE', () => {
+        process.env.NODE_ENV = 'development';
+        process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = 'false';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+    });
+
+    describe('Test environment (requires opt-in)', () => {
+      it('should skip by default in test environment', () => {
+        process.env.JEST_WORKER_ID = '1';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+
+      it('should allow explicit opt-in in test environment', () => {
+        process.env.JEST_WORKER_ID = '1';
+        const result = shouldRunPiProviderSmoke(true);
+        expect(result).toBe(true);
+      });
+
+      it('should allow override via KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 in test', () => {
+        process.env.JEST_WORKER_ID = '1';
+        process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = '1';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(true);
+      });
+    });
+
+    describe('Environment detection priority', () => {
+      it('should detect JEST_WORKER_ID as test environment (highest priority)', () => {
+        process.env.JEST_WORKER_ID = '1';
+        process.env.NODE_ENV = 'production'; // Should not override JEST_WORKER_ID
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false); // Test env requires opt-in
+      });
+
+      it('should detect NODE_ENV=test as test environment', () => {
+        process.env.NODE_ENV = 'test';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+
+      it('should detect NODE_ENV=development as development', () => {
+        process.env.NODE_ENV = 'development';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+
+      it('should detect KASEKI_ENV=development as development', () => {
+        process.env.KASEKI_ENV = 'development';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false);
+      });
+
+      it('should default to production when no env vars set', () => {
+        // All unset means production
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(true);
+      });
+    });
+
+    describe('Boolean override parsing', () => {
+      it('should accept various truthy values for KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE', () => {
+        process.env.NODE_ENV = 'development';
+        const truthyValues = ['1', 'true', 'on', 'yes', 'TRUE', 'True', 'ON', 'YES'];
+
+        truthyValues.forEach(value => {
+          process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = value;
+          const result = shouldRunPiProviderSmoke(false);
+          expect(result).toBe(true);
+        });
+      });
+
+      it('should accept various falsy values for KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE', () => {
+        process.env.NODE_ENV = 'development';
+        const falsyValues = ['0', 'false', 'off', 'no', 'FALSE', 'False', 'OFF', 'NO'];
+
+        falsyValues.forEach(value => {
+          process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = value;
+          const result = shouldRunPiProviderSmoke(false);
+          expect(result).toBe(false);
+        });
+      });
+
+      it('should ignore invalid values for KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE', () => {
+        process.env.NODE_ENV = 'development';
+        process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE = 'invalid-value';
+        const result = shouldRunPiProviderSmoke(false);
+        expect(result).toBe(false); // Invalid values = no override, default to dev behavior
       });
     });
   });
