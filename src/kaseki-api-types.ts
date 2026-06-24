@@ -234,7 +234,8 @@ export type DiagnosticEntryPoint =
   | 'pi-agent-diagnostics.jsonl'
   | 'pi-events.jsonl'
   | 'pi-summary.json'
-  | 'progress-stream-diagnostics.log';
+  | 'progress-stream-diagnostics.log'
+  | '.gateway-diagnostics.jsonl';
 
 export interface StructuredProgress {
   stage: string; // Required: current stage name
