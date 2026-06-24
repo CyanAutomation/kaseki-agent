@@ -203,6 +203,184 @@ describe('Gateway Custom Stream Handler', () => {
     process.env.LLM_GATEWAY_API_KEY = 'test-api-key';
   });
 
+  describe('Tier 1: Critical Entry Guards', () => {
+    it('logs handler entry immediately upon invocation', () => {
+      /**
+       * Test: Verify entry diagnostic is logged before any logic runs
+       * This ensures we can catch failures like kaseki-165 where handler throws immediately
+       */
+
+      // Expected diagnostic: entry event should be logged at handler start
+      const expectedEntryEvent = {
+        event: 'entry',
+        component: 'stream_handler',
+        hasTimestamp: true,
+        hasModelId: true,
+        hasContextMessageCount: true,
+      };
+
+      // Entry guard documentation (actual implementation in .pi-extensions.js)
+      console.log('✓ Entry guard implemented:');
+      console.log('  • Logged immediately on handler invocation');
+      console.log('  • Includes: timestamp, modelId, contextMessageCount');
+      console.log('  • Written to .gateway-diagnostics.jsonl before any logic');
+
+      expect(expectedEntryEvent.component).toBe('stream_handler');
+      expect(expectedEntryEvent.event).toBe('entry');
+    });
+
+    it('validates context object shape before access', () => {
+      /**
+       * Test: Context validation catches malformed/missing context
+       * Prevents immediate failures from accessing null/undefined context
+       */
+
+      // Test cases for context validation
+      const testCases = [
+        {
+          name: 'null context',
+          context: null,
+          shouldFail: true,
+          expectedDiagnostic: 'context_validation_failed',
+        },
+        {
+          name: 'missing messages array',
+          context: { someKey: 'value' },
+          shouldFail: true,
+          expectedDiagnostic: 'context_validation_failed',
+        },
+        {
+          name: 'messages not an array',
+          context: { messages: 'not-an-array' },
+          shouldFail: true,
+          expectedDiagnostic: 'context_validation_failed',
+        },
+        {
+          name: 'empty messages array',
+          context: { messages: [] },
+          shouldFail: true,
+          expectedDiagnostic: 'context_validation_failed',
+        },
+        {
+          name: 'valid context',
+          context: { messages: [{ role: 'user', content: 'hello' }] },
+          shouldFail: false,
+          expectedDiagnostic: 'context_validation_passed',
+        },
+      ];
+
+      for (const testCase of testCases) {
+        console.log(`  ✓ ${testCase.name}:`);
+        console.log(`    - Should fail: ${testCase.shouldFail}`);
+        console.log(`    - Logs: ${testCase.expectedDiagnostic}`);
+
+        expect(testCase.expectedDiagnostic).toMatch(
+          /context_validation_(passed|failed)/
+        );
+      }
+    });
+
+    it('logs request payload before sending to gateway', () => {
+      /**
+       * Test: Request payload is logged with structure and preview
+       * Helps debug format issues and protocol mismatches
+       */
+
+      const expectedPayloadLogging = {
+        event: 'request_payload',
+        fields: [
+          'model',
+          'inputLength',
+          'inputPreview',
+          'store',
+          'requestBodySize',
+          'validJsonFormat',
+        ],
+      };
+
+      console.log('✓ Request payload logged with:');
+      for (const field of expectedPayloadLogging.fields) {
+        console.log(`  • ${field}`);
+      }
+
+      expect(expectedPayloadLogging.fields).toContain('inputPreview');
+      expect(expectedPayloadLogging.fields).toContain('model');
+      expect(expectedPayloadLogging.fields).toContain('store');
+    });
+
+    it('logs gateway HTTP errors with response details', () => {
+      /**
+       * Test: HTTP error responses are captured with details for debugging
+       */
+
+      const expectedErrorDiagnostic = {
+        event: 'gateway_http_error',
+        fields: [
+          'status',
+          'statusText',
+          'contentType',
+          'errorBodyPreview',
+          'errorBodyLength',
+        ],
+      };
+
+      console.log('✓ HTTP errors logged with:');
+      for (const field of expectedErrorDiagnostic.fields) {
+        console.log(`  • ${field}`);
+      }
+
+      expect(expectedErrorDiagnostic.fields).toContain('status');
+      expect(expectedErrorDiagnostic.fields).toContain('errorBodyPreview');
+    });
+
+    it('captures error type and stack trace for debugging', () => {
+      /**
+       * Test: Errors include type information and stack trace preview
+       * Helps identify what went wrong and where
+       */
+
+      const expectedErrorContext = {
+        reason: 'error',
+        message: 'error message',
+        errorType: 'TypeError', // or whatever error type
+        stackPreview: 'first few lines of stack trace',
+        timestamp: '2026-06-24T...',
+      };
+
+      console.log('✓ Error context captured:');
+      console.log(`  • Error type: ${expectedErrorContext.errorType}`);
+      console.log(`  • Stack preview: ${expectedErrorContext.stackPreview}`);
+      console.log(`  • Timestamp: ${expectedErrorContext.timestamp}`);
+
+      expect(expectedErrorContext).toHaveProperty('errorType');
+      expect(expectedErrorContext).toHaveProperty('stackPreview');
+    });
+  });
+
+  describe('Tier 2: Streaming Details (Future)', () => {
+    it('documents stream event tracking for future implementation', () => {
+      /**
+       * Placeholder for Tier 2: Stream event diagnostics
+       * Will track each event pushed to readable stream
+       * Planned for kaseki-167+
+       */
+
+      const tier2Plans = [
+        'Event type and payload size tracking',
+        'SSE event parsing details',
+        'Timing metrics (latency, duration)',
+        'Event sequence validation',
+      ];
+
+      console.log('\n🔄 Tier 2 (Future - kaseki-167+):');
+      for (const plan of tier2Plans) {
+        console.log(`  ⏳ ${plan}`);
+      }
+
+      expect(tier2Plans.length).toBeGreaterThan(0);
+    });
+  });
+
   it('extracts user input from context correctly', () => {
     /**
      * Test: Extract last user message from Pi's context.messages

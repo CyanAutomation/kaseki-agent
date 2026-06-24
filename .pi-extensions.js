@@ -294,45 +294,71 @@ function extractUserInputFromContext(context) {
  * Custom stream handler for LLM Gateway provider
  * Converts Pi's message format to gateway's input format and processes SSE responses
  *
+ * streamSimple handlers in Pi must return a Node.js Readable stream.
+ * The stream emits JSON objects as lines (JSONL format).
+ * Each line is a streaming event that Pi parses.
+ *
  * @param {object} model - Model configuration (id, provider, api, etc.)
  * @param {object} context - Pi execution context with messages, tools, etc.
  * @param {object} options - Stream options (signal for abort, etc.)
- * @returns {object} Pi-compatible event stream
+ * @returns {Readable} Node.js Readable stream emitting JSONL events
  */
 function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
-  return async function streamGatewayProvider(model, context, options) {
-    // Try to import Pi's stream utilities from global context
-    // These are injected by Pi CLI when calling streamSimple handlers
-    const { createAssistantMessageEventStream, calculateCost } = global.__piStreamHelpers || {};
+  // Import Node.js stream utilities
+  const { Readable } = require('stream');
 
-    if (!createAssistantMessageEventStream) {
-      throw new Error('Pi stream utilities not available; ensure Pi CLI injected helpers');
-    }
-
-    const stream = createAssistantMessageEventStream();
-    const output = {
-      role: 'assistant',
-      content: [],
-      api: 'custom-gateway',
-      provider: 'gateway',
-      model: model.id || 'auto',
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  return function streamGatewayProvider(model, context, options) {
+    // Create a readable stream that will emit Pi-compatible events
+    const readable = new Readable({
+      read() {
+        // Stream will be pushed to externally
       },
-      stopReason: 'stop',
-      timestamp: Date.now(),
-    };
+    });
 
-    // Wrap execution in async IIFE to handle streaming
+    // Async handler for gateway communication
     (async () => {
       try {
-        // Push start event
-        stream.push({ type: 'start', partial: output });
+        // ENTRY GUARD: Log handler invocation immediately
+        recordGatewayDiagnostic('stream_handler', 'entry', {
+          timestamp: new Date().toISOString(),
+          modelId: model?.id || 'unknown',
+          modelType: model?.reasoning ? 'reasoning' : 'standard',
+          contextMessageCount: context?.messages?.length || 0,
+          contextKeys: context ? Object.keys(context) : [],
+        });
+
+        // CONTEXT VALIDATION: Check context shape before access
+        if (!context) {
+          recordGatewayDiagnostic('stream_handler', 'context_validation_failed', {
+            reason: 'context_null',
+            errorMessage: 'Context object is null or undefined',
+          });
+          throw new Error('Context is null or undefined');
+        }
+
+        if (!Array.isArray(context.messages)) {
+          recordGatewayDiagnostic('stream_handler', 'context_validation_failed', {
+            reason: 'messages_not_array',
+            contextType: typeof context.messages,
+            contextKeys: Object.keys(context),
+          });
+          throw new Error(
+            `Context.messages must be an array, got ${typeof context.messages}`
+          );
+        }
+
+        if (context.messages.length === 0) {
+          recordGatewayDiagnostic('stream_handler', 'context_validation_failed', {
+            reason: 'messages_empty',
+            messageCount: 0,
+          });
+          throw new Error('No messages in context');
+        }
+
+        recordGatewayDiagnostic('stream_handler', 'context_validation_passed', {
+          messageCount: context.messages.length,
+          lastMessageRole: context.messages[context.messages.length - 1]?.role,
+        });
 
         // Record diagnostic: stream handler invoked
         recordGatewayDiagnostic('stream_handler', 'invoked', {
@@ -345,6 +371,9 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
 
         recordGatewayDiagnostic('stream_handler', 'input_extracted', {
           inputLength: userInput.length,
+          inputPreview: userInput.substring(0, 100),
+          // eslint-disable-next-line no-control-regex
+          hasControlChars: /[\x00-\x1F\x7F]/.test(userInput),
         });
 
         // Build request in gateway's expected format
@@ -354,12 +383,27 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
           store: false,
         };
 
+        // REQUEST PAYLOAD LOGGING: Log exact structure sent to gateway
+        recordGatewayDiagnostic('stream_handler', 'request_payload', {
+          model: requestBody.model,
+          inputLength: requestBody.input.length,
+          inputPreview: requestBody.input.substring(0, 100),
+          store: requestBody.store,
+          requestBodySize: JSON.stringify(requestBody).length,
+          validJsonFormat: true,
+        });
+
         recordGatewayDiagnostic('stream_handler', 'request_built', {
           requestKeys: Object.keys(requestBody),
           inputFormat: typeof requestBody.input,
         });
 
         // Make request to gateway
+        recordGatewayDiagnostic('stream_handler', 'gateway_request_start', {
+          url: `${gatewayUrl}/responses`,
+          method: 'POST',
+          timestamp: new Date().toISOString(),
+        });
         const response = await fetch(`${gatewayUrl}/responses`, {
           method: 'POST',
           headers: {
@@ -371,6 +415,15 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         });
 
         if (!response.ok) {
+          // Capture error response details for diagnostics
+          const errorBody = await response.text().catch(() => '<unable to read>');
+          recordGatewayDiagnostic('stream_handler', 'gateway_http_error', {
+            status: response.status,
+            statusText: response.statusText,
+            contentType: response.headers.get('content-type'),
+            errorBodyPreview: errorBody.substring(0, 200),
+            errorBodyLength: errorBody.length,
+          });
           throw new Error(
             `Gateway HTTP ${response.status}: ${response.statusText}`
           );
@@ -379,6 +432,8 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         recordGatewayDiagnostic('stream_handler', 'response_received', {
           status: response.status,
           contentType: response.headers.get('content-type'),
+          hasBody: !!response.body,
+          timestamp: new Date().toISOString(),
         });
 
         // Parse SSE stream from gateway
@@ -390,6 +445,22 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         let textContent = '';
         let usage = null;
 
+        // Emit start event
+        readable.push(
+          JSON.stringify({
+            type: 'start',
+            partial: {
+              role: 'assistant',
+              content: [],
+              api: 'custom-gateway',
+              provider: 'gateway',
+              model: model.id || 'auto',
+              timestamp: Date.now(),
+            },
+          }) + '\n'
+        );
+
+        // Process SSE stream
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -440,80 +511,95 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
           hasUsage: !!usage,
         });
 
-        // Add text content to Pi stream
+        // Emit text events if we got content
         if (textContent) {
-          output.content.push({ type: 'text', text: textContent });
+          readable.push(
+            JSON.stringify({
+              type: 'text_start',
+              contentIndex: 0,
+            }) + '\n'
+          );
 
-          stream.push({
-            type: 'text_start',
-            contentIndex: 0,
-            partial: output,
-          });
+          readable.push(
+            JSON.stringify({
+              type: 'text_delta',
+              contentIndex: 0,
+              delta: textContent,
+            }) + '\n'
+          );
 
-          stream.push({
-            type: 'text_delta',
-            contentIndex: 0,
-            delta: textContent,
-            partial: output,
-          });
-
-          stream.push({
-            type: 'text_end',
-            contentIndex: 0,
-            content: textContent,
-            partial: output,
-          });
+          readable.push(
+            JSON.stringify({
+              type: 'text_end',
+              contentIndex: 0,
+              content: textContent,
+            }) + '\n'
+          );
         }
 
-        // Update usage metrics from gateway response
-        if (usage && calculateCost) {
-          output.usage.input = usage.input_tokens || 0;
-          output.usage.output = usage.output_tokens || 0;
-          output.usage.cacheRead = usage.cache_read_tokens || 0;
-          output.usage.cacheWrite = usage.cache_write_tokens || 0;
-          output.usage.totalTokens =
-            output.usage.input +
-            output.usage.output +
-            output.usage.cacheRead +
-            output.usage.cacheWrite;
-          calculateCost(model, output.usage);
-        }
-
-        recordGatewayDiagnostic('stream_handler', 'stream_complete', {
-          totalTokens: output.usage.totalTokens,
-        });
-
-        // Push done event
-        stream.push({
+        // Emit done event with usage metrics
+        const doneEvent = {
           type: 'done',
-          reason: output.stopReason,
-          message: output,
+          stopReason: 'stop',
+          message: {
+            role: 'assistant',
+            content: textContent ? [{ type: 'text', text: textContent }] : [],
+            usage: usage
+              ? {
+                input_tokens: usage.input_tokens || 0,
+                output_tokens: usage.output_tokens || 0,
+                cache_read_tokens: usage.cache_read_tokens || 0,
+                cache_write_tokens: usage.cache_write_tokens || 0,
+              }
+              : {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
+              },
+          },
+        };
+
+        readable.push(JSON.stringify(doneEvent) + '\n');
+        recordGatewayDiagnostic('stream_handler', 'stream_complete', {
+          totalTokens:
+            (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
         });
 
-        stream.end();
+        // End stream
+        readable.push(null);
       } catch (error) {
-        // Handle any errors during streaming
+        // Handle any errors during streaming with detailed context
         const errorMsg = error instanceof Error ? error.message : String(error);
-        output.stopReason = options?.signal?.aborted ? 'aborted' : 'error';
-        output.errorMessage = errorMsg;
+        const errorStack = error instanceof Error ? error.stack : '';
+        const stopReason = options?.signal?.aborted ? 'aborted' : 'error';
 
         recordGatewayDiagnostic('stream_handler', 'error', {
-          reason: output.stopReason,
+          reason: stopReason,
           message: errorMsg,
+          errorType: error?.constructor?.name || 'Unknown',
+          stackPreview: errorStack.split('\n').slice(0, 3).join(' | '),
+          timestamp: new Date().toISOString(),
         });
 
-        // Push error event
-        stream.push({
-          type: 'error',
-          reason: output.stopReason,
-          error: output,
-        });
+        // Emit error event
+        readable.push(
+          JSON.stringify({
+            type: 'error',
+            reason: stopReason,
+            error: {
+              message: errorMsg,
+              errorMessage: errorMsg,
+            },
+          }) + '\n'
+        );
 
-        stream.end();
+        // End stream
+        readable.push(null);
       }
     })();
 
-    return stream;
+    return readable;
   };
 }
 
