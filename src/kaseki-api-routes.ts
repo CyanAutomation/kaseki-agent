@@ -47,7 +47,18 @@ import {
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
 
-// Re-export UTF-8 helpers for backward compatibility
+/**
+ * BACKWARD COMPATIBILITY RE-EXPORTS
+ * 
+ * The following are re-exported for backward compatibility with existing tests
+ * and consumers that import from this module. New code should import directly
+ * from the source modules instead.
+ */
+
+/**
+ * @deprecated Use `import { decodeUtf8TailSafely } from './utils/utf8-helpers'` instead
+ * Re-exported from utf8-helpers for backward compatibility
+ */
 export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
@@ -63,7 +74,10 @@ function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   );
 }
 
-// Re-export health checks for backward compatibility with tests and callers
+/**
+ * @deprecated Use `import { checkDeletedBindMounts } from './kaseki-api-health-checks'` instead
+ * Re-exported for backward compatibility with tests and callers
+ */
 export {
   checkDeletedBindMounts,
   checkWritableDirectory,
@@ -80,9 +94,12 @@ export {
   TEMPLATE_REMEDIATION,
   shouldBlockForFreshness,
   isTemplateDoctorTimeout,
-};
+} from './kaseki-api-health-checks';
 
-// Re-export from subprocess-helpers for backward compatibility with tests
+/**
+ * @deprecated Use `import { classifyDockerFailure } from './lib/subprocess-helpers'` instead
+ * Re-exported for backward compatibility with tests
+ */
 export { classifyDockerFailure } from './lib/subprocess-helpers';
 
 function stableStringify(value: unknown): string {
