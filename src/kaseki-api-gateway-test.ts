@@ -225,10 +225,19 @@ export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}):
 }
 
 export function shouldRunPiProviderSmoke(requested: boolean): boolean {
-  if (!requested) return false;
   const environment = detectGatewayTestEnvironment();
+
+  // 1. Auto-run in production (no opt-in required)
   if (environment === 'production') return true;
-  return parseBooleanOverride(process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE) === true;
+
+  // 2. Allow explicit opt-in in any environment (requested=true from ?piProvider=true)
+  if (requested) return true;
+
+  // 3. Allow override via env var in non-production environments
+  if (parseBooleanOverride(process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE) === true) return true;
+
+  // 4. Default to skip in non-production without opt-in
+  return false;
 }
 
 export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeTestResult {
@@ -237,14 +246,19 @@ export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeT
   const model = process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'auto';
 
   if (!shouldRunPiProviderSmoke(requested)) {
+    const environment = detectGatewayTestEnvironment();
+    const remediation = environment === 'production'
+      ? 'This should not happen in production (auto-run enabled). Check logs for errors.'
+      : 'Pi provider smoke is opt-in in non-production environments. Add ?piProvider=true to the request, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 to enable for development testing.';
+
     return {
       status: 'skipped',
-      detail: 'Pi provider smoke skipped. It is opt-in and only runs by default in production because it consumes LLM gateway tokens.',
+      detail: 'Pi provider smoke skipped. It runs by default in production, but requires opt-in in non-production environments to conserve LLM gateway tokens.',
       responseTime: 0,
       timestamp,
       provider: 'gateway',
       model,
-      remediation: 'Run in production with /api/gateway-test?stage=2&responseSmoke=true&piProvider=true, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 for a controlled development smoke.',
+      remediation,
     };
   }
 
