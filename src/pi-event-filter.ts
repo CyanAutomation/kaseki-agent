@@ -1008,6 +1008,9 @@ function extractEmptyAssistantTurn(event: PiEvent, states: Map<string, Assistant
   const provider = typeof message.provider === 'string' ? message.provider : undefined;
   const api = typeof message.api === 'string' ? message.api : undefined;
   const model = typeof message.model === 'string' ? message.model : undefined;
+
+  // Token-based classification: High token count with no output suggests provider infrastructure issue,
+  // while low token count suggests possible config/auth/model problem
   const details = [
     provider ? `provider=${provider}` : '',
     api ? `api=${api}` : '',
