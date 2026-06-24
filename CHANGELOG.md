@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.100.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.99.1...v1.100.0) (2026-06-24)
+
+
+### Features
+
+* add diagnostics logging tests for gateway stream handler entry and error handling ([0985790](https://github.com/CyanAutomation/kaseki-agent/commit/0985790560402f8db05cd62b7e6fd45f94817e44))
+
 ## [1.99.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.99.0...v1.99.1) (2026-06-24)
 
 
