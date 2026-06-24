@@ -4,6 +4,20 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.102.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.101.0...v1.102.0) (2026-06-24)
+
+
+### Bug Fixes
+
+* update flushInterval type to NodeJS.Timeout in ProviderDiagnosticsLogger ([bd15913](https://github.com/CyanAutomation/kaseki-agent/commit/bd159134192340e5132ac9f5e0430dc1fb20e56f))
+
+
+### Features
+
+* add Kaseki-170 implementation guide and integration tests for empty assistant turn handling ([a8a4b33](https://github.com/CyanAutomation/kaseki-agent/commit/a8a4b338df6457ddb3c8c209052aa54b2c45cfd3))
+* add provider diagnostics logger for capturing and logging provider issues ([2417d08](https://github.com/CyanAutomation/kaseki-agent/commit/2417d08c0adeeba5ad28aaa0e2cd0fd479ef6605))
+* enhance Pi event validation and sanitization with detailed error checks and helper functions ([1d96553](https://github.com/CyanAutomation/kaseki-agent/commit/1d965530d3aeb14c814c54a904fb1e1ac207a3f1))
+
 # [1.101.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.100.0...v1.101.0) (2026-06-24)
 
 
