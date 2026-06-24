@@ -163,6 +163,15 @@ export const ARTIFACT_METADATA_REGISTRY: Record<string, ArtifactMetadataDefiniti
     sizeHint: 'small',
   },
 
+  '.gateway-diagnostics.jsonl': {
+    name: '.gateway-diagnostics.jsonl',
+    contentType: 'application/x-jsonl',
+    description: 'LLM gateway Pi provider registration and adapter diagnostics, including native vs legacy stream handler selection',
+    availability: ArtifactAvailability.CONDITIONAL,
+    triageOrder: 2,
+    sizeHint: 'small',
+  },
+
   'prompt-diagnostics.jsonl': {
     name: 'prompt-diagnostics.jsonl',
     contentType: 'application/x-jsonl',
