@@ -729,6 +729,110 @@ describe('pi-event-filter fast correctness tests', () => {
       expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
     });
 
+    test('should NOT flag streaming response as empty when prior message_update carries text for same response', async () => {
+      const fixture = [
+        JSON.stringify({
+          type: 'message_update',
+          timestamp: '2026-06-23T10:32:21.100Z',
+          assistantMessageEvent: {
+            type: 'text_delta',
+            partial: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Visible text from response.output_text.delta' }],
+              api: 'openai-responses',
+              provider: 'gateway',
+              model: 'auto',
+              responseId: 'resp_stream_state',
+            },
+          },
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Visible text from response.output_text.delta' }],
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            responseId: 'resp_stream_state',
+          },
+        }),
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-06-23T10:32:22.000Z',
+          message: {
+            role: 'assistant',
+            content: [],
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            usage: {
+              input: 2000,
+              output: 128,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2128,
+            },
+            stopReason: 'stop',
+            responseId: 'resp_stream_state',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error?.type).not.toBe('provider_empty_assistant_turn');
+    });
+
+    test('should still flag streaming response as empty when prior message_update is whitespace only', async () => {
+      const fixture = [
+        JSON.stringify({
+          type: 'message_update',
+          timestamp: '2026-06-23T10:32:21.100Z',
+          assistantMessageEvent: {
+            type: 'text_delta',
+            partial: {
+              role: 'assistant',
+              content: [{ type: 'text', text: '\n\n' }],
+              api: 'openai-responses',
+              provider: 'gateway',
+              model: 'auto',
+              responseId: 'resp_whitespace_state',
+            },
+          },
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: '\n\n' }],
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            responseId: 'resp_whitespace_state',
+          },
+        }),
+        JSON.stringify({
+          type: 'message_end',
+          timestamp: '2026-06-23T10:32:22.000Z',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: '\n\n' }],
+            api: 'openai-responses',
+            provider: 'gateway',
+            model: 'auto',
+            usage: {
+              input: 2000,
+              output: 128,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2128,
+            },
+            stopReason: 'stop',
+            responseId: 'resp_whitespace_state',
+          },
+        }),
+      ];
+
+      const result = await runFilter(fixture);
+      expect(result.exitCode).toBe(0);
+      expect(result.summary.primary_provider_error?.type).toBe('provider_empty_assistant_turn');
+    });
+
     test('should STILL flag empty response when ALL sources are empty (true empty turn)', async () => {
       // Spec: Verify that legitimate empty responses are still caught
       // Scenario: message.content empty AND message.text empty AND message.output_text missing → true empty
