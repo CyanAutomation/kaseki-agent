@@ -29,16 +29,8 @@ import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artif
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
 import { testGatewayConnectivity_Stage1, testGatewayResponseSmoke_Stage2, resolveGatewayApiKey, shouldRunGatewayResponseSmoke, testPiGatewayProviderSmoke } from './kaseki-api-gateway-test';
 import {
-  checkDeletedBindMounts,
-  checkWritableDirectory,
-  checkLLMGatewayKey,
-  checkGatewayTestSecretConsistency,
-  checkWorkerGatewayConfig,
   checkGitHubAppCredentials,
-  checkWorkerSmokeTest,
-  buildTemplateHealthStatus,
   resolveCheckoutFreshness,
-  checkTemplateActivatorParity,
   getSubmissionTemplateHealthStatus,
   checkTemplatePublishModeCompatibility,
   TEMPLATE_REMEDIATION,
