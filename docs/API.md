@@ -189,6 +189,25 @@ and is intentionally excluded from the current readiness status:
 Use the top-level `/api/preflight` `status`, `timestamp`, and `checks` fields for
 current readiness decisions.
 
+### Gateway Diagnostics
+
+**GET `/api/gateway-test`**
+
+Requires authentication. Runs LLM gateway diagnostics in layers:
+
+- `?stage=1` checks gateway reachability and authentication via `/models` without inference tokens.
+- `?stage=2&responseSmoke=true` checks OpenAI Responses API inference with `model=auto`, including JSON, streaming, and larger prompt responses. This consumes gateway tokens.
+- `?stage=2&responseSmoke=true&piProvider=true` also runs a Pi CLI provider smoke through `--provider gateway --model auto`. This production adapter check catches Pi provider registration problems even when raw gateway HTTP checks pass. In development/test it is skipped unless `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1` is set.
+
+```bash
+curl -H "Authorization: Bearer sk-your-api-key" \
+  "http://localhost:8080/api/gateway-test?stage=2&responseSmoke=true&piProvider=true"
+```
+
+Successful raw gateway checks do not prove the Pi provider adapter is healthy.
+When provider failures occur, inspect `.gateway-diagnostics.jsonl` along with
+`failure.json`.
+
 ### Startup Health Report
 
 **GET `/api/startup-health`**

@@ -72,6 +72,8 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `LLM_GATEWAY_URL` | — | string | LLM Gateway endpoint. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with `model=auto`. Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
+| `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Allows `/api/gateway-test?stage=2&responseSmoke=true&piProvider=true` to run the real Pi gateway provider smoke outside production. Keep unset for normal development because this consumes LLM gateway tokens and requires production-like gateway credentials. |
+| `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
 | `KASEKI_API_KEY` | — | string | Client-side bearer token for authenticated Kaseki API services |
 | `KASEKI_API_KEYS` | `/agents/secrets/kaseki_api_keys`, `~/secrets/kaseki_api_keys` | string | Newline-separated API keys accepted by the Kaseki service |

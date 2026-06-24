@@ -1,4 +1,5 @@
 import { readHostSecret } from './secrets/host-secrets-reader';
+import { spawnSync } from 'node:child_process';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -52,12 +53,25 @@ export interface ResponseSmokeTestResult {
 }
 
 export interface ResponseSmokeSubcheck {
-  name: 'json-response' | 'streaming-response' | 'large-prompt-response';
+  name: 'json-response' | 'streaming-response' | 'large-prompt-response' | 'pi-provider-response';
   status: 'ok' | 'error';
   detail: string;
   responseTime: number;
   responseId?: string;
   outputTokens?: number;
+}
+
+export interface PiProviderSmokeTestResult {
+  status: 'ok' | 'error' | 'skipped';
+  detail: string;
+  responseTime: number;
+  timestamp: string;
+  provider: 'gateway';
+  model: string;
+  outputEventCount?: number;
+  assistantTextChars?: number;
+  exitCode?: number | null;
+  remediation?: string;
 }
 
 /**
@@ -128,6 +142,14 @@ const GATEWAY_RESPONSE_LARGE_SMOKE_PROMPT = [
   ),
 ].join('\n');
 const GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS = 256;
+const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
+  const envValue = process.env.KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS;
+  if (envValue) {
+    const parsed = parseInt(envValue, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 60000;
+})();
 
 export interface GatewayApiKeyResolution {
   configured: boolean;
@@ -200,6 +222,121 @@ export function shouldRunGatewayResponseSmoke(options: GatewayTestOptions = {}):
   // 4. Environment-based default: only run stage 2 in production
   const environment = detectGatewayTestEnvironment();
   return environment === 'production';
+}
+
+export function shouldRunPiProviderSmoke(requested: boolean): boolean {
+  if (!requested) return false;
+  const environment = detectGatewayTestEnvironment();
+  if (environment === 'production') return true;
+  return parseBooleanOverride(process.env.KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE) === true;
+}
+
+export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeTestResult {
+  const timestamp = new Date().toISOString();
+  const startTime = performance.now();
+  const model = process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'auto';
+
+  if (!shouldRunPiProviderSmoke(requested)) {
+    return {
+      status: 'skipped',
+      detail: 'Pi provider smoke skipped. It is opt-in and only runs by default in production because it consumes LLM gateway tokens.',
+      responseTime: 0,
+      timestamp,
+      provider: 'gateway',
+      model,
+      remediation: 'Run in production with /api/gateway-test?stage=2&responseSmoke=true&piProvider=true, or set KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1 for a controlled development smoke.',
+    };
+  }
+
+  const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const apiKey = resolveGatewayApiKey().value;
+  if (!gatewayUrl || !apiKey) {
+    return {
+      status: 'error',
+      detail: 'Pi provider smoke cannot run because LLM_GATEWAY_URL or LLM_GATEWAY_API_KEY is missing',
+      responseTime: 0,
+      timestamp,
+      provider: 'gateway',
+      model,
+      remediation: 'Configure gateway URL and API key before running Pi provider smoke.',
+    };
+  }
+
+  const prompt = [
+    'Return exactly this plain text and nothing else:',
+    'kaseki pi provider smoke ok',
+  ].join('\n');
+  const child = spawnSync('pi', ['--mode', 'json', '--no-session', '--provider', 'gateway', '--model', model, prompt], {
+    encoding: 'utf8',
+    timeout: PI_PROVIDER_SMOKE_TIMEOUT_MS,
+    env: {
+      ...process.env,
+      LLM_GATEWAY_URL: gatewayUrl,
+      LLM_GATEWAY_API_KEY: apiKey,
+      LLM_GATEWAY_MAX_OUTPUT_TOKENS: '128',
+    },
+    maxBuffer: 1024 * 1024,
+  });
+  const responseTime = Math.round(performance.now() - startTime);
+  const stdout = child.stdout || '';
+  const stderr = child.stderr || '';
+  const assistantText = extractPiJsonAssistantText(stdout);
+
+  if (child.error) {
+    const timedOut = child.error.message.includes('ETIMEDOUT');
+    return {
+      status: 'error',
+      detail: `Pi provider smoke failed to start or complete: ${child.error.message}`,
+      responseTime,
+      timestamp,
+      provider: 'gateway',
+      model,
+      exitCode: child.status,
+      remediation: timedOut
+        ? 'Pi provider smoke timed out. Check gateway latency and Pi provider registration.'
+        : 'Check that Pi CLI is installed in the controller/worker image and gateway provider extension loads.',
+    };
+  }
+
+  if (child.status !== 0) {
+    return {
+      status: 'error',
+      detail: `Pi provider smoke exited ${child.status}: ${(stderr || stdout).slice(0, 240)}`,
+      responseTime,
+      timestamp,
+      provider: 'gateway',
+      model,
+      exitCode: child.status,
+      remediation: 'Gateway HTTP smoke can pass while Pi provider registration fails. Check .gateway-diagnostics.jsonl and provider api type.',
+    };
+  }
+
+  if (!assistantText.trim()) {
+    return {
+      status: 'error',
+      detail: 'Pi provider smoke completed but produced no assistant text',
+      responseTime,
+      timestamp,
+      provider: 'gateway',
+      model,
+      exitCode: child.status,
+      outputEventCount: countPiJsonEvents(stdout),
+      assistantTextChars: 0,
+      remediation: 'Verify Pi provider api uses openai-responses and does not register the legacy custom streamSimple adapter.',
+    };
+  }
+
+  return {
+    status: 'ok',
+    detail: `Pi gateway provider produced assistant text (${responseTime}ms)`,
+    responseTime,
+    timestamp,
+    provider: 'gateway',
+    model,
+    exitCode: child.status,
+    outputEventCount: countPiJsonEvents(stdout),
+    assistantTextChars: assistantText.trim().length,
+  };
 }
 
 /**
@@ -905,6 +1042,39 @@ function parseResponsesSse(bodyText: string): { text: string; responseId?: strin
     }
   }
   return { text, responseId, outputTokens };
+}
+
+function countPiJsonEvents(stdout: string): number {
+  return stdout
+    .split(/\r?\n/)
+    .filter((line) => line.trim().startsWith('{'))
+    .length;
+}
+
+function extractPiJsonAssistantText(stdout: string): string {
+  let text = '';
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    let event: any;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    const message = event?.message;
+    if (!message || message.role !== 'assistant') continue;
+    if (typeof message.text === 'string') text += message.text;
+    if (typeof message.output_text === 'string') text += message.output_text;
+    if (typeof message.assistantMessage === 'string') text += message.assistantMessage;
+    if (Array.isArray(message.content)) {
+      for (const part of message.content) {
+        if (typeof part?.text === 'string') text += part.text;
+        if (typeof part?.output_text === 'string') text += part.output_text;
+      }
+    }
+  }
+  return text;
 }
 
 export function isResponsesEndpoint(url: URL): boolean {
