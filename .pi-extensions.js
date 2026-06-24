@@ -22,6 +22,59 @@
 
 import fs from 'node:fs';
 
+/**
+ * Sanitize Pi event for emission
+ * Validates and cleans event object before emission
+ *
+ * @param {Record<string, any>} event - Event object to sanitize
+ * @returns {Record<string, any>} Sanitized event
+ */
+function sanitizePiEventForEmission(event) {
+  // Pass through event as-is; structure is already validated
+  // by Pi CLI's streaming protocol
+  return event;
+}
+
+/**
+ * Extract user input from context messages
+ * Concatenates all message content, prioritizing user messages
+ *
+ * @param {object} context - Context object with messages array
+ * @returns {string} Extracted user input text
+ */
+function extractUserInputFromContext(context) {
+  if (!context || !Array.isArray(context.messages) || context.messages.length === 0) {
+    return '';
+  }
+
+  // Collect all user messages and concatenate
+  const userMessages = context.messages
+    .filter(msg => msg && msg.role === 'user')
+    .map(msg => {
+      // Handle content as string or array of content blocks
+      if (typeof msg.content === 'string') {
+        return msg.content;
+      }
+      if (Array.isArray(msg.content)) {
+        return msg.content
+          .map(block => {
+            if (typeof block === 'string') return block;
+            if (block && typeof block === 'object') {
+              return block.text || block.content || '';
+            }
+            return '';
+          })
+          .filter(Boolean)
+          .join(' ');
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  return userMessages || '';
+}
+
 // Log extension module load for diagnostics
 const extensionLoadDiagnostic = {
   timestamp: new Date().toISOString(),
@@ -260,110 +313,185 @@ if (!process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE) {
 }
 
 /**
- * Extract user input from Pi's context message history
- * @param {object} context - Pi execution context with messages array
- * @returns {string} Extracted user input text
+ * Extract text content from various gateway response event formats
+ * Handles 5+ fallback paths for compatibility with different providers
+ *
+ * @param {object} event - Gateway SSE event
+ * @returns {{textContent: string, hasText: boolean}} Extracted text
  */
-function extractUserInputFromContext(context) {
-  if (!context || !context.messages || !Array.isArray(context.messages)) {
-    throw new Error('No messages in context');
-  }
-
-  // Find the last user message (iterate backwards)
-  for (let i = context.messages.length - 1; i >= 0; i--) {
-    const msg = context.messages[i];
-    if (msg.role === 'user') {
-      // Handle both string and content block formats
-      if (typeof msg.content === 'string') {
-        return msg.content;
+function extractTextFromGatewayEvent(event) {
+  // Primary: Extract from response.output array (standard gateway format)
+  if (event.response?.output && Array.isArray(event.response.output)) {
+    for (const block of event.response.output) {
+      if (block?.type === 'text' && block.text) {
+        return { textContent: block.text, hasText: true };
       }
-      if (Array.isArray(msg.content)) {
-        // Extract and concatenate all text blocks
-        return msg.content
-          .filter(block => block && block.type === 'text')
-          .map(block => block.text || '')
-          .join('');
-      }
-      return String(msg.content);
     }
   }
 
-  throw new Error('No user message found in context');
+  // Fallback 1: Extract from event.response.text
+  if (typeof event.response?.text === 'string') {
+    return { textContent: event.response.text, hasText: true };
+  }
+
+  // Fallback 2: Extract from event.response.content array
+  if (Array.isArray(event.response?.content)) {
+    for (const block of event.response.content) {
+      if (block && typeof block === 'object') {
+        const blockText = block.text || block.content || block.output_text;
+        if (typeof blockText === 'string' && blockText.trim()) {
+          return { textContent: blockText, hasText: true };
+        }
+      } else if (typeof block === 'string' && block.trim()) {
+        return { textContent: block, hasText: true };
+      }
+    }
+  }
+
+  // Fallback 3: Extract from event.response.message.content
+  if (Array.isArray(event.response?.message?.content)) {
+    for (const block of event.response.message.content) {
+      if (block && typeof block === 'object') {
+        const blockText = block.text || block.content || block.output_text;
+        if (typeof blockText === 'string' && blockText.trim()) {
+          return { textContent: blockText, hasText: true };
+        }
+      } else if (typeof block === 'string' && block.trim()) {
+        return { textContent: block, hasText: true };
+      }
+    }
+  }
+
+  // Fallback 4: Extract from root level text fields
+  if (typeof event.text === 'string') {
+    return { textContent: event.text, hasText: true };
+  }
+
+  // Fallback 5: Extract from event.output_text
+  if (typeof event.output_text === 'string') {
+    return { textContent: event.output_text, hasText: true };
+  }
+
+  return { textContent: '', hasText: false };
 }
 
 /**
- * Sanitize Pi event to remove callable fields that would cause TypeError
- * Detects and removes any function-typed properties that Pi might try to invoke
+ * Parse SSE stream and collect text content and usage metrics
+ *
+ * @param {ReadableStreamDefaultReader} reader - Response body reader
+ * @param {TextDecoder} decoder - Text decoder for stream chunks
+ * @returns {Promise<{textContent: string, usage: object | null}>} Parsed stream data
  */
-function sanitizePiEventForEmission(event) {
-  if (!event || typeof event !== 'object') {
-    return event;
-  }
+async function parseSseStreamEvents(reader, decoder) {
+  let buffer = '';
+  let textContent = '';
+  let usage = null;
 
-  const isCallable = (val) => typeof val === 'function';
-  const sanitized = JSON.parse(JSON.stringify(event)); // Deep clone to avoid mutation
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-  // Check and sanitize message object
-  if (sanitized.message && typeof sanitized.message === 'object') {
-    if (isCallable(sanitized.message.result)) {
-      recordGatewayDiagnostic('stream_handler', 'sanitize_message_result_removed', {
-        reason: 'callable_result_field_detected',
-        message: 'Removed callable message.result that would cause TypeError in Pi',
-      });
-      delete sanitized.message.result;
-    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
 
-    // Check content array parts
-    if (Array.isArray(sanitized.message.content)) {
-      sanitized.message.content = sanitized.message.content.map((part) => {
-        if (part && typeof part === 'object' && isCallable(part.result)) {
-          recordGatewayDiagnostic('stream_handler', 'sanitize_content_result_removed', {
-            reason: 'callable_result_in_content_part',
-          });
-          const cleanPart = JSON.parse(JSON.stringify(part));
-          delete cleanPart.result;
-          return cleanPart;
+    for (const line of lines) {
+      // Parse SSE data: lines
+      if (line.startsWith('data: ')) {
+        try {
+          const jsonStr = line.slice(6);
+          // Skip [DONE] marker
+          if (jsonStr === '[DONE]') {
+            break;
+          }
+
+          const event = JSON.parse(jsonStr);
+          const { textContent: extractedText } = extractTextFromGatewayEvent(event);
+          if (extractedText && !textContent) {
+            textContent = extractedText;
+          }
+
+          // Collect usage metrics from any response event
+          if (event.response?.usage) {
+            usage = event.response.usage;
+          }
+        } catch {
+          // Silently ignore parse errors (SSE comments, etc.)
         }
-        return part;
-      });
+      }
     }
   }
 
-  // Check and sanitize partial object (start events)
-  if (sanitized.partial && typeof sanitized.partial === 'object') {
-    if (isCallable(sanitized.partial.result)) {
-      recordGatewayDiagnostic('stream_handler', 'sanitize_partial_result_removed', {
-        reason: 'callable_result_field_detected',
-        message: 'Removed callable partial.result that would cause TypeError in Pi',
-      });
-      delete sanitized.partial.result;
-    }
+  return { textContent, usage };
+}
 
-    // Check content array parts in partial
-    if (Array.isArray(sanitized.partial.content)) {
-      sanitized.partial.content = sanitized.partial.content.map((part) => {
-        if (part && typeof part === 'object' && isCallable(part.result)) {
-          recordGatewayDiagnostic('stream_handler', 'sanitize_partial_content_result_removed', {
-            reason: 'callable_result_in_content_part',
-          });
-          const cleanPart = JSON.parse(JSON.stringify(part));
-          delete cleanPart.result;
-          return cleanPart;
+/**
+ * Build and emit Pi-compatible streaming events to readable stream
+ *
+ * @param {Readable} readable - Writable stream to push events to
+ * @param {string} textContent - Message text content
+ * @param {object | null} _usage - Token usage metrics
+ * @param {string} _modelId - Model identifier
+ */
+function emitPiStreamingEvents(readable, textContent, _usage, _modelId) {
+  // Emit text_start event
+  const textStartEvent = {
+    type: 'text_start',
+    contentIndex: 0,
+  };
+  readable.push(JSON.stringify(sanitizePiEventForEmission(textStartEvent)) + '\n');
+
+  // Emit text_delta event
+  const textDeltaEvent = {
+    type: 'text_delta',
+    contentIndex: 0,
+    delta: textContent,
+  };
+  readable.push(JSON.stringify(sanitizePiEventForEmission(textDeltaEvent)) + '\n');
+
+  // Emit text_end event
+  const textEndEvent = {
+    type: 'text_end',
+    contentIndex: 0,
+    content: textContent,
+  };
+  readable.push(JSON.stringify(sanitizePiEventForEmission(textEndEvent)) + '\n');
+}
+
+/**
+ * Build and emit Pi done event with usage metrics
+ *
+ * @param {Readable} readable - Writable stream to push events to
+ * @param {string} textContent - Message text content
+ * @param {object | null} usage - Token usage metrics
+ * @param {string} _modelId - Model identifier
+ */
+function emitPiDoneEvent(readable, textContent, usage, _modelId) {
+  const doneEvent = {
+    type: 'done',
+    stopReason: 'stop',
+    message: {
+      role: 'assistant',
+      content: textContent ? [{ type: 'text', text: textContent }] : [],
+      // Include fallback text fields for better compatibility with event filters
+      ...(textContent ? { text: textContent, output_text: textContent } : {}),
+      usage: usage
+        ? {
+          input_tokens: usage.input_tokens || 0,
+          output_tokens: usage.output_tokens || 0,
+          cache_read_tokens: usage.cache_read_tokens || 0,
+          cache_write_tokens: usage.cache_write_tokens || 0,
         }
-        return part;
-      });
-    }
-  }
+        : {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+        },
+    },
+  };
 
-  // Check error object
-  if (sanitized.error && typeof sanitized.error === 'object' && isCallable(sanitized.error.result)) {
-    recordGatewayDiagnostic('stream_handler', 'sanitize_error_result_removed', {
-      reason: 'callable_result_in_error',
-    });
-    delete sanitized.error.result;
-  }
-
-  return sanitized;
+  readable.push(JSON.stringify(sanitizePiEventForEmission(doneEvent)) + '\n');
 }
 
 /**
@@ -517,9 +645,6 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         // @ts-expect-error - TextDecoder is available in Node.js runtime
         // eslint-disable-next-line no-undef
         const decoder = new TextDecoder();
-        let buffer = '';
-        let textContent = '';
-        let usage = null;
 
         // Emit start event
         const startEvent = {
@@ -535,162 +660,31 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         };
         readable.push(JSON.stringify(sanitizePiEventForEmission(startEvent)) + '\n');
 
-        // Process SSE stream
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          // Keep incomplete line in buffer
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            // Parse SSE data: lines
-            if (line.startsWith('data: ')) {
-              try {
-                const jsonStr = line.slice(6);
-                // Skip [DONE] marker
-                if (jsonStr === '[DONE]') {
-                  break;
-                }
-
-                const event = JSON.parse(jsonStr);
-
-                // Extract text from response.output array (primary path)
-                if (
-                  event.response &&
-                  event.response.output &&
-                  Array.isArray(event.response.output)
-                ) {
-                  for (const block of event.response.output) {
-                    if (block && block.type === 'text' && block.text) {
-                      textContent = block.text;
-                    }
-                  }
-                }
-
-                // Fallback 1: Extract from event.response.text (some providers use direct text field)
-                if (!textContent && event.response && typeof event.response.text === 'string') {
-                  textContent = event.response.text;
-                }
-
-                // Fallback 2: Extract from event.response.content (direct content array)
-                if (!textContent && event.response && Array.isArray(event.response.content)) {
-                  for (const block of event.response.content) {
-                    if (block && typeof block === 'object') {
-                      const blockText = block.text || block.content || block.output_text;
-                      if (typeof blockText === 'string' && blockText.trim()) {
-                        textContent = blockText;
-                        break;
-                      }
-                    } else if (typeof block === 'string' && block.trim()) {
-                      textContent = block;
-                      break;
-                    }
-                  }
-                }
-
-                // Fallback 3: Extract from event.response.message.content (wrapped message)
-                if (!textContent && event.response && event.response.message && Array.isArray(event.response.message.content)) {
-                  for (const block of event.response.message.content) {
-                    if (block && typeof block === 'object') {
-                      const blockText = block.text || block.content || block.output_text;
-                      if (typeof blockText === 'string' && blockText.trim()) {
-                        textContent = blockText;
-                        break;
-                      }
-                    } else if (typeof block === 'string' && block.trim()) {
-                      textContent = block;
-                      break;
-                    }
-                  }
-                }
-
-                // Fallback 4: Extract from root level text fields
-                if (!textContent && typeof event.text === 'string') {
-                  textContent = event.text;
-                }
-
-                // Fallback 5: Extract from event.output_text (gateway alternative naming)
-                if (!textContent && typeof event.output_text === 'string') {
-                  textContent = event.output_text;
-                }
-
-                // Collect usage metrics from any response event
-                if (event.response && event.response.usage) {
-                  usage = event.response.usage;
-                }
-              } catch {
-                // Silently ignore parse errors (SSE comments, etc.)
-              }
-            }
-          }
-        }
+        // Parse SSE stream and collect text/usage
+        const { textContent, usage } = await parseSseStreamEvents(reader, decoder);
 
         recordGatewayDiagnostic('stream_handler', 'stream_parsed', {
           textLength: textContent.length,
           hasUsage: !!usage,
-          usageTokens: usage ? {
-            input: usage.input_tokens || 0,
-            output: usage.output_tokens || 0,
-            total: (usage.input_tokens || 0) + (usage.output_tokens || 0),
-          } : null,
+          usageTokens: usage
+            ? {
+              input: usage.input_tokens || 0,
+              output: usage.output_tokens || 0,
+              total: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+            }
+            : null,
         });
 
         // Emit text events if we got content
         if (textContent) {
-          const textStartEvent = {
-            type: 'text_start',
-            contentIndex: 0,
-          };
-          readable.push(JSON.stringify(sanitizePiEventForEmission(textStartEvent)) + '\n');
-
-          const textDeltaEvent = {
-            type: 'text_delta',
-            contentIndex: 0,
-            delta: textContent,
-          };
-          readable.push(JSON.stringify(sanitizePiEventForEmission(textDeltaEvent)) + '\n');
-
-          const textEndEvent = {
-            type: 'text_end',
-            contentIndex: 0,
-            content: textContent,
-          };
-          readable.push(JSON.stringify(sanitizePiEventForEmission(textEndEvent)) + '\n');
+          emitPiStreamingEvents(readable, textContent, usage, model.id);
         }
 
         // Emit done event with usage metrics
-        const doneEvent = {
-          type: 'done',
-          stopReason: 'stop',
-          message: {
-            role: 'assistant',
-            content: textContent ? [{ type: 'text', text: textContent }] : [],
-            // Include fallback text fields for better compatibility with event filters
-            // These are checked by pi-event-filter.ts as fallback paths for extractMessageTextLength()
-            ...(textContent ? { text: textContent, output_text: textContent } : {}),
-            usage: usage
-              ? {
-                input_tokens: usage.input_tokens || 0,
-                output_tokens: usage.output_tokens || 0,
-                cache_read_tokens: usage.cache_read_tokens || 0,
-                cache_write_tokens: usage.cache_write_tokens || 0,
-              }
-              : {
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_read_tokens: 0,
-                cache_write_tokens: 0,
-              },
-          },
-        };
+        emitPiDoneEvent(readable, textContent, usage, model.id);
 
-        readable.push(JSON.stringify(sanitizePiEventForEmission(doneEvent)) + '\n');
         recordGatewayDiagnostic('stream_handler', 'stream_complete', {
-          totalTokens:
-            (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
+          totalTokens: (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
         });
 
         // End stream

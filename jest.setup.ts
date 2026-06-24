@@ -90,6 +90,45 @@ const processExitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: n
 }) as never);
 
 /**
+ * Helper function: Destroy all sockets in a given agent
+ * @param agent - HTTP or HTTPS agent with sockets property
+ */
+function destroyAgentSockets(agent: any): void {
+  if (!agent) return;
+  try {
+    const sockets = Object.values(agent.sockets || {});
+    for (const socketList of sockets) {
+      if (Array.isArray(socketList)) {
+        for (const socket of socketList) {
+          socket.destroy();
+        }
+      }
+    }
+  } catch {
+    // If sockets don't exist or we can't access them, continue
+  }
+}
+
+/**
+ * Helper function: Cleanup global HTTP and HTTPS agents (fast version for afterEach)
+ * Destroys all sockets in the global HTTP/HTTPS agents to prevent connection pool exhaustion.
+ * This is critical because Node.js's fetch() uses global HttpAgent/HttpsAgent
+ * which keep sockets alive for connection reuse.
+ */
+function cleanupHttpAgents(): void {
+  try {
+    // @ts-ignore - Accessing Node's internal HTTP agents
+    const http = require('http');
+    const https = require('https');
+    
+    destroyAgentSockets(http.globalAgent);
+    destroyAgentSockets(https.globalAgent);
+  } catch {
+    // If agents don't exist or we can't access them, continue
+  }
+}
+
+/**
  * Global afterEach hook to ensure proper cleanup between tests
  * This prevents handle leaks from process.exit spy and other resources
  */
@@ -111,42 +150,170 @@ afterEach(() => {
   // Clear all pending timers to prevent handle leaks
   jest.clearAllTimers();
 
-  // Destroy all HTTP/HTTPS agent sockets to prevent connection pool exhaustion
-  // This is critical because Node.js's fetch() uses global HttpAgent/HttpsAgent
-  // which keep sockets alive for connection reuse. If not drained, these sockets
-  // prevent the process from exiting.
+  // Cleanup HTTP/HTTPS agent sockets (fast path)
+  cleanupHttpAgents();
+});
+
+/**
+ * Helper function: Destroy all requests (pending and queued) in a given agent
+ * @param agent - HTTP or HTTPS agent with requests property
+ */
+function destroyAgentRequests(agent: any): void {
+  if (!agent) return;
   try {
-    // @ts-ignore - Accessing Node's internal HTTP agents
-    const http = require('http');
-    const https = require('https');
-    
-    // Destroy all sockets in the global HTTP agent
-    if (http.globalAgent) {
-      const httpSockets = Object.values(http.globalAgent.sockets || {});
-      for (const socketList of httpSockets) {
-        if (Array.isArray(socketList)) {
-          for (const socket of socketList) {
-            socket.destroy();
-          }
-        }
-      }
-    }
-    
-    // Destroy all sockets in the global HTTPS agent
-    if (https.globalAgent) {
-      const httpsSockets = Object.values(https.globalAgent.sockets || {});
-      for (const socketList of httpsSockets) {
-        if (Array.isArray(socketList)) {
-          for (const socket of socketList) {
-            socket.destroy();
+    const requests = Object.values(agent.requests || {});
+    for (const requestList of requests) {
+      if (Array.isArray(requestList)) {
+        while (requestList.length > 0) {
+          const req = requestList.pop();
+          if (req) {
+            req.abort?.();
+            req.destroy?.();
           }
         }
       }
     }
   } catch {
+    // If requests don't exist or we can't access them, continue
+  }
+}
+
+/**
+ * Helper function: Aggressively cleanup global HTTP and HTTPS agents (slow version for afterAll)
+ * Destroys all sockets AND requests in the global agents.
+ * This is more thorough than afterEach cleanup.
+ */
+function cleanupHttpAgentsAggressive(): void {
+  try {
+    // @ts-ignore - Accessing Node's internal HTTP agents
+    const http = require('http');
+    const https = require('https');
+    
+    if (http.globalAgent) {
+      // Destroy sockets
+      const httpSockets = http.globalAgent.sockets || {};
+      for (const [, socketList] of Object.entries(httpSockets)) {
+        if (Array.isArray(socketList)) {
+          while (socketList.length > 0) {
+            const socket = socketList.pop();
+            if (socket) {
+              socket.destroy();
+            }
+          }
+        }
+      }
+      // Destroy pending requests
+      destroyAgentRequests(http.globalAgent);
+    }
+    
+    if (https.globalAgent) {
+      // Destroy sockets
+      const httpsSockets = https.globalAgent.sockets || {};
+      for (const [, socketList] of Object.entries(httpsSockets)) {
+        if (Array.isArray(socketList)) {
+          while (socketList.length > 0) {
+            const socket = socketList.pop();
+            if (socket) {
+              socket.destroy();
+            }
+          }
+        }
+      }
+      // Destroy pending requests
+      destroyAgentRequests(https.globalAgent);
+    }
+  } catch (e) {
     // If agents don't exist or we can't access them, continue
   }
-});
+}
+
+/**
+ * Helper function: Cleanup undici connection pool (used by Node's fetch)
+ */
+async function cleanupUndiciDispatcher(): Promise<void> {
+  try {
+    const { getGlobalDispatcher } = require('undici');
+    const dispatcher = getGlobalDispatcher();
+    if (dispatcher && typeof dispatcher.destroy === 'function') {
+      await dispatcher.destroy();
+    }
+  } catch {
+    // undici might not be explicitly installed or accessible
+  }
+}
+
+/**
+ * Helper function: Kill any lingering child processes
+ */
+function cleanupChildProcesses(): void {
+  try {
+    // @ts-ignore - Access to private Node API
+    const activeRequests = process._getActiveRequests?.() || [];
+    for (const req of activeRequests) {
+      if (req && typeof req.kill === 'function') {
+        try {
+          req.kill();
+        } catch {
+          // Already dead
+        }
+      }
+    }
+  } catch {
+    // Child process module may not be available or private API not accessible
+  }
+}
+
+/**
+ * Helper function: Remove all process event listeners that might keep the process alive
+ */
+function cleanupProcessListeners(): void {
+  try {
+    process.removeAllListeners('uncaughtException');
+    process.removeAllListeners('unhandledRejection');
+    
+    // Remove all other process listeners that might keep it alive
+    const allListeners = process.eventNames();
+    for (const listener of allListeners) {
+      process.removeAllListeners(listener as string);
+    }
+  } catch {
+    // If we can't remove listeners, continue
+  }
+}
+
+/**
+ * Helper function: Log open handles for debugging (debug mode only)
+ */
+function debugLogOpenHandles(): void {
+  if (process.env.KASEKI_DEBUG_HANDLES !== '1') return;
+  
+  try {
+    // @ts-ignore - Accessing private Node API
+    const handles = process._getActiveHandles?.() || [];
+    // @ts-ignore
+    const requests = process._getActiveRequests?.() || [];
+    console.error('Open handles:', handles.length);
+    console.error('Open requests:', requests.length);
+    
+    // Log details about what's keeping the process alive
+    for (let i = 0; i < handles.length && i < 5; i++) {
+      // @ts-ignore
+      const handle = handles[i];
+      const name = handle?.constructor?.name || typeof handle;
+      console.error(`  Handle ${i}: ${name}`);
+      // Log more details for file descriptors
+      if (handle && handle.fd !== undefined) {
+        console.error(`    - FD: ${handle.fd}`);
+      }
+    }
+    for (let i = 0; i < requests.length && i < 5; i++) {
+      // @ts-ignore
+      console.error(`Request ${i}:`, requests[i]?.constructor?.name || typeof requests[i]);
+    }
+  } catch {
+    // Private API not available
+  }
+}
 
 /**
  * Global afterAll hook to clean up global resources after all tests complete
@@ -163,142 +330,23 @@ afterAll(async () => {
   (global as any).__kasekiCapturedLogs = [];
   delete (global as any).__kasekiCapturedLogs;
 
-  // Force cleanup of any lingering listeners to prevent hanging
-  process.removeAllListeners('uncaughtException');
-  process.removeAllListeners('unhandledRejection');
-  
-  // Remove all other process listeners that might keep it alive
-  const allListeners = process.eventNames();
-  for (const listener of allListeners) {
-    process.removeAllListeners(listener as string);
-  }
+  // Cleanup process listeners
+  cleanupProcessListeners();
 
-  // Kill any lingering child processes (critical for spawn() usage in tests)
-  try {
-    const { spawn: _spawn } = require('child_process');
-    // @ts-ignore - Access to private Node API
-    const activeRequests = process._getActiveRequests?.() || [];
-    for (const req of activeRequests) {
-      if (req && typeof req.kill === 'function') {
-        try {
-          req.kill();
-        } catch {
-          // Already dead
-        }
-      }
-    }
-  } catch {
-    // Child process module may not be available
-  }
+  // Kill any lingering child processes
+  cleanupChildProcesses();
 
   // Aggressively clean up HTTP/HTTPS global agents
-  try {
-    // @ts-ignore - Accessing Node's internal HTTP agents
-    const http = require('http');
-    const https = require('https');
-    
-    // Destroy ALL sockets in global HTTP agent
-    if (http.globalAgent) {
-      const httpSockets = http.globalAgent.sockets || {};
-      for (const [key, socketList] of Object.entries(httpSockets)) {
-        if (Array.isArray(socketList)) {
-          while (socketList.length > 0) {
-            const socket = socketList.pop();
-            if (socket) {
-              socket.destroy();
-            }
-          }
-        }
-      }
-      // Also destroy requests pending
-      const httpRequests = http.globalAgent.requests || {};
-      for (const [key, requestList] of Object.entries(httpRequests)) {
-        if (Array.isArray(requestList)) {
-          while (requestList.length > 0) {
-            const req = requestList.pop();
-            if (req) {
-              req.abort?.();
-              req.destroy?.();
-            }
-          }
-        }
-      }
-    }
-    
-    // Destroy ALL sockets in global HTTPS agent
-    if (https.globalAgent) {
-      const httpsSockets = https.globalAgent.sockets || {};
-      for (const [key, socketList] of Object.entries(httpsSockets)) {
-        if (Array.isArray(socketList)) {
-          while (socketList.length > 0) {
-            const socket = socketList.pop();
-            if (socket) {
-              socket.destroy();
-            }
-          }
-        }
-      }
-      // Also destroy requests pending
-      const httpsRequests = https.globalAgent.requests || {};
-      for (const [key, requestList] of Object.entries(httpsRequests)) {
-        if (Array.isArray(requestList)) {
-          while (requestList.length > 0) {
-            const req = requestList.pop();
-            if (req) {
-              req.abort?.();
-              req.destroy?.();
-            }
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // If agents don't exist or we can't access them, continue
-  }
+  cleanupHttpAgentsAggressive();
 
-  // Explicitly close undici connection pool if available (used by Node's fetch)
-  try {
-    const { getGlobalDispatcher } = require('undici');
-    const dispatcher = getGlobalDispatcher();
-    if (dispatcher && typeof dispatcher.destroy === 'function') {
-      await dispatcher.destroy();
-    }
-  } catch {
-    // undici might not be explicitly installed or accessible
-  }
+  // Cleanup undici dispatcher
+  await cleanupUndiciDispatcher();
 
   // Give Node a moment to complete any pending operations
   await new Promise(resolve => setImmediate(resolve));
 
-  // Check for open handles using private API
-  if (process.env.KASEKI_DEBUG_HANDLES === '1') {
-    try {
-      // @ts-ignore - Accessing private Node API
-      const handles = process._getActiveHandles?.() || [];
-      // @ts-ignore
-      const requests = process._getActiveRequests?.() || [];
-      console.error('Open handles:', handles.length);
-      console.error('Open requests:', requests.length);
-      
-      // Log details about what's keeping the process alive
-      for (let i = 0; i < handles.length && i < 5; i++) {
-        // @ts-ignore
-        const handle = handles[i];
-        const name = handle?.constructor?.name || typeof handle;
-        console.error(`  Handle ${i}: ${name}`);
-        // Log more details for file descriptors
-        if (handle && handle.fd !== undefined) {
-          console.error(`    - FD: ${handle.fd}`);
-        }
-      }
-      for (let i = 0; i < requests.length && i < 5; i++) {
-        // @ts-ignore
-        console.error(`Request ${i}:`, requests[i]?.constructor?.name || typeof requests[i]);
-      }
-    } catch {
-      // Private API not available
-    }
-  }
+  // Log open handles for debugging (if enabled)
+  debugLogOpenHandles();
 
   // Signal successful exit code; Jest's forceExit (jest.config.ts) handles
   // forcibly terminating any lingering open handles after all tests complete.

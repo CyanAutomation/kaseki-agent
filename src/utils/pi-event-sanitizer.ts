@@ -17,6 +17,120 @@ function isCallable(value: any): boolean {
 }
 
 /**
+ * Validate content block array (message.content or partial.content)
+ * @returns Array of error messages for callable result fields
+ */
+function validateContentBlocks(content: any[], blockPath: string): string[] {
+  const errors: string[] = [];
+
+  if (!Array.isArray(content)) {
+    errors.push(`${blockPath} is not an array`);
+    return errors;
+  }
+
+  content.forEach((part: any, idx: number) => {
+    if (part && typeof part === 'object' && isCallable(part.result)) {
+      errors.push(
+        `Event ${blockPath}[${idx}].result is a function (callable) - will cause TypeError`
+      );
+    }
+  });
+
+  return errors;
+}
+
+/**
+ * Validate message object structure
+ * @returns Array of error messages
+ */
+function validateMessageField(message: any): string[] {
+  const errors: string[] = [];
+
+  if (!message || typeof message !== 'object') {
+    errors.push('Event message is not an object');
+    return errors;
+  }
+
+  // Check for problematic callable fields
+  if (isCallable(message.result)) {
+    errors.push(
+      'Event message.result is a function (callable) - will cause TypeError when Pi tries to use it'
+    );
+  }
+
+  // Validate role field
+  if (message.role && typeof message.role !== 'string') {
+    errors.push('Event message.role is not a string');
+  }
+
+  // Content should be array if present
+  if (message.content && !Array.isArray(message.content)) {
+    errors.push('Event message.content is not an array');
+  }
+
+  // Check for callable fields in content parts
+  if (Array.isArray(message.content)) {
+    errors.push(...validateContentBlocks(message.content, 'message.content'));
+  }
+
+  // Usage should be object if present
+  if (message.usage && typeof message.usage !== 'object') {
+    errors.push('Event message.usage is not an object');
+  }
+
+  return errors;
+}
+
+/**
+ * Validate partial object structure (start events)
+ * @returns Array of error messages
+ */
+function validatePartialField(partial: any): string[] {
+  const errors: string[] = [];
+
+  if (!partial || typeof partial !== 'object') {
+    errors.push('Event partial is not an object');
+    return errors;
+  }
+
+  if (isCallable(partial.result)) {
+    errors.push(
+      'Event partial.result is a function (callable) - will cause TypeError when Pi tries to use it'
+    );
+  }
+
+  // Content should be array if present
+  if (partial.content && !Array.isArray(partial.content)) {
+    errors.push('Event partial.content is not an array');
+  }
+
+  // Check for callable fields in content parts
+  if (Array.isArray(partial.content)) {
+    errors.push(...validateContentBlocks(partial.content, 'partial.content'));
+  }
+
+  return errors;
+}
+
+/**
+ * Validate error object structure
+ * @returns Array of error messages
+ */
+function validateErrorField(error: any): string[] {
+  const errors: string[] = [];
+
+  if (!error || typeof error !== 'object') {
+    return errors; // error field is optional
+  }
+
+  if (isCallable(error.result)) {
+    errors.push('Event error.result is a function (callable) - will cause TypeError');
+  }
+
+  return errors;
+}
+
+/**
  * Sanitize a message object to remove callable fields that Pi CLI cannot handle
  */
 function sanitizeMessage(msg: any): any {
@@ -85,6 +199,24 @@ function sanitizePartial(partial: any): any {
 }
 
 /**
+ * Sanitize an error object
+ */
+function sanitizeError(error: any): any {
+  if (!error || typeof error !== 'object') {
+    return error;
+  }
+
+  const sanitized = { ...error };
+
+  if (isCallable(sanitized.result)) {
+    console.warn('[Pi Event Sanitizer] Warning: Removing callable error.result field');
+    delete sanitized.result;
+  }
+
+  return sanitized;
+}
+
+/**
  * Validate Pi event structure
  * Returns validation result with list of errors if invalid
  */
@@ -104,75 +236,17 @@ export function validatePiEvent(event: any): PiEventValidationResult {
 
   // Validate message structure for events that have messages
   if (event.message) {
-    if (typeof event.message !== 'object') {
-      errors.push('Event message is not an object');
-    } else {
-      const msg = event.message;
-
-      // Check for problematic callable fields
-      if (isCallable(msg.result)) {
-        errors.push(
-          'Event message.result is a function (callable) - will cause TypeError when Pi tries to use it'
-        );
-      }
-
-      // Validate role field
-      if (msg.role && typeof msg.role !== 'string') {
-        errors.push('Event message.role is not a string');
-      }
-
-      // Content should be array if present
-      if (msg.content && !Array.isArray(msg.content)) {
-        errors.push('Event message.content is not an array');
-      }
-
-      // Check for callable fields in content parts
-      if (Array.isArray(msg.content)) {
-        msg.content.forEach((part: any, idx: number) => {
-          if (part && typeof part === 'object' && isCallable(part.result)) {
-            errors.push(
-              `Event message.content[${idx}].result is a function (callable) - will cause TypeError`
-            );
-          }
-        });
-      }
-
-      // Usage should be object if present
-      if (msg.usage && typeof msg.usage !== 'object') {
-        errors.push('Event message.usage is not an object');
-      }
-    }
+    errors.push(...validateMessageField(event.message));
   }
 
   // Validate partial structure for start events
   if (event.partial) {
-    if (typeof event.partial !== 'object') {
-      errors.push('Event partial is not an object');
-    } else {
-      const partial = event.partial;
+    errors.push(...validatePartialField(event.partial));
+  }
 
-      if (isCallable(partial.result)) {
-        errors.push(
-          'Event partial.result is a function (callable) - will cause TypeError when Pi tries to use it'
-        );
-      }
-
-      // Content should be array if present
-      if (partial.content && !Array.isArray(partial.content)) {
-        errors.push('Event partial.content is not an array');
-      }
-
-      // Check for callable fields in content parts
-      if (Array.isArray(partial.content)) {
-        partial.content.forEach((part: any, idx: number) => {
-          if (part && typeof part === 'object' && isCallable(part.result)) {
-            errors.push(
-              `Event partial.content[${idx}].result is a function (callable) - will cause TypeError`
-            );
-          }
-        });
-      }
-    }
+  // Validate error structure if present
+  if (event.error) {
+    errors.push(...validateErrorField(event.error));
   }
 
   const valid = errors.length === 0;
@@ -185,6 +259,9 @@ export function validatePiEvent(event: any): PiEventValidationResult {
     }
     if (event.partial) {
       sanitized.partial = sanitizePartial(event.partial);
+    }
+    if (event.error) {
+      sanitized.error = sanitizeError(event.error);
     }
     return { valid, errors, sanitized };
   }
@@ -211,14 +288,10 @@ export function sanitizePiEvent(event: any): any {
     sanitized.partial = sanitizePartial(event.partial);
   }
 
-  if (event.error && typeof event.error === 'object') {
-    const errorObj = { ...event.error };
-    if (isCallable(errorObj.result)) {
-      console.warn('[Pi Event Sanitizer] Warning: Removing callable error.result field');
-      delete errorObj.result;
-    }
-    sanitized.error = errorObj;
+  if (event.error) {
+    sanitized.error = sanitizeError(event.error);
   }
 
   return sanitized;
 }
+

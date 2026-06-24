@@ -29,6 +29,49 @@ interface TestResult {
   command?: string;
 }
 
+/**
+ * Pattern definition for test result matching
+ */
+interface TestResultPattern {
+  regex: RegExp;
+  status: 'passed' | 'failed';
+  nameGroup: number;
+}
+
+/**
+ * Create a reusable test result pattern matcher
+ * Each pattern definition includes a regex, status, and which group number contains the test name
+ */
+function createTestResultMatcher(patterns: TestResultPattern[]) {
+  return (line: string, seenTests: Set<string>, results: Record<string, TestResult>) => {
+    for (const pattern of patterns) {
+      const match = line.match(pattern.regex);
+      if (match && match[pattern.nameGroup]) {
+        const testName = match[pattern.nameGroup].trim();
+        if (testName && !seenTests.has(testName)) {
+          results[testName] = { status: pattern.status };
+          seenTests.add(testName);
+          return true; // Matched this line
+        }
+      }
+    }
+    return false; // No pattern matched
+  };
+}
+
+/**
+ * Define common test result patterns
+ * Support multiple output formats: ✓/✗, PASS/FAIL, [PASS]/[FAIL]
+ */
+const TEST_RESULT_PATTERNS: TestResultPattern[] = [
+  { regex: /^\s*✓\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },
+  { regex: /^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'failed', nameGroup: 1 },
+  { regex: /^\s*PASS\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'passed', nameGroup: 1 },
+  { regex: /^\s*FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/, status: 'failed', nameGroup: 1 },
+  { regex: /^\s*\[PASS\]\s+(.+?)$/, status: 'passed', nameGroup: 1 },
+  { regex: /^\s*\[FAIL\]\s+(.+?)$/, status: 'failed', nameGroup: 1 },
+];
+
 interface TestClassification {
   baseline_status: 'passed' | 'failed' | 'skipped';
   working_status: 'passed' | 'failed' | 'skipped';
@@ -64,74 +107,17 @@ export function parseTestResults(logContent: string, exitCode: number): Record<s
   // Track which test names we've already seen to avoid duplicates
   const seenTests = new Set<string>();
 
+  // Create a matcher function for this parse
+  const matcher = createTestResultMatcher(TEST_RESULT_PATTERNS);
+
   for (const line of lines) {
     // Skip empty lines and header lines
     if (!line.trim() || /^(Test|PASS|FAIL|Tests|Files):/.test(line.trim())) {
       continue;
     }
 
-    // Pattern 1: ✓ test name or ✗ test name
-    let match = line.match(/^\s*✓\s+(.+?)(?:\s+\(\d+ms\))?$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'passed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
-
-    match = line.match(/^\s*✗\s+(.+?)(?:\s+\(\d+ms\))?$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'failed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
-
-    // Pattern 2: PASS test name or FAIL test name
-    match = line.match(/^\s*PASS\s+(.+?)(?:\s+\(\d+ms\))?$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'passed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
-
-    match = line.match(/^\s*FAIL\s+(.+?)(?:\s+\(\d+ms\))?$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'failed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
-
-    // Pattern 3: [PASS] test name or [FAIL] test name
-    match = line.match(/^\s*\[PASS\]\s+(.+?)$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'passed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
-
-    match = line.match(/^\s*\[FAIL\]\s+(.+?)$/);
-    if (match) {
-      const testName = match[1].trim();
-      if (testName && !seenTests.has(testName)) {
-        results[testName] = { status: 'failed' };
-        seenTests.add(testName);
-        continue;
-      }
-    }
+    // Try all patterns
+    matcher(line, seenTests, results);
   }
 
   // If no individual tests found, infer overall status from exit code
