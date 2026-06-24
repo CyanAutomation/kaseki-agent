@@ -291,6 +291,81 @@ function extractUserInputFromContext(context) {
 }
 
 /**
+ * Sanitize Pi event to remove callable fields that would cause TypeError
+ * Detects and removes any function-typed properties that Pi might try to invoke
+ */
+function sanitizePiEventForEmission(event) {
+  if (!event || typeof event !== 'object') {
+    return event;
+  }
+
+  const isCallable = (val) => typeof val === 'function';
+  const sanitized = JSON.parse(JSON.stringify(event)); // Deep clone to avoid mutation
+
+  // Check and sanitize message object
+  if (sanitized.message && typeof sanitized.message === 'object') {
+    if (isCallable(sanitized.message.result)) {
+      recordGatewayDiagnostic('stream_handler', 'sanitize_message_result_removed', {
+        reason: 'callable_result_field_detected',
+        message: 'Removed callable message.result that would cause TypeError in Pi',
+      });
+      delete sanitized.message.result;
+    }
+
+    // Check content array parts
+    if (Array.isArray(sanitized.message.content)) {
+      sanitized.message.content = sanitized.message.content.map((part) => {
+        if (part && typeof part === 'object' && isCallable(part.result)) {
+          recordGatewayDiagnostic('stream_handler', 'sanitize_content_result_removed', {
+            reason: 'callable_result_in_content_part',
+          });
+          const cleanPart = JSON.parse(JSON.stringify(part));
+          delete cleanPart.result;
+          return cleanPart;
+        }
+        return part;
+      });
+    }
+  }
+
+  // Check and sanitize partial object (start events)
+  if (sanitized.partial && typeof sanitized.partial === 'object') {
+    if (isCallable(sanitized.partial.result)) {
+      recordGatewayDiagnostic('stream_handler', 'sanitize_partial_result_removed', {
+        reason: 'callable_result_field_detected',
+        message: 'Removed callable partial.result that would cause TypeError in Pi',
+      });
+      delete sanitized.partial.result;
+    }
+
+    // Check content array parts in partial
+    if (Array.isArray(sanitized.partial.content)) {
+      sanitized.partial.content = sanitized.partial.content.map((part) => {
+        if (part && typeof part === 'object' && isCallable(part.result)) {
+          recordGatewayDiagnostic('stream_handler', 'sanitize_partial_content_result_removed', {
+            reason: 'callable_result_in_content_part',
+          });
+          const cleanPart = JSON.parse(JSON.stringify(part));
+          delete cleanPart.result;
+          return cleanPart;
+        }
+        return part;
+      });
+    }
+  }
+
+  // Check error object
+  if (sanitized.error && typeof sanitized.error === 'object' && isCallable(sanitized.error.result)) {
+    recordGatewayDiagnostic('stream_handler', 'sanitize_error_result_removed', {
+      reason: 'callable_result_in_error',
+    });
+    delete sanitized.error.result;
+  }
+
+  return sanitized;
+}
+
+/**
  * Custom stream handler for LLM Gateway provider
  * Converts Pi's message format to gateway's input format and processes SSE responses
  *
@@ -446,19 +521,18 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         let usage = null;
 
         // Emit start event
-        readable.push(
-          JSON.stringify({
-            type: 'start',
-            partial: {
-              role: 'assistant',
-              content: [],
-              api: 'custom-gateway',
-              provider: 'gateway',
-              model: model.id || 'auto',
-              timestamp: Date.now(),
-            },
-          }) + '\n'
-        );
+        const startEvent = {
+          type: 'start',
+          partial: {
+            role: 'assistant',
+            content: [],
+            api: 'custom-gateway',
+            provider: 'gateway',
+            model: model.id || 'auto',
+            timestamp: Date.now(),
+          },
+        };
+        readable.push(JSON.stringify(sanitizePiEventForEmission(startEvent)) + '\n');
 
         // Process SSE stream
         while (true) {
@@ -513,28 +587,25 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
 
         // Emit text events if we got content
         if (textContent) {
-          readable.push(
-            JSON.stringify({
-              type: 'text_start',
-              contentIndex: 0,
-            }) + '\n'
-          );
+          const textStartEvent = {
+            type: 'text_start',
+            contentIndex: 0,
+          };
+          readable.push(JSON.stringify(sanitizePiEventForEmission(textStartEvent)) + '\n');
 
-          readable.push(
-            JSON.stringify({
-              type: 'text_delta',
-              contentIndex: 0,
-              delta: textContent,
-            }) + '\n'
-          );
+          const textDeltaEvent = {
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: textContent,
+          };
+          readable.push(JSON.stringify(sanitizePiEventForEmission(textDeltaEvent)) + '\n');
 
-          readable.push(
-            JSON.stringify({
-              type: 'text_end',
-              contentIndex: 0,
-              content: textContent,
-            }) + '\n'
-          );
+          const textEndEvent = {
+            type: 'text_end',
+            contentIndex: 0,
+            content: textContent,
+          };
+          readable.push(JSON.stringify(sanitizePiEventForEmission(textEndEvent)) + '\n');
         }
 
         // Emit done event with usage metrics
@@ -560,7 +631,7 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
           },
         };
 
-        readable.push(JSON.stringify(doneEvent) + '\n');
+        readable.push(JSON.stringify(sanitizePiEventForEmission(doneEvent)) + '\n');
         recordGatewayDiagnostic('stream_handler', 'stream_complete', {
           totalTokens:
             (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
@@ -583,16 +654,15 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         });
 
         // Emit error event
-        readable.push(
-          JSON.stringify({
-            type: 'error',
-            reason: stopReason,
-            error: {
-              message: errorMsg,
-              errorMessage: errorMsg,
-            },
-          }) + '\n'
-        );
+        const errorEvent = {
+          type: 'error',
+          reason: stopReason,
+          error: {
+            message: errorMsg,
+            errorMessage: errorMsg,
+          },
+        };
+        readable.push(JSON.stringify(sanitizePiEventForEmission(errorEvent)) + '\n');
 
         // End stream
         readable.push(null);
