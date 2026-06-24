@@ -12,12 +12,33 @@
  * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key
  * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
  *
- * NOTE: This extension patches global.fetch to normalize multi-message array prompts
- * to the OpenAI Responses API format before sending to gateway.
- * Diagnostic events are emitted to .gateway-diagnostics.jsonl for monitoring.
+ * DIAGNOSTICS:
+ * - Extension load diagnostics written to /results/.gateway-diagnostics.jsonl
+ * - Records: extension load, provider registration, model resolution, api type confirmation
+ * - Does NOT attempt fetch/undici normalization (Pi uses undici directly, which bypasses fetch)
  */
 
 import fs from 'node:fs';
+
+// Log extension module load for diagnostics
+const extensionLoadDiagnostic = {
+  timestamp: new Date().toISOString(),
+  event: 'extension_module_loaded',
+  piExtensionsVersion: 'gateway-provider-v1',
+};
+
+// Try to write diagnostic immediately (best effort)
+try {
+  if (fs.existsSync('/results')) {
+    fs.appendFileSync(
+      '/results/.gateway-diagnostics.jsonl',
+      JSON.stringify(extensionLoadDiagnostic) + '\n',
+      'utf8'
+    );
+  }
+} catch {
+  // Silent: /results may not exist during extension load
+}
 
 function resolveGatewayApiKey() {
   if (process.env.LLM_GATEWAY_API_KEY) {
@@ -244,11 +265,13 @@ export default function registerGatewayProvider(pi) {
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
+    const apiType = 'openai-responses';
+
     pi.registerProvider('gateway', {
       name: 'LLM Gateway',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: 'openai-responses', // Manifest gateway is OpenAI Responses API compatible
+      api: apiType,  // DECISION POINT: Verify if 'openai-responses' maps to /v1/responses
       models: [
         {
           id: 'auto',
@@ -261,5 +284,46 @@ export default function registerGatewayProvider(pi) {
         }
       ]
     });
+
+    // Write provider registration diagnostic
+    const providerDiagnostic = {
+      timestamp: new Date().toISOString(),
+      event: 'provider_registered',
+      provider: 'gateway',
+      baseUrl: gatewayUrl,
+      apiType: apiType,
+      modelId: 'auto',
+      hasApiKey: !!gatewayApiKey,
+    };
+
+    try {
+      if (fs.existsSync('/results')) {
+        fs.appendFileSync(
+          '/results/.gateway-diagnostics.jsonl',
+          JSON.stringify(providerDiagnostic) + '\n',
+          'utf8'
+        );
+      }
+    } catch {
+      // Silent: diagnostics not critical to provider functionality
+    }
+  } else {
+    // No gateway URL configured
+    const noDiagnostic = {
+      timestamp: new Date().toISOString(),
+      event: 'provider_skipped',
+      reason: 'no_LLM_GATEWAY_URL',
+    };
+    try {
+      if (fs.existsSync('/results')) {
+        fs.appendFileSync(
+          '/results/.gateway-diagnostics.jsonl',
+          JSON.stringify(noDiagnostic) + '\n',
+          'utf8'
+        );
+      }
+    } catch {
+      // Silent
+    }
   }
 }
