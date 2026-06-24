@@ -258,6 +258,265 @@ if (!process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE) {
   process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE = 'true';
 }
 
+/**
+ * Extract user input from Pi's context message history
+ * @param {object} context - Pi execution context with messages array
+ * @returns {string} Extracted user input text
+ */
+function extractUserInputFromContext(context) {
+  if (!context || !context.messages || !Array.isArray(context.messages)) {
+    throw new Error('No messages in context');
+  }
+
+  // Find the last user message (iterate backwards)
+  for (let i = context.messages.length - 1; i >= 0; i--) {
+    const msg = context.messages[i];
+    if (msg.role === 'user') {
+      // Handle both string and content block formats
+      if (typeof msg.content === 'string') {
+        return msg.content;
+      }
+      if (Array.isArray(msg.content)) {
+        // Extract and concatenate all text blocks
+        return msg.content
+          .filter(block => block && block.type === 'text')
+          .map(block => block.text || '')
+          .join('');
+      }
+      return String(msg.content);
+    }
+  }
+
+  throw new Error('No user message found in context');
+}
+
+/**
+ * Custom stream handler for LLM Gateway provider
+ * Converts Pi's message format to gateway's input format and processes SSE responses
+ *
+ * @param {object} model - Model configuration (id, provider, api, etc.)
+ * @param {object} context - Pi execution context with messages, tools, etc.
+ * @param {object} options - Stream options (signal for abort, etc.)
+ * @returns {object} Pi-compatible event stream
+ */
+function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
+  return async function streamGatewayProvider(model, context, options) {
+    // Try to import Pi's stream utilities from global context
+    // These are injected by Pi CLI when calling streamSimple handlers
+    const { createAssistantMessageEventStream, calculateCost } = global.__piStreamHelpers || {};
+
+    if (!createAssistantMessageEventStream) {
+      throw new Error('Pi stream utilities not available; ensure Pi CLI injected helpers');
+    }
+
+    const stream = createAssistantMessageEventStream();
+    const output = {
+      role: 'assistant',
+      content: [],
+      api: 'custom-gateway',
+      provider: 'gateway',
+      model: model.id || 'auto',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    };
+
+    // Wrap execution in async IIFE to handle streaming
+    (async () => {
+      try {
+        // Push start event
+        stream.push({ type: 'start', partial: output });
+
+        // Record diagnostic: stream handler invoked
+        recordGatewayDiagnostic('stream_handler', 'invoked', {
+          model: model.id,
+          contextMessageCount: context?.messages?.length || 0,
+        });
+
+        // Extract user input from context
+        const userInput = extractUserInputFromContext(context);
+
+        recordGatewayDiagnostic('stream_handler', 'input_extracted', {
+          inputLength: userInput.length,
+        });
+
+        // Build request in gateway's expected format
+        const requestBody = {
+          model: model.id || 'auto',
+          input: userInput,
+          store: false,
+        };
+
+        recordGatewayDiagnostic('stream_handler', 'request_built', {
+          requestKeys: Object.keys(requestBody),
+          inputFormat: typeof requestBody.input,
+        });
+
+        // Make request to gateway
+        const response = await fetch(`${gatewayUrl}/responses`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${gatewayApiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: options?.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Gateway HTTP ${response.status}: ${response.statusText}`
+          );
+        }
+
+        recordGatewayDiagnostic('stream_handler', 'response_received', {
+          status: response.status,
+          contentType: response.headers.get('content-type'),
+        });
+
+        // Parse SSE stream from gateway
+        const reader = response.body.getReader();
+        // @ts-expect-error - TextDecoder is available in Node.js runtime
+        // eslint-disable-next-line no-undef
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let textContent = '';
+        let usage = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // Keep incomplete line in buffer
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            // Parse SSE data: lines
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonStr = line.slice(6);
+                // Skip [DONE] marker
+                if (jsonStr === '[DONE]') {
+                  break;
+                }
+
+                const event = JSON.parse(jsonStr);
+
+                // Extract text from response.output array
+                if (
+                  event.response &&
+                  event.response.output &&
+                  Array.isArray(event.response.output)
+                ) {
+                  for (const block of event.response.output) {
+                    if (block && block.type === 'text' && block.text) {
+                      textContent = block.text;
+                    }
+                  }
+                }
+
+                // Collect usage metrics from any response event
+                if (event.response && event.response.usage) {
+                  usage = event.response.usage;
+                }
+              } catch {
+                // Silently ignore parse errors (SSE comments, etc.)
+              }
+            }
+          }
+        }
+
+        recordGatewayDiagnostic('stream_handler', 'stream_parsed', {
+          textLength: textContent.length,
+          hasUsage: !!usage,
+        });
+
+        // Add text content to Pi stream
+        if (textContent) {
+          output.content.push({ type: 'text', text: textContent });
+
+          stream.push({
+            type: 'text_start',
+            contentIndex: 0,
+            partial: output,
+          });
+
+          stream.push({
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: textContent,
+            partial: output,
+          });
+
+          stream.push({
+            type: 'text_end',
+            contentIndex: 0,
+            content: textContent,
+            partial: output,
+          });
+        }
+
+        // Update usage metrics from gateway response
+        if (usage && calculateCost) {
+          output.usage.input = usage.input_tokens || 0;
+          output.usage.output = usage.output_tokens || 0;
+          output.usage.cacheRead = usage.cache_read_tokens || 0;
+          output.usage.cacheWrite = usage.cache_write_tokens || 0;
+          output.usage.totalTokens =
+            output.usage.input +
+            output.usage.output +
+            output.usage.cacheRead +
+            output.usage.cacheWrite;
+          calculateCost(model, output.usage);
+        }
+
+        recordGatewayDiagnostic('stream_handler', 'stream_complete', {
+          totalTokens: output.usage.totalTokens,
+        });
+
+        // Push done event
+        stream.push({
+          type: 'done',
+          reason: output.stopReason,
+          message: output,
+        });
+
+        stream.end();
+      } catch (error) {
+        // Handle any errors during streaming
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        output.stopReason = options?.signal?.aborted ? 'aborted' : 'error';
+        output.errorMessage = errorMsg;
+
+        recordGatewayDiagnostic('stream_handler', 'error', {
+          reason: output.stopReason,
+          message: errorMsg,
+        });
+
+        // Push error event
+        stream.push({
+          type: 'error',
+          reason: output.stopReason,
+          error: output,
+        });
+
+        stream.end();
+      }
+    })();
+
+    return stream;
+  };
+}
+
 export default function registerGatewayProvider(pi) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const gatewayApiKey = resolveGatewayApiKey();
@@ -265,13 +524,16 @@ export default function registerGatewayProvider(pi) {
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
-    const apiType = 'openai-responses';
+    // Create custom stream handler with captured gateway config
+    const streamHandler = createGatewayStreamHandler(gatewayUrl, gatewayApiKey);
 
+    // Register provider with custom stream handling
     pi.registerProvider('gateway', {
       name: 'LLM Gateway',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: apiType,  // DECISION POINT: Verify if 'openai-responses' maps to /v1/responses
+      api: 'custom-gateway',  // Custom API type - we handle streaming ourselves
+      streamSimple: streamHandler,  // Use custom stream handler instead of built-in formatter
       models: [
         {
           id: 'auto',
@@ -280,9 +542,9 @@ export default function registerGatewayProvider(pi) {
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 128000,
-          maxTokens
-        }
-      ]
+          maxTokens,
+        },
+      ],
     });
 
     // Write provider registration diagnostic
@@ -291,7 +553,8 @@ export default function registerGatewayProvider(pi) {
       event: 'provider_registered',
       provider: 'gateway',
       baseUrl: gatewayUrl,
-      apiType: apiType,
+      apiType: 'custom-gateway',
+      streamingHandler: 'custom-streamSimple',
       modelId: 'auto',
       hasApiKey: !!gatewayApiKey,
     };

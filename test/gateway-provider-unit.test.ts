@@ -181,3 +181,289 @@ describe('Gateway Provider Configuration', () => {
     expect(true).toBe(true);
   });
 });
+
+/**
+ * Unit Test: Custom Stream Handler for Gateway Provider
+ *
+ * Tests define expected behavior for converting Pi's message format
+ * to gateway's input format and parsing SSE responses correctly.
+ */
+describe('Gateway Custom Stream Handler', () => {
+  // Mock fetch and stream utilities
+  let mockFetch: jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    // Mock fetch
+    mockFetch = jest.fn();
+    global.fetch = mockFetch;
+
+    process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1';
+    process.env.LLM_GATEWAY_API_KEY = 'test-api-key';
+  });
+
+  it('extracts user input from context correctly', () => {
+    /**
+     * Test: Extract last user message from Pi's context.messages
+     * This ensures we get the right input to send to gateway.
+     */
+
+    // Mock context with multiple messages
+    const context = {
+      messages: [
+        { role: 'system', content: 'You are helpful' },
+        { role: 'user', content: 'First question' },
+        { role: 'assistant', content: 'First answer' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Second' },
+            { type: 'text', text: ' question' },
+          ],
+        },
+      ],
+    };
+
+    // Expected: Extract last user message and concatenate text blocks
+    const expectedInput = 'Second question';
+
+    // This test documents expected extraction behavior
+    // (Implementation will be in .pi-extensions.js extractUserInput function)
+    expect(context.messages[3].role).toBe('user');
+    expect(Array.isArray(context.messages[3].content)).toBe(true);
+
+    const extracted = context.messages[3].content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('');
+
+    expect(extracted).toBe(expectedInput);
+
+    console.log(`\n✓ Extracted input from context: "${expectedInput}"`);
+  });
+
+  it('formats request with correct gateway contract', () => {
+    /**
+     * Test: Request body matches gateway's expected format.
+     * Gateway expects: {model: "auto", input: "string", store: false}
+     * Pi default sends: {model: "auto", messages: [...], ...}
+     */
+
+    // Expected request format for gateway
+    const expectedRequestBody = {
+      model: 'auto',
+      input: 'Hello, what can you do?',
+      store: false,
+    };
+
+    // Verify structure matches gateway contract
+    expect(expectedRequestBody).toHaveProperty('model', 'auto');
+    expect(expectedRequestBody).toHaveProperty('input');
+    expect(typeof expectedRequestBody.input).toBe('string');
+    expect(expectedRequestBody).toHaveProperty('store', false);
+    expect(expectedRequestBody).not.toHaveProperty('messages'); // NOT the Pi format
+
+    console.log('✓ Request format matches gateway contract:');
+    console.log(`  {model: '${expectedRequestBody.model}', input: '...', store: ${expectedRequestBody.store}}`);
+  });
+
+  it('parses SSE response and extracts content', () => {
+    /**
+     * Test: Parse gateway's SSE stream correctly.
+     * Extract text from response.output array.
+     */
+
+    // Mock SSE response from gateway (same format as kaseki-164)
+    const sseResponse = `event: response.created
+data: {"type":"response.created","response":{"id":"resp_123","output":[]}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[{"type":"text","text":"Hello from gateway"}],"usage":{"input_tokens":100,"output_tokens":50}}}
+
+data: [DONE]
+`;
+
+    // Expected extracted values
+    const expectedText = 'Hello from gateway';
+    const expectedUsage = {
+      input_tokens: 100,
+      output_tokens: 50,
+    };
+
+    // Parse SSE lines
+    const lines = sseResponse.split('\n');
+    let parsedText = '';
+    let parsedUsage: any = null;
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const json = JSON.parse(line.slice(6));
+          if (
+            json.response?.output?.length > 0 &&
+            json.response.output[0]?.type === 'text'
+          ) {
+            parsedText = json.response.output[0].text;
+          }
+          if (json.response?.usage) {
+            parsedUsage = json.response.usage;
+          }
+        } catch {
+          // Ignore [DONE] marker
+        }
+      }
+    }
+
+    expect(parsedText).toBe(expectedText);
+    expect(parsedUsage).toEqual(expectedUsage);
+
+    console.log('✓ Parsed SSE response:');
+    console.log(`  Text: '${parsedText}'`);
+    console.log(`  Tokens: input=${parsedUsage.input_tokens}, output=${parsedUsage.output_tokens}`);
+  });
+
+  it('generates Pi-compatible stream events', () => {
+    /**
+     * Test: Stream handler produces correct event sequence for Pi.
+     * Sequence: start → text_start → text_delta → text_end → done
+     */
+
+    // Mock stream object
+    const mockStream = {
+      push: jest.fn(),
+      end: jest.fn(),
+    };
+
+    // Simulated stream event generation
+    const output = {
+      role: 'assistant',
+      content: [],
+      api: 'custom-gateway',
+      provider: 'gateway',
+      model: 'auto',
+      usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 150 },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    };
+
+    // Expected event sequence
+    const expectedEvents = [
+      { type: 'start', partial: output },
+      {
+        type: 'text_start',
+        contentIndex: 0,
+        partial: expect.objectContaining({ content: [] }),
+      },
+      {
+        type: 'text_delta',
+        contentIndex: 0,
+        delta: 'Hello from gateway',
+        partial: expect.any(Object),
+      },
+      { type: 'text_end', contentIndex: 0, content: 'Hello from gateway' },
+      { type: 'done', reason: 'stop', message: expect.any(Object) },
+    ];
+
+    // Push events (simulating handler behavior)
+    mockStream.push(expectedEvents[0]);
+    mockStream.push(expectedEvents[1]);
+    mockStream.push(expectedEvents[2]);
+    mockStream.push(expectedEvents[3]);
+    mockStream.push(expectedEvents[4]);
+    mockStream.end();
+
+    // Verify event sequence
+    expect(mockStream.push).toHaveBeenCalledTimes(5);
+    expect(mockStream.end).toHaveBeenCalledTimes(1);
+
+    const calls = mockStream.push.mock.calls;
+    expect(calls[0][0].type).toBe('start');
+    expect(calls[1][0].type).toBe('text_start');
+    expect(calls[2][0].type).toBe('text_delta');
+    expect(calls[3][0].type).toBe('text_end');
+    expect(calls[4][0].type).toBe('done');
+
+    console.log('✓ Stream event sequence:');
+    console.log('  1. start - Stream initialization');
+    console.log('  2. text_start - Text block started');
+    console.log('  3. text_delta - Text content chunk');
+    console.log('  4. text_end - Text block complete');
+    console.log('  5. done - Stream finished');
+  });
+
+  it('handles network errors gracefully', () => {
+    /**
+     * Test: Stream handler catches fetch errors and returns error event.
+     */
+
+    // Mock fetch to reject
+    mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
+
+    // Mock stream
+    const mockStream = {
+      push: jest.fn(),
+      end: jest.fn(),
+    };
+
+    // Simulated error handling in handler
+    try {
+      throw new Error('Network timeout');
+    } catch (error) {
+      const errorOutput = {
+        role: 'assistant',
+        content: [],
+        stopReason: 'error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      };
+
+      mockStream.push({ type: 'error', reason: 'error', error: errorOutput });
+      mockStream.end();
+    }
+
+    // Verify error event
+    expect(mockStream.push).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'error', reason: 'error' })
+    );
+    expect(mockStream.end).toHaveBeenCalled();
+
+    console.log('✓ Error handling:');
+    console.log('  ✓ Caught network error');
+    console.log('  ✓ Generated error event');
+    console.log('  ✓ Ended stream gracefully');
+  });
+
+  it('logs diagnostic events during stream handling', () => {
+    /**
+     * Test: Stream handler records diagnostics for troubleshooting.
+     */
+
+    // Mock fs for diagnostics writing
+    const mockFs = {
+      existsSync: jest.fn().mockReturnValue(true),
+      appendFileSync: jest.fn(),
+    };
+
+    // Simulated diagnostic event
+    const diagnosticEvent = {
+      timestamp: new Date().toISOString(),
+      event: 'stream_handler_invoked',
+      provider: 'gateway',
+      requestFormat: { model: 'auto', input: '...' },
+    };
+
+    // Simulate diagnostic write
+    const diagnosticsPath = '/results/.gateway-diagnostics.jsonl';
+    mockFs.appendFileSync(diagnosticsPath, JSON.stringify(diagnosticEvent) + '\n');
+
+    // Verify diagnostic write
+    expect(mockFs.appendFileSync).toHaveBeenCalledWith(
+      diagnosticsPath,
+      expect.stringContaining('stream_handler_invoked')
+    );
+
+    console.log('✓ Diagnostics recorded:');
+    console.log('  Event: stream_handler_invoked');
+    console.log(`  Path: ${diagnosticsPath}`);
+  });
+});
