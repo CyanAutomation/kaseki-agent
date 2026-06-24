@@ -843,8 +843,24 @@ function classifyProviderError(
 function extractProviderError(event: PiEvent): ProviderErrorSummary | null {
   const message = (event as any).message;
   if (!message || typeof message !== 'object') return null;
-  const errorMessage = typeof message.errorMessage === 'string' ? message.errorMessage.trim() : '';
+
+  // Defensively extract errorMessage as string
+  let errorMessage = '';
+  if (typeof message.errorMessage === 'string') {
+    errorMessage = message.errorMessage.trim();
+  } else if (message.errorMessage !== undefined && message.errorMessage !== null) {
+    // Attempt to convert to string if it exists but isn't already a string
+    try {
+      errorMessage = String(message.errorMessage).trim();
+    } catch {
+      // If conversion fails, treat as empty
+      return null;
+    }
+  }
+
+  // Defensively extract stopReason as string
   const stopReason = typeof message.stopReason === 'string' ? message.stopReason.trim() : '';
+
   if (!errorMessage || stopReason !== 'error') return null;
 
   const { type, retryable } = classifyProviderError(errorMessage);
@@ -870,6 +886,10 @@ function numericUsageValue(usage: any, keys: string[]): number | undefined {
 }
 
 function extractMessageTextLength(message: any): number {
+  if (!message || typeof message !== 'object') {
+    return 0;
+  }
+
   // Primary path: accumulate text from message.content array
   const content = message?.content;
   if (typeof content === 'string') return content.trim().length;
@@ -905,17 +925,21 @@ function extractMessageTextLength(message: any): number {
 
   // Fallback 3: nested body.output[].content[].text (OpenRouter-specific format)
   if (Array.isArray(message?.body?.output)) {
-    const nestedLength = message.body.output.reduce((sum: number, item: any) => {
-      if (!item || typeof item !== 'object') return sum;
-      if (Array.isArray(item.content)) {
-        return sum + item.content.reduce((itemSum: number, part: any) => {
-          const text = typeof part?.text === 'string' ? part.text : '';
-          return itemSum + text.trim().length;
-        }, 0);
-      }
-      return sum;
-    }, 0);
-    if (nestedLength > 0) return nestedLength;
+    try {
+      const nestedLength = message.body.output.reduce((sum: number, item: any) => {
+        if (!item || typeof item !== 'object') return sum;
+        if (Array.isArray(item.content)) {
+          return sum + item.content.reduce((itemSum: number, part: any) => {
+            const text = typeof part?.text === 'string' ? part.text : '';
+            return itemSum + text.trim().length;
+          }, 0);
+        }
+        return sum;
+      }, 0);
+      if (nestedLength > 0) return nestedLength;
+    } catch {
+      // If extraction fails, continue to fallback
+    }
   }
 
   // No content found in any source
