@@ -557,7 +557,7 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
 
                 const event = JSON.parse(jsonStr);
 
-                // Extract text from response.output array
+                // Extract text from response.output array (primary path)
                 if (
                   event.response &&
                   event.response.output &&
@@ -568,6 +568,53 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
                       textContent = block.text;
                     }
                   }
+                }
+
+                // Fallback 1: Extract from event.response.text (some providers use direct text field)
+                if (!textContent && event.response && typeof event.response.text === 'string') {
+                  textContent = event.response.text;
+                }
+
+                // Fallback 2: Extract from event.response.content (direct content array)
+                if (!textContent && event.response && Array.isArray(event.response.content)) {
+                  for (const block of event.response.content) {
+                    if (block && typeof block === 'object') {
+                      const blockText = block.text || block.content || block.output_text;
+                      if (typeof blockText === 'string' && blockText.trim()) {
+                        textContent = blockText;
+                        break;
+                      }
+                    } else if (typeof block === 'string' && block.trim()) {
+                      textContent = block;
+                      break;
+                    }
+                  }
+                }
+
+                // Fallback 3: Extract from event.response.message.content (wrapped message)
+                if (!textContent && event.response && event.response.message && Array.isArray(event.response.message.content)) {
+                  for (const block of event.response.message.content) {
+                    if (block && typeof block === 'object') {
+                      const blockText = block.text || block.content || block.output_text;
+                      if (typeof blockText === 'string' && blockText.trim()) {
+                        textContent = blockText;
+                        break;
+                      }
+                    } else if (typeof block === 'string' && block.trim()) {
+                      textContent = block;
+                      break;
+                    }
+                  }
+                }
+
+                // Fallback 4: Extract from root level text fields
+                if (!textContent && typeof event.text === 'string') {
+                  textContent = event.text;
+                }
+
+                // Fallback 5: Extract from event.output_text (gateway alternative naming)
+                if (!textContent && typeof event.output_text === 'string') {
+                  textContent = event.output_text;
                 }
 
                 // Collect usage metrics from any response event
@@ -584,6 +631,11 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
         recordGatewayDiagnostic('stream_handler', 'stream_parsed', {
           textLength: textContent.length,
           hasUsage: !!usage,
+          usageTokens: usage ? {
+            input: usage.input_tokens || 0,
+            output: usage.output_tokens || 0,
+            total: (usage.input_tokens || 0) + (usage.output_tokens || 0),
+          } : null,
         });
 
         // Emit text events if we got content
@@ -616,6 +668,9 @@ function createGatewayStreamHandler(gatewayUrl, gatewayApiKey) {
           message: {
             role: 'assistant',
             content: textContent ? [{ type: 'text', text: textContent }] : [],
+            // Include fallback text fields for better compatibility with event filters
+            // These are checked by pi-event-filter.ts as fallback paths for extractMessageTextLength()
+            ...(textContent ? { text: textContent, output_text: textContent } : {}),
             usage: usage
               ? {
                 input_tokens: usage.input_tokens || 0,
