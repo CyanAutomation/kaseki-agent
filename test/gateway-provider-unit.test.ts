@@ -140,11 +140,11 @@ describe('Gateway Provider Configuration', () => {
     console.log('\n=== Step 2b: CRITICAL - Verify API Type ===');
     console.log(`  Current: api = '${apiType}'`);
     console.log(`  Must confirm: Does '${apiType}' map to /v1/responses endpoint?`);
-    console.log(`  If NOT, need to update api type in .pi-extensions.js`);
-    console.log(`  Pi CLI docs: https://github.com/earendil-works/pi-coding-agent/docs/providers`);
+    console.log('  If NOT, need to update api type in .pi-extensions.js');
+    console.log('  Pi CLI docs: https://github.com/earendil-works/pi-coding-agent/docs/providers');
     console.log('');
-    console.log(`  Action: Check Pi CLI v0.77.0 documentation`);
-    console.log(`         for correct api type value for Responses-style payload`);
+    console.log('  Action: Check Pi CLI v0.77.0 documentation');
+    console.log('         for correct api type value for Responses-style payload');
 
     expect(apiType).toBeDefined();
   });
