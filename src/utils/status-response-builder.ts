@@ -32,6 +32,7 @@ const GOAL_CHECK_DIAGNOSTIC_FILES = [
   'goal-check-attempts.jsonl',
 ] as const;
 const PI_AGENT_DIAGNOSTIC_FILES = [
+  '.gateway-diagnostics.jsonl',
   'pi-agent-diagnostics.jsonl',
   'pi-events.jsonl',
   'pi-summary.json',
@@ -347,7 +348,7 @@ export class StatusResponseBuilder {
   ): void {
     const phaseDiagnosticEntryPoints: DiagnosticEntryPoint[] = [
       ...(flags.includePiAgent
-        ? (['pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
+        ? (['.gateway-diagnostics.jsonl', 'pi-agent-diagnostics.jsonl', 'pi-events.jsonl', 'pi-summary.json'] as DiagnosticEntryPoint[])
         : []),
       ...(flags.includePreValidation
         ? (['test-baseline-comparison.json', 'pre-validation.log'] as DiagnosticEntryPoint[])
@@ -378,8 +379,11 @@ export class StatusResponseBuilder {
     const providerErrorType = String(metadata?.provider_error_type ?? '');
     const failedCommand = String(metadata?.failed_command ?? '');
     return (
+      providerErrorType === 'provider_error' ||
+      providerErrorType === 'model_unavailable' ||
       providerErrorType === 'provider_empty_assistant_turn' ||
       failedCommand.includes('pi provider empty assistant turn') ||
+      failedCommand.includes('pi provider error') ||
       PI_AGENT_DIAGNOSTIC_FILES.some((fileName) => fs.existsSync(path.join(runDir, fileName)))
     );
   }

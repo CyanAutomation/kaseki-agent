@@ -1194,6 +1194,64 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
+  test('GET /api/gateway-test?stage=2 reports Pi provider smoke skipped by default outside production', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-skipped-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+
+    try {
+      process.env.JEST_WORKER_ID = '1';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        const requestBody = JSON.parse(String(init?.body ?? '{}'));
+        if (requestBody.stream === true) {
+          return Promise.resolve(new Response([
+            'event: response.output_text.delta',
+            'data: {"type":"response.output_text.delta","delta":"kaseki gateway smoke ok"}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'), { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'resp_stage2_pi_skipped',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 5 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(200);
+        expect(body.responseSmokeValidated).toBe(true);
+        expect(body.piProviderSmoke).toEqual(expect.objectContaining({
+          status: 'skipped',
+          provider: 'gateway',
+          model: 'auto',
+        }));
+        expect(body.piProviderSmoke.detail).toContain('skipped');
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
     const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
     (readHostSecret as jest.Mock).mockImplementation((name: string) => {
@@ -2185,6 +2243,52 @@ describe('kaseki-api-routes run artifacts inventory endpoint', () => {
       const missingFile = body.artifacts.find((artifact: any) => artifact.name === 'stdout.log');
       expect(failureFile.available).toBe(true);
       expect(missingFile.available).toBe(false);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await idempotencyStore.shutdown();
+    }
+  });
+
+  test('provider failed run recommends gateway diagnostics first when available', async () => {
+    const jobId = 'kaseki-provider-failed-artifacts';
+    const jobDir = path.join(resultsDir, jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    fs.writeFileSync(path.join(jobDir, 'metadata.json'), JSON.stringify({
+      provider_error_type: 'provider_error',
+      failed_command: 'pi scouting agent',
+    }));
+    fs.writeFileSync(path.join(jobDir, '.gateway-diagnostics.jsonl'), '{"event":"provider_registered","apiType":"custom-gateway"}\n');
+    fs.writeFileSync(path.join(jobDir, 'failure.json'), JSON.stringify({ provider_error_type: 'provider_error' }));
+    fs.writeFileSync(path.join(jobDir, 'result-summary.md'), '# summary');
+
+    const scheduler = {
+      getQueueStatus: () => ({ pending: 0, running: 0, maxConcurrent: 1 }),
+      getJob: (id: string) =>
+        id === jobId
+          ? { id: jobId, status: 'failed', createdAt: new Date(), resultDir: jobDir, exitCode: 88 }
+          : undefined,
+      submitJob: jest.fn(),
+      listJobs: () => [],
+      cancelJob: jest.fn()
+    } as any;
+
+    const config = createTestConfig(resultsDir);
+    const idempotencyStore = new IdempotencyStore(resultsDir, 24);
+    const preFlightValidator = new PreFlightValidator();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createApiRouter(scheduler, config, idempotencyStore, preFlightValidator));
+    const { server, port } = await listenTestApp(app);
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/runs/${jobId}/artifacts`, {
+        headers: { Authorization: 'Bearer test-key' }
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.recommended[0]).toBe('.gateway-diagnostics.jsonl');
+      expect(body.recommended).toContain('failure.json');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await idempotencyStore.shutdown();

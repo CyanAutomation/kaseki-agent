@@ -15,7 +15,9 @@
  * DIAGNOSTICS:
  * - Extension load diagnostics written to /results/.gateway-diagnostics.jsonl
  * - Records: extension load, provider registration, model resolution, api type confirmation
- * - Does NOT attempt fetch/undici normalization (Pi uses undici directly, which bypasses fetch)
+ * - Defaults to Pi's native OpenAI Responses adapter.
+ * - Legacy custom JSONL stream handler is available only with
+ *   KASEKI_GATEWAY_LEGACY_STREAM_SIMPLE=1.
  */
 
 import fs from 'node:fs';
@@ -250,10 +252,9 @@ if (originalFetch && !process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED) {
   process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED = 'true';
 }
 
-// Note: Undici patching is deferred to Pi CLI extension hooks if available
-// The fetch wrapper above will catch requests made through fetch API
-// Diagnostic events are still recorded to .gateway-diagnostics.jsonl file
-// for visibility into all request normalization attempts
+// Note: Native openai-responses registration does not need request
+// normalization in normal operation. These wrappers remain for the legacy
+// custom stream handler escape hatch.
 if (!process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE) {
   process.env.PI_EXTENSIONS_GATEWAY_INIT_COMPLETE = 'true';
 }
@@ -680,16 +681,15 @@ export default function registerGatewayProvider(pi) {
 
   // If gateway is configured, register the provider
   if (gatewayUrl) {
-    // Create custom stream handler with captured gateway config
-    const streamHandler = createGatewayStreamHandler(gatewayUrl, gatewayApiKey);
+    const useLegacyStreamSimple = /^(1|true|on|yes)$/i.test(
+      process.env.KASEKI_GATEWAY_LEGACY_STREAM_SIMPLE || ''
+    );
 
-    // Register provider with custom stream handling
-    pi.registerProvider('gateway', {
+    const providerConfig = {
       name: 'LLM Gateway',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: 'custom-gateway',  // Custom API type - we handle streaming ourselves
-      streamSimple: streamHandler,  // Use custom stream handler instead of built-in formatter
+      api: useLegacyStreamSimple ? 'custom-gateway' : 'openai-responses',
       models: [
         {
           id: 'auto',
@@ -701,7 +701,13 @@ export default function registerGatewayProvider(pi) {
           maxTokens,
         },
       ],
-    });
+    };
+
+    if (useLegacyStreamSimple) {
+      providerConfig.streamSimple = createGatewayStreamHandler(gatewayUrl, gatewayApiKey);
+    }
+
+    pi.registerProvider('gateway', providerConfig);
 
     // Write provider registration diagnostic
     const providerDiagnostic = {
@@ -709,10 +715,11 @@ export default function registerGatewayProvider(pi) {
       event: 'provider_registered',
       provider: 'gateway',
       baseUrl: gatewayUrl,
-      apiType: 'custom-gateway',
-      streamingHandler: 'custom-streamSimple',
+      apiType: providerConfig.api,
+      streamingHandler: useLegacyStreamSimple ? 'legacy-custom-streamSimple' : 'pi-native-openai-responses',
       modelId: 'auto',
       hasApiKey: !!gatewayApiKey,
+      legacyStreamSimple: useLegacyStreamSimple,
     };
 
     try {

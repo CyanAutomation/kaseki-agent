@@ -189,8 +189,18 @@ export function createArtifactRoutes(scheduler: JobScheduler, config: KasekiApiC
     const preAgentValidationFailed =
       String(runMetadata?.failed_command ?? '').includes('pre-agent validation') ||
       Number(runMetadata?.pre_validation_exit_code ?? 0) !== 0;
+    const providerFailure =
+      String(runMetadata?.provider_error_type ?? '').trim().length > 0 ||
+      String(runMetadata?.failed_command ?? '').includes('pi provider');
 
     const triageRank = (artifactName: string, fallback: number | undefined): number => {
+      if (providerFailure) {
+        if (artifactName === '.gateway-diagnostics.jsonl') return 0;
+        if (artifactName === 'failure.json') return 1;
+        if (artifactName === 'result-summary.md') return 2;
+        if (artifactName === 'pi-agent-diagnostics.jsonl') return 3;
+        if (artifactName === 'pi-events.jsonl') return 4;
+      }
       if (preAgentValidationFailed) {
         if (artifactName === 'test-baseline-comparison.json') return 0;
         if (artifactName === 'pre-validation.log') return 1;

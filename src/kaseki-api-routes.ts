@@ -27,7 +27,7 @@ import { ResultCache } from './result-cache';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
-import { testGatewayConnectivity_Stage1, testGatewayResponseSmoke_Stage2, resolveGatewayApiKey, shouldRunGatewayResponseSmoke } from './kaseki-api-gateway-test';
+import { testGatewayConnectivity_Stage1, testGatewayResponseSmoke_Stage2, resolveGatewayApiKey, shouldRunGatewayResponseSmoke, testPiGatewayProviderSmoke } from './kaseki-api-gateway-test';
 import {
   checkDeletedBindMounts,
   checkWritableDirectory,
@@ -283,9 +283,14 @@ export function createApiRouter(
           ? false
           : undefined;
       const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
+      const piProviderParam = typeof _req.query.piProvider === 'string'
+        ? _req.query.piProvider.trim().toLowerCase()
+        : '';
+      const piProviderRequested = ['1', 'true', 'on', 'yes'].includes(piProviderParam);
 
       let stage1Result: any = null;
       let stage2Result: any = null;
+      let piProviderResult: any = null;
 
       // Run Stage 1 if requested (or if running both)
       if (requestedStage === 0 || requestedStage === 1) {
@@ -305,6 +310,12 @@ export function createApiRouter(
           const startTime = performance.now();
           stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
         }
+      }
+
+      if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
+        piProviderResult = testPiGatewayProviderSmoke(true);
+      } else if (requestedStage === 2) {
+        piProviderResult = testPiGatewayProviderSmoke(false);
       }
 
       // Build response - handle both single-stage and dual-stage responses
@@ -344,8 +355,11 @@ export function createApiRouter(
         if (stage2Result?.checks) {
           result.checks = stage2Result.checks;
         }
+        if (piProviderResult) {
+          result.piProviderSmoke = piProviderResult;
+        }
 
-        const httpStatus = stage2Result?.status === 'ok' ? 200 : 503;
+        const httpStatus = stage2Result?.status === 'ok' && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
         res.status(httpStatus).json(result);
       } else {
         // Both stages response (backward compatible format)
@@ -366,8 +380,15 @@ export function createApiRouter(
           result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
           result.checks = stage2Result.checks;
         }
+        if (piProviderResult) {
+          result.piProviderSmoke = piProviderResult;
+        }
 
-        const httpStatus = (stage1Result.status === 'ok' && (!stage2Result || stage2Result.status === 'ok')) ? 200 : 503;
+        const httpStatus = (
+          stage1Result.status === 'ok' &&
+          (!stage2Result || stage2Result.status === 'ok') &&
+          (!piProviderResult || piProviderResult.status !== 'error')
+        ) ? 200 : 503;
         res.status(httpStatus).json(result);
       }
     } catch (error) {

@@ -1397,7 +1397,7 @@ const controllerPage = String.raw`<!doctype html>
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity (no token consumption)"><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test LLM inference (consumes tokens)"><span class="hc-label">Test LLM</span><span class="health-check-status" data-status="llm-test"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test gateway Responses API inference. Add piProvider=true to also test Pi provider adapter in production."><span class="hc-label">Test LLM</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>
           <div class="summary-grid" id="health-summary" aria-live="polite">
@@ -2405,6 +2405,13 @@ const controllerPage = String.raw`<!doctype html>
               ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
+            if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
+              setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
+            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
+              setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
+            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
+              setResponseSummary('Gateway Responses API result includes Pi provider adapter failure.');
+            }
           } else {
             // Stage 1 or full test (gateway connectivity)
             setSummary('gateway', summary, payload.status === 'ok' ? (slow ? 'warning' : 'ok') : 'bad');
