@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.99.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.98.0...v1.99.0) (2026-06-24)
+
+
+### Features
+
+* add diagnostics logging for gateway provider extension load and registration ([0f776db](https://github.com/CyanAutomation/kaseki-agent/commit/0f776db4e83b1bcc17de650d9d8e87b9fcd4a4fc))
+
 # [1.98.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.97.0...v1.98.0) (2026-06-23)
 
 
