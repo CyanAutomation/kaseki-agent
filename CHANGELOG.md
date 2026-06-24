@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.101.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.100.0...v1.101.0) (2026-06-24)
+
+
+### Features
+
+* implement event sanitization and validation for Pi events to prevent TypeErrors ([672f551](https://github.com/CyanAutomation/kaseki-agent/commit/672f551d1a4186e5c0375daf79fa7dd66a9fa273))
+
 # [1.100.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.99.1...v1.100.0) (2026-06-24)
 
 
