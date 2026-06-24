@@ -35,7 +35,7 @@ export class ProviderDiagnosticsLogger {
   private diagnosticsPath: string;
   private seenErrors: Set<string> = new Set();
   private writeBuffer: ProviderDiagnostic[] = [];
-  private flushInterval: NodeJS.Timer | null = null;
+  private flushInterval: NodeJS.Timeout | null = null;
 
   constructor(resultsDir: string = '/results') {
     this.diagnosticsPath = path.join(resultsDir, 'provider-diagnostics.jsonl');
