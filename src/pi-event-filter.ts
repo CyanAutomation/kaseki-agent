@@ -632,6 +632,11 @@ interface ProviderErrorSummary {
   retryable?: boolean; // true if error appears transient (503, 429, connection), false if permanent (404, deprecated)
 }
 
+interface AssistantTurnState {
+  textLength: number;
+  toolResultCount: number;
+}
+
 const inputPath = process.argv[2] ?? '/tmp/pi-events.raw.jsonl';
 const filteredPath = process.argv[3] ?? '/results/pi-events.jsonl';
 const summaryPath = process.argv[4] ?? '/results/pi-summary.json';
@@ -946,6 +951,18 @@ function extractMessageTextLength(message: any): number {
   return 0;
 }
 
+function extractResponseIdFromMessage(message: any): string | undefined {
+  return typeof message?.responseId === 'string' ? message.responseId : undefined;
+}
+
+function extractResponseIdFromEvent(event: PiEvent): string | undefined {
+  return (
+    extractResponseIdFromMessage((event as any).message) ??
+    extractResponseIdFromMessage((event as any).assistantMessageEvent?.message) ??
+    extractResponseIdFromMessage((event as any).assistantMessageEvent?.partial)
+  );
+}
+
 function extractToolResultCount(event: PiEvent): number {
   const toolResults = (event as any).toolResults;
   if (Array.isArray(toolResults)) return toolResults.length;
@@ -954,7 +971,19 @@ function extractToolResultCount(event: PiEvent): number {
   return 0;
 }
 
-function extractEmptyAssistantTurn(event: PiEvent): ProviderErrorSummary | null {
+function recordAssistantTurnState(event: PiEvent, states: Map<string, AssistantTurnState>): void {
+  const responseId = extractResponseIdFromEvent(event);
+  if (!responseId) return;
+
+  const current = states.get(responseId) ?? { textLength: 0, toolResultCount: 0 };
+  current.textLength += extractMessageTextLength((event as any).message);
+  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.message);
+  current.textLength += extractMessageTextLength((event as any).assistantMessageEvent?.partial);
+  current.toolResultCount += extractToolResultCount(event);
+  states.set(responseId, current);
+}
+
+function extractEmptyAssistantTurn(event: PiEvent, states: Map<string, AssistantTurnState>): ProviderErrorSummary | null {
   const message = (event as any).message;
   if (!message || typeof message !== 'object' || message.role !== 'assistant') return null;
 
@@ -965,14 +994,20 @@ function extractEmptyAssistantTurn(event: PiEvent): ProviderErrorSummary | null 
   const outputTokens = numericUsageValue(usage, ['output', 'output_tokens', 'completion_tokens']);
   if (!outputTokens || outputTokens <= 0) return null;
 
-  if (extractMessageTextLength(message) > 0 || extractToolResultCount(event) > 0) return null;
+  const responseId = extractResponseIdFromMessage(message);
+  const priorState = responseId ? states.get(responseId) : undefined;
+  if (
+    extractMessageTextLength(message) > 0 ||
+    extractToolResultCount(event) > 0 ||
+    (priorState?.textLength ?? 0) > 0 ||
+    (priorState?.toolResultCount ?? 0) > 0
+  ) return null;
 
   const inputTokens = numericUsageValue(usage, ['input', 'input_tokens', 'prompt_tokens']);
   const totalTokens = numericUsageValue(usage, ['totalTokens', 'total_tokens', 'total']);
   const provider = typeof message.provider === 'string' ? message.provider : undefined;
   const api = typeof message.api === 'string' ? message.api : undefined;
   const model = typeof message.model === 'string' ? message.model : undefined;
-  const responseId = typeof message.responseId === 'string' ? message.responseId : undefined;
   const details = [
     provider ? `provider=${provider}` : '',
     api ? `api=${api}` : '',
@@ -1016,6 +1051,7 @@ async function main(): Promise<void> {
   const executionTime = new ExecutionTimeAggregator();
   const tokenUsage = new TokenUsageAggregator();
   const providerErrors: ProviderErrorSummary[] = [];
+  const assistantTurnStates = new Map<string, AssistantTurnState>();
   const tracker = new TimestampTracker();
   let invalidJsonLines = 0;
 
@@ -1057,11 +1093,12 @@ async function main(): Promise<void> {
       const modelName = extractModelName(event);
       tokenUsage.recordUsage(modelName, usage);
     }
+    recordAssistantTurnState(event, assistantTurnStates);
     const providerError = extractProviderError(event);
     if (providerError) {
       providerErrors.push(providerError);
     }
-    const emptyAssistantTurn = extractEmptyAssistantTurn(event);
+    const emptyAssistantTurn = extractEmptyAssistantTurn(event, assistantTurnStates);
     if (emptyAssistantTurn) {
       providerErrors.push(emptyAssistantTurn);
     }
