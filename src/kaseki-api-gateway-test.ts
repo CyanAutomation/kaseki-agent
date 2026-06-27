@@ -79,6 +79,10 @@ export interface PiProviderSmokeTestResult {
     fieldsFound?: string[];
     eventsByType?: Record<string, number>;
     eventsWithText?: number;
+    assistantEventsWithText?: number;
+    nonAssistantEventsWithText?: number;
+    assistantFieldsFound?: string[];
+    nonAssistantFieldsFound?: string[];
     suggestedPatterns?: string[];
     sampleEventStructure?: any;
   };
@@ -427,13 +431,19 @@ export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeT
         fieldsFound: analysis.fieldsFound,
         eventsByType: analysis.eventsByType,
         eventsWithText: analysis.eventsWithText,
+        assistantEventsWithText: analysis.assistantEventsWithText,
+        nonAssistantEventsWithText: analysis.nonAssistantEventsWithText,
+        assistantFieldsFound: analysis.assistantFieldsFound,
+        nonAssistantFieldsFound: analysis.nonAssistantFieldsFound,
         suggestedPatterns: analysis.suggestedPatterns,
         sampleEventStructure: sampleEvent,
       },
       remediation:
         analysis.suggestedPatterns.length > 0
-          ? `Found response fields but text not extracted. Try patterns: ${analysis.suggestedPatterns.slice(0, 2).join(', ')}. Check Pi provider registration and gateway response format.`
-          : 'No response fields found. Verify Pi provider api uses openai-responses and gateway is returning valid responses.',
+          ? `Found assistant response fields but text not extracted. Try patterns: ${analysis.suggestedPatterns.slice(0, 2).join(', ')}. Check Pi provider registration and gateway response format.`
+          : analysis.nonAssistantFieldsFound.length > 0
+            ? `Found text fields only on non-assistant messages (${analysis.nonAssistantFieldsFound.slice(0, 2).join(', ')}), but no assistant text was produced. Verify Pi provider api uses openai-responses and gateway assistant output is streamed with role=assistant.`
+            : 'No assistant response fields found. Verify Pi provider api uses openai-responses and gateway is returning valid assistant responses.',
     };
   }
 
@@ -1393,12 +1403,30 @@ export function analyzeResponseStructure(stdout: string): {
   eventsByType: Record<string, number>;
   fieldsFound: string[];
   eventsWithText: number;
+  assistantEventsWithText: number;
+  nonAssistantEventsWithText: number;
+  assistantFieldsFound: string[];
+  nonAssistantFieldsFound: string[];
   suggestedPatterns: string[];
 } {
   const eventsByType: Record<string, number> = {};
   const fieldsFound = new Set<string>();
-  let eventsWithText = 0;
+  const assistantFieldsFound = new Set<string>();
+  const nonAssistantFieldsFound = new Set<string>();
+  let assistantEventsWithText = 0;
+  let nonAssistantEventsWithText = 0;
   let eventCount = 0;
+
+  const recordField = (field: string, role: unknown) => {
+    fieldsFound.add(field);
+    if (role === 'assistant') {
+      assistantFieldsFound.add(field);
+    } else {
+      nonAssistantFieldsFound.add(`${typeof role === 'string' ? role : 'unknown'}.${field}`);
+    }
+  };
+
+  const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
 
   for (const line of stdout.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -1418,61 +1446,90 @@ export function analyzeResponseStructure(stdout: string): {
     const message = event?.message;
     if (!message) continue;
 
-    // Track which fields are present
+    const role = message.role;
+    let messageHasText = false;
+
+    // Track which fields are present, separating assistant output from prompts or other roles.
     if (typeof message.text === 'string') {
-      fieldsFound.add('message.text');
-      if (message.text.trim()) eventsWithText++;
+      recordField('message.text', role);
+      if (hasText(message.text)) messageHasText = true;
     }
     if (typeof message.output_text === 'string') {
-      fieldsFound.add('message.output_text');
-      if (message.output_text.trim()) eventsWithText++;
+      recordField('message.output_text', role);
+      if (hasText(message.output_text)) messageHasText = true;
     }
     if (typeof message.assistantMessage === 'string') {
-      fieldsFound.add('message.assistantMessage');
-      if (message.assistantMessage.trim()) eventsWithText++;
+      recordField('message.assistantMessage', role);
+      if (hasText(message.assistantMessage)) messageHasText = true;
     }
     if (typeof message.content === 'string') {
-      fieldsFound.add('message.content (string)');
-      if (message.content.trim()) eventsWithText++;
+      recordField('message.content (string)', role);
+      if (hasText(message.content)) messageHasText = true;
     }
     if (Array.isArray(message.choices)) {
-      fieldsFound.add('message.choices[]');
+      recordField('message.choices[]', role);
       const choice = message.choices[0];
-      if (choice?.message?.content) fieldsFound.add('message.choices[0].message.content');
-      if (choice?.delta?.content) fieldsFound.add('message.choices[0].delta.content');
+      if (typeof choice?.message?.content === 'string') {
+        recordField('message.choices[0].message.content', role);
+        if (hasText(choice.message.content)) messageHasText = true;
+      }
+      if (typeof choice?.delta?.content === 'string') {
+        recordField('message.choices[0].delta.content', role);
+        if (hasText(choice.delta.content)) messageHasText = true;
+      }
     }
     // Direct delta field (streaming format without choices wrapper)
     if (typeof message.delta?.content === 'string') {
-      fieldsFound.add('message.delta.content');
-      if (message.delta.content.trim()) eventsWithText++;
+      recordField('message.delta.content', role);
+      if (hasText(message.delta.content)) messageHasText = true;
     }
-    if (message.response?.content) {
-      fieldsFound.add('message.response.content');
+    if (typeof message.response?.content === 'string') {
+      recordField('message.response.content', role);
+      if (hasText(message.response.content)) messageHasText = true;
     }
     if (Array.isArray(message.content)) {
-      fieldsFound.add('message.content (array)');
+      recordField('message.content (array)', role);
       for (const part of message.content) {
-        if (part?.text) fieldsFound.add('message.content[].text');
-        if (part?.output_text) fieldsFound.add('message.content[].output_text');
+        if (typeof part?.text === 'string') {
+          recordField('message.content[].text', role);
+          if (hasText(part.text)) messageHasText = true;
+        }
+        if (typeof part?.output_text === 'string') {
+          recordField('message.content[].output_text', role);
+          if (hasText(part.output_text)) messageHasText = true;
+        }
+        if (typeof part?.content === 'string') {
+          recordField('message.content[].content', role);
+          if (hasText(part.content)) messageHasText = true;
+        }
       }
+    }
+
+    if (messageHasText) {
+      if (role === 'assistant') assistantEventsWithText++;
+      else nonAssistantEventsWithText++;
     }
   }
 
-  // Suggest patterns based on what was found
+  // Suggest patterns based only on assistant response fields that were found.
   const suggestedPatterns: string[] = [];
-  if (fieldsFound.has('message.text')) suggestedPatterns.push('message.text (legacy Pi)');
-  if (fieldsFound.has('message.output_text')) suggestedPatterns.push('message.output_text (legacy Pi)');
-  if (fieldsFound.has('message.content (string)')) suggestedPatterns.push('message.content string (Cloudflare)');
-  if (fieldsFound.has('message.choices[0].message.content')) suggestedPatterns.push('choices[0].message.content (Chat Completions)');
-  if (fieldsFound.has('message.choices[0].delta.content')) suggestedPatterns.push('choices[0].delta.content (streaming)');
-  if (fieldsFound.has('message.delta.content')) suggestedPatterns.push('message.delta.content (streaming direct)');
-  if (fieldsFound.has('message.response.content')) suggestedPatterns.push('response.content (wrapped)');
+  if (assistantFieldsFound.has('message.text')) suggestedPatterns.push('message.text (legacy Pi)');
+  if (assistantFieldsFound.has('message.output_text')) suggestedPatterns.push('message.output_text (legacy Pi)');
+  if (assistantFieldsFound.has('message.content (string)')) suggestedPatterns.push('message.content string (Cloudflare)');
+  if (assistantFieldsFound.has('message.choices[0].message.content')) suggestedPatterns.push('choices[0].message.content (Chat Completions)');
+  if (assistantFieldsFound.has('message.choices[0].delta.content')) suggestedPatterns.push('choices[0].delta.content (streaming)');
+  if (assistantFieldsFound.has('message.delta.content')) suggestedPatterns.push('message.delta.content (streaming direct)');
+  if (assistantFieldsFound.has('message.response.content')) suggestedPatterns.push('response.content (wrapped)');
 
   return {
     eventCount,
     eventsByType,
     fieldsFound: Array.from(fieldsFound),
-    eventsWithText,
+    eventsWithText: assistantEventsWithText,
+    assistantEventsWithText,
+    nonAssistantEventsWithText,
+    assistantFieldsFound: Array.from(assistantFieldsFound),
+    nonAssistantFieldsFound: Array.from(nonAssistantFieldsFound),
     suggestedPatterns,
   };
 }
