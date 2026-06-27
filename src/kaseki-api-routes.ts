@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { JobScheduler } from './job-scheduler';
 import { IdempotencyStore } from './idempotency-store';
 import { PreFlightValidator } from './pre-flight-validator';
+import { classifyDockerFailure } from './lib/subprocess-helpers';
 import { getContainerPreflightResults } from './startup/container-preflight';
 import {
   RunRequestSchema,
@@ -716,3 +717,6 @@ export function createApiRouter(
 
   return router;
 }
+
+// Re-export classifyDockerFailure for public API
+export { classifyDockerFailure };

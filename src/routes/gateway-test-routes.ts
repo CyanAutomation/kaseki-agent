@@ -150,6 +150,7 @@ export function createGatewayTestRoutes(): Router {
       const requestedStage = parseQueryStage(_req.query.stage);
       const responseSmoke = parseQueryBoolean(_req.query.responseSmoke);
       const piProviderRequested = parseQueryBoolean(_req.query.piProvider) ?? false;
+      const debugMode = parseQueryBoolean(_req.query.debug) ?? false;
 
       const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
 
@@ -178,9 +179,9 @@ export function createGatewayTestRoutes(): Router {
 
       // Run PI provider test if requested
       if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
-        piProviderResult = testPiGatewayProviderSmoke(true);
+        piProviderResult = testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
       } else if (requestedStage === 2) {
-        piProviderResult = testPiGatewayProviderSmoke(false);
+        piProviderResult = testPiGatewayProviderSmoke({ requested: false, debug: debugMode });
       }
 
       // Build response based on requested stage

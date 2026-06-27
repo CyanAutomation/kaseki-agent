@@ -470,8 +470,49 @@ test -s "${LLM_GATEWAY_API_KEY_FILE:-$HOME/secrets/llm_gateway_api_key}" && \
 
 ---
 
+## API Endpoint Query Parameters
+
+The following query parameters are supported on gateway testing endpoints:
+
+### `/api/gateway-test` Query Parameters
+
+| Parameter | Values | Purpose | Example |
+|---|---|---|---|
+| `stage` | `1`, `2`, `0` | Test stage: 1=connectivity only, 2=full test, 0=auto-detect | `?stage=2` |
+| `piProvider` | `true`, `false` | Enable Pi provider adapter smoke test | `?piProvider=true` |
+| `responseSmoke` | `true`, `false` | Enable response parsing smoke test (included in stage 2) | `?responseSmoke=true` |
+| `debug` | `true`, `false` | Enable debug mode with full response diagnostics | `?debug=true` |
+
+**Examples:**
+
+```bash
+# Basic connectivity test (stage 1)
+curl http://localhost:3000/api/gateway-test?stage=1
+
+# Full inference test (stage 2)
+curl http://localhost:3000/api/gateway-test?stage=2
+
+# Full test with Pi provider adapter check
+curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true
+
+# Full test with debug diagnostics
+curl "http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true"
+```
+
+**Response with debug mode:** When `?debug=true` is used with a Pi provider adapter error, the response includes detailed diagnostics:
+- `fieldsSearched` — All field patterns the text extractor checks
+- `fieldsFound` — Actual fields present in the gateway response
+- `eventsByType` — Count of each event type in Pi JSONL response
+- `suggestedPatterns` — Recommended field patterns to try
+- `sampleEventStructure` — Sanitized structure of first few events
+
+See [GATEWAY_TEST.md](GATEWAY_TEST.md) for comprehensive gateway testing documentation.
+
+---
+
 ## See Also
 
 - [DEPLOYMENT.md](DEPLOYMENT.md) — Service setup with env vars
 - [QUALITY_GATES.md](QUALITY_GATES.md) — Quality gate configuration details
 - [PERFORMANCE_TUNING.md](PERFORMANCE_TUNING.md) — Tuning env vars for performance
+- [GATEWAY_TEST.md](GATEWAY_TEST.md) — Gateway testing and diagnostics
