@@ -32,7 +32,7 @@ export interface ConnectivityTestResult {
 
 /**
  * Stage 2: Full response validation test result (model inference smoke test)
- * Tests /responses endpoint with model=auto to validate inference
+ * Tests /responses endpoint with the resolved gateway model to validate inference
  * CONSUMES inference tokens - only run in production or when explicitly triggered
  */
 export interface ResponseSmokeTestResult {
@@ -244,10 +244,14 @@ export function shouldRunPiProviderSmoke(requested: boolean): boolean {
   return false;
 }
 
+export function resolveGatewayModel(): string {
+  return process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
+}
+
 export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeTestResult {
   const timestamp = new Date().toISOString();
   const startTime = performance.now();
-  const model = process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'auto';
+  const model = resolveGatewayModel();
 
   if (!shouldRunPiProviderSmoke(requested)) {
     const environment = detectGatewayTestEnvironment();
@@ -649,7 +653,7 @@ export async function testGatewayConnectivity(options: GatewayTestOptions = {}):
 
 /**
  * Stage 2: Full response validation test
- * Tests model inference via /responses endpoint with model=auto
+ * Tests model inference via /responses endpoint with the resolved gateway model
  * CONSUMES inference tokens - only call in production or when explicitly requested
  *
  * @param gatewayUrl Base gateway URL (e.g., https://llmgateway.local.xyz/v1)
@@ -763,7 +767,7 @@ async function runGatewayResponseJsonCheck(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'auto',
+        model: resolveGatewayModel(),
         input: prompt,
         max_output_tokens: GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS,
       }),
@@ -785,7 +789,7 @@ async function runGatewayResponseJsonCheck(
           httpStatus: response.status,
           remediation: authError
             ? 'Authentication failed for the Responses API smoke test. Check that LLM_GATEWAY_API_KEY is valid for response generation.'
-            : 'Gateway /responses path is unhealthy or incompatible. Verify the gateway supports OpenAI Responses API requests with model=auto.',
+            : 'Gateway /responses path is unhealthy or incompatible. Verify the gateway supports OpenAI Responses API requests with the resolved gateway model (default dynamic/kaseki-agent).',
         },
         check: { name: checkName, status: 'error', detail: `HTTP ${response.status}`, responseTime },
       };
@@ -804,7 +808,7 @@ async function runGatewayResponseJsonCheck(
           timestamp,
           authenticationValidated: true,
           responseSmokeValidated: false,
-          remediation: 'Gateway /responses should return OpenAI Responses-compatible JSON for model=auto.',
+          remediation: 'Gateway /responses should return OpenAI Responses-compatible JSON for dynamic/kaseki-agent by default, or the resolved gateway model.',
         },
         check: { name: checkName, status: 'error', detail: 'non-JSON response body', responseTime },
       };
@@ -830,7 +834,7 @@ async function runGatewayResponseJsonCheck(
           responseSmokeValidated: false,
           responseId,
           outputTokens,
-          remediation: 'Gateway accepted model=auto for routing but returned an empty assistant response. Keep model=auto enabled; fix the Responses API adapter to surface routed model output as output_text, response.output_text.delta, or assistant message content.',
+          remediation: 'Gateway accepted the resolved gateway model for routing but returned an empty assistant response. Keep dynamic/kaseki-agent enabled by default, or set KASEKI_MODEL/LLM_GATEWAY_MODEL to a supported model; fix the Responses API adapter to surface routed model output as output_text, response.output_text.delta, or assistant message content.',
         },
         check: { name: checkName, status: 'error', detail: detailParts.join(' '), responseTime, responseId, outputTokens },
       };
@@ -863,7 +867,7 @@ async function runGatewayResponseJsonCheck(
         timestamp,
         authenticationValidated: false,
         responseSmokeValidated: false,
-        remediation: 'Cannot complete a model=auto Responses API request. Check gateway health, routing, and network access.',
+        remediation: 'Cannot complete a Responses API request with the resolved gateway model. Check gateway health, routing, and network access.',
       },
       check: { name: checkName, status: 'error', detail: errorMessage, responseTime },
     };
@@ -887,7 +891,7 @@ async function runGatewayResponseStreamCheck(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'auto',
+        model: resolveGatewayModel(),
         input: GATEWAY_RESPONSE_SMOKE_PROMPT,
         max_output_tokens: GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS,
         stream: true,
@@ -936,7 +940,7 @@ async function runGatewayResponseStreamCheck(
           streamSmokeValidated: false,
           responseId: parsed.responseId,
           outputTokens: parsed.outputTokens,
-          remediation: 'Gateway accepted stream=true but produced no response.output_text.delta events and no final assistant text. Fix the Responses API streaming adapter before running Kaseki agent traffic through model=auto.',
+          remediation: 'Gateway accepted stream=true but produced no response.output_text.delta events and no final assistant text. Fix the Responses API streaming adapter before running Kaseki agent traffic through the resolved gateway model.',
         },
         check: {
           name: 'streaming-response',
@@ -984,7 +988,7 @@ async function runGatewayResponseStreamCheck(
         authenticationValidated: false,
         responseSmokeValidated: false,
         streamSmokeValidated: false,
-        remediation: 'Cannot complete a stream=true model=auto Responses API request. Check gateway health, routing, and SSE adapter behavior.',
+        remediation: 'Cannot complete a stream=true Responses API request with the resolved gateway model. Check gateway health, routing, and SSE adapter behavior.',
       },
       check: { name: 'streaming-response', status: 'error', detail: errorMessage, responseTime },
     };
@@ -1033,7 +1037,7 @@ function buildStage1ProbeRequest(baseUrl: string): Stage1ProbeRequest {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'auto',
+          model: resolveGatewayModel(),
           messages: [{ role: 'user', content: CLOUDFLARE_STAGE1_PROBE_PROMPT }],
           max_tokens: 1,
           stream: false,
