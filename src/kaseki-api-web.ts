@@ -2405,7 +2405,9 @@ const controllerPage = String.raw`<!doctype html>
               ? responseTime + 'ms' + (outputTokens ? ' ' + outputTokens + ' tokens' : '') + (coverage ? ' ' + coverage : '')
               : 'Failed';
             setSummary('llm-test', llmSummary, payload.status === 'ok' ? 'ok' : 'bad');
-            if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
+            if (!payload.piProviderSmoke) {
+              setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was not requested; add piProvider=true to run it.');
+            } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'skipped') {
               setResponseSummary('Gateway Responses API passed. Pi provider adapter smoke was skipped; run production check with piProvider=true.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
               setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
