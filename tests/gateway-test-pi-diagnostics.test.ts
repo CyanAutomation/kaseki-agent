@@ -176,6 +176,36 @@ describe('Pi Provider Smoke Test Diagnostics', () => {
       expect(analysis.eventsWithText).toBe(0);
       expect(analysis.suggestedPatterns.length).toBe(0);
     });
+
+
+    it('should distinguish user text fields from missing assistant text', () => {
+      const jsonl = [
+        JSON.stringify({
+          type: 'message_start',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'prompt text should not count as output' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'message_start',
+          message: {
+            role: 'assistant',
+            content: [],
+          },
+        }),
+      ].join('\n');
+
+      const analysis = analyzeResponseStructure(jsonl);
+
+      expect(analysis.eventsWithText).toBe(0);
+      expect(analysis.assistantEventsWithText).toBe(0);
+      expect(analysis.nonAssistantEventsWithText).toBe(1);
+      expect(analysis.assistantFieldsFound).toContain('message.content (array)');
+      expect(analysis.assistantFieldsFound).not.toContain('message.content[].text');
+      expect(analysis.nonAssistantFieldsFound).toContain('user.message.content[].text');
+      expect(analysis.suggestedPatterns).toHaveLength(0);
+    });
   });
 
   describe('Real-world scenarios', () => {
