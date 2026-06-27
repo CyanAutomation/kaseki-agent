@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.103.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.103.0...v1.103.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* update LLM gateway references to use llm-gateway.local.xyz ([2a07a87](https://github.com/CyanAutomation/kaseki-agent/commit/2a07a87dcacc2cc8fe167b43440ae95c568b9a4c))
+
 # [1.103.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.102.0...v1.103.0) (2026-06-27)
 
 
