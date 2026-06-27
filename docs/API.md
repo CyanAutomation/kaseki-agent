@@ -196,8 +196,8 @@ current readiness decisions.
 Requires authentication. Runs LLM gateway diagnostics in layers:
 
 - `?stage=1` checks gateway reachability and authentication via `/models` without inference tokens for standard OpenAI-compatible gateways. Cloudflare `/compat` URLs are scoped gateway URLs (`/v1/{account_id}/{gateway_id}/compat`) and are probed through `/compat/chat/completions` instead of being reduced to `/v1/models`; this minimal probe may consume a small amount of gateway/provider quota.
-- `?stage=2&responseSmoke=true` checks OpenAI Responses API inference with `model=auto`, including JSON, streaming, and larger prompt responses. This consumes gateway tokens.
-- `?stage=2&responseSmoke=true&piProvider=true` also runs a Pi CLI provider smoke through `--provider gateway --model auto`. This production adapter check catches Pi provider registration problems even when raw gateway HTTP checks pass. In development/test it is skipped unless `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1` is set.
+- `?stage=2&responseSmoke=true` checks OpenAI Responses API inference with the configured gateway model, defaulting to `dynamic/kaseki-agent` via `KASEKI_MODEL` or `LLM_GATEWAY_MODEL`, including JSON, streaming, and larger prompt responses. This consumes gateway tokens.
+- `?stage=2&responseSmoke=true&piProvider=true` also runs a Pi CLI provider smoke through `--provider gateway --model <configured-model>`, where the model is `LLM_GATEWAY_MODEL`, `KASEKI_MODEL`, or the default `dynamic/kaseki-agent`. This production adapter check catches Pi provider registration problems even when raw gateway HTTP checks pass. In development/test it is skipped unless `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE=1` is set.
 
 ```bash
 curl -H "Authorization: Bearer sk-your-api-key" \

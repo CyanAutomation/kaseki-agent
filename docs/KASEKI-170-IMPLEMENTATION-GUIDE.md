@@ -214,7 +214,7 @@ rate(provider_empty_assistant_turns_total[1h]) > 0
 ### Nice to Have (Phase 2)
 
 - [ ] Graceful fallback in orchestration
-- [ ] Conditional model retry (model=auto → gpt-4)
+- [ ] Conditional model retry (legacy `auto` model alias → `gpt-4`; current gateway deployments default to `dynamic/kaseki-agent`)
 - [ ] Provider health check endpoint
 - [ ] Prometheus metrics
 - [ ] Grafana dashboard
@@ -233,9 +233,11 @@ npm test -- test/kaseki-170-integration.test.ts
 
 ### Integration Test
 
+> Historical note: this guide references the older `auto` gateway model alias from the KASEKI-170 investigation. Current gateway deployments should use `dynamic/kaseki-agent` unless an explicit provider-specific model is configured.
+
 ```bash
 # Simulate kaseki-170 scenario
-KASEKI_MODEL=auto ./run-kaseki.sh
+KASEKI_MODEL=dynamic/kaseki-agent ./run-kaseki.sh
 
 # Expect: /results/provider-diagnostics.jsonl to contain error
 # Check: Response ID matches gateway logs
