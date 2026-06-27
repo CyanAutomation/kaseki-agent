@@ -231,6 +231,27 @@ describe('LLM Gateway Test', () => {
       expect(callArgs[1].headers.Authorization).toBe('Bearer test-key');
     });
 
+    it('should accept Cloudflare gateway URLs with /compat suffix', async () => {
+      process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat';
+      process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => '{"models": []}',
+      });
+
+      const result = await testGatewayConnectivity();
+
+      expect(result.status).toBe('ok');
+      expect(result.responseTime).toBeGreaterThanOrEqual(0);
+      expect(result.authenticationValidated).toBe(true);
+      // Verify it correctly extracts the /v1 version and converts to /v1/models
+      expect(mockFetch).toHaveBeenCalled();
+      const callArgs = mockFetch.mock.calls[0];
+      expect(callArgs[0]).toBe('https://gateway.ai.cloudflare.com/v1/models');
+    });
+
     it('should return error with 401 when authentication fails', async () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1/responses';
       process.env.LLM_GATEWAY_API_KEY = 'invalid-key';
