@@ -840,7 +840,6 @@ describe('LLM Gateway Test', () => {
         expect(result.status).toBe('ok');
       });
 
-
       it('should preserve Cloudflare scoped /compat path for Stage 1 probes', async () => {
         process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat';
         process.env.LLM_GATEWAY_API_KEY = 'test-key';
