@@ -1239,9 +1239,13 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         expect(body.piProviderSmoke).toEqual(expect.objectContaining({
           status: 'skipped',
           provider: 'gateway',
-          model: 'auto',
+          model: 'dynamic/kaseki-agent',
+          detail: expect.stringContaining('skipped'),
+          remediation: expect.stringContaining('opt-in'),
+          responseTime: 0,
         }));
-        expect(body.piProviderSmoke.detail).toContain('skipped');
+        expect(body.piProviderSmoke.timestamp).toBeDefined();
+        expect(typeof body.piProviderSmoke.timestamp).toBe('string');
       } finally {
         fetchSpy.mockRestore();
         await cleanupTestApp(server, idempotencyStore);
