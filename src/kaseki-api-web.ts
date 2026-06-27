@@ -2410,7 +2410,26 @@ const controllerPage = String.raw`<!doctype html>
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'ok') {
               setResponseSummary('Gateway Responses API and Pi provider adapter passed.');
             } else if (payload.piProviderSmoke && payload.piProviderSmoke.status === 'error') {
-              setResponseSummary('Gateway Responses API result includes Pi provider adapter failure.');
+              const diag = payload.piProviderSmoke.diagnostics || {};
+              const fieldsFound = diag.fieldsFound || [];
+              const suggested = diag.suggestedPatterns || [];
+              const eventsByType = diag.eventsByType || {};
+              
+              let diagnosticMsg = 'Pi provider adapter test failed. Diagnostics:\n';
+              diagnosticMsg += '  Fields found: ' + (fieldsFound.length > 0 ? fieldsFound.join(', ') : '(none)') + '\n';
+              const eventTypesList = [];
+              for (const [k, v] of Object.entries(eventsByType)) {
+                eventTypesList.push(k + '(' + v + ')');
+              }
+              diagnosticMsg += '  Event types seen: ' + (eventTypesList.join(', ') || '(none)') + '\n';
+              
+              if (suggested.length > 0) {
+                diagnosticMsg += '  Suggested patterns to try: ' + suggested.slice(0, 3).join(', ') + '\n';
+              }
+              
+              diagnosticMsg += '  Remediation: ' + (payload.piProviderSmoke.remediation || 'Check gateway configuration and Pi provider registration');
+              
+              setResponseSummary(diagnosticMsg);
             }
           } else {
             // Stage 1 or full test (gateway connectivity)

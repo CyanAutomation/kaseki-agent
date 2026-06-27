@@ -1,5 +1,6 @@
 import { readHostSecret } from './secrets/host-secrets-reader';
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 
 /**
  * LLM Gateway Responsiveness Test
@@ -256,12 +257,59 @@ export function resolveGatewayModel(): string {
   return process.env.KASEKI_MODEL || process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
 }
 
-export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeTestResult {
+/**
+ * Options for Pi provider smoke test
+ */
+export interface PiProviderSmokeTestOptions {
+  requested?: boolean;
+  debug?: boolean; // Log full response and diagnostics
+}
+
+/**
+ * Verify Pi provider is registered and configured correctly
+ */
+export function verifyPiProviderRegistration(): {
+  registered: boolean;
+  apiType?: string;
+  model?: string;
+  baseUrl?: string;
+  issues?: string[];
+  } {
+  const result: any = {
+    registered: false,
+    issues: [],
+  };
+
+  const gatewayUrl = process.env.LLM_GATEWAY_URL;
+  const model = resolveGatewayModel();
+
+  if (!gatewayUrl) {
+    result.issues.push('LLM_GATEWAY_URL not configured');
+  }
+
+  if (!process.env.LLM_GATEWAY_API_KEY && !process.env.LLM_GATEWAY_API_KEY_FILE) {
+    result.issues.push('LLM_GATEWAY_API_KEY or LLM_GATEWAY_API_KEY_FILE not configured');
+  }
+
+  result.registered = result.issues.length === 0;
+  result.apiType = 'openai-responses';
+  result.model = model;
+  result.baseUrl = gatewayUrl;
+
+  return result;
+}
+
+export function testPiGatewayProviderSmoke(requested: boolean | PiProviderSmokeTestOptions = false): PiProviderSmokeTestResult {
   const timestamp = new Date().toISOString();
   const startTime = performance.now();
   const model = resolveGatewayModel();
 
-  if (!shouldRunPiProviderSmoke(requested)) {
+  // Handle both boolean (backward compat) and options object
+  const options: PiProviderSmokeTestOptions = typeof requested === 'object' ? requested : { requested };
+  const debugMode = options.debug === true;
+  const requestedSmoke = options.requested === true;
+
+  if (!shouldRunPiProviderSmoke(requestedSmoke)) {
     const environment = detectGatewayTestEnvironment();
     const remediation = environment === 'production'
       ? 'This should not happen in production (auto-run enabled). Check logs for errors.'
@@ -344,6 +392,18 @@ export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeT
   if (!assistantText.trim()) {
     const analysis = analyzeResponseStructure(stdout);
     const sampleEvent = extractSampleEventStructure(stdout);
+
+    if (debugMode) {
+      // In debug mode, include raw response for diagnostics
+      try {
+        const debugPath = `/tmp/kaseki-pi-debug-${Date.now()}.jsonl`;
+        fs.writeFileSync(debugPath, stdout);
+        // This path could be logged/reported in a real implementation
+      } catch {
+        // Ignore write errors in debug mode
+      }
+    }
+
     return {
       status: 'error',
       detail: 'Pi provider smoke completed but produced no assistant text',
