@@ -177,11 +177,12 @@ export function createGatewayTestRoutes(): Router {
         }
       }
 
-      // Run PI provider test if requested
+      // Run PI provider test only when explicitly requested. The UI's Stage 2 LLM
+      // probe validates the Responses API and should not be made fatal by the
+      // heavier Pi provider adapter smoke unless the caller opts in with
+      // ?piProvider=true.
       if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
         piProviderResult = testPiGatewayProviderSmoke({ requested: true, debug: debugMode });
-      } else if (requestedStage === 2) {
-        piProviderResult = testPiGatewayProviderSmoke({ requested: false, debug: debugMode });
       }
 
       // Build response based on requested stage
