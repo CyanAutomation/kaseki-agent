@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.105.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.104.0...v1.105.0) (2026-06-27)
+
+
+### Features
+
+* Add Cloudflare gateway detection and endpoint builders for models and responses ([0c354b2](https://github.com/CyanAutomation/kaseki-agent/commit/0c354b2be5ae903f06b848bd3455212fccb2c0a7))
+
 # [1.104.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.103.1...v1.104.0) (2026-06-27)
 
 
