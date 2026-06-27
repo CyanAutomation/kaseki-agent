@@ -13,7 +13,7 @@ Complete reference for all environment variables used by kaseki-agent.
 | `REPO_URL` | `CyanAutomation/crudmapper` | string | Target repository URL ([https://github.com/owner/repo](https://github.com/owner/repo)) |
 | `GIT_REF` | `main` | string | Branch, tag, or commit hash |
 | `TASK_PROMPT` | (code fix task) | string | Agent instruction/task description |
-| `KASEKI_MODEL` | `auto` | string | LLM model identifier (e.g., `auto`, `gpt-4-turbo`, or gateway's native model IDs) |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | LLM model identifier (for gateway production deployments, use `dynamic/kaseki-agent`; other providers may use their native model IDs) |
 | `KASEKI_PROVIDER` | `gateway` | string | Primary LLM provider. Options: `gateway` (default, uses LLM Gateway), `openrouter` (uses OpenRouter). OpenRouter is always validated during startup as a fallback option. |
 | `KASEKI_AGENT_TIMEOUT_SECONDS` | `1200` | integer | Agent reasoning timeout in seconds (max 86400) |
 | `KASEKI_GOAL_CHECK` | `KASEKI_SCOUTING` | boolean | Enable the post-validation goal-check Pi evaluator when scouting artifacts are available |
@@ -71,7 +71,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used when `KASEKI_PROVIDER=openrouter` is selected as the fallback/secondary path. |
 | `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
-| `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with `model=auto`. Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
+| `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with the configured gateway model (default `dynamic/kaseki-agent`). Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |
 | `KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS` | `60000` | integer | Timeout for the opt-in Pi gateway provider smoke test. |
 | `KASEKI_API_URL` | `http://localhost:8080/api` | string | Client-side base URL used by npm API-backed commands (`run`, `list`, `report`, `status`, `stop`/`cancel`) |
@@ -298,19 +298,21 @@ If dependency restore logs show EXDEV/cross-device hardlink failures:
 |----------|---------|------|---------|
 | `LLM_GATEWAY_API_KEY` | — | string | Gateway API key (required if using inline auth) |
 | `LLM_GATEWAY_API_KEY_FILE` | `$HOME/.kaseki/secrets.json` | string | Path to file containing API key (preferred) |
+| `LLM_GATEWAY_MODEL` | `$KASEKI_MODEL` (default `dynamic/kaseki-agent`) | string | Optional gateway-specific model override. If omitted, gateway checks and Pi provider smoke use `KASEKI_MODEL`, whose compiled default is `dynamic/kaseki-agent`. |
 
 ### Model Selection
 
 | Variable | Default | Type | Purpose |
 |----------|---------|------|---------|
-| `KASEKI_MODEL` | `auto` | string | Model identifier (gateway-specific; use `auto` for gateway default) |
+| `KASEKI_MODEL` | `dynamic/kaseki-agent` | string | Model identifier. Gateway production deployments should use the default `dynamic/kaseki-agent` unless a specific gateway model is intentionally configured. |
 
 **Common Model Values:**
 
-- `auto` — Use gateway's default model (recommended)
+- `dynamic/kaseki-agent` — Default gateway model ID for production deployments (recommended)
+- Provider-specific IDs — Use only when intentionally bypassing the gateway default routing model
 - `gpt-4-turbo` — OpenAI GPT-4 Turbo (if using OpenAI gateway)
 - `claude-3-opus-20240229` — Anthropic Claude 3 Opus (if using Anthropic gateway)
-- Gateway-specific IDs — Check your gateway's model list for available options
+- Gateway-specific IDs — Check your gateway's model list for available options; for current Cloudflare/gateway production behavior, prefer `dynamic/kaseki-agent`
 
 ### Multi-Phase Model Overrides
 
@@ -434,7 +436,7 @@ Configuration is resolved in this order (first match wins):
 2. **File-based env var** (e.g., `LLM_GATEWAY_API_KEY_FILE=...`)
 3. **Default location** (e.g., `/agents/secrets/llm_gateway_api_key`)
 4. **Fallback location** (e.g., `~/secrets/llm_gateway_api_key`)
-5. **Compiled default** (e.g., `auto` for `KASEKI_MODEL`)
+5. **Compiled default** (e.g., `dynamic/kaseki-agent` for `KASEKI_MODEL`)
 
 ---
 
