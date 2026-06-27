@@ -8,7 +8,7 @@
  *
  * NOTE: Full end-to-end Pi CLI integration test (Step 4 in plan)
  * requires Pi CLI installed. Best run manually via:
- * KASEKI_PROVIDER=gateway KASEKI_MODEL=gateway/auto ./run-kaseki.sh
+ * KASEKI_PROVIDER=gateway KASEKI_MODEL=dynamic/kaseki-agent ./run-kaseki.sh
  */
 
 describe('Gateway Provider Configuration', () => {
@@ -18,6 +18,7 @@ describe('Gateway Provider Configuration', () => {
     process.env.LLM_GATEWAY_URL = 'https://llm-gateway.local.xyz/v1';
     process.env.LLM_GATEWAY_API_KEY = 'test-api-key';
     process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS = '2048';
+    delete process.env.LLM_GATEWAY_MODEL;
   });
 
   it('validates provider configuration structure', () => {
@@ -28,14 +29,14 @@ describe('Gateway Provider Configuration', () => {
 
     // Expected provider configuration (from .pi-extensions.js logic)
     const expectedConfig = {
-      name: 'LLM Gateway',
+      name: 'LLM Gateway (CloudFlare)',
       baseUrl: 'https://llm-gateway.local.xyz/v1',
       apiKey: 'test-api-key',
       api: 'openai-responses', // Step 2b: Confirm this is correct
       models: [
         {
-          id: 'auto',
-          name: 'Auto (Gateway Default)',
+          id: 'dynamic/kaseki-agent',
+          name: 'CloudFlare Gateway (dynamic/kaseki-agent)',
           reasoning: false,
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -50,7 +51,7 @@ describe('Gateway Provider Configuration', () => {
     expect(expectedConfig.apiKey).toBe(process.env.LLM_GATEWAY_API_KEY);
     expect(expectedConfig.api).toBe('openai-responses'); // KEY: Confirm api type
     expect(expectedConfig.models).toHaveLength(1);
-    expect(expectedConfig.models[0].id).toBe('auto');
+    expect(expectedConfig.models[0].id).toBe('dynamic/kaseki-agent');
     expect(expectedConfig.models[0].maxTokens).toBe(parseInt(process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS || '4096', 10));
 
     console.log('\n=== Step 3: Provider Configuration Validated ===');
@@ -59,6 +60,37 @@ describe('Gateway Provider Configuration', () => {
     console.log(`  ✓ API type: ${expectedConfig.api}`);
     console.log(`  ✓ Model ID: ${expectedConfig.models[0].id}`);
     console.log(`  ✓ Max tokens: ${expectedConfig.models[0].maxTokens}`);
+  });
+
+  it('allows LLM_GATEWAY_MODEL to override the default model', () => {
+    /**
+     * Test: Custom gateway model override still works.
+     * This protects callers that intentionally route through a specific model.
+     */
+
+    process.env.LLM_GATEWAY_MODEL = 'custom/provider-model';
+
+    const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
+    const expectedConfig = {
+      name: 'LLM Gateway (CloudFlare)',
+      baseUrl: process.env.LLM_GATEWAY_URL,
+      apiKey: process.env.LLM_GATEWAY_API_KEY,
+      api: 'openai-responses',
+      models: [
+        {
+          id: model,
+          name: `CloudFlare Gateway (${model})`,
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128000,
+          maxTokens: parseInt(process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS || '4096', 10),
+        },
+      ],
+    };
+
+    expect(expectedConfig.models[0].id).toBe('custom/provider-model');
+    expect(expectedConfig.models[0].name).toBe('CloudFlare Gateway (custom/provider-model)');
   });
 
   it('validates diagnostics file path convention', () => {
@@ -82,7 +114,7 @@ describe('Gateway Provider Configuration', () => {
         provider: 'gateway',
         baseUrl: process.env.LLM_GATEWAY_URL,
         apiType: 'openai-responses',
-        modelId: 'auto',
+        modelId: 'dynamic/kaseki-agent',
         hasApiKey: true,
         // timestamp is ISO string
       },
@@ -97,7 +129,7 @@ describe('Gateway Provider Configuration', () => {
       if (event.event === 'provider_registered') {
         expect(event).toHaveProperty('provider', 'gateway');
         expect(event).toHaveProperty('apiType');
-        expect(event).toHaveProperty('modelId', 'auto');
+        expect(event).toHaveProperty('modelId', 'dynamic/kaseki-agent');
       }
     });
 
@@ -162,7 +194,7 @@ describe('Gateway Provider Configuration', () => {
     console.log('  export LLM_GATEWAY_URL=https://llm-gateway.local.xyz/v1');
     console.log('  export LLM_GATEWAY_API_KEY=<your-key>');
     console.log('  export KASEKI_PROVIDER=gateway');
-    console.log('  export KASEKI_MODEL=gateway/auto');
+    console.log('  export KASEKI_MODEL=dynamic/kaseki-agent');
     console.log('');
     console.log('  ./run-kaseki.sh');
     console.log('');
@@ -424,19 +456,19 @@ describe('Gateway Custom Stream Handler', () => {
   it('formats request with correct gateway contract', () => {
     /**
      * Test: Request body matches gateway's expected format.
-     * Gateway expects: {model: "auto", input: "string", store: false}
-     * Pi default sends: {model: "auto", messages: [...], ...}
+     * Gateway expects: {model: "dynamic/kaseki-agent", input: "string", store: false}
+     * Pi default sends: {model: "dynamic/kaseki-agent", messages: [...], ...}
      */
 
     // Expected request format for gateway
     const expectedRequestBody = {
-      model: 'auto',
+      model: 'dynamic/kaseki-agent',
       input: 'Hello, what can you do?',
       store: false,
     };
 
     // Verify structure matches gateway contract
-    expect(expectedRequestBody).toHaveProperty('model', 'auto');
+    expect(expectedRequestBody).toHaveProperty('model', 'dynamic/kaseki-agent');
     expect(expectedRequestBody).toHaveProperty('input');
     expect(typeof expectedRequestBody.input).toBe('string');
     expect(expectedRequestBody).toHaveProperty('store', false);
@@ -519,7 +551,7 @@ data: [DONE]
       content: [],
       api: 'custom-gateway',
       provider: 'gateway',
-      model: 'auto',
+      model: 'dynamic/kaseki-agent',
       usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 150 },
       stopReason: 'stop',
       timestamp: Date.now(),
@@ -627,7 +659,7 @@ data: [DONE]
       timestamp: new Date().toISOString(),
       event: 'stream_handler_invoked',
       provider: 'gateway',
-      requestFormat: { model: 'auto', input: '...' },
+      requestFormat: { model: 'dynamic/kaseki-agent', input: '...' },
     };
 
     // Simulate diagnostic write
