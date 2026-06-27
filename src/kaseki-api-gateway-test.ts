@@ -53,7 +53,7 @@ export interface ResponseSmokeTestResult {
 }
 
 export interface ResponseSmokeSubcheck {
-  name: 'json-response' | 'streaming-response' | 'large-prompt-response' | 'pi-provider-response';
+  name: 'json-response' | 'streaming-response' | 'large-prompt-response' | 'pi-provider-response' | 'cloudflare-compat-note';
   status: 'ok' | 'error';
   detail: string;
   responseTime: number;
@@ -683,14 +683,17 @@ async function testGatewayResponseSmokeFull(
     const responseTime = performance.now() - startTime;
     checks.push({
       name: 'cloudflare-compat-note',
-      ok: true,
+      status: 'ok',
       detail: 'Cloudflare gateway detected. Full response smoke test skipped (Cloudflare only supports Chat Completions). Health check to /v1/models passed.',
+      responseTime,
     });
     return {
       status: 'ok',
       detail: 'Cloudflare gateway connectivity verified (health check passed, full smoke test not applicable)',
+      gatewayUrl,
       responseTime,
       timestamp,
+      authenticationValidated: true,
       responseSmokeValidated: true, // Mark as validated since we did the health check
       checks,
     };
