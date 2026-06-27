@@ -4,6 +4,13 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.103.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.102.0...v1.103.0) (2026-06-27)
+
+
+### Features
+
+* add CloudFlare AI Workers Gateway provider extension ([f5101b2](https://github.com/CyanAutomation/kaseki-agent/commit/f5101b2bc7a9d53726236a000bae2ee4c0c5f8f6))
+
 # [1.102.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.101.0...v1.102.0) (2026-06-24)
 
 
