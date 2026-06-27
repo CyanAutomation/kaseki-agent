@@ -39,8 +39,6 @@ import {
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
 
-
-
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
     return false;
@@ -53,8 +51,6 @@ function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
     remoteAddress.startsWith('127.')
   );
 }
-
-
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
