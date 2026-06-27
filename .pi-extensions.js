@@ -20,7 +20,7 @@ import fs from 'node:fs';
  * Prefers environment variable, falls back to file
  * @returns {string} API key or empty string if not configured
  */
-export function resolveGatewayApiKey() {
+function resolveGatewayApiKey() {
   if (process.env.LLM_GATEWAY_API_KEY) {
     return process.env.LLM_GATEWAY_API_KEY;
   }
@@ -45,7 +45,7 @@ export function resolveGatewayApiKey() {
  * Resolve max output tokens from environment
  * @returns {number} Max tokens (default: 4096)
  */
-export function resolveGatewayMaxTokens() {
+function resolveGatewayMaxTokens() {
   const raw = process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS;
   if (!raw) return 4096;
   const parsed = Number.parseInt(raw, 10);

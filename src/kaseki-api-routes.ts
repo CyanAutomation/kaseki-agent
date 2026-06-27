@@ -39,19 +39,7 @@ import {
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
 
-/**
- * BACKWARD COMPATIBILITY RE-EXPORTS
- *
- * The following are re-exported for backward compatibility with existing tests
- * and consumers that import from this module. New code should import directly
- * from the source modules instead.
- */
 
-/**
- * @deprecated Use `import { decodeUtf8TailSafely } from './utils/utf8-helpers'` instead
- * Re-exported from utf8-helpers for backward compatibility
- */
-export { decodeUtf8TailSafely, tailLogByLines } from './utils/utf8-helpers';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -66,33 +54,7 @@ function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   );
 }
 
-/**
- * @deprecated Use `import { checkDeletedBindMounts } from './kaseki-api-health-checks'` instead
- * Re-exported for backward compatibility with tests and callers
- */
-export {
-  checkDeletedBindMounts,
-  checkWritableDirectory,
-  checkLLMGatewayKey,
-  checkGatewayTestSecretConsistency,
-  checkWorkerGatewayConfig,
-  checkGitHubAppCredentials,
-  checkWorkerSmokeTest,
-  buildTemplateHealthStatus,
-  resolveCheckoutFreshness,
-  checkTemplateActivatorParity,
-  getSubmissionTemplateHealthStatus,
-  checkTemplatePublishModeCompatibility,
-  TEMPLATE_REMEDIATION,
-  shouldBlockForFreshness,
-  isTemplateDoctorTimeout,
-} from './kaseki-api-health-checks';
 
-/**
- * @deprecated Use `import { classifyDockerFailure } from './lib/subprocess-helpers'` instead
- * Re-exported for backward compatibility with tests
- */
-export { classifyDockerFailure } from './lib/subprocess-helpers';
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
