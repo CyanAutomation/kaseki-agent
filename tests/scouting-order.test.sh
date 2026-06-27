@@ -12,6 +12,7 @@ RESULTS_DIR="$TMP_DIR/results"
 WORKSPACE_REPO="$TMP_DIR/repo"
 APP_LIB="$TMP_DIR/app/lib"
 PI_CALLS="$TMP_DIR/pi-calls.log"
+PI_ARGS="$TMP_DIR/pi-args.log"
 RUN_LOG="$TMP_DIR/kaseki-run.log"
 trap 'cat "$RESULTS_DIR/scouting-validation-errors.jsonl" 2>/dev/null; rm -rf "$TMP_DIR"' EXIT
 
@@ -23,13 +24,22 @@ fail() {
 
 mkdir -p "$FAKE_REPO/deps/fake-dep" "$FAKE_BIN" "$RESULTS_DIR" "$WORKSPACE_REPO" "$APP_LIB" "$TMP_DIR/scripts" "$TMP_DIR/scripts/lib"
 cp "$REPO_ROOT/scripts/allowlist-helper.sh" "$TMP_DIR/scripts/allowlist-helper.sh"
-cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+if [ -f "$REPO_ROOT/scripts/scouting-allowlist.js" ]; then
+  cp "$REPO_ROOT/scripts/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+else
+  cp "$REPO_ROOT/dist/scouting-allowlist.js" "$TMP_DIR/scripts/scouting-allowlist.js"
+fi
 cp "$REPO_ROOT/scripts/lib/json.sh" "$TMP_DIR/scripts/lib/json.sh"
 cp "$REPO_ROOT/scripts/lib/json-events.sh" "$TMP_DIR/scripts/lib/json-events.sh"
+cp "$REPO_ROOT/scripts/dependency-cache-helpers.sh" "$TMP_DIR/scripts/dependency-cache-helpers.sh"
+cp "$REPO_ROOT/scripts/npm-install-helpers.sh" "$TMP_DIR/scripts/npm-install-helpers.sh"
+cp "$REPO_ROOT/scripts/agent-prompt.sh" "$TMP_DIR/scripts/agent-prompt.sh"
 touch "$APP_LIB/event-aggregator.js" "$APP_LIB/timestamp-tracker.js" "$APP_LIB/progress-stream-utils.js"
 MODIFIED_SCRIPT="$TMP_DIR/kaseki-agent-modified.sh"
 sed "s#\"\${KASEKI_WORKSPACE_DIR}\"/repo#$WORKSPACE_REPO#g; s#\${KASEKI_WORKSPACE_DIR}/repo#$WORKSPACE_REPO#g; s#/workspace/repo#$WORKSPACE_REPO#g; s#/results#$RESULTS_DIR#g; s#/app/lib#$APP_LIB#g" "$REPO_ROOT/kaseki-agent.sh" > "$MODIFIED_SCRIPT"
 chmod +x "$MODIFIED_SCRIPT"
+: > "$PI_CALLS"
+: > "$PI_ARGS"
 
 printf '%s\n' '{"name":"fake-scouting-repo","version":"1.0.0","private":true,"scripts":{"check":"exit 0"},"dependencies":{"fake-dep":"file:deps/fake-dep"}}' > "$FAKE_REPO/package.json"
 printf '%s\n' '{"name":"fake-dep","version":"1.0.0","private":true}' > "$FAKE_REPO/deps/fake-dep/package.json"
@@ -43,8 +53,11 @@ git -C "$FAKE_REPO" -c user.email=kaseki-test@example.invalid -c user.name="Kase
 cat > "$FAKE_BIN/pi" <<EOF_PI
 #!/usr/bin/env bash
 if [ "\${1:-}" = "--version" ]; then echo "pi 0.0.0-test"; exit 0; fi
+if [ "\${1:-}" = "--list-models" ]; then echo "gateway/dynamic/kaseki-agent"; exit 0; fi
 prompt="\${*: -1}"
+args="\$*"
 if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
+  printf 'goal-setting\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'goal-setting\n' >> "$PI_CALLS"
   if printf '%s' "\$prompt" | grep -Fq 'Write exactly one JSON object to $RESULTS_DIR/goal-setting-candidate.json'; then
     printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"Upgraded: inspect then code","reasoning":"test","key_requirements":[],"success_criteria":[]}' > "$RESULTS_DIR/goal-setting-candidate.json"
@@ -52,12 +65,15 @@ if printf '%s' "\$prompt" | grep -q 'goal-setting Pi agent'; then
     printf '%s\n' '{"original_prompt":"inspect then code","upgraded_goal":"stdout only","reasoning":"test","key_requirements":[],"success_criteria":[]}'
   fi
 elif printf '%s' "\$prompt" | grep -q 'read-only scouting Pi agent'; then
+  printf 'scouting\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'scouting\n' >> "$PI_CALLS"
   printf '%s\n' '{"task":"inspect","requirements":[],"relevant_files":[],"observations":[],"plan":[],"validation":[],"risks":[],"test_impact":[]}' > "$RESULTS_DIR/scouting-candidate.json"
 elif printf '%s' "\$prompt" | grep -q 'read-only goal-check Pi agent'; then
+  printf 'goal-check\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'goal-check\n' >> "$PI_CALLS"
   printf '%s\n' '{"met":true,"confidence":"high","summary":"done","evidence":[],"missing":[],"retry_prompt":"","validation_notes":[]}' > "$RESULTS_DIR/goal-check-candidate.json"
 else
+  printf 'coding\t%s\n' "\$args" >> "$PI_ARGS"
   printf 'coding\n' >> "$PI_CALLS"
   printf '%s' "\$prompt" > "$RESULTS_DIR/coding-prompt.txt"
 fi
@@ -95,6 +111,8 @@ set -e
 
 [ "$run_exit" -eq 0 ] || fail "expected zero exit, got $run_exit"
 [ "$(cat "$PI_CALLS")" = $'goal-setting\nscouting\ncoding\ngoal-check' ] || fail "Pi calls were not goal-setting then scouting then coding then goal-check"
+grep -Eq '^scouting[[:space:]].*--model dynamic/kaseki-agent( |$)' "$PI_ARGS" || fail "scouting Pi was not invoked with default gateway model dynamic/kaseki-agent"
+grep -Eq '^coding[[:space:]].*--model dynamic/kaseki-agent( |$)' "$PI_ARGS" || fail "coding Pi was not invoked with default gateway model dynamic/kaseki-agent"
 [ -s "$RESULTS_DIR/goal-setting.json" ] || fail "goal-setting.json was not copied into results"
 [ ! -e "$RESULTS_DIR/goal-setting-candidate.json" ] || fail "goal-setting candidate artifact should be consumed after validation"
 [ -s "$RESULTS_DIR/scouting.json" ] || fail "scouting.json was not copied into results"

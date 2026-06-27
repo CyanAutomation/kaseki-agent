@@ -146,7 +146,13 @@ fi
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
 KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
-KASEKI_MODEL="${KASEKI_MODEL:-auto}"
+if [ -z "${KASEKI_MODEL+x}" ]; then
+  if [ "$KASEKI_PROVIDER" = "gateway" ]; then
+    KASEKI_MODEL="${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
+  else
+    KASEKI_MODEL="auto"
+  fi
+fi
 KASEKI_DRY_RUN="${KASEKI_DRY_RUN:-0}"
 KASEKI_STARTUP_CHECK_MODE="${KASEKI_STARTUP_CHECK_MODE:-boot}"
 KASEKI_BASELINE_VALIDATION_DRY_RUN="${KASEKI_BASELINE_VALIDATION_DRY_RUN:-0}"
