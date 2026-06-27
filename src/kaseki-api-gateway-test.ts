@@ -73,6 +73,14 @@ export interface PiProviderSmokeTestResult {
   assistantTextChars?: number;
   exitCode?: number | null;
   remediation?: string;
+  diagnostics?: {
+    fieldsSearched?: string[];
+    fieldsFound?: string[];
+    eventsByType?: Record<string, number>;
+    eventsWithText?: number;
+    suggestedPatterns?: string[];
+    sampleEventStructure?: any;
+  };
 }
 
 /**
@@ -334,6 +342,8 @@ export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeT
   }
 
   if (!assistantText.trim()) {
+    const analysis = analyzeResponseStructure(stdout);
+    const sampleEvent = extractSampleEventStructure(stdout);
     return {
       status: 'error',
       detail: 'Pi provider smoke completed but produced no assistant text',
@@ -344,7 +354,26 @@ export function testPiGatewayProviderSmoke(requested: boolean): PiProviderSmokeT
       exitCode: child.status,
       outputEventCount: countPiJsonEvents(stdout),
       assistantTextChars: 0,
-      remediation: 'Verify Pi provider api uses openai-responses and does not register the legacy custom streamSimple adapter.',
+      diagnostics: {
+        fieldsSearched: [
+          'message.text',
+          'message.output_text',
+          'message.assistantMessage',
+          'message.content (string)',
+          'message.choices[0].message.content',
+          'message.choices[0].delta.content',
+          'message.response.content',
+        ],
+        fieldsFound: analysis.fieldsFound,
+        eventsByType: analysis.eventsByType,
+        eventsWithText: analysis.eventsWithText,
+        suggestedPatterns: analysis.suggestedPatterns,
+        sampleEventStructure: sampleEvent,
+      },
+      remediation:
+        analysis.suggestedPatterns.length > 0
+          ? `Found response fields but text not extracted. Try patterns: ${analysis.suggestedPatterns.slice(0, 2).join(', ')}. Check Pi provider registration and gateway response format.`
+          : 'No response fields found. Verify Pi provider api uses openai-responses and gateway is returning valid responses.',
     };
   }
 
@@ -1169,6 +1198,56 @@ function parseResponsesSse(bodyText: string): { text: string; responseId?: strin
   return { text, responseId, outputTokens };
 }
 
+/**
+ * Extract the structure of the first few events for diagnostics
+ * Sanitized to avoid leaking sensitive data
+ */
+export function extractSampleEventStructure(stdout: string): any[] {
+  const samples: any[] = [];
+  for (const line of stdout.split(/\r?\n/).slice(0, 5)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const event = JSON.parse(trimmed);
+      // Build a sanitized structure showing only field names and types
+      const sanitized = sanitizeEventStructure(event);
+      samples.push(sanitized);
+    } catch {
+      // Skip malformed lines
+    }
+  }
+  return samples;
+}
+
+/**
+ * Recursively sanitize event structure to show field names/types without sensitive content
+ */
+function sanitizeEventStructure(obj: any, depth = 0, maxDepth = 3): any {
+  if (depth > maxDepth) return '...';
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return typeof obj;
+  if (Array.isArray(obj)) return `[${obj.length} items]`;
+
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === 'string') {
+      // Show type and length for strings
+      result[key] = `string(${Math.min(value.length, 50)})`;
+    } else if (typeof value === 'number') {
+      result[key] = 'number';
+    } else if (typeof value === 'boolean') {
+      result[key] = 'boolean';
+    } else if (value === null) {
+      result[key] = 'null';
+    } else if (Array.isArray(value)) {
+      result[key] = `[${value.length} items]`;
+    } else if (typeof value === 'object') {
+      result[key] = sanitizeEventStructure(value, depth + 1, maxDepth);
+    }
+  }
+  return result;
+}
+
 function countPiJsonEvents(stdout: string): number {
   return stdout
     .split(/\r?\n/)
@@ -1176,7 +1255,16 @@ function countPiJsonEvents(stdout: string): number {
     .length;
 }
 
-function extractPiJsonAssistantText(stdout: string): string {
+/**
+ * Extract assistant text from Pi provider JSONL output
+ * Supports multiple response formats:
+ * - Legacy Pi formats: message.text, message.output_text, message.assistantMessage
+ * - Chat Completions: choices[0].message.content, choices[0].delta.content
+ * - Direct content: message.content (string or array)
+ * - Response wrapper: message.response.content
+ * - Cloudflare variants: direct string content field
+ */
+export function extractPiJsonAssistantText(stdout: string): string {
   let text = '';
   for (const line of stdout.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -1189,17 +1277,144 @@ function extractPiJsonAssistantText(stdout: string): string {
     }
     const message = event?.message;
     if (!message || message.role !== 'assistant') continue;
+
+    // Legacy Pi formats
     if (typeof message.text === 'string') text += message.text;
     if (typeof message.output_text === 'string') text += message.output_text;
     if (typeof message.assistantMessage === 'string') text += message.assistantMessage;
+
+    // Chat Completions API: standard format with choices
+    if (Array.isArray(message.choices) && message.choices.length > 0) {
+      const choice = message.choices[0];
+      // Standard message format
+      if (typeof choice?.message?.content === 'string') {
+        text += choice.message.content;
+      }
+      // Streaming delta format
+      if (typeof choice?.delta?.content === 'string') {
+        text += choice.delta.content;
+      }
+    }
+
+    // Direct delta field (streaming format without choices wrapper)
+    if (typeof message.delta?.content === 'string') {
+      text += message.delta.content;
+    }
+
+    // Direct content field (Cloudflare and other variants)
+    if (typeof message.content === 'string') {
+      text += message.content;
+    }
+
+    // Content as array of parts (Pi format)
     if (Array.isArray(message.content)) {
       for (const part of message.content) {
         if (typeof part?.text === 'string') text += part.text;
         if (typeof part?.output_text === 'string') text += part.output_text;
+        // Support content objects with direct content field
+        if (typeof part?.content === 'string') text += part.content;
       }
+    }
+
+    // Response wrapper (some gateway implementations)
+    if (typeof message.response?.content === 'string') {
+      text += message.response.content;
     }
   }
   return text;
+}
+
+/**
+ * Analyze response structure to help diagnose text extraction failures
+ * Returns details about what fields were found and which patterns might work
+ */
+export function analyzeResponseStructure(stdout: string): {
+  eventCount: number;
+  eventsByType: Record<string, number>;
+  fieldsFound: string[];
+  eventsWithText: number;
+  suggestedPatterns: string[];
+} {
+  const eventsByType: Record<string, number> = {};
+  const fieldsFound = new Set<string>();
+  let eventsWithText = 0;
+  let eventCount = 0;
+
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    let event: any;
+    try {
+      event = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    eventCount++;
+
+    if (event.type) {
+      eventsByType[event.type] = (eventsByType[event.type] || 0) + 1;
+    }
+
+    const message = event?.message;
+    if (!message) continue;
+
+    // Track which fields are present
+    if (typeof message.text === 'string') {
+      fieldsFound.add('message.text');
+      if (message.text.trim()) eventsWithText++;
+    }
+    if (typeof message.output_text === 'string') {
+      fieldsFound.add('message.output_text');
+      if (message.output_text.trim()) eventsWithText++;
+    }
+    if (typeof message.assistantMessage === 'string') {
+      fieldsFound.add('message.assistantMessage');
+      if (message.assistantMessage.trim()) eventsWithText++;
+    }
+    if (typeof message.content === 'string') {
+      fieldsFound.add('message.content (string)');
+      if (message.content.trim()) eventsWithText++;
+    }
+    if (Array.isArray(message.choices)) {
+      fieldsFound.add('message.choices[]');
+      const choice = message.choices[0];
+      if (choice?.message?.content) fieldsFound.add('message.choices[0].message.content');
+      if (choice?.delta?.content) fieldsFound.add('message.choices[0].delta.content');
+    }
+    // Direct delta field (streaming format without choices wrapper)
+    if (typeof message.delta?.content === 'string') {
+      fieldsFound.add('message.delta.content');
+      if (message.delta.content.trim()) eventsWithText++;
+    }
+    if (message.response?.content) {
+      fieldsFound.add('message.response.content');
+    }
+    if (Array.isArray(message.content)) {
+      fieldsFound.add('message.content (array)');
+      for (const part of message.content) {
+        if (part?.text) fieldsFound.add('message.content[].text');
+        if (part?.output_text) fieldsFound.add('message.content[].output_text');
+      }
+    }
+  }
+
+  // Suggest patterns based on what was found
+  const suggestedPatterns: string[] = [];
+  if (fieldsFound.has('message.text')) suggestedPatterns.push('message.text (legacy Pi)');
+  if (fieldsFound.has('message.output_text')) suggestedPatterns.push('message.output_text (legacy Pi)');
+  if (fieldsFound.has('message.content (string)')) suggestedPatterns.push('message.content string (Cloudflare)');
+  if (fieldsFound.has('message.choices[0].message.content')) suggestedPatterns.push('choices[0].message.content (Chat Completions)');
+  if (fieldsFound.has('message.choices[0].delta.content')) suggestedPatterns.push('choices[0].delta.content (streaming)');
+  if (fieldsFound.has('message.delta.content')) suggestedPatterns.push('message.delta.content (streaming direct)');
+  if (fieldsFound.has('message.response.content')) suggestedPatterns.push('response.content (wrapped)');
+
+  return {
+    eventCount,
+    eventsByType,
+    fieldsFound: Array.from(fieldsFound),
+    eventsWithText,
+    suggestedPatterns,
+  };
 }
 
 export function isResponsesEndpoint(url: URL): boolean {
