@@ -1047,12 +1047,19 @@ describe('LLM Gateway Test', () => {
           performance.now()
         );
 
-        expect(result.status).toBe('ok');
-        expect(result.responseSmokeValidated).toBe(true);
+        expect(result).toMatchObject({
+          status: 'ok',
+          gatewayUrl: 'https://gateway.ai.cloudflare.com/v1/account123/default/compat',
+          authenticationValidated: true,
+          responseSmokeValidated: true,
+        });
         expect(result.detail).toContain('Cloudflare gateway connectivity verified');
         expect(result.detail).toContain('health check passed');
-        expect(result.checks[0].name).toBe('cloudflare-compat-note');
-        expect(result.checks[0].status).toBe('ok');
+        expect(result.responseTime).toEqual(expect.any(Number));
+        expect(result.timestamp).toEqual(expect.any(String));
+        expect(result.checks).toHaveLength(1);
+        expect(result.checks?.[0].name).toBe('cloudflare-compat-note');
+        expect(result.checks?.[0].status).toBe('ok');
       });
     });
 
