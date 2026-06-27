@@ -1017,7 +1017,6 @@ export function isCloudflareGateway(url: string): boolean {
   }
 }
 
-
 interface Stage1ProbeRequest {
   endpoint: string;
   init: Record<string, unknown>;
