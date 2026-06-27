@@ -1,30 +1,38 @@
 /**
- * Pi CLI Custom Extension: LLM Gateway Provider
+ * Pi CLI Custom Extension: CloudFlare AI Workers Gateway Provider
  *
- * Registers a custom LLM gateway provider that reads endpoint and API key
- * from environment variables.
+ * Registers a gateway provider configured for CloudFlare's AI Workers gateway.
+ * Uses Pi CLI's native OpenAI Responses API which is OpenAI-compatible.
  *
  * Configuration Environment Variables:
- * - LLM_GATEWAY_URL: Gateway API endpoint (required; base URL only, e.g., https://llmgateway.local.xyz/v1).
- *   NOTE: Pi CLI automatically appends /responses for the openai-responses API type.
- *   So LLM_GATEWAY_URL=https://llmgateway.local.xyz/v1 results in requests to /v1/responses.
- * - LLM_GATEWAY_API_KEY: API key literal (optional, prefer file)
- * - LLM_GATEWAY_API_KEY_FILE: Path to file containing API key (default: ~/.kaseki/secrets.json)
- * - LLM_GATEWAY_MODEL: Model selector (optional, defaults to "auto")
+ * - LLM_GATEWAY_URL: CloudFlare gateway base URL (required)
+ *   Example: https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat
+ * - LLM_GATEWAY_API_KEY: CloudFlare API token (optional, prefer file)
+ * - LLM_GATEWAY_API_KEY_FILE: Path to file containing CloudFlare API token (default: ~/.kaseki/secrets.json)
+ * - LLM_GATEWAY_MODEL: Model to use (optional, defaults to "dynamic/kaseki-agent")
+ * - LLM_GATEWAY_MAX_OUTPUT_TOKENS: Max output tokens (optional, defaults to 4096)
  */
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import fs from 'node:fs';
 
-function resolveGatewayApiKey(): string {
+/**
+ * Resolve CloudFlare API key from environment or file
+ * Prefers environment variable, falls back to file
+ * @returns API key or empty string if not configured
+ */
+export function resolveGatewayApiKey(): string {
   if (process.env.LLM_GATEWAY_API_KEY) {
     return process.env.LLM_GATEWAY_API_KEY;
   }
 
-  const filePath = process.env.LLM_GATEWAY_API_KEY_FILE;
+  const filePath = process.env.LLM_GATEWAY_API_KEY_FILE || '~/.kaseki/secrets.json';
   if (filePath) {
     try {
-      const value = fs.readFileSync(filePath, 'utf8').trim();
+      const expandedPath = filePath.startsWith('~')
+        ? filePath.replace('~', process.env.HOME || '')
+        : filePath;
+      const value = fs.readFileSync(expandedPath, 'utf8').trim();
       if (value) return value;
     } catch {
       // Extension initialization will surface the failure
@@ -34,7 +42,11 @@ function resolveGatewayApiKey(): string {
   return '';
 }
 
-function resolveGatewayMaxTokens(): number {
+/**
+ * Resolve max output tokens from environment
+ * @returns Max tokens (default: 4096)
+ */
+export function resolveGatewayMaxTokens(): number {
   const raw = process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS;
   if (!raw) return 4096;
   const parsed = Number.parseInt(raw, 10);
@@ -42,113 +54,25 @@ function resolveGatewayMaxTokens(): number {
 }
 
 /**
- * Normalize request payload for OpenAI Responses API compatibility
- *
- * Converts multi-message array input to messages field:
- * - {input: [{role, content}]} → {messages: [{role, content}]}
- * - {input: "string"} → {input: "string"} (unchanged)
- *
- * @param request - Request payload
- * @returns Normalized request
+ * Register CloudFlare gateway provider with Pi CLI
+ * @param pi - Pi CLI extension API
  */
-function normalizeGatewayRequest(
-  request: Record<string, unknown>,
-): Record<string, unknown> {
-  const { input, ...rest } = request;
-
-  // Check if input is a multi-message array (array of {role, content} objects)
-  if (
-    Array.isArray(input) &&
-    input.length > 0 &&
-    input.every(
-      item =>
-        typeof item === 'object' &&
-        item !== null &&
-        'role' in item &&
-        'content' in item,
-    )
-  ) {
-    // Convert multi-message array to messages field
-    // This is required for OpenAI Responses API when sending conversation history
-    return {
-      ...rest,
-      messages: input,
-    };
-  }
-
-  // Keep input field as-is (string or invalid format)
-  // String inputs are passed through unchanged for simple prompts
-  // Malformed arrays will be caught by the gateway error handling
-  return { input, ...rest };
-}
-
-/**
- * Create a fetch wrapper that normalizes request payloads
- * This intercepts fetch calls to apply normalization before sending to gateway
- *
- * @param originalFetch - The original fetch function
- * @returns Wrapped fetch function that normalizes requests
- */
-function createNormalizedFetch(
-  originalFetch: typeof globalThis.fetch,
-): typeof globalThis.fetch {
-  return async function normalizedFetch(
-    url: string | URL,
-    options?: Record<string, unknown>,
-  ): Promise<Response> {
-    // Only normalize requests to /responses endpoints
-    if (
-      (typeof url === 'string' || url instanceof URL) &&
-      String(url).includes('/responses')
-    ) {
-      try {
-        const opts = { ...options };
-        if (opts.body && typeof opts.body === 'string') {
-          const body = JSON.parse(opts.body);
-          const normalized = normalizeGatewayRequest(body);
-          opts.body = JSON.stringify(normalized);
-        }
-        return originalFetch(url, opts);
-      } catch {
-        // If normalization fails, proceed with original request
-        // This ensures we don't break anything if there are parsing issues
-        return originalFetch(url, options);
-      }
-    }
-
-    // Pass through all other requests unchanged
-    return originalFetch(url, options);
-  };
-}
-
-// Store original fetch before patching
-const originalFetch = globalThis.fetch;
-
-// Patch global fetch with normalization wrapper
-if (
-  originalFetch &&
-  !process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED
-) {
-  globalThis.fetch = createNormalizedFetch(originalFetch);
-  process.env.PI_EXTENSIONS_GATEWAY_FETCH_PATCHED = 'true';
-}
-
 export default function (pi: ExtensionAPI) {
   const gatewayUrl = process.env.LLM_GATEWAY_URL;
   const gatewayApiKey = resolveGatewayApiKey();
   const maxTokens = resolveGatewayMaxTokens();
+  const model = process.env.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
 
-  // If gateway is configured, register the provider
   if (gatewayUrl) {
     pi.registerProvider('gateway', {
-      name: 'LLM Gateway',
+      name: 'LLM Gateway (CloudFlare)',
       baseUrl: gatewayUrl,
       apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: 'openai-responses', // Manifest gateway is OpenAI Responses API compatible
+      api: 'openai-responses', // Pi's native OpenAI-compatible API support
       models: [
         {
-          id: 'auto',
-          name: 'Auto (Gateway Default)',
+          id: model,
+          name: `CloudFlare Gateway (${model})`,
           reasoning: false,
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
