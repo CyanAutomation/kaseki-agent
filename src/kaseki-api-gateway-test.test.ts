@@ -18,6 +18,7 @@ import {
   buildModelsEndpoint,
   buildResponsesEndpoint,
   buildCloudflareInferenceEndpoint,
+  resolveGatewayModel,
 } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
@@ -429,7 +430,7 @@ describe('LLM Gateway Test', () => {
       expect(result.authenticationValidated).toBe(true);
     });
 
-    it('should validate Responses API smoke output with model auto when enabled', async () => {
+    it('should validate Responses API smoke output with default gateway model when enabled', async () => {
       process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
       process.env.LLM_GATEWAY_API_KEY = 'test-key';
       process.env.KASEKI_GATEWAY_RESPONSE_SMOKE = '1';
@@ -462,7 +463,7 @@ describe('LLM Gateway Test', () => {
         'https://llmgateway.local.xyz/v1/responses',
         expect.objectContaining({
           method: 'POST',
-          body: expect.stringContaining('"model":"auto"'),
+          body: expect.stringContaining('"model":"dynamic/kaseki-agent"'),
         }),
       );
     });
@@ -516,7 +517,7 @@ describe('LLM Gateway Test', () => {
       expect(result.detail).toContain('response_id=resp_empty');
       expect(result.detail).toContain('output_tokens=128');
       expect(result.responseSmokeValidated).toBe(false);
-      expect(result.remediation).toContain('model=auto');
+      expect(result.remediation).toContain('dynamic/kaseki-agent');
       expect(result.remediation).toContain('Responses API adapter');
       expect(result.remediation).toContain('output_text');
     });
@@ -939,7 +940,7 @@ describe('LLM Gateway Test', () => {
         }
       });
 
-      it('should consume tokens (model=auto inference)', async () => {
+      it('should consume tokens with the default gateway model', async () => {
         mockSuccessfulStage2Responses({
           id: 'resp_inference',
           output_text: 'response text',
@@ -953,11 +954,36 @@ describe('LLM Gateway Test', () => {
           performance.now()
         );
 
-        // Verify model=auto request was sent
+        // Verify default gateway model request was sent
         expect(mockFetch).toHaveBeenCalledWith(
           expect.any(String),
           expect.objectContaining({
-            body: expect.stringContaining('"model":"auto"'),
+            body: expect.stringContaining('"model":"dynamic/kaseki-agent"'),
+          })
+        );
+      });
+
+      it('should use LLM_GATEWAY_MODEL when no KASEKI_MODEL is set', async () => {
+        delete process.env.KASEKI_MODEL;
+        process.env.LLM_GATEWAY_MODEL = 'custom/gateway-model';
+        mockSuccessfulStage2Responses({
+          id: 'resp_custom_model',
+          output_text: 'response text',
+          usage: { output_tokens: 7 },
+        });
+
+        await testGatewayResponseSmoke_Stage2(
+          'https://llmgateway.local.xyz/v1',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(resolveGatewayModel()).toBe('custom/gateway-model');
+        expect(mockFetch).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            body: expect.stringContaining('"model":"custom/gateway-model"'),
           })
         );
       });
@@ -977,7 +1003,7 @@ describe('LLM Gateway Test', () => {
         );
 
         const requestBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
-        expect(requestBody.model).toBe('auto');
+        expect(requestBody.model).toBe('dynamic/kaseki-agent');
         expect(requestBody.max_output_tokens).toBeGreaterThanOrEqual(128);
         expect(requestBody.input).toContain('Return exactly one JSON object');
         expect(requestBody.input).toContain('kaseki gateway smoke ok');
@@ -1133,7 +1159,7 @@ describe('LLM Gateway Test', () => {
 
         // After detection, request should use messages field instead of input
         const normalizedPayload = {
-          model: 'auto',
+          model: 'dynamic/kaseki-agent',
           messages: multiMessageInput,
           max_output_tokens: 256,
         };
@@ -1186,7 +1212,7 @@ describe('LLM Gateway Test', () => {
 
         // String input should stay as-is
         const requestPayload = {
-          model: 'auto',
+          model: 'dynamic/kaseki-agent',
           input: simpleInput,
           max_output_tokens: 256,
         };
@@ -1218,7 +1244,7 @@ describe('LLM Gateway Test', () => {
 
         // Malformed array stays in input field (gateway will error appropriately)
         const requestPayload = {
-          model: 'auto',
+          model: 'dynamic/kaseki-agent',
           input: malformedArray,
           max_output_tokens: 256,
         };
