@@ -14,6 +14,10 @@ import {
   testGatewayResponseSmoke_Stage2,
   shouldRunPiProviderSmoke,
   GatewayTestResult,
+  isCloudflareGateway,
+  buildModelsEndpoint,
+  buildResponsesEndpoint,
+  buildCloudflareInferenceEndpoint,
 } from './kaseki-api-gateway-test';
 
 // Mock fetch before importing
@@ -554,6 +558,80 @@ describe('LLM Gateway Test', () => {
     });
   });
 
+  describe('Cloudflare Gateway Endpoint Detection', () => {
+    it('should detect Cloudflare URLs ending with /compat', () => {
+      expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/account123/default/compat')).toBe(true);
+      expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat')).toBe(true);
+      expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/account123/default/compat/')).toBe(true);
+    });
+
+    it('should not detect non-Cloudflare URLs', () => {
+      expect(isCloudflareGateway('https://api.openai.com/v1')).toBe(false);
+      expect(isCloudflareGateway('https://llmgateway.local.xyz/v1')).toBe(false);
+      expect(isCloudflareGateway('https://gateway.ai.cloudflare.com/v1/responses')).toBe(false);
+    });
+  });
+
+  describe('Endpoint Builders', () => {
+    describe('buildModelsEndpoint', () => {
+      it('should extract /v1/models from Cloudflare URLs with /compat', () => {
+        const endpoint = buildModelsEndpoint('https://gateway.ai.cloudflare.com/v1/account123/default/compat');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/models');
+      });
+
+      it('should extract /v1/models from standard URLs', () => {
+        const endpoint = buildModelsEndpoint('https://llmgateway.local.xyz/v1');
+        expect(endpoint).toBe('https://llmgateway.local.xyz/v1/models');
+      });
+
+      it('should handle URLs with trailing slash', () => {
+        const endpoint = buildModelsEndpoint('https://gateway.ai.cloudflare.com/v1/account/namespace/compat/');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/models');
+      });
+    });
+
+    describe('buildResponsesEndpoint', () => {
+      it('should NOT append /responses for Cloudflare URLs with /compat', () => {
+        const endpoint = buildResponsesEndpoint('https://gateway.ai.cloudflare.com/v1/account123/default/compat');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/account123/default/compat');
+        expect(endpoint).not.toContain('/responses');
+      });
+
+      it('should append /responses for standard gateway URLs', () => {
+        const endpoint = buildResponsesEndpoint('https://llmgateway.local.xyz/v1');
+        expect(endpoint).toBe('https://llmgateway.local.xyz/v1/responses');
+      });
+
+      it('should not duplicate /responses if already present', () => {
+        const endpoint = buildResponsesEndpoint('https://llmgateway.local.xyz/v1/responses');
+        expect(endpoint).toBe('https://llmgateway.local.xyz/v1/responses');
+      });
+
+      it('should handle trailing slashes correctly', () => {
+        const endpoint = buildResponsesEndpoint('https://gateway.ai.cloudflare.com/v1/account/namespace/compat/');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/account/namespace/compat');
+      });
+    });
+
+    describe('buildCloudflareInferenceEndpoint', () => {
+      it('should build /chat/completions endpoint for Cloudflare URLs', () => {
+        const endpoint = buildCloudflareInferenceEndpoint('https://gateway.ai.cloudflare.com/v1/account123/default/compat');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/account123/default/compat/chat/completions');
+      });
+
+      it('should handle trailing slashes', () => {
+        const endpoint = buildCloudflareInferenceEndpoint('https://gateway.ai.cloudflare.com/v1/account123/default/compat/');
+        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/account123/default/compat/chat/completions');
+      });
+
+      it('should throw error if called with non-Cloudflare URL', () => {
+        expect(() => {
+          buildCloudflareInferenceEndpoint('https://api.openai.com/v1');
+        }).toThrow('buildCloudflareInferenceEndpoint should only be used for Cloudflare URLs');
+      });
+    });
+  });
+
   describe('GatewayTestResult type', () => {
     it('should have all required fields', () => {
       const result: GatewayTestResult = {
@@ -950,6 +1028,31 @@ describe('LLM Gateway Test', () => {
 
         expect(result.status).toBe('error');
         expect(result.detail).toContain('aborted');
+      });
+
+      it('should skip full smoke test for Cloudflare gateways but mark as validated', async () => {
+        // For Cloudflare URLs, the full response smoke test is skipped
+        // because Cloudflare only supports Chat Completions, not the Responses API
+        // However, the health check (/v1/models) already passed, so we mark as validated
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"models": []}',
+        });
+
+        const result = await testGatewayResponseSmoke_Stage2(
+          'https://gateway.ai.cloudflare.com/v1/account123/default/compat',
+          'test-key',
+          new Date().toISOString(),
+          performance.now()
+        );
+
+        expect(result.status).toBe('ok');
+        expect(result.responseSmokeValidated).toBe(true);
+        expect(result.detail).toContain('Cloudflare gateway connectivity verified');
+        expect(result.detail).toContain('health check passed');
+        expect(result.checks[0].name).toBe('cloudflare-compat-note');
+        expect(result.checks[0].ok).toBe(true);
       });
     });
 

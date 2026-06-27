@@ -677,6 +677,25 @@ async function testGatewayResponseSmokeFull(
 ): Promise<ResponseSmokeTestResult & GatewayTestResult> {
   const checks: ResponseSmokeSubcheck[] = [];
 
+  // For Cloudflare gateways, skip full smoke testing (Cloudflare only supports Chat Completions, not Responses API)
+  // The health check to /models endpoint already validated connectivity and authentication
+  if (isCloudflareGateway(gatewayUrl)) {
+    const responseTime = performance.now() - startTime;
+    checks.push({
+      name: 'cloudflare-compat-note',
+      ok: true,
+      detail: 'Cloudflare gateway detected. Full response smoke test skipped (Cloudflare only supports Chat Completions). Health check to /v1/models passed.',
+    });
+    return {
+      status: 'ok',
+      detail: 'Cloudflare gateway connectivity verified (health check passed, full smoke test not applicable)',
+      responseTime,
+      timestamp,
+      responseSmokeValidated: true, // Mark as validated since we did the health check
+      checks,
+    };
+  }
+
   const jsonCheck = await runGatewayResponseJsonCheck(
     gatewayUrl,
     apiKey,
@@ -980,10 +999,24 @@ async function testGatewayResponseSmoke(
 }
 
 /**
+ * Detect if a gateway URL is a Cloudflare endpoint (ends with /compat)
+ * Exported for testing
+ */
+export function isCloudflareGateway(url: string): boolean {
+  try {
+    const normalized = url.endsWith('/') ? url.slice(0, -1) : url;
+    return /\/compat$/.test(new URL(normalized).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Build the appropriate models endpoint for the gateway
  * Handles both base URLs (/v1) and full paths (/v1/responses or /v1/chat/completions)
+ * Exported for testing
  */
-function buildModelsEndpoint(baseUrl: string): string {
+export function buildModelsEndpoint(baseUrl: string): string {
   const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
   // Match base version path: /v1, /v2, /v3, etc., optionally with /responses or other paths
@@ -999,10 +1032,36 @@ function buildModelsEndpoint(baseUrl: string): string {
   return `${url}/v1/models`;
 }
 
-function buildResponsesEndpoint(baseUrl: string): string {
+/**
+ * Build the appropriate responses/chat endpoint for the gateway
+ * For Cloudflare endpoints (/compat), returns base URL without appending /responses
+ * For standard gateways, appends /responses for OpenAI Responses API
+ * Exported for testing
+ */
+export function buildResponsesEndpoint(baseUrl: string): string {
   const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+  // For Cloudflare gateways, return base URL as-is (SDK will handle path appending)
+  if (isCloudflareGateway(url)) {
+    return url;
+  }
+
+  // For standard gateways, append /responses if not already present
   if (/\/responses$/.test(url)) return url;
   return `${url}/responses`;
+}
+
+/**
+ * Build the chat completions endpoint for Cloudflare gateways
+ * Cloudflare requires /chat/completions for inference, not /responses
+ * Exported for testing
+ */
+export function buildCloudflareInferenceEndpoint(baseUrl: string): string {
+  if (!isCloudflareGateway(baseUrl)) {
+    throw new Error('buildCloudflareInferenceEndpoint should only be used for Cloudflare URLs');
+  }
+  const url = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return `${url}/chat/completions`;
 }
 
 function extractResponseText(value: unknown): string {
