@@ -1052,7 +1052,7 @@ describe('LLM Gateway Test', () => {
         expect(result.detail).toContain('Cloudflare gateway connectivity verified');
         expect(result.detail).toContain('health check passed');
         expect(result.checks[0].name).toBe('cloudflare-compat-note');
-        expect(result.checks[0].ok).toBe(true);
+        expect(result.checks[0].status).toBe('ok');
       });
     });
 
