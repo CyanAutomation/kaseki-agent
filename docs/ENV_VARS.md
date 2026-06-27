@@ -69,7 +69,7 @@ For the gateway path, worker preflight checks verify gateway URL/key configurati
 | Variable | Default / Alternative | Type | Purpose |
 |----------|---|---|---|
 | `OPENROUTER_API_KEY` | `OPENROUTER_API_KEY_FILE` | string | OpenRouter API key used when `KASEKI_PROVIDER=openrouter` is selected as the fallback/secondary path. |
-| `LLM_GATEWAY_URL` | — | string | LLM Gateway endpoint. Required for the default `KASEKI_PROVIDER=gateway` path. |
+| `LLM_GATEWAY_URL` | — | string | OpenAI-compatible gateway endpoint (CloudFlare AI Workers, Azure OpenAI, Ollama, etc.). Required for the default `KASEKI_PROVIDER=gateway` path. Example: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat` or `https://api.openai.com/v1`. |
 | `LLM_GATEWAY_API_KEY` | `LLM_GATEWAY_API_KEY_FILE` | string | LLM Gateway API key. Required for the default `KASEKI_PROVIDER=gateway` path. |
 | `KASEKI_GATEWAY_RESPONSE_SMOKE` | production: `true`, test/dev: `false` | boolean | Controls whether `/api/gateway-test` performs a real OpenAI Responses API smoke request with `model=auto`. Set `0`, `false`, `off`, or `no` to disable in production; set `1`, `true`, `on`, or `yes` to force-enable in test/dev. |
 | `KASEKI_ALLOW_DEV_PI_PROVIDER_SMOKE` | `false` | boolean | Enables Pi provider smoke in non-production environments. In production, Pi provider smoke runs automatically with `/api/gateway-test?stage=2&responseSmoke=true` (no query parameter needed). In development/test, set to `1`, `true`, `on`, or `yes` to enable for controlled testing. Consuming LLM gateway tokens; only enable if you need to test the Pi provider adapter in development. |

@@ -67,7 +67,7 @@ describe('Provider Diagnostics Logger', () => {
       const content = fs.readFileSync(diagnosticsPath, 'utf-8');
       const diagnostic = JSON.parse(content.trim());
 
-      expect(diagnostic.suggestedAction).toContain('manifest.scheimann.xyz');
+      expect(diagnostic.suggestedAction).toContain('llm-gateway.local.xyz');
       expect(diagnostic.suggestedAction).toContain('openai-responses adapter');
     });
 

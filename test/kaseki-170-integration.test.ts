@@ -147,7 +147,7 @@ describe('Integration: Kaseki-170 Empty Assistant Turn Flow', () => {
     const diagnostic = JSON.parse(content.trim());
 
     // Verify suggestions for gateway-specific debugging
-    expect(diagnostic.suggestedAction).toContain('manifest.scheimann.xyz');
+    expect(diagnostic.suggestedAction).toContain('llm-gateway.local.xyz');
     expect(diagnostic.suggestedAction).toContain('openai-responses adapter');
 
     // Verify full response is captured for deep debugging
@@ -208,7 +208,7 @@ describe('Integration: Kaseki-170 Empty Assistant Turn Flow', () => {
      * 1. Run kaseki and encounter exit 86
      * 2. Check provider-diagnostics.jsonl for details
      * 3. Use response_id to trace in gateway logs
-     * 4. Review suggested actions (manifest.scheimann.xyz endpoint)
+     * 4. Review suggested actions (llm-gateway.local.xyz endpoint)
      * 5. Implement gateway fix based on error
      */
 

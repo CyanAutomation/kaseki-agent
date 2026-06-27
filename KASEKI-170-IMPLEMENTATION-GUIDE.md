@@ -76,7 +76,7 @@ async function handleResponse(response: any): Promise<any> {
 
 ```bash
 # Simulate kaseki-170 response
-curl -X POST https://manifest.scheimann.xyz/v1/responses \
+curl -X POST https://llm-gateway.local.xyz/v1/responses \
   -H "Authorization: Bearer mnfst_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -280,7 +280,7 @@ $ cat /results/provider-diagnostics.jsonl | jq .
   "outputTokens": 146,
   "errorType": "empty_assistant_turn",
   "errorMessage": "Provider returned... but with zero assistant content",
-  "suggestedAction": "Check LLM gateway (manifest.scheimann.xyz)...",
+  "suggestedAction": "Check LLM gateway (llm-gateway.local.xyz)...",
   "fullResponseBody": "{...full response for inspection...}"
 }
 ```

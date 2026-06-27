@@ -76,7 +76,7 @@ export class ProviderDiagnosticsLogger {
       errorMessage: `Provider ${provider} returned successful HTTP response (${api} API) but with zero assistant content despite claiming ${outputTokens} output tokens`,
       suggestedAction:
         provider === 'gateway'
-          ? 'Check LLM gateway (manifest.scheimann.xyz) openai-responses adapter. May need to: (1) Validate response deserialization, (2) Check response.message.content population, (3) Retry with explicit model instead of auto-routing'
+          ? 'Check LLM gateway (llm-gateway.local.xyz) openai-responses adapter. May need to: (1) Validate response deserialization, (2) Check response.message.content population, (3) Retry with explicit model instead of auto-routing'
           : 'Provider issue; try direct provider (not via gateway), or fallback to different model',
       ...(fullResponse ? { fullResponseBody: JSON.stringify(fullResponse, null, 2) } : {}),
     };
