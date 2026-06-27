@@ -136,7 +136,7 @@ Find entry with:
   - content: null
   - suggestedAction: Check gateway openai-responses adapter
     ↓
-Trace responseId in gateway logs: manifest.scheimann.xyz
+Trace responseId in gateway logs: llm-gateway.local.xyz
     ↓
 Identify bug:
   - Response serialization issue?

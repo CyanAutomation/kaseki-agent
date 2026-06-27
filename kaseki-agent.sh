@@ -9408,8 +9408,12 @@ if [ "$KASEKI_PROVIDER" = "gateway" ]; then
   if [ -z "${LLM_GATEWAY_URL:-}" ]; then
     set_current_stage "agent setup"
     printf 'Missing LLM Gateway configuration for provider=gateway.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '  Set LLM_GATEWAY_URL with the gateway endpoint (e.g., https://llmgateway.local.xyz/v1/responses), or\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
-    printf '  Set KASEKI_PROVIDER=openrouter and provide OPENROUTER_API_KEY to use OpenRouter instead.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '  Set LLM_GATEWAY_URL with an OpenAI-compatible endpoint:\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '    - CloudFlare AI: https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '    - Azure OpenAI: https://{resource}.openai.azure.com/\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '    - Ollama: http://localhost:11434/v1\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '    - Other: {your-endpoint}\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
+    printf '  Or set KASEKI_PROVIDER=openrouter and provide OPENROUTER_API_KEY to use OpenRouter instead.\n' | tee -a "${KASEKI_RESULTS_DIR}"/pi-stderr.log >&2
     : > "$RAW_EVENTS"
     PI_EXIT=2
     STATUS=2

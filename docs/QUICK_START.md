@@ -28,7 +28,11 @@ When prompted, provide:
 1. **LLM Gateway settings** (required for the default provider)
    - Kaseki defaults to `KASEKI_PROVIDER=gateway` so the LLM Gateway is the primary provider.
    - Provide `LLM_GATEWAY_URL` and `LLM_GATEWAY_API_KEY` or `LLM_GATEWAY_API_KEY_FILE`.
-   - Examples: `https://llmgateway.local.xyz/v1/responses`, `https://api.openai.com/v1/chat/completions`, or `http://localhost:11434/v1/chat/completions`.
+   - The gateway endpoint should be any OpenAI-compatible API (CloudFlare AI Workers, Azure OpenAI, local Ollama, etc.)
+   - **CloudFlare AI Workers example**:
+     - `LLM_GATEWAY_URL`: `https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat`
+     - `LLM_GATEWAY_API_KEY`: CloudFlare API token (starts with `cfut_`)
+   - **Other examples**: `https://api.openai.com/v1`, `http://localhost:11434/v1`, Azure OpenAI endpoints
    - Gateway preflight validates URL/key configuration, worker secret mounting, and Pi provider registration before agent phases run.
 
 2. **OpenRouter API Key** (fallback / secondary provider)
@@ -66,6 +70,47 @@ curl http://localhost:8080/ready
 ```bash
 ./run-kaseki.sh https://github.com/your-org/your-repo main
 ```
+
+---
+
+## CloudFlare AI Workers Gateway Setup (Optional)
+
+If you want to use CloudFlare AI Workers instead of OpenRouter:
+
+### Prerequisites
+
+1. **CloudFlare Account** with AI Workers enabled
+2. **API Token**: Create one in CloudFlare dashboard → API Tokens
+3. **Account ID and Namespace**: Available in CloudFlare dashboard
+
+### Configuration
+
+When running `kaseki-agent init`, choose the LLM Gateway option and provide:
+
+1. **Gateway URL**:
+   ```
+   https://gateway.ai.cloudflare.com/v1/{account_id}/{namespace}/compat
+   ```
+   Replace `{account_id}` with your CloudFlare account ID and `{namespace}` with your AI namespace (default: `default`)
+
+2. **API Key**:
+   ```
+   cfut_xxxxx (your CloudFlare API token)
+   ```
+
+### Verification
+
+Once configured, verify connectivity:
+
+```bash
+# Check that the setup completed
+curl http://localhost:8080/ready
+
+# View logs (should show successful gateway initialization)
+docker-compose logs -f kaseki-api | grep -i cloudflare
+```
+
+The setup wizard will validate CloudFlare connectivity before completing setup.
 
 ---
 

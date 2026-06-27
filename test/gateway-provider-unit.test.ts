@@ -15,7 +15,7 @@ describe('Gateway Provider Configuration', () => {
   // Mock fs and environment
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1';
+    process.env.LLM_GATEWAY_URL = 'https://llm-gateway.local.xyz/v1';
     process.env.LLM_GATEWAY_API_KEY = 'test-api-key';
     process.env.LLM_GATEWAY_MAX_OUTPUT_TOKENS = '2048';
   });
@@ -29,7 +29,7 @@ describe('Gateway Provider Configuration', () => {
     // Expected provider configuration (from .pi-extensions.js logic)
     const expectedConfig = {
       name: 'LLM Gateway',
-      baseUrl: 'https://manifest.scheimann.xyz/v1',
+      baseUrl: 'https://llm-gateway.local.xyz/v1',
       apiKey: 'test-api-key',
       api: 'openai-responses', // Step 2b: Confirm this is correct
       models: [
@@ -159,7 +159,7 @@ describe('Gateway Provider Configuration', () => {
     console.log('');
     console.log('To validate actual gateway payload format:');
     console.log('');
-    console.log('  export LLM_GATEWAY_URL=https://manifest.scheimann.xyz/v1');
+    console.log('  export LLM_GATEWAY_URL=https://llm-gateway.local.xyz/v1');
     console.log('  export LLM_GATEWAY_API_KEY=<your-key>');
     console.log('  export KASEKI_PROVIDER=gateway');
     console.log('  export KASEKI_MODEL=gateway/auto');
@@ -199,7 +199,7 @@ describe('Gateway Custom Stream Handler', () => {
     mockFetch = jest.fn();
     global.fetch = mockFetch;
 
-    process.env.LLM_GATEWAY_URL = 'https://manifest.scheimann.xyz/v1';
+    process.env.LLM_GATEWAY_URL = 'https://llm-gateway.local.xyz/v1';
     process.env.LLM_GATEWAY_API_KEY = 'test-api-key';
   });
 

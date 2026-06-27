@@ -117,7 +117,7 @@ export function validateProviderResponse(response: unknown): ValidationResult {
     if (!hasRecentSecretWarning()) {
       // Only warn once per session to avoid log spam
       warnings.push(
-        'Gateway using openai-responses adapter; ensure manifest.scheimann.xyz is responsive'
+        'Gateway using openai-responses adapter; ensure llm-gateway.local.xyz is responsive'
       );
       recordSecretWarning();
     }
