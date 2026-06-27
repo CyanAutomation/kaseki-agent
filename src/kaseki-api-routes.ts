@@ -41,7 +41,7 @@ import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-a
 
 /**
  * BACKWARD COMPATIBILITY RE-EXPORTS
- * 
+ *
  * The following are re-exported for backward compatibility with existing tests
  * and consumers that import from this module. New code should import directly
  * from the source modules instead.
