@@ -955,8 +955,16 @@ describe('LLM Gateway Test', () => {
         expect(requestBody.input).toContain('"status"');
         const streamBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
         expect(streamBody.stream).toBe(true);
-        const largeBody = JSON.parse(String(mockFetch.mock.calls[2][1]?.body));
+        const largeCall = mockFetch.mock.calls[2];
+        const largeBody = JSON.parse(String(largeCall[1]?.body));
+        expect(largeCall[1]?.headers).toEqual(expect.objectContaining({
+          Authorization: 'Bearer test-key',
+        }));
         expect(largeBody.input.length).toBeGreaterThan(requestBody.input.length);
+        expect(largeBody.input).toContain('Return exactly one JSON object');
+        expect(largeBody.input).toContain('kaseki gateway smoke ok');
+        expect(largeBody.input).toContain('Context sample:');
+        expect(largeBody.input).toContain('file_80.ts');
       });
 
       it('should detect streaming responses with usage but no assistant text deltas', async () => {
