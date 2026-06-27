@@ -13,7 +13,7 @@ jest.mock('./secrets/host-secrets-reader', () => ({
 import * as fs from 'fs';
 import type { Server } from 'http';
 import * as hostSecretsReader from './secrets/host-secrets-reader';
-import { assertSupportedNodeVersion, createGracefulShutdown, ensureResultsDir } from './kaseki-api-service';
+import { assertSupportedNodeVersion, createGracefulShutdown, ensureResultsDir, setupLlmProviderEnvironment } from './kaseki-api-service';
 import { loadConfig } from './kaseki-api-config';
 import { JobScheduler } from './job-scheduler';
 import { WebhookManager } from './webhook-manager';
@@ -525,5 +525,54 @@ describe('Node runtime precheck', () => {
 
     expect(() => assertSupportedNodeVersion('22.22.2')).toThrow('exit:1');
     expect(exitMock).toHaveBeenCalledWith(1);
+  });
+});
+
+describe('Kaseki API LLM Provider Setup', () => {
+  test('sets KASEKI_PROVIDER=gateway when LLM_GATEWAY_URL is configured', () => {
+    const mockEnv = {
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
+    };
+    setupLlmProviderEnvironment(mockEnv as any);
+    expect(mockEnv.KASEKI_PROVIDER).toBe('gateway');
+  });
+
+  test('respects explicit KASEKI_PROVIDER when already set', () => {
+    const mockEnv = {
+      KASEKI_PROVIDER: 'openrouter',
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
+    };
+    setupLlmProviderEnvironment(mockEnv as any);
+    expect(mockEnv.KASEKI_PROVIDER).toBe('openrouter');
+  });
+
+  test('does not set KASEKI_PROVIDER when LLM_GATEWAY_URL is not set', () => {
+    const mockEnv = {} as any;
+    setupLlmProviderEnvironment(mockEnv);
+    expect(mockEnv.KASEKI_PROVIDER).toBeUndefined();
+  });
+
+  test('operates on process.env when no environment object is passed', () => {
+    const originalProvider = process.env.KASEKI_PROVIDER;
+    const originalGatewayUrl = process.env.LLM_GATEWAY_URL;
+
+    try {
+      delete process.env.KASEKI_PROVIDER;
+      process.env.LLM_GATEWAY_URL = 'https://gateway.example.com/v1';
+
+      setupLlmProviderEnvironment();
+      expect(process.env.KASEKI_PROVIDER).toBe('gateway');
+    } finally {
+      if (originalProvider === undefined) {
+        delete process.env.KASEKI_PROVIDER;
+      } else {
+        process.env.KASEKI_PROVIDER = originalProvider;
+      }
+      if (originalGatewayUrl === undefined) {
+        delete process.env.LLM_GATEWAY_URL;
+      } else {
+        process.env.LLM_GATEWAY_URL = originalGatewayUrl;
+      }
+    }
   });
 });

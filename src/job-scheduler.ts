@@ -371,6 +371,7 @@ export class JobScheduler {
     }
 
     this.populateGitHubAppEnv(env);
+    this.setupLlmProvider(env);
     this.setupStartupCheckMode(job, env);
     this.setupValidationCommands(job, env);
     this.setupAutoLintCleanup(job, env);
@@ -379,6 +380,23 @@ export class JobScheduler {
     this.setupTaskPrompt(job, env);
 
     return env;
+  }
+
+  /**
+   * Configure LLM provider based on available credentials/configuration.
+   * When LLM_GATEWAY_URL is set, default to gateway provider.
+   * Explicit KASEKI_PROVIDER env vars always take precedence.
+   */
+  private setupLlmProvider(env: NodeJS.ProcessEnv): void {
+    // If KASEKI_PROVIDER is already set (from process.env), respect it
+    if (env.KASEKI_PROVIDER) {
+      return;
+    }
+
+    // If gateway URL is configured, default to gateway provider
+    if (env.LLM_GATEWAY_URL) {
+      env.KASEKI_PROVIDER = 'gateway';
+    }
   }
 
   /**

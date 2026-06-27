@@ -23,6 +23,19 @@ import {
 export { assertSupportedNodeVersion, ensureTemplateInitialized };
 
 /**
+ * Set up LLM provider configuration.
+ * If gateway URL is configured and provider is not explicitly set,
+ * default to 'gateway' provider. This ensures child processes
+ * (worker containers) inherit the correct provider configuration.
+ */
+export function setupLlmProviderEnvironment(env?: NodeJS.ProcessEnv): void {
+  const actualEnv = env || process.env;
+  if (!actualEnv.KASEKI_PROVIDER && actualEnv.LLM_GATEWAY_URL) {
+    actualEnv.KASEKI_PROVIDER = 'gateway';
+  }
+}
+
+/**
  * Legacy wrapper for gracefulShutdown to maintain backwards compatibility
  */
 export function createGracefulShutdown(deps: ShutdownDeps) {
@@ -46,6 +59,9 @@ async function main(): Promise<void> {
     enabled: process.env.SENTRY_DSN ? 'true' : 'false',
     environment: process.env.SENTRY_ENVIRONMENT || 'development',
   });
+
+  // Set up LLM provider early so child processes inherit correct configuration
+  setupLlmProviderEnvironment();
 
   // Phase 3: Auto-initialize setup (Node version and template directory)
   const templateDir = process.env.KASEKI_TEMPLATE_DIR || '/agents/kaseki-template';

@@ -145,7 +145,17 @@ fi
 
 REPO_URL="${REPO_URL:-https://github.com/CyanAutomation/crudmapper}"
 GIT_REF="${GIT_REF:-main}"
-KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
+
+# Determine LLM provider: infer 'gateway' if gateway URL is set
+if [ -z "${KASEKI_PROVIDER+x}" ]; then
+  if [ -n "${LLM_GATEWAY_URL:-}" ]; then
+    KASEKI_PROVIDER="gateway"
+  else
+    KASEKI_PROVIDER="${KASEKI_PROVIDER:-gateway}"
+  fi
+fi
+
+# Select model based on provider
 if [ -z "${KASEKI_MODEL+x}" ]; then
   if [ "$KASEKI_PROVIDER" = "gateway" ]; then
     KASEKI_MODEL="${LLM_GATEWAY_MODEL:-dynamic/kaseki-agent}"
