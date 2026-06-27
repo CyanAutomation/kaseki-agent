@@ -1396,7 +1396,7 @@ const controllerPage = String.raw`<!doctype html>
           <div class="health-checks-grid">
             <button class="health-check-button" data-probe="/health" type="button"><span class="hc-label">Health</span><span class="health-check-status" data-status="health"></span></button>
             <button class="health-check-button" data-probe="/ready" type="button"><span class="hc-label">Readiness</span><span class="health-check-status" data-status="readiness"></span></button>
-            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity (no token consumption)"><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
+            <button class="health-check-button" data-probe="/api/gateway-test?stage=1" data-auth="true" type="button" title="Test gateway connectivity. Standard gateways use /models without token consumption; Cloudflare /compat uses a minimal chat-completions probe."><span class="hc-label">Test Gateway</span><span class="health-check-status" data-status="gateway"></span></button>
             <button class="health-check-button" data-probe="/api/gateway-test?stage=2&responseSmoke=true" data-auth="true" type="button" title="Test gateway Responses API inference. Add piProvider=true to also test Pi provider adapter in production."><span class="hc-label">Test LLM</span><span class="health-check-status" data-status="llm-test"></span></button>
             <button class="health-check-button" data-probe="/api/preflight" data-auth="true" type="button"><span class="hc-label">Current Preflight</span><span class="health-check-status" data-status="preflight"></span></button>
           </div>

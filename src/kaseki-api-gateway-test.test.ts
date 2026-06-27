@@ -242,7 +242,7 @@ describe('LLM Gateway Test', () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () => '{"models": []}',
+        text: async () => '{"id":"chatcmpl-test","choices":[{"message":{"content":"ok"}}]}',
       });
 
       const result = await testGatewayConnectivity();
@@ -250,10 +250,11 @@ describe('LLM Gateway Test', () => {
       expect(result.status).toBe('ok');
       expect(result.responseTime).toBeGreaterThanOrEqual(0);
       expect(result.authenticationValidated).toBe(true);
-      // Verify it correctly extracts the /v1 version and converts to /v1/models
       expect(mockFetch).toHaveBeenCalled();
       const callArgs = mockFetch.mock.calls[0];
-      expect(callArgs[0]).toBe('https://gateway.ai.cloudflare.com/v1/models');
+      expect(callArgs[0]).toBe('https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat/chat/completions');
+      expect(callArgs[0]).not.toBe('https://gateway.ai.cloudflare.com/v1/models');
+      expect(callArgs[1].method).toBe('POST');
     });
 
     it('should return error with 401 when authentication fails', async () => {
@@ -574,20 +575,11 @@ describe('LLM Gateway Test', () => {
 
   describe('Endpoint Builders', () => {
     describe('buildModelsEndpoint', () => {
-      it('should extract /v1/models from Cloudflare URLs with /compat', () => {
-        const endpoint = buildModelsEndpoint('https://gateway.ai.cloudflare.com/v1/account123/default/compat');
-        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/models');
-      });
-
       it('should extract /v1/models from standard URLs', () => {
         const endpoint = buildModelsEndpoint('https://llmgateway.local.xyz/v1');
         expect(endpoint).toBe('https://llmgateway.local.xyz/v1/models');
       });
 
-      it('should handle URLs with trailing slash', () => {
-        const endpoint = buildModelsEndpoint('https://gateway.ai.cloudflare.com/v1/account/namespace/compat/');
-        expect(endpoint).toBe('https://gateway.ai.cloudflare.com/v1/models');
-      });
     });
 
     describe('buildResponsesEndpoint', () => {
@@ -847,6 +839,43 @@ describe('LLM Gateway Test', () => {
         expect(result.status).toBe('ok');
       });
 
+
+      it('should preserve Cloudflare scoped /compat path for Stage 1 probes', async () => {
+        process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat';
+        process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '{"id":"chatcmpl-test","choices":[{"message":{"content":"ok"}}]}',
+        });
+
+        await testGatewayConnectivity_Stage1();
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(mockFetch.mock.calls[0][0]).toBe('https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat/chat/completions');
+        expect(mockFetch.mock.calls[0][0]).not.toBe('https://gateway.ai.cloudflare.com/v1/models');
+        expect(mockFetch.mock.calls[0][1].method).toBe('POST');
+      });
+
+      it('should not validate authentication on Cloudflare invalid request path errors', async () => {
+        process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/c40f3cb30efbf8c6d081cf9e50a61931/default/compat';
+        process.env.LLM_GATEWAY_API_KEY = 'test-key';
+
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          text: async () => '{"error":{"message":"Invalid request path"}}',
+        });
+
+        const result = await testGatewayConnectivity_Stage1();
+
+        expect(result.status).toBe('error');
+        expect(result.httpStatus).toBe(400);
+        expect(result.authenticationValidated).toBe(false);
+        expect(result.remediation).toContain('do not reduce it to /v1/models');
+      });
+
       it('should return authenticationValidated=false on 401', async () => {
         process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
         process.env.LLM_GATEWAY_API_KEY = 'invalid-key';
@@ -1040,13 +1069,8 @@ describe('LLM Gateway Test', () => {
 
       it('should skip full smoke test for Cloudflare gateways but mark as validated', async () => {
         // For Cloudflare URLs, the full response smoke test is skipped
-        // because Cloudflare only supports Chat Completions, not the Responses API
-        // However, the health check (/v1/models) already passed, so we mark as validated
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          text: async () => '{"models": []}',
-        });
+        // because Cloudflare only supports Chat Completions, not the Responses API.
+        // Stage 1 validates Cloudflare via the scoped /compat/chat/completions probe.
 
         const result = await testGatewayResponseSmoke_Stage2(
           'https://gateway.ai.cloudflare.com/v1/account123/default/compat',
@@ -1066,6 +1090,7 @@ describe('LLM Gateway Test', () => {
         expect(result.responseTime).toEqual(expect.any(Number));
         expect(result.timestamp).toEqual(expect.any(String));
         expect(result.checks).toHaveLength(1);
+        expect(mockFetch).not.toHaveBeenCalled();
         expect(result.checks?.[0].name).toBe('cloudflare-compat-note');
         expect(result.checks?.[0].status).toBe('ok');
       });
