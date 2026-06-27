@@ -113,9 +113,11 @@ export interface GatewayTestOptions {
 }
 
 const GATEWAY_LATENCY_WARNING_MS = 5000;
-// Accept both base URLs (/v1) and full response paths (/v1/responses)
+// Accept base URLs (/v1), full response paths (/v1/responses), and gateway-specific suffixes (e.g., /v1/compat)
+// For Cloudflare and similar gateways, allows /v1/{segments}/compat (e.g., /v1/account/namespace/compat)
 // Pi CLI automatically appends /responses, so either format is valid
-const GATEWAY_VALID_PATH_PATTERN = /\/v\d+(\/responses)?\/?$/;
+// Does NOT allow arbitrary endpoints like /v1/chat/completions
+const GATEWAY_VALID_PATH_PATTERN = /\/v\d+(?:(?:\/[a-z0-9-]+)*\/compat)?(?:\/responses)?\/?$/;
 // Timeout for /models endpoint (lightweight check)
 const GATEWAY_MODELS_TIMEOUT_MS = 10000;
 // Timeout for /responses endpoint (includes model inference)
