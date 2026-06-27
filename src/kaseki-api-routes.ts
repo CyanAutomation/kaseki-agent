@@ -27,7 +27,6 @@ import { ResultCache } from './result-cache';
 import { metricsRegistry } from './metrics';
 import { getCachedStartupHealthReport } from './kaseki-api/startup-summary-artifact';
 import { healthReportToMarkdown } from './kaseki-api/startup-health-reporter';
-import { testGatewayConnectivity_Stage1, testGatewayResponseSmoke_Stage2, resolveGatewayApiKey, shouldRunGatewayResponseSmoke, testPiGatewayProviderSmoke } from './kaseki-api-gateway-test';
 import {
   checkGitHubAppCredentials,
   resolveCheckoutFreshness,
@@ -38,6 +37,7 @@ import {
   isTemplateDoctorTimeout,
 } from './kaseki-api-health-checks';
 import { buildPreflightResponse as buildPreflightResponseImpl } from './kaseki-api-routes-preflight';
+import { createGatewayTestRoutes } from './routes/gateway-test-routes';
 
 function isLoopbackRemoteAddress(remoteAddress: string | undefined): boolean {
   if (!remoteAddress) {
@@ -201,6 +201,11 @@ export function createApiRouter(
   router.use(createHealthRoutes(scheduler, config, artifactCache));
 
   /**
+   * Mount gateway test routes (/gateway-test, /gateway-test/stage1)
+   */
+  router.use(createGatewayTestRoutes());
+
+  /**
    * GET /api/preflight - Controller-oriented readiness diagnostics.
    */
   router.get('/preflight', (_req: Request, res: Response) => {
@@ -223,178 +228,6 @@ export function createApiRouter(
     }
 
     res.status(response.status === 'error' ? 503 : 200).json(response);
-  });
-
-  /**
-   * GET /api/gateway-test - Orchestrated full test (Stage 1 + Stage 2)
-   * Runs both connectivity and response validation tests
-   * Stage 2 runs by default in production, skipped in dev/test (no token consumption in dev)
-   * Query params:
-   *   ?stage=1          - Run Stage 1 only (connectivity check)
-   *   ?stage=2          - Run Stage 2 only (inference test)
-   *   ?responseSmoke=true/false - Override stage 2 decision
-   */
-  router.get('/gateway-test', async (_req: Request, res: Response) => {
-    try {
-      const stageParam = typeof _req.query.stage === 'string'
-        ? _req.query.stage.trim().toLowerCase()
-        : '';
-      const requestedStage = stageParam === '1' ? 1 : stageParam === '2' ? 2 : 0; // 0 = both
-
-      const smokeParam = typeof _req.query.responseSmoke === 'string'
-        ? _req.query.responseSmoke.trim().toLowerCase()
-        : '';
-      const responseSmoke = ['1', 'true', 'on', 'yes'].includes(smokeParam)
-        ? true
-        : ['0', 'false', 'off', 'no'].includes(smokeParam)
-          ? false
-          : undefined;
-      const options = typeof responseSmoke === 'boolean' ? { responseSmoke } : undefined;
-      const piProviderParam = typeof _req.query.piProvider === 'string'
-        ? _req.query.piProvider.trim().toLowerCase()
-        : '';
-      const piProviderRequested = ['1', 'true', 'on', 'yes'].includes(piProviderParam);
-
-      let stage1Result: any = null;
-      let stage2Result: any = null;
-      let piProviderResult: any = null;
-
-      // Run Stage 1 if requested (or if running both)
-      if (requestedStage === 0 || requestedStage === 1) {
-        stage1Result = await testGatewayConnectivity_Stage1();
-      }
-
-      // Run Stage 2 if requested (or if running both and Stage 1 passed)
-      if (requestedStage === 2 || (requestedStage === 0 && stage1Result && stage1Result.status === 'ok')) {
-        // Determine if we should run stage 2
-        const runStage2 = shouldRunGatewayResponseSmoke(options);
-
-        if (runStage2 || requestedStage === 2) {
-          // Run stage 2
-          const gatewayUrl = process.env.LLM_GATEWAY_URL || '';
-          const apiKey = resolveGatewayApiKey().value || '';
-          const timestamp = new Date().toISOString();
-          const startTime = performance.now();
-          stage2Result = await testGatewayResponseSmoke_Stage2(gatewayUrl, apiKey, timestamp, startTime);
-        }
-      }
-
-      if ((requestedStage === 0 || requestedStage === 2) && piProviderRequested) {
-        piProviderResult = testPiGatewayProviderSmoke(true);
-      } else if (requestedStage === 2) {
-        piProviderResult = testPiGatewayProviderSmoke(false);
-      }
-
-      // Build response - handle both single-stage and dual-stage responses
-      if (requestedStage === 1) {
-        // Stage 1 only response
-        const result = {
-          ...stage1Result,
-          responseSmokeValidated: false, // Stage 2 was not run
-        };
-        const httpStatus = stage1Result.status === 'ok' ? 200 : 503;
-        res.status(httpStatus).json(result);
-      } else if (requestedStage === 2) {
-        // Stage 2 only response
-        const result: any = {
-          status: stage2Result?.status === 'ok' ? 'ok' : 'error',
-          detail: stage2Result?.detail || 'LLM inference test failed',
-          responseTime: stage2Result?.responseTime || 0,
-          timestamp: new Date().toISOString(),
-          responseSmokeValidated: stage2Result?.status === 'ok',
-        };
-
-        if (stage2Result?.responseId) {
-          result.responseId = stage2Result.responseId;
-        }
-        if (stage2Result?.outputTokens) {
-          result.outputTokens = stage2Result.outputTokens;
-        }
-        if (stage2Result?.modelUsed) {
-          result.modelUsed = stage2Result.modelUsed;
-        }
-        if (typeof stage2Result?.streamSmokeValidated === 'boolean') {
-          result.streamSmokeValidated = stage2Result.streamSmokeValidated;
-        }
-        if (typeof stage2Result?.largePromptSmokeValidated === 'boolean') {
-          result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
-        }
-        if (stage2Result?.checks) {
-          result.checks = stage2Result.checks;
-        }
-        if (piProviderResult) {
-          result.piProviderSmoke = piProviderResult;
-        }
-
-        const httpStatus = stage2Result?.status === 'ok' && (!piProviderResult || piProviderResult.status !== 'error') ? 200 : 503;
-        res.status(httpStatus).json(result);
-      } else {
-        // Both stages response (backward compatible format)
-        const result: any = {
-          status: stage1Result.status,
-          detail: stage1Result.detail,
-          responseTime: stage1Result.responseTime,
-          timestamp: new Date().toISOString(),
-          authenticationValidated: stage1Result.authenticationValidated,
-          responseSmokeValidated: stage2Result?.status === 'ok',
-        };
-
-        if (stage2Result) {
-          result.responseId = stage2Result.responseId;
-          result.outputTokens = stage2Result.outputTokens;
-          result.modelUsed = stage2Result.modelUsed;
-          result.streamSmokeValidated = stage2Result.streamSmokeValidated;
-          result.largePromptSmokeValidated = stage2Result.largePromptSmokeValidated;
-          result.checks = stage2Result.checks;
-        }
-        if (piProviderResult) {
-          result.piProviderSmoke = piProviderResult;
-        }
-
-        const httpStatus = (
-          stage1Result.status === 'ok' &&
-          (!stage2Result || stage2Result.status === 'ok') &&
-          (!piProviderResult || piProviderResult.status !== 'error')
-        ) ? 200 : 503;
-        res.status(httpStatus).json(result);
-      }
-    } catch (error) {
-      logger.error('Gateway test error', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(500).json({
-        status: 'error',
-        detail: 'Unexpected error during gateway test',
-        responseTime: 0,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: false,
-      });
-    }
-  });
-
-  /**
-   * GET /api/gateway-test/stage1 - Stage 1 only: Lightweight LLM gateway connectivity test
-   * Tests reachability and authentication via /models endpoint
-   * Does NOT consume inference tokens - fast (<2s), runs by default
-   */
-  router.get('/gateway-test/stage1', async (_req: Request, res: Response) => {
-    try {
-      const result = await testGatewayConnectivity_Stage1();
-      const status = result.status === 'ok' ? 200 : 503;
-      res.status(status).json(result);
-    } catch (error) {
-      logger.error('Gateway test (stage 1) error', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(500).json({
-        status: 'error',
-        detail: 'Unexpected error during gateway connectivity test',
-        gatewayUrl: '',
-        responseTime: 0,
-        timestamp: new Date().toISOString(),
-        authenticationValidated: false,
-      });
-    }
   });
 
   /**
