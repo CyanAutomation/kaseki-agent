@@ -158,7 +158,7 @@ This document defines the formal structure of all kaseki-agent artifacts using J
 ## Key Metrics
 
 - **Duration**: 5m 23s
-- **Model**: auto (defaults to gateway's default model)
+- **Model**: dynamic/kaseki-agent (current default gateway model ID)
 - **Commands**: 3 attempted, 3 passed
 - **Diff Size**: 1.2 KB
 
