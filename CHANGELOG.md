@@ -4,6 +4,16 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.106.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.105.0...v1.106.0) (2026-06-27)
+
+
+### Features
+
+* add diagnostics for Pi provider smoke tests with event structure analysis and sample extraction ([e6ffc99](https://github.com/CyanAutomation/kaseki-agent/commit/e6ffc9983306f3a4b088ca8014ac13339038dfa3))
+* add gateway connectivity test routes for comprehensive diagnostics ([b2bfb4a](https://github.com/CyanAutomation/kaseki-agent/commit/b2bfb4a2057ce646dc3af5138891d2b09ebf2bda))
+* enhance gateway testing with detailed diagnostics and new API endpoint parameters ([6a4d796](https://github.com/CyanAutomation/kaseki-agent/commit/6a4d796c7f7c5d58ca8904cbd61818a95ac3e901))
+* implement LLM provider inference based on gateway URL configuration ([bfcf5f8](https://github.com/CyanAutomation/kaseki-agent/commit/bfcf5f826bb0e38757ec691fb58bba693ec44625))
+
 # [1.105.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.104.0...v1.105.0) (2026-06-27)
 
 
