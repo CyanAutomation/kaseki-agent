@@ -1195,7 +1195,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
     }
   });
 
-  test('GET /api/gateway-test?stage=2 reports Pi provider smoke skipped by default outside production', async () => {
+  test('GET /api/gateway-test?stage=2&responseSmoke=true returns 200 without Pi provider smoke by default', async () => {
     const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-skipped-results-'));
     const envSnapshot = { ...process.env };
     const originalFetch = global.fetch;
@@ -1237,16 +1237,7 @@ describe('kaseki-api-routes preflight diagnostics', () => {
         const body = (await res.json()) as any;
         expect(res.status).toBe(200);
         expect(body.responseSmokeValidated).toBe(true);
-        expect(body.piProviderSmoke).toEqual(expect.objectContaining({
-          status: 'skipped',
-          provider: 'gateway',
-          model: 'dynamic/kaseki-agent',
-          detail: expect.stringContaining('skipped'),
-          remediation: expect.stringContaining('opt-in'),
-          responseTime: 0,
-        }));
-        expect(body.piProviderSmoke.timestamp).toBeDefined();
-        expect(typeof body.piProviderSmoke.timestamp).toBe('string');
+        expect(body.piProviderSmoke).toBeUndefined();
       } finally {
         fetchSpy.mockRestore();
         await cleanupTestApp(server, idempotencyStore);
@@ -1256,6 +1247,79 @@ describe('kaseki-api-routes preflight diagnostics', () => {
       fs.rmSync(resultsDir, { recursive: true, force: true });
     }
   });
+
+  test('GET /api/gateway-test?stage=2&responseSmoke=true&piProvider=true returns 503 when explicit Pi provider smoke fails', async () => {
+    const resultsDir = fs.mkdtempSync(path.join('/tmp', 'kaseki-gateway-test-pi-explicit-fail-results-'));
+    const envSnapshot = { ...process.env };
+    const originalFetch = global.fetch;
+    const childProcess = require('node:child_process') as typeof import('node:child_process');
+    const spawnSpy = jest.spyOn(childProcess, 'spawnSync').mockReturnValue({
+      status: 1,
+      signal: null,
+      output: [null, '', 'provider failed'],
+      pid: 123,
+      stdout: '',
+      stderr: 'provider failed',
+    } as any);
+
+    try {
+      process.env.JEST_WORKER_ID = '1';
+      process.env.LLM_GATEWAY_URL = 'https://llmgateway.local.xyz/v1';
+      process.env.LLM_GATEWAY_API_KEY = 'route-test-key';
+
+      const scheduler = createMockScheduler({});
+      const config = createTestConfig(resultsDir);
+      const { server, port, idempotencyStore } = await createTestApp(scheduler, config);
+      const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((input: any, init?: any) => {
+        const url = typeof input === 'string' ? input : String(input?.url ?? input);
+        if (url.startsWith(`http://127.0.0.1:${port}`)) {
+          return originalFetch(input, init);
+        }
+        const requestBody = JSON.parse(String(init?.body ?? '{}'));
+        if (requestBody.stream === true) {
+          return Promise.resolve(new Response([
+            'event: response.output_text.delta',
+            'data: {"type":"response.output_text.delta","delta":"kaseki gateway smoke ok"}',
+            '',
+            'data: [DONE]',
+            '',
+          ].join('\n'), { status: 200, headers: { 'content-type': 'text/event-stream' } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'resp_stage2_pi_explicit_fail',
+          output_text: 'kaseki gateway smoke ok',
+          usage: { output_tokens: 5 }
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      });
+
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/gateway-test?stage=2&responseSmoke=true&piProvider=true`, {
+          headers: { Authorization: 'Bearer test-key' }
+        });
+        const body = (await res.json()) as any;
+        expect(res.status).toBe(503);
+        expect(body.responseSmokeValidated).toBe(true);
+        expect(body.piProviderSmoke).toEqual(expect.objectContaining({
+          status: 'error',
+          provider: 'gateway',
+          detail: expect.stringContaining('Pi provider smoke exited 1'),
+        }));
+        expect(spawnSpy).toHaveBeenCalledWith(
+          'pi',
+          expect.arrayContaining(['--provider', 'gateway']),
+          expect.any(Object)
+        );
+      } finally {
+        fetchSpy.mockRestore();
+        await cleanupTestApp(server, idempotencyStore);
+      }
+    } finally {
+      spawnSpy.mockRestore();
+      process.env = envSnapshot;
+      fs.rmSync(resultsDir, { recursive: true, force: true });
+    }
+  });
+
 
   test('GET /api/preflight reports worker gateway launch config missing when API gateway test uses inline key only', async () => {
     const { readHostSecret, resolveHostSecretPath } = jest.mocked(hostSecretsReader);
