@@ -3037,3 +3037,110 @@ describe('JobScheduler attachProcessListeners - stderr/stdout separation', () =>
     expect(stderrLog).not.toContain('--- captured stdout tail ---');
   });
 });
+
+describe('JobScheduler gateway provider detection', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.LLM_GATEWAY_URL;
+    delete process.env.KASEKI_PROVIDER;
+  });
+
+  test('sets KASEKI_PROVIDER=gateway when LLM_GATEWAY_URL is configured', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const originalGatewayUrl = process.env.LLM_GATEWAY_URL;
+    process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/compat';
+
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager(),
+      );
+
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'bash',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            KASEKI_PROVIDER: 'gateway',
+          }),
+        }),
+      );
+    } finally {
+      if (originalGatewayUrl === undefined) {
+        delete process.env.LLM_GATEWAY_URL;
+      } else {
+        process.env.LLM_GATEWAY_URL = originalGatewayUrl;
+      }
+    }
+  });
+
+  test('respects explicit KASEKI_PROVIDER override even when gateway URL is set', async () => {
+    const proc = new MockProcess();
+    mockSpawn.mockReturnValue(proc);
+    mockSpawnSync.mockReturnValue({ stdout: '', stderr: '', status: 0 });
+
+    const originalGatewayUrl = process.env.LLM_GATEWAY_URL;
+    const originalProvider = process.env.KASEKI_PROVIDER;
+    process.env.LLM_GATEWAY_URL = 'https://gateway.ai.cloudflare.com/v1/compat';
+    process.env.KASEKI_PROVIDER = 'openrouter';
+
+    try {
+      const scheduler = new JobScheduler(
+        {
+          port: 8080,
+          apiKeys: ['test-key'],
+          resultsDir: createResultsDir(),
+          maxConcurrentRuns: 1,
+          defaultTaskMode: 'patch',
+          maxDiffBytes: 400000,
+          agentTimeoutSeconds: 30,
+          logLevel: 'info',
+        },
+        createMockWebhookManager(),
+      );
+
+      await scheduler.submitJob({
+        repoUrl: 'https://github.com/org/repo',
+        ref: 'main',
+      });
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'bash',
+        expect.any(Array),
+        expect.objectContaining({
+          env: expect.objectContaining({
+            KASEKI_PROVIDER: 'openrouter',
+          }),
+        }),
+      );
+    } finally {
+      if (originalGatewayUrl === undefined) {
+        delete process.env.LLM_GATEWAY_URL;
+      } else {
+        process.env.LLM_GATEWAY_URL = originalGatewayUrl;
+      }
+      if (originalProvider === undefined) {
+        delete process.env.KASEKI_PROVIDER;
+      } else {
+        process.env.KASEKI_PROVIDER = originalProvider;
+      }
+    }
+  });
+});
