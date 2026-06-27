@@ -4,6 +4,14 @@ All notable changes to Kaseki Agent are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [1.104.0](https://github.com/CyanAutomation/kaseki-agent/compare/v1.103.1...v1.104.0) (2026-06-27)
+
+
+### Features
+
+* Implement Kaseki-156 goal-setting fixes and Kaseki-170 response validation ([2ace9f4](https://github.com/CyanAutomation/kaseki-agent/commit/2ace9f437458a9f3eb2c3be8cc23c14d2a7dc3bd))
+* Support Cloudflare gateway URLs and update validation patterns ([a9f5f4b](https://github.com/CyanAutomation/kaseki-agent/commit/a9f5f4b82fce46e265bce21a8c962446f4d805b5))
+
 ## [1.103.1](https://github.com/CyanAutomation/kaseki-agent/compare/v1.103.0...v1.103.1) (2026-06-27)
 
 
