@@ -9,13 +9,14 @@ import { spawnSync } from 'node:child_process';
  * 2. Responsive (returns HTTP responses)
  * 3. Authenticated (API key is accepted)
  *
- * This is a lightweight test that doesn't consume tokens or make model requests.
+ * This is a lightweight test for standard gateways; Cloudflare /compat gateways require
+ * a minimal chat-completions probe because they do not expose an unscoped /models route.
  */
 
 /**
  * Stage 1: Lightweight connectivity test result (reachability + authentication)
- * Tests /models endpoint to validate gateway is up and API key works
- * Does NOT consume inference tokens
+ * Tests /models endpoint to validate gateway is up and API key works. Cloudflare /compat
+ * gateways use a minimal chat-completions probe because /v1/models is not valid there.
  */
 export interface ConnectivityTestResult {
   status: 'ok' | 'error';
@@ -144,6 +145,7 @@ const GATEWAY_RESPONSE_LARGE_SMOKE_PROMPT = [
   ),
 ].join('\n');
 const GATEWAY_RESPONSE_SMOKE_MAX_OUTPUT_TOKENS = 256;
+const CLOUDFLARE_STAGE1_PROBE_PROMPT = 'Reply with ok.';
 const PI_PROVIDER_SMOKE_TIMEOUT_MS = (() => {
   const envValue = process.env.KASEKI_PI_PROVIDER_SMOKE_TIMEOUT_MS;
   if (envValue) {
@@ -425,24 +427,21 @@ export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTest
     };
   }
 
-  // Make test request to models endpoint
-  const modelsEndpoint = buildModelsEndpoint(gatewayUrl);
+  // Make test request to the appropriate Stage 1 probe endpoint. Standard
+  // OpenAI-compatible gateways can use /models; Cloudflare /compat gateways must
+  // preserve the scoped /v1/{account_id}/{gateway_id}/compat path and probe chat completions.
+  const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
 
   try {
     const fetchStartTime = performance.now();
-    const response = await fetchWithTimeout(modelsEndpoint, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
-      },
-    }, GATEWAY_MODELS_TIMEOUT_MS);
+    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
 
     const responseTime = Math.round(performance.now() - fetchStartTime);
 
     if (!response.ok) {
       const errorBody = await response.text();
       const authError = response.status === 401 || response.status === 403;
+      const invalidPathError = isInvalidGatewayPathError(errorBody);
 
       return {
         status: 'error',
@@ -450,11 +449,13 @@ export async function testGatewayConnectivity_Stage1(): Promise<ConnectivityTest
         gatewayUrl,
         responseTime,
         timestamp,
-        authenticationValidated: !authError,
+        authenticationValidated: !authError && !invalidPathError,
         httpStatus: response.status,
         remediation: authError
           ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-          : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+          : invalidPathError
+            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
+            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
       };
     }
 
@@ -562,25 +563,21 @@ export async function testGatewayConnectivity(options: GatewayTestOptions = {}):
     };
   }
 
-  // Make test request to models endpoint
-  // Most LLM gateways (OpenAI, Manifest, Ollama) have a /models endpoint for listing
-  const modelsEndpoint = buildModelsEndpoint(gatewayUrl);
+  // Make test request to the appropriate Stage 1 probe endpoint. Standard
+  // OpenAI-compatible gateways can use /models; Cloudflare /compat gateways must
+  // preserve the scoped /v1/{account_id}/{gateway_id}/compat path and probe chat completions.
+  const stage1Probe = buildStage1ProbeRequest(gatewayUrl);
 
   try {
     const fetchStartTime = performance.now();
-    const response = await fetchWithTimeout(modelsEndpoint, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'application/json',
-      },
-    }, GATEWAY_MODELS_TIMEOUT_MS);
+    const response = await fetchWithTimeout(stage1Probe.endpoint, stage1Probe.init, GATEWAY_MODELS_TIMEOUT_MS);
 
     const responseTime = Math.round(performance.now() - fetchStartTime);
 
     if (!response.ok) {
       const errorBody = await response.text();
       const authError = response.status === 401 || response.status === 403;
+      const invalidPathError = isInvalidGatewayPathError(errorBody);
 
       return {
         status: 'error',
@@ -588,11 +585,13 @@ export async function testGatewayConnectivity(options: GatewayTestOptions = {}):
         gatewayUrl,
         responseTime,
         timestamp,
-        authenticationValidated: !authError,
+        authenticationValidated: !authError && !invalidPathError,
         httpStatus: response.status,
         remediation: authError
           ? 'Authentication failed. Check that LLM_GATEWAY_API_KEY is valid, or that the llm_gateway_api_key file in the configured Kaseki secrets directory contains the expected token'
-          : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
+          : invalidPathError
+            ? 'Gateway request path is invalid. For Cloudflare /compat gateways, preserve the scoped /v1/{account_id}/{gateway_id}/compat path and do not reduce it to /v1/models.'
+            : `Gateway returned an error. Verify the gateway is healthy and the URL is correct (${response.status})`,
       };
     }
 
@@ -684,12 +683,12 @@ async function testGatewayResponseSmokeFull(
     checks.push({
       name: 'cloudflare-compat-note',
       status: 'ok',
-      detail: 'Cloudflare gateway detected. Full response smoke test skipped (Cloudflare only supports Chat Completions). Health check to /v1/models passed.',
+      detail: 'Cloudflare gateway detected. Full response smoke test skipped (Cloudflare only supports Chat Completions). Stage 1 uses the scoped /compat/chat/completions probe.',
       responseTime,
     });
     return {
       status: 'ok',
-      detail: 'Cloudflare gateway connectivity verified (health check passed, full smoke test not applicable)',
+      detail: 'Cloudflare gateway connectivity verified (health check passed via scoped /compat probe, full Responses smoke test not applicable)',
       gatewayUrl,
       responseTime,
       timestamp,
@@ -1012,6 +1011,51 @@ export function isCloudflareGateway(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+
+interface Stage1ProbeRequest {
+  endpoint: string;
+  init: Record<string, unknown>;
+}
+
+function buildStage1ProbeRequest(baseUrl: string): Stage1ProbeRequest {
+  const apiKey = resolveGatewayApiKey().value ?? '';
+
+  if (isCloudflareGateway(baseUrl)) {
+    return {
+      endpoint: buildCloudflareInferenceEndpoint(baseUrl),
+      init: {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'auto',
+          messages: [{ role: 'user', content: CLOUDFLARE_STAGE1_PROBE_PROMPT }],
+          max_tokens: 1,
+          stream: false,
+        }),
+      },
+    };
+  }
+
+  return {
+    endpoint: buildModelsEndpoint(baseUrl),
+    init: {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+      },
+    },
+  };
+}
+
+function isInvalidGatewayPathError(errorBody: string): boolean {
+  return /invalid request path/i.test(errorBody);
 }
 
 /**
