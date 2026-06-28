@@ -43,14 +43,14 @@ import { validateGitHubAppPrivateKey } from './github-app-private-key';
 import {
   resolveGatewayApiKey,
   isResponsesEndpoint,
-} from './kaseki-api-gateway-test';
+} from './kaseki-api-gateway-smoke';
 
 jest.mock('fs');
 jest.mock('node:child_process');
 jest.mock('./lib/subprocess-helpers');
 jest.mock('./secrets/host-secrets-reader');
 jest.mock('./github-app-private-key');
-jest.mock('./kaseki-api-gateway-test');
+jest.mock('./kaseki-api-gateway-smoke');
 jest.mock('./utils/file-helpers', () => ({
   commandOutput: jest.fn().mockReturnValue(''),
   readFirstLine: jest.fn().mockReturnValue(''),

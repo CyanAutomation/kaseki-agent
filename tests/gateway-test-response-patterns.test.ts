@@ -3,7 +3,7 @@
  * Tests various Chat Completions response formats (standard, streaming, Cloudflare variants)
  */
 
-import { extractPiJsonAssistantText, analyzeResponseStructure } from '../src/kaseki-api-gateway-test';
+import { extractPiJsonAssistantText, analyzeResponseStructure } from '../src/kaseki-api-gateway-smoke';
 
 describe('extractPiJsonAssistantText', () => {
   describe('Standard Pi JSONL formats (legacy)', () => {
