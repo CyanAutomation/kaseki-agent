@@ -159,28 +159,52 @@ describe('Gateway Provider Configuration', () => {
 
   it('validates API type for Responses format', () => {
     /**
-     * Test: API type is correct for Pi's Responses API.
-     * Step 2b: Confirm 'openai-responses' maps to /v1/responses endpoint.
+     * Test: Execute the real gateway provider registration source and assert
+     * the registered provider uses Pi's Responses-compatible API type.
+     *
+     * This intentionally reads the value from .pi-extensions.js at runtime so
+     * the test fails if production provider configuration changes.
      */
 
-    // From .pi-extensions.js: api: 'openai-responses'
-    const apiType = 'openai-responses';
+    let output: string;
+    try {
+      output = execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import registerGatewayProvider from './.pi-extensions.js';
+const calls = [];
+registerGatewayProvider({
+  registerProvider: (...args) => calls.push(args),
+});
+console.log(JSON.stringify(calls));`,
+        ],
+        {
+          env: {
+            ...process.env,
+            LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
+            LLM_GATEWAY_API_KEY: 'test-api-key',
+            LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
+            LLM_GATEWAY_MODEL: 'dynamic/kaseki-agent',
+          },
+          encoding: 'utf8',
+        }
+      );
+    } catch (error) {
+      throw new Error(`Failed to execute .pi-extensions.js: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
-    // This is the critical decision point:
-    // - If 'openai-responses' maps to /v1/responses ✓
-    // - If it maps to /v1/chat/completions ✗ (would be wrong)
-    // - If something else ✗
+    const calls = JSON.parse(output);
+    expect(calls).toHaveLength(1);
 
-    console.log('\n=== Step 2b: CRITICAL - Verify API Type ===');
-    console.log(`  Current: api = '${apiType}'`);
-    console.log(`  Must confirm: Does '${apiType}' map to /v1/responses endpoint?`);
-    console.log('  If NOT, need to update api type in .pi-extensions.js');
-    console.log('  Pi CLI docs: https://github.com/earendil-works/pi-coding-agent/docs/providers');
-    console.log('');
-    console.log('  Action: Check Pi CLI v0.77.0 documentation');
-    console.log('         for correct api type value for Responses-style payload');
-
-    expect(apiType).toBeDefined();
+    const [providerName, registeredProviderConfig] = calls[0];
+    expect(providerName).toBe('gateway');
+    expect(registeredProviderConfig).toEqual(
+      expect.objectContaining({
+        api: 'openai-responses',
+      })
+    );
   });
 
   it('registers the actual gateway provider with deterministic configuration', () => {
@@ -203,9 +227,10 @@ registerGatewayProvider({
 });
 console.log(JSON.stringify(calls));`,
         ],
+        {
           env: {
             ...process.env,
-            LLM_GATEWAY_URL: '',
+            LLM_GATEWAY_URL: 'https://llm-gateway.local.xyz/v1',
             LLM_GATEWAY_API_KEY: 'test-api-key',
             LLM_GATEWAY_MAX_OUTPUT_TOKENS: '2048',
           },
