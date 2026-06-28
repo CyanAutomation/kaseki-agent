@@ -33,6 +33,13 @@ export function setupLlmProviderEnvironment(env?: NodeJS.ProcessEnv): void {
   if (!actualEnv.KASEKI_PROVIDER && actualEnv.LLM_GATEWAY_URL) {
     actualEnv.KASEKI_PROVIDER = 'gateway';
   }
+
+  const shouldNormalizeGatewayModel =
+    actualEnv.KASEKI_PROVIDER === 'gateway' && (!actualEnv.KASEKI_MODEL || actualEnv.KASEKI_MODEL === 'auto');
+
+  if (shouldNormalizeGatewayModel) {
+    actualEnv.KASEKI_MODEL = actualEnv.LLM_GATEWAY_MODEL || 'dynamic/kaseki-agent';
+  }
 }
 
 /**

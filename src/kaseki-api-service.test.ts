@@ -529,12 +529,45 @@ describe('Node runtime precheck', () => {
 });
 
 describe('Kaseki API LLM Provider Setup', () => {
-  test('sets KASEKI_PROVIDER=gateway when LLM_GATEWAY_URL is configured', () => {
+  test('sets KASEKI_PROVIDER=gateway and default model when LLM_GATEWAY_URL is configured', () => {
     const mockEnv = {
       LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
     };
     setupLlmProviderEnvironment(mockEnv as any);
     expect(mockEnv.KASEKI_PROVIDER).toBe('gateway');
+    expect(mockEnv.KASEKI_MODEL).toBe('dynamic/kaseki-agent');
+  });
+
+  test('rewrites auto KASEKI_MODEL for gateway provider', () => {
+    const mockEnv = {
+      KASEKI_PROVIDER: 'gateway',
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
+      KASEKI_MODEL: 'auto',
+    };
+    setupLlmProviderEnvironment(mockEnv as any);
+    expect(mockEnv.KASEKI_PROVIDER).toBe('gateway');
+    expect(mockEnv.KASEKI_MODEL).toBe('dynamic/kaseki-agent');
+  });
+
+  test('honors LLM_GATEWAY_MODEL when normalizing gateway model', () => {
+    const mockEnv = {
+      KASEKI_PROVIDER: 'gateway',
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
+      LLM_GATEWAY_MODEL: 'custom/gateway-model',
+    };
+    setupLlmProviderEnvironment(mockEnv as any);
+    expect(mockEnv.KASEKI_MODEL).toBe('custom/gateway-model');
+  });
+
+  test('preserves explicit non-auto KASEKI_MODEL for gateway provider', () => {
+    const mockEnv = {
+      KASEKI_PROVIDER: 'gateway',
+      LLM_GATEWAY_URL: 'https://gateway.ai.cloudflare.com/v1/compat',
+      LLM_GATEWAY_MODEL: 'custom/gateway-model',
+      KASEKI_MODEL: 'explicit/model',
+    };
+    setupLlmProviderEnvironment(mockEnv as any);
+    expect(mockEnv.KASEKI_MODEL).toBe('explicit/model');
   });
 
   test('respects explicit KASEKI_PROVIDER when already set', () => {
@@ -555,13 +588,18 @@ describe('Kaseki API LLM Provider Setup', () => {
   test('operates on process.env when no environment object is passed', () => {
     const originalProvider = process.env.KASEKI_PROVIDER;
     const originalGatewayUrl = process.env.LLM_GATEWAY_URL;
+    const originalModel = process.env.KASEKI_MODEL;
+    const originalGatewayModel = process.env.LLM_GATEWAY_MODEL;
 
     try {
       delete process.env.KASEKI_PROVIDER;
+      delete process.env.KASEKI_MODEL;
+      delete process.env.LLM_GATEWAY_MODEL;
       process.env.LLM_GATEWAY_URL = 'https://gateway.example.com/v1';
 
       setupLlmProviderEnvironment();
       expect(process.env.KASEKI_PROVIDER).toBe('gateway');
+      expect(process.env.KASEKI_MODEL).toBe('dynamic/kaseki-agent');
     } finally {
       if (originalProvider === undefined) {
         delete process.env.KASEKI_PROVIDER;
@@ -572,6 +610,16 @@ describe('Kaseki API LLM Provider Setup', () => {
         delete process.env.LLM_GATEWAY_URL;
       } else {
         process.env.LLM_GATEWAY_URL = originalGatewayUrl;
+      }
+      if (originalModel === undefined) {
+        delete process.env.KASEKI_MODEL;
+      } else {
+        process.env.KASEKI_MODEL = originalModel;
+      }
+      if (originalGatewayModel === undefined) {
+        delete process.env.LLM_GATEWAY_MODEL;
+      } else {
+        process.env.LLM_GATEWAY_MODEL = originalGatewayModel;
       }
     }
   });
