@@ -31,6 +31,26 @@ curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true
 curl http://localhost:3000/api/gateway-test?stage=2&piProvider=true&debug=true
 ```
 
+
+## Manual Pi CLI Integration Test
+
+Use this end-to-end check when Pi CLI is available and you need to validate the actual gateway payload format against a live gateway.
+
+```bash
+export LLM_GATEWAY_URL=https://llm-gateway.local.xyz/v1
+export LLM_GATEWAY_API_KEY=<your-key>
+export KASEKI_PROVIDER=gateway
+export KASEKI_MODEL=dynamic/kaseki-agent
+
+./run-kaseki.sh
+```
+
+After the run finishes, inspect these artifacts and logs:
+
+1. `/agents/kaseki-results/kaseki-N/.gateway-diagnostics.jsonl` should contain `extension_module_loaded` and `provider_registered` events.
+2. Gateway server logs should show the payload shape, including `{model, input, stream, tools, ...}`. Confirm whether `input` is a string or an array.
+3. `metadata.json` should include `phases.gateway_normalization` with consolidated diagnostics.
+
 ## Test Stages
 
 ### Stage 1: Gateway Connectivity
