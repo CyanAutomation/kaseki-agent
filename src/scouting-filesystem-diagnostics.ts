@@ -23,7 +23,7 @@ export function buildResultsDirectoryNotWritableMessage({
     '',
     'Impact:',
     '  - Scouting Pi agent will fail to write scouting-candidate.json',
-  '  - This causes exit code 83 (scouting prerequisite failure)',
+    '  - This causes exit code 83 (scouting prerequisite failure)',
     '',
     'Fix: Remount /results as read-write',
     '  docker run -v /path/to/results:/results:rw kaseki-agent',

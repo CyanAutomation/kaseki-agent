@@ -102,29 +102,28 @@ export default function (pi) {
   }
 
   pi.registerProvider('gateway', {
-      name: 'LLM Gateway (CloudFlare)',
-      baseUrl: gatewayUrl,
-      apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
-      api: 'openai-responses', // Pi's native OpenAI-compatible API support
-      models: [
-        {
-          id: model,
-          name: `CloudFlare Gateway (${model})`,
-          reasoning: false,
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens,
-        },
-      ],
-    });
-    recordGatewayDiagnostic({
-      event: 'provider_registered',
-      provider: 'gateway',
-      baseUrl: gatewayUrl,
-      apiType: 'openai-responses',
-      modelId: model,
-      hasApiKey: Boolean(gatewayApiKey),
-    });
-  }
+    name: 'LLM Gateway (CloudFlare)',
+    baseUrl: gatewayUrl,
+    apiKey: gatewayApiKey || '$LLM_GATEWAY_API_KEY',
+    api: 'openai-responses', // Pi's native OpenAI-compatible API support
+    models: [
+      {
+        id: model,
+        name: `CloudFlare Gateway (${model})`,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens,
+      },
+    ],
+  });
+  recordGatewayDiagnostic({
+    event: 'provider_registered',
+    provider: 'gateway',
+    baseUrl: gatewayUrl,
+    apiType: 'openai-responses',
+    modelId: model,
+    hasApiKey: Boolean(gatewayApiKey),
+  });
 }
